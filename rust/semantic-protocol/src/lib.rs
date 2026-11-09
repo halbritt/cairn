@@ -1,5 +1,5 @@
-//! Already-decoded semantic/4 prefixes, explicit remaining work and unqualified
-//! logical projections. There is no decoder, serializer or initialized backend.
+//! Lossless semantic/4 byte codecs, decoded prefixes, explicit remaining work
+//! and unqualified logical projections. There is no initialized backend.
 //!
 //! `Value` equality compares IR representations, including float bits and value
 //! tags. It is not Python numeric equality. Hash and cache comparisons implement
@@ -9,6 +9,7 @@ use cairn_semantic_text::is_python_blank;
 
 pub mod cache;
 pub mod hash;
+pub mod json;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IrError {
@@ -138,14 +139,13 @@ pub struct PyObject(Vec<(PyString, Value)>);
 
 impl PyObject {
     pub fn new(entries: Vec<(PyString, Value)>) -> Result<Self, IrError> {
+        let mut seen = std::collections::BTreeMap::new();
         for (duplicate, (key, _)) in entries.iter().enumerate() {
-            if let Some(first) = entries[..duplicate]
-                .iter()
-                .position(|(prior, _)| prior == key)
-            {
+            if let Some(first) = seen.insert(key.codepoints(), duplicate) {
                 return Err(IrError::DuplicateObjectKey { first, duplicate });
             }
         }
+        drop(seen);
         Ok(Self(entries))
     }
 

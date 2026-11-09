@@ -1,5 +1,5 @@
 //! Pure decoded cache policy. Identity and stream phase are supplied inputs,
-//! not evidence of an initialized backend. No JSON serializer is provided.
+//! not evidence of an initialized backend. Byte emission/counting live in json.
 
 use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig, STANDARD};
 use base64::{alphabet, Engine};
@@ -32,16 +32,14 @@ impl SuppliedIdentity {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeasurementBoundary {
-    FiniteNonzeroFloat,
-    IntegerMagnitudeBeyond64Bits,
-    ContainerBeyondChildLevel,
+    ContainerDepthBeyond64,
 }
 
-/// The original state remains unmeasured. No caller count can close this stage.
+/// Original cache input/profile retained at the shared renderer's depth limit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CacheEnvelopeNeedsSourceMeasure<'a> {
     input: &'a Value,
-    boundary: MeasurementBoundary,
+    pending: crate::json::NeedsSourceDepth<'a>,
 }
 
 impl<'a> CacheEnvelopeNeedsSourceMeasure<'a> {
@@ -49,93 +47,28 @@ impl<'a> CacheEnvelopeNeedsSourceMeasure<'a> {
         self.input
     }
     pub fn boundary(&self) -> MeasurementBoundary {
-        self.boundary
+        MeasurementBoundary::ContainerDepthBeyond64
+    }
+    pub fn profile(&self) -> crate::json::RenderProfile {
+        self.pending.profile()
     }
 }
 
-fn string_size(text: &PyString) -> u128 {
-    2 + text
-        .codepoints()
-        .iter()
-        .map(|&cp| match cp {
-            0x22 | 0x5c | 0x08 | 0x0c | 0x0a | 0x0d | 0x09 => 2u128,
-            0x20..=0x7e => 1,
-            0..=0xffff => 6,
-            _ => 12,
-        })
-        .sum::<u128>()
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CacheMeasureError<'a> {
+    Source(crate::json::CodecError),
+    NeedsSourceDepth(CacheEnvelopeNeedsSourceMeasure<'a>),
 }
 
-fn measure(value: &Value, container_depth: usize) -> Result<u128, MeasurementBoundary> {
-    match value {
-        Value::Null => Ok(4),
-        Value::Bool(true) => Ok(4),
-        Value::Bool(false) => Ok(5),
-        Value::String(text) => Ok(string_size(text)),
-        Value::Integer(integer) => {
-            let limbs = integer.magnitude();
-            if limbs.len() > 2 {
-                return Err(MeasurementBoundary::IntegerMagnitudeBeyond64Bits);
-            }
-            let mut magnitude = u64::from(limbs.first().copied().unwrap_or(0))
-                | (u64::from(limbs.get(1).copied().unwrap_or(0)) << 32);
-            let mut digits = 1 + u128::from(integer.is_negative());
-            while magnitude >= 10 {
-                magnitude /= 10;
-                digits += 1;
-            }
-            Ok(digits)
-        }
-        Value::FloatBits(bits) => {
-            let magnitude = bits & 0x7fff_ffff_ffff_ffff;
-            if magnitude == 0 {
-                Ok(if bits >> 63 == 0 { 3 } else { 4 })
-            } else if magnitude >> 52 == 0x7ff {
-                if magnitude & 0x000f_ffff_ffff_ffff != 0 {
-                    Ok(3) // Every NaN, including negative/payload NaNs, is "NaN".
-                } else {
-                    Ok(if bits >> 63 == 0 { 8 } else { 9 })
-                }
-            } else {
-                Err(MeasurementBoundary::FiniteNonzeroFloat)
-            }
-        }
-        Value::Array(values) => {
-            if container_depth > 1 {
-                return Err(MeasurementBoundary::ContainerBeyondChildLevel);
-            }
-            let mut size = 2;
-            for (index, value) in values.iter().enumerate() {
-                if index != 0 {
-                    size += 2; // ", "
-                }
-                size += measure(value, container_depth + 1)?;
-            }
-            Ok(size)
-        }
-        Value::Object(object) => {
-            if container_depth > 1 {
-                return Err(MeasurementBoundary::ContainerBeyondChildLevel);
-            }
-            let mut size = 2;
-            for (index, (key, value)) in object.entries().iter().enumerate() {
-                if index != 0 {
-                    size += 2;
-                }
-                size += string_size(key) + 2 + measure(value, container_depth + 1)?;
-            }
-            Ok(size)
-        }
+/// Shared full default-JSON rendering/counting with allow_nonfinite=true and
+/// no LF. Conversion/pending completes before cache bounds or identity.
+pub fn measure_envelope(input: &Value) -> Result<u128, CacheMeasureError<'_>> {
+    match crate::json::measure_cache_value(input).map_err(CacheMeasureError::Source)? {
+        crate::json::MeasureOutcome::Complete(size) => Ok(size),
+        crate::json::MeasureOutcome::NeedsSourceDepth(pending) => Err(
+            CacheMeasureError::NeedsSourceDepth(CacheEnvelopeNeedsSourceMeasure { input, pending }),
+        ),
     }
-}
-
-/// Exact default json.dumps/ensure_ascii logical length on the selected domain.
-/// Root containers have depth 0 and child containers depth 1. The counter never
-/// shortcuts on CACHE_LIMIT: a later unsupported value must remain pending.
-/// u128 holds the exact length of this shallow in-memory domain on the selected
-/// 64-bit host; no saturation, float conversion or serialization is used.
-pub fn measure_envelope(input: &Value) -> Result<u128, CacheEnvelopeNeedsSourceMeasure<'_>> {
-    measure(input, 0).map_err(|boundary| CacheEnvelopeNeedsSourceMeasure { input, boundary })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -172,6 +105,7 @@ pub fn decode_source_base64(encoded: &PyString) -> Result<Vec<u8>, Base64Failure
 pub enum CacheSite {
     Format,
     EnvelopeSize,
+    EnvelopeConversion(crate::json::CodecSite),
     VectorMap,
     EntryKey(usize),
     EntryEncoded(usize),
@@ -260,7 +194,12 @@ pub fn restore_payload<'a>(
     };
     let size = match measure_envelope(input) {
         Ok(size) => size,
-        Err(pending) => return Ok(RestoreOutcome::NeedsSourceMeasure(pending)),
+        Err(CacheMeasureError::NeedsSourceDepth(pending)) => {
+            return Ok(RestoreOutcome::NeedsSourceMeasure(pending))
+        }
+        Err(CacheMeasureError::Source(error)) => {
+            return Err(refuse(CacheSite::EnvelopeConversion(error.site)))
+        }
     };
     if size > CACHE_LIMIT {
         return Err(refuse(CacheSite::EnvelopeSize));
@@ -346,7 +285,7 @@ impl SnapshotEntries {
     }
 }
 
-/// Decoded cache Value only: no general JSON encoder or worker reply path.
+/// Decoded cache Value only; byte encoding is a separate json-module stage.
 /// All vectors precede aggregate count/size checks; zero vectors and arbitrary
 /// string keys are intentionally permitted by snapshot, unlike restore.
 pub fn snapshot_payload(
@@ -383,7 +322,8 @@ pub fn snapshot_payload(
         ),
         (PyString::from("vectors"), Value::Object(PyObject(entries))),
     ]));
-    let size = measure_envelope(&state).expect("snapshot contains only two-level string objects");
+    let size = measure_envelope(&state)
+        .expect("snapshot string-only two-level objects cannot fail or exceed codec depth");
     if size > CACHE_LIMIT {
         return Err(refuse(CacheSite::EnvelopeSize));
     }
@@ -555,12 +495,8 @@ mod tests {
             measure_envelope(&Value::Array(vec![Value::Array(vec![])])).unwrap(),
             4
         );
-        assert_eq!(
-            measure_envelope(&Value::FloatBits(1))
-                .unwrap_err()
-                .boundary(),
-            MeasurementBoundary::FiniteNonzeroFloat
-        );
+        // SP3 now measures this formerly pending finite subnormal exactly.
+        assert_eq!(measure_envelope(&Value::FloatBits(1)).unwrap(), 6);
     }
 
     #[test]
@@ -612,43 +548,48 @@ mod tests {
 
     #[test]
     fn sdp2_source_measure_pending_precedes_size_identity_and_vectors() {
-        // Q4: unsupported vectors AFTER an already-overbound supported model.
-        pending_unchanged(
+        // SP3 removes numeric/child-level pending, preserving old precedence
+        // and atomicity while retaining an honest out-of-profile depth case.
+        refusal_unchanged(
             &state(text(&"A".repeat(614401)), Value::FloatBits(1)),
-            MeasurementBoundary::FiniteNonzeroFloat,
+            CacheSite::EnvelopeSize,
         );
-        pending_unchanged(
-            &state(text("other"), Value::FloatBits(1)),
-            MeasurementBoundary::FiniteNonzeroFloat,
-        );
-        // Unsupported identity precedes both a would-be mismatch and bad vectors.
-        pending_unchanged(
-            &state(Value::FloatBits(0x3ff0_0000_0000_0000), Value::Null),
-            MeasurementBoundary::FiniteNonzeroFloat,
-        );
-        pending_unchanged(
-            &state(
+        let mut cache = seed();
+        let before = cache.clone();
+        for input in [
+            state(text("other"), Value::FloatBits(1)),
+            state(Value::FloatBits(0x3ff0_0000_0000_0000), Value::Null),
+            state(
                 Value::Integer(PyInteger::new(false, vec![0, 0, 1])),
                 Value::Bool(false),
             ),
-            MeasurementBoundary::IntegerMagnitudeBeyond64Bits,
-        );
-        pending_unchanged(
-            &state(text("other"), Value::Array(vec![Value::Array(vec![])])),
-            MeasurementBoundary::ContainerBeyondChildLevel,
-        );
-        pending_unchanged(
+            state(text("other"), Value::Array(vec![Value::Array(vec![])])),
+        ] {
+            assert_eq!(
+                restore_payload(&mut cache, &input, &identity()).unwrap(),
+                RestoreOutcome::IgnoredOtherModel
+            );
+            assert_eq!(cache, before);
+        }
+        refusal_unchanged(
             &state(
                 text("self"),
                 Value::Integer(PyInteger::new(true, vec![1, 0, 1])),
             ),
-            MeasurementBoundary::IntegerMagnitudeBeyond64Bits,
+            CacheSite::VectorMap,
         );
-        let deferred = state(
-            text(&"A".repeat(614401)),
-            Value::Array(vec![Value::Object(PyObject::new(vec![]).unwrap())]),
+        let mut deep = Value::Null;
+        for _ in 0..64 {
+            deep = Value::Array(vec![deep]);
+        }
+        pending_unchanged(
+            &state(text(&"A".repeat(614401)), deep.clone()),
+            MeasurementBoundary::ContainerDepthBeyond64,
         );
-        pending_unchanged(&deferred, MeasurementBoundary::ContainerBeyondChildLevel);
+        pending_unchanged(
+            &state(text("other"), deep),
+            MeasurementBoundary::ContainerDepthBeyond64,
+        );
     }
 
     #[test]
