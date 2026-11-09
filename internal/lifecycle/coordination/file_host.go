@@ -30,6 +30,7 @@ const (
 // SourceReaderProfile owns both Decode and Write in the Foundation interface.
 // Its session writer route covers json.dump followed by the terminating LF.
 type FileHostOptions struct {
+	Services       *ServiceBindings
 	Profile        *value.SourceReaderProfile
 	Journal        *SessionJournalAdapter
 	JournalOptions journal.Options
@@ -79,7 +80,7 @@ func NewFileHost(options FileHostOptions) *Host {
 	if adapter.PathText == nil {
 		adapter.PathText = func(v *value.Value) (string, error) { return sourcePathText(options.Profile, v) }
 	}
-	h := &Host{Journal: adapter, Log: log}
+	h := &Host{Journal: adapter, Log: log, Profile: options.Profile, Services: options.Services}
 	h.Call = options.Call
 	if h.Call == nil {
 		h.Call = sourceCall(options.Profile, options.Runner)
@@ -136,7 +137,20 @@ func NewFileHost(options FileHostOptions) *Host {
 		}
 		return options.Profile.Decode(SiteSessionRead, raw)
 	}
-	h.Persist = func(path string, record *value.Value) (err error) {
+	h.ReadConfig = func(path string) (*value.Value, error) {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		return options.Profile.Decode(SiteConfigRead, raw)
+	}
+	h.Persist = sourceStateWriter(options, SiteSessionWrite)
+	h.WriteContext = sourceStateWriter(options, SiteInboxContextWrite)
+	return h
+}
+
+func sourceStateWriter(options FileHostOptions, site string) func(string, *value.Value) error {
+	return func(path string, record *value.Value) (err error) {
 		if err = os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return err
 		}
@@ -169,7 +183,7 @@ func NewFileHost(options FileHostOptions) *Host {
 		if rename == nil {
 			rename = os.Rename
 		}
-		if err = options.Profile.Write(SiteSessionWrite, stateWriter{file, write}, record); err != nil {
+		if err = options.Profile.Write(site, stateWriter{file, write}, record); err != nil {
 			return err
 		}
 		if err = sync(file); err != nil {
@@ -192,7 +206,6 @@ func NewFileHost(options FileHostOptions) *Host {
 		}
 		return err
 	}
-	return h
 }
 
 func sourceCall(profile *value.SourceReaderProfile, runner journal.Runner) func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error) {
@@ -297,5 +310,16 @@ func NewRecoveryEngine(host *Host, evidence TranscriptEvidence, hooks RecoveryHo
 	if adapter != nil && adapter.Now != nil {
 		clock = adapter.Now
 	}
+	bindings := ServiceBindings{}
+	if host != nil {
+		bindings.Profile = host.Profile
+		if host.Services != nil {
+			bindings = *host.Services
+			if bindings.Profile == nil {
+				bindings.Profile = host.Profile
+			}
+		}
+	}
+	hooks = bindings.bind(host, hooks, procRoot, clock)
 	return &RecoveryEngine{Host: host, Journal: adapter, Evidence: evidence, Hooks: hooks, Now: clock}
 }

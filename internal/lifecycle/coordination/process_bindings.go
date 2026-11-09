@@ -286,7 +286,7 @@ func NewProcessHooks(root string) RecoveryHooks {
 		}
 		return view, nil
 	}
-	return RecoveryHooks{Alive: alive, DaemonView: probe, Daemon: func(recorded *value.Value) (bool, error) {
+	return RecoveryHooks{Alive: alive, ObserveTime: ObserveTime, DaemonView: probe, Daemon: func(recorded *value.Value) (bool, error) {
 		view, err := probe(recorded)
 		if err != nil {
 			return false, err
