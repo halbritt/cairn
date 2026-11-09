@@ -110,7 +110,99 @@ impl Drop for Output {
         unsafe { cairn_ort_output_release(self) }
     }
 }
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(crate) struct Bytes {
+    pub data: *const u8,
+    pub length: usize,
+}
+impl Default for Bytes {
+    fn default() -> Self {
+        Self {
+            data: std::ptr::null(),
+            length: 0,
+        }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ConfigEntry {
+    pub key: Bytes,
+    pub value: Bytes,
+}
+#[repr(C)]
+pub(crate) struct ConfigView {
+    pub observed: i32,
+    pub reserved: i32,
+    pub count: usize,
+    pub entries: *const ConfigEntry,
+}
+impl Default for ConfigView {
+    fn default() -> Self {
+        Self {
+            observed: 0,
+            reserved: 0,
+            count: 0,
+            entries: std::ptr::null(),
+        }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct MemoryObservation {
+    pub present: i32,
+    pub device_type: i32,
+    pub device_id: i32,
+    pub allocator_type: i32,
+    pub memory_type: i32,
+    pub device_memory_type: i32,
+    pub vendor_id: u32,
+    pub reserved: u32,
+    pub name: Bytes,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct EpObservation {
+    pub present: i32,
+    pub reserved: i32,
+    pub name: Bytes,
+    pub vendor: Bytes,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct IoObservation {
+    pub ordinal: usize,
+    pub node_name: Bytes,
+    pub memory: MemoryObservation,
+    pub ep: EpObservation,
+}
+const _: [(); 16] = [(); std::mem::size_of::<Bytes>()];
+const _: [(); 32] = [(); std::mem::size_of::<ConfigEntry>()];
+const _: [(); 24] = [(); std::mem::size_of::<ConfigView>()];
+const _: [(); 48] = [(); std::mem::size_of::<MemoryObservation>()];
+const _: [(); 40] = [(); std::mem::size_of::<EpObservation>()];
+const _: [(); 112] = [(); std::mem::size_of::<IoObservation>()];
+const _: [(); 8] = [(); std::mem::offset_of!(ConfigView, count)];
+const _: [(); 16] = [(); std::mem::offset_of!(ConfigView, entries)];
+const _: [(); 32] = [(); std::mem::offset_of!(MemoryObservation, name)];
+const _: [(); 8] = [(); std::mem::offset_of!(EpObservation, name)];
+const _: [(); 24] = [(); std::mem::offset_of!(EpObservation, vendor)];
+const _: [(); 8] = [(); std::mem::offset_of!(IoObservation, node_name)];
+const _: [(); 24] = [(); std::mem::offset_of!(IoObservation, memory)];
+const _: [(); 72] = [(); std::mem::offset_of!(IoObservation, ep)];
 extern "C" {
+    pub fn cairn_ort_config_observation(
+        session: *const Session,
+        out: *mut ConfigView,
+        error: *mut NativeError,
+    ) -> c_int;
+    pub fn cairn_ort_io_observation(
+        session: *const Session,
+        input: c_int,
+        index: usize,
+        out: *mut IoObservation,
+        error: *mut NativeError,
+    ) -> c_int;
     fn cairn_ort_error_release(error: *mut NativeError);
     pub fn cairn_ort_runtime_open(
         bytes: *const u8,

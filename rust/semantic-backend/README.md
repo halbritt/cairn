@@ -218,3 +218,43 @@ rank. New compile/link/ABI and selected-test disposition belong to SAME B2,
 followed by SAME R1. Only rustfmt, source inspection and whitespace checks were
 authorized for author verification. No component run or runtime acceptance is
 claimed. All existing P1-P5 and actual-worker FIRST holds above remain.
+
+## S-P2-SESSION-1 partial owning-session evidence
+
+`Session::observations()` exposes immutable, privately constructed evidence
+from its actual C cache. The backend includes options-entry byte pairs and
+ordinal input/output memory/optional EP records under `session.partial_observations`.
+Bytes use exact hex; config pairs have a canonical byte-pair ordering with
+duplicates retained, and I/O arrays keep metadata order. Configured caps and
+settings are distinguished from actual option getters and initialized-session
+I/O evidence. An options entry list, including an observed empty list, is not a
+complete effective-default manifest. No public fixture/ready constructor was
+added, and LoadedBackend computation operations stay crate-private.
+
+All ten missing observations remain. B1's three session obligations now state
+the unsupported relation precisely: I/O allocator type does not read global
+CPU-arena enablement; config entries and two option getters do not enumerate
+remaining effective defaults; optional I/O EP devices do not prove every node's
+provider/dispatch. The public API29 functions used here expose these partial
+records only. Retained internal C++ getters are not public C ABI observations.
+The next B1 source action must establish actual public, binary-bound readback
+for each missing global field without changing settings. Release retains the
+existing binary/build/link, mapped-dependency and CPU/OS obligations. External
+model assets/unknown schema or ORT format remain pending where applicable.
+
+Two new private `p2_session1_` backend tests call the actual session-input
+consumer with synthetic partial JSON and metadata. They reject readiness
+inference even from CPU/arena-looking I/O or asserted global fields nested in
+partial evidence, retain the identity gate, separate stages, preserve metadata
+order and distinguish changed byte/order inputs. Eight ORT decoder tests cover
+the owning-data boundary. These ten tests are authored, not executed by B1.
+Future selections are `--lib p2_session1_ -- --test-threads=1` in their respective
+backend and ORT roots, subject to SAME B2 admission. Old selections are not
+replayed. No new dependency, graph feature, native unit or build-system edge is
+introduced; existing bridge code and readback ABI gain the observations.
+
+Author checks are source inspection, rustfmt and whitespace only. Source
+construction does not establish actual getter behavior, default/provider
+completeness, model execution or numerical/runtime acceptance. Full P1-P5,
+all294-before-model, both norms/cache occurrences/NumPy iterator, raw-bit
+similarity/strict integer, production and FIRST holds remain unchanged.

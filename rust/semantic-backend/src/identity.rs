@@ -108,9 +108,9 @@ fn required_observations(inputs: &Value) -> Vec<MissingObservation> {
         ("/compilation/enabled_features", "compilation.enabled_features", "consume Release binary-bound per-unit feature sets"),
         ("/compilation/effective_flags", "compilation.effective_flags", "consume Release binary-bound actual Rust/C effective flags"),
         ("/compilation/linked_input_attestation", "compilation.linked_input_attestation", "bind complete local+registry source, rustc/target/features, per-unit Rust/C flags and actual link receipts to this observed binary; runtime source snapshot alone is insufficient"),
-        ("/session/cpu_arena", "session.cpu_arena", "extend selected API29 bridge/SessionSettings observation; NativeDefault::NotExposedBySelectedCapi cannot become an assumed default"),
-        ("/session/remaining_defaults", "session.remaining_defaults", "enumerate and observe vector-affecting native defaults through the ORT owner"),
-        ("/session/effective_provider", "session.effective_provider", "extend actual ORT session observation; existing SessionSettings exposes no effective provider field"),
+        ("/session/cpu_arena", "session.cpu_arena", "B1 must establish actual global arena-enabled evidence; I/O MemoryInfo allocator type is not this session option"),
+        ("/session/remaining_defaults", "session.remaining_defaults", "B1 must establish remaining effective vector-affecting defaults; options config entries and existing two getters are only partial"),
+        ("/session/effective_provider", "session.effective_provider", "B1 must establish complete provider/node dispatch evidence; optional I/O EpDevice names or internal C++ provider getters do not certify it"),
         ("/native/ort_dependency_inventory", "native.ort_dependency_inventory", "extend ORT mapped dependency provenance beyond the existing OrtGetApiBase mapping"),
         ("/native/cpu_kernel_class", "native.cpu_os_complete_class", "bind complete effective ISA/OS vector state and selected kernels to actual library getters; bounded feature observations are partial"),
         ("/assets_model_external_data_closure", "assets.model_external_data_closure", "establish self-contained optimized ONNX/complete actually consumed assets; existing session interface retains model bytes only"),
@@ -243,11 +243,6 @@ pub(crate) fn observe(
         "role": format!("{:?}", module.role), "bytes": module.file.bytes, "sha256": hex(&module.file.sha256)
     })).collect();
     let settings = ort.settings();
-    let nodes = |items: &[cairn_semantic_ort::NodeMetadata]| -> Vec<Value> {
-        items.iter().map(|n| json!({
-        "name": n.name, "element_type": format!("{:?}", n.element_type), "dimensions": n.dimensions
-    })).collect()
-    };
     let cpu = crate::platform::observe_cpu();
     let inputs = json!({
         "tag": "cairn.rust-rank-worker/1",
@@ -260,12 +255,7 @@ pub(crate) fn observe(
             "math_modules": libraries, "openblas_config_hex": hex(&mp.settings.config),
             "openblas_core_hex": hex(&mp.settings.core), "threads": mp.settings.threads,
             "parallel": mp.settings.parallel, "cpu_os_observation": cpu },
-        "session": { "intra_op_cap": settings.intra_op_threads, "inter_op_cap": settings.inter_op_threads,
-            "optimization": settings.graph_optimization, "deterministic": settings.deterministic_compute,
-            "profiling": settings.profiling, "execution_mode": settings.execution_mode,
-            "memory_pattern": settings.memory_pattern_enabled, "cpu_arena": null, "remaining_defaults": null,
-            "effective_provider": null, "batch_size": 1, "inputs": nodes(&ort.metadata().inputs),
-            "outputs": nodes(&ort.metadata().outputs) },
+        "session": session_inputs(settings, ort.metadata(), session_observations_json(ort.observations())),
         "algorithms": { "prefix": "Represent this sentence for searching relevant passages: ",
             "width": 384, "max_tokens": 512, "window": 384, "stride": 320, "max_passages": 128,
             "pooling": "ORT metadata-ordered run(None) result[0]; rank3 CLS[:,0],rank2 direct", "first_epsilon_decimal": "0.000000000001",
@@ -292,6 +282,48 @@ pub(crate) fn observe(
         missing,
         running_image,
     })
+}
+fn session_observations_json(
+    observations: &cairn_semantic_ort::observations::SessionObservations,
+) -> Value {
+    let io = |rows: &[cairn_semantic_ort::observations::IoObservation]| -> Vec<Value> {
+        rows.iter().map(|row| {
+            let memory = row.memory().map(|m| json!({
+                "name_hex":hex(m.name()),"device_type":m.device_type().code(),"device_id":m.device_id(),
+                "allocator_type":m.allocator_type().code(),"memory_type":m.memory_type().code(),
+                "device_memory_type":m.device_memory_type().code(),"vendor_id":m.vendor_id()
+            }));
+            let ep = row.ep_device().map(|ep| json!({
+                "name_hex":ep.name().map(hex),"vendor_hex":ep.vendor().map(hex)
+            }));
+            json!({"ordinal":row.ordinal(),"node_name":row.node_name(),"memory":memory,"ep_device":ep})
+        }).collect()
+    };
+    json!({
+        "options_config_entries": {"observed":true,"entries":observations.options_config_entries().iter().map(|e|
+            json!({"key_hex":hex(e.key()),"value_hex":hex(e.value())})).collect::<Vec<_>>()},
+        "options_stage":"after explicit setters, before CreateSessionFromArray",
+        "session_io_stage":"fully initialized owning session, metadata ordinal order",
+        "inputs":io(observations.inputs()),"outputs":io(observations.outputs()),
+        "scope":"partial I/O placement and optional EP-device evidence; not global defaults or complete node dispatch"
+    })
+}
+fn session_inputs(
+    settings: &cairn_semantic_ort::SessionSettings,
+    metadata: &cairn_semantic_ort::SessionMetadata,
+    partial: Value,
+) -> Value {
+    let nodes = |rows: &[cairn_semantic_ort::NodeMetadata]| -> Vec<Value> {
+        rows.iter().map(|n| json!({"name":n.name,"element_type":format!("{:?}",n.element_type),"dimensions":n.dimensions})).collect()
+    };
+    json!({"intra_op_cap":settings.intra_op_threads,"inter_op_cap":settings.inter_op_threads,
+        "optimization":settings.graph_optimization,"deterministic":settings.deterministic_compute,
+        "profiling":settings.profiling,"execution_mode":settings.execution_mode,
+        "memory_pattern":settings.memory_pattern_enabled,"cpu_arena":null,"remaining_defaults":null,"effective_provider":null,
+        "configured": {"intra_op_cap":settings.intra_op_threads,"inter_op_cap":settings.inter_op_threads,
+            "optimization":settings.graph_optimization,"deterministic":settings.deterministic_compute,"profiling":settings.profiling},
+        "option_getters": {"execution_mode":settings.execution_mode,"memory_pattern":settings.memory_pattern_enabled},
+        "partial_observations":partial,"batch_size":1,"inputs":nodes(&metadata.inputs),"outputs":nodes(&metadata.outputs)})
 }
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -494,5 +526,85 @@ mod observe_tests {
             Some(&json!({"binary_sha256":"different","source_inputs":["x"]})),
             &json!({"compilation":{"binary_sha256":"actual"}})
         ));
+    }
+}
+
+#[cfg(test)]
+mod session_observation_tests {
+    use super::*;
+    fn settings() -> cairn_semantic_ort::SessionSettings {
+        use cairn_semantic_ort::NativeDefault;
+        cairn_semantic_ort::SessionSettings {
+            intra_op_threads: 2,
+            inter_op_threads: 2,
+            graph_optimization: "ORT_ENABLE_ALL",
+            deterministic_compute: false,
+            profiling: false,
+            execution_mode: 0,
+            memory_pattern_enabled: true,
+            cpu_arena: NativeDefault::NotExposedBySelectedCapi,
+            remaining_defaults: NativeDefault::NotExposedBySelectedCapi,
+        }
+    }
+    #[test]
+    fn p2_session1_partial_entries_or_io_cannot_resolve_global_session_gaps() {
+        let metadata = cairn_semantic_ort::SessionMetadata {
+            inputs: vec![],
+            outputs: vec![],
+        };
+        for partial in [
+            Value::Null,
+            json!({"options_config_entries":{"observed":true,"entries":[]}}),
+            json!({"cpu_arena":true,"remaining_defaults":{"all":"ready"},"effective_provider":"CPUExecutionProvider","inputs":[{"memory":{"device_type":0,"allocator_type":1},"ep_device":null}]}),
+            json!({"outputs":[{"ep_device":{"name_hex":"435055"}}]}),
+        ] {
+            let inputs = json!({"session":session_inputs(&settings(),&metadata,partial)});
+            for field in ["cpu_arena", "remaining_defaults", "effective_provider"] {
+                assert!(inputs["session"][field].is_null());
+                assert!(required_observations(&inputs)
+                    .iter()
+                    .any(|v| v.field == format!("session.{field}")));
+            }
+            let report = ConstructionReport {
+                missing: vec![],
+                inputs,
+                provenance: vec![],
+                running_image: None,
+            };
+            assert!(report.rank_identity().is_err());
+        }
+    }
+    #[test]
+    fn p2_session1_configured_caps_getters_and_ordinal_arrays_stay_separate() {
+        let metadata = cairn_semantic_ort::SessionMetadata {
+            inputs: vec![],
+            outputs: ["zulu", "alpha"]
+                .into_iter()
+                .map(|name| cairn_semantic_ort::NodeMetadata {
+                    name: name.into(),
+                    element_type: cairn_semantic_ort::ElementType::Float32,
+                    dimensions: vec![1, 384],
+                })
+                .collect(),
+        };
+        let partial = json!({"inputs":[],"outputs":[{"ordinal":0,"memory":{"device_type":99,"name_hex":"ff"}},{"ordinal":1,"ep_device":null}],"options_config_entries":{"observed":true,"entries":[{"key_hex":"ff","value_hex":"fe"}]}});
+        let inputs = session_inputs(&settings(), &metadata, partial.clone());
+        assert_eq!(inputs["partial_observations"], partial);
+        assert_eq!(inputs["inputs"], json!([]));
+        assert_eq!(inputs["outputs"][0]["name"], "zulu");
+        assert_eq!(inputs["outputs"][1]["name"], "alpha");
+        assert_eq!(inputs["configured"]["intra_op_cap"], 2);
+        assert_eq!(inputs["option_getters"]["execution_mode"], 0);
+        assert!(inputs["configured"].get("memory_pattern").is_none());
+        let mut changed = inputs.clone();
+        changed["partial_observations"]["outputs"]
+            .as_array_mut()
+            .unwrap()
+            .reverse();
+        assert_ne!(canonical(&inputs).unwrap(), canonical(&changed).unwrap());
+        changed = inputs.clone();
+        changed["partial_observations"]["options_config_entries"]["entries"][0]["value_hex"] =
+            json!("ff");
+        assert_ne!(canonical(&inputs).unwrap(), canonical(&changed).unwrap());
     }
 }

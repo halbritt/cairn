@@ -2,6 +2,7 @@
 //! This crate implements neither the rank BackendSession nor a worker identity/handshake.
 mod ffi;
 pub mod metadata;
+pub mod observations;
 
 use cairn_semantic_tokenizer::{BatchOneTensors, ConsumedFile, PreparedTokenizer};
 pub use metadata::{ElementType, NodeMetadata, RawClsBits, SessionMetadata};
@@ -257,6 +258,7 @@ impl Runtime {
         };
         let metadata = read_metadata(pointer)?;
         metadata.validate()?;
+        let observations = observations::read(pointer, &metadata)?;
         if !matches!(options.execution_mode, 0 | 1) {
             return Err(contract("unknown observed session execution mode"));
         }
@@ -282,6 +284,7 @@ impl Runtime {
             consumed_tokenizer,
             metadata,
             settings,
+            observations,
         })
     }
 }
@@ -331,8 +334,12 @@ pub struct Session {
     consumed_tokenizer: Vec<ConsumedFile>,
     metadata: SessionMetadata,
     settings: SessionSettings,
+    observations: observations::SessionObservations,
 }
 impl Session {
+    pub fn observations(&self) -> &observations::SessionObservations {
+        &self.observations
+    }
     pub fn metadata(&self) -> &SessionMetadata {
         &self.metadata
     }

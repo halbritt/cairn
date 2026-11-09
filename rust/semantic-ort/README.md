@@ -184,3 +184,70 @@ component receipts precede this changed source and do not validate its ABI.
 No settings/default/provider configuration was changed. The backend's new
 model-closure preflight is conditional; direct ORT callers still require the
 external model-asset admission described above.
+
+## S-P2-SESSION-1 owning observation source
+
+The bridge now observes the actual options and initialized session without
+changing any configured setting. After existing explicit setters and the two
+option getters, `GetSessionOptionsConfigEntries` returns an owned
+`OrtKeyValuePairs`. `GetKeyValuePairs` exposes borrowed arrays; every key/value
+byte string is copied before `ReleaseKeyValuePairs` on success or error. The
+observed empty list remains distinct from an unobserved/malformed getter result.
+Configuration entries do not enumerate every effective default.
+
+After `CreateSessionFromArray`, node-count bounds and metadata reads,
+`SessionGetMemoryInfoForInputs/Outputs` and `SessionGetEpDeviceForInputs/Outputs`
+collect records in the same order as the corresponding name APIs. The C cache
+copies node names plus memory name, device type/id, allocator type, memory type,
+device memory type and vendor id. Optional EP-device records copy name/vendor
+bytes. A NULL EP device, an observed device with NULL text, and an observed empty
+text are separate states. Unknown native enum codes remain exact typed codes.
+I/O memory placement, an arena allocator kind, or a CPU EP name for an I/O node
+is partial evidence; none establishes global CPU-arena enablement, complete
+provider/node dispatch, or all effective defaults.
+
+All session-returned MemoryInfo/EpDevice pointers borrow the live session; this
+bridge never releases those borrowed objects. It releases only the newly owned
+options KeyValuePairs and its own byte copies. On any status/allocation failure,
+the original error propagates and partial cache allocations are freed by session
+cleanup. Getter failures are not silently converted to an observed empty list.
+The Rust adapter reads the cache while SessionHandle is live, verifies count,
+ordinal and exact name association, then owns every byte. Config pairs are
+lexicographically sorted as complete byte pairs with duplicates preserved. No
+lossy UTF-8 conversion or map overwrite can merge distinct observations.
+
+Bounds use the existing selected 1..3 input and 1..64 output limits, C
+`PTRDIFF_MAX` object/slice addressability for NUL-terminated strings and copied
+entry arrays, and Rust's owned-entry allocation/slice bounds. They are finite
+addressability/allocation checks, not invented ORT configuration maxima. C
+allocation failures and fallible Rust byte/config reservations retain errors.
+The selected APIs do not specify a smaller universal text or entry-count limit.
+No retained source was reacquired to invent one.
+
+Existing bridge error/node/mapping/options/output aggregate guards remain. New
+C/Rust views are asserted at 16 bytes (bytes), 32 (pair), 24 (config view),
+48 (memory), 40 (EP), and 112 (I/O record), with four-byte native memory enum
+guards. No ORT vendor header, native unit, build script, dependency, feature,
+lock or library changed. Additional calls use the same selected API29 table.
+
+Eight `p2_session1_` ORT tests use owned synthetic buffers and the actual private
+decoder. They check missing/empty config, canonical duplicate/non-UTF-8 pairs,
+deep copying after mutation/drop, ordinal/count/name errors, unknown memory
+codes, NULL/empty EP distinctions, invalid presence/byte views and I/O byte
+ownership. They perform no native call or filesystem/process/network action.
+Two backend consumer tests check partial-evidence refusal and stage/order/byte
+identity changes. All ten are authored and UNEXECUTED by B1. Existing 16
+`p2_observe1_` tests, the corrected ORT regression and prior failures remain.
+
+Selected source is unchanged API29 `onnxruntime_c_api.h`: KeyValuePairs
+5504-5568, memory accessors 2167-2186/4413-4417/5828-5844, EP name/vendor
+5717-5733, options entries 6725-6735, input/output memory 6737-6778, input EP
+6782-6807 and output EP 7016-7039. Status-returning calls use checked OrtStatus;
+void/direct-return getters have no status to check. The retained ORT
+`inference_session.cc:2434-2441,2903-2912` describes internal default-CPU
+creation and private C++ getters, not exported public C readback.
+
+Actual invocation remains separately held, including all294-before-model,
+P1-P5, both normalization stages, strict integers, host/runtime/resource gates
+and actual-worker FIRST. This source supplies partial observations, not a
+ready session identity or runtime qualification.

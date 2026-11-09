@@ -19,10 +19,13 @@ _Static_assert(sizeof(void *) == 8 && sizeof(size_t) == 8 && sizeof(int) == 4, "
 _Static_assert(sizeof(OrtErrorCode) == 4 && sizeof(ONNXTensorElementDataType) == 4 && sizeof(ExecutionMode) == 4, "ORT enum ABI; reject short-enum compiler settings");
 _Static_assert(sizeof(CairnOrtError) == 32 && offsetof(CairnOrtError,stage) == 8, "bridge error ABI");
 _Static_assert(sizeof(CairnOrtNode) == 32 && sizeof(CairnOrtMapping) == 32 && sizeof(CairnOrtOptions) == 8 && sizeof(CairnOrtOutput) == 48, "bridge record ABI");
+_Static_assert(sizeof(CairnOrtBytes)==16 && sizeof(CairnOrtConfigEntry)==32 && sizeof(CairnOrtConfigView)==24, "config observation aggregate ABI");
+_Static_assert(sizeof(CairnOrtMemoryObservation)==48 && sizeof(CairnOrtEpObservation)==40 && sizeof(CairnOrtIoObservation)==112, "IO observation aggregate ABI");
+_Static_assert(sizeof(OrtAllocatorType)==4 && sizeof(OrtMemType)==4 && sizeof(OrtDeviceMemoryType)==4 && sizeof(OrtMemoryInfoDeviceType)==4, "memory observation enum ABI");
 _Static_assert(sizeof(float) == 4 && FLT_MANT_DIG == 24 && FLT_MAX_EXP == 128, "IEEE binary32 required");
 struct CairnOrtRuntime { void *library; int fd; const OrtApi *api; OrtEnv *env; };
-typedef struct { char *name; int32_t kind; int32_t ort_type; size_t rank; int64_t *dimensions; } OwnedNode;
-struct CairnOrtSession { CairnOrtRuntime *runtime; OrtSession *session; OwnedNode *inputs; OwnedNode *outputs; size_t input_count; size_t output_count; };
+typedef struct { char *name; int32_t kind; int32_t ort_type; size_t rank; int64_t *dimensions; CairnOrtIoObservation observation; } OwnedNode;
+struct CairnOrtSession { CairnOrtRuntime *runtime; OrtSession *session; OwnedNode *inputs; OwnedNode *outputs; size_t input_count; size_t output_count; CairnOrtConfigEntry *config_entries; size_t config_count; int config_observed; };
 
 static int error_add(CairnOrtError *e, int code, const char *stage, const char *message) {
     if (!e->stage) { e->stage = stage; e->code = code; }
@@ -136,13 +139,22 @@ done:
     return result;
 }
 
-static void node_free(OwnedNode *node) { free(node->name); free(node->dimensions); }
+static void bytes_free(CairnOrtBytes *bytes) { free((void *)bytes->data); memset(bytes,0,sizeof(*bytes)); }
+static void node_free(OwnedNode *node) {
+    free(node->name); free(node->dimensions);
+    bytes_free(&node->observation.node_name);
+    bytes_free(&node->observation.memory.name);
+    bytes_free(&node->observation.ep.name); bytes_free(&node->observation.ep.vendor);
+}
 void cairn_ort_session_close(CairnOrtSession *s) {
     if (!s) return;
     if (s->session) s->runtime->api->ReleaseSession(s->session);
     if (s->inputs) for (size_t i=0;i<s->input_count;i++) node_free(&s->inputs[i]);
     if (s->outputs) for (size_t i=0;i<s->output_count;i++) node_free(&s->outputs[i]);
-    free(s->inputs); free(s->outputs); free(s);
+    if (s->config_entries) for (size_t i=0;i<s->config_count;i++) {
+        bytes_free(&s->config_entries[i].key); bytes_free(&s->config_entries[i].value);
+    }
+    free(s->config_entries); free(s->inputs); free(s->outputs); free(s);
 }
 
 static int read_node(CairnOrtSession *s, int input, size_t index, OrtAllocator *allocator, OwnedNode *out, CairnOrtError *error) {
@@ -185,6 +197,104 @@ done:
     return result;
 }
 
+/* Public string getters return NUL-terminated bytes. PTRDIFF_MAX bounds
+ * addressable C objects and Rust slices; it is not an invented ORT text limit. */
+static int copy_observed_text(const char *text, CairnOrtBytes *out, CairnOrtError *error) {
+    if (!text) return error_add(error,-1,"observation string","required string pointer is null");
+    size_t length=strnlen(text,(size_t)PTRDIFF_MAX);
+    if (length==(size_t)PTRDIFF_MAX) return error_add(error,-1,"observation string","string exceeds addressable object bound");
+    uint8_t *owned=malloc(length+1);
+    if (!owned) return error_add(error,ENOMEM,"observation string allocation","out of memory");
+    memcpy(owned,text,length+1); out->data=owned; out->length=length; return 0;
+}
+
+static int collect_config_entries(CairnOrtSession *s, const OrtSessionOptions *options, CairnOrtError *error) {
+    const OrtApi *api=s->runtime->api; OrtKeyValuePairs *pairs=NULL; int result=-1;
+    const char *const *keys=NULL, *const *values=NULL; size_t count=0;
+    CALL(api,api->GetSessionOptionsConfigEntries(options,&pairs));
+    if (!pairs) { error_add(error,-1,"options config entries","getter returned no owned object"); goto done; }
+    api->GetKeyValuePairs(pairs,&keys,&values,&count);
+    if (count>(size_t)PTRDIFF_MAX/sizeof(CairnOrtConfigEntry) || (count && (!keys || !values))) {
+        error_add(error,-1,"options config entries","invalid array pointer/count or allocation bound"); goto done;
+    }
+    if (count) {
+        s->config_entries=calloc(count,sizeof(CairnOrtConfigEntry));
+        if (!s->config_entries) { error_add(error,ENOMEM,"config observation allocation","out of memory"); goto done; }
+    }
+    s->config_count=count;
+    for (size_t i=0;i<count;i++) {
+        if (copy_observed_text(keys[i],&s->config_entries[i].key,error) ||
+            copy_observed_text(values[i],&s->config_entries[i].value,error)) goto done;
+    }
+    s->config_observed=1; result=0;
+done:
+    if (pairs) api->ReleaseKeyValuePairs(pairs);
+    return result;
+}
+
+static int copy_memory_observation(const OrtApi *api, const OrtMemoryInfo *memory, CairnOrtMemoryObservation *out, CairnOrtError *error) {
+    if (!memory) return 0; /* Preserve missing evidence, never substitute CPU. */
+    const char *name=NULL; int device_id; OrtAllocatorType allocator; OrtMemType memory_type;
+    OrtMemoryInfoDeviceType device; int result=-1;
+    CALL(api,api->MemoryInfoGetName(memory,&name));
+    CALL(api,api->MemoryInfoGetId(memory,&device_id));
+    CALL(api,api->MemoryInfoGetType(memory,&allocator));
+    CALL(api,api->MemoryInfoGetMemType(memory,&memory_type));
+    api->MemoryInfoGetDeviceType(memory,&device);
+    if (copy_observed_text(name,&out->name,error)) goto done;
+    out->device_type=(int32_t)device; out->device_id=device_id;
+    out->allocator_type=(int32_t)allocator; out->memory_type=(int32_t)memory_type;
+    out->device_memory_type=(int32_t)api->MemoryInfoGetDeviceMemType(memory);
+    out->vendor_id=api->MemoryInfoGetVendorId(memory); out->present=1; result=0;
+done:
+    return result;
+}
+
+static int copy_ep_observation(const OrtApi *api, const OrtEpDevice *device, CairnOrtEpObservation *out, CairnOrtError *error) {
+    if (!device) return 0; /* API29 legacy/non-V2 sessions may have NULL entries. */
+    const char *name=api->EpDevice_EpName(device), *vendor=api->EpDevice_EpVendor(device);
+    /* Keep NULL text distinct from observed empty text. No EP object is retained. */
+    if (name && copy_observed_text(name,&out->name,error)) return -1;
+    if (vendor && copy_observed_text(vendor,&out->vendor,error)) return -1;
+    out->present=1; return 0;
+}
+
+static int collect_io_observations(CairnOrtSession *s, int input, CairnOrtError *error) {
+    const OrtApi *api=s->runtime->api; int result=-1;
+    size_t count=input ? s->input_count : s->output_count;
+    OwnedNode *nodes=input ? s->inputs : s->outputs;
+    const OrtMemoryInfo *memory[64]={NULL}; const OrtEpDevice *devices[64]={NULL};
+    if (!count || count>64) return error_add(error,-1,"IO observation count","outside selected session node bound");
+    if (input) {
+        CALL(api,api->SessionGetMemoryInfoForInputs(s->session,memory,count));
+        CALL(api,api->SessionGetEpDeviceForInputs(s->session,devices,count));
+    } else {
+        CALL(api,api->SessionGetMemoryInfoForOutputs(s->session,memory,count));
+        CALL(api,api->SessionGetEpDeviceForOutputs(s->session,devices,count));
+    }
+    for (size_t i=0;i<count;i++) {
+        CairnOrtIoObservation *out=&nodes[i].observation; out->ordinal=i;
+        if (copy_observed_text(nodes[i].name,&out->node_name,error) ||
+            copy_memory_observation(api,memory[i],&out->memory,error) ||
+            copy_ep_observation(api,devices[i],&out->ep,error)) goto done;
+    }
+    result=0;
+done:
+    /* MemoryInfo/EpDevice pointers borrow the live session; only our copies free. */
+    return result;
+}
+
+int cairn_ort_config_observation(const CairnOrtSession *s, CairnOrtConfigView *out, CairnOrtError *error) {
+    if (!s->config_observed) return error_add(error,-1,"config observation","not collected");
+    memset(out,0,sizeof(*out)); out->observed=s->config_observed;
+    out->count=s->config_count; out->entries=s->config_entries; return 0;
+}
+int cairn_ort_io_observation(const CairnOrtSession *s, int input, size_t index, CairnOrtIoObservation *out, CairnOrtError *error) {
+    size_t count=input ? s->input_count : s->output_count;
+    if (index>=count) return error_add(error,-1,"IO observation index","outside owning metadata count");
+    *out=(input ? s->inputs[index] : s->outputs[index]).observation; return 0;
+}
+
 int cairn_ort_session_open(CairnOrtRuntime *runtime, const uint8_t *model, size_t length, CairnOrtSession **out, CairnOrtOptions *observed, CairnOrtError *error) {
     const OrtApi *api=runtime->api; int result=-1; *out=NULL;
     OrtSessionOptions *options=NULL; OrtAllocator *allocator=NULL;
@@ -204,6 +314,7 @@ int cairn_ort_session_open(CairnOrtRuntime *runtime, const uint8_t *model, size_
     CALL(api,api->GetSessionExecutionMode(options,&execution));
     CALL(api,api->GetMemPatternEnabled(options,&pattern));
     observed->execution_mode=(int32_t)execution; observed->memory_pattern=pattern;
+    if (collect_config_entries(s,options,error)) goto done;
     /* No EP is appended: API29 header1440-1449 selects the internal CPU EP. */
     CALL(api,api->CreateSessionFromArray(runtime->env,model,length,options,&s->session));
     CALL(api,api->GetAllocatorWithDefaultOptions(&allocator));
@@ -216,6 +327,7 @@ int cairn_ort_session_open(CairnOrtRuntime *runtime, const uint8_t *model, size_
     if (!s->inputs || !s->outputs) { error_add(error,ENOMEM,"session node arrays","out of memory"); goto done; }
     for (size_t i=0;i<s->input_count;i++) if (read_node(s,1,i,allocator,&s->inputs[i],error)) goto done;
     for (size_t i=0;i<s->output_count;i++) if (read_node(s,0,i,allocator,&s->outputs[i],error)) goto done;
+    if (collect_io_observations(s,1,error) || collect_io_observations(s,0,error)) goto done;
     *out=s; s=NULL; result=0;
 done:
     if (options) api->ReleaseSessionOptions(options);

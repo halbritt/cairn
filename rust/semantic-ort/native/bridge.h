@@ -13,6 +13,24 @@ typedef struct { size_t rank; int64_t dimensions[3]; size_t count; uint32_t *bit
 
 _Static_assert(sizeof(CairnOrtOutput)==48, "x86_64 Source output ABI size");
 
+/* Borrowed views into bridge-owned copies. No ORT object crosses this ABI. */
+typedef struct { const uint8_t *data; size_t length; } CairnOrtBytes;
+typedef struct { CairnOrtBytes key; CairnOrtBytes value; } CairnOrtConfigEntry;
+typedef struct { int32_t observed; int32_t reserved; size_t count; const CairnOrtConfigEntry *entries; } CairnOrtConfigView;
+typedef struct {
+    int32_t present, device_type, device_id, allocator_type;
+    int32_t memory_type, device_memory_type; uint32_t vendor_id, reserved;
+    CairnOrtBytes name;
+} CairnOrtMemoryObservation;
+typedef struct { int32_t present, reserved; CairnOrtBytes name, vendor; } CairnOrtEpObservation;
+typedef struct { size_t ordinal; CairnOrtBytes node_name; CairnOrtMemoryObservation memory; CairnOrtEpObservation ep; } CairnOrtIoObservation;
+_Static_assert(sizeof(CairnOrtBytes)==16 && sizeof(CairnOrtConfigEntry)==32 && sizeof(CairnOrtConfigView)==24, "x86_64 config observation ABI");
+_Static_assert(sizeof(CairnOrtMemoryObservation)==48 && sizeof(CairnOrtEpObservation)==40 && sizeof(CairnOrtIoObservation)==112, "x86_64 IO observation ABI");
+_Static_assert(offsetof(CairnOrtConfigView,count)==8 && offsetof(CairnOrtConfigView,entries)==16, "config observation field offsets");
+_Static_assert(offsetof(CairnOrtMemoryObservation,name)==32 && offsetof(CairnOrtEpObservation,name)==8 && offsetof(CairnOrtEpObservation,vendor)==24, "memory/EP byte field offsets");
+_Static_assert(offsetof(CairnOrtIoObservation,node_name)==8 && offsetof(CairnOrtIoObservation,memory)==24 && offsetof(CairnOrtIoObservation,ep)==72, "IO association field offsets");
+
+
 void cairn_ort_error_release(CairnOrtError *error);
 int cairn_ort_runtime_open(const uint8_t *bytes, size_t length, CairnOrtRuntime **out, CairnOrtMapping *mapping, CairnOrtError *error);
 int cairn_ort_runtime_close(CairnOrtRuntime *runtime, CairnOrtError *error);
@@ -21,5 +39,7 @@ void cairn_ort_session_close(CairnOrtSession *session);
 size_t cairn_ort_node_count(const CairnOrtSession *session, int input);
 int cairn_ort_node(const CairnOrtSession *session, int input, size_t index, CairnOrtNode *out, CairnOrtError *error);
 int cairn_ort_run(CairnOrtSession *session, const int64_t *ids, const int64_t *mask, const int64_t *types, size_t sequence, CairnOrtOutput *out, CairnOrtError *error);
+int cairn_ort_config_observation(const CairnOrtSession *session, CairnOrtConfigView *out, CairnOrtError *error);
+int cairn_ort_io_observation(const CairnOrtSession *session, int input, size_t index, CairnOrtIoObservation *out, CairnOrtError *error);
 void cairn_ort_output_release(CairnOrtOutput *out);
 #endif
