@@ -40,6 +40,30 @@ helpers; a later file replacement must not silently select different code.
 Modules loaded for one bundle must not come from another bundle's process-wide
 import cache.
 
+## Shared Go mechanisms
+
+The Go CLI's `LockedStateFile` wrapper uses
+[`internal/statefile`](../internal/statefile/file.go) while retaining each
+caller's validation, checkpoint and publication-on-error policy. The Claude
+bridge uses [`internal/procpeer`](../internal/procpeer/process.go) for process
+measurement and its existing bounded server framing. Go measurement equality
+retains a measurable zombie; Python lifecycle consumers keep their own Z/X
+refusal policy.
+
+Go wake clients use [`procpeer.ConnectClient`](../internal/procpeer/client.go)
+to check the connected Unix peer's credentials and process identity before
+payload. Process-owned mode requires the exact peer PID/start/boot, with an
+optional explicit UID check. Same-user mode checks the selected UID and the
+recorded target identity and returns the actual peer identity, whose PID can
+differ from the target. Protocol, wake custody and refusal classification stay
+with the consuming wake library. Client timing and bounds remain separate from
+the bridge server's 8192-byte request payload and two-second deadlines.
+
+These packages do not select an installed bundle or change its executor.
+Installed `/2` pins continue to authenticate their selected Python bytes.
+See the [capability map](reference/lifecycle-slices.md) and
+[primitive test boundaries](developer/testing.md#shared-go-lifecycle-primitives).
+
 ## Upgrade and rollback
 
 Existing installed copies keep their existing behavior until explicitly

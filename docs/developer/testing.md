@@ -111,6 +111,27 @@ node scripts/check_opencode_recent_files.mjs
 node scripts/check_opencode_lifecycle.mjs
 ```
 
+### Shared Go lifecycle primitives
+
+The Go CLI's state-file wrapper and Claude channel bridge use the shared
+`internal/statefile` and `internal/procpeer` packages. The Go wake library also
+uses the verified Unix client functions in `procpeer`.
+
+| Test source | Boundary |
+| --- | --- |
+| `internal/statefile/file_test.go` and `crash_test.go` | State publication, propagated I/O errors and owned-child crashes at existing write boundaries; these do not simulate power loss. |
+| `internal/procpeer/frame_test.go` | The retained bridge's 8192-byte request payload bound and two-second server deadlines. |
+| `internal/procpeer/client_test.go` | Client credential/identity checks before payload, caller-selected timing, line bounds and a cumulative connection read budget, using Go-only private fixtures. |
+| `internal/procpeer/process_test.go` | Measurement identity and the separate Go/Python zombie policies; the zombie comparison invokes the retained Python helper. |
+| `internal/claudechannel/claudechannel_test.go` | Retained bridge protocol, publication, ownership and refusal behavior. |
+
+Select the tests for the affected consumer explicitly when a Go-only check is
+required. Client tests have the `TestClient` prefix; the zombie comparison is a
+separate test with a Python dependency. Socket fixtures use private temporary
+paths; process-control fixtures act only on children they created. These checks
+cover source behavior. Installed lifecycle selection and runtime qualification
+remain separate.
+
 ## Exercise backup and recovery
 
 ```sh

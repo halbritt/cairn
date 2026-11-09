@@ -4,6 +4,19 @@ Use this map to find implementation and validation for lifecycle features.
 A store inspection helper can report a condition without enforcing it in every
 client. Integrators must connect a decision to the action it is intended to gate.
 
+## Shared Go lifecycle mechanisms
+
+| Source | Consumer and boundary |
+| --- | --- |
+| [`statefile.File`](../../internal/statefile/file.go) | The CLI's `LockedStateFile` wrapper retains send-journal, delivery-alert and delivery-attention policy. Write/sync errors propagate; a directory-sync failure after rename reports an error while retaining published state. |
+| [`procpeer.ProcessRefOf` and `Live`](../../internal/procpeer/process.go) | The retained Claude bridge measures PID/start/boot and preserves its Go measurement-equality policy. Python callers separately exclude Z/X states. |
+| [`procpeer.ReadLine` and `WriteLine`](../../internal/procpeer/frame.go) | The bridge retains an 8192-byte request payload excluding newline and two-second socket deadlines. MCP emission keeps its separate deadline. |
+| [`procpeer.ConnectClient` and client I/O](../../internal/procpeer/client.go) | Go wake clients validate credentials and expected identity before payload. Callers select process-owned or same-user policy, timing, framing and cumulative read budgets. The connector returns the actual peer identity. |
+
+See [primitive test boundaries](../developer/testing.md#shared-go-lifecycle-primitives).
+Installed executor selection and runtime acceptance are separate from these
+shared source mechanisms.
+
 ## Store inspection and evaluation helpers
 
 The following methods live in
