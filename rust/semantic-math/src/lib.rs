@@ -1,7 +1,8 @@
-//! Pinned native matrix-vector stage for an already-normalized full-occurrence matrix.
-//! Both normalizations, full BackendSession, worker identity and qualification are separate.
+//! Two Source normalization stages and pinned full-occurrence matrix-vector arithmetic.
+//! Full BackendSession, worker identity and actual numerical qualification remain separate.
 mod ffi;
 pub mod layout;
+pub mod normalization;
 pub use layout::{FullOccurrenceMatrix, Layout, Operation, WIDTH};
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;

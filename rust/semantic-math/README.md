@@ -1,4 +1,4 @@
-# Pinned full-occurrence matrix-vector stage
+# Source normalization and pinned full-occurrence matrix-vector stages
 
 This crate owns the selected NumPy-wheel OpenBLAS runtime and implements the
 float32 operation `vectors[1:] @ vectors[0]` for a contiguous matrix of width
@@ -7,10 +7,11 @@ cache-hit rows, follows in source order. The input must already have passed
 both required normalizations. The output is unrounded float32 similarity in
 that same occurrence order.
 
-The crate supplies one real native computation stage. It does not implement a
-complete rank `BackendSession`/`BackendFactory`, either normalization, a worker
-handshake or derivation identity. No native execution or numerical acceptance
-is established by source authoring.
+The crate also implements both real Source normalization stages through
+`normalization`: raw CLS -> first-pass cache row -> owned full occurrences ->
+second norms -> zero decision -> second-pass matrix. It does not implement a
+complete rank `BackendSession`/`BackendFactory`, worker handshake or derivation
+identity. Source authoring establishes no native execution or numerical acceptance.
 
 ## Exact ABI and source selection
 
@@ -148,47 +149,82 @@ failure in the caller's `CleanupErrors` observer. Keep that observer after
 runtime drop and drain it. Actual namespace unload, background-thread/resource
 cleanup and repeated lifecycle behavior still need host qualification.
 
-## Remaining normalization and composition work
+## Both normalization stages and composition
 
-The pinned FastEmbed `onnx_embedding.py:311-322` selects CLS for rank-three
-output and calls `common/utils.py:18-23`: row L2 norm, `maximum(norm,1e-12)`,
-then division. The rank Source subsequently reconstructs the full occurrence
-matrix (`semantic_rank.py:101-105`), computes NumPy
-`linalg.norm(axis=1,keepdims=True)`, checks its existing zero-norm condition and
-divides again before the matmul (`:106-110`). NumPy `_linalg.py:2802-2805` uses
-float32 elementwise squares, add reduction and square root for that row norm.
-Neither normalization/reduction/division stage is implemented in this crate.
+`normalization::RawClsRow::from_values` accepts exactly 384 raw float32 CLS
+components. Consuming `normalize` actually computes squares, NumPy's pairwise
+FLOAT reduction and sqrt, maximum with the weakly cast Python epsilon 1e-12,
+and true float32 division. `FirstNormalizedRow` has no public constructor that
+asserts prior normalization; its private storage is immutable and cloneable for
+first-pass cache ownership. Its observed norm/denominator can be inspected.
+It has no second first-pass normalization method.
 
-The composing rank backend must supply its future `Normalized` associated
-type only after those exact operations, then pass all rows through
-`FullOccurrenceMatrix::from_normalized` and `Runtime::matrix_vector`. The latter
-supplies only the matrix-vector result; existing rank/score owners retain note
-maximum, float64 clamp/scale and Python ties-to-even integer rounding. This
-crate supplies no fake norms, BackendSession/Factory implementation, ready
-boolean, worker identity or substitute score output. Full P3 remains open.
+`FirstPassOccurrences::reconstruct` copies a query and all passage references
+in supplied order into distinct checked owned storage. Every duplicate/cache
+hit gets its own row. `norms_keepdims` consumes that matrix and computes an
+independent norm for every row with NO epsilon. `SecondPassNorms` owns both
+norms and that exact matrix, exposing immutable pre-division data and
+`any_zero_norm`. Consuming `divide_in_place` checks ALL norms first. A zero
+returns `ZeroNorm` with the intact owner and the existing "empty model
+embedding" diagnostic; it never partly mutates earlier rows. Successful
+division produces `FullOccurrenceMatrix` for the published matrix-vector path.
+No caller-supplied norms, numeric fallback, clipping or extra finite policy
+enters this performed path.
+
+The existing lower-level `FullOccurrenceMatrix::from_normalized` retains its
+already-normalized input contract for compatibility. It is not evidence that
+either stage ran. The new production construction path uses actual performed
+operations; future backend composition must use those stage owners, preserve
+the unchanged rank finite check and cache FIRST-pass vectors. Cache restore
+needs its own authenticated snapshot boundary; this slice does not introduce
+a caller assertion that raw or arbitrary vectors are first-normalized.
+
+The selected algorithms, intermediate rounding, broadcasting, real conjugate,
+epsilon dtype promotion, signed-zero/NaN behavior, generated-template/CPU
+dispatch relation and full source/license custody are documented in
+[vendor/numpy-2.4.6/README.md](vendor/numpy-2.4.6/README.md). Explicit x86 float32
+lane operations implement the source-derived arithmetic; actual selected
+wheel/CPU/kernel/FENV/NaN-bit correspondence remains unproved. Both stage norm
+outputs, unrounded similarities and strict integers still need exact runtime
+reference comparison. No tolerance or narrowed input domain substitutes for it.
+
+Existing rank/score owners retain note maximum, float64 clamp/scale and Python
+ties-to-even rounding. The accepted rank ordering and other semantic crates
+are unchanged. No full backend, ready boolean, worker identity or qualified
+derivation is supplied. Full P3 remains open.
 
 ## Build and verification boundary
 
 Direct dependencies are only sha2 0.10.9 with defaults disabled/force-soft and
-build dependency cc 1.11.1. Native edges are the two C units, versioned ABI
-headers, GNU/Linux headers, libdl and the explicit runtime dependency graph.
+build dependency cc 1.11.1. The existing native edges are the two math C units,
+versioned ABI headers, GNU/Linux headers, libdl and explicit runtime dependencies.
+S-NORM-1 adds one standalone C11 normalization unit and compiler SSE headers,
+with -fno-fast-math, -ffp-contract=off and -frounding-math, and no new library.
+Existing loader/compute files and their build flags are unchanged.
 The selected source target is x86_64-unknown-linux-gnu. No bindgen, libclang,
 Rust downloader or build-time native payload acquisition is included.
 The accepted source-only intake provides the real Cargo-produced lock unchanged:
 14 packages (13 registry plus this crate), preserving selected versions/features.
-Actual build scripts/compiler probes, linking and tests still need separately
-selected component validation; compilation/tests/runtime remain unexecuted.
+The existing selected math component was separately validated; its retained
+result is not replayed here. The new normalization unit requires a separately
+selected SAME B2 changed-component disposition and SAME R1 primary review;
+its compiler/build/test/runtime execution is unexecuted in this author slice.
 
 Seven authored pure-data tests exercise production layout/dispatch, zero/one/
 many-row boundaries, duplicate/cache-row preservation, storage/ILP64 bounds,
 nonfinite bit preservation and actual payload hash refusal. They do not load
-native math or compute synthetic BLAS answers through a fake backend. Source
-format/hash/ELF inspection is not compile/link/test/runtime qualification.
+native math or compute synthetic BLAS answers through a fake backend. Nine new
+normalization tests exercise performed arithmetic, exact raw shape, epsilon
+versus second-pass behavior, analytic pairwise grouping, all-row zero decision
+before mutation, duplicates/cache ownership, empty matvec dispatch, nonfinite
+flow and subnormal-square underflow. The new tests are synthetic and authored
+but UNEXECUTED; no selected NumPy/reference golden or runtime parity is claimed.
+Source formatting/hash inspection is not compilation or test qualification.
 
 All 294 tokenizer IDs/lengths must pass before actual model/session
-construction. P2 raw ORT/output order/model proof, both normalization stages,
-P3 bit-identical native math and strict integers, P4 actual host/library/CPU/
-egress/write/resource boundaries, P5 real worker/CLI/Go and existing C2/D1-A
+construction. P2 raw ORT/output order/model proof, actual execution and exact
+reference proof for both normalization stages, P3 native math and strict integers,
+P4 actual host/library/CPU/egress/write/resource boundaries, P5 real worker/CLI/Go and existing C2/D1-A
 IO_NOT_ESTABLISHED/D2 HOLD/RTERM/P/W/uv/failed-runtime/production holds remain.
 Actual-worker FIRST is unconsumed. No author build/test/compiler, native
 load/getter/BLAS/probe, Python/NumPy/FastEmbed import, model run, Go reference,
