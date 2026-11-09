@@ -21,13 +21,16 @@ Late metadata lookup and result construction precede cache replacement. The
 ordinary stream reply's size/conversion check precedes snapshot creation.
 
 `BackendFactory::construct` returns an owning `BackendSession` before the core
-reads its identity or calls its tokenizer/model. A future native factory must
+reads its identity or calls its tokenizer/model. A native factory must
 verify the complete consumed manifest/assets, loaded runtime and tokenizer and
 numeric settings. There is no production backend, executable, substitute
 tokenizer, numerical implementation, readiness flag or fallback in this cut.
-The separate norm, zero check, division and matrix-vector operations preserve
-Source sequencing; implementing the NumPy/OpenBLAS equivalent remains a native
-backend obligation. Raw model rows are explicitly float32 bits. The core adds
+The separate [native backend crate](../semantic-backend/README.md) now connects
+the tokenizer, ORT and math owners to this interface, but withholds usable
+initialization while its required observations remain incomplete. The separate
+norm, zero check, division and matrix-vector operations preserve Source
+sequencing; actual NumPy/OpenBLAS correspondence remains unqualified. Raw model
+rows are explicitly float32 bits. The core adds
 no new finiteness refusal after arithmetic and reuses the published reducer.
 
 Every failure terminates that invocation. `InvocationError` retains the selected

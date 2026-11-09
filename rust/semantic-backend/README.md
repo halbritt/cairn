@@ -129,19 +129,21 @@ unbounded_depth). Cargo.lock is a SOURCE-ASSEMBLED union of the accepted ORT
 and math lock entries, NOT a Cargo-produced or resolved lock. It has119 packages:
 111 unchanged registry packages and eight local packages. Same registry IDs,
 checksums and dependency edges match byte-derived accepted records. No registry
-version, dependency acquisition or feature request changes. SAME B2 must
-validate the combined lock/feature graph before executing its selected step.
+version, dependency acquisition or feature request changes. B2 validated
+the combined lock/feature graph before the selected component run, as recorded
+in the [campaign inventory](../../docs/plans/hybrid-runtime-campaign-status.md).
 
 The projected active graph reuses the selected ORT graph (98 contexts,
 22 scripts, nine host proc macros), adding target math/backend contexts and
-one math build script: projected100 contexts/23 scripts/nine macros, not a
-measured new graph. Existing Onig C, ESAXX C++11, support probes, ORT C11 bridge
+one math build script: 100 contexts/23 scripts/nine macros. The completed
+component run matched that projection and reported 123 artifacts. Existing
+Onig C, ESAXX C++11, support probes, ORT C11 bridge
 and three math C11 units retain their source/flags/system-link requirements.
 There is no new build script, native unit, ABI or system library in this crate.
 Actual compiler/link/process effects require B2's exact component admission;
 old component tests are not rerun by this source assignment.
 
-Twelve new focused tests are authored and UNEXECUTED. They cover restored bit
+All twelve selected component tests passed in one run. They cover restored bit
 storage without first renormalization, exact norms/session binding, all-row
 zero-before-mutation/cache preservation, shape refusal, numeric-bit policy,
 relative asset refusal, structured UTF-8 errors, canonical identity refusal,
@@ -150,9 +152,12 @@ exercise real adapter normalization through generic rank streams: cold unique
 misses versus full warm duplicate rows, and late metadata failure with no new
 reply/cache snapshot or next read. Their literal token/inference/score values
 are explicitly synthetic; they do not exercise actual ORT or OpenBLAS.
-A future `--lib backend1_` selection addresses these12 new cases only. No
+The `--lib backend1_` selection covered these twelve cases only. No
 production test collaborator, fake ready identity or broad replacement backend
-is available. Source formatting/whitespace checks do not prove compilation.
+is available. Independent source review accepted the candidate with the
+completed component receipt. Landing preserved all 76 source/input pins and passed one `make check`;
+the component run was not repeated. These checks do not establish actual model
+or runtime qualification.
 
 All294 token IDs/lengths precede actual model/session admission. P2 raw ORT,
 assets/output order, full P3 both norm outputs/unrounded similarities/strict
