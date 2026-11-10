@@ -33,6 +33,7 @@ Everyday commands:
   closures | close-replies (reply and wait-notice reservations; use --help)
   ack | complete | retry | renew (leased event handling; use --help)
   agent --help | agent OPERATION --help (ordinary JSON request examples)
+  lifecycle (DISABLED; no activation or hook execution)
   version | agent [--token-file FILE] [--socket PATH] version
   clients [--profile NAME | --token-file FILE] [--socket PATH] [--limit N] (observed client declarations for your own principal; use --help)
   opencode-install --project DIRECTORY --socket PATH --token-file FILE --repo REPO [--tokens N] [--max-tokens N] [--task TASK] [--run RUN] [--recent-files] [--replace] [--revision REV] [--workspace-sha256 SHA] [--task-class CLASS] [--task-phase PHASE] [--binding BIND] [--capability CAP]
@@ -132,6 +133,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	}
 	if len(args) == 0 {
 		return nil, invalid("expected a command; use --help")
+	}
+	if args[0] == "lifecycle" {
+		return lifecycleCommand(ctx, args[1:], input)
 	}
 	if args[0] == "wake" {
 		return wakeCommand(ctx, args[1:])

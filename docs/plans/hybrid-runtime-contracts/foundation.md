@@ -47,7 +47,7 @@ Tests may run any number of times only inside a namespace with no production
 home, no production sockets, no network and no view of host processes. This
 isolation rule replaces C2, FIRST and source-only test holds. Production changes,
 including deployment, service changes and production-state effects, still need
-a grant. Other runtime-acceptance, controller and preserved-failure holds remain,
+a grant. Decision `98d46758/v1` supplies the complete four-condition isolation gate; wrapper audit, self-test qualification and receipt retention add no acceptance gate, while actual functional and parity evidence remain required. Other runtime-acceptance, controller and preserved-failure holds remain,
 as do retry decision `607a5940/v2`, subscription-only model routes and trunk rules.
 
 ## Work and dependencies

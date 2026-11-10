@@ -18,6 +18,9 @@ import (
 	"github.com/halbritt/cairn/runner"
 )
 
+// No environment, configuration, payload or command-line option can open this gate.
+const lifecycleCommandEnabled = false
+
 type response struct {
 	RefusalID string                      `json:"refusal_id,omitempty"`
 	Admission *core.EventAdmissionRefusal `json:"admission,omitempty"`

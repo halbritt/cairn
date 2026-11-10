@@ -126,8 +126,8 @@ func runningPresent(info syscall.Stat_t) error {
 }
 
 func openBinary(path string) (*os.File, error) {
-	if !filepath.IsAbs(path) {
-		return nil, errors.New("binary path must be absolute")
+	if !canonicalPath(path) {
+		return nil, errors.New("binary path must be canonical and absolute")
 	}
 	parts := strings.Split(path, "/")
 	fd, err := syscall.Open("/", syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
@@ -137,6 +137,12 @@ func openBinary(path string) (*os.File, error) {
 	defer func() { _ = syscall.Close(fd) }()
 	walked := "/"
 	var parent syscall.Stat_t
+	if err := syscall.Fstat(fd, &parent); err != nil {
+		return nil, err
+	}
+	if (parent.Uid != 0 && parent.Uid != uint32(os.Getuid())) || parent.Mode&0022 != 0 {
+		return nil, errors.New("unsafe binary root ancestor")
+	}
 	for _, part := range parts[1 : len(parts)-1] {
 		if part == "" {
 			continue
