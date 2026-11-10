@@ -485,14 +485,20 @@ From the repository root, on Linux with Python and Bubblewrap installed:
 
 ```sh
 make test-hybrid-runtime-operations
+make test-isolated CMD="go test ./..." RECEIPT="/tmp/isolation-receipt.json"
 ```
 
-The target runs 168 F1 collector/helper tests, 97 F1 executor tests and 87 F3
-tests in isolated namespaces. They use synthetic observations, fake effects and
-fixed disposable children. Source is
-mounted read-only, with private temporary storage and no production home,
-profiles, sockets, network or host process filesystem exposed. These tests
-verify the implemented boundaries; live handoff qualification remains separate.
+The operations target runs 168 F1 collector/helper tests, 97 F1 executor tests
+and 87 F3 tests in isolated namespaces, and `make test-isolated` (or
+`scripts/test_hybrid_runtime_operations.py -- <command>`) runs arbitrary Go,
+Python or Rust test commands in the same sandbox. Every run masks all `passwd`
+account homes under bound paths, mounts a fresh child-PID `procfs`, binds
+explicit read-only toolchains and `/work` with writes on `tmpfs`, and starts
+with an in-sandbox self-test that fails closed if any `passwd` home is
+readable, any Unix socket is visible under a bound path, any network route
+exists or `/proc` shows a process outside the sandbox (`98d46758-c61c-42b4-9912-76cf9dfb0dc0` v1).
+These tests verify the implemented boundaries; live handoff qualification
+remains separate.
 
 ## Remaining work
 

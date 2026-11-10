@@ -1,4 +1,4 @@
-.PHONY: build test test-sdk-spawn test-sdk-ipc test-sdk-native-ipc test-sdk-native-process-owner test-sdk-node-owner test-sdk-peer test-integration test-lifecycle test-hybrid-runtime-operations check contract
+.PHONY: build test test-sdk-spawn test-sdk-ipc test-sdk-native-ipc test-sdk-native-process-owner test-sdk-node-owner test-sdk-peer test-integration test-lifecycle test-hybrid-runtime-operations test-isolated check contract
 build:
 	go build -o bin/cairn ./cmd/cairn
 test:
@@ -33,7 +33,9 @@ test-integration:
 test-lifecycle: build
 	bash scripts/test-local-lifecycle.sh
 test-hybrid-runtime-operations:
-	python3 -I -B scripts/test_hybrid_runtime_operations.py
+	python3 -I -B scripts/test_hybrid_runtime_operations.py $(ISOLATED_ARGS)
+test-isolated:
+	python3 -I -B scripts/test_hybrid_runtime_operations.py $(ISOLATED_ARGS) $(if $(RECEIPT),--receipt "$(RECEIPT)",) $(if $(CMD),-- $(CMD),)
 contract:
 	go run ./internal/apicontract/cmd/cairn-contract
 check:
