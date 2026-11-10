@@ -1,6 +1,6 @@
 // Private synthetic report data, never a claim of actual native observations.
-mod response_tests;
 mod entry_tests;
+mod response_tests;
 use super::super::RunningImageProvenance;
 use super::*;
 use std::path::PathBuf;
@@ -112,7 +112,7 @@ fn embedding_identity4_common_observations_are_retained_exactly() {
 }
 
 #[test]
-fn embedding_identity4_each_required_observation_missing_null_and_invalid_refuses() {
+fn embedding_init7_named_unobserved_initializes_but_invalid_observed_data_refuses() {
     let rows = [
         ("/compilation/rustc", "compilation.rustc", json!(true)),
         ("/compilation/target", "compilation.target", json!(true)),
@@ -172,6 +172,17 @@ fn embedding_identity4_each_required_observation_missing_null_and_invalid_refuse
                 _ => *report.inputs.pointer_mut(pointer).unwrap() = invalid.clone(),
             }
             let rank = report.rank_identity().unwrap_err();
+            if kind < 2 && field != "assets.model_external_data_closure" {
+                let manifest = report.embedding_manifest().unwrap();
+                assert_eq!(manifest["unobserved_observations"], json!([field]));
+                assert_eq!(manifest.pointer(pointer), report.inputs.pointer(pointer));
+                assert_ne!(
+                    report.embedding_identity().unwrap(),
+                    PyString::from(EMBED_DIGEST)
+                );
+                assert!(rank.iter().any(|gap| gap.field == field));
+                continue;
+            }
             let embed = report.embedding_identity().unwrap_err();
             assert!(
                 embed.iter().any(|gap| gap.field == field),
@@ -184,7 +195,7 @@ fn embedding_identity4_each_required_observation_missing_null_and_invalid_refuse
 }
 
 #[test]
-fn embedding_identity4_cached_missing_and_recomputed_gaps_are_preserved() {
+fn embedding_init7_unrelated_cached_gap_remains_terminal() {
     let mut report = fixture();
     report
         .missing
@@ -195,25 +206,76 @@ fn embedding_identity4_cached_missing_and_recomputed_gaps_are_preserved() {
         expected[0],
         missing("owner-pending", "retain original owner action")
     );
-    assert_eq!(report.embedding_identity().unwrap_err(), expected);
+    assert_eq!(
+        report.embedding_identity().unwrap_err(),
+        vec![expected[0].clone()]
+    );
     assert_eq!(report.missing.len(), 1);
 }
 
 #[test]
-fn embedding_identity4_partial_io_records_cannot_fill_global_nulls() {
+fn embedding_init7_partial_io_records_do_not_replace_named_unobserved_globals() {
     let mut report = fixture();
     for key in ["cpu_arena", "remaining_defaults", "effective_provider"] {
         report.inputs["session"][key] = Value::Null;
     }
     report.inputs["session"]["partial_observations"] = json!({"cpu_arena":true,"remaining_defaults":{"ready":true},"effective_provider":"CPUExecutionProvider","outputs":[{"ep_device":{"name_hex":"435055"}}]});
-    let errors = report.embedding_identity().unwrap_err();
-    for field in [
-        "session.cpu_arena",
-        "session.remaining_defaults",
-        "session.effective_provider",
-    ] {
-        assert!(errors.iter().any(|e| e.field == field));
+    let manifest = report.embedding_manifest().unwrap();
+    assert_eq!(
+        manifest["unobserved_observations"],
+        json!([
+            "session.cpu_arena",
+            "session.effective_provider",
+            "session.remaining_defaults"
+        ])
+    );
+    for key in ["cpu_arena", "remaining_defaults", "effective_provider"] {
+        assert!(manifest["session"][key].is_null());
     }
+    assert_eq!(
+        manifest["session"]["partial_observations"],
+        report.inputs["session"]["partial_observations"]
+    );
+    report.embedding_identity().unwrap();
+}
+
+#[test]
+fn embedding_init7_observed_empty_features_differ_from_unobserved() {
+    let mut observed = fixture();
+    observed.inputs["compilation"]["enabled_features"] = json!({"fixture:target":[]});
+    let manifest = observed.embedding_manifest().unwrap();
+    assert_eq!(
+        manifest["compilation"]["enabled_features"],
+        json!({"fixture:target":[]})
+    );
+    assert!(manifest.get("unobserved_observations").is_none());
+    let mut unobserved = fixture();
+    unobserved.inputs["compilation"]["enabled_features"] = Value::Null;
+    assert_eq!(
+        unobserved.embedding_manifest().unwrap()["unobserved_observations"],
+        json!(["compilation.enabled_features"])
+    );
+    assert_ne!(
+        observed.embedding_identity().unwrap(),
+        unobserved.embedding_identity().unwrap()
+    );
+}
+
+#[test]
+fn embedding_init7_invalid_parent_and_contradictory_cached_gap_still_refuse() {
+    for parent in ["compilation", "session", "native"] {
+        let mut report = fixture();
+        report.inputs[parent] = json!(false);
+        assert!(report.embedding_identity().is_err(), "{parent}");
+    }
+    let mut report = fixture();
+    report
+        .missing
+        .push(missing("session.cpu_arena", "unresolved owner evidence"));
+    assert_eq!(
+        report.embedding_identity().unwrap_err()[0].field,
+        "session.cpu_arena"
+    );
 }
 
 #[test]
@@ -518,4 +580,58 @@ fn embedding_identity4_missing_common_algorithm_structure_refuses_projection() {
             "algorithms.embedding_common"
         );
     }
+}
+
+#[test]
+fn embedding_init7_all_ten_unavailable_observations_have_named_identity() {
+    let mut report = fixture();
+    let groups: [(&str, &[&str]); 3] = [
+        (
+            "compilation",
+            &[
+                "rustc",
+                "target",
+                "enabled_features",
+                "effective_flags",
+                "linked_input_attestation",
+            ],
+        ),
+        (
+            "session",
+            &["cpu_arena", "remaining_defaults", "effective_provider"],
+        ),
+        ("native", &["ort_dependency_inventory", "cpu_kernel_class"]),
+    ];
+    for (group, keys) in groups {
+        for key in keys {
+            report.inputs[group][*key] = Value::Null;
+        }
+    }
+    let names = [
+        "compilation.effective_flags",
+        "compilation.enabled_features",
+        "compilation.linked_input_attestation",
+        "compilation.rustc",
+        "compilation.target",
+        "native.cpu_os_complete_class",
+        "native.ort_dependency_inventory",
+        "session.cpu_arena",
+        "session.effective_provider",
+        "session.remaining_defaults",
+    ];
+    report.missing = names
+        .iter()
+        .map(|name| missing(name, "fixture unavailable observation"))
+        .collect();
+    let before = canonical(report.inputs()).unwrap();
+    let manifest = report.embedding_manifest().unwrap();
+    assert_eq!(manifest["unobserved_observations"], json!(names));
+    assert!(manifest["session"]["cpu_arena"].is_null());
+    assert_eq!(
+        report.embedding_identity().unwrap(),
+        PyString::from("51f1db03a55ae5cb16dc22c5a643aab9acf80d2eeec320fcfff39386122adbcb")
+    );
+    assert_eq!(canonical(report.inputs()).unwrap(), before);
+    assert_eq!(report.missing.len(), 10);
+    assert_eq!(report.rank_identity().unwrap_err().len(), 10);
 }

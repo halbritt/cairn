@@ -40,6 +40,20 @@ production, preserved-failure and retry-policy holds remain.
 
 ## Inspect the implementation
 
+The item 7 source change applies the owner's rule-C initialization exception to
+embedding identity. Its canonical manifest names exactly ten unavailable
+build/session/native observations in sorted `unobserved_observations`, retaining
+the absent/null values without defaults. Valid observed empty values remain
+observed; malformed observations, other owner gaps, model-asset closure and
+actual construction/file-mapping errors still refuse. The strict rank gate and
+the three-field embedding wire identity are unchanged. Private fixtures cover
+the named gaps, observed/unobserved distinction, digest sensitivity, invalid
+observations and initialization before EOF/identity input. These fixture changes
+have not yet been independently reviewed or executed; this source change claims
+no new model, numerical, runtime or production qualification. Historical missing
+observation refusals below describe their earlier source; they are superseded
+only for these ten unavailable embedding observations.
+
 The table records published source and extensions through the native embedding
 entry, tested as `d41be9e7`, on 2026-11-10. The Go libraries
 are callable source. Rust has explicit rank/stream and embedding entry targets;

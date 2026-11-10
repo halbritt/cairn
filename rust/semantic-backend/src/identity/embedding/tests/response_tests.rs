@@ -260,9 +260,9 @@ fn embedding_response5_construction_failure_reads_and_writes_nothing() {
     assert!(e.input.is_empty());
 }
 #[test]
-fn embedding_response5_null_observation_refuses_before_any_read_or_identity() {
+fn embedding_init7_invalid_observation_refuses_before_any_read_or_identity() {
     let (mut i, mut o, mut f, t) = setup(request("identity", ""), vec![]);
-    f.session.report.inputs["session"]["cpu_arena"] = serde_json::Value::Null;
+    f.session.report.inputs["session"]["cpu_arena"] = serde_json::json!("invalid observed boolean");
     let e = run_embedding(&mut i, &mut o, f).unwrap_err();
     let Failure::Observations(gaps) = e.failure else {
         panic!("expected observations")
@@ -777,5 +777,29 @@ fn embedding_response5_id_limit_counts_python_characters_instead_of_utf8_bytes()
             assert!(o.bytes.is_empty());
         }
         no_embedding(&t);
+    }
+}
+
+#[test]
+fn embedding_init7_unobserved_initializes_before_eof_and_identity_without_inference() {
+    for raw in [vec![], request("identity", "")] {
+        let eof = raw.is_empty();
+        let (mut input, mut output, mut factory, trace) = setup(raw, vec![]);
+        factory.session.report.inputs["session"]["cpu_arena"] = serde_json::Value::Null;
+        run_embedding(&mut input, &mut output, factory).unwrap();
+        assert_eq!(
+            &trace.borrow()[..3],
+            ["construct", "observations", "read:0"]
+        );
+        assert_eq!(trace.borrow().last().unwrap(), "drop-session");
+        no_embedding(&trace);
+        if eof {
+            assert!(output.bytes.is_empty());
+        } else {
+            assert_eq!(output.bytes, concat!(
+                "{\"id\":\"r\",\"identity\":{\"model_sha256\":\"187c766c92da76e9685104b95b481829cdf7689557b3f14bc97d310b794a0d02\",",
+                "\"algorithm\":\"bge-original-passages/1\",\"dimensions\":384}}\n"
+            ).as_bytes());
+        }
     }
 }

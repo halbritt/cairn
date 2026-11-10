@@ -77,16 +77,15 @@ fn embedding_entry6_native_guard_accepts_complete_owned_report_only() {
 }
 
 #[test]
-fn embedding_entry6_native_guard_refuses_each_null_global() {
+fn embedding_init7_native_guard_allows_each_named_unobserved_global() {
     for field in ["effective_provider", "cpu_arena", "remaining_defaults"] {
         let mut report = super::fixture();
         report.inputs["session"][field] = serde_json::Value::Null;
-        let error = require_embedding_observations(&report).unwrap_err();
-        let BackendError::Operation { stage, detail } = error else {
-            panic!("expected guarded refusal")
-        };
-        assert_eq!(stage, "unresolved embedding initialization observations");
-        assert!(detail.contains(field));
+        require_embedding_observations(&report).unwrap();
+        assert_eq!(
+            report.embedding_manifest().unwrap()["unobserved_observations"],
+            serde_json::json!([format!("session.{field}")])
+        );
     }
 }
 
@@ -143,7 +142,7 @@ impl EmbeddingFactory for RefusingFactory {
     type Session = NeverSession;
     fn construct(self) -> Result<NeverSession, BackendError> {
         require_embedding_observations(&self.report)?;
-        panic!("NULL observation guard was bypassed")
+        panic!("invalid observation guard was bypassed")
     }
 }
 struct NoIo;
@@ -170,9 +169,9 @@ impl Write for NoIo {
 }
 
 #[test]
-fn embedding_entry6_observation_gate_failure_precedes_loop_io_and_drops_factory() {
+fn embedding_init7_invalid_observation_gate_precedes_loop_io_and_drops_factory() {
     let mut report = super::fixture();
-    report.inputs["session"]["cpu_arena"] = serde_json::Value::Null;
+    report.inputs["session"]["cpu_arena"] = serde_json::json!("invalid observed boolean");
     let dropped = Rc::new(Cell::new(false));
     let error = run_embedding(
         &mut NoIo,

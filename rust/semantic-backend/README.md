@@ -10,11 +10,12 @@ ordering, reply sizing, snapshot ordering and I/O/flush behavior stay in rank.
 Both advertised-cache and absent-cache profiles use those same entry points;
 existing pending codec depth profiles remain pending.
 
-The production computation path is written, but usable initialization is
-currently withheld by precise missing observations below. Source construction
-is not a completed worker, numerical qualification or campaign acceptance.
-No caller-supplied digest, identity, ready flag, synthetic model or fallback
-can make the production factory publish an initialized session.
+The production computation path is written. The rank identity gate still
+requires the observations below. Under rule C, embedding initialization records
+ten unavailable observations by name in its canonical identity manifest instead
+of refusing for their absence. Source construction is not a completed worker,
+numerical qualification or campaign acceptance. No caller-supplied digest,
+identity, ready flag, synthetic model or fallback replaces actual construction.
 
 ## Actual ownership and data path
 
@@ -36,10 +37,14 @@ and observations intact; the factory's terminal failure drops that owner and
 retains cleanup diagnostics in the supplied observers. It does not retry.
 
 The embedding adapter in `embedding_native` retains that same loaded owner and
-requires its protected `embedding_identity` observations before returning a
-session; missing observations drop the owner and remain terminal. The response
-loop repeats its own protected identity guard before reading, including EOF and
-identity-only input. Embedding uses only the existing batch-one first-pass path,
+requires its protected `embedding_identity` validation before returning a
+session. The ten rule-C missing/null observations enter the manifest's sorted
+`unobserved_observations` names without substituted values. Invalid observed
+data, unrelated unresolved gaps and model-asset closure failures remain terminal.
+The response loop repeats that identity validation before reading, including EOF
+and identity-only input. Its three-field wire identity is unchanged and carries
+the resulting digest; Go rejects extra wire fields. Embedding uses only the
+existing batch-one first-pass path,
 then converts its matrix storage to owned rows without another normalization or
 matvec. The loop owns full count, shape, finite/nonzero and serialization guards.
 
@@ -114,10 +119,14 @@ emits compact UTF-8 JSON and integer decimals, rejects floating JSON numbers,
 and represents the epsilon as canonical decimal string `0.000000000001`.
 Feature observations are sorted sets; algorithm sequences retain order.
 The separate tag is `cairn.rust-rank-worker/1`, never Python's model identity.
-The final SHA-256 path is implemented but refuses missing observations; a
-canonical partial report is not a complete identity or qualification receipt.
+The rank SHA-256 path refuses missing observations. Embedding hashes the retained
+inputs plus named rule-C unavailable observations. Neither digest is a
+qualification receipt or evidence that an unavailable observation was obtained.
 
-The existing component interfaces cannot yet establish these required inputs:
+The existing component interfaces cannot yet establish all these inputs. The
+first five rows remain rank initialization requirements; embedding records their
+ten missing fields as unobserved. Model-asset closure remains required in both
+modes.
 
 | Required observation | Exact interface/owner action |
 | --- | --- |
@@ -130,21 +139,23 @@ The existing component interfaces cannot yet establish these required inputs:
 
 Missing observations are derived from the actual report's missing fields and
 rechecked internally before identity hashing; no public API can replace them
-with asserted observations. The currently written observer leaves those exact
-fields unresolved, so `NativeFactory::construct` does not yet return a usable
-initialized session. Independent actual tokenizer/inference/normalization/math
-operations are crate-private on the retained loaded owner; the public production
-composed route remains identity-gated NativeSession. This separation lets
+with asserted observations. For the ten rule-C fields, only an absent/null leaf
+inside its existing object is unobserved. A malformed observed value or parent
+object still refuses. Valid empty feature/flag lists stay observed and hash
+differently from missing/null data. The current observer leaves these fields
+unresolved, so the rank factory still withholds a session, while the embedding
+factory may initialize with those named gaps. Independent actual tokenizer,
+inference, normalization and math operations are crate-private on the retained
+loaded owner; the public rank route remains identity-gated NativeSession. This separation lets
 the owner extend precise observation interfaces without replacing a dummy
 backend or declaring an unknown default qualified. It is not permission to
 execute the loaded owner outside the separately admitted host boundary.
 
-The next observation/code checkpoint is the API29/build/asset observer plan
-after this exact source component is reviewed: enumerate those field getters
-or retained build evidence against their owners, then wire only actual
-observations. Current bounds prohibit changing the accepted ORT ABI/settings
-or executing probes here. Runtime qualification remains independently required
-once complete identity inputs exist; identity hashing itself proves no parity.
+Further API29/build/asset observations must come from their actual owners;
+gathering them remains separate from this embedding initialization exception.
+This change does not alter the accepted ORT ABI/settings. Runtime qualification
+remains independently required under the selected rule-C policy; identity
+hashing itself proves no parity.
 
 ## Source graph and test selection
 

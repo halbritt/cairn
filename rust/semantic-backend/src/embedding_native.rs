@@ -6,6 +6,7 @@ use cairn_semantic_rank::backend::{BackendError, RawMatrix};
 use cairn_semantic_tokenizer::PreparedTokenizer;
 
 /// Owns the same loaded session, tokenizer, libraries and observation report.
+/// Rule-C unavailable observations are named in identity, not readiness failures.
 /// Fields are private; only the real factory can construct this adapter.
 pub struct NativeEmbeddingSession {
     loaded: LoadedBackend,

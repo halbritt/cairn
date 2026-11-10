@@ -220,6 +220,27 @@ not indexed scores. These discrete assertions are exact as well.
 
 ### Derivation manifest
 
+Under the owner's 2026-11-10 rule-C initialization policy, unavailable
+bit-identity observations do not prevent the embedding worker from initializing.
+The embedding manifest retains each missing or null value and adds a sorted
+`unobserved_observations` array naming the unavailable fields:
+`compilation.rustc`, `compilation.target`, `compilation.enabled_features`,
+`compilation.effective_flags`, `compilation.linked_input_attestation`,
+`session.cpu_arena`, `session.remaining_defaults`, `session.effective_provider`,
+`native.ort_dependency_inventory` and `native.cpu_os_complete_class`.
+No default, partial observation or fabricated value fills these gaps. A valid
+observed empty value remains distinct from an unobserved value. The names and
+retained input values participate in the canonical embedding digest; the
+existing three-field wire identity remains unchanged because the Go decoder
+refuses unknown fields.
+
+This exception applies only to unavailable observations in those ten fields.
+Invalid observed values, malformed parent objects, other unresolved owner gaps,
+invalid canonical values and missing or invalid model-asset closure still
+refuse. Actual asset/runtime mapping and construction errors remain terminal.
+The rank identity gate is unchanged. Initialization does not establish rule-C
+numerical acceptance, actual-session coverage or production qualification.
+
 Rank and embed use separate versioned tags, respectively
 `cairn.rust-rank-worker/1` and `cairn.rust-embedding-worker/1`.
 Each SHA-256 binds a canonical manifest containing the following inputs.
