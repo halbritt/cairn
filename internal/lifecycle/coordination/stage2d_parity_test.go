@@ -3,6 +3,7 @@ package coordination
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -296,5 +297,54 @@ func TestOpenSessionReleasesLockOnLoadError(t *testing.T) {
 	sess, release, err := OpenSession(value.Mapping(), "n1", host, false)
 	if sess != nil || release != nil || err != wantErr || closed != 1 {
 		t.Fatalf("OpenSession load error: sess=%v hasRelease=%t err=%v closed=%d", sess, release != nil, err, closed)
+	}
+}
+
+func TestJournalFloatPythonTimestampParity(t *testing.T) {
+	pyBin, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 not found: %v", err)
+	}
+	samples := []float64{
+		0.0,
+		math.Copysign(0.0, -1),
+		1e-5,
+		-1e-5,
+		9.999999999999999e-5,
+		1e-4,
+		-1e-4,
+		0.000123456789,
+		999999.5,
+		1e6,
+		-1e6,
+		1700000000.0,
+		1794345125.6512349,
+		1794345125.7548075,
+		1794345207.9413965,
+		1794345208.1857958,
+		1.23e14,
+		1.1e15,
+		9999999999999998.0,
+		1e16,
+		-1e16,
+		math.NaN(),
+		math.Inf(1),
+		math.Inf(-1),
+	}
+	for _, x := range samples {
+		got := string(journalFloat(x))
+		hexBits := fmt.Sprintf("%016x", math.Float64bits(x))
+		cmd := exec.Command(pyBin, "-I", "-B", "-c",
+			"import json, struct, sys; x = struct.unpack('>d', bytes.fromhex(sys.argv[1]))[0]; sys.stdout.write(json.dumps(x))",
+			hexBits,
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("python3 json.dumps(%s): %v (%s)", hexBits, err, string(out))
+		}
+		want := string(out)
+		if got != want {
+			t.Fatalf("journalFloat(%v) (bits %s): got %q, want Python %q", x, hexBits, got, want)
+		}
 	}
 }

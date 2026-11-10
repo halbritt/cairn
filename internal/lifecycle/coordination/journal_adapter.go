@@ -195,7 +195,12 @@ func journalFloat(n float64) json.Number {
 	if math.IsInf(n, -1) {
 		return json.Number("-Infinity")
 	}
-	text := strconv.FormatFloat(n, 'g', -1, 64)
+	style := byte('f')
+	abs := math.Abs(n)
+	if abs != 0 && (abs < 1e-4 || abs >= 1e16) {
+		style = 'e'
+	}
+	text := strconv.FormatFloat(n, style, -1, 64)
 	if !strings.ContainsAny(text, ".eE") {
 		text += ".0"
 	}
