@@ -144,6 +144,13 @@ func NewFileHost(options FileHostOptions) *Host {
 		}
 		return options.Profile.Decode(SiteConfigRead, raw)
 	}
+	h.ReadContext = func(path string) (*value.Value, error) {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		return options.Profile.Decode(SiteInboxContextRead, raw)
+	}
 	h.Persist = sourceStateWriter(options, SiteSessionWrite)
 	h.WriteContext = sourceStateWriter(options, SiteInboxContextWrite)
 	return h

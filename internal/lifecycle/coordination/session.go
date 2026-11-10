@@ -44,6 +44,7 @@ type Host struct {
 	Profile      *value.SourceReaderProfile
 	Services     *ServiceBindings
 	ReadConfig   func(string) (*value.Value, error)
+	ReadContext  func(string) (*value.Value, error)
 	WriteContext func(string, *value.Value) error
 	Call         func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error)
 	Persist      func(string, *value.Value) error
@@ -118,6 +119,12 @@ func (s *NativeSession) endHost(ctx context.Context, fenced bool) (bool, error) 
 		return s.Host.EndTurn(ctx, s, fenced)
 	}
 	return s.EndTurn(ctx, fenced)
+}
+func (s *NativeSession) renewHost(ctx context.Context, attempt *value.Value) (*value.Value, error) {
+	if s.Host.Renew != nil {
+		return s.Host.Renew(ctx, s, attempt)
+	}
+	return s.Renew(ctx, attempt)
 }
 func (s *NativeSession) mapping() error {
 	if s.Record == nil || s.Record.Kind != value.Object {
@@ -1074,7 +1081,10 @@ type MemoryHost struct {
 	Persisted                    []*value.Value
 	Logged                       []string
 	Responses                    map[string]MemoryResponse
+	Contexts                     map[string]*value.Value
 	FlushResult, CommittedResult bool
+	CommandsAbsentResult         bool
+	CompletionStateResult        string
 }
 type memoryJournal struct{ host *MemoryHost }
 
@@ -1085,9 +1095,24 @@ func (m memoryJournal) Committed(*value.Value, *value.Value) (bool, error) {
 	return m.host.CommittedResult, nil
 }
 func (memoryJournal) TurnEndDiagnostic(*value.Value, *value.Value) error { return nil }
+func (m memoryJournal) AttemptCommandsAbsent(*value.Value, *value.Value) (bool, error) {
+	return m.host.CommandsAbsentResult, nil
+}
+func (m memoryJournal) JournalCompletionState(*value.Value, *value.Value) (string, error) {
+	if m.host.CompletionStateResult != "" {
+		return m.host.CompletionStateResult, nil
+	}
+	return "absent", nil
+}
 func NewMemoryHost(responses map[string]MemoryResponse) *MemoryHost {
-	m := &MemoryHost{Responses: responses, FlushResult: true}
+	m := &MemoryHost{Responses: responses, FlushResult: true, CommandsAbsentResult: true, CompletionStateResult: "absent"}
 	m.Host.Journal = memoryJournal{m}
+	m.Host.ReadContext = func(path string) (*value.Value, error) {
+		if m.Contexts != nil && m.Contexts[path] != nil {
+			return nativeClone(m.Contexts[path]), nil
+		}
+		return nil, &value.Error{Class: "OSError", Message: "context not found"}
+	}
 	m.Host.Call = func(_ context.Context, _ *value.Value, op string, body *value.Value, options NativeCallOptions) (*value.Value, error) {
 		m.Calls = append(m.Calls, NativeCall{op, nativeClone(body), options})
 		if fn := m.Responses[op]; fn != nil {

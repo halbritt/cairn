@@ -38,7 +38,7 @@ func (LosslessJournalProjection) Project(record *value.Value) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	return x.(map[string]any), nil
+	return journal.DefaultJSONConstants(x).(map[string]any), nil
 }
 func (LosslessJournalProjection) ApplyJournals(record *value.Value, state map[string]any) error {
 	if record == nil || record.Kind != value.Object {
@@ -49,14 +49,15 @@ func (LosslessJournalProjection) ApplyJournals(record *value.Value, state map[st
 		nativePop(record, "inbox_journals")
 		return nil
 	}
+	plain := journal.PlainValue(x)
 	old, err := journalGoValue(record.Get("inbox_journals"))
 	if err != nil {
 		return err
 	}
-	if record.Get("inbox_journals") != nil && reflect.DeepEqual(old, x) {
+	if record.Get("inbox_journals") != nil && reflect.DeepEqual(old, plain) {
 		return nil
 	}
-	next, err := journalNativeValue(x)
+	next, err := journalNativeValue(plain)
 	if err != nil {
 		return err
 	}

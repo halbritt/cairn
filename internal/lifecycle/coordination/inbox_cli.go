@@ -276,7 +276,7 @@ func (c *CLI) InboxCommand(ctx context.Context, argv []string, in io.Reader, out
 
 // InboxHandoff creates the same fenced commands used by native and manual
 // delivery. The caller owns admission and persistence; selectors contain paths.
-func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID string, requestIDs *value.Value) (string, *value.Value, error) {
+func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID string, requestIDs *value.Value, scope ...string) (string, *value.Value, error) {
 	event, err := nativeRequired(delivery, "event")
 	if err != nil {
 		return "", nil, err
@@ -320,7 +320,11 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 	if err != nil {
 		return "", nil, err
 	}
-	complete := &value.Value{Kind: value.Array, Items: append(append([]*value.Value{cairn, value.Text("complete")}, leased...), value.Text("--shareable"), value.Text("--stdin"), deliveryID)}
+	completeItems := append([]*value.Value{cairn, value.Text("complete")}, leased...)
+	for _, s := range scope {
+		completeItems = append(completeItems, value.Text(s))
+	}
+	complete := &value.Value{Kind: value.Array, Items: append(completeItems, value.Text("--shareable"), value.Text("--stdin"), deliveryID)}
 	ack := &value.Value{Kind: value.Array, Items: append(append([]*value.Value{cairn, value.Text("ack")}, leased...), deliveryID)}
 	commands := nativeMap("complete", complete, "ack", ack)
 	kind, err := nativeRequired(event, "kind")

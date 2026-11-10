@@ -718,6 +718,9 @@ func scalarString(v any) string {
 			return i.String()
 		}
 		f, err := strconv.ParseFloat(string(v), 64)
+		if math.IsNaN(f) {
+			return "nan"
+		}
 		if math.IsInf(f, 0) {
 			if f < 0 {
 				return "-inf"
