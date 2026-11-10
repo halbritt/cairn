@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -230,5 +231,67 @@ func TestReaderMechanicsUseHeapStack(t *testing.T) {
 				t.Fatal("deep leaf changed")
 			}
 		})
+	}
+}
+
+func TestWriteKernelPythonFloatTimestampParity(t *testing.T) {
+	pyBin, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 not found: %v", err)
+	}
+	samples := []float64{
+		0.0,
+		math.Copysign(0.0, -1),
+		1e-5,
+		-1e-5,
+		9.999999999999999e-5,
+		1e-4,
+		-1e-4,
+		0.000123456789,
+		999999.5,
+		1e6,
+		-1e6,
+		1700000000.0,
+		1794345125.6512349,
+		1794345125.7548075,
+		1794345207.9413965,
+		1794345208.1857958,
+		1.23e14,
+		1.1e15,
+		9999999999999998.0,
+		1e16,
+		-1e16,
+		math.NaN(),
+		math.Inf(1),
+		math.Inf(-1),
+	}
+	ensureASCII := true
+	compact := false
+	trailingLF := false
+	route := WriterRoute{
+		EnsureASCII: &ensureASCII,
+		Compact:     &compact,
+		TrailingLF:  &trailingLF,
+		Codec:       &Codec{Name: "utf-8", Errors: "strict"},
+	}
+	for _, x := range samples {
+		var buf strings.Builder
+		if err := WriteKernel(&buf, &Value{Kind: Float, Number: x}, route, 4300); err != nil {
+			t.Fatalf("WriteKernel(%v): %v", x, err)
+		}
+		got := buf.String()
+		hexBits := fmt.Sprintf("%016x", math.Float64bits(x))
+		cmd := exec.Command(pyBin, "-I", "-B", "-c",
+			"import json, struct, sys; x = struct.unpack('>d', bytes.fromhex(sys.argv[1]))[0]; sys.stdout.write(json.dumps(x))",
+			hexBits,
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("python3 json.dumps(%s): %v (%s)", hexBits, err, string(out))
+		}
+		want := string(out)
+		if got != want {
+			t.Fatalf("float %v (bits %s): got %q, want Python %q", x, hexBits, got, want)
+		}
 	}
 }

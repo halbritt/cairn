@@ -135,7 +135,12 @@ func WriteKernel(out io.Writer, v *Value, route WriterRoute, integerDigits int) 
 			case math.IsInf(x.Number, -1):
 				text = "-Infinity"
 			default:
-				text = strconv.FormatFloat(x.Number, 'g', -1, 64)
+				style := byte('f')
+				n := math.Abs(x.Number)
+				if n != 0 && (n < 1e-4 || n >= 1e16) {
+					style = 'e'
+				}
+				text = strconv.FormatFloat(x.Number, style, -1, 64)
 				if !strings.ContainsAny(text, ".eE") {
 					text += ".0"
 				}
