@@ -229,9 +229,51 @@ def discover_mapped_passwd_homes(passwd_homes, bind_pairs, symlink_pairs=()):
     return sorted(mapped)
 
 
-def build_sandbox_spec(source, *, chdir='/work'):
+def parse_ro_bind_specs(ro_binds, passwd_homes):
+    home_set = set(passwd_homes) | {'/', '/home', '/root'}
+    forbidden_dst_roots = {'/', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/dev', '/etc', '/proc', '/work'}
+    parsed = []
+    for entry in ro_binds or ():
+        if ':' in entry:
+            raw_src, raw_dst = entry.split(':', 1)
+        else:
+            raw_src, raw_dst = entry, None
+        if not raw_src:
+            raise ValueError('empty read-only bind source')
+        src_path = Path(raw_src).resolve()
+        if not src_path.exists():
+            raise ValueError(f'read-only bind source does not exist: {raw_src}')
+        src = os.path.normpath(str(src_path))
+        if src in home_set or os.path.normpath(raw_src) in home_set:
+            raise ValueError(f'refusing to bind production account home: {raw_src}')
+        if (
+            any(is_under(src, p) for p in ('/var/lib/postgresql', '/run', '/var/run'))
+            or '/.local/share/cairn' in src
+            or '/.config/cairn' in src
+        ):
+            raise ValueError(f'refusing to bind production Cairn or service state: {raw_src}')
+        if not raw_dst:
+            if is_under(src, '/home') or is_under(src, '/root'):
+                raw_dst = '/opt/assets/' + src_path.name
+            else:
+                raw_dst = src
+        dst = os.path.normpath(raw_dst)
+        if (
+            not dst.startswith('/')
+            or dst in forbidden_dst_roots
+            or dst in home_set
+            or is_under(dst, '/home')
+            or is_under(dst, '/root')
+        ):
+            raise ValueError(f'invalid read-only bind destination: {raw_dst}')
+        parsed.append((src, dst))
+    return parsed
+
+
+def build_sandbox_spec(source, *, chdir='/work', ro_binds=()):
     passwd_homes = discover_passwd_homes()
     toolchain_binds = discover_toolchain_binds(passwd_homes)
+    extra_ro_binds = parse_ro_bind_specs(ro_binds, passwd_homes)
     script_path = str(Path(__file__).resolve())
     source_str = str(Path(source).resolve())
     symlink_pairs = []
@@ -246,6 +288,7 @@ def build_sandbox_spec(source, *, chdir='/work'):
         *extra_sys_binds,
         (source_str, '/work'),
         *toolchain_binds,
+        *extra_ro_binds,
     ]
     bound_destinations = [dst for _, dst in bind_pairs]
     masked_homes = discover_masked_homes(passwd_homes, bind_pairs)
@@ -261,6 +304,7 @@ def build_sandbox_spec(source, *, chdir='/work'):
         'symlink_pairs': symlink_pairs,
         'extra_sys_binds': extra_sys_binds,
         'toolchain_binds': toolchain_binds,
+        'extra_ro_binds': extra_ro_binds,
         'bound_destinations': bound_destinations,
         'host_pid_ns': os.readlink('/proc/self/ns/pid'),
         'host_net_ns': os.readlink('/proc/self/ns/net'),
@@ -285,6 +329,8 @@ def namespace_argv(source, command, *, spec=None, report_fd=-1, self_test_only=F
         '--chmod', '0111', '/etc',
     ])
     for src, dst in spec['toolchain_binds']:
+        argv.extend(['--ro-bind', src, dst])
+    for src, dst in spec.get('extra_ro_binds', ()):
         argv.extend(['--ro-bind', src, dst])
     argv.extend([
         '--ro-bind', spec['script_path'], '/opt/toolchains/isolation_runner.py',
@@ -466,7 +512,11 @@ def run_sandbox_self_test(spec):
         failures.append(f'proc leak: pid_ns={pid_ns} visible_pids={visible_pids}')
 
     ro_checks = {}
-    for dst in ('/usr', '/work', *(d for _, d in spec['toolchain_binds'])):
+    for dst in (
+        '/usr', '/work',
+        *(d for _, d in spec['toolchain_binds']),
+        *(d for _, d in spec.get('extra_ro_binds', ())),
+    ):
         ro_checks[dst] = bool(os.statvfs(dst).f_flag & os.ST_RDONLY)
         if not ro_checks[dst]:
             failures.append(f'mount not read-only: {dst}')
@@ -590,8 +640,8 @@ def sandbox_entry(spec_json, report_fd, self_test_only, command):
     return completed.returncode
 
 
-def run_isolated(source, command, *, chdir='/work', timeout=None, self_test_only=False):
-    spec = build_sandbox_spec(source, chdir=chdir)
+def run_isolated(source, command, *, chdir='/work', timeout=None, self_test_only=False, ro_binds=()):
+    spec = build_sandbox_spec(source, chdir=chdir, ro_binds=ro_binds)
     r_fd, w_fd = os.pipe()
     raw_report = b''
     try:
@@ -663,6 +713,11 @@ def main(argv=None):
     parser.add_argument('--receipt', help='Write JSON isolation and self-test receipt to PATH')
     parser.add_argument('--cwd', default='/work', help='Working directory inside /work')
     parser.add_argument('--timeout', type=int, default=None, help='Timeout in seconds')
+    parser.add_argument(
+        '--ro-bind', '--ro-bind-asset', dest='ro_binds', action='append', default=[],
+        metavar='SRC[:DST]',
+        help='Bind an explicit read-only asset file or directory into the sandbox',
+    )
     parser.add_argument('--self-test-only', action='store_true', help='Run only the in-sandbox self-test')
     parser.add_argument('command', nargs=argparse.REMAINDER, help='Command to run inside isolation')
     args = parser.parse_args(argv)
@@ -670,13 +725,18 @@ def main(argv=None):
     chdir = args.cwd if args.cwd.startswith('/') else '/work/' + args.cwd
 
     if args.self_test_only:
-        rc, report = run_isolated(REPO_ROOT, [], chdir=chdir, timeout=args.timeout or 60, self_test_only=True)
+        rc, report = run_isolated(
+            REPO_ROOT, [], chdir=chdir, timeout=args.timeout or 60,
+            self_test_only=True, ro_binds=args.ro_binds,
+        )
         if args.receipt:
             write_receipt(args.receipt, 'self-test-only', [{'command': [], 'returncode': rc, 'self_test': report}])
         return rc
 
     if command:
-        rc, report = run_isolated(REPO_ROOT, command, chdir=chdir, timeout=args.timeout)
+        rc, report = run_isolated(
+            REPO_ROOT, command, chdir=chdir, timeout=args.timeout, ro_binds=args.ro_binds,
+        )
         if args.receipt:
             write_receipt(args.receipt, 'command', [{'command': command, 'returncode': rc, 'self_test': report}])
         return rc
@@ -734,6 +794,18 @@ class HybridRuntimeIsolationTests(unittest.TestCase):
                 self.assertEqual(errors, [])
             finally:
                 srv.close()
+
+    def test_parse_ro_bind_specs_allows_assets_and_rejects_homes_or_cairn_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            asset_dir = Path(tmp) / 'assets'
+            asset_dir.mkdir()
+            (asset_dir / 'model_optimized.onnx').write_bytes(b'onnx')
+            homes = ['/root', '/home/halbritt', '/usr/share/ollama']
+            binds = parse_ro_bind_specs([f'{asset_dir}:/opt/assets/model'], homes)
+            self.assertEqual(binds, [(str(asset_dir.resolve()), '/opt/assets/model')])
+            for bad in ('/root:/opt/assets/root', '/home/halbritt:/opt/assets/h', f'{asset_dir}:/home/halbritt/out'):
+                with self.assertRaises(ValueError):
+                    parse_ro_bind_specs([bad], homes)
 
     def _passing_self_test_patches(self, stack, *, unix_text='Num RefCount\n',
                                    route_text='Iface\tDestination\n',

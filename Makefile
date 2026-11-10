@@ -35,7 +35,7 @@ test-lifecycle: build
 test-hybrid-runtime-operations:
 	python3 -I -B scripts/test_hybrid_runtime_operations.py $(ISOLATED_ARGS)
 test-isolated:
-	python3 -I -B scripts/test_hybrid_runtime_operations.py $(ISOLATED_ARGS) $(if $(RECEIPT),--receipt "$(RECEIPT)",) $(if $(CMD),-- $(CMD),)
+	python3 -I -B scripts/test_hybrid_runtime_operations.py $(ISOLATED_ARGS) $(if $(RO_BIND),--ro-bind "$(RO_BIND)",) $(if $(RECEIPT),--receipt "$(RECEIPT)",) $(if $(CMD),-- $(CMD),)
 contract:
 	go run ./internal/apicontract/cmd/cairn-contract
 check:
