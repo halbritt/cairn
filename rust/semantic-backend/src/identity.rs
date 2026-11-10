@@ -12,6 +12,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod embedding;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MissingObservation {
     pub field: &'static str,
