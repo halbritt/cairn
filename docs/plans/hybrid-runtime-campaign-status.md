@@ -40,10 +40,10 @@ production, preserved-failure and retry-policy holds remain.
 
 ## Inspect the implementation
 
-The table records published source and extensions through the Rust embedding
-response loop, tested as `008efd1b`, on 2026-11-10. The Go libraries are callable
-source. Rust has an explicit
-rank/stream entry target; model initialization and actual-worker qualification
+The table records published source and extensions through the native embedding
+entry, tested as `d41be9e7`, on 2026-11-10. The Go libraries
+are callable source. Rust has explicit rank/stream and embedding entry targets;
+model initialization and actual-worker qualification
 remain open. Publication does not activate the migration on supported hosts.
 
 | Component | Source and publication | Implemented behavior | Remaining acceptance and area owner |
@@ -69,8 +69,9 @@ remain open. Publication does not activate the migration on supported hosts.
 | Rust rank/stream entry and launch plan | [entry](../../rust/semantic-backend/src/bin/rank.rs), [parser](../../rust/semantic-backend/src/bin/rank_entry/plan.rs); tested source [`cb6dbc90`](https://github.com/halbritt/cairn/commit/cb6dbc906661e771431a22238d0fd75f5afedd18) | Explicit `cairn-semantic-rank` target and pure parsing of six absolute asset/library/source selections; rank-once or stream dispatch with exact stream-cache opt-in; 11 bounded parser, private-driver and synthetic-cleanup checks passed | Semantic and Release: production entry/native wiring, real owner drop/cleanup, exit/stderr behavior, model initialization, actual-session T1, worker and Go supervisor remain unqualified; installer and Go routing are unchanged |
 | Rust original-text embedding-query projection | [projection](../../rust/semantic-tokenizer/src/query.rs), [character slicing](../../rust/semantic-tokenizer/src/offsets.rs); tested source [`d58aed45`](https://github.com/halbritt/cairn/commit/d58aed45a45901b0de155b832a5697bda7161f24) | Untruncated/unpadded rank-tokenizer counts, original-text prefix selection with at most eight re-encodings, character-to-UTF-8 slicing and prefix-only hash/count metadata; 20 bounded owned-fixture checks passed, with 11 prior tests filtered out | Semantic and Release: Python binding/version correspondence, actual prepared-token parity, actual-session T1 and model/worker/runtime qualification remain open; component input attestation has the header limit below |
 | Rust original-text document-passage projection | [projection](../../rust/semantic-tokenizer/src/document.rs), [shared character slicing](../../rust/semantic-tokenizer/src/offsets.rs); tested source [`474b756f`](https://github.com/halbritt/cairn/commit/474b756fd4f47e7c20ce23b4ca1887db1fdb893e) | Typed original passage text and UTF-8 spans, adaptive 128/96 windows including the final tail, complete span validation before ordered default-special re-encoding; 22 bounded owned-fixture checks passed with 31 prior tests filtered out | Semantic and Release: Python binding/version correspondence, actual prepared-token parity, actual-session T1 and model/worker/runtime qualification remain open; current selected header coverage does not close item2's historical gap |
-| Rust embedding derivation projection | [projection](../../rust/semantic-backend/src/identity/embedding.rs), [observed-input owner](../../rust/semantic-backend/src/identity.rs); tested source [`58b3a299`](https://github.com/halbritt/cairn/commit/58b3a299cf3e323bdd54fb38fe20be7ee2d8e2c1) | Gated owned `ConstructionReport` embedding manifest and digest with distinct mode tag/constants and retained common inputs; 17 pure owned-fixture checks passed with 35 prior tests filtered out | Semantic and Release: actual observation rows/NULL globals, real construction/session, actual-session T1 and native embedding adapter/binary integration remain owed; pure digest sensitivity is not observed completeness or usable identity |
-| Rust embedding response loop | [composition](../../rust/semantic-backend/src/embedding_response.rs), [private fixtures](../../rust/semantic-backend/src/identity/embedding/tests/response_tests.rs); tested source `008efd1b` | One owning collaborator and protected identity before any read, landed query/document projections, whole-batch vector guards, bounded complete serialization and per-reply write/flush; 32 selected checks passed with 52 prior library tests filtered | Semantic and Release: actual native embedding factory/entry is item 6; real initialization/session cleanup, actual-session T1, numerical/runtime and Go-supervisor qualification remain open |
+| Rust embedding derivation projection | [projection](../../rust/semantic-backend/src/identity/embedding.rs), [observed-input owner](../../rust/semantic-backend/src/identity.rs); tested source [`58b3a299`](https://github.com/halbritt/cairn/commit/58b3a299cf3e323bdd54fb38fe20be7ee2d8e2c1) | Gated owned `ConstructionReport` embedding manifest and digest with distinct mode tag/constants and retained common inputs; 17 pure owned-fixture checks passed with 35 prior tests filtered out | Semantic and Release: actual observation rows/NULL globals, real construction/session, actual-session T1 and native embedding execution/binary qualification remain owed; pure digest sensitivity is not observed completeness or usable identity |
+| Rust embedding response loop | [composition](../../rust/semantic-backend/src/embedding_response.rs), [private fixtures](../../rust/semantic-backend/src/identity/embedding/tests/response_tests.rs); tested source `008efd1b` | One owning collaborator and protected identity before any read, landed query/document projections, whole-batch vector guards, bounded complete serialization and per-reply write/flush; 32 selected checks passed with 52 prior library tests filtered | Semantic and Release: real native initialization/session cleanup, actual-session T1, numerical/runtime and Go-supervisor qualification remain open |
+| Rust native embedding adapter and entry | [adapter](../../rust/semantic-backend/src/embedding_native.rs), [entry](../../rust/semantic-backend/src/bin/embed.rs), [shared cleanup](../../rust/semantic-backend/src/bin/entry/cleanup.rs); tested source `d41be9e7` | Owning native adapter and explicit six-path embed target, protected observation refusal, first-pass-only rows and shared failure/cleanup handling; 17 selected checks passed (7 library/10 embed), 84 older library tests filtered | Semantic and Release: production main, concrete load/construct/getters and model/session behavior remain unexecuted; actual initialization, T1, numerical/runtime, Go supervisor and separately admitted EOF load remain open |
 | Go memory client and checkpoint reader | [client](../../internal/lifecycle/memoryclient/client.go), [checkpoint](../../internal/lifecycle/memoryclient/checkpoint.go), [contract](hybrid-runtime-contracts/f02-memory-client.md); [`2989f834`](https://github.com/halbritt/cairn/commit/2989f83442ba880dd586b807b9cdece5282b67e5) | Direct authenticated SDK search/pull calls, receipt-credit accounting and concrete raw-record checkpoint traversal | Foundation: recall/capture frontends, hook streams/exits/meters, grants and executing-hook identity; full F-02 and HC-03 remain open |
 | Go unfinished checkpoint refresh | [refresh](../../internal/lifecycle/memoryclient/checkpoint_refresh.go), [contract](hybrid-runtime-contracts/f02-checkpoint-refresh.md); [`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a) | Restores at most one current whole unfinished note through bounded authenticated search/pull, with identity/hash/extent checks and shared deadline accounting | Foundation: frontend state, grants and metering integration; runtime and full F-02 acceptance remain open |
 | Go capture selection and ordered writes | [capture](../../internal/lifecycle/memoryclient/capture.go), [contract](hybrid-runtime-contracts/f03-capture-commit.md); [`1497c7dc`](https://github.com/halbritt/cairn/commit/1497c7dc8ac14c776ca4672e28d038976cb21265) | Validates the complete selection before record mutation, performs ordered create/revise calls and retains confirmed writes when a later write fails | Foundation: frontend state commits, hooks, streams/exits/meters, grants and executing-hook identity; full F-03 remains open |
@@ -323,7 +324,7 @@ sensitivity; correctness of those constants rests on the exact literal-byte
 test. Passing these fixtures supplies neither actual observations nor usable
 initialization, Python parity or runtime acceptance. Actual build/link/CPU and
 session-global observations, real construction/session, actual-session T1 and
-actual native embedding adapter and binary integration remain owed.
+actual native embedding execution and binary qualification remain owed.
 
 For this component, all 268 selected system-header preflight, observed and
 postflight paths matched, with zero additional system headers. This is
@@ -368,7 +369,8 @@ line and 4 MiB output line bounds, including LF. Complete serialization precedes
 write-all/flush for each reply. Codec, projection, backend and I/O failures stop
 before the next logical frame; the session drops on EOF or failure. Synthetic
 ownership/drop evidence does not qualify an actual native lifecycle. The actual
-`NativeFactory` embedding adapter and `cairn-semantic-embed` entry remain item 6.
+`NativeFactory` embedding adapter and `cairn-semantic-embed` entry are supplied
+below; their concrete runtime paths remain unexecuted.
 
 Four nonblocking review limits remain: inherited read/write loops do not prove
 Python EINTR retry parity; no loop-level `QueryPrefixError` fixture exists;
@@ -398,19 +400,62 @@ usable initialization, Python parity, actual worker, Go-supervisor or campaign
 acceptance. The conditional post-item6 no-inference EOF load remains unexecuted.
 
 The item 6 native embedding adapter and explicit `cairn-semantic-embed` target
-are now authored source, pending their existing reviewer and selected pure
-component check. The adapter retains the real loaded owner, gates readiness on
-protected embedding observations, and uses only the existing batch-one first
-normalization. The binary reuses the six-path parser, rejects rank stream mode,
-and shares invocation/cleanup collection with rank. Seventeen new private
-adapter/dispatch/lifetime/failure fixtures are authored and unexecuted; the
-proposed selector excludes production `main`, actual factory loading and native
-observations/model/session calls. Synthetic cleanup and guard fixtures establish
-no actual native lifecycle or usable initialization. No tests, builds, runtime
-kit or model-load attempt ran during this authoring. One precedence sentence in
-the Semantic contract cites owner decision `98d46758-c61c-42b4-9912-76cf9dfb0dc0@1`;
-that source amendment grants no additional execution. Item 6 review, component
-validation and landing precede the separately admitted tester-only EOF load.
+(`d41be9e7`) were accepted in source review round 1 without conditions
+(`20486459-809f-4d25-b519-d673256c38e4@1`). One command inside the shared isolation
+wrapper passed all 17 exact fixtures: seven library checks with 84 older tests
+filtered, and ten embed-bin harness checks with zero older tests filtered. It
+ran for 60.304456579 seconds, exited 0 and had no retries
+(`0bd601df-b802-4e85-bf79-3b990cd17bcc@1`). Rank's 11 tests, doctests, dependency
+harnesses and closed selectors were excluded. The wrapper's ordinary built-in
+checks ran; no extra wrapper self-test or special wrapper receipt was added.
+
+The adapter retains the real loaded owner and gates readiness on protected
+embedding observations. Its concrete path uses existing batch-one FIRST
+normalization, with no rank second normalization or matvec. The entry reuses
+the six absolute-path parser, refuses rank stream mode, and shares cleanup
+collection with rank. The moved cleanup block and rank dispatch/main/test bodies
+preserve behavior, with only visibility and equivalent generic error typing
+changed. The selected fixtures exercised structural row bits/layout, synthetic
+report gates and panic-on-I/O failure, parser/dispatch, synthetic owner-drop and
+dual-error collection, diagnostics, and configuration-only `NativeFactory::new`
+plus empty cleanup drains. They did not exercise production `main`, `run_native`,
+concrete load/construct/observe/getters, the three native-session methods,
+PyString conversion in that adapter, ORT/BLAS/model/session or actual cleanup.
+The new test harnesses are not production-worker execution evidence.
+
+The observed graph matched 102 noncustom units (25 host/77 target), 23 custom
+artifacts, nine host macros and 125 total artifacts, with 53 production native
+units and five archives. Lead intake independently verified all 105 source pins,
+34 sealed receipts, exact raw test names/output, the full artifact multiset and
+lossless trace digest. Link evidence explicitly lacks hashes for 85 embedding
+and 216 library temporary objects removed during teardown; five stable object
+hashes per harness remain. Do not infer complete linker-input hashing, archive
+member extraction, function behavior or CPU/FENV coverage. All 268 selected
+system headers match prospective pre/post pins with zero extras; this is not
+complete include/transitive/runtime attestation and does not close item2's
+historical 198-preflight/20-post-only gap. B2's retained materialization and its
+separate cleanup belong to the lead.
+
+Review qualifications remain: duplicate `--stream` returns the closed parser's
+Duplicate error while still exiting 2; embedding does not read the shared
+stream-cache field; backend/native/tokenizer detail strings are not sanitized,
+although the raw request buffer is not formatted; and no signal-handler,
+MXCSR/denormal or actual ORT/OpenBLAS floating-mode behavior was observed.
+Inherited EINTR, DAZ/FTZ, N1-N4 and helper-only limits remain. All truly discrete
+outputs stay exact; numerical acceptance uses the owner rule C above.
+
+One existing contract-precedence sentence cites owner decision
+`98d46758-c61c-42b4-9912-76cf9dfb0dc0@1` in this code change, without a separate
+review round. Landing preserves tested Rust code, manifests, locks and native
+inputs; campaign status and the backend README's test-status paragraph are the
+intentional documentation updates. Required observations/NULL globals, full
+P1-P5, actual-session T1, all294 IDs/lengths before model, numerical/runtime
+acceptance, production, preserved failures, retry policy and the original R1
+draft remain open under current policy. `REQUIRED` declares 11 rows, not 11
+measured missing observations. Only B2 may perform the separately granted ONE
+no-inference EOF-only model load after landing and exact command/sandbox/all294
+admission. No model load, inference, runtime-kit preparation or production
+change occurred in this component or author landing.
 
 The paired value/transcript component passed formatting, build, vet and scoped
 race checks for those two packages. Foundation cleared the exact four-file value

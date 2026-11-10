@@ -50,9 +50,12 @@ refused and the rank cache environment is not read. Rank and embedding entries
 share invocation/cleanup collection, retaining both failures after owners drop.
 Argument failures exit 2, invocation/cleanup failures exit 1, and raw request
 bytes are excluded from invocation diagnostics. Source-only private fixtures
-are authored for this adapter/entry; they have not been compiled or run yet.
-Production `main`, real factory loading and observation/getter/model/session
-calls remain excluded from their proposed component selector. Source publication
+passed one shared-wrapper component invocation: seven library checks (84 older
+checks filtered) and ten embed-bin harness checks, with no retries. The concrete
+native adapter methods, production `main`, real factory loading and
+observation/getter/model/session calls were not exercised by that selector.
+Temporary object hash gaps and selected-header limits are recorded in the
+campaign status; the harness pass is not a production-worker run. Source publication
 does not qualify real initialization, native cleanup or a worker process.
 
 Production `encode` and `decode` call the actual prepared rank tokenizer with
