@@ -50,6 +50,12 @@ including deployment, service changes and production-state effects, still need
 a grant. Decision `98d46758/v1` supplies the complete four-condition isolation gate; wrapper audit, self-test qualification and receipt retention add no acceptance gate, while actual functional and parity evidence remain required. Other runtime-acceptance, controller and preserved-failure holds remain,
 as do retry decision `607a5940/v2`, subscription-only model routes and trunk rules.
 
+F-01 namespace coverage has four fixture skips: root-UID visibility and the
+existing `/dev/shm`, `/tmp` and `/var/tmp` filesystem conditions. The root-owned
+pin refusal path is not exercised inside this namespace and remains for installed
+qualification. These skips leave coverage gaps; F-01 landing and F-04 acceptance
+remain pending.
+
 ## Work and dependencies
 
 | Plan key | Plane item | Deliverable | Builder | Required predecessors |
