@@ -49,13 +49,16 @@ func ResolveActivation(ctx context.Context, in admission.HookInvocation) (bool, 
 		}
 		// Disabled staging still uses the source owner-controlled memory location
 		// to find an existing ledger; its final staged SHA is deliberately not read.
-		raw, err := readData(memory.Path, false)
-		if err != nil {
-			return false, err
-		}
-		stateConfig, err := decodeData(raw)
-		if err != nil {
-			return false, err
+		stateConfig := config
+		if memory.Path != in.ConfigPath {
+			raw, err := readData(memory.Path, false)
+			if err != nil {
+				return false, err
+			}
+			stateConfig, err = decodeData(raw)
+			if err != nil {
+				return false, err
+			}
 		}
 		return ledger.DecideActivation(ctx, ledger.Activation{Memory: stateConfig, Harness: string(harness.String), Session: string(session.String), Turn: string(turn.String), Enabled: enabled})
 	})

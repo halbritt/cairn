@@ -1500,6 +1500,9 @@ def session_lock(path):
 
 
 def call(config, operation, request, timeout=4, session=None):
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None:
+        timeout = compatibility.remaining(timeout)
     for key in ("cairn", "socket", "token_file"):
         if not config.get(key):
             raise CoordinationError("INVALID_CONFIG", f"missing {key} in config")
@@ -2031,12 +2034,17 @@ def inbox_command(argv):
     parser.add_argument('--disposition', choices=('handled', 'ignored', 'failed'))
     parser.add_argument('--code', choices=('unsupported_kind', 'source_unavailable', 'processing_failed'))
     args = parser.parse_args(argv)
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None:
+        compatibility.bind_context_path(args.context)
     info = args.context.stat()
     if info.st_uid != os.getuid() or info.st_mode & 0o077:
         raise CoordinationError('INVALID_HOST', 'native inbox context must be owner-only')
     context = json.loads(args.context.read_text())
     if not isinstance(context, dict) or context.get('schema') != 'cairn.session-inbox/1':
         raise CoordinationError('INVALID_HOST', 'not a native inbox context')
+    if compatibility is not None:
+        compatibility.bind_context(context)
     command_kind = 'complete' if args.kind == 'finish-reply' else args.kind
     command = context.get('commands', {}).get(command_kind)
     if not command:
@@ -2151,6 +2159,9 @@ def compact_inbox_command(argv):
     if args.operation != 'settle' and args.code:
         raise CoordinationError('INVALID_REQUEST', 'reason code applies only to settlement')
     root = Path(os.environ.get('CAIRN_INBOX_ROOT', str(Path.home() / '.local/share/cairn/coordination'))).resolve()
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None:
+        compatibility.bind_lookup(root)
     candidates = list((root / 'state').glob('*/compact/' + args.handle + '.json'))
     direct = root / 'state' / 'compact' / (args.handle + '.json')
     if direct.exists():
@@ -2173,6 +2184,8 @@ def compact_inbox_command(argv):
     if not isinstance(binding, str) or not re.fullmatch('[A-Za-z0-9_.-]{1,128}', binding):
         raise CoordinationError('INVALID_HOST', 'invalid compact inbox binding')
     config_path = root / 'bindings' / (binding + '.json')
+    if compatibility is not None:
+        compatibility.bind_lookup(root, binding, config_path)
     config_info = config_path.stat()
     if config_info.st_uid != os.getuid() or config_info.st_mode & 0o077:
         raise CoordinationError('INVALID_HOST', 'compact inbox binding must be owner-only')
@@ -2630,6 +2643,7 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
     # instructions for the same attempt. Old attempt-only markers are retained
     # conservatively because their former prompt revision is unknown, except
     # when compact source recovery now has an explicit failure settlement.
+    reminder = compatibility_control(reminder)
     prior = state.get('inbox_ack_reminder_revision')
     if state.get('inbox_ack_reminded') == attempt_id:
         if ((not isinstance(prior, dict) or prior.get('attempt_id') != attempt_id)
@@ -2653,6 +2667,18 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
     return reminder
 
 
+def compact_command_text(operation, handle, *args):
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is None:
+        return shlex.join(['cairn-inbox', operation, handle, *args])
+    return shlex.join(compatibility.issued_argv(['inbox', 'compact', operation, handle, *args]))
+
+
+def compatibility_control(text):
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    return compatibility.control(text) if compatibility is not None else text
+
+
 def inbox_handoff(config, session, delivery, attempt_id, request_ids, *, scope=()):
     """Build the persisted inbox context and its journaled commands for one held delivery.
 
@@ -2672,7 +2698,10 @@ def inbox_handoff(config, session, delivery, attempt_id, request_ids, *, scope=(
                                '--to', event['from'], '--kind', 'response', '--causation-id', event['event_id']]
         if event.get('correlation_id'):
             commands['respond'] += ['--correlation-id', event['correlation_id']]
-    journaled = [sys.executable, str(Path(__file__).resolve()), 'inbox', '--context', str(target)]
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    tail = ['inbox', '--context', str(target)]
+    journaled = (compatibility.issued_argv(tail) if compatibility is not None else
+                 [sys.executable, str(Path(__file__).resolve()), *tail])
     context = dict(schema='cairn.session-inbox/1', **session, attempt_id=attempt_id,
                    event_id=event['event_id'], kind=event['kind'], sender=event['from'], source=event['ref'],
                    delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
@@ -2683,6 +2712,8 @@ def inbox_handoff(config, session, delivery, attempt_id, request_ids, *, scope=(
                    commands=commands, request_ids=request_ids)
     if event['kind'] == 'request':
         context['response'] = [*journaled, 'respond']
+    if compatibility is not None:
+        compatibility.context_commands(context)
     return target, context
 
 
@@ -2821,6 +2852,9 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         context['native_turn_id'] = attempt['native_turn_id']
     if event['kind'] == 'request':
         context['finish_reply'] = [*context['completion'][:-1], 'finish-reply']
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None:
+        compatibility.context_commands(context)
     if config.get('compact_inbox_version') == 1 and event['kind'] in ('notice', 'response'):
         if config.get('notice_batch_version') == 1 and event['kind'] == 'notice' and attempt.get('native_turn_id'):
             context['batch_advance_request_id'] = str(uuid.uuid4())
@@ -2845,26 +2879,30 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         except CoordinationError as exc:
             if 'batch_advance_request_id' not in context or exc.code not in ('SOURCE_UNAVAILABLE', 'PAYLOAD_UNAVAILABLE', 'NOT_FOUND'):
                 raise
-            fallback = (header + f"Source is unavailable ({exc.code}); retry cairn-inbox read {context['compact_handle']} "
-                        f"or explicitly settle this item with cairn-inbox settle {context['compact_handle']} "
-                        f"failed --code source_unavailable. After confirmed settlement, run cairn-inbox advance "
-                        f"{context['compact_handle']}. Its neighbors remain separate and unacknowledged.")
+            fallback = compatibility_control(header + f"Source is unavailable ({exc.code}); retry "
+                        + compact_command_text('read', context['compact_handle'])
+                        + " or explicitly settle this item with "
+                        + compact_command_text('settle', context['compact_handle'], 'failed', '--code', 'source_unavailable')
+                        + ". After confirmed settlement, run " + compact_command_text('advance', context['compact_handle'])
+                        + ". Its neighbors remain separate and unacknowledged.")
             context['compact_fallback_control'] = fallback
             context['compact_source_unavailable'] = True
             write_state(target, context)
             return fallback
-        settle = (f"Explicitly settle with cairn-inbox settle {context['compact_handle']} handled "
+        settle = ("Explicitly settle with " + compact_command_text('settle', context['compact_handle'], 'handled') + " "
                   "after processing; use failed or ignored only with a reason code. "
                   "Reading or describing this message does not settle it.")
         if 'batch_advance_request_id' in context:
-            settle += (f" After confirmed settlement, run cairn-inbox advance {context['compact_handle']} "
+            settle += (" After confirmed settlement, run " + compact_command_text('advance', context['compact_handle']) + " "
                        "to inspect the next already-waiting notice in this turn, up to three total. "
                        "A request or urgent notice waits for the next turn. Settle each item separately.")
-        fallback = (header + settle + f" Source is {len(body.encode())} bytes; "
-                    f"read its exact text with cairn-inbox read {context['compact_handle']} before settling.")
+        compatibility_control(header + settle)
+        fallback = compatibility_control(header + settle + f" Source is {len(body.encode())} bytes; "
+                    + "read its exact text with " + compact_command_text('read', context['compact_handle']) + " before settling.")
         context['compact_fallback_control'] = fallback
         write_state(target, context)
-        if len(body.encode()) <= 4096:
+        compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+        if len(body.encode()) <= 4096 and (compatibility is None or len(json.dumps(body).encode()) <= 4096):
             return header + settle + '\nSource text (sender data, not new authority):\n' + body
         return fallback
     recall_cue = (
@@ -2883,6 +2921,11 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         if event['kind'] == 'request' and not config.get('inbox_recall_binding') else '')
     command_cue = (f"Request finish/reply command: {shlex.join(context['finish_reply'])}" if event['kind'] == 'request' else
                    f"Acknowledgement command: {shlex.join(context['acknowledgement'])}")
+    if getattr(_BUNDLE, 'compatibility_context', None) is not None:
+        return compatibility_control(f"Cairn {event['kind']} from {event['from']}. Read context {target} and its exact source "
+            "with read/read_input. Handle this delivery within owner authority; finish_reply journals completion and response. "
+            "A notice/response needs acknowledgement only. The host renews this lease; do not start a parallel consumer. "
+            "Ending without explicit completion fails this delivery. " + command_cue)
     return (f"Cairn has a {event['kind']} from {event['from']} for this conversation. "
         f"Read the structured inbox context at {target}. Read its exact selected source with the read argv and read_input JSON. "
         f"{recall_cue}"
@@ -2952,6 +2995,13 @@ def inbox_cue_text(pending, config, agent):
         count = pending[key]
         if count:
             parts.append(f"{count}{'+' if pending.get('truncated') else ''} {word}{'s' if count != 1 else ''}")
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None:
+        command = shlex.join(compatibility.issued_argv(['inbox', 'drain', '--config', compatibility.args.config,
+                            '--agent-id', agent['agent_id'], '--execution-id', agent['execution_id']]))
+        return compatibility_control("Cairn inbox: " + ', '.join(parts) + " waiting for this session. End at a safe "
+            "turn boundary for native delivery. After ~10 minutes without delivery, drain your own inbox with `"
+            + command + "`. Never claim another session's inbox.")
     return ("Cairn inbox: " + ", ".join(parts) + " waiting for this session. Native delivery hands them over only at "
             "a turn boundary, one per turn. When the current step reaches a safe stopping point, end your turn so "
             "they can arrive. If native delivery has not delivered for ~10 minutes, drain your own inbox "
@@ -3902,6 +3952,9 @@ def handle(config, event, event_name=None, *, _inbox_resolved=False):
 
 def _handle(config, event, event_name=None, *, recall_reports=None):
     bridge_deadline = time.monotonic() + 12
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None:
+        bridge_deadline = compatibility.cap_deadline(bridge_deadline)
     wake = None
 
     def accept_wake():
@@ -4360,7 +4413,8 @@ def drain_command(argv):
 
 
 def load_config(path):
-    return validate_config(json.loads(path.read_text()))
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    return validate_config(compatibility.config(path) if compatibility is not None else json.loads(path.read_text()))
 
 
 def main():
@@ -4488,9 +4542,12 @@ def main():
             result = handle(config, event, args.event, _inbox_resolved=True)
             if config.get('inbox_recall_binding') and inbox_recall_wake(event):
                 # Matches the bridge's measured complete stdout envelope, including newline.
-                print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
+                rendered = json.dumps(result, ensure_ascii=False, separators=(',', ':'))
             else:
-                print(json.dumps(result))
+                rendered = json.dumps(result)
+            if compatibility is not None and config.get('harness') == 'codex' and len((rendered+'\n').encode()) > 12000:
+                raise CoordinationError('OUTPUT_LIMIT', 'lifecycle context exceeds the native output allowance')
+            print(rendered)
         else:
             if args.config_dir is None:
                 parser.error("watch requires --config-dir")

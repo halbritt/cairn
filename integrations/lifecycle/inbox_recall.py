@@ -263,6 +263,9 @@ LOCK_WAIT_SECONDS = 1.5
 
 def acquire_session_lock(lock, deadline=None):
     """Exclusive session lock, waiting at most LOCK_WAIT_SECONDS (and never past deadline)."""
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None and compatibility.hook:
+        deadline = compatibility.deadline if deadline is None else compatibility.cap_deadline(deadline)
     return _grant_ledger.acquire_session_lock(lock, deadline, wait_seconds=LOCK_WAIT_SECONDS)
 
 

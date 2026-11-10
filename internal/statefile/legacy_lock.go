@@ -32,6 +32,9 @@ func LegacyLock(ctx context.Context, path string, wait time.Duration, run func()
 		}
 		remaining := time.Until(limit)
 		if remaining <= 0 {
+			if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+				return context.DeadlineExceeded
+			}
 			return err
 		}
 		if remaining > 10*time.Millisecond {

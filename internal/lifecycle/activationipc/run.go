@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"math"
 	"os"
 	"syscall"
 	"time"
@@ -20,6 +21,13 @@ import (
 )
 
 func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
+	parent := os.Getppid()
+	if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(syscall.SIGKILL), 0, 0, 0); err != nil {
+		return refuse(diagnostic, err)
+	}
+	if parent < 2 || os.Getppid() != parent {
+		return refuse(diagnostic, errors.New("lifecycle parent exited"))
+	}
 	if len(args) < 3 || args[0] != "lifecycle" || args[1] != "binding" || args[2] != "activation" {
 		return refuse(diagnostic, errors.New("invalid private activation operation"))
 	}
@@ -41,7 +49,7 @@ func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 		return refuse(diagnostic, err)
 	}
 	remaining := *deadline - float64(now.Sec) - float64(now.Nsec)/1e9
-	if remaining <= 0 {
+	if remaining <= 0 || math.IsNaN(remaining) || math.IsInf(remaining, 0) {
 		return refuse(diagnostic, context.DeadlineExceeded)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(remaining*float64(time.Second)))
@@ -114,6 +122,10 @@ func refuse(out io.Writer, err error) int {
 	}{}
 	frame.Error.Class, frame.Error.Reason, frame.Error.Errno = class, reason, number
 	// These fixed fields cannot exceed the protocol bound or include source text.
-	json.NewEncoder(out).Encode(frame)
+	if err := json.NewEncoder(out).Encode(frame); err != nil {
+		// A broken diagnostic pipe cannot carry another frame. The parent treats
+		// missing/partial protocol data as failure, never as disabled activation.
+		return 1
+	}
 	return 1
 }

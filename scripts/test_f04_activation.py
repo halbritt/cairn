@@ -5,7 +5,9 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -42,26 +44,50 @@ def encoded(obj):
 
 
 class Fixture:
-    def __init__(self, root, binary, *, enabled=True, harness='codex'):
+    def __init__(self, root, binary, *, enabled=True, harness='codex', compact=False, binary_name='activation'):
         self.root = root
         root.mkdir(mode=0o700)
         (root / '.git').mkdir()
-        self.binary = root / 'bin' / 'activation'
+        self.binary = root / 'bin' / binary_name
         self.binary.parent.mkdir(mode=0o700)
         shutil.copyfile(binary, self.binary)
         self.binary.chmod(0o500)
         self.binding = root / 'binding.json'
         self.memory_path, self.coord_path = root / 'memory.json', root / 'coordination.json'
+        if compact:
+            (root/'bindings').mkdir(mode=0o700)
+            self.coord_path = root/'bindings'/'fixture.json'
         self.api = root / 'fixture-api'
         write(self.api, b'''#!/usr/bin/python3
-import json,sys,pathlib
+import json,sys,pathlib,time
 args=sys.argv[1:]; index=1
-while args[index].startswith('--'): index+=2
-op=args[index]; request=json.loads(sys.stdin.read() or '{}')
+if args[0]=='agent':
+ while args[index].startswith('--'): index+=2
+ op=args[index]
+else: op=args[0]
+body=sys.stdin.read(); request=json.loads(body or '{}') if args[0]=='agent' else {}
 with pathlib.Path(__file__).with_suffix('.calls').open('a') as log: log.write(op+'\\n')
+with pathlib.Path(__file__).with_suffix('.jsonl').open('a') as log: log.write(json.dumps(dict(operation=op,argv=args,input=body))+'\\n')
+selected=pathlib.Path(__file__).with_suffix('.replies')
+replies=json.loads(selected.read_text()) if selected.exists() else {}
+if op in replies:
+ queue=replies[op]; reply=queue.pop(0) if len(queue)>1 else queue[0]
+ if reply.pop('claim_identity',False):
+  reply['data']['attempt'].update(attempt_id=request['request_id'],session=request['session'])
+ if reply.pop('advance_identity',False) and reply['data']['attempt'] is not None:
+  reply['data']['attempt'].update(attempt_id=request['request_id'],session=request['session'])
+ time.sleep(reply.pop('delay',0))
+ selected.write_text(json.dumps(replies)); print(json.dumps(dict(schema='cairn.response/1',**reply)))
+ sys.exit(0 if reply['ok'] else reply.get('exit',4))
 data={'status':'READY','destination':{'name':'hosted','allow_local':False},'selected':[],'index':[],'omitted':{}}
 if op=='agent-register':
  data=dict(agent_id='33333333-3333-4333-8333-333333333333',execution_id='44444444-4444-4444-8444-444444444444',native_session_id=request['native_session_id'],display_name='agent-fixture',inbox='agent/fixture',context_revision=1,metadata=request['metadata'])
+ pathlib.Path(__file__).with_suffix('.agent').write_text(json.dumps(data))
+elif op in ('agent-context','agent-heartbeat'):
+ data=json.loads(pathlib.Path(__file__).with_suffix('.agent').read_text())
+ if op=='agent-context':
+  data.update(metadata=request['metadata'],context_revision=request['expected_revision']+1)
+  pathlib.Path(__file__).with_suffix('.agent').write_text(json.dumps(data))
 elif op in ('event-next','session-inbox-claim'): data={'delivery':None}
 elif op=='session-inbox-pending': data={'requests':0,'notices':0,'responses':0}
 elif op!='search':
@@ -73,6 +99,8 @@ print(json.dumps({'ok':True,'status':'OK','data':data}))
         self.memory = dict(common, state_dir=str(root/'memory-state'), recall_mode='agent_tools', context_bytes=9500,
                            recall_observations=False)
         self.coord = dict(common, state_dir=str(root/'coordination-state'), native_delivery=True, binding='fixture')
+        if compact:
+            self.coord.update(state_dir=str(root/'state'/'fixture'),compact_inbox_version=1,notice_batch_version=1)
         write(self.memory_path, encoded(self.memory))
         write(self.coord_path, encoded(self.coord))
         def descriptor(path): return dict(path=str(path), sha256=sha(path.read_bytes()))
@@ -118,24 +146,59 @@ print(json.dumps({'ok':True,'status':'OK','data':data}))
     def env(self):
         return {k:v for k,v in os.environ.items() if not k.startswith('CAIRN_') and k not in ('CODEX_HOME','CLAUDE_CONFIG_DIR')}
 
-    def activation(self, role='memory', raw=None):
+    def activation_argv(self, role='memory'):
         config = self.memory_path if role == 'memory' else self.coord_path
-        argv = [str(self.binary), 'lifecycle', 'binding', 'activation', '--entrypoint', role,
+        return [str(self.binary), 'lifecycle', 'binding', 'activation', '--entrypoint', role,
                 '--config', str(config), '--config-sha256', sha(config.read_bytes()),
                 '--binding-sha256', self.receipt['binding']['sha256'], '--receipt', str(self.receipt_path),
                 '--receipt-sha256', self.receipt_sha, '--deadline', str(time.monotonic()+13)]
-        return subprocess.run(argv, input=self.raw if raw is None else raw, capture_output=True, cwd=self.root, env=self.env(), timeout=15)
 
-    def public(self, role):
+    def activation(self, role='memory', raw=None):
+        return subprocess.run(self.activation_argv(role), input=self.raw if raw is None else raw,
+                              capture_output=True, cwd=self.root, env=self.env(), timeout=15)
+
+    def launcher(self, role, timeout=None):
         config = self.memory_path if role == 'memory' else self.coord_path
         vector = compat.launch_vector(sys.executable, self.receipt_path, self.receipt_sha, role,
-                                      role+'-hook.py', config, 13 if role=='memory' else 15, self.launch_root)
+                                      role+'-hook.py', config, timeout if timeout is not None else (13 if role=='memory' else 15), self.launch_root)
         raw = compat.launcher_bytes(vector)
         directory = self.launch_root/sha(raw)
         directory.mkdir(mode=0o700, exist_ok=True)
         launcher = directory/'inbox'
-        write(launcher, raw, 0o500)
-        return subprocess.run([str(launcher)], input=self.raw, capture_output=True, cwd=self.root, env=self.env(), timeout=18)
+        if launcher.exists():
+            assert launcher.read_bytes()==raw
+        else:
+            write(launcher, raw, 0o500)
+        return launcher
+
+    def public(self, role, timeout=None):
+        return subprocess.run([str(self.launcher(role,timeout))], input=self.raw, capture_output=True, cwd=self.root, env=self.env(), timeout=18)
+
+    def shell(self, argv, body=b'', env=None):
+        text=shlex.join(argv)
+        assert len(text.encode())<=512, text
+        return subprocess.run(['/bin/sh','-c',text],input=body,capture_output=True,cwd=self.root,env=env or self.env(),timeout=35)
+
+    def replies(self, values):
+        self.api.with_suffix('.replies').write_text(json.dumps(values))
+
+    def api_calls(self):
+        path=self.api.with_suffix('.jsonl')
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def publish_configuration(self, *, enabled=None):
+        """Stage a new test generation before issuing its independently pinned L."""
+        write(self.memory_path,encoded(self.memory))
+        write(self.coord_path,encoded(self.coord))
+        manifest=json.loads(self.binding.read_text())
+        if enabled is not None: manifest['enabled']=enabled
+        manifest['memory_config']['sha256']=sha(self.memory_path.read_bytes())
+        manifest['coordination_configs'][0]['sha256']=sha(self.coord_path.read_bytes())
+        write(self.binding,encoded(manifest))
+        for key in ('memory_config','coordination_configs'): self.receipt[key]=manifest[key]
+        self.receipt['binding']['sha256']=sha(self.binding.read_bytes())
+        write(self.receipt_path,encoded(self.receipt))
+        self.receipt_sha=sha(self.receipt_path.read_bytes())
 
 
 def scalar_tree(obj):
@@ -170,7 +233,8 @@ class F04ActivationTests(unittest.TestCase):
                 source.mkdir(mode=0o700)
                 name = SESSION + ('.inbox-recall.json' if harness=='claude' else '.memory-budget.json')
                 state = (dict(schema='cairn.inbox-recall-grants/1', session=SESSION, grants={}) if harness=='claude'
-                         else dict(schema='cairn.codex-memory-grants/1', session_id=SESSION, turns={}, pending={}))
+                         else dict(schema='cairn.codex-memory-grants/1', session_id=SESSION, active_turn_id=None, turns={},
+                                   pending=dict(limit_bytes=9500,emitted_hook_bytes=0,reserved_native_bytes=0,granted=False)))
                 state['opaque'] = dict(big=9007199254740993123456789, negative_zero=-0.0, nan=float('nan'),
                                        unicode='日本語<>&\ud800', true=True)
                 target = Path(f.memory['state_dir']); target.mkdir(mode=0o700)
@@ -197,6 +261,39 @@ class F04ActivationTests(unittest.TestCase):
         self.assertEqual(result.stdout,b'')
         self.assertEqual(json.loads(result.stderr)['error']['class'],'ValueError')
         self.assertFalse(path.exists())
+
+    def test_actual_public_callers_preserve_source_byte_decoding_and_exact_claude_owner(self):
+        for role in ('memory','coordination'):
+            for codec in ('utf-8-sig','utf-16','utf-16-be','utf-32','utf-32-be','duplicates'):
+                with self.subTest(role=role,codec=codec):
+                    f=self.fixture(role+codec,harness='claude')
+                    owner='日本語-owner'
+                    f.event['prompt_id']=owner
+                    # Coordination uses the required-only real retained wake.
+                    f.event['host_pid']=os.getpid()
+                    f.event['prompt']=(f'<channel source="cairn-events" native_session_id="{SESSION}" '
+                        'agent_id="33333333-3333-4333-8333-333333333333" execution_id="44444444-4444-4444-8444-444444444444" '
+                        'delivery_id="55555555-5555-4555-8555-555555555555">\n'+f.wake()+'\n</channel>')
+                    f.raw=(json.dumps(f.event,ensure_ascii=False).encode(codec) if codec!='duplicates' else
+                           encoded(f.event).replace(b'"hook_event_name":"UserPromptSubmit"',
+                             b'"Hook_Event_Name":"Stop","hook_event_name":"Stop","hook_event_name":"UserPromptSubmit"'))
+                    result=f.public(role)
+                    self.assertEqual((result.returncode,result.stderr),(0,b''),result.stdout)
+                    state=json.loads((Path(f.memory['state_dir'])/(SESSION+'.inbox-recall.json')).read_text())
+                    self.assertEqual(state['inbox_activation'],{'claude-channel:'+owner:True})
+
+    def test_lone_surrogate_claude_owners_keep_the_source_error_before_any_write(self):
+        for role in ('memory','coordination'):
+            for owner in ('\ud800','\udcff'):
+                with self.subTest(role=role,owner=repr(owner)):
+                    f=self.fixture(role+hex(ord(owner)),harness='claude')
+                    f.event['prompt_id']=owner;f.raw=encoded(f.event)
+                    with self.assertRaises(UnicodeEncodeError): oracle.claude_owner(f.event)
+                    result=f.public(role)
+                    self.assertEqual((result.returncode,result.stdout),(1 if role=='memory' else 2,b''))
+                    self.assertIn(b'phase=activation error_class=ValueError' if role=='memory' else b'phase=activation error_class=OtherError',result.stderr)
+                    self.assertFalse(Path(f.memory['state_dir']).exists())
+                    self.assertEqual(f.api_calls(),[])
 
     def test_both_complete_public_frontends_reach_retained_handlers(self):
         for role in ('memory','coordination'):
@@ -228,6 +325,49 @@ class F04ActivationTests(unittest.TestCase):
         self.assertEqual(result.stdout,b'')
         self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n')
         self.assertFalse(Path(f.memory['state_dir']).exists())
+
+    def required_wake(self,name,harness,body):
+        f=self.fixture(name,harness=harness)
+        f.event['host_pid']=os.getpid()
+        if harness=='claude':
+            f.event['prompt']=(f'<channel source="cairn-events" native_session_id="{SESSION}" '
+                'agent_id="33333333-3333-4333-8333-333333333333" execution_id="44444444-4444-4444-8444-444444444444" '
+                'delivery_id="55555555-5555-4555-8555-555555555555">\n'+f.wake()+'\n</channel>')
+        f.raw=encoded(f.event)
+        result=dict(status='READY',destination=dict(name='hosted',allow_local=False),
+                    selected=[dict(mandatory=True,record=dict(body=body))],index=[],omitted={})
+        f.replies({'search':[dict(ok=True,status='OK',data=result)]})
+        return f,f.public('coordination')
+
+    def test_complete_reserved_wake_retains_whole_required_context_at_exact_wire_limit(self):
+        for harness in ('codex','claude'):
+            with self.subTest(harness=harness):
+                # No delivery is admitted by the fixture store: this is the
+                # retained required-only wake path, not a fabricated grant.
+                probe,result=self.required_wake('probe-'+harness,harness,'R')
+                self.assertEqual((result.returncode,result.stderr),(0,b''),result.stdout)
+                overhead=len(result.stdout)-1
+                allowance=re.search(rb'Automatic exact-source read allowance: (\d+)',result.stdout).group(1)
+                maximum=9500-overhead+len(allowance)-1
+                self.assertGreater(maximum,1000)
+                exact,result=self.required_wake('exact-'+harness,harness,'R'*maximum)
+                self.assertEqual((result.returncode,result.stderr),(0,b''),result.stdout)
+                self.assertEqual(len(result.stdout),9500)
+                self.assertIn('R'*maximum,json.loads(result.stdout)['hookSpecificOutput']['additionalContext'])
+                suffix='.inbox-recall.json' if harness=='claude' else '.memory-budget.json'
+                activation=json.loads((Path(exact.memory['state_dir'])/(SESSION+suffix)).read_text())
+                owner='claude-channel:fixture-prompt' if harness=='claude' else TURN
+                self.assertEqual(activation['inbox_activation'],{owner:True})
+                grants=json.loads((Path(exact.memory['state_dir'])/(SESSION+'.inbox-recall.json')).read_text())
+                self.assertEqual(len(grants['grants']),1)
+                grant=next(iter(grants['grants'].values()))
+                self.assertEqual(grant['identity']['boundary'],'unadmitted_wake')
+                self.assertEqual(grant['output_bytes'],len(result.stdout))
+                self.assertLessEqual(grant['output_bytes']+grant['native_allowance_bytes'],9500)
+                over,result=self.required_wake('extra-'+harness,harness,'R'*(maximum+1))
+                self.assertEqual((result.returncode,result.stdout),(2,b''))
+                self.assertIn(b'NATIVE_PROMPT_REFUSED',result.stderr)
+                self.assertTrue(all(row['operation'] not in ('ack','complete') for row in over.api_calls()))
 
 
 if __name__=='__main__': unittest.main()

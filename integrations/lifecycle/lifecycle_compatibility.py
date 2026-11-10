@@ -2,7 +2,6 @@
 import errno
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 import selectors
@@ -11,6 +10,7 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 import types
 
@@ -134,13 +134,21 @@ class CompatibilityPreflightError(Exception):
     pass
 
 
+class ParentSignal(BaseException):
+    def __init__(self, number): self.number = number
+
+
 def guarded_sources(source):
     """Return bytes for a NEW immutable /3 snapshot; never rewrite a /2 bundle."""
-    prefix = (b'if not globals().get("_CAIRN_COMPATIBILITY_CONTEXT"):\n'
-              b'    import sys\n'
-              b'    sys.stderr.write("Cairn compatibility member requires its authenticated launcher\\n")\n'
-              b'    raise SystemExit(1)\n')
-    return {name: prefix + (Path(source) / name).read_bytes() for name in MEMBERS}
+    result = {}
+    for name in MEMBERS:
+        role = 'Cairn coordination' if name=='coordination.py' else 'Cairn lifecycle'
+        prefix = ('if not globals().get("_CAIRN_COMPATIBILITY_CONTEXT"):\n'
+                  '    import sys\n'
+                  '    sys.stderr.write(' + repr(role+' diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n') + ')\n'
+                  '    raise SystemExit(1)\n').encode()
+        result[name] = prefix + (Path(source) / name).read_bytes()
+    return result
 
 
 def launch_vector(python, receipt, receipt_sha256, role, entrypoint, config, timeout, launch_root, shell='/bin/sh'):
@@ -150,6 +158,10 @@ def launch_vector(python, receipt, receipt_sha256, role, entrypoint, config, tim
 
 
 def launcher_bytes(vector, shell='/bin/sh'):
+    if not os.path.isabs(shell) or any(c.isspace() or ord(c)<32 for c in shell):
+        raise ValueError('launcher shell requires an absolute single pathname')
+    if len(vector)<4 or not os.path.isabs(vector[0]) or vector[1:4]!=['-I','-S','-c']:
+        raise ValueError('launcher requires the isolated approved Python vector')
     return ('#!' + shell + '\nexec ' + shlex.join(vector) + ' -- "$@"\n').encode()
 
 
@@ -160,6 +172,7 @@ class InvocationContext:
         self.current_raw = self.current = self.manifest = self.memory = self.coordinators = None
         self.enabled = None
         self.bundle = None
+        self.hook = not (args.role == 'coordination' and args.tail[:1] == ['inbox'])
         self.launcher_raw = launcher_bytes(vector, args.shell)
         self.launcher = Path(args.launch_root) / hashlib.sha256(self.launcher_raw).hexdigest() / 'inbox'
 
@@ -189,6 +202,19 @@ class InvocationContext:
             raise ValueError('checked parent observation required')
         if self.enabled is not None:
             raise RuntimeError('activation already resolved')
+        name = event.get('hook_event_name')
+        # H is selected in the external vector. Check the installed row when
+        # one exists; an unknown/excluded callback still reaches source
+        # admission without using its event data to choose a fresh timeout.
+        rows = ({'SessionStart':13,'UserPromptSubmit':13,'PreCompact':150,
+                 **({'Stop':150} if config.get('harness')=='codex' else
+                    {'SessionEnd':150,'PostToolUse':13,'PostToolUseFailure':13})}
+                if self.args.role=='memory' else
+                {'SessionStart':15,'UserPromptSubmit':15,'Stop':15,'SessionEnd':2,'PostToolUse':2,
+                 **({'Interrupt':2} if config.get('harness')=='codex' else {})})
+        expected = rows.get(name)
+        if expected is not None and float(self.args.hook_timeout) != expected:
+            raise CompatibilityPreflightError()
         self.enabled = self.activation(raw)
         if not self.enabled:
             result = dict(config)
@@ -213,6 +239,8 @@ class InvocationContext:
             frame = json.loads(err.decode('utf-8'))
             error = frame['error']
             if set(frame) != {'error'} or set(error) != {'class', 'reason', 'errno'} or error['reason'] not in ('activation', 'compatibility_receipt'):
+                raise ValueError()
+            if json.dumps(frame, separators=(',', ':'), ensure_ascii=True).encode() + b'\n' != err:
                 raise ValueError()
             if error['errno'] is not None and (type(error['errno']) is not int or error['errno'] < 0):
                 raise ValueError()
@@ -242,9 +270,53 @@ class InvocationContext:
     def child(self, argv, raw):
         if time.monotonic() >= self.deadline:
             raise TimeoutError(errno.ETIMEDOUT, 'lifecycle activation deadline')
-        child = subprocess.Popen(argv, executable='/proc/self/fd/' + str(self.binary_fd),
-                                 pass_fds=(self.binary_fd,), stdin=subprocess.PIPE,
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
+            # Popen maps ECHILD to status zero when SIGCHLD is ignored. That
+            # cannot establish the private protocol's required successful exit.
+            raise subprocess.SubprocessError('activation wait status unavailable')
+        child = None
+        previous = {}
+        interrupted = None
+        failure = None
+        result = None
+        cleaning = False
+        def interrupt(number, frame):
+            nonlocal interrupted
+            interrupted = number
+            # During Popen construction retain the signal until its owned PID
+            # is available, then stop/reap it before preserving the host signal.
+            if child is not None and not cleaning: raise ParentSignal(number)
+        try:
+            if threading.current_thread() is threading.main_thread():
+                for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                    old = signal.getsignal(number)
+                    if old in (signal.SIG_DFL, signal.default_int_handler):
+                        previous[number] = old
+                        signal.signal(number, interrupt)
+            if interrupted is not None: raise ParentSignal(interrupted)
+            child = subprocess.Popen(argv, executable='/proc/self/fd/' + str(self.binary_fd),
+                                     pass_fds=(self.binary_fd,), stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if interrupted is not None: raise ParentSignal(interrupted)
+            result = self.child_io(child, raw)
+        except ParentSignal as stop:
+            interrupted = stop.number
+        except BaseException as error:
+            failure = error
+        finally:
+            cleaning = True
+            if child is not None:
+                if child.poll() is None: child.kill()
+                child.wait()
+                for pipe in (child.stdin, child.stdout, child.stderr): pipe.close()
+            for number, old in previous.items(): signal.signal(number, old)
+        if interrupted is not None:
+            os.kill(os.getpid(), interrupted)
+            raise SystemExit(128 + interrupted)
+        if failure is not None: raise failure
+        return result
+
+    def child_io(self, child, raw):
         streams = {child.stdout: (bytearray(), 64), child.stderr: (bytearray(), 4096)}
         selector = selectors.DefaultSelector()
         for pipe in streams:
@@ -283,9 +355,6 @@ class InvocationContext:
             return bytes(streams[child.stdout][0]), bytes(streams[child.stderr][0]), code
         finally:
             selector.close()
-            if child.poll() is None: child.kill()
-            child.wait()
-            for pipe in (child.stdin, child.stdout, child.stderr): pipe.close()
 
     def checked_binding(self):
         if self.manifest is not None: return
@@ -295,6 +364,9 @@ class InvocationContext:
         if hashlib.sha256(raw).hexdigest() != self.receipt['binding']['sha256']:
             raise ValueError('inbox recall binding changed')
         self.manifest = json.loads(raw)
+        if (not isinstance(self.manifest,dict) or self.manifest.get('schema')!='cairn.inbox-recall-binding/3'
+                or type(self.manifest.get('enabled')) is not bool):
+            raise ValueError('unsupported inbox recall binding')
         for key in ('binary', 'memory_config', 'coordination_configs'):
             if self.manifest[key] != self.receipt[key]: raise ValueError('mixed binding and receipt selection')
         configs = []
@@ -303,6 +375,16 @@ class InvocationContext:
             if hashlib.sha256(raw).hexdigest() != descriptor['sha256']: raise ValueError('inbox recall binding changed')
             configs.append(self.current if descriptor['path'] == self.args.config else json.loads(raw.decode('utf-8')))
         self.memory, self.coordinators = configs[0], configs[1:]
+        self.bundle.load('inbox_binding').validate_configuration_profiles(self.current, path, self.memory, self.coordinators)
+
+    def remaining(self, limit):
+        if not self.hook: return limit
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0: raise TimeoutError(errno.ETIMEDOUT, 'lifecycle hook deadline')
+        return min(limit, remaining)
+
+    def cap_deadline(self, deadline):
+        return min(deadline,self.deadline) if self.hook else deadline
 
     def coordinates_wake(self, config, event):
         self.checked_binding()
@@ -316,16 +398,59 @@ class InvocationContext:
 
     def validate(self, config, require_enabled=False):
         self.checked_binding()
-        if require_enabled and not self.manifest['enabled']: raise ValueError('inbox recall binding is disabled')
+        enabled = self.enabled if self.enabled is not None else self.manifest['enabled']
+        if require_enabled and not enabled: raise ValueError('inbox recall binding is disabled')
         if config not in [self.memory, *self.coordinators]: raise ValueError('incompatible inbox recall profile binding')
         return self.bundle.load('memory'), self.memory
 
     def issued_argv(self, tail):
         raw, _ = self.opened(str(self.launcher), 65536)
         if raw != self.launcher_raw: raise CompatibilityPreflightError()
+        if stat.S_IMODE(os.stat(self.launcher,follow_symlinks=False).st_mode)!=0o500:
+            raise CompatibilityPreflightError()
         result = [str(self.launcher), *map(str, tail)]
         if len(shlex.join(result).encode()) > 512: raise ValueError('issued lifecycle command exceeds budget')
         return result
+
+    def control(self, text):
+        if len(text.encode()) > 2048: raise ValueError('lifecycle control exceeds budget')
+        return text
+
+    def context_commands(self, context):
+        rendered = {key:shlex.join(context[key]) for key in
+                    ('read','completion','acknowledgement','response','finish_reply') if key in context}
+        if any(len(text.encode())>512 for text in rendered.values()) or sum(len(text.encode()) for text in rendered.values())>2048:
+            raise ValueError('issued lifecycle command presentation exceeds budget')
+        context['shell_commands'] = rendered
+
+    def bind_lookup(self, root, binding=None, config_path=None):
+        self.checked_binding()
+        selected = Path(self.current['state_dir']).resolve()
+        if root.resolve() != selected.parent.parent:
+            raise CompatibilityPreflightError()
+        if binding is not None and binding != self.current['binding']:
+            raise CompatibilityPreflightError()
+        if config_path is not None and config_path.resolve() != Path(self.args.config).resolve():
+            raise CompatibilityPreflightError()
+
+    def bind_context_path(self, path):
+        self.checked_binding()
+        if path.resolve().parent != (Path(self.current['state_dir'])/'inbox').resolve():
+            raise CompatibilityPreflightError()
+
+    def bind_context(self, context):
+        if context.get('state_dir') != self.current['state_dir']:
+            raise CompatibilityPreflightError()
+        for index, command in enumerate([context.get('read'), *context.get('commands', {}).values()]):
+            if not isinstance(command, list) or not command or command[0] != self.current['cairn']:
+                raise CompatibilityPreflightError()
+            for flag,key in (('--socket','socket'),('--token-file','token_file')):
+                if command.count(flag)!=1 or command[command.index(flag)+1:][:1] != [self.current[key]]:
+                    raise CompatibilityPreflightError()
+            # Inner store argv keep their retained machine form. The model
+            # executes the bounded outer wrapper, or the direct read command.
+            if index == 0 and len(shlex.join(command).encode())>512:
+                raise ValueError('issued lifecycle command exceeds budget')
 
 
 def run_checked(args, receipt, sources, binary_fd, deadline, vector, opened):
@@ -341,6 +466,10 @@ def run_checked(args, receipt, sources, binary_fd, deadline, vector, opened):
         tail = args.tail or (['--config', args.config] if args.role == 'memory' else ['hook', '--config', args.config])
         for index, arg in enumerate(tail):
             if arg == '--config' and (index + 1 == len(tail) or tail[index+1] != args.config): raise CompatibilityPreflightError()
+            if arg.startswith('--config=') and arg != '--config='+args.config: raise CompatibilityPreflightError()
+            if arg.split('=',1)[0] in ('--receipt','--receipt-sha256','--role','--entrypoint','--hook-timeout','--launch-root','--shell'):
+                raise CompatibilityPreflightError()
+        if args.role=='memory' and tail!=['--config',args.config]: raise CompatibilityPreflightError()
         if args.role == 'coordination' and tail[0] not in ('hook', 'inbox'): raise CompatibilityPreflightError()
         role = bundle.load(args.role, entry_path=Path(receipt['snapshot_root']) / args.entrypoint)
         sys.argv = [role.__file__, *tail]

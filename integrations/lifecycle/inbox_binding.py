@@ -33,6 +33,23 @@ def _checked_file(spec):
     return path, raw
 
 
+def validate_configuration_profiles(config, path, memory, coordinators):
+    """The retained predicate over already checked configuration snapshots."""
+    profiles = [memory, *coordinators]
+    homes = [str(Path(c['config_home']).resolve()) if c.get('config_home') else None for c in coordinators]
+    if len(coordinators) > 1 and (None in homes or len(homes) != len(set(homes))):
+        raise _refusal('shared memory binding requires distinct explicit configuration homes', 'config_homes')
+    if (config.get('harness') not in ('codex', 'claude') or memory.get('recall_mode') != 'agent_tools'
+            or any(not c.get('native_delivery') for c in coordinators)
+            or any(c.get('inbox_recall_binding') != str(path) for c in profiles)
+            or any(c.get(k) != memory.get(k) for c in profiles for k in ('harness', 'cairn', 'socket', 'token_file', 'repo'))
+            or config not in profiles or not all(Path(c['state_dir']).is_absolute() for c in profiles)
+            or any(Path(memory['state_dir']).resolve() == Path(c['state_dir']).resolve() for c in coordinators)
+            or any(c.get('config_home') and not Path(c['config_home']).is_absolute() for c in coordinators)
+            or type(memory.get('context_bytes')) is not int or not 1000 <= memory['context_bytes'] <= 9500):
+        raise _refusal('incompatible inbox recall profile binding', 'profile')
+
+
 class InboxBinding:
     """Binding policy over one complete lifecycle bundle and its grant ledger."""
 
@@ -104,19 +121,7 @@ class InboxBinding:
         if not isinstance(descriptors, list) or not 1 <= len(descriptors) <= 8:
             raise _refusal('one to eight explicit coordination configurations required', 'coordination_count')
         coordinators = [json.loads(_checked_file(item)[1]) for item in descriptors]
-        profiles = [memory, *coordinators]
-        homes = [str(Path(c['config_home']).resolve()) if c.get('config_home') else None for c in coordinators]
-        if len(coordinators) > 1 and (None in homes or len(homes) != len(set(homes))):
-            raise _refusal('shared memory binding requires distinct explicit configuration homes', 'config_homes')
-        if (config.get('harness') not in ('codex', 'claude') or memory.get('recall_mode') != 'agent_tools'
-                or any(not c.get('native_delivery') for c in coordinators)
-                or any(c.get('inbox_recall_binding') != str(path) for c in profiles)
-                or any(c.get(k) != memory.get(k) for c in profiles for k in ('harness', 'cairn', 'socket', 'token_file', 'repo'))
-                or config not in profiles or not all(Path(c['state_dir']).is_absolute() for c in profiles)
-                or any(Path(memory['state_dir']).resolve() == Path(c['state_dir']).resolve() for c in coordinators)
-                or any(c.get('config_home') and not Path(c['config_home']).is_absolute() for c in coordinators)
-                or type(memory.get('context_bytes')) is not int or not 1000 <= memory['context_bytes'] <= 9500):
-            raise _refusal('incompatible inbox recall profile binding', 'profile')
+        validate_configuration_profiles(config, path, memory, coordinators)
         engine = self._bundle.load_pinned(manifest['engine'], 'memory')
         if getattr(engine, 'INBOX_RECALL_VERSION', None) != 1:
             raise _refusal('pinned memory engine lacks the inbox recall contract', 'engine_contract')
