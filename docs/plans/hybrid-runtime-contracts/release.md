@@ -15,6 +15,8 @@ vector-norm claims. The initial source baseline is
 `d3c255a4bb75438e93527eaa1d83da780fd11eea`; inventory observations must record
 their own current source and artifact identities.
 
+Owner decision `98d46758-c61c-42b4-9912-76cf9dfb0dc0` (2026-11-10, version 1) replaces C2, FIRST and source-only test holds with isolation from production homes, production sockets, network and host processes, permits separate lifecycle and semantic release trains while retirement waits for both, and retains all other holds and the requirement for explicit grants for production changes.
+
 ## Ownership and interfaces
 
 The release team owns installation, host adapters, independent acceptance,
