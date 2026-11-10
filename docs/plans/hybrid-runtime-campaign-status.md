@@ -48,11 +48,27 @@ observed; malformed observations, other owner gaps, model-asset closure and
 actual construction/file-mapping errors still refuse. The strict rank gate and
 the three-field embedding wire identity are unchanged. Private fixtures cover
 the named gaps, observed/unobserved distinction, digest sensitivity, invalid
-observations and initialization before EOF/identity input. These fixture changes
-have not yet been independently reviewed or executed; this source change claims
-no new model, numerical, runtime or production qualification. Historical missing
+observations and initialization before EOF/identity input. Independent source
+review accepted candidate `0513d6b8` in round 1 without conditions
+(`71f9aac6-e06d-4fc7-b88d-d3f9b3d75d21@1`). One command in the shared isolation
+wrapper passed the lead-selected 20 fixtures: ten item 7 checks and ten
+compatibility, refusal and wire checks, with 75 older checks filtered out. The
+run exited 0 in 88.094604474 seconds with zero retries
+(`8719a0ef-3e5f-4fe4-a87b-148918d55685@1`). The reviewer's proposed 60-fixture
+selector was not run. The raw selected names and summary matched the prepared
+manifest, and all 105 candidate source pins remained unchanged.
+
+These synthetic fixtures did not call the real factory load/construct path,
+open model/runtime payloads or run a production worker, ORT session or inference.
+The retained component evidence covers its selected compiler/artifact graph and
+surviving objects; it does not establish complete temporary-object/link-input or
+header closure, actual-session T1, CPU/FENV behavior, rule-C numerical acceptance
+or runtime/production qualification. Landing updates only this status wording;
+reviewed/tested Rust and consumed inputs are preserved. Historical missing
 observation refusals below describe their earlier source; they are superseded
-only for these ten unavailable embedding observations.
+only for these ten unavailable embedding observations. Reviewer notes about a
+currently unreachable reserved input key and an additional empty-flags fixture
+remain nonblocking; no optional code fix is included.
 
 The table records published source and extensions through the native embedding
 entry, tested as `d41be9e7`, on 2026-11-10. The Go libraries
