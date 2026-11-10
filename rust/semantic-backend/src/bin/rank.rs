@@ -1,8 +1,14 @@
 //! Source entry wiring only. Parsing a plan does not admit native/model execution.
+#[path = "entry/cleanup.rs"]
+mod cleanup;
 #[path = "rank_entry/plan.rs"]
 mod plan;
 
-use cairn_semantic_backend::assets::{AssetPaths, CleanupErrors, NativeFactory};
+use cleanup::{invoke_native, NativeFailure};
+#[cfg(test)]
+use cleanup::{with_cleanup, CleanupReport};
+
+use cairn_semantic_backend::assets::AssetPaths;
 use cairn_semantic_protocol::CachePolicy;
 use cairn_semantic_rank::{run_rank_once, run_rank_stream, InvocationError};
 use plan::{LaunchPlan, Mode};
@@ -31,65 +37,12 @@ fn dispatch<D: Driver>(plan: LaunchPlan, driver: &mut D) -> Result<(), D::Error>
     }
 }
 
-trait CleanupReport {
-    fn is_empty(&self) -> bool;
-}
-#[derive(Debug)]
-struct RunFailure<E, C> {
-    invocation: Option<E>,
-    cleanup: C,
-}
-
-fn with_cleanup<E, C: CleanupReport>(
-    invoke: impl FnOnce() -> Result<(), E>,
-    collect: impl FnOnce() -> C,
-) -> Result<(), RunFailure<E, C>> {
-    // The driver returns (and drops its owners) before draining shared observers,
-    // including on invocation failure. Keep both causes instead of using `?` here.
-    let invocation = invoke();
-    let cleanup = collect();
-    if invocation.is_ok() && cleanup.is_empty() {
-        Ok(())
-    } else {
-        Err(RunFailure {
-            invocation: invocation.err(),
-            cleanup,
-        })
-    }
-}
-
-#[derive(Debug)]
-struct NativeCleanup {
-    ort: Vec<cairn_semantic_ort::Error>,
-    math: Vec<cairn_semantic_math::Error>,
-}
-impl CleanupReport for NativeCleanup {
-    fn is_empty(&self) -> bool {
-        self.ort.is_empty() && self.math.is_empty()
-    }
-}
-type NativeFailure = RunFailure<InvocationError, NativeCleanup>;
-
-fn invoke_native(
-    paths: AssetPaths,
-    invoke: impl FnOnce(NativeFactory) -> Result<(), InvocationError>,
-) -> Result<(), NativeFailure> {
-    let cleanup = CleanupErrors::default();
-    with_cleanup(
-        || invoke(NativeFactory::new(paths, cleanup.clone())),
-        || NativeCleanup {
-            ort: cleanup.ort.drain(),
-            math: cleanup.math.drain(),
-        },
-    )
-}
-
 struct NativeDriver<'a, R, W> {
     input: &'a mut R,
     output: &'a mut W,
 }
 impl<R: BufRead, W: Write> Driver for NativeDriver<'_, R, W> {
-    type Error = NativeFailure;
+    type Error = NativeFailure<InvocationError>;
     fn rank_once(&mut self, paths: AssetPaths) -> Result<(), Self::Error> {
         invoke_native(paths, |factory| {
             run_rank_once(self.input, self.output, factory)

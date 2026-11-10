@@ -1,6 +1,7 @@
-//! Owning native rank composition. No CLI, routing, worker handshake or qualification.
+//! Owning native rank and embedding composition; worker qualification remains separate.
 mod arithmetic;
 pub mod assets;
+pub mod embedding_native;
 pub mod embedding_response;
 pub mod identity;
 mod model_assets;

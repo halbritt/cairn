@@ -1,4 +1,4 @@
-//! Explicit local assets; construction is called by rank only AFTER prefix/hash admission.
+//! Explicit consumed assets; each caller owns its construction-order policy.
 use crate::{arithmetic::operation, identity, LoadedBackend};
 use cairn_semantic_rank::backend::BackendError;
 use cairn_semantic_tokenizer::{PreparedInputs, PreparedTokenizer};

@@ -12,6 +12,13 @@ test = true
 bench = false
 harness = true
 
+[[bin]]
+name = "cairn-semantic-embed"
+path = "src/bin/embed.rs"
+test = true
+bench = false
+harness = true
+
 [dependencies]
 cairn-semantic-rank = { path = "../semantic-rank" }
 cairn-semantic-protocol = { path = "../semantic-protocol" }

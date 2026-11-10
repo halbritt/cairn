@@ -1,5 +1,7 @@
 # Semantic worker contract
 
+Owner decision `98d46758-c61c-42b4-9912-76cf9dfb0dc0@1` takes precedence over conflicting score, isolation, release-train and conditional model-load clauses in this contract.
+
 Revision: `semantic/4`, proposed maximum-document evidence amendment to the
 accepted `semantic/3`. Characterization baseline:
 `d3c255a4bb75438e93527eaa1d83da780fd11eea` (2026-11-06).

@@ -1,7 +1,8 @@
-# Native rank backend composition source
+# Native rank and embedding backend source
 
 This local crate connects the published rank, tokenizer, ORT and math owners.
-It ships no CLI, installer, worker handshake, Go routing or deployment change.
+Explicit rank and embedding binary targets provide source entry wiring;
+installer, worker handshake, Go routing and deployment changes remain separate.
 The generic `run_rank_once` and `run_rank_stream` entry points are re-exported;
 the rank engine calls `NativeFactory::construct` only after its existing
 prefix/hash admission. Ordinary validation, tokenization laziness, note/chunk
@@ -30,9 +31,29 @@ tokenizer. ORT retains its model bytes and runtime Rc. Field/drop order releases
 the session before the other component owners; existing component cleanup
 errors remain in `CleanupErrors`. Keep a clone outside the factory/session,
 drop all owners, then drain both its `ort` and `math` observers. A failed
-identity initialization returns `PendingInitialization` with the loaded owner
+rank identity initialization returns `PendingInitialization` with the loaded owner
 and observations intact; the factory's terminal failure drops that owner and
 retains cleanup diagnostics in the supplied observers. It does not retry.
+
+The embedding adapter in `embedding_native` retains that same loaded owner and
+requires its protected `embedding_identity` observations before returning a
+session; missing observations drop the owner and remain terminal. The response
+loop repeats its own protected identity guard before reading, including EOF and
+identity-only input. Embedding uses only the existing batch-one first-pass path,
+then converts its matrix storage to owned rows without another normalization or
+matvec. The loop owns full count, shape, finite/nonzero and serialization guards.
+
+The explicit `cairn-semantic-embed` target accepts the existing absolute
+`--model-dir`, `--ort-runtime`, `--openblas`, `--gfortran`, `--quadmath` and
+`--source-root` flags through the shared rank launch-plan parser; `--stream` is
+refused and the rank cache environment is not read. Rank and embedding entries
+share invocation/cleanup collection, retaining both failures after owners drop.
+Argument failures exit 2, invocation/cleanup failures exit 1, and raw request
+bytes are excluded from invocation diagnostics. Source-only private fixtures
+are authored for this adapter/entry; they have not been compiled or run yet.
+Production `main`, real factory loading and observation/getter/model/session
+calls remain excluded from their proposed component selector. Source publication
+does not qualify real initialization, native cleanup or a worker process.
 
 Production `encode` and `decode` call the actual prepared rank tokenizer with
 the existing policies. The lone-surrogate UTF-8 bridge retains its structured

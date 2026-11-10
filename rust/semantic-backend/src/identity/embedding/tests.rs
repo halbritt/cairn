@@ -1,5 +1,6 @@
 // Private synthetic report data, never a claim of actual native observations.
 mod response_tests;
+mod entry_tests;
 use super::super::RunningImageProvenance;
 use super::*;
 use std::path::PathBuf;

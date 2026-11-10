@@ -397,6 +397,21 @@ missing observations. This component pass and source publication establish no
 usable initialization, Python parity, actual worker, Go-supervisor or campaign
 acceptance. The conditional post-item6 no-inference EOF load remains unexecuted.
 
+The item 6 native embedding adapter and explicit `cairn-semantic-embed` target
+are now authored source, pending their existing reviewer and selected pure
+component check. The adapter retains the real loaded owner, gates readiness on
+protected embedding observations, and uses only the existing batch-one first
+normalization. The binary reuses the six-path parser, rejects rank stream mode,
+and shares invocation/cleanup collection with rank. Seventeen new private
+adapter/dispatch/lifetime/failure fixtures are authored and unexecuted; the
+proposed selector excludes production `main`, actual factory loading and native
+observations/model/session calls. Synthetic cleanup and guard fixtures establish
+no actual native lifecycle or usable initialization. No tests, builds, runtime
+kit or model-load attempt ran during this authoring. One precedence sentence in
+the Semantic contract cites owner decision `98d46758-c61c-42b4-9912-76cf9dfb0dc0@1`;
+that source amendment grants no additional execution. Item 6 review, component
+validation and landing precede the separately admitted tester-only EOF load.
+
 The paired value/transcript component passed formatting, build, vet and scoped
 race checks for those two packages. Foundation cleared the exact four-file value
 dependency, and both transcript reviewers accepted the source and fixture delta.
