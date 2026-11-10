@@ -12,11 +12,12 @@ acceptance remain open.
 
 ## Inspect the implementation
 
-The following slices are published through
-[`249f1eda`](https://github.com/halbritt/cairn/commit/249f1edabb9453dc664e3e0a9e12cbcbde42a080)
-on 2026-11-09. The Go libraries are callable source; the Rust libraries have no
-executable worker or initialized model backend. Their publication does not
-activate the migration on supported hosts.
+The table records published source and extensions through the Rust rank/stream
+entry
+[`cb6dbc90`](https://github.com/halbritt/cairn/commit/cb6dbc906661e771431a22238d0fd75f5afedd18)
+on 2026-11-09. The Go libraries are callable source. Rust has an explicit
+rank/stream entry target; model initialization and actual-worker qualification
+remain open. Publication does not activate the migration on supported hosts.
 
 | Component | Source and publication | Implemented behavior | Remaining acceptance and area owner |
 | --- | --- | --- | --- |
@@ -31,13 +32,14 @@ activate the migration on supported hosts.
 | Rust single-note score reduction | [library](../../rust/semantic-score/src/lib.rs), [boundary](../../rust/semantic-score/README.md); [`94cf6685`](https://github.com/halbritt/cairn/commit/94cf66857e7c96602f9dc3bc4b3a1d0984091c1c) | Ordered maximum over supplied chunk similarities, final clamp, scaling and ties-to-even rounding | Semantic: tokenizer/model execution, matrix arithmetic and actual worker/caller qualification |
 | Rust decoded protocol, hash admission and cache payloads | [protocol](../../rust/semantic-protocol/src/lib.rs), [hash](../../rust/semantic-protocol/src/hash.rs), [cache](../../rust/semantic-protocol/src/cache.rs), [boundary](../../rust/semantic-protocol/README.md); [`e4e8e80d`](https://github.com/halbritt/cairn/commit/e4e8e80d93cf5bd2ca43bec817006198d7c05632), extended by [`66dd1540`](https://github.com/halbritt/cairn/commit/66dd15409359d1f28b32fab7896dec3e2c425053) | Lossless decoded values and ordered prefix guards, body hashes, atomic cache restore and payload codecs with shared JSON rendering and byte measurement | Semantic: real constructor/model identity, tokenizer and worker/runtime qualification; unsupported depth remains explicitly pending |
 | Rust JSON input and reply codecs | [codec](../../rust/semantic-protocol/src/json.rs), [boundary](../../rust/semantic-protocol/README.md); [`b244e26b`](https://github.com/halbritt/cairn/commit/b244e26b85673d15308f7fbac9f36c311beaad23), corrected in [`114cf677`](https://github.com/halbritt/cairn/commit/114cf677082af2729e0e744a3c83fee6eb40bceb) | Byte framing, Unicode/JSON decoding, reply serialization and shared cache measurement over lossless values | Semantic: inputs deeper than 64 containers remain pending; actual worker, model, runtime policy and transport qualification remain open |
-| Rust rank and stream engine | [request engine](../../rust/semantic-rank/src/rank.rs), [bounded I/O](../../rust/semantic-rank/src/stream.rs), [backend interface](../../rust/semantic-rank/src/backend.rs), [boundary](../../rust/semantic-rank/README.md); [`d1c78f8c`](https://github.com/halbritt/cairn/commit/d1c78f8cbffc01a19bbc5469f4fca0e65210e9f6) | Joins protocol, hash admission, cache and score components; orders backend calls and flushes each stream reply before reading the next request | Semantic: actual tokenizer/model/numerical backend, executable and Go supervisor; component control-flow evidence does not qualify those implementations |
+| Rust rank and stream engine | [request engine](../../rust/semantic-rank/src/rank.rs), [bounded I/O](../../rust/semantic-rank/src/stream.rs), [backend interface](../../rust/semantic-rank/src/backend.rs), [boundary](../../rust/semantic-rank/README.md); [`d1c78f8c`](https://github.com/halbritt/cairn/commit/d1c78f8cbffc01a19bbc5469f4fca0e65210e9f6) | Joins protocol, hash admission, cache and score components; orders backend calls and flushes each stream reply before reading the next request | Semantic: actual tokenizer/model/numerical behavior and Go supervisor remain unqualified; the separate entry target below has only bounded component evidence |
 | Rust prepared tokenizer and input tensors | [preparation](../../rust/semantic-tokenizer/src/prepared.rs), [tensors](../../rust/semantic-tokenizer/src/tensors.rs), [boundary](../../rust/semantic-tokenizer/README.md); [`d732f5fe`](https://github.com/halbritt/cairn/commit/d732f5fe292aff17cfc54b580c1ada433ac795e2), fixture correction [`37a50424`](https://github.com/halbritt/cairn/commit/37a50424872d8b3229ad97b80dd3ed8aa0e4888a) | Uses Tokenizers 0.23.2 with supplied model configuration; maintains separate model/rank policies and produces batch-one int64 IDs, attention masks and zero model token-type rows | Semantic: prepared-asset comparison of all 294 token IDs/lengths, actual model/ORT and numerical backend, executable and Go supervisor remain unqualified |
 | Rust ORT runtime and raw CLS inference | [runtime/session owners](../../rust/semantic-ort/src/lib.rs), [native bridge](../../rust/semantic-ort/native/bridge.c), [boundary](../../rust/semantic-ort/README.md); [`2cdedfbf`](https://github.com/halbritt/cairn/commit/2cdedfbf56d67848f1921cd5ed81253b2539eaf2) | ORT 1.29 C-API runtime/session ownership, batch-one int64 feeds and raw 384-component CLS bits from the named output | Semantic: actual model/session execution and raw-bit parity, numerical backend, worker and Go supervisor; component tests do not load ORT or run a model |
 | Rust full-occurrence matrix-vector stage | [layout](../../rust/semantic-math/src/layout.rs), [runtime owner](../../rust/semantic-math/src/lib.rs), [native computation](../../rust/semantic-math/native/compute.c), [boundary](../../rust/semantic-math/README.md); [`4b54d04e`](https://github.com/halbritt/cairn/commit/4b54d04ef03dd8ffbbf9b09b57abb307d7857741), accepted lock [`dc6a066d`](https://github.com/halbritt/cairn/commit/dc6a066d76e58d0222cb8e8234c0ba1a29c70651) | Preserves all passage occurrences in source order at width 384; selects empty output, one native dot product, or one full-matrix GEMV using the pinned OpenBLAS bridge | Semantic: actual native loading and numerical parity, complete rank backend, worker and Go supervisor; no BLAS computation was exercised by the component tests |
 | Rust first-pass and full-occurrence normalization | [stage owners](../../rust/semantic-math/src/normalization.rs), [native arithmetic](../../rust/semantic-math/native/normalization.c), [boundary](../../rust/semantic-math/README.md); [`11f1395e`](https://github.com/halbritt/cairn/commit/11f1395ebae685a72a05ee4541c7f2d91790d6eb) | Normalizes raw 384-component CLS rows with epsilon, preserves immutable first-pass cache rows, reconstructs all occurrences, then checks every second-pass norm before division | Semantic: rank/cache composition is published below; actual NumPy, CPU and floating-environment correspondence, exact numerical parity and initialized backend/worker acceptance remain open |
 | Rust owning native rank backend | [composition](../../rust/semantic-backend/src/lib.rs), [cache/arithmetic binding](../../rust/semantic-backend/src/arithmetic.rs), [initialization boundary](../../rust/semantic-backend/README.md); [`5b6f1f31`](https://github.com/halbritt/cairn/commit/5b6f1f310635b9384d199f9869f22cbab39561b1) | Connects the prepared tokenizer, ORT session, first-pass cache rows and full-occurrence normalization/matrix computation under one session owner; restored rows retain their bits without repeating first normalization | Semantic and Release: missing initialization observations still prevent a usable factory; actual assets/model/math parity, worker, Go supervisor and runtime qualification remain open |
 | Rust typed session-observation serializer fixtures | [serializer](../../rust/semantic-backend/src/identity.rs); tested source `d0ad8f82` | Private read-only traits let owner-created ORT records and private typed fixtures use the same serializers; four selected fixture checks passed with independent expected values | Semantic and Release: concrete ORT getter forwarding and the original actual-session T1 comparison remain owed; required observations, NULL globals, numerical/runtime and FIRST holds remain unchanged |
+| Rust rank/stream entry and launch plan | [entry](../../rust/semantic-backend/src/bin/rank.rs), [parser](../../rust/semantic-backend/src/bin/rank_entry/plan.rs); tested source [`cb6dbc90`](https://github.com/halbritt/cairn/commit/cb6dbc906661e771431a22238d0fd75f5afedd18) | Explicit `cairn-semantic-rank` target and pure parsing of six absolute asset/library/source selections; rank-once or stream dispatch with exact stream-cache opt-in; 11 bounded parser, private-driver and synthetic-cleanup checks passed | Semantic and Release: production entry/native wiring, real owner drop/cleanup, exit/stderr behavior, model initialization, actual-session T1, worker and Go supervisor remain unqualified; installer and Go routing are unchanged |
 | Go memory client and checkpoint reader | [client](../../internal/lifecycle/memoryclient/client.go), [checkpoint](../../internal/lifecycle/memoryclient/checkpoint.go), [contract](hybrid-runtime-contracts/f02-memory-client.md); [`2989f834`](https://github.com/halbritt/cairn/commit/2989f83442ba880dd586b807b9cdece5282b67e5) | Direct authenticated SDK search/pull calls, receipt-credit accounting and concrete raw-record checkpoint traversal | Foundation: recall/capture frontends, hook streams/exits/meters, grants and executing-hook identity; full F-02 and HC-03 remain open |
 | Go unfinished checkpoint refresh | [refresh](../../internal/lifecycle/memoryclient/checkpoint_refresh.go), [contract](hybrid-runtime-contracts/f02-checkpoint-refresh.md); [`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a) | Restores at most one current whole unfinished note through bounded authenticated search/pull, with identity/hash/extent checks and shared deadline accounting | Foundation: frontend state, grants and metering integration; runtime and full F-02 acceptance remain open |
 | Go capture selection and ordered writes | [capture](../../internal/lifecycle/memoryclient/capture.go), [contract](hybrid-runtime-contracts/f03-capture-commit.md); [`1497c7dc`](https://github.com/halbritt/cairn/commit/1497c7dc8ac14c776ca4672e28d038976cb21265) | Validates the complete selection before record mutation, performs ordered create/revise calls and retains confirmed writes when a later write fails | Foundation: frontend state commits, hooks, streams/exits/meters, grants and executing-hook identity; full F-03 remains open |
@@ -114,6 +116,45 @@ observations remain unchanged. `effective_provider`, `cpu_arena` and
 numerical parity and campaign acceptance remain open, with the current strict
 score policy and all294-before-model, numerical/runtime/resource/production and
 actual-worker FIRST holds unchanged.
+
+The Rust rank/stream entry (`cb6dbc90`) was accepted in independent source
+review round 1 with no defect. One isolated, offline, locked
+`--bin cairn-semantic-rank rank_entry1_` invocation passed all 11 selected checks,
+with zero filtered tests and zero retries. The checks cover pure launch-plan
+path/cache/refusal/non-UTF-8 behavior, private `ProbeDriver` dispatch and synthetic
+cleanup/drop/error sequencing. The normal backend library and binary-test
+harness were built separately. Inherited native compilation and the new harness's
+linkage/startup were observed; these component effects do not establish production
+entry or native runtime behavior. Landing preserves the reviewed and tested Rust
+source without repeating the component command.
+
+The parser requires separate absolute values for `--model-dir`, `--ort-runtime`,
+`--openblas`, `--gfortran`, `--quadmath` and `--source-root`; it performs no asset
+reads or discovery. `--stream` selects streaming, and only
+`CAIRN_SEMANTIC_STREAM_CACHE=1` advertises its cache. Rank-once ignores that
+setting. The parser is intentionally stricter than argparse: equals forms,
+abbreviations, help, duplicates and relative paths are refused. A following flag
+consumed as a path value is also refused deterministically.
+
+Four nonblocking review limits remain. The binary and its library dependency
+share a crate name, leaving a documentation-output collision if dependency docs
+are built; no rename or documentation build was required. Free-form
+`BackendError` details mean source inspection cannot guarantee request-free
+stderr. Production `main`, `NativeDriver`, `invoke_native`, real factory/driver
+wiring and owner drop/native cleanup, exit mapping and stderr remain supported
+only by source review. The synthetic cleanup tests establish sequencing within
+the helper, not the real shared-observer wiring; a driver panic would exit
+nonzero without draining cleanup. The stricter parser behavior above is the
+fourth limit.
+
+The active installer and Go routing are unchanged. Actual-session T1, required
+observations and NULL globals remain as described above. `REQUIRED` still
+declares 11 rows, not a measured count of missing observations. The current
+strict score policy permits no +/-1 tolerance. All 294 token IDs/lengths must
+precede model execution; actual-worker FIRST remains unconsumed. Full P1-P5,
+numerical/runtime/resource/production and old-failure holds persist. This entry
+publication establishes neither readiness, parity, initialization nor campaign
+acceptance. Query-prefix and document-span work remain separate queued items.
 
 The paired value/transcript component passed formatting, build, vet and scoped
 race checks for those two packages. Foundation cleared the exact four-file value
