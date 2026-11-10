@@ -30,13 +30,21 @@ F3_MODULES = (
     'backend_process.py', 'backend_proof.py', 'backend_wire.py',
     'remote_executor.py', 'root_launcher.py',
 )
-SYSTEM_MOUNT_ROOTS = frozenset({
-    '/', '/bin', '/dev', '/etc', '/home', '/lib', '/lib64',
-    '/opt', '/proc', '/tmp', '/usr', '/usr/bin', '/usr/lib', '/usr/lib64', '/work',
+OS_SYSTEM_DIRS = frozenset({
+    '/', '/bin', '/sbin', '/usr', '/usr/bin', '/usr/sbin', '/usr/games',
+    '/usr/lib', '/usr/lib64', '/lib', '/lib64', '/dev', '/etc',
+    '/home', '/opt', '/proc', '/tmp', '/work', '/nonexistent',
 })
 EXPECTED_SANDBOX_ROOT_ENTRIES = frozenset({
-    'bin', 'dev', 'etc', 'home', 'lib', 'lib64', 'opt', 'proc', 'tmp', 'usr', 'work',
+    'bin', 'dev', 'etc', 'home', 'lib', 'lib64', 'opt', 'proc', 'sbin', 'tmp', 'usr', 'work',
 })
+
+
+def is_production_home(path):
+    if not path or not path.startswith('/'):
+        return False
+    norm = os.path.normpath(path)
+    return norm not in OS_SYSTEM_DIRS
 
 
 def private_copy(source, destination):
@@ -78,27 +86,34 @@ def is_under(child, parent):
 
 
 def discover_passwd_homes():
-    homes = set()
+    homes = {'/root'}
     for entry in pwd.getpwall():
-        if entry.pw_dir and entry.pw_dir.startswith('/'):
+        if is_production_home(entry.pw_dir):
             homes.add(os.path.normpath(entry.pw_dir))
     passwd_file = Path('/etc/passwd')
     if passwd_file.is_file():
         for line in passwd_file.read_text(encoding='utf-8', errors='replace').splitlines():
             parts = line.split(':')
-            if len(parts) >= 6 and parts[5].startswith('/'):
+            if len(parts) >= 6 and is_production_home(parts[5]):
                 homes.add(os.path.normpath(parts[5]))
+    home_root = Path('/home')
+    if home_root.is_dir():
+        try:
+            for child in home_root.iterdir():
+                norm = os.path.normpath(str(child))
+                if is_production_home(norm):
+                    homes.add(norm)
+        except OSError:
+            pass
     for raw in list(homes):
-        if raw in SYSTEM_MOUNT_ROOTS:
-            continue
         try:
             resolved = os.path.normpath(str(Path(raw).resolve()))
-            if resolved.startswith('/') and resolved not in SYSTEM_MOUNT_ROOTS:
+            if is_production_home(resolved):
                 homes.add(resolved)
         except OSError:
             pass
     if not homes:
-        raise RuntimeError('passwd database returned no home directories')
+        raise RuntimeError('passwd database returned no production home directories')
     return sorted(homes)
 
 
@@ -181,35 +196,35 @@ def discover_masked_homes(passwd_homes, bind_pairs):
         except OSError:
             pass
     for home in passwd_homes:
-        if home in SYSTEM_MOUNT_ROOTS:
+        if not is_production_home(home):
             continue
         home_variants = {os.path.normpath(home)}
         try:
             real_home = os.path.normpath(os.path.realpath(home))
-            if real_home not in SYSTEM_MOUNT_ROOTS:
+            if is_production_home(real_home):
                 home_variants.add(real_home)
         except OSError:
             pass
         for h in home_variants:
             for src, dst in normalized_pairs:
                 mapped = _map_subpath(h, src, dst)
-                if mapped and mapped not in SYSTEM_MOUNT_ROOTS:
+                if mapped and is_production_home(mapped):
                     masked.add(mapped)
             for _, dst in normalized_pairs:
-                if is_under(h, dst) and h not in SYSTEM_MOUNT_ROOTS:
+                if is_under(h, dst) and is_production_home(h):
                     masked.add(h)
     return sorted(masked)
 
 
 def discover_mapped_passwd_homes(passwd_homes, bind_pairs, symlink_pairs=()):
-    mapped = set(passwd_homes) | set(discover_masked_homes(passwd_homes, bind_pairs))
+    mapped = {h for h in passwd_homes if is_production_home(h)} | set(discover_masked_homes(passwd_homes, bind_pairs))
     for target, link_path in symlink_pairs:
         abs_target = os.path.normpath('/' + target.lstrip('/'))
         for item in list(mapped):
-            if item in SYSTEM_MOUNT_ROOTS:
+            if not is_production_home(item):
                 continue
             alias = _map_subpath(item, abs_target, link_path)
-            if alias and alias not in SYSTEM_MOUNT_ROOTS:
+            if alias and is_production_home(alias):
                 mapped.add(alias)
     return sorted(mapped)
 
@@ -221,11 +236,11 @@ def build_sandbox_spec(source, *, chdir='/work'):
     source_str = str(Path(source).resolve())
     symlink_pairs = []
     extra_sys_binds = []
-    for sys_lib in ('/lib', '/lib64'):
-        if os.path.islink(sys_lib):
-            symlink_pairs.append((os.readlink(sys_lib), sys_lib))
-        elif os.path.exists(sys_lib):
-            extra_sys_binds.append((sys_lib, sys_lib))
+    for sys_link in ('/bin', '/sbin', '/lib', '/lib64'):
+        if os.path.islink(sys_link):
+            symlink_pairs.append((os.readlink(sys_link), sys_link))
+        elif os.path.exists(sys_link):
+            extra_sys_binds.append((sys_link, sys_link))
     bind_pairs = [
         ('/usr', '/usr'),
         *extra_sys_binds,
@@ -265,10 +280,6 @@ def namespace_argv(source, command, *, spec=None, report_fd=-1, self_test_only=F
     for src, dst in spec.get('extra_sys_binds', ()):
         argv.extend(['--ro-bind', src, dst])
     argv.extend([
-        '--dir', '/bin',
-        '--ro-bind', '/usr/bin/sh', '/bin/sh',
-        '--ro-bind', '/usr/bin/env', '/bin/env',
-        '--chmod', '0111', '/bin',
         '--dir', '/etc',
         '--ro-bind', '/etc/passwd', '/etc/passwd',
         '--chmod', '0111', '/etc',
@@ -281,13 +292,13 @@ def namespace_argv(source, command, *, spec=None, report_fd=-1, self_test_only=F
     ])
     for masked in spec['masked_homes']:
         argv.extend(['--tmpfs', masked, '--chmod', '0000', masked])
-    path_parts = ['/usr/bin', '/bin']
+    path_parts = ['/usr/bin', '/bin', '/usr/sbin', '/sbin']
     for _, dst in spec['toolchain_binds']:
         if dst in ('/opt/toolchains/go', '/opt/toolchains/rust'):
             path_parts.insert(0, dst + '/bin')
     argv.extend([
         '--tmpfs', '/tmp',
-        '--dev', '/dev', '--chmod', '0111', '/dev',
+        '--dev', '/dev',
         '--proc', '/proc',
         '--clearenv',
         '--setenv', 'PATH', ':'.join(path_parts),
@@ -360,11 +371,11 @@ def run_sandbox_self_test(spec):
     sandbox_passwd = [
         os.path.normpath(e.pw_dir)
         for e in pwd.getpwall()
-        if e.pw_dir and e.pw_dir.startswith('/')
+        if is_production_home(e.pw_dir)
     ]
     all_homes = sorted(
-        set(spec['passwd_homes'])
-        | set(spec.get('mapped_passwd_homes', ()))
+        {h for h in spec['passwd_homes'] if is_production_home(h)}
+        | {h for h in spec.get('mapped_passwd_homes', ()) if is_production_home(h)}
         | set(sandbox_passwd)
     )
     if not all_homes:
@@ -380,7 +391,7 @@ def run_sandbox_self_test(spec):
 
     readable_homes = []
     for home in all_homes:
-        if home == '/':
+        if not is_production_home(home):
             continue
         is_readable = os.access(home, os.R_OK) or os.access(home, os.W_OK)
         listable = False
@@ -403,7 +414,30 @@ def run_sandbox_self_test(spec):
     if readable_homes:
         failures.append(f'readable passwd homes: {sorted(set(readable_homes))}')
 
-    bound_files = ['/bin/sh', '/bin/env', '/etc/passwd', '/opt/toolchains/isolation_runner.py']
+    positive_system_checks = {}
+    for prog, args in (
+        ('/bin/true', ['/bin/true']),
+        ('/bin/sleep', ['/bin/sleep', '0']),
+        ('/bin/bash', ['/bin/bash', '-c', 'exit 0']),
+    ):
+        try:
+            res = subprocess.run(args, capture_output=True, text=True, timeout=5, check=True)
+            positive_system_checks[prog] = res.returncode == 0
+        except Exception as exc:
+            positive_system_checks[prog] = False
+            failures.append(f'positive command check failed for {prog}: {exc}')
+    for sys_dir in ('/usr/sbin', '/dev', '/bin', '/sbin'):
+        try:
+            entries = os.listdir(sys_dir)
+            ok = len(entries) > 0
+            positive_system_checks[sys_dir] = ok
+            if not ok:
+                failures.append(f'system directory empty: {sys_dir}')
+        except Exception as exc:
+            positive_system_checks[sys_dir] = False
+            failures.append(f'system directory not listable: {sys_dir}: {exc}')
+
+    bound_files = ['/etc/passwd', '/opt/toolchains/isolation_runner.py']
     scanned, visible_sockets, scan_errors = scan_bound_tree_for_sockets(
         [*spec['bound_destinations'], *bound_files], masked_set,
     )
@@ -456,6 +490,7 @@ def run_sandbox_self_test(spec):
         'passwd_homes_checked': len(all_homes),
         'readable_passwd_homes': sorted(set(readable_homes)),
         'masked_homes': spec['masked_homes'],
+        'positive_system_checks': positive_system_checks,
         'root_isolated': root_isolated,
         'bound_destinations': spec['bound_destinations'],
         'scanned_entries': scanned,
@@ -671,9 +706,12 @@ def main(argv=None):
 
 class HybridRuntimeIsolationTests(unittest.TestCase):
     def test_discover_masked_homes_masks_passwd_homes_under_bound_paths(self):
-        homes = ['/root', '/home/alice', '/usr/share/ollama', '/usr/sbin', '/var/lib/postgresql', '/']
+        homes = [
+            '/root', '/home/alice', '/usr/share/ollama', '/usr/sbin',
+            '/var/lib/postgresql', '/', '/bin', '/dev', '/usr/games', '/nonexistent',
+        ]
         masked = discover_masked_homes(homes, [('/usr', '/usr'), ('/repo', '/work')])
-        self.assertEqual(masked, ['/home', '/usr/sbin', '/usr/share/ollama'])
+        self.assertEqual(masked, ['/home', '/usr/share/ollama'])
 
     def test_discover_masked_homes_maps_aliased_bind_and_symlink_paths(self):
         homes = ['/usr/lib/dhcpcd', '/usr/share/ollama']
@@ -700,7 +738,8 @@ class HybridRuntimeIsolationTests(unittest.TestCase):
     def _passing_self_test_patches(self, stack, *, unix_text='Num RefCount\n',
                                    route_text='Iface\tDestination\n',
                                    ipv6_text='00000000000000000000000000000001 80 00000000000000000000000000000000 00 00000000000000000000000000000000 00000000 00000001 00000000 00000001 lo\n',
-                                   proc_entries=None, readable_home=False, visible_sockets=None):
+                                   proc_entries=None, readable_home=False, visible_sockets=None,
+                                   empty_sys_dir=False, positive_cmd_fails=False):
         if proc_entries is None:
             proc_entries = ['1', str(os.getpid()), 'net', 'self']
         if visible_sockets is None:
@@ -721,9 +760,11 @@ class HybridRuntimeIsolationTests(unittest.TestCase):
 
         def fake_listdir(path):
             if path == '/':
-                return ['usr', 'work', 'tmp', 'proc', 'dev', 'home', 'bin', 'etc', 'lib', 'lib64', 'opt']
+                return ['usr', 'work', 'tmp', 'proc', 'dev', 'home', 'bin', 'sbin', 'etc', 'lib', 'lib64', 'opt']
             if path == '/proc':
                 return proc_entries
+            if path in ('/usr/sbin', '/dev', '/bin', '/sbin'):
+                return [] if empty_sys_dir else ['entry']
             raise PermissionError('masked')
 
         stack.enter_context(mock.patch.object(os, 'listdir', side_effect=fake_listdir))
@@ -743,7 +784,10 @@ class HybridRuntimeIsolationTests(unittest.TestCase):
         stack.enter_context(mock.patch.object(socket, 'if_nameindex', return_value=[(1, 'lo')]))
         stack.enter_context(mock.patch.object(os, 'readlink', side_effect=lambda p: 'pid:[200]' if 'pid' in p else 'net:[200]'))
         stack.enter_context(mock.patch.object(os, 'statvfs', return_value=mock.Mock(f_flag=os.ST_RDONLY)))
-        stack.enter_context(mock.patch.object(subprocess, 'run', return_value=mock.Mock(stdout='go version go1.25.0 linux/amd64\n')))
+        if positive_cmd_fails:
+            stack.enter_context(mock.patch.object(subprocess, 'run', side_effect=FileNotFoundError('/bin/true')))
+        else:
+            stack.enter_context(mock.patch.object(subprocess, 'run', return_value=mock.Mock(returncode=0, stdout='go version go1.25.0 linux/amd64\n')))
         return spec
 
     def test_self_test_passes_when_all_four_conditions_hold(self):
@@ -758,6 +802,8 @@ class HybridRuntimeIsolationTests(unittest.TestCase):
             {'visible_sockets': ['/usr/share/ollama/live.sock']},
             {'route_text': 'Iface\tDestination\neth0\t00000000\n'},
             {'proc_entries': ['1', str(os.getpid()), '9999']},
+            {'empty_sys_dir': True},
+            {'positive_cmd_fails': True},
         ]
         for kwargs in cases:
             with self.subTest(kwargs=kwargs), contextlib_exit_stack() as stack:
