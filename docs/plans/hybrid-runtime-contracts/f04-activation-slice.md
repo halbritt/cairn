@@ -21,9 +21,11 @@ or environment variable opens that public command.
 
 Release must explicitly build and select this private image in its `/3`
 descriptor and compatibility receipt. Building the ordinary `cmd/cairn` image
-does not supply this route. This source change does not modify the installer
-or certify that producer relationship. The private image receives the checked
-current-config digest, binding digest and independently selected receipt digest.
+does not supply this route. Release has confirmed that its binary staging can
+select this image without a receipt or authority change. Complete hash-named
+snapshot and launcher publication remains Release-owned and is not implemented
+by this slice. The private image receives the checked current-config digest,
+binding digest and independently selected receipt digest.
 
 `lifecycle_compatibility.py` supplies the stdlib verifier literal, snapshot-byte
 staging and launch-vector construction. Its new `/3` snapshots include all
@@ -117,6 +119,13 @@ Run the focused process corpus with the shared namespace wrapper:
 python3 -I -B scripts/test_hybrid_runtime_operations.py --timeout 420 -- \
   env CC=gcc python3 -I -B -m unittest discover -s scripts -p 'test_f04_*.py' -v
 ```
+
+For disposable PostgreSQL integration, set `TZ=America/Los_Angeles` inside the
+shared wrapper, alongside `CC=gcc`. With the wrapper's empty environment, five
+Core timestamp-replay equality tests fail on unchanged main as well as this
+slice. Setting the timezone makes those five checks pass without changing Core,
+the tests or the wrapper. These environmental results do not qualify production
+installation or waive other integration failures.
 
 The fixtures build the actual private image and stage disposable receipts,
 snapshots and launchers. Only the Store boundary is scripted. State, flock,
