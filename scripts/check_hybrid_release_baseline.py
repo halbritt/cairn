@@ -191,7 +191,7 @@ SUITES = (
     Suite(
         'legacy-memory',
         'scripts/test_inbox_recall_bridge.py',
-        '0327ee40bd6eecd77d39d1fe77208a01798f298528cf4af270ad371748b501c4',
+        '7133f88fe4f8d14b41c8a46f9b4dd1d9ebaabced70606fc53c4cd229e16a1949',
         case_inventory("""
             InboxRecallBridgeTests.test_bound_prompt_recalls_while_stop_selects_and_capture_preserves_grant
         """, Evidence('fake-boundary', 'supported', ('REL-STREAM', 'REL-IDENTITY'), ('codex:memory', 'codex:coordination'), 'Source assertions with synthetic API/model or host boundary; not installed-effectful or live acceptance.'), {
@@ -330,7 +330,7 @@ SUITES = (
     Suite(
         'legacy-coordination',
         'scripts/test_idle_wakeup.py',
-        'a48bea5e29a9bebdf81e94da16b1db99a36542f0413253e72ea81d86b655e159',
+        '83975cebd94029fc3af92057e46cb69fe5233775813a91a9da153d31908084a8',
         case_inventory("""
             IdleWakeup.test_busy_blocked_unknown_or_other_session_never_get_prompted
             IdleWakeup.test_claude_channel_uncertain_is_retained_without_fallback
