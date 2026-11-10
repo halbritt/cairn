@@ -650,8 +650,7 @@ func (c *CLI) runRecovery(ctx context.Context, argv []string, out io.Writer) (in
 	case "recover-codex-refused-wake":
 		result, err = e.RecoverCodexRefusedWake(ctx, config, r)
 	case "recover-native-refused-wake":
-		config = nativeClone(config)
-		config.Set("config_path", value.Text(purePosixPath(a.get("--config"))))
+		r.ConfigPath = purePosixPath(a.get("--config"))
 		result, err = e.RecoverNativeRefusedWake(ctx, config, r)
 	case "recover-refused-wake":
 		result, err = e.RecoverRefusedWake(ctx, config, r)

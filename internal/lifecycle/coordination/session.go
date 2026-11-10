@@ -1036,11 +1036,11 @@ func OpenSession(config *value.Value, nativeID string, host *Host, create bool) 
 	if e != nil {
 		return nil, nil, e
 	}
-	release = lock.Close
+	closeLock := lock.Close
 	ok := false
 	defer func() {
 		if !ok {
-			_ = release()
+			_ = closeLock()
 		}
 	}()
 	var record *value.Value
@@ -1066,7 +1066,7 @@ func OpenSession(config *value.Value, nativeID string, host *Host, create bool) 
 		}
 	}
 	ok = true
-	return &NativeSession{Config: config, Path: path, Record: record, Host: host}, release, nil
+	return &NativeSession{Config: config, Path: path, Record: record, Host: host}, closeLock, nil
 }
 
 type NativeCall struct {

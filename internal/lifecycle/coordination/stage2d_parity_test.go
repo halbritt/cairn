@@ -3,6 +3,7 @@ package coordination
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -115,6 +116,9 @@ func TestStage2DCompletionScopeSettleAndReminder(t *testing.T) {
 }
 
 func TestStage2DClassAPythonGoCoordinationCorpus(t *testing.T) {
+	if os.Getenv("HOME") != "/tmp/home" {
+		t.Fatalf("refusing to run outside campaign isolation sandbox (HOME=%q)", os.Getenv("HOME"))
+	}
 	coordPy, err := filepath.Abs("../../../integrations/lifecycle/coordination.py")
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +152,6 @@ spec = importlib.util.spec_from_file_location("coord", sys.argv[1])
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.renew_inbox = lambda cfg, st, p, att: att["delivery"]
-mod.write_state = lambda p, st: None
 root, claim_id, deliv_id = sys.argv[2], sys.argv[3], sys.argv[4]
 sess = {"agent_id": "ag-1", "execution_id": "ex-1"}
 att = {"attempt_id": claim_id, "session": sess, "delivery": {"delivery_id": deliv_id, "lease_id": "l-1", "event": {"kind": "notice"}}}
@@ -160,8 +163,25 @@ state = {
 }
 cfg = {"state_dir": root, "binding": "claude-one", "harness": "claude", "remind_unacknowledged_turn_end": True}
 scope = mod.completion_scope(state, att)
-rem = mod.unacknowledged_turn_end_reminder(cfg, state, pathlib.Path(root) / "s.json", {"native_turn_id": "t-1"})
-print(json.dumps({"scope": scope, "reminder": rem, "revision": state["inbox_ack_reminder_revision"]["sha256"]}))
+rem = mod.unacknowledged_turn_end_reminder(cfg, state, pathlib.Path(root) / "s-py.json", {"native_turn_id": "t-1"})
+
+fb_id = "401e246e-a3b7-498b-b6a7-3d84e592097f"
+(pathlib.Path(root) / "inbox" / (fb_id + ".json")).write_text(json.dumps({
+    "attempt_id": fb_id,
+    "kind": "\ud800",
+    "compact_source_unavailable": True,
+    "compact_fallback_control": "Run the fallback settlement.",
+}, ensure_ascii=True))
+fb_att = {"attempt_id": fb_id, "session": sess, "delivery": {"delivery_id": deliv_id, "lease_id": "l-1", "event": {}}}
+fb_state = {"agent": sess, "inbox_intent": {"request_id": fb_id, "session": sess}, "inbox_attempt": fb_att}
+fb_renews = 0
+def count_renew(cfg, st, p, a):
+    global fb_renews
+    fb_renews += 1
+    return a["delivery"]
+mod.renew_inbox = count_renew
+fb_rem = mod.unacknowledged_turn_end_reminder(cfg, fb_state, pathlib.Path(root) / "s-fb-py.json", {"native_turn_id": "t-1"})
+print(json.dumps({"scope": scope, "reminder": rem, "revision": state["inbox_ack_reminder_revision"]["sha256"], "fb_reminder": fb_rem, "fb_renews": fb_renews}))
 `
 	cmd := exec.Command("python3", "-I", "-B", "-c", pyInline, coordPy, root, claimID, delivID)
 	out, err := cmd.CombinedOutput()
@@ -169,9 +189,11 @@ print(json.dumps({"scope": scope, "reminder": rem, "revision": state["inbox_ack_
 		t.Fatalf("python corpus failed: %v (%s)", err, string(out))
 	}
 	var pyRes struct {
-		Scope    []string `json:"scope"`
-		Reminder string   `json:"reminder"`
-		Revision string   `json:"revision"`
+		Scope      []string `json:"scope"`
+		Reminder   string   `json:"reminder"`
+		Revision   string   `json:"revision"`
+		FBReminder string   `json:"fb_reminder"`
+		FBRenews   int      `json:"fb_renews"`
 	}
 	if err := json.Unmarshal(out, &pyRes); err != nil {
 		t.Fatal(err)
@@ -184,12 +206,20 @@ print(json.dumps({"scope": scope, "reminder": rem, "revision": state["inbox_ack_
 	if err != nil || !reflect.DeepEqual(goScope, pyRes.Scope) {
 		t.Fatalf("scope mismatch: go=%v py=%v err=%v", goScope, pyRes.Scope, err)
 	}
-	m := NewMemoryHost(nil)
-	m.Contexts = map[string]*value.Value{
-		ctxPath: nativeMap("attempt_id", claimID, "kind", "notice", "acknowledgement", stringArray("/usr/bin/python3", coordPy, "inbox", "--context", ctxPath+" with spaces", "ack")),
-	}
+	fbRenewsGo := 0
+	host := NewFileHost(FileHostOptions{
+		Profile: stage2ServicesProfile(),
+		Log:     func(string) error { return nil },
+		Call: func(_ context.Context, _ *value.Value, op string, _ *value.Value, _ NativeCallOptions) (*value.Value, error) {
+			if op == "event-renew" {
+				fbRenewsGo++
+				return att.Get("delivery"), nil
+			}
+			return nativeMap("ok", true), nil
+		},
+	})
 	cfg := nativeMap("state_dir", root, "binding", "claude-one", "harness", "claude", "remind_unacknowledged_turn_end", true)
-	ns := &NativeSession{Config: cfg, Path: filepath.Join(root, "s.json"), Record: state, Host: &m.Host}
+	ns := &NativeSession{Config: cfg, Path: filepath.Join(root, "s-go.json"), Record: state, Host: host}
 	goRem, err := ns.UnacknowledgedTurnEndReminder(context.Background(), nativeMap("native_turn_id", "t-1"))
 	if err != nil || goRem != pyRes.Reminder {
 		t.Fatalf("reminder mismatch:\ngo: %q\npy: %q\nerr=%v", goRem, pyRes.Reminder, err)
@@ -197,5 +227,74 @@ print(json.dumps({"scope": scope, "reminder": rem, "revision": state["inbox_ack_
 	revObj := state.Get("inbox_ack_reminder_revision")
 	if revObj == nil || !value.SameText(revObj.Get("sha256"), pyRes.Revision) {
 		t.Fatalf("revision sha256 mismatch: go=%+v py=%q", revObj, pyRes.Revision)
+	}
+	pyStateBytes, err := os.ReadFile(filepath.Join(root, "s-py.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goStateBytes, err := os.ReadFile(filepath.Join(root, "s-go.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pySaved, goSaved any
+	if err := json.Unmarshal(pyStateBytes, &pySaved); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(goStateBytes, &goSaved); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(pySaved, goSaved) {
+		t.Fatalf("saved state mismatch:\npy=%s\ngo=%s", string(pyStateBytes), string(goStateBytes))
+	}
+
+	// Verify fallback reminder ignores surrogate kind, matching Python (J-R1 F2).
+	fbID := "401e246e-a3b7-498b-b6a7-3d84e592097f"
+	fbAtt := nativeMap("attempt_id", fbID, "session", sessRef, "delivery", nativeMap("delivery_id", delivID, "lease_id", "l-1", "event", nativeMap()))
+	fbState := nativeMap("agent", sessRef, "inbox_intent", nativeMap("request_id", fbID, "session", sessRef), "inbox_attempt", fbAtt)
+	fbRenewsGo = 0
+	fbNS := &NativeSession{Config: cfg, Path: filepath.Join(root, "s-fb-go.json"), Record: fbState, Host: host}
+	fbRemGo, err := fbNS.UnacknowledgedTurnEndReminder(context.Background(), nativeMap("native_turn_id", "t-1"))
+	if err != nil || fbRemGo != pyRes.FBReminder || fbRenewsGo != pyRes.FBRenews {
+		t.Fatalf("fallback surrogate kind mismatch: go=(%q, renews=%d, err=%v) py=(%q, renews=%d)", fbRemGo, fbRenewsGo, err, pyRes.FBReminder, pyRes.FBRenews)
+	}
+
+	// Verify lone surrogates fail with UnicodeEncodeError before renewHost (J-R2 E3).
+	renewCalls := 0
+	surrHost := NewMemoryHost(map[string]MemoryResponse{
+		"event-renew": func(*value.Value) (*value.Value, error) {
+			renewCalls++
+			return att.Get("delivery"), nil
+		},
+	})
+	surrCmd := &value.Value{Kind: value.Array, Items: []*value.Value{
+		value.Text("/usr/bin/python3"),
+		{Kind: value.String, String: []rune{'a', 0xd800, 'b'}},
+	}}
+	surrHost.Contexts = map[string]*value.Value{
+		ctxPath: nativeMap("attempt_id", claimID, "kind", "notice", "acknowledgement", surrCmd),
+	}
+	surrState := nativeMap("agent", sessRef, "inbox_intent", nativeMap("request_id", claimID, "session", sessRef), "inbox_attempt", att)
+	surrNS := &NativeSession{Config: cfg, Path: filepath.Join(root, "s-surr.json"), Record: surrState, Host: &surrHost.Host}
+	_, surrErr := surrNS.UnacknowledgedTurnEndReminder(context.Background(), nativeMap("native_turn_id", "t-1"))
+	if value.ErrorClass(surrErr) != "UnicodeEncodeError" || renewCalls != 0 {
+		t.Fatalf("expected UnicodeEncodeError before renewHost, got err=%v renewCalls=%d", surrErr, renewCalls)
+	}
+}
+
+type testLockCloser struct{ closed *int }
+
+func (c testLockCloser) Close() error { *c.closed++; return nil }
+
+func TestOpenSessionReleasesLockOnLoadError(t *testing.T) {
+	closed := 0
+	wantErr := &value.Error{Class: "OSError", Message: "load failed"}
+	host := &Host{
+		Locate: func(*value.Value, string) (string, error) { return "/tmp/s.json", nil },
+		Lock:   func(string) (io.Closer, error) { return testLockCloser{&closed}, nil },
+		Load:   func(string) (*value.Value, error) { return nil, wantErr },
+	}
+	sess, release, err := OpenSession(value.Mapping(), "n1", host, false)
+	if sess != nil || release != nil || err != wantErr || closed != 1 {
+		t.Fatalf("OpenSession load error: sess=%v hasRelease=%t err=%v closed=%d", sess, release != nil, err, closed)
 	}
 }

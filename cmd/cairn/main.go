@@ -105,6 +105,18 @@ func main() {
 		}
 		return
 	}
+	if plan, ok := data.(lifecycleCoordinationPlan); ok && err == nil {
+		// Unregister main's SIGINT/SIGTERM NotifyContext before running the
+		// non-watch coordination CLI so OS signals keep Source's default
+		// process-termination behavior instead of becoming context.Canceled.
+		cancel()
+		code, runErr := plan.execute(context.Background(), os.Stdout, os.Stderr)
+		if runErr != nil {
+			fmt.Fprintln(os.Stderr, runErr)
+			os.Exit(1)
+		}
+		os.Exit(code)
+	}
 	watchOutput := false
 	if plan, ok := data.(watchPlan); ok {
 		watchOutput = true

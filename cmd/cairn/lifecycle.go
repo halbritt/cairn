@@ -14,6 +14,13 @@ func lifecycleCommand(ctx context.Context, args []string, input io.Reader) (any,
 	if !lifecycleCommandEnabled {
 		return nil, &core.Error{Code: "LIFECYCLE_DISABLED", Message: "lifecycle is disabled; activation requires an owner grant"}
 	}
+	return executeLifecycle(ctx, args, input)
+}
+
+func executeLifecycle(ctx context.Context, args []string, input io.Reader) (any, error) {
+	if len(args) > 0 && args[0] == "coordination" {
+		return lifecycleCoordinationPlan{args: args[1:], input: input}, nil
+	}
 	return executeLifecycleCheck(ctx, args, input)
 }
 

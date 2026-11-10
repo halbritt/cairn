@@ -45,6 +45,9 @@ func TestStage2DNaNScalarAndSessionJournals(t *testing.T) {
 }
 
 func TestStage2DClassAPythonGoJournalCorpus(t *testing.T) {
+	if os.Getenv("HOME") != "/tmp/home" {
+		t.Fatalf("refusing to run outside campaign isolation sandbox (HOME=%q)", os.Getenv("HOME"))
+	}
 	coordPy, err := filepath.Abs("../../../integrations/lifecycle/coordination.py")
 	if err != nil {
 		t.Fatal(err)

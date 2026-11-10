@@ -56,6 +56,7 @@ type RecoveryEngine struct {
 }
 type RecoveryRequest struct {
 	NativeSessionID, AttemptID, NativeTurnID, DeliveryID, QueuedSubmissionID string
+	ConfigPath                                                               string
 	Records                                                                  *value.Value
 	CheckOnly                                                                bool
 	Outcome                                                                  *value.Value
@@ -434,7 +435,15 @@ func (e *RecoveryEngine) RecoverNativeRefusedWake(ctx context.Context, config *v
 		if value.SameText(active.Get("id"), turn) {
 			return nil, held
 		}
-		proof, err := e.evidence(ctx, EvidenceNativeRefusal, s, attempt, nil, nil, r.Records, turn)
+		evidenceSession := s
+		if s.Config != nil {
+			cfg := nativeClone(s.Config)
+			cfg.Set("config_path", value.Text(r.ConfigPath))
+			copySession := *s
+			copySession.Config = cfg
+			evidenceSession = &copySession
+		}
+		proof, err := e.evidence(ctx, EvidenceNativeRefusal, evidenceSession, attempt, nil, nil, r.Records, turn)
 		if err != nil {
 			return nil, err
 		}

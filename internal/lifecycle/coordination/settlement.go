@@ -141,12 +141,19 @@ func (s *NativeSession) UnacknowledgedTurnEndReminder(ctx context.Context, obser
 	if attemptID.Kind != value.String {
 		return "", &journal.TypeError{Field: "attempt_id"}
 	}
+	hasSurrogate := !validUTF8Runes(attemptID.String)
 	attemptText := string(attemptID.String)
 	dir, err := s.reminderStateDir()
 	if err != nil {
 		return "", err
 	}
-	target := sourceJoin(sourceJoin(dir, "inbox"), attemptText+".json")
+	target, err := s.reminderInboxTarget(dir, attemptID)
+	if err != nil {
+		if sourceReadCaught(err) {
+			return "", nil
+		}
+		return "", err
+	}
 	contextVal, err := s.loadReminderContext(target)
 	if err != nil || contextVal == nil || contextVal.Kind != value.Object || !nativeEqual(contextVal.Get("attempt_id"), attemptID) {
 		return "", err
@@ -157,6 +164,7 @@ func (s *NativeSession) UnacknowledgedTurnEndReminder(ctx context.Context, obser
 		if fc == nil || fc.Kind != value.String || len(fc.String) == 0 {
 			return "", nativeRefusal("INVALID_HOST", "unavailable source has no settlement instructions")
 		}
+		hasSurrogate = hasSurrogate || !validUTF8Runes(fc.String)
 		fallback = string(fc.String)
 	}
 	deliveryObj, err := nativeObj(attempt.Get("delivery"), "delivery")
@@ -174,27 +182,33 @@ func (s *NativeSession) UnacknowledgedTurnEndReminder(ctx context.Context, obser
 	case fallback != "":
 		reminder = fmt.Sprintf("Cairn inbox reminder: attempt %s still needs an explicit outcome. %s Ending the turn again without settlement will record this delivery as processing_failed.", attemptText, fallback)
 	case (kind == "response" || kind == "notice") && contextVal.Get("acknowledgement") != nil && contextVal.Get("acknowledgement").Kind == value.Array:
-		ackCmd, e := shlexJoinValue(contextVal.Get("acknowledgement"))
+		ackCmd, surr, e := shlexJoinValue(contextVal.Get("acknowledgement"))
 		if e != nil {
 			return "", e
 		}
+		hasSurrogate = hasSurrogate || surr
 		reminder = fmt.Sprintf("Cairn inbox reminder: this turn received a %s (attempt %s) that has not been acknowledged yet. Run the exact acknowledgement command before ending your turn: %s. Ending the turn again without acknowledging will record this delivery as processing_failed.", kind, attemptText, ackCmd)
 	case contextVal.Get("completion") != nil && contextVal.Get("completion").Kind == value.Array:
+		if kindVal != nil && kindVal.Kind == value.String && !validUTF8Runes(kindVal.String) {
+			hasSurrogate = true
+		}
 		cmdVal := contextVal.Get("finish_reply")
 		hasFinishReply := value.Truth(cmdVal)
 		if !hasFinishReply {
 			cmdVal = contextVal.Get("completion")
 		}
-		compCmd, e := shlexJoinValue(cmdVal)
+		compCmd, surr, e := shlexJoinValue(cmdVal)
 		if e != nil {
 			return "", e
 		}
+		hasSurrogate = hasSurrogate || surr
 		replyHint := ""
 		if !hasFinishReply && contextVal.Get("response") != nil && contextVal.Get("response").Kind == value.Array {
-			respCmd, e := shlexJoinValue(contextVal.Get("response"))
+			respCmd, respSurr, e := shlexJoinValue(contextVal.Get("response"))
 			if e != nil {
 				return "", e
 			}
+			hasSurrogate = hasSurrogate || respSurr
 			replyHint = fmt.Sprintf(" Then send the reply with %s --version RESULT_VERSION RESULT_RECORD_UUID.", respCmd)
 		}
 		reminder = fmt.Sprintf("Cairn inbox reminder: this turn received a %s (attempt %s) that has no journaled completion yet. Run the exact command with a concise selected result on stdin before ending your turn: %s.%s Ending the turn again without completion will record this delivery as processing_failed.", kind, attemptText, compCmd, replyHint)
@@ -210,6 +224,9 @@ func (s *NativeSession) UnacknowledgedTurnEndReminder(ctx context.Context, obser
 	jState, err := inspector.JournalCompletionState(s.Config, attempt)
 	if err != nil {
 		return "", err
+	}
+	if hasSurrogate {
+		return "", &value.Error{Class: "UnicodeEncodeError", Message: "surrogates not allowed"}
 	}
 	revision := reminderRevisionSHA256(attemptText, jState, reminder)
 	if prior != nil && prior.Kind == value.Object && nativeEqual(prior.Get("attempt_id"), attemptID) && value.SameText(prior.Get("sha256"), revision) {
@@ -233,6 +250,15 @@ func (s *NativeSession) UnacknowledgedTurnEndReminder(ctx context.Context, obser
 	return reminder, nil
 }
 
+func validUTF8Runes(points []rune) bool {
+	for _, r := range points {
+		if !utf8.ValidRune(r) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *NativeSession) reminderStateDir() (string, error) {
 	v, err := nativeRequired(s.Config, "state_dir")
 	if err != nil {
@@ -244,12 +270,24 @@ func (s *NativeSession) reminderStateDir() (string, error) {
 	if v.Kind != value.String {
 		return "", &journal.TypeError{Field: "state_dir"}
 	}
-	for _, r := range v.String {
-		if !utf8.ValidRune(r) {
-			return "", &value.ProfileUnavailable{}
-		}
+	if !validUTF8Runes(v.String) {
+		return "", &value.ProfileUnavailable{}
 	}
 	return string(v.String), nil
+}
+
+func (s *NativeSession) reminderInboxTarget(dir string, attemptID *value.Value) (string, error) {
+	if s.Host != nil && s.Host.Profile != nil {
+		name, err := sourcePathText(s.Host.Profile, attemptID)
+		if err != nil {
+			return "", err
+		}
+		return sourceJoin(sourceJoin(dir, "inbox"), name+".json"), nil
+	}
+	if !validUTF8Runes(attemptID.String) {
+		return "", &value.Error{Class: "UnicodeEncodeError", Message: "surrogates not allowed"}
+	}
+	return sourceJoin(sourceJoin(dir, "inbox"), string(attemptID.String)+".json"), nil
 }
 
 func (s *NativeSession) loadReminderContext(path string) (*value.Value, error) {
@@ -270,18 +308,22 @@ func (s *NativeSession) loadReminderContext(path string) (*value.Value, error) {
 	return v, nil
 }
 
-func shlexJoinValue(v *value.Value) (string, error) {
+func shlexJoinValue(v *value.Value) (string, bool, error) {
 	if v == nil || v.Kind != value.Array {
-		return "", &journal.TypeError{Field: "command"}
+		return "", false, &journal.TypeError{Field: "command"}
 	}
+	hasSurrogate := false
 	parts := make([]string, len(v.Items))
 	for i, item := range v.Items {
 		if item == nil || item.Kind != value.String {
-			return "", &journal.TypeError{Field: "command"}
+			return "", false, &journal.TypeError{Field: "command"}
+		}
+		if !validUTF8Runes(item.String) {
+			hasSurrogate = true
 		}
 		parts[i] = shlexQuote(string(item.String))
 	}
-	return strings.Join(parts, " "), nil
+	return strings.Join(parts, " "), hasSurrogate, nil
 }
 
 func shlexQuote(s string) string {

@@ -21,6 +21,16 @@ type configurationProfiles struct {
 	Resolve         func(*value.Value) ([]rune, error)
 }
 
+// ConfigurationProfiles exposes the /3 application configuration predicate
+// inputs for downstream callers such as cmd/cairn coordination binding checks.
+type ConfigurationProfiles = configurationProfiles
+
+// ValidateConfigurationProfiles validates the /3 profile-agreement and
+// 1000..9500 byte-budget predicates on already-decoded configurations.
+func ValidateConfigurationProfiles(in ConfigurationProfiles) error {
+	return validateConfigurationProfiles(in)
+}
+
 func profileFailure(class, message string) error { return &value.Error{Class: class, Message: message} }
 func incompatibleProfile() error {
 	return profileFailure("ValueError", "incompatible inbox recall profile binding")
