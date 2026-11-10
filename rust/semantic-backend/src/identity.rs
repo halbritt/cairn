@@ -19,7 +19,7 @@ pub struct MissingObservation {
     pub field: &'static str,
     pub owner_action: &'static str,
 }
-/// Partial observed inputs are inspectable, but NEVER published as a complete rank identity.
+/// Running-image provenance does not turn unavailable observations into facts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunningImageProvenance {
     pub device: u64,
@@ -46,28 +46,88 @@ impl ConstructionReport {
     pub fn missing(&self) -> &[MissingObservation] {
         &self.missing
     }
-    pub fn rank_identity(&self) -> Result<PyString, Vec<MissingObservation>> {
-        let mut missing = self.missing.clone();
+    /// Retains the full rank inputs and names unavailable rule-C observations.
+    /// Invalid observed data and noncanonical values still refuse admission.
+    pub fn rank_manifest(&self) -> Result<Value, Vec<MissingObservation>> {
+        let unobserved = self.unobserved_observations()?;
+        canonical(&self.inputs).map_err(|_| noncanonical())?;
+        let mut manifest = self.inputs.clone();
+        if !unobserved.is_empty() {
+            manifest["unobserved_observations"] = json!(unobserved);
+        }
+        Ok(manifest)
+    }
+
+    fn unobserved_observations(&self) -> Result<Vec<&'static str>, Vec<MissingObservation>> {
+        let mut unobserved: Vec<_> = RULE_C_OBSERVATIONS
+            .iter()
+            .filter_map(|(pointer, field)| {
+                let (parent, key) = pointer.rsplit_once('/').expect("observation pointer");
+                self.inputs
+                    .pointer(parent)
+                    .and_then(Value::as_object)
+                    .filter(|fields| fields.get(key).map_or(true, Value::is_null))
+                    .map(|_| *field)
+            })
+            .collect();
+        unobserved.sort_unstable();
+        let mut errors = self.missing.clone();
         for gap in required_observations(&self.inputs) {
-            if !missing.iter().any(|existing| existing.field == gap.field) {
-                missing.push(gap);
+            if !errors.iter().any(|existing| existing.field == gap.field) {
+                errors.push(gap);
             }
         }
-        if !missing.is_empty() {
-            return Err(missing);
+        errors.retain(|gap| !unobserved.contains(&gap.field));
+        if errors.is_empty() {
+            Ok(unobserved)
+        } else {
+            Err(errors)
         }
-        let bytes = canonical(&self.inputs).map_err(|_| {
-            vec![MissingObservation {
-                field: "canonical_manifest",
-                owner_action: "remove noncanonical float values",
-            }]
-        })?;
+    }
+
+    pub fn rank_identity(&self) -> Result<PyString, Vec<MissingObservation>> {
+        let manifest = self.rank_manifest()?;
+        let bytes = canonical(&manifest).map_err(|_| noncanonical())?;
         Ok(
             PyString::from_codepoints(digest(&bytes).chars().map(u32::from).collect())
                 .expect("hex scalar string"),
         )
     }
 }
+// These ten observation gaps no longer gate rank or embedding initialization under
+// rule C. Missing/null leaves stay intact; no default or partial value fills them.
+const RULE_C_OBSERVATIONS: &[(&str, &str)] = &[
+    ("/compilation/rustc", "compilation.rustc"),
+    ("/compilation/target", "compilation.target"),
+    (
+        "/compilation/enabled_features",
+        "compilation.enabled_features",
+    ),
+    (
+        "/compilation/effective_flags",
+        "compilation.effective_flags",
+    ),
+    (
+        "/compilation/linked_input_attestation",
+        "compilation.linked_input_attestation",
+    ),
+    ("/session/cpu_arena", "session.cpu_arena"),
+    ("/session/remaining_defaults", "session.remaining_defaults"),
+    ("/session/effective_provider", "session.effective_provider"),
+    (
+        "/native/ort_dependency_inventory",
+        "native.ort_dependency_inventory",
+    ),
+    ("/native/cpu_kernel_class", "native.cpu_os_complete_class"),
+];
+
+fn noncanonical() -> Vec<MissingObservation> {
+    vec![missing(
+        "canonical_manifest",
+        "remove noncanonical float values",
+    )]
+}
+
 fn digest(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
@@ -576,7 +636,7 @@ fn source_snapshot(root: &Path) -> Result<Value, BackendError> {
 mod tests {
     use super::*;
     #[test]
-    fn backend1_unobserved_provider_defaults_and_build_never_publish_identity() {
+    fn rank_rulec_missing_parent_objects_and_model_closure_still_refuse() {
         // Test-only partial observation; no native owner/library/CPU probe.
         let report = ConstructionReport {
             inputs: json!({"tag":"cairn.rust-rank-worker/1", "session":{"cpu_arena":null}}),
@@ -588,7 +648,10 @@ mod tests {
             )],
         };
         let gap = report.rank_identity().err().unwrap();
-        assert_eq!(gap[0].field, "session.cpu_arena");
+        assert!(gap
+            .iter()
+            .any(|gap| gap.field == "assets.model_external_data_closure"));
+        assert!(!gap.iter().any(|gap| gap.field == "session.cpu_arena"));
         assert!(report.inputs().get("session").unwrap()["cpu_arena"].is_null());
         assert_eq!(
             report.provenance_paths(),
@@ -738,7 +801,11 @@ mod session_observation_tests {
                 provenance: vec![],
                 running_image: None,
             };
-            assert!(report.rank_identity().is_err());
+            assert!(report
+                .rank_identity()
+                .unwrap_err()
+                .iter()
+                .any(|gap| gap.field == "assets.model_external_data_closure"));
         }
     }
     #[test]
@@ -807,7 +874,11 @@ mod session_observation_tests {
             provenance: vec![],
             running_image: None,
         };
-        assert!(report.rank_identity().is_err());
+        assert!(report
+            .rank_identity()
+            .unwrap_err()
+            .iter()
+            .any(|gap| gap.field == "assets.model_external_data_closure"));
     }
 }
 
@@ -1123,7 +1194,7 @@ mod typed_serializer_tests {
     }
 
     #[test]
-    fn p2_t1_source_shared_serializer_preserves_global_readiness_refusal() {
+    fn p2_t1_source_shared_serializer_keeps_global_gaps_and_refuses_missing_closure() {
         use cairn_semantic_ort::{NativeDefault, SessionMetadata, SessionSettings};
         let settings = SessionSettings {
             intra_op_threads: 2,
@@ -1164,6 +1235,10 @@ mod typed_serializer_tests {
             missing: vec![],
             running_image: None,
         };
-        assert!(report.rank_identity().is_err());
+        assert!(report
+            .rank_identity()
+            .unwrap_err()
+            .iter()
+            .any(|gap| gap.field == "assets.model_external_data_closure"));
     }
 }

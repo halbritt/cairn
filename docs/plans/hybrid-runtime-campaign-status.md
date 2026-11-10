@@ -40,6 +40,20 @@ production, preserved-failure and retry-policy holds remain.
 
 ## Inspect the implementation
 
+The rank initialization follow-through applies the same ten-field rule-C policy
+to `ConstructionReport::rank_identity`, which the shipped
+`LoadedBackend::initialize` admission already calls. The shared observation
+owner retains the missing/null leaves and their sorted names. Rank keeps its
+complete tag, two normalizations, matvec, score reduction and cache manifest;
+it never uses embedding's mode projection. Hard validation, model-asset closure
+and unrelated owner gaps still refuse. No scoring, tokenization, thread/FENV,
+protocol, runtime-loader or dependency change is included. Seven focused rank
+fixtures are authored but not yet executed or independently reviewed. This
+source change does not repeat the closed 20 embedding checks or all-294
+tokenizer comparison and establishes no runtime or numerical acceptance.
+Earlier strict-rank initialization wording below describes the prior source and
+is superseded only for those ten unavailable observations.
+
 The item 7 source change applies the owner's rule-C initialization exception to
 embedding identity. Its canonical manifest names exactly ten unavailable
 build/session/native observations in sorted `unobserved_observations`, retaining
