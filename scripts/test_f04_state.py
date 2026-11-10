@@ -4,6 +4,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import select
 import signal
 import subprocess
@@ -126,16 +127,27 @@ class F04StateTests(unittest.TestCase):
 
     def test_real_write_sync_and_rename_failures_preserve_the_publication_boundary(self):
         for operation,number,published_marker,published_state in (
-                ('write',1,False,False),('fsync',1,False,False),('fsync',2,True,False),
+                ('write',1,False,False),('write','1+',False,False),('fsync',1,False,False),('fsync',2,True,False),
                 ('fsync',3,True,False),('fsync',4,True,True),('renameat',1,False,False),('renameat',2,True,False)):
             with self.subTest(operation=operation,number=number):
                 f=self.fixture(operation+str(number))
                 trace=f.root/'fault-syscalls'
-                result=subprocess.run(['/usr/bin/strace','-qq','-f','-o',str(trace),'-e','trace='+operation,
+                result=subprocess.run(['/usr/bin/strace','-qq','-f','-yy','-o',str(trace),'-e','trace='+operation,
                     '-e',f'inject={operation}:error=EIO:when={number}',*f.activation_argv()],input=f.raw,
                     capture_output=True,cwd=f.root,env=f.env(),timeout=15)
                 self.assertEqual((result.returncode,result.stdout),(1,b''),trace.read_text())
-                self.assertEqual(json.loads(result.stderr)['error'],{'class':'OSError','reason':'activation','errno':5})
+                if result.stderr:
+                    self.assertEqual(json.loads(result.stderr)['error'],{'class':'OSError','reason':'activation','errno':5})
+                else:
+                    # strace's counter is per Linux task. A migrated Go
+                    # goroutine can hit another first-write injection while
+                    # reporting the original file error. Only an observed
+                    # injected stderr failure permits a missing frame here;
+                    # the public parent treats it as transport failure.
+                    text=trace.read_text()
+                    self.assertEqual(operation,'write',text)
+                    self.assertRegex(text,r'write\(2(?:<[^>]*>)?,[^\n]*= -1 EIO[^\n]*INJECTED')
+                    self.assertRegex(text,r'write\(\d+<'+re.escape(str(self.ledger(f).parent))+r'/[^\n]*= -1 EIO[^\n]*INJECTED')
                 path=self.ledger(f)
                 self.assertEqual(path.with_suffix('.initialized').exists(),published_marker,trace.read_text())
                 self.assertEqual(path.exists(),published_state,trace.read_text())
