@@ -3871,8 +3871,8 @@ def record_activation_refusal(config, event, exc):
         reconcile_rejected_wake(config, state, path)
 
 
-def effective_inbox_config(config, event=None):
-    return _inbox_binding.effective_config(config, event, inbox_recall_wake)
+def effective_inbox_config(config, event=None, *, raw_event=None):
+    return _inbox_binding.effective_config(config, event, inbox_recall_wake, raw_event=raw_event)
 
 
 def load_inbox_recall(config, *, validate=True):
@@ -4469,11 +4469,13 @@ def main():
             raw = sys.stdin.buffer.read(1024 * 1024 + 1)
             if len(raw) > 1024 * 1024:
                 raise CoordinationError("INVALID_HOST", "hook input exceeds limit")
-            config, event = load_config(args.config), json.loads(raw)
+            compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+            config = validate_config(compatibility.config(args.config)) if compatibility is not None else load_config(args.config)
+            event = json.loads(raw)
             global HOOK_CONFIG_PATH
             HOOK_CONFIG_PATH = str(args.config.resolve())
             try:
-                config = effective_inbox_config(config, event)
+                config = effective_inbox_config(config, event, raw_event=raw) if compatibility is not None else effective_inbox_config(config, event)
             except (ValueError, KeyError, TypeError, OSError) as exc:
                 if config.get('inbox_recall_binding') and inbox_recall_wake(event):
                     print(f'Cairn coordination diagnostic: phase=activation error_class={refusal_error_class(exc)}', file=sys.stderr)

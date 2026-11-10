@@ -135,6 +135,8 @@ class Bundle:
         module.__file__ = str(entry_path or self.root / filename)
         raw = self.sources[filename]
         module.__dict__.update(_CAIRN_BUNDLE=self, _CAIRN_VALIDATED_SOURCE=raw)
+        if hasattr(self, 'compatibility_context'):
+            module.__dict__['_CAIRN_COMPATIBILITY_CONTEXT'] = self.compatibility_context
         self.modules[name] = module
         try:
             exec(compile(raw, module.__file__, "exec"), module.__dict__)

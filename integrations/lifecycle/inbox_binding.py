@@ -40,13 +40,16 @@ class InboxBinding:
         self._bundle = bundle
         self._ledger = bundle.load('grant_ledger')
         self._admission = bundle.load('hook_admission')
+        self._compatibility = getattr(bundle, 'compatibility_context', None)
 
-    def effective_config(self, config, event, is_wake):
+    def effective_config(self, config, event, is_wake, *, raw_event=None):
         """Snapshot the one-file activation decision for this hook invocation.
 
         Disabled staging must not inspect pins whose configurations are still being
         replaced. Removing the opt-in from a private copy preserves every old path.
         """
+        if self._compatibility is not None:
+            return self._compatibility.effective_config(config, event, raw_event)
         if not config.get("inbox_recall_binding"):
             return config
         # Guards, event vocabulary and the privacy walk are the shared admission decision.
@@ -70,6 +73,10 @@ class InboxBinding:
 
     def load_bridge(self, config, *, validate=True):
         """Execute only the complete, explicitly pinned inbox recall bundle."""
+        if self._compatibility is not None:
+            if validate:
+                self._compatibility.validate(config)
+            return self._bundle.load('inbox_recall')
         _, manifest = _owner_manifest(config)
         if manifest.get('schema') != SCHEMA:
             raise _refusal('unsupported inbox recall binding; restage its complete lifecycle bundle', 'schema')
@@ -83,6 +90,8 @@ class InboxBinding:
         return module
 
     def validate(self, config, *, require_enabled=False):
+        if self._compatibility is not None:
+            return self._compatibility.validate(config, require_enabled)
         path, manifest = _owner_manifest(config)
         if manifest.get('schema') != SCHEMA or type(manifest.get('enabled')) is not bool:
             raise _refusal('unknown inbox recall binding', 'schema')
@@ -115,6 +124,10 @@ class InboxBinding:
 
     def activation_decision(self, config, event, enabled):
         """One decision for both reserved-wake hooks; no grant or active turn changes."""
+        if self._compatibility is not None:
+            if self._compatibility.enabled is None:
+                raise ValueError('activation requires its checked hook invocation')
+            return self._compatibility.enabled
         if config.get('harness') not in ('codex', 'claude') or event.get('hook_event_name') != 'UserPromptSubmit':
             return enabled
         session = event.get('session_id')
@@ -141,6 +154,8 @@ class InboxBinding:
 
     def coordinates_wake(self, config, event):
         """A coordination opt-out leaves the independent required-only hook active."""
+        if self._compatibility is not None:
+            return self._compatibility.coordinates_wake(config, event)
         manifest = json.loads(Path(config['inbox_recall_binding']).read_text())
         coordinators = [json.loads(_checked_file(item)[1]) for item in manifest['coordination_configs']]
         active = self._admission.active_home(config['harness']).resolve()
