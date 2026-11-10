@@ -1,9 +1,11 @@
 //! Real prepared tokenizer and batch-one input tensors; no ORT/model/worker.
+pub mod document;
 mod offsets;
 pub mod prepared;
 pub mod query;
 pub mod tensors;
 
+pub use document::{DocumentPassage, DocumentSpansError, Utf8Span};
 pub use prepared::{ConsumedFile, PreparationNotice, PreparedInputs, PreparedTokenizer};
 pub use query::{QueryPrefixError, QueryProjection, QueryProjectionMetadata};
 pub use tensors::BatchOneTensors;
