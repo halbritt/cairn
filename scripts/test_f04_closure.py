@@ -101,6 +101,24 @@ class F04ClosureTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stderr)['error'],{'class':'ValueError','reason':'activation','errno':None})
             self.assertFalse(Path(f.memory['state_dir']).exists())
 
+    def test_receipt_provenance_type_and_new_artifact_encoding_refuse_before_bootstrap(self):
+        for defect in ('provenance-type','provenance-surrogate','utf-8-sig','utf-16'):
+            with self.subTest(defect=defect):
+                f=self.fixture(defect)
+                if defect=='provenance-type': f.receipt['source_revision']={'untrusted':'shape'}
+                elif defect=='provenance-surrogate': f.receipt['source_revision']='\ud800'
+                raw=encoded(f.receipt)
+                if not defect.startswith('provenance'): raw=raw.decode().encode(defect)
+                write(f.receipt_path,raw);f.receipt_sha=sha(raw)
+                # Even an independently selected hash does not make malformed
+                # new-artifact metadata a valid bootstrap selection.
+                trace=f.root/'metadata-trace'
+                result=subprocess.run(['/usr/bin/strace','-f','-qq','-s','64','-o',str(trace),'-e','trace=execve',
+                                       str(f.launcher('memory'))],input=f.raw,capture_output=True,
+                                      cwd=f.root,env=f.env(),timeout=18)
+                self.assert_preflight(f,'memory',result)
+                self.assertNotIn('execve("/proc/self/fd/',trace.read_text())
+
     def test_source_exclusions_precede_unopened_invalid_binding_data(self):
         cases=('lifecycle-disabled','child','coordination-disabled','wake-context','other-home',
                'memory-marker','coordination-marker','unsupported','noncanonical-uuid')

@@ -88,9 +88,10 @@ try:
     if not math.isfinite(H) or H not in ((13.,150.) if a.role=='memory' else (2.,15.)): raise ValueError('timeout')
     raw,sha=opened(a.receipt,1048576)
     if not digest(a.receipt_sha256) or sha!=a.receipt_sha256: raise ValueError('receipt pin')
-    r=json.loads(raw,object_pairs_hook=unique)
+    r=json.loads(raw.decode('utf-8'),object_pairs_hook=unique)
     fields={'schema','source_revision','snapshot_root','members','bootstrap','loader','roles','aliases','binary','binding','memory_config','coordination_configs'}
     if set(r)!=fields or r['schema']!='cairn.lifecycle-compatibility/1' or r['bootstrap']!='lifecycle_compatibility.py' or r['loader']!='lifecycle_bundle.py' or not canonical(r['snapshot_root']): raise ValueError('receipt')
+    if type(r['source_revision']) is not str or any(0xd800<=ord(c)<=0xdfff for c in r['source_revision']): raise ValueError('provenance')
     names={'lifecycle_bundle.py','memory.py','coordination.py','inbox_recall.py','inbox_binding.py','grant_ledger.py','transcript_recovery.py','unix_peer_transport.py','wake_transport.py','process_scan.py','codex_queue.py','claude_channel.py','opencode_queue.py','hermes_queue.py','recall_dispatch.py','hook_admission.py','native_session.py','lifecycle_compatibility.py'}
     if r['roles']!={k:k+'.py' for k in ('memory','coordination','inbox_recall','inbox_binding')} or type(r['aliases']) is not dict: raise ValueError('roles')
     for name,target in r['aliases'].items():
