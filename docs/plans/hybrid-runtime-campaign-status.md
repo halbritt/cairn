@@ -12,9 +12,9 @@ acceptance remain open.
 
 ## Inspect the implementation
 
-The table records published source and extensions through the Rust rank/stream
-entry
-[`cb6dbc90`](https://github.com/halbritt/cairn/commit/cb6dbc906661e771431a22238d0fd75f5afedd18)
+The table records published source and extensions through the Rust embedding
+query-prefix projection
+[`d58aed45`](https://github.com/halbritt/cairn/commit/d58aed45a45901b0de155b832a5697bda7161f24)
 on 2026-11-09. The Go libraries are callable source. Rust has an explicit
 rank/stream entry target; model initialization and actual-worker qualification
 remain open. Publication does not activate the migration on supported hosts.
@@ -40,6 +40,7 @@ remain open. Publication does not activate the migration on supported hosts.
 | Rust owning native rank backend | [composition](../../rust/semantic-backend/src/lib.rs), [cache/arithmetic binding](../../rust/semantic-backend/src/arithmetic.rs), [initialization boundary](../../rust/semantic-backend/README.md); [`5b6f1f31`](https://github.com/halbritt/cairn/commit/5b6f1f310635b9384d199f9869f22cbab39561b1) | Connects the prepared tokenizer, ORT session, first-pass cache rows and full-occurrence normalization/matrix computation under one session owner; restored rows retain their bits without repeating first normalization | Semantic and Release: missing initialization observations still prevent a usable factory; actual assets/model/math parity, worker, Go supervisor and runtime qualification remain open |
 | Rust typed session-observation serializer fixtures | [serializer](../../rust/semantic-backend/src/identity.rs); tested source `d0ad8f82` | Private read-only traits let owner-created ORT records and private typed fixtures use the same serializers; four selected fixture checks passed with independent expected values | Semantic and Release: concrete ORT getter forwarding and the original actual-session T1 comparison remain owed; required observations, NULL globals, numerical/runtime and FIRST holds remain unchanged |
 | Rust rank/stream entry and launch plan | [entry](../../rust/semantic-backend/src/bin/rank.rs), [parser](../../rust/semantic-backend/src/bin/rank_entry/plan.rs); tested source [`cb6dbc90`](https://github.com/halbritt/cairn/commit/cb6dbc906661e771431a22238d0fd75f5afedd18) | Explicit `cairn-semantic-rank` target and pure parsing of six absolute asset/library/source selections; rank-once or stream dispatch with exact stream-cache opt-in; 11 bounded parser, private-driver and synthetic-cleanup checks passed | Semantic and Release: production entry/native wiring, real owner drop/cleanup, exit/stderr behavior, model initialization, actual-session T1, worker and Go supervisor remain unqualified; installer and Go routing are unchanged |
+| Rust original-text embedding-query projection | [projection](../../rust/semantic-tokenizer/src/query.rs), [character slicing](../../rust/semantic-tokenizer/src/offsets.rs); tested source [`d58aed45`](https://github.com/halbritt/cairn/commit/d58aed45a45901b0de155b832a5697bda7161f24) | Untruncated/unpadded rank-tokenizer counts, original-text prefix selection with at most eight re-encodings, character-to-UTF-8 slicing and prefix-only hash/count metadata; 20 bounded owned-fixture checks passed, with 11 prior tests filtered out | Semantic and Release: Python binding/version correspondence, actual prepared-token parity, actual-session T1 and model/worker/runtime qualification remain open; component input attestation has the header limit below |
 | Go memory client and checkpoint reader | [client](../../internal/lifecycle/memoryclient/client.go), [checkpoint](../../internal/lifecycle/memoryclient/checkpoint.go), [contract](hybrid-runtime-contracts/f02-memory-client.md); [`2989f834`](https://github.com/halbritt/cairn/commit/2989f83442ba880dd586b807b9cdece5282b67e5) | Direct authenticated SDK search/pull calls, receipt-credit accounting and concrete raw-record checkpoint traversal | Foundation: recall/capture frontends, hook streams/exits/meters, grants and executing-hook identity; full F-02 and HC-03 remain open |
 | Go unfinished checkpoint refresh | [refresh](../../internal/lifecycle/memoryclient/checkpoint_refresh.go), [contract](hybrid-runtime-contracts/f02-checkpoint-refresh.md); [`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a) | Restores at most one current whole unfinished note through bounded authenticated search/pull, with identity/hash/extent checks and shared deadline accounting | Foundation: frontend state, grants and metering integration; runtime and full F-02 acceptance remain open |
 | Go capture selection and ordered writes | [capture](../../internal/lifecycle/memoryclient/capture.go), [contract](hybrid-runtime-contracts/f03-capture-commit.md); [`1497c7dc`](https://github.com/halbritt/cairn/commit/1497c7dc8ac14c776ca4672e28d038976cb21265) | Validates the complete selection before record mutation, performs ordered create/revise calls and retains confirmed writes when a later write fails | Foundation: frontend state commits, hooks, streams/exits/meters, grants and executing-hook identity; full F-03 remains open |
@@ -154,7 +155,58 @@ strict score policy permits no +/-1 tolerance. All 294 token IDs/lengths must
 precede model execution; actual-worker FIRST remains unconsumed. Full P1-P5,
 numerical/runtime/resource/production and old-failure holds persist. This entry
 publication establishes neither readiness, parity, initialization nor campaign
-acceptance. Query-prefix and document-span work remain separate queued items.
+acceptance. The query-prefix projection is published below; document-span work
+remains queued for separate dispatch.
+
+The original-text embedding-query projection (`d58aed45`) was accepted in
+independent source review round 1 with no candidate defect. One isolated,
+offline, locked `--lib query_prefix2_` invocation passed all 20 exact selected
+checks with 11 prior tests filtered out and zero retries. The owned synthetic
+`PreparedInputs` fixtures exercise actual Bert/WordPiece tokenization and
+independent count, Unicode-offset and SHA-256 expectations. Private scripted
+observations exercise the same production projection algorithm for retreat and
+error bounds. No actual prepared294 inputs, protected Python reference, model,
+session or worker were executed. The component build excludes the backend, ORT
+and math crates. It compiled the inherited Onig/ESAXX units and exercised the new
+test harness's linkage/startup; those effects do not qualify production runtime.
+
+`PreparedTokenizer::query_prefix` refuses Python-blank text and inputs above
+4096 strict UTF-8 bytes. It counts default-special tokens on the separate
+untruncated/unpadded rank clone. At 512 tokens or fewer it preserves the original
+text. Above that bound it re-encodes at most eight original-text prefixes,
+retreating through the original encoding's offsets with Python's signed slice
+semantics. Character offsets map to valid original UTF-8 cuts, without decoding
+tokens, normalizing the selected text or expanding over ignored bytes. The
+question includes the exact instruction; `original-prefix/1` metadata retains
+the full original count, embedded count, truncation flag, and prefix-only UTF-8
+byte length and SHA-256. Model tokenizer truncation/padding remains unchanged.
+
+The source review retains several limits. Python binding use of character
+offsets and Python/Rust tokenizer-version correspondence remain unproved. A
+valid UTF-8 cut can split a base character from a combining mark, as the source
+algorithm permits. Four current identical instruction-prefix copies lack a
+cross-crate guard. The simple retreat test discriminates the decrement weakly;
+the negative-end and large-count cases cover the arithmetic. The owned-fixture
+expectations have now passed the component run; broader parity remains held.
+
+Component header evidence has a specific limit: all 198 selected system-header
+preflight hashes matched. Twenty additional headers have same-run post-run
+identities/hashes and retained historical path evidence, but no current-run
+preflight hashes. The prior line parser missed split unfinished/resumed opens;
+the coverage assertion was repaired only from that same trace, without a rerun.
+The plan explicitly limited its selected header set. The bounded component
+result supports source landing; it does not establish before/after stability of
+those 20 headers or complete include/input attestation.
+
+Landing preserves the tested code, manifests, locks and native inputs without
+repeating the component command. The active installer, Go routing, rank/stream
+entry and existing model/rank preparation bodies are unchanged. Actual-session
+T1, required observations/NULL globals, exact current integer scores with no
++/-1 tolerance, all294-before-model, FIRST UNCONSUMED and full P1-P5,
+numerical/runtime/resource/production and old-failure holds persist. `REQUIRED`
+declares 11 rows, not a measured missing count. No readiness, usable
+initialization, actual prepared-token parity or campaign acceptance is claimed.
+Document-span work remains queued for separate dispatch after this landing.
 
 The paired value/transcript component passed formatting, build, vet and scoped
 race checks for those two packages. Foundation cleared the exact four-file value
