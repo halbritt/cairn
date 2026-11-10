@@ -4,9 +4,10 @@ Status: acceptance criteria for the authorized hybrid runtime campaign, prepared
 against `d3c255a4bb75438e93527eaa1d83da780fd11eea` on 2026-11-06.
 Delivery allocation incorporates the overall lead's
 [F-04 consumer decision](f04-consumer-decision.md), committed as `32ca633`.
-These contracts specify work to implement and verify. They do not claim that
-`internal/statefile`, `internal/procpeer`, `internal/lifecycle`, binary binding
-`/3`, or the proposed lifecycle commands already exist.
+These contracts specify implementation and acceptance criteria. F-01 provides
+read-only admission and `/3` binding checks through `binding.Check`, with the
+lifecycle command registered but disabled. F-04 activation and complete installed
+hook qualification remain pending.
 
 The [implementation plan](../hybrid-runtime-implementation.md) controls the
 sequence. Foundation owns this file. The overall lead owns the shared contract
@@ -38,9 +39,8 @@ no provider is built.
 
 The embedded CPython host, C value graph and RTERM1 observer construction are
 paused. Keep every artifact and delete nothing; start no new construction cut.
-F-01 implementation and landing await the coordinator's next dispatch. Its
-planned landing precedes F-04 and leaves the lifecycle command disabled on main;
-production activation still requires a grant. Lifecycle and semantic release
+F-01 supplies a callable read-only consumer before F-04. The lifecycle command
+stays disabled on main; production activation still requires a grant. Lifecycle and semantic release
 trains are separate; retirement waits for both.
 
 Tests may run any number of times only inside a namespace with no production
@@ -53,8 +53,8 @@ as do retry decision `607a5940/v2`, subscription-only model routes and trunk rul
 F-01 namespace coverage has four fixture skips: root-UID visibility and the
 existing `/dev/shm`, `/tmp` and `/var/tmp` filesystem conditions. The root-owned
 pin refusal path is not exercised inside this namespace and remains for installed
-qualification. These skips leave coverage gaps; F-01 landing and F-04 acceptance
-remain pending.
+qualification. These skips leave coverage gaps and do not establish full
+installed qualification or F-04 acceptance.
 
 ## Work and dependencies
 
