@@ -38,7 +38,7 @@ func run(ctx context.Context, args []string, out, diagnostic io.Writer) error {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil && err != flag.ErrHelp {
+	if err := runCommand(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil && err != flag.ErrHelp {
 		fmt.Fprintln(os.Stderr, "cairn-stage-lifecycle:", err)
 		os.Exit(1)
 	}

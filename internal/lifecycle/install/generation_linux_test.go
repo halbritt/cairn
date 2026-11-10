@@ -1,16 +1,20 @@
 package install
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -213,5 +217,115 @@ func TestGenerationLockAndCanceledContextRefuseBeforeWrites(t *testing.T) {
 	names, err := os.ReadDir(root)
 	if err != nil || len(names) != 0 {
 		t.Fatalf("refusal wrote state: %v %v", names, err)
+	}
+}
+
+type generationCrashInput struct {
+	Root  string
+	Files []File
+	At    string
+}
+
+func TestGenerationCrashChild(t *testing.T) {
+	path := os.Getenv("CAIRN_R02_CRASH_INPUT")
+	if path == "" {
+		return
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in generationCrashInput
+	if err := json.Unmarshal(raw, &in); err != nil {
+		t.Fatal(err)
+	}
+	_, err = stageGeneration(context.Background(), in.Root, nextID, in.Files, func(at string) error {
+		if at == in.At {
+			if _, err := os.Stdout.WriteString("at-boundary\n"); err != nil {
+				return err
+			}
+			var release [1]byte
+			_, err := os.Stdin.Read(release[:])
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Fatal("crash child unexpectedly finished staging")
+}
+
+func TestGenerationSIGKILLReconciliationRetainsPreviousGeneration(t *testing.T) {
+	for _, point := range []string{"member-sync/coordination.json", "member-sync/launcher", "member-sync/memory.json", "manifest-sync", "generation-sync", "publication", "root-sync"} {
+		for _, side := range []string{"before:", "after:"} {
+			t.Run(side+point, func(t *testing.T) {
+				root, files := generationInputs(t)
+				old, err := StageGeneration(context.Background(), root, legacyID, files)
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw, err := json.Marshal(generationCrashInput{root, files, side + point})
+				if err != nil {
+					t.Fatal(err)
+				}
+				input := filepath.Join(filepath.Dir(root), "crash-input.json")
+				if err := os.WriteFile(input, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+				self, err := os.Executable()
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, self, "-test.run=^TestGenerationCrashChild$")
+				cmd.Env = append(os.Environ(), "CAIRN_R02_CRASH_INPUT="+input)
+				stdin, err := cmd.StdinPipe()
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer stdin.Close()
+				stdout, err := cmd.StdoutPipe()
+				if err != nil {
+					t.Fatal(err)
+				}
+				var diagnostic bytes.Buffer
+				cmd.Stderr = &diagnostic
+				if err := cmd.Start(); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					if cmd.ProcessState == nil {
+						if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+							t.Error(err)
+						}
+						if err := cmd.Wait(); err == nil {
+							t.Error("expected terminated fixture")
+						}
+					}
+				})
+				line, err := bufio.NewReader(stdout).ReadString('\n')
+				if err != nil || line != "at-boundary\n" {
+					t.Fatalf("child did not reach boundary: %q %v %s", line, err, diagnostic.String())
+				}
+				if err := cmd.Process.Kill(); err != nil {
+					t.Fatal(err)
+				}
+				if err := cmd.Wait(); err == nil || cmd.ProcessState.Success() {
+					t.Fatalf("child did not terminate under SIGKILL: %v", err)
+				}
+				if _, err := ReadGeneration(context.Background(), old); err != nil {
+					t.Fatalf("previous generation invalid after crash: %v", err)
+				}
+				selected, err := StageGeneration(context.Background(), root, nextID, files)
+				if err != nil {
+					t.Fatalf("exact file-only reconciliation after joined child: %v", err)
+				}
+				if _, err := ReadGeneration(context.Background(), selected); err != nil {
+					t.Fatalf("reconciled selection invalid: %v", err)
+				}
+			})
+		}
 	}
 }
