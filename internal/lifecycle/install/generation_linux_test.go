@@ -157,6 +157,22 @@ func TestGenerationRefusesChangedReuseAndMemberTampering(t *testing.T) {
 	}
 }
 
+func TestChangedGenerationReuseReturnsNoSelection(t *testing.T) {
+	root, files := generationInputs(t)
+	old, err := StageGeneration(context.Background(), root, legacyID, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files[0].Executable = !files[0].Executable
+	refused, err := StageGeneration(context.Background(), root, legacyID, files)
+	if err == nil || refused != (Generation{}) {
+		t.Fatalf("refused replacement returned an unusable selection pin: %+v %v", refused, err)
+	}
+	if _, err := ReadGeneration(context.Background(), old); err != nil {
+		t.Fatalf("refused replacement changed the retained generation: %v", err)
+	}
+}
+
 func TestGenerationFailureAtEveryDurableBoundaryKeepsOldSelection(t *testing.T) {
 	points := []string{"member-sync/coordination.json", "member-sync/launcher", "member-sync/memory.json", "manifest-sync", "generation-sync", "publication", "root-sync"}
 	for _, point := range points {

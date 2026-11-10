@@ -84,3 +84,34 @@ func TestGenerationCommandRefusesAmbiguousPlansBeforeWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerationCommandRejectsNullExecutableBeforeWrites(t *testing.T) {
+	base, err := os.MkdirTemp("/dev/shm", "cairn-null-plan-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(base); err != nil {
+			t.Error(err)
+		}
+	})
+	root := filepath.Join(base, "releases")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	member := filepath.Join(base, "source")
+	raw := []byte("selected configuration bytes\n")
+	if err := os.WriteFile(member, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.Sum256(raw)
+	plan := fmt.Sprintf(`{"id":"147fc8dd-b0d9-4b9f-8be1-59a2c77ef0cb","files":[{"name":"memory.json","path":%q,"sha256":%q,"executable":null}]}`, member, hex.EncodeToString(h[:]))
+	var out, diagnostic bytes.Buffer
+	if err := runCommand(context.Background(), []string{"generation", "--root", root}, strings.NewReader(plan), &out, &diagnostic); err == nil {
+		t.Fatal("explicit null executable was accepted as a boolean and published")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil || len(entries) != 0 || out.Len() != 0 {
+		t.Fatalf("invalid executable field wrote state: %v %v %q", entries, err, out.String())
+	}
+}

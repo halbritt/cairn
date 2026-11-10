@@ -115,9 +115,12 @@ class GenerationInstallation(unittest.TestCase):
             self.assertEqual(path.read_bytes(), raw)
         self.assertFalse(self.tripwire.exists(), "fixture unexpectedly invoked the API executable")
 
+    def legacy_event(self):
+        return json.dumps(dict(hook_event_name="PostToolUse", session_id="11111111-1111-4111-8111-111111111111",
+                               cwd=str(self.work), tool_name="Read", tool_input={"file_path": "selected.go"})).encode()
+
     def legacy_frontends(self, launches):
-        event = json.dumps(dict(hook_event_name="PostToolUse", session_id="11111111-1111-4111-8111-111111111111",
-                                cwd=str(self.work), tool_name="Read", tool_input={"file_path": "selected.go"})).encode()
+        event = self.legacy_event()
         # Ordinary excluded coordination is a real frontend path, not admission
         # or activation acceptance. The legacy binding predicate is checked below.
         (self.work / ".cairn-no-coordination").touch()
@@ -162,12 +165,14 @@ class GenerationInstallation(unittest.TestCase):
         self.assert_preserved()
 
     def test_tampered_retained_member_refuses_before_reverse_selection(self):
+        before = self.call(self.launches["memory"], self.legacy_event())
+        self.assertEqual((before.returncode, before.stdout, before.stderr), (0, b"{}\n", b""))
         helper = self.old_dir / "hook_admission.py"
         helper.chmod(0o600)
         helper.write_bytes(b"changed installed helper\n")
         helper.chmod(0o400)
         self.inspect(self.old, success=False)
-        result = self.call(self.launches["memory"], b"{}")
+        result = self.call(self.launches["memory"], self.legacy_event())
         self.assertNotEqual(result.returncode, 0)
         self.assert_preserved()
 

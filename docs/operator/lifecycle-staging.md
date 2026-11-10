@@ -68,8 +68,9 @@ claims and watchers do not acquire it, so it cannot establish quiescence.
 The durable order is: copy and pin each member, seal its mode and sync it;
 write and sync the manifest; sync the private generation directory; publish
 with a no-replace rename; verify every published member; sync the release-root
-directory and check its pathname identity. Returned failures identify any
-already-published generation. A killed publisher may leave an unselected
+directory and check its pathname identity. A failure can leave a published
+generation: reconcile the intended ID rather than inferring no write from an
+error, including a deferred-close error. A killed publisher may leave an unselected
 `.stage-*` directory, which is retained for reconciliation, never selected or
 automatically pruned. Exact published generations are verified before reuse.
 

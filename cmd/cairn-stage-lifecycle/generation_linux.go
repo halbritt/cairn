@@ -86,6 +86,9 @@ func runCommand(ctx context.Context, args []string, input io.Reader, out, diagno
 				return errors.New("unknown generation file field")
 			}
 		}
+		if raw, present := entry["executable"]; present && !bytes.Equal(bytes.TrimSpace(raw), []byte("true")) && !bytes.Equal(bytes.TrimSpace(raw), []byte("false")) {
+			return errors.New("generation executable field must be a boolean")
+		}
 		var file install.File
 		if err := json.Unmarshal(raw, &file); err != nil {
 			return err

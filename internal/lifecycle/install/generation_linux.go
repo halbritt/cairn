@@ -179,7 +179,11 @@ func stageGeneration(ctx context.Context, root, id string, files []File, observe
 	}
 	result = generationPin(root, name, raw)
 	if err := verifyGeneration(ctx, root, name, manifest, raw); err != nil {
-		return result, fmt.Errorf("generation exists at %s but verification failed: %w", result.Path, err)
+		path := result.Path
+		if !published {
+			result = Generation{}
+		}
+		return result, fmt.Errorf("generation exists at %s but verification failed: %w", path, err)
 	}
 	if temporary != "" {
 		if err := anchored.RemoveAll(temporary); err != nil {
