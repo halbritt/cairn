@@ -1,8 +1,11 @@
 //! Real prepared tokenizer and batch-one input tensors; no ORT/model/worker.
+mod offsets;
 pub mod prepared;
+pub mod query;
 pub mod tensors;
 
 pub use prepared::{ConsumedFile, PreparationNotice, PreparedInputs, PreparedTokenizer};
+pub use query::{QueryPrefixError, QueryProjection, QueryProjectionMetadata};
 pub use tensors::BatchOneTensors;
 
 use cairn_semantic_protocol::{FailureKind, Utf8Error};

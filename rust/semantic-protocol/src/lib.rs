@@ -73,7 +73,9 @@ impl PyString {
         self.0.iter().copied().eq(text.chars().map(u32::from))
     }
 
-    fn python_blank(&self) -> bool {
+    /// Exact Python whitespace predicate, including U+001C..U+001F. Lone
+    /// surrogates are nonblank; strict UTF-8 conversion remains a separate step.
+    pub fn python_blank(&self) -> bool {
         self.0
             .iter()
             .all(|&codepoint| match char::from_u32(codepoint) {

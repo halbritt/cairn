@@ -211,7 +211,7 @@ fn added_token(
     Ok(token)
 }
 
-fn utf8(text: &PyString) -> Result<String, Error> {
+pub(crate) fn utf8(text: &PyString) -> Result<String, Error> {
     let bytes = text.strict_utf8().map_err(Error::TextUtf8)?;
     Ok(String::from_utf8(bytes).expect("published strict_utf8 returns valid UTF8"))
 }
@@ -349,6 +349,18 @@ impl PreparedTokenizer {
             .encode(text.as_str(), policy == SpecialTokens::Default)
             .map_err(|source| Error::tokenizer("rank encode", source))?;
         Ok(encoding.get_ids().to_vec())
+    }
+
+    /// Original Unicode-scalar offsets, not normalized or UTF-8 byte offsets.
+    /// Uses the separate untruncated/unpadded rank clone without exposing it.
+    pub(crate) fn rank_char_encoding(
+        &self,
+        text: &str,
+        special_tokens: bool,
+    ) -> Result<Encoding, Error> {
+        self.rank
+            .encode_char_offsets(text, special_tokens)
+            .map_err(|source| Error::tokenizer("rank character-offset encode", source))
     }
 
     pub fn rank_decode(&self, ids: &[u32], policy: DecodeTokens) -> Result<PyString, Error> {
