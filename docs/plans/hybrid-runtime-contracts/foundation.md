@@ -14,6 +14,42 @@ index, cross-team decisions and X-01 admission. Dependent implementation waits
 for the overall lead's explicit X-01 completion notice. Source inventory,
 synthetic fixture preparation and existing baseline tests may proceed now.
 
+## Owner amendment: 2026-11-10
+
+Cairn owner decision `98d46758-c61c-42b4-9912-76cf9dfb0dc0`, version 1,
+supersedes conflicting parity and test-execution requirements below. It changes
+the acceptance criteria; it does not establish implementation or test completion.
+
+Lifecycle inputs have three classes:
+
+- **Class A:** inputs the Python writers can produce, and recorded real hook
+  inputs. Require exact parity by running Python and Go on the same corpus.
+- **Class B:** malformed or hostile inputs. Go must refuse safely with a stable
+  error; matching Python's exception class, message or order is unnecessary.
+- **Class C:** resource exhaustion and interpreter limits. These are outside
+  parity acceptance; document Go's own behavior.
+
+Fixture records identify their class and writer or recorded-input provenance.
+The exact value, ordering and refusal requirements below apply to Class A;
+they do not require equality with CPython on every possible input. Input
+classification does not grant authority or weaken identity, privacy or
+persistence safeguards. The ref-tracer provider question is closed as Class C;
+no provider is built.
+
+The embedded CPython host, C value graph and RTERM1 observer construction are
+paused. Keep every artifact and delete nothing; start no new construction cut.
+F-01 implementation and landing await the coordinator's next dispatch. Its
+planned landing precedes F-04 and leaves the lifecycle command disabled on main;
+production activation still requires a grant. Lifecycle and semantic release
+trains are separate; retirement waits for both.
+
+Tests may run any number of times only inside a namespace with no production
+home, no production sockets, no network and no view of host processes. This
+isolation rule replaces C2, FIRST and source-only test holds. Production changes,
+including deployment, service changes and production-state effects, still need
+a grant. Other runtime-acceptance, controller and preserved-failure holds remain,
+as do retry decision `607a5940/v2`, subscription-only model routes and trunk rules.
+
 ## Work and dependencies
 
 | Plan key | Plane item | Deliverable | Builder | Required predecessors |
@@ -228,14 +264,12 @@ source reader/writer behavior: invalid counter fields still refuse, while
 accepted opaque values roundtrip with their non-finite class preserved. Go's
 standard JSON/float64/struct decoding is insufficient evidence of this
 contract; use a source-compatible lossless representation for accepted legacy
-values. Source parser/encoder limits remain part of the operation profile: the
-observed Python 3.14 default integer digit limit is 4300, environment
-configuration can change it, and excessive nesting raises an escaping
-`RecursionError`. Capture the active reference profile and test both sides of
-its integer/depth limits so Go neither widens nor narrows the accepted domain.
-No strict-parser change or silent replacement character is authorized by this
-port. A narrower accepted domain requires a separate explicit compatibility
-decision before F-04 can be accepted.
+values in Class A. Retain the source writer/profile provenance needed to run
+Python and Go on the same Class A corpus. Python's integer-digit and recursion
+limits are Class C, not boundaries Go must reproduce; document Go's own behavior
+instead. Class B inputs require safe refusal with a stable Go error, without
+matching Python exception details or failure order. Class A values must not be
+silently changed by strict-parser normalization or replacement characters.
 
 Required cross-language fixtures include each writer profile, unknown nested
 values, large integers, floats/signed zero, bool versus int, duplicate/case keys,
@@ -393,15 +427,16 @@ config/binding digests alone do not convey it. This code-selection metadata
 check does not open binding data before source admission or imply that a
 process-local Python context survived into Go.
 
-The child interprets those event bytes with the source-compatible lossless
+The child interprets Class A event bytes with the source-compatible lossless
 reader profile, not Go struct decoding or replacement-character normalization.
 The state-file equivalence rules also apply to the event: case-sensitive keys,
 duplicate-last values with original insertion positions, exact scalar types,
-large integers, non-finite values, surrogate-preserving strings and the same
-accepted encodings, integer-digit and recursion limits. Every admission and
-activation field retains Python's type checks, string/path semantics and
-failure order. Capture the actual isolated interpreter profile (`-I` ignores
-`PYTHONINTMAXSTRDIGITS`) and run both sides against it.
+large integers, non-finite values, surrogate-preserving strings and encodings
+exercised by that corpus. Class A admission and activation fields retain
+Python's type checks, string/path semantics and failure order. Compare both
+implementations on the same Class A corpus with its recorded source provenance.
+Malformed or hostile Class B events require stable safe Go refusal; interpreter
+and resource limits are Class C and do not require matching Python's boundaries.
 
 Fixtures include escaped lone surrogates and surrogate-escape code points in
 `prompt_id`, `turn_id`, `session_id`, `cwd` and `project_path`, case-variant
@@ -566,8 +601,9 @@ inspection or other operator modes without separately pinning/testing their
 dependency closure: `codex_queue` lazily imports third-party `websocket` on
 those paths, outside the qualified hook/issued-inbox call graph. `-I -S` does
 not load that package from user/site paths. Those modes retain their `/2`
-executor until their real migration consumer lands. Differential fixtures use
-the same captured isolated parser/interpreter profile on both sides.
+executor until their real migration consumer lands. Class A differential
+fixtures run both implementations on the same corpus with recorded source
+profile provenance; interpreter-limit parity is not required.
 
 The hash graph is acyclic: configs name only their versioned binding path;
 the `/3` manifest hashes Go and config bytes; the receipt hashes that manifest,
