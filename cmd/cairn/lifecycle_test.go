@@ -146,10 +146,38 @@ func (f *lifecycleFixture) write(t *testing.T) {
 		lifecycleWrite(t, filepath.Join(snapshot, name), []byte("# checked fixture bytes, never executed: "+name+"\n"))
 	}
 	receipt := map[string]any{"schema": "cairn.lifecycle-compatibility/1", "source_revision": "fixture-writer/v1", "snapshot_root": snapshot, "members": members, "bootstrap": "lifecycle_compatibility.py", "loader": "lifecycle_bundle.py", "roles": map[string]string{"memory": "memory.py", "coordination": "coordination.py", "inbox_recall": "inbox_recall.py", "inbox_binding": "inbox_binding.py"}, "aliases": map[string]string{}, "binary": bd, "binding": map[string]any{"path": f.Manifest, "sha256": lifecycleSHA(mr), "schema": "cairn.inbox-recall-binding/3"}, "memory_config": md, "coordination_configs": []any{cd}}
+	f.pinReceipt(t, receipt)
+	f.selectConfig(t, "memory", f.Config)
+}
+func (f *lifecycleFixture) pinReceipt(t *testing.T, receipt map[string]any) {
+	t.Helper()
 	raw := lifecycleJSON(t, receipt)
 	lifecycleWrite(t, f.Receipt, raw)
 	f.ReceiptSHA = lifecycleSHA(raw)
-	lifecycleWrite(t, f.Input, lifecycleJSON(t, lifecycleChildInput{[]string{"check", "--entrypoint", "memory", "--config", f.Config, "--receipt", f.Receipt, "--receipt-sha256", f.ReceiptSHA}}))
+}
+func (f *lifecycleFixture) selectConfig(t *testing.T, entrypoint, path string) {
+	t.Helper()
+	lifecycleWrite(t, f.Input, lifecycleJSON(t, lifecycleChildInput{[]string{"check", "--entrypoint", entrypoint, "--config", path, "--receipt", f.Receipt, "--receipt-sha256", f.ReceiptSHA}}))
+}
+func lifecycleObject(t *testing.T, path string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		t.Fatal(err)
+	}
+	return object
+}
+func (f *lifecycleFixture) pinManifest(t *testing.T, manifest, receipt map[string]any) {
+	t.Helper()
+	raw := lifecycleJSON(t, manifest)
+	lifecycleWrite(t, f.Manifest, raw)
+	// Preserve independent receipt descriptors while admitting the changed manifest bytes.
+	receipt["binding"].(map[string]any)["sha256"] = lifecycleSHA(raw)
+	f.pinReceipt(t, receipt)
 }
 func lifecycleEnv(extra []string) []string {
 	var env []string
@@ -215,6 +243,139 @@ func fixtureState(t *testing.T, f *lifecycleFixture) map[string]string {
 		t.Fatal(err)
 	}
 	return result
+}
+
+func (f *lifecycleFixture) assertConsumerOutcome(t *testing.T, entrypoint, wantError, disposition string) {
+	t.Helper()
+	event := []byte(fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","cwd":%q,"opaque":{"keep":"raw input"}}`, f.Work))
+	var env []string
+	if home, ok := f.Coordination["config_home"].(string); ok && entrypoint == "coordination" {
+		env = append(env, "CODEX_HOME="+home)
+	}
+	before := fixtureState(t, f)
+	result, code, stderr := f.run(t, event, env)
+	stdout := result["_stdout_for_evidence"].(string)
+	wantCode := 1
+	wantStdout := string(lifecycleJSON(t, map[string]string{"error": wantError})) + "\n"
+	if wantError == "" {
+		path := f.Config
+		if entrypoint == "coordination" {
+			path = f.Coord
+		}
+		wantCode = 0
+		wantStdout = fmt.Sprintf("{\"disposition\":%q,\"verdict\":\"run\",\"config_sha256\":%q,\"binding_sha256\":%q}\n", disposition, before[path], before[f.Manifest])
+	}
+	after := fixtureState(t, f)
+	t.Logf("entrypoint=%s cwd=%q env=%q event=%q stdout=%q stderr=%q exit=%d state_before=%s state_after=%s", entrypoint, f.Work, env, event, stdout, stderr, code, lifecycleSHA(lifecycleJSON(t, before)), lifecycleSHA(lifecycleJSON(t, after)))
+	if code != wantCode || stdout != wantStdout || stderr != "" {
+		t.Fatalf("want exit=%d stdout=%q stderr=\"\"; got exit=%d stdout=%q stderr=%q", wantCode, wantStdout, code, stdout, stderr)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("consumer changed fixture state")
+	}
+}
+
+func newLifecycleTwoCoordinatorFixture(t *testing.T) *lifecycleFixture {
+	t.Helper()
+	f := newLifecycleFixture(t, true)
+	f.Coordination["config_home"] = filepath.Join(f.Root, "first-home")
+	f.write(t)
+	second := lifecycleObject(t, f.Coord)
+	second["config_home"] = filepath.Join(f.Root, "second-home")
+	second["state_dir"] = filepath.Join(f.Root, "second-state")
+	path := filepath.Join(f.Root, "coordination-second.json")
+	raw := lifecycleJSON(t, second)
+	lifecycleWrite(t, path, raw)
+	manifest, receipt := lifecycleObject(t, f.Manifest), lifecycleObject(t, f.Receipt)
+	secondDescriptor := map[string]any{"path": path, "sha256": lifecycleSHA(raw)}
+	manifest["coordination_configs"] = append(manifest["coordination_configs"].([]any), secondDescriptor)
+	receipt["coordination_configs"] = append(receipt["coordination_configs"].([]any), secondDescriptor)
+	f.pinManifest(t, manifest, receipt)
+	return f
+}
+
+func TestLifecycleConsumerReceiptSelectionRefusals(t *testing.T) {
+	for _, entrypoint := range []string{"memory", "coordination"} {
+		t.Run(entrypoint, func(t *testing.T) {
+			for _, which := range []string{"selected", "current-config", "binding-path", "binding-digest", "binary-path", "binary-digest", "memory-path", "memory-digest", "coordination-count", "coordination-0-path", "coordination-0-digest", "coordination-1-path", "coordination-1-digest"} {
+				t.Run(which, func(t *testing.T) {
+					f := newLifecycleTwoCoordinatorFixture(t)
+					manifest, receipt := lifecycleObject(t, f.Manifest), lifecycleObject(t, f.Receipt)
+					path, other := f.Config, f.Coord
+					if entrypoint == "coordination" {
+						path, other = f.Coord, f.Config
+					}
+					want := "mixed binding and receipt selection"
+					switch which {
+					case "selected":
+						want = ""
+					case "current-config":
+						path, want = other, "configuration differs from selected receipt"
+					case "binding-path":
+						receipt["binding"].(map[string]any)["path"] = filepath.Join(f.Root, "unselected-binding.json")
+						f.pinReceipt(t, receipt)
+						want = "binding differs from selected receipt"
+					case "binding-digest":
+						manifest["enabled"] = false
+						lifecycleWrite(t, f.Manifest, lifecycleJSON(t, manifest))
+						want = "binding differs from selected receipt"
+					case "coordination-count":
+						coords := manifest["coordination_configs"].([]any)
+						manifest["coordination_configs"] = append(coords, coords[0])
+						f.pinManifest(t, manifest, receipt)
+					default:
+						parts := strings.Split(which, "-")
+						var descriptor map[string]any
+						if parts[0] == "coordination" {
+							index := 0
+							if parts[1] == "1" {
+								index = 1
+							}
+							descriptor = manifest["coordination_configs"].([]any)[index].(map[string]any)
+							want = "mixed coordination selection"
+						} else {
+							key := parts[0]
+							if key == "memory" {
+								key = "memory_config"
+							}
+							descriptor = manifest[key].(map[string]any)
+						}
+						if parts[len(parts)-1] == "path" {
+							descriptor["path"] = filepath.Join(f.Root, "unselected-config")
+						} else {
+							descriptor["sha256"] = strings.Repeat("0", 64)
+						}
+						f.pinManifest(t, manifest, receipt)
+					}
+					f.selectConfig(t, entrypoint, path)
+					f.assertConsumerOutcome(t, entrypoint, want, "checked")
+				})
+			}
+		})
+	}
+}
+
+func TestLifecycleConsumerDisabledStagingIgnoresChangedDownstreamConfig(t *testing.T) {
+	for _, entrypoint := range []string{"memory", "coordination"} {
+		for _, enabled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/enabled=%t", entrypoint, enabled), func(t *testing.T) {
+				f := newLifecycleFixture(t, enabled)
+				path, downstream := f.Config, f.Coord
+				if entrypoint == "coordination" {
+					path, downstream = f.Coord, f.Config
+				}
+				changed := lifecycleObject(t, downstream)
+				changed["opaque"] = "changed after descriptor pinning"
+				lifecycleWrite(t, downstream, lifecycleJSON(t, changed))
+				f.selectConfig(t, entrypoint, path)
+				want := ""
+				if enabled {
+					want = "inbox recall binding changed"
+				}
+				f.assertConsumerOutcome(t, entrypoint, want, "disabled")
+			})
+		}
+	}
 }
 
 func TestLifecycleConsumerSameAdmissionCorpus(t *testing.T) {
