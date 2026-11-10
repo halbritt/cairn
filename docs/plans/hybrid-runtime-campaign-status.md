@@ -12,9 +12,9 @@ acceptance remain open.
 
 ## Inspect the implementation
 
-The table records published source and extensions through the Rust original-text
-document-passage projection
-[`474b756f`](https://github.com/halbritt/cairn/commit/474b756fd4f47e7c20ce23b4ca1887db1fdb893e)
+The table records published source and extensions through the Rust embedding
+derivation projection
+[`58b3a299`](https://github.com/halbritt/cairn/commit/58b3a299cf3e323bdd54fb38fe20be7ee2d8e2c1)
 on 2026-11-09. The Go libraries are callable source. Rust has an explicit
 rank/stream entry target; model initialization and actual-worker qualification
 remain open. Publication does not activate the migration on supported hosts.
@@ -42,6 +42,7 @@ remain open. Publication does not activate the migration on supported hosts.
 | Rust rank/stream entry and launch plan | [entry](../../rust/semantic-backend/src/bin/rank.rs), [parser](../../rust/semantic-backend/src/bin/rank_entry/plan.rs); tested source [`cb6dbc90`](https://github.com/halbritt/cairn/commit/cb6dbc906661e771431a22238d0fd75f5afedd18) | Explicit `cairn-semantic-rank` target and pure parsing of six absolute asset/library/source selections; rank-once or stream dispatch with exact stream-cache opt-in; 11 bounded parser, private-driver and synthetic-cleanup checks passed | Semantic and Release: production entry/native wiring, real owner drop/cleanup, exit/stderr behavior, model initialization, actual-session T1, worker and Go supervisor remain unqualified; installer and Go routing are unchanged |
 | Rust original-text embedding-query projection | [projection](../../rust/semantic-tokenizer/src/query.rs), [character slicing](../../rust/semantic-tokenizer/src/offsets.rs); tested source [`d58aed45`](https://github.com/halbritt/cairn/commit/d58aed45a45901b0de155b832a5697bda7161f24) | Untruncated/unpadded rank-tokenizer counts, original-text prefix selection with at most eight re-encodings, character-to-UTF-8 slicing and prefix-only hash/count metadata; 20 bounded owned-fixture checks passed, with 11 prior tests filtered out | Semantic and Release: Python binding/version correspondence, actual prepared-token parity, actual-session T1 and model/worker/runtime qualification remain open; component input attestation has the header limit below |
 | Rust original-text document-passage projection | [projection](../../rust/semantic-tokenizer/src/document.rs), [shared character slicing](../../rust/semantic-tokenizer/src/offsets.rs); tested source [`474b756f`](https://github.com/halbritt/cairn/commit/474b756fd4f47e7c20ce23b4ca1887db1fdb893e) | Typed original passage text and UTF-8 spans, adaptive 128/96 windows including the final tail, complete span validation before ordered default-special re-encoding; 22 bounded owned-fixture checks passed with 31 prior tests filtered out | Semantic and Release: Python binding/version correspondence, actual prepared-token parity, actual-session T1 and model/worker/runtime qualification remain open; current selected header coverage does not close item2's historical gap |
+| Rust embedding derivation projection | [projection](../../rust/semantic-backend/src/identity/embedding.rs), [observed-input owner](../../rust/semantic-backend/src/identity.rs); tested source [`58b3a299`](https://github.com/halbritt/cairn/commit/58b3a299cf3e323bdd54fb38fe20be7ee2d8e2c1) | Gated owned `ConstructionReport` embedding manifest and digest with distinct mode tag/constants and retained common inputs; 17 pure owned-fixture checks passed with 35 prior tests filtered out | Semantic and Release: actual observation rows/NULL globals, real construction/session, actual-session T1 and downstream response/native-binary integration remain owed; pure digest sensitivity is not observed completeness or usable identity |
 | Go memory client and checkpoint reader | [client](../../internal/lifecycle/memoryclient/client.go), [checkpoint](../../internal/lifecycle/memoryclient/checkpoint.go), [contract](hybrid-runtime-contracts/f02-memory-client.md); [`2989f834`](https://github.com/halbritt/cairn/commit/2989f83442ba880dd586b807b9cdece5282b67e5) | Direct authenticated SDK search/pull calls, receipt-credit accounting and concrete raw-record checkpoint traversal | Foundation: recall/capture frontends, hook streams/exits/meters, grants and executing-hook identity; full F-02 and HC-03 remain open |
 | Go unfinished checkpoint refresh | [refresh](../../internal/lifecycle/memoryclient/checkpoint_refresh.go), [contract](hybrid-runtime-contracts/f02-checkpoint-refresh.md); [`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a) | Restores at most one current whole unfinished note through bounded authenticated search/pull, with identity/hash/extent checks and shared deadline accounting | Foundation: frontend state, grants and metering integration; runtime and full F-02 acceptance remain open |
 | Go capture selection and ordered writes | [capture](../../internal/lifecycle/memoryclient/capture.go), [contract](hybrid-runtime-contracts/f03-capture-commit.md); [`1497c7dc`](https://github.com/halbritt/cairn/commit/1497c7dc8ac14c776ca4672e28d038976cb21265) | Validates the complete selection before record mutation, performs ordered create/revise calls and retains confirmed writes when a later write fails | Foundation: frontend state commits, hooks, streams/exits/meters, grants and executing-hook identity; full F-03 remains open |
@@ -260,6 +261,58 @@ numerical/runtime/resource/production and old-failure holds persist. `REQUIRED`
 declares 11 rows, not 11 measured missing observations. This source publication
 establishes no readiness, usable initialization, actual prepared-token parity or
 campaign acceptance.
+
+The embedding derivation projection (`58b3a299`) was accepted in independent
+source review round 1 with no condition. One isolated, offline, locked
+`--lib embedding_identity4_` invocation passed all 17 exact selected checks with
+35 prior tests filtered out and zero retries. Private owned report fixtures
+exercise exact literal rank/embedding canonical manifests and digests, required
+missing/null/invalid refusals, common and mode sensitivity, provenance exclusion,
+set/sequence rules and repeated projections without mutation. They are not
+actual native observation rows. Inherited native units were compiled and the
+new library-test harness linked and started; project ORT/BLAS/getter/model/session
+runtime paths were not selected.
+
+`ConstructionReport::embedding_manifest` and `embedding_identity` first reuse
+the existing cached-missing, recomputed-required and canonical-validation
+guards. The rank digest is discarded, not used as embedding evidence. The owned
+projection retains common implementation, compilation, native, session, asset
+and prepared-tokenizer inputs, including unknown future common fields. It
+binds `cairn.rust-embedding-worker/1`, `bge-original-passages/1`, dimensions 384,
+the exact query/document policies and the first-normalization epsilon/order.
+Rank-only second normalization, matvec, reduction and cache policy declarations
+are removed from embedding mode without mutating the report or changing rank
+behavior. Object keys remain sorted, sequences retain order, floating constants
+remain decimal strings, and absolute installation paths and image device/inode
+metadata remain provenance. Existing observer, source-snapshot and actual
+initialization behavior is unchanged.
+
+Three source-review qualifications remain. Common algorithm keys beyond the
+first normalization rely on the private production owner supplying them and on
+the exact literal fixture. Guard-before-projection order is direct in the code
+but has no dedicated combined test. Mode-constant sensitivity establishes hash
+sensitivity; correctness of those constants rests on the exact literal-byte
+test. Passing these fixtures supplies neither actual observations nor usable
+initialization, Python parity or runtime acceptance. Actual build/link/CPU and
+session-global observations, real construction/session, actual-session T1 and
+downstream response/native-binary integration remain owed.
+
+For this component, all 268 selected system-header preflight, observed and
+postflight paths matched, with zero additional system headers. This is
+selected-path coverage, not complete future, transitive, include or runtime
+attestation. Item2's historical 198-preflight/20-post-run-only gap remains
+unclosed. A whitespace-tolerant receipt-parser correction reconciled six joined
+exit records from the same retained trace, without repeating the component
+invocation or changing source/receipt inputs.
+
+Landing preserves the reviewed/tested source, manifests, locks and native
+inputs without repeating the component command. Required observations and NULL
+globals, full P1-P5, actual-session T1, all294-before-model, strict integer scores
+with no +/-1 tolerance, FIRST UNCONSUMED and runtime/resource/production and
+old-failure holds persist. `REQUIRED` declares 11 rows, not 11 measured missing
+observations. No readiness, usable identity, initialization, parity or campaign
+acceptance is claimed. Initialization-on-EOF and runtime-kit preparation remain
+ungranted; downstream source slices await separate dispatch.
 
 The paired value/transcript component passed formatting, build, vet and scoped
 race checks for those two packages. Foundation cleared the exact four-file value
