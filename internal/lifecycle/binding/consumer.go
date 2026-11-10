@@ -20,12 +20,7 @@ var ErrLegacyBinding = errors.New("legacy /2 binding requires its retained pinne
 
 // Invocation is host-selected input, not authentication or an activation grant.
 // Event bytes and the captured process environment/cwd are never reconstructed.
-type Invocation struct {
-	EntryPoint, ConfigPath, ReceiptPath, ReceiptSHA256 string
-	Event                                              []byte
-	Environment                                        []string
-	Directory                                          string
-}
+type Invocation = admission.HookInvocation
 type CheckResult struct {
 	Disposition   string `json:"disposition"`
 	Verdict       string `json:"verdict"`
@@ -159,6 +154,16 @@ func sourceHome(env map[string][]rune) ([]rune, error) {
 // one checked binding/config snapshot, then actual configuration predicates.
 // It performs no token/API/state access, activation, fallback, or Python launch.
 func Check(ctx context.Context, in Invocation) (*CheckResult, error) {
+	return checkInvocation(ctx, in, nil)
+}
+
+func checkInvocation(ctx context.Context, in Invocation, activate func(*value.Value, *value.Value, *value.Value, bool) (bool, error)) (*CheckResult, error) {
+	codeFailure := func(err error) error {
+		if activate != nil {
+			return &ActivationError{Reason: "compatibility_receipt", Class: "CompatibilityPreflightError", Err: err}
+		}
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -170,20 +175,23 @@ func Check(ctx context.Context, in Invocation) (*CheckResult, error) {
 	}
 	receipt, err := readCompatibilityReceipt(in.ReceiptPath, in.ReceiptSHA256)
 	if err != nil {
-		return nil, err
+		return nil, codeFailure(err)
 	}
 	if !selectedConfig(receipt, in.EntryPoint, in.ConfigPath) {
-		return nil, errors.New("configuration differs from selected receipt")
+		return nil, codeFailure(errors.New("configuration differs from selected receipt"))
 	}
 	if _, err = receipt.checkedClosure(); err != nil {
-		return nil, err
+		return nil, codeFailure(err)
 	}
 	if err = ValidateBinary(receipt.Binary.Path, receipt.Binary.SHA256); err != nil {
-		return nil, err
+		return nil, codeFailure(err)
 	}
 	raw, err := readData(in.ConfigPath, false)
 	if err != nil {
 		return nil, err
+	}
+	if activate != nil && digest(raw) != in.ConfigSHA256 {
+		return nil, errors.New("parent configuration changed")
 	}
 	config, err := decodeData(raw)
 	if err != nil {
@@ -244,6 +252,9 @@ func Check(ctx context.Context, in Invocation) (*CheckResult, error) {
 	if path != receipt.Binding.Path || digest(manifestRaw) != receipt.Binding.SHA256 {
 		return nil, errors.New("binding differs from selected receipt")
 	}
+	if activate != nil && digest(manifestRaw) != in.BindingSHA256 {
+		return nil, errors.New("parent binding changed")
+	}
 	binary, err := descriptor(manifest.Get("binary"))
 	if err != nil {
 		return nil, err
@@ -271,10 +282,17 @@ func Check(ctx context.Context, in Invocation) (*CheckResult, error) {
 		descriptors[i] = d
 	}
 	if err = ValidateBinary(binary.Path, binary.SHA256); err != nil {
-		return nil, err
+		return nil, codeFailure(err)
 	}
 	result.BindingSHA256 = digest(manifestRaw)
-	if !enabled.Boolean {
+	effective := enabled.Boolean
+	if activate != nil {
+		effective, err = activate(config, manifest, event, effective)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !effective {
 		result.Disposition = "disabled"
 		return result, nil
 	}

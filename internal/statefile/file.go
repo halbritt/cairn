@@ -235,13 +235,21 @@ func (s File[T]) loadLocked() (T, error) {
 }
 
 func (s File[T]) writeAtomic(value T) error {
-	calls := s.ioCalls()
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(s.Path)
-	pattern := s.TempPattern
+	return replaceBytes(s.Path, raw, s.TempPattern, s.ioCalls())
+}
+
+// Replace persists already encoded caller-owned bytes with the same durable
+// boundary as File.Update. The caller must hold its operation's existing lock.
+func Replace(path string, raw []byte) error {
+	return replaceBytes(path, raw, "", (File[any]{}).ioCalls())
+}
+
+func replaceBytes(path string, raw []byte, pattern string, calls IO) error {
+	dir := filepath.Dir(path)
 	if pattern == "" {
 		pattern = ".cairn-state-*"
 	}
@@ -254,7 +262,11 @@ func (s File[T]) writeAtomic(value T) error {
 		tmp.Close()
 		return err
 	}
-	if _, err = calls.Write(tmp, raw); err == nil {
+	n, err := calls.Write(tmp, raw)
+	if err == nil && n != len(raw) {
+		err = io.ErrShortWrite
+	}
+	if err == nil {
 		err = calls.Sync(tmp)
 	}
 	if closeErr := calls.Close(tmp); err == nil {
@@ -263,7 +275,7 @@ func (s File[T]) writeAtomic(value T) error {
 	if err != nil {
 		return err
 	}
-	if err := calls.Rename(tmp.Name(), s.Path); err != nil {
+	if err := calls.Rename(tmp.Name(), path); err != nil {
 		return err
 	}
 	parent, err := os.Open(dir)

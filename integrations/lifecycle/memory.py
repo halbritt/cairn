@@ -378,6 +378,9 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None, observation=N
 
 def bounded_command(command, *, body, timeout, env, cwd, observation=None):
     """Read both child pipes concurrently, stopping before either exceeds the cap."""
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None:
+        timeout = compatibility.remaining(timeout)
     input_bytes = None if body is None else body.encode("utf-8")
     started = time.monotonic()
     deadline = started + timeout
@@ -2572,6 +2575,9 @@ def recall(memory, event, state=None):
     recall_task_key(memory.config)  # Reject malformed explicit launch binding before retrieval.
     if mode == "agent_tools":
         deadline = started + 5
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None:
+        deadline = compatibility.cap_deadline(deadline)
     semantic = (mode == "agent_tools" and not defer_optional and bool(memory.config.get("semantic_fallback"))
                 and (memory.config.get("harness") != "codex" or
                      (event["hook_event_name"] == "UserPromptSubmit" and native_uuid(event.get("turn_id")))))
@@ -3151,8 +3157,8 @@ def codex_new_messages(event, state):
     return sum(1 for offset in offsets if offset > marker["offset"])
 
 
-def effective_inbox_config(config, event=None):
-    return _inbox_binding.effective_config(config, event, lambda event: taskless_notification(event.get("prompt", "")))
+def effective_inbox_config(config, event=None, *, raw_event=None):
+    return _inbox_binding.effective_config(config, event, lambda event: taskless_notification(event.get("prompt", "")), raw_event=raw_event)
 
 
 def load_inbox_recall(config, *, validate=True):
@@ -3188,6 +3194,9 @@ def lock_capture_commit(lock, config, event, hook_started):
     deadline = (min(time.monotonic() + CAPTURE_COMMIT_WAIT_SECONDS,
                     hook_started + CAPTURE_HOOK_SECONDS - CAPTURE_COMMIT_MARGIN_SECONDS)
                 if known_budget else 0)
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if compatibility is not None and compatibility.hook and known_budget:
+        deadline = min(deadline, compatibility.deadline - CAPTURE_COMMIT_MARGIN_SECONDS)
     while True:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -3475,7 +3484,8 @@ def _main(args):
     phase = "configuration"
     _trace_note(phase=phase)
     try:
-        config = json.loads(args.config.read_text())
+        compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+        config = compatibility.config(args.config) if compatibility is not None else json.loads(args.config.read_text())
         phase = "input"
         _trace_note(phase=phase)
         raw = sys.stdin.buffer.read(1024 * 1024 + 1)
@@ -3487,7 +3497,11 @@ def _main(args):
         _trace_parsed(event)
         phase = "activation"
         _trace_note(phase=phase, stage="activation")
-        config = effective_inbox_config(config, event)
+        try:
+            config = effective_inbox_config(config, event, raw_event=raw) if compatibility is not None else effective_inbox_config(config, event)
+        except subprocess.SubprocessError:
+            print('Cairn lifecycle diagnostic: phase=activation error_class=UnexpectedError', file=sys.stderr)
+            return 1
         _trace_note(bound=bool(config.get("inbox_recall_binding")))
         phase = "handle"
         _trace_note(phase=phase)

@@ -4,6 +4,9 @@ Decision: select Foundation proposal A on 2026-11-06 for CAIRN-301 / X-01.
 This refines delivery order; the full Go lifecycle migration remains required.
 It does not close X-01, accept an implementation or activate production.
 
+The [activation source slice](f04-activation-slice.md) records its concrete
+private executable, compatibility caller and verification boundaries.
+
 ## First consumer
 
 F-04 delivers exercised shared-state and binding-activation support. Its first
