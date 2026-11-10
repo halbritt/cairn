@@ -214,7 +214,7 @@ func SessionJournals(stateDir string, state map[string]any) ([]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !slices.ContainsFunc(ids, func(existing any) bool { return equal(existing, id) }) {
+		if !slices.ContainsFunc(ids, func(existing any) bool { return containerEqual(existing, id) }) {
 			ids = append(ids, id)
 			state["inbox_journals"] = ids
 		}

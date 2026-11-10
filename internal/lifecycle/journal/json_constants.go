@@ -37,6 +37,29 @@ func DefaultJSONConstants(v any) any {
 	return v
 }
 
+// PlainValue converts internal JSON constant wrappers and atoms back to plain Go
+// values (json.Number, map[string]any, []any, string, bool, nil) for host state projection.
+func PlainValue(v any) any {
+	switch x := value(v).(type) {
+	case *jsonConstant:
+		return json.Number(x.token)
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, child := range x {
+			out[k] = PlainValue(child)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, child := range x {
+			out[i] = PlainValue(child)
+		}
+		return out
+	default:
+		return x
+	}
+}
+
 // Mask only complete value tokens, retaining byte offsets for RawMessage
 // slices. Strings, keys and malformed token suffixes remain unchanged.
 func maskConstants(raw []byte) []byte {
