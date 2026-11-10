@@ -12,9 +12,9 @@ acceptance remain open.
 
 ## Inspect the implementation
 
-The table records published source and extensions through the Rust embedding
-query-prefix projection
-[`d58aed45`](https://github.com/halbritt/cairn/commit/d58aed45a45901b0de155b832a5697bda7161f24)
+The table records published source and extensions through the Rust original-text
+document-passage projection
+[`474b756f`](https://github.com/halbritt/cairn/commit/474b756fd4f47e7c20ce23b4ca1887db1fdb893e)
 on 2026-11-09. The Go libraries are callable source. Rust has an explicit
 rank/stream entry target; model initialization and actual-worker qualification
 remain open. Publication does not activate the migration on supported hosts.
@@ -41,6 +41,7 @@ remain open. Publication does not activate the migration on supported hosts.
 | Rust typed session-observation serializer fixtures | [serializer](../../rust/semantic-backend/src/identity.rs); tested source `d0ad8f82` | Private read-only traits let owner-created ORT records and private typed fixtures use the same serializers; four selected fixture checks passed with independent expected values | Semantic and Release: concrete ORT getter forwarding and the original actual-session T1 comparison remain owed; required observations, NULL globals, numerical/runtime and FIRST holds remain unchanged |
 | Rust rank/stream entry and launch plan | [entry](../../rust/semantic-backend/src/bin/rank.rs), [parser](../../rust/semantic-backend/src/bin/rank_entry/plan.rs); tested source [`cb6dbc90`](https://github.com/halbritt/cairn/commit/cb6dbc906661e771431a22238d0fd75f5afedd18) | Explicit `cairn-semantic-rank` target and pure parsing of six absolute asset/library/source selections; rank-once or stream dispatch with exact stream-cache opt-in; 11 bounded parser, private-driver and synthetic-cleanup checks passed | Semantic and Release: production entry/native wiring, real owner drop/cleanup, exit/stderr behavior, model initialization, actual-session T1, worker and Go supervisor remain unqualified; installer and Go routing are unchanged |
 | Rust original-text embedding-query projection | [projection](../../rust/semantic-tokenizer/src/query.rs), [character slicing](../../rust/semantic-tokenizer/src/offsets.rs); tested source [`d58aed45`](https://github.com/halbritt/cairn/commit/d58aed45a45901b0de155b832a5697bda7161f24) | Untruncated/unpadded rank-tokenizer counts, original-text prefix selection with at most eight re-encodings, character-to-UTF-8 slicing and prefix-only hash/count metadata; 20 bounded owned-fixture checks passed, with 11 prior tests filtered out | Semantic and Release: Python binding/version correspondence, actual prepared-token parity, actual-session T1 and model/worker/runtime qualification remain open; component input attestation has the header limit below |
+| Rust original-text document-passage projection | [projection](../../rust/semantic-tokenizer/src/document.rs), [shared character slicing](../../rust/semantic-tokenizer/src/offsets.rs); tested source [`474b756f`](https://github.com/halbritt/cairn/commit/474b756fd4f47e7c20ce23b4ca1887db1fdb893e) | Typed original passage text and UTF-8 spans, adaptive 128/96 windows including the final tail, complete span validation before ordered default-special re-encoding; 22 bounded owned-fixture checks passed with 31 prior tests filtered out | Semantic and Release: Python binding/version correspondence, actual prepared-token parity, actual-session T1 and model/worker/runtime qualification remain open; current selected header coverage does not close item2's historical gap |
 | Go memory client and checkpoint reader | [client](../../internal/lifecycle/memoryclient/client.go), [checkpoint](../../internal/lifecycle/memoryclient/checkpoint.go), [contract](hybrid-runtime-contracts/f02-memory-client.md); [`2989f834`](https://github.com/halbritt/cairn/commit/2989f83442ba880dd586b807b9cdece5282b67e5) | Direct authenticated SDK search/pull calls, receipt-credit accounting and concrete raw-record checkpoint traversal | Foundation: recall/capture frontends, hook streams/exits/meters, grants and executing-hook identity; full F-02 and HC-03 remain open |
 | Go unfinished checkpoint refresh | [refresh](../../internal/lifecycle/memoryclient/checkpoint_refresh.go), [contract](hybrid-runtime-contracts/f02-checkpoint-refresh.md); [`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a) | Restores at most one current whole unfinished note through bounded authenticated search/pull, with identity/hash/extent checks and shared deadline accounting | Foundation: frontend state, grants and metering integration; runtime and full F-02 acceptance remain open |
 | Go capture selection and ordered writes | [capture](../../internal/lifecycle/memoryclient/capture.go), [contract](hybrid-runtime-contracts/f03-capture-commit.md); [`1497c7dc`](https://github.com/halbritt/cairn/commit/1497c7dc8ac14c776ca4672e28d038976cb21265) | Validates the complete selection before record mutation, performs ordered create/revise calls and retains confirmed writes when a later write fails | Foundation: frontend state commits, hooks, streams/exits/meters, grants and executing-hook identity; full F-03 remains open |
@@ -155,8 +156,7 @@ strict score policy permits no +/-1 tolerance. All 294 token IDs/lengths must
 precede model execution; actual-worker FIRST remains unconsumed. Full P1-P5,
 numerical/runtime/resource/production and old-failure holds persist. This entry
 publication establishes neither readiness, parity, initialization nor campaign
-acceptance. The query-prefix projection is published below; document-span work
-remains queued for separate dispatch.
+acceptance. The query-prefix and document-span projections are published below.
 
 The original-text embedding-query projection (`d58aed45`) was accepted in
 independent source review round 1 with no candidate defect. One isolated,
@@ -206,7 +206,60 @@ T1, required observations/NULL globals, exact current integer scores with no
 numerical/runtime/resource/production and old-failure holds persist. `REQUIRED`
 declares 11 rows, not a measured missing count. No readiness, usable
 initialization, actual prepared-token parity or campaign acceptance is claimed.
-Document-span work remains queued for separate dispatch after this landing.
+The document-passage projection is published below.
+
+The original-text document-passage projection (`474b756f`) was accepted in
+independent source review round 1 with no candidate defect. One isolated,
+offline, locked `--lib document_spans3_` invocation passed all 22 exact selected
+checks with 31 prior tests filtered out and zero retries. Owned Bert/WordPiece
+fixtures and private observations exercise the same production algorithm with
+independent literal expectations. They cover byte/scalar geometry, blank and
+token-empty distinctions, bounds, tail windows, adaptive density, failure order
+and changed token counts after a cut. No actual prepared294 inputs, protected
+Python reference, model, session or worker were executed. The build excludes
+backend/ORT/math; inherited Onig/ESAXX compilation and new test-harness
+linkage/startup are component effects only.
+
+`PreparedTokenizer::document_passages` returns owned original text plus UTF-8
+byte spans. Python-blank refusal precedes strict UTF-8 conversion and the
+inclusive 65536-byte bound. The untruncated/unpadded rank clone encodes the body
+without specials; the offset population determines the windows. Stride is
+`max(96, ceil(tokens/256))` and window width is `max(128, stride+32)`, with
+overflow-safe arithmetic. Every start emits, including a final smaller tail
+even when the preceding window already reaches the end. Each span uses the
+first and last endpoint, not a maximum over the window; invalid ordering
+refuses before Python-style clipping. Shared character slicing preserves the
+exact original UTF-8 text and byte geometry without decoding, normalizing or
+expanding ignored bytes. All spans and the 1..256 passage guard complete before
+ordered default-special re-encodings of the actual passages against the
+inclusive 512-token limit. There is no document instruction prefix or silent
+truncation to fit.
+
+Source-review limits remain. Python binding/version correspondence is unproved.
+The passage-count refusal is mathematically unreachable because the adaptive
+stride bounds positive offset populations to 1..256 windows; the source guard
+is retained. Out-of-range offsets can clip to an empty passage, matching Python
+rather than adding a new refusal. A trailing combining mark can stay outside a
+span, as in the query projection. The owned real-tokenizer expectations have
+now passed the component run; they do not establish Python or runtime parity.
+
+For this component, all 218 selected system-header preflight, observed and
+postflight paths matched, with zero additional observed system headers, as
+rederived from the complete joined trace. This is selected-path coverage, not
+complete future, transitive, include or runtime input attestation. It does not
+retroactively close item2's historical 198-preflight/20-post-run-only gap or
+establish before/after stability for those historical 20 headers.
+
+Landing preserves the reviewed/tested Rust source and its code, manifest, lock
+and native inputs without repeating the component command. Query behavior,
+shared helpers, model/rank preparation, rank/stream entry, identity, numerical
+code, installer and Go routing are unchanged. Actual-session T1 remains owed.
+Required observations/NULL globals, exact integer scores with no +/-1 tolerance,
+all294-before-model, FIRST UNCONSUMED and full P1-P5,
+numerical/runtime/resource/production and old-failure holds persist. `REQUIRED`
+declares 11 rows, not 11 measured missing observations. This source publication
+establishes no readiness, usable initialization, actual prepared-token parity or
+campaign acceptance.
 
 The paired value/transcript component passed formatting, build, vet and scoped
 race checks for those two packages. Foundation cleared the exact four-file value
