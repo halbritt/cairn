@@ -1,6 +1,7 @@
 package memoryhook
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,7 +18,7 @@ import (
 )
 
 func resolved(path, directory string) (string, error) {
-	points, err := (admission.OSProbe{Directory: directory}).Resolve(value.Text(path))
+	points, err := (admission.OSProbe{Directory: directory}).Resolve(&value.Value{Kind: value.String, String: admission.PathPoints(path)})
 	if err != nil {
 		return "", err
 	}
@@ -25,9 +26,17 @@ func resolved(path, directory string) (string, error) {
 }
 func projectRoot(event *value.Value, directory string) (string, error) {
 	if p := event.Get("project_path"); value.Truth(p) {
-		return resolved(text(p), directory)
+		path, err := pathValue(p)
+		if err != nil {
+			return "", err
+		}
+		return resolved(path, directory)
 	}
-	path, err := resolved(text(event.Get("cwd")), directory)
+	cwd, err := pathValue(event.Get("cwd"))
+	if err != nil {
+		return "", err
+	}
+	path, err := resolved(cwd, directory)
 	if err != nil {
 		return "", err
 	}
@@ -67,8 +76,6 @@ func strip(s string) string { return strings.TrimFunc(s, pySpace) }
 
 var wordsRE = regexp.MustCompile(`[\p{L}\p{N}_.-]+`)
 var filesRE = regexp.MustCompile(`[\p{L}\p{N}_./-]+\.[A-Za-z0-9_]+`)
-var nonspaceRE = regexp.MustCompile(`\S*(?:://|@)\S*`)
-var continueRE = regexp.MustCompile(`(?i)^\s*(?:please\s+)?(?:continue|resume)\b`)
 var stopWords = strings.Fields("a an and are as at be before can check continue could do does for from have how i in into is it its make me memory need next of on or please project task test tests that the then these this to use using want was we what when which with work would you your")
 
 func contains(ss []string, s string) bool {
@@ -213,11 +220,20 @@ func recentNumber(v *value.Value) float64 {
 func retrievalIntent(event, state *value.Value, project string) (string, []string, error) {
 	prompt := text(event.Get("prompt"))
 	paths := []string{}
-	cwd := text(event.Get("project_path"))
+	cwd, err := pathValue(event.Get("project_path"))
 	if cwd == "" {
-		cwd = text(event.Get("cwd"))
+		cwd, err = pathValue(event.Get("cwd"))
 	}
-	fileText := nonspaceRE.ReplaceAllString(prompt, " ")
+	if err != nil {
+		return "", nil, err
+	}
+	var fileParts []string
+	for _, part := range strings.FieldsFunc(prompt, pySpace) {
+		if !strings.Contains(part, "://") && !strings.Contains(part, "@") {
+			fileParts = append(fileParts, part)
+		}
+	}
+	fileText := strings.Join(fileParts, " ")
 	for _, part := range filesRE.FindAllString(fileText, -1) {
 		part = strings.TrimRight(strings.Trim(part, "`\"',;:()[]"), ".")
 		if part == "" || strings.Contains(part, "\n") {
@@ -248,6 +264,37 @@ func retrievalIntent(event, state *value.Value, project string) (string, []strin
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 	hints := state.Get("hints")
+	if hints != nil {
+		invalid := func() (string, []string, error) { return "", nil, fail("invalid stored memory hints") }
+		if hints.Kind != value.Object {
+			return invalid()
+		}
+		for _, key := range []string{"files", "searches"} {
+			if entries := hints.Get(key); entries != nil {
+				if entries.Kind != value.Object {
+					return invalid()
+				}
+				for _, entry := range entries.Members {
+					if !timestamp(entry.Value) {
+						return invalid()
+					}
+				}
+			}
+		}
+		if at := hints.Get("error_at"); at != nil && !timestamp(at) {
+			return invalid()
+		}
+		if entries := hints.Get("errors"); entries != nil {
+			if entries.Kind != value.Array {
+				return invalid()
+			}
+			for _, entry := range entries.Items {
+				if entry.Kind != value.String {
+					return invalid()
+				}
+			}
+		}
+	}
 	var recent []string
 	if files := hints.Get("files"); files != nil && files.Kind == value.Object {
 		for _, m := range files.Members {
@@ -300,6 +347,9 @@ func retrievalIntent(event, state *value.Value, project string) (string, []strin
 		anchors = append([]string{workstreamPrefix(project) + topic}, anchors...)
 	}
 	if source := text(event.Get("source")); source == "resume" || source == "compact" {
+		if saved := state.Get("workstream"); saved != nil && saved.Kind != value.String {
+			return "", nil, fail("invalid stored memory workstream")
+		}
 		title := text(state.Get("workstream"))
 		if state.Get("workstream") == nil {
 			title = "Handoff: " + clip(strings.ReplaceAll(baseName(project), "\"", ""), 70) + " / Claude session " + text(event.Get("session_id"))
@@ -319,7 +369,7 @@ func retrievalIntent(event, state *value.Value, project string) (string, []strin
 		}
 	}
 	anchors = filtered
-	if continueRE.MatchString(prompt) {
+	if continuation(prompt) {
 		anchors = append([]string{strings.TrimRightFunc(workstreamPrefix(project), pySpace)}, anchors...)
 		if len(anchors) > 8 {
 			anchors = anchors[:8]
@@ -338,4 +388,34 @@ func retrievalIntent(event, state *value.Value, project string) (string, []strin
 		}
 	}
 	return query, paths, nil
+}
+
+func timestamp(v *value.Value) bool {
+	if v == nil || (v.Kind != value.Int && v.Kind != value.Float) {
+		return false
+	}
+	n := recentNumber(v)
+	return !math.IsNaN(n) && !math.IsInf(n, 0)
+}
+
+func continuation(prompt string) bool {
+	s := strings.TrimLeftFunc(cases.Lower(language.Und).String(prompt), pySpace)
+	if strings.HasPrefix(s, "please") {
+		rest := s[len("please"):]
+		r, _ := utf8.DecodeRuneInString(rest)
+		if pySpace(r) {
+			s = strings.TrimLeftFunc(rest, pySpace)
+		}
+	}
+	for _, word := range []string{"continue", "resume"} {
+		if strings.HasPrefix(s, word) {
+			rest := s[len(word):]
+			if rest == "" {
+				return true
+			}
+			r, _ := utf8.DecodeRuneInString(rest)
+			return !(unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_')
+		}
+	}
+	return false
 }

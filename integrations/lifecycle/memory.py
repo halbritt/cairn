@@ -3501,6 +3501,7 @@ def _main(args):
             if compatibility is not None:
                 migrated = compatibility.memory_start(config, event, raw)
                 if migrated is not None:
+                    _trace_note(**migrated['trace'])
                     sys.stdout.write(migrated['stdout'])
                     sys.stderr.write(migrated['stderr'])
                     return migrated['exit_code']

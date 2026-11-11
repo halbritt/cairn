@@ -200,7 +200,9 @@ raise SystemExit('unresolved /3 was accepted')
     def test_whole_frontend_uses_one_checked_fd_go_exec_and_one_parent_config_read(self):
         for role in ('memory','coordination'):
             f=self.fixture('trace-'+role)
-            f.raw=encoded(dict(f.event,hook_event_name='SessionStart',prompt='',host_pid=os.getpid()))
+            # F04 retains its activation-only cell. F02 separately checks the
+            # migrated SessionStart body with a real private API fixture.
+            f.raw=encoded(dict(f.event,hook_event_name='UserPromptSubmit' if role=='memory' else 'SessionStart',prompt='',host_pid=os.getpid()))
             log=f.root/'trace'
             result=subprocess.run(['/usr/bin/strace','-f','-qq','-o',str(log),'-s','1024','-e','trace=execve,openat',str(f.launcher(role))],
                                   input=f.raw,capture_output=True,cwd=f.root,env=f.env(),timeout=18)

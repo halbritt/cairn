@@ -1,8 +1,8 @@
-# F02 bound Codex SessionStart construction checkpoint
+# F02 bound Codex SessionStart recall consumer
 
 This tranche implements the `/3` bound Codex `SessionStart` memory cell with
-`recall_mode=agent_tools`. It is under construction, pending the remaining
-differential corpus and independent review. It establishes no installed or
+`recall_mode=agent_tools`. It is an author candidate pending independent review and
+Foundation integration. It establishes no installed or
 production acceptance. The public `cairn lifecycle` command stays disabled.
 
 The receipt-selected Python memory parent invokes the checked executable once
@@ -35,39 +35,79 @@ from the server's authenticated principal and observation channel.
 
 | Cell | Implementation in this tranche |
 | --- | --- |
-| Bound `/3`, Codex, SessionStart, agent_tools | Go body behind checked private process; corpus in progress |
+| Bound `/3`, Codex, SessionStart, agent_tools | Go body behind checked private process |
 | `/2` and unbound memory | Retained Python |
 | Codex UserPromptSubmit, tool events, Stop/capture | Retained Python; unported here |
 | Claude memory and every other harness | Retained Python; unported here |
 | Coordination/journal/watcher and installer/adapter | Outside author scope |
 
-`scripts/test_f02_start.py` currently compares five Class A producer-shaped
-process fixtures: empty, degraded empty, required Unicode text, policy conflict
-and ordinary optional refusal. Candidate processes enter through the real
-receipt-selected public launcher. The Python oracle bypasses only the already
-characterized F04 activation/bridge prefix; its memory body, rendering,
-persistence and real API CLI execute. Both use the same private Unix HTTP
-fixture and synthetic owner-only token. Exact public streams and exits match;
-persisted JSON is compared with scalar types and object order retained.
-Wall time and elapsed measurements are explicitly excluded from equality.
-Fresh random request UUIDs currently receive separate comparison handling;
-request identity assertions and refresh/corruption/lock/meter corpus expansion
-remain unfinished. Binary identity is asserted independently, never erased.
+`scripts/test_f02_start.py` contains 26 process tests, with additional table
+cases. Class A cases use producer-shaped configuration, native start events,
+source grant writers, real files/flocks and a private Unix HTTP fixture. The
+candidate enters through the actual receipt-selected public launcher. The
+oracle runs the retained memory body and actual API CLI; its activation manifest
+uses the retained `/2` schema and only the unused SessionStart bridge loader is
+bypassed. F04 independently covers that prefix. Both use the same provisioned
+fixture paths and synthetic owner-only token.
 
-The first five paired cases pass in the shared namespace wrapper with
-`CC=gcc TZ=America/Los_Angeles TMPDIR=/tmp GOFLAGS=-buildvcs=false`. The existing
-16 Codex turn-budget tests passed before construction. These focused results
-are not the complete F02 corpus, a store integration result or runtime
-qualification. The first run exposed a Unicode escaping mismatch; it was
-corrected to the Python memory writer's `ensure_ascii=False` behavior. A
-subsequent policy-conflict comparison caught a missing persistent pending
-requirement in construction, which is also corrected in this checkpoint.
+The corpus compares exact public stdout, stderr and exit codes, and persisted
+state with scalar types and object order retained. Corrupt files are compared
+as exact bytes. It covers empty/degraded recall, Unicode whole required context,
+policy and optional refusals, whole-budget refusal, charged-grant refresh,
+compact/resume whole checkpoint restoration, malformed/empty API replies,
+search timeout, missing socket, lock contention, anti-reset/corrupt ledgers,
+fsync failure before delivery, privacy, retrieval hints, executing identity,
+recall meters and invocation trace. A Go → Python → Go process sequence retains
+native reservation, emitted charges, large integers, Unicode and negative zero.
+A separate Go test faults inside the body and asserts its fixed unexpected
+exit-1 diagnostic; it adds no production fault switch.
 
-Next checkpoint: paired compact/resume refresh on a previously charged grant,
-including its whole-note result and exact separate refresh counters. Then
-expand malformed/refused API, persistence/lock/failure, metadata and retained
-cell coverage, run required local checks, and submit the clean candidate to
-the existing reviewer through Foundation. Foundation owns landing and cleanup.
+Wall-clock timestamps and observed elapsed measurements differ between real
+processes and are checked separately. Generated random RPC UUIDs have canonical
+non-nil shape assertions; deterministic request fields, receipt IDs and grants
+are compared unchanged. The fixed whole-pull UUID derivation and unchanged
+paired arguments are separately covered by the existing checkpoint-refresh
+component tests. Executing identities are asserted separately: the source
+memory file SHA for Python and the actual private executable SHA for Go. Neither
+identity is erased from comparison. These declarations do not authenticate the
+store principal or observation channel.
+
+The 26 process tests pass, as do the four affected Go packages and all 48 F04
+regression tests. The retained source corpus runs 494 tests across 27 modules;
+493 execute successfully and one requires `OPENCODE_TEST_BINARY` to name a
+patched native OpenCode build. That unavailable native probe remains a coverage
+gap in an unported cell. The source corpus includes:
+
+| Source fixture modules | Boundary covered here |
+| --- | --- |
+| `test_codex_turn_budget`, `test_startup_recall`, `test_codex_lifecycle`, `test_receipt_accounting` | Codex grants, startup and receipt preservation |
+| `test_hook_error_diagnostics`, `test_recall_error_diagnostics`, `test_recall_failure_observation` | Fixed caught failure/refusal behavior |
+| `test_recall_observation`, `test_inbox_recall_observation`, `test_hook_invocation_trace`, `test_selector_process_observation` | Meter and trace meanings; no selector is ported here |
+| `test_native_session`, `test_grant_ledger`, `test_hook_admission`, `test_unix_peer_transport` | Shared identity, state and guard primitives |
+| `test_inbox_recall_bridge`, `test_inbox_ledger_compaction`, `test_recall_task_grant`, `test_claude_inbox_recall`, `test_claude_channel` | Retained binding/bridge and other grant consumers |
+| `test_codex_queue`, `test_hermes_queue`, `test_opencode_queue` | Retained queue behavior |
+| `test_capture_concurrency`, `test_capture_observation`, `test_claude_lifecycle`, `test_hermes_lifecycle` | Retained capture and other harnesses |
+
+Other installer/adapter, trial, controller and native-runtime fixtures do not
+establish this selected-cell acceptance; their ownership/holds remain with
+Release and the campaign. The source corpus is regression evidence, not a
+claim to port those cells. The initial 16 Codex turn-budget tests ran before
+construction; subsequent comparisons retain the literal Python body.
+
+All checks run in the shared namespace wrapper, with `CC=gcc`, a `cc` alias to
+gcc, `TZ=America/Los_Angeles`, `TMPDIR=/tmp` and `GOFLAGS=-buildvcs=false`.
+`make check` passes. Disposable `make test-integration` is recorded separately;
+Foundation owns final exact-candidate/trunk integration and any linked-worktree
+Git-clone environment disposition. Focused results do not establish full F02,
+installed qualification, production acceptance or measured usefulness.
+
+During construction the corpus caught Unicode escaping, persisted field order,
+pending-requirement persistence, API failure classification and the strict
+ledger reader's memory-wrapper error class. Those corrections are included.
+F04's temporary failure-image fixture now copies its required `localapi`
+dependency; its activation-only strace test retains UserPromptSubmit coverage,
+and the new F02 test checks the migrated SessionStart's one checked Go exec,
+zero API CLI subprocesses and one current config read per parent/Go process.
 
 Rollback remains Release's explicit drain/repin to retained immutable artifacts.
 There is no deployment or activation in this tranche. Native C/CPython, frozen

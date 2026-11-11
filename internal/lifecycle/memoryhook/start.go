@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -41,9 +42,10 @@ before relying on claims outside that passage.
 
 // Result is private bounded process data, not a public hook protocol.
 type Result struct {
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	ExitCode int    `json:"exit_code"`
+	Stdout   string         `json:"stdout"`
+	Stderr   string         `json:"stderr"`
+	ExitCode int            `json:"exit_code"`
+	Trace    map[string]any `json:"trace"`
 }
 
 type hookError struct {
@@ -61,6 +63,23 @@ func text(v *value.Value) string {
 		return ""
 	}
 	return string(v.String)
+}
+func pathValue(v *value.Value) (string, error) {
+	if v == nil || v.Kind != value.String {
+		return "", &value.Error{Class: "TypeError", Message: "invalid memory path"}
+	}
+	return admission.PathBytes(v.String)
+}
+func validText(v *value.Value) bool {
+	if v == nil || v.Kind != value.String {
+		return false
+	}
+	for _, r := range v.String {
+		if r >= 0xd800 && r <= 0xdfff || r < 0 || r > 0x10ffff {
+			return false
+		}
+	}
+	return true
 }
 func integer(n int) *value.Value               { return value.IntegerText(strconv.Itoa(n)) }
 func floating(n float64) *value.Value          { return &value.Value{Kind: value.Float, Number: n} }
@@ -92,13 +111,48 @@ func rounded(d time.Duration) *value.Value {
 // RunStart recovers every unexpected supported-boundary panic to the declared
 // fixed diagnostic. Nothing from a panic, API body or profile enters stderr.
 func RunStart(ctx context.Context, config, event *value.Value, bound bool, directory string, environment []string) (result Result) {
+	trace := map[string]any{"phase": "handle", "bound": bound}
 	defer func() {
 		if recover() != nil {
 			result = Result{Stderr: "Cairn lifecycle diagnostic: phase=handle error_class=UnexpectedError\n", ExitCode: 1}
+			trace["outcome"] = "unexpected"
 		}
+		if result.Stderr != "" {
+			if line, _, ok := strings.Cut(result.Stderr, "\n"); ok {
+				if _, class, ok := strings.Cut(line, "error_class="); ok {
+					trace["error_class"] = class
+				}
+			}
+		}
+		if _, ok := trace["outcome"]; !ok {
+			if strings.HasPrefix(result.Stdout, "{\"continue\":false,") {
+				trace["outcome"] = "required_refused"
+			} else if result.ExitCode != 0 {
+				trace["outcome"] = "error"
+			} else {
+				trace["outcome"] = "engine_completed"
+			}
+		}
+		if result.ExitCode == 0 && result.Stderr == "" {
+			if _, ok := trace["context_bytes"]; !ok {
+				trace["context_bytes"] = 0
+			}
+		}
+		result.Trace = trace
 	}()
+	boundary := func(err error) Result {
+		original := classify(err)
+		converted := requiredFailure(config, event, original, bound, false)
+		out := failure(original)
+		if isRequired(converted) && !isRequired(original) {
+			out.Stdout = stopOutput
+			out.Stderr = strings.SplitN(out.Stderr, "\n", 2)[0] + "\n"
+			out.ExitCode = 0
+		}
+		return out
+	}
 	if !value.SameText(config.Get("harness"), "codex") || !value.SameText(config.Get("recall_mode"), "agent_tools") || !value.SameText(event.Get("hook_event_name"), "SessionStart") {
-		return failure(fail("unsupported private memory cell"), false)
+		return failure(fail("unsupported private memory cell"))
 	}
 	env := make(map[string][]rune)
 	for _, part := range environment {
@@ -106,28 +160,67 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 			env[k] = admission.PathPoints(v)
 		}
 	}
-	decision, err := admission.Decide(admission.Invocation{Kind: "memory", Config: config, Event: event, Environment: env, Home: func() ([]rune, error) { return env["HOME"], nil }, Filesystem: admission.OSProbe{Directory: directory}})
+	decision, err := admission.Decide(admission.Invocation{Kind: "memory", Config: config, Event: event, Environment: env, Home: func() ([]rune, error) {
+		if home, ok := env["HOME"]; ok {
+			return home, nil
+		}
+		current, err := user.Current()
+		if err != nil {
+			return nil, err
+		}
+		return admission.PathPoints(current.HomeDir), nil
+	}, Filesystem: admission.OSProbe{Directory: directory}})
 	if err != nil {
-		return failure(err, false)
+		return boundary(err)
 	}
-	if decision.Verdict == "invalid" {
-		return failure(fail(decision.Message), false)
-	}
-	if !decision.Run() {
+	if decision.Reason == "disabled_env" || decision.Reason == "other_account_home" {
+		trace["outcome"] = "early_return:disabled_env"
 		return Result{Stdout: "{}\n"}
 	}
+	trace["stage"] = "validated"
+	if decision.Verdict == "invalid" {
+		return boundary(fail(decision.Message))
+	}
 	topic := event.Get("workstream")
-	if topic != nil && (topic.Kind != value.String || len(text(topic)) > 90 || strings.ContainsAny(text(topic), "\r\n\"")) {
-		return failure(fail("invalid explicit workstream"), false)
+	if topic != nil && (!validText(topic) || len(text(topic)) > 90 || strings.ContainsAny(text(topic), "\r\n\"")) {
+		return boundary(fail("invalid explicit workstream"))
+	}
+	if !decision.Run() {
+		trace["outcome"] = "early_return:no_memory_marker"
+		return Result{Stdout: "{}\n"}
+	}
+	if prompt := event.Get("prompt"); prompt != nil && !validText(prompt) {
+		return boundary(fail("invalid memory hook input"))
+	}
+	for _, key := range []string{"repo", "task_id", "run_id"} {
+		if v := config.Get(key); v != nil && !validText(v) {
+			return boundary(fail("invalid memory hook input"))
+		}
+	}
+	if pins := config.Get("context"); pins != nil {
+		if pins.Kind != value.Object {
+			return boundary(fail("invalid memory hook input"))
+		}
+		for _, key := range []string{"revision", "workspace_sha256", "task_class", "task_phase", "binding", "capability"} {
+			if v := pins.Get(key); v != nil && !validText(v) {
+				return boundary(fail("invalid memory hook input"))
+			}
+		}
+	}
+	if bound {
+		trace["stage"] = "bridge"
 	}
 	started := time.Now()
 	session := text(event.Get("session_id"))
-	stateDir := text(config.Get("state_dir"))
+	stateDir, err := pathValue(config.Get("state_dir"))
+	if err != nil {
+		return boundary(err)
+	}
 	if stateDir == "" {
-		return failure(&value.Error{Class: "KeyError", Message: "state_dir"}, false)
+		return boundary(&value.Error{Class: "KeyError", Message: "state_dir"})
 	}
 	if err = os.MkdirAll(stateDir, 0700); err != nil {
-		return failure(err, false)
+		return boundary(err)
 	}
 	path := filepath.Join(stateDir, session+".json")
 	var client *memoryclient.Client
@@ -135,15 +228,21 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 	operationTime := map[string]time.Duration{"search": 0, "pull": 0}
 	var injected int
 	var observedErr error
+	var recallElapsed time.Duration
+	reportReady := false
 	defer func() {
 		if api != nil {
 			defer api.Close()
 		}
-		if client != nil {
-			report(ctx, api, client, config, started, operationTime, injected, observedErr)
+		if client != nil && reportReady {
+			report(ctx, api, client, config, started, recallElapsed, operationTime, injected, observedErr)
 		}
 	}()
+	trace["stage"] = "lock_attempt"
+	locked := false
 	err = statefile.LegacyLock(ctx, filepath.Join(stateDir, session+".lock"), 0, func() error {
+		locked = true
+		trace["stage"] = "locked"
 		state := value.Mapping()
 		raw, err := os.ReadFile(path)
 		if err == nil {
@@ -162,8 +261,14 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 		if old == nil {
 			old = array(nil, value.Text(""))
 		}
-		a, _ := encoded(binding, false)
-		b, _ := encoded(old, false)
+		a, err := encoded(binding, false)
+		if err != nil {
+			return err
+		}
+		b, err := encoded(old, false)
+		if err != nil {
+			return err
+		}
 		if !bytes.Equal(a, b) {
 			state = value.Mapping(value.Field("binding", binding))
 		}
@@ -183,6 +288,7 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 			return err
 		}
 		recallStarted := time.Now()
+		trace["stage"] = "recall"
 		status := value.Mapping(value.Field("at", floating(float64(time.Now().UnixNano())/1e9)), value.Field("hook_event_name", value.Text("SessionStart")), value.Field("outcome", value.Text("empty")), value.Field("records", array()), value.Field("bytes", integer(0)), value.Field("discovery", value.Text("lexical")), value.Field("inspected", integer(0)), value.Field("rejected", value.Mapping()))
 		state.Set("last_recall", status)
 		state.Set("seen", value.Mapping())
@@ -196,7 +302,14 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 				}
 			}
 		}
-		api, err = localapi.NewClient(text(config.Get("socket")), text(config.Get("token_file")))
+		socket, err := pathValue(config.Get("socket"))
+		token := ""
+		if err == nil {
+			token, err = pathValue(config.Get("token_file"))
+		}
+		if err == nil {
+			api, err = localapi.NewClient(socket, token)
+		}
 		var body string
 		if err == nil {
 			diagnostics := localapi.ClientDiagnostics{Surface: "cli", Harness: "unknown", Origin: &localapi.ClientOrigin{Component: "lifecycle-memory", ImplementationID: executingSHA(), Basis: "reported"}, RetrievalCapabilities: localapi.CurrentRetrievalCapabilities(), ReaderCapabilities: localapi.CurrentReaderCapabilities()}
@@ -215,6 +328,7 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 			}
 		}
 		if err != nil {
+			reportReady = true
 			original := classify(err)
 			err = requiredFailure(config, event, original, bound, true)
 			status.Set("outcome", value.Text("failed"))
@@ -236,13 +350,18 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 					err = fail("recall failed and failure status could not be saved")
 				}
 			}
+			recallElapsed = time.Since(started)
 			return err
 		}
 		status.Set("duration_ms", floating(math.Round(float64(time.Since(recallStarted))/float64(time.Microsecond))/1000))
+		reportReady = true
+		recallElapsed = time.Since(started)
 		if err = saveState(path, state); err != nil {
 			return err
 		}
 		injected = len(body)
+		trace["stage"] = "saved"
+		trace["context_bytes"] = injected
 		if body == "" {
 			result = Result{Stdout: "{}\n"}
 		} else {
@@ -254,12 +373,13 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 		}
 		return nil
 	})
-	if errors.Is(err, syscall.EAGAIN) {
+	if !locked && errors.Is(err, syscall.EAGAIN) {
+		trace["cause"] = "lock_busy"
 		err = fail("a memory hook is already running for this session")
 	}
 	if err != nil {
 		observedErr = classify(err)
-		return failure(requiredFailure(config, event, observedErr, bound, false), bound)
+		return boundary(observedErr)
 	}
 	return result
 }
@@ -282,7 +402,7 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 		return "", err
 	}
 	var kinds []string
-	if strings.TrimSpace(text(event.Get("prompt"))) == "" && strings.TrimSpace(text(event.Get("workstream"))) == "" && text(event.Get("source")) != "resume" && text(event.Get("source")) != "compact" {
+	if strip(text(event.Get("prompt"))) == "" && strip(text(event.Get("workstream"))) == "" && text(event.Get("source")) != "resume" && text(event.Get("source")) != "compact" {
 		kinds = []string{"decision", "preference"}
 	}
 	room := 32000
@@ -307,9 +427,20 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 	if budget < 1000 || budget > 65536 {
 		return "", fail("invalid context_bytes; expected an integer from 1000 to 65536")
 	}
-	path := filepath.Join(text(config.Get("state_dir")), text(event.Get("session_id"))+".memory-budget.json")
+	if id, err := uuid.Parse(text(event.Get("session_id"))); err != nil || id == uuid.Nil || id.String() != text(event.Get("session_id")) {
+		return "", fail("native-turn memory requires a canonical session UUID")
+	}
+	stateDir, err := pathValue(config.Get("state_dir"))
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(stateDir, text(event.Get("session_id"))+".memory-budget.json")
 	grants, err := ledger.CodexBudget(path, text(event.Get("session_id")), budget)
 	if err != nil {
+		var source *value.Error
+		if errors.As(err, &source) && source.Class == "ValueError" {
+			return "", fail(source.Message)
+		}
 		return "", err
 	}
 	grant := ledger.CodexCurrentGrant(grants)
@@ -317,7 +448,10 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 	emitted := number(grant.Get("emitted_hook_bytes"))
 	if bound && number(grant.Get("serialized_hook_bytes")) != emitted {
 		if emitted > 0 {
-			empty, _ := encoded(hookOutput(""), false)
+			empty, encodeErr := encoded(hookOutput(""), false)
+			if encodeErr != nil {
+				return "", encodeErr
+			}
 			emitted = 2*emitted + 1 + len(empty)
 		}
 	}
@@ -419,8 +553,11 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 		}
 		status.Set("outcome", value.Text(outcome))
 		status.Set("optional_deferred", value.Text("native_turn_grant_used"))
+		status.Set("native_turn_id", grants.Get("active_turn_id"))
+		status.Set("cumulative_hook_bytes", grant.Get("emitted_hook_bytes"))
 		status.Set("required_refresh_bytes", grant.Get("required_refresh_bytes"))
 		status.Set("checkpoint_refresh_bytes", grant.Get("checkpoint_refresh_bytes"))
+		status.Set("reserved_native_bytes", grant.Get("reserved_native_bytes"))
 		if checkpointReason != "" {
 			status.Set("checkpoint_refresh", value.Text(checkpointReason))
 		}
@@ -448,7 +585,11 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 			return "", err
 		}
 	}
-	status.Set("discovery", value.Text("deferred"))
+	discovery := "agent_tools"
+	if bound {
+		discovery = "deferred"
+	}
+	status.Set("discovery", value.Text(discovery))
 	status.Set("bytes", integer(len(body)))
 	status.Set("native_turn_id", grants.Get("active_turn_id"))
 	status.Set("cumulative_hook_bytes", grant.Get("emitted_hook_bytes"))
@@ -501,7 +642,12 @@ func errorFamily(err error) string {
 	}
 	var source *value.Error
 	if errors.As(err, &source) {
-		return source.Class
+		switch source.Class {
+		case "KeyError", "TypeError":
+			return source.Class
+		default:
+			return "ValueError"
+		}
 	}
 	var osError *os.PathError
 	var errno syscall.Errno
@@ -522,7 +668,7 @@ func classify(err error) error {
 		return err
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return &hookError{class: "HookError", message: "memory command timed out", code: "TIMEOUT"}
+		return &hookError{class: "HookError", message: "command timed out; memory operation not confirmed", code: "TIMEOUT"}
 	}
 	var service *core.Error
 	if errors.As(err, &service) {
@@ -531,16 +677,19 @@ func classify(err error) error {
 		}
 		return &hookError{class: "HookError", message: fmt.Sprintf("memory command exited %d; operation not confirmed", refusal.Classify(service.Code).ExitCode), code: service.Code, reason: "NONZERO_EXIT"}
 	}
-	if errors.Is(err, memoryclient.ErrNotConfirmed) {
-		return &hookError{class: "HookError", message: "Cairn did not confirm the operation", reason: "NOT_CONFIRMED"}
-	}
 	if errors.Is(err, memoryclient.ErrSearchStatus) {
 		return &hookError{class: "HookError", message: "Cairn retrieval is not ready", reason: "SEARCH_STATUS"}
 	}
 	if errors.Is(err, memoryclient.ErrNotHosted) {
 		return &hookError{class: "HookError", message: "lifecycle hooks require a hosted-destination profile", reason: "NOT_HOSTED"}
 	}
-	return err
+	var source *value.Error
+	var file *os.PathError
+	var errno syscall.Errno
+	if errors.As(err, &source) || errors.As(err, &file) || errors.As(err, &errno) {
+		return err
+	}
+	return &hookError{class: "HookError", message: fmt.Sprintf("memory command exited %d; operation not confirmed", refusal.Classify(core.Code(err)).ExitCode), reason: "NONZERO_EXIT"}
 }
 func requiredFailure(config, event *value.Value, err error, bound, persist bool) error {
 	if !bound || isRequired(err) {
@@ -548,7 +697,11 @@ func requiredFailure(config, event *value.Value, err error, bound, persist bool)
 	}
 	var h *hookError
 	policy := errors.As(err, &h) && (h.code == "OPEN_CONFLICT" || h.code == "POLICY_UNENFORCEABLE")
-	path := filepath.Join(text(config.Get("state_dir")), text(event.Get("session_id"))+".memory-budget.json")
+	stateDir, pathErr := pathValue(config.Get("state_dir"))
+	if pathErr != nil {
+		return err
+	}
+	path := filepath.Join(stateDir, text(event.Get("session_id"))+".memory-budget.json")
 	budget := 12000
 	if n := config.Get("context_bytes"); n != nil {
 		budget = number(n)
@@ -566,6 +719,8 @@ func requiredFailure(config, event *value.Value, err error, bound, persist bool)
 				hash = known.Get("selection_sha256")
 			}
 			grant.Set("required", value.Mapping(value.Field("count", count), value.Field("selection_sha256", hash), value.Field("pending", value.Boolean(true))))
+			// Source keeps the proven requirement even if its pending-status save
+			// fails; that failure cannot turn this refusal into optional success.
 			_ = ledger.SaveCodexBudget(path, state)
 		}
 	}
@@ -574,15 +729,20 @@ func requiredFailure(config, event *value.Value, err error, bound, persist bool)
 	}
 	return err
 }
-func failure(err error, bound bool) Result {
+
+const stopOutput = "{\"continue\":false,\"stopReason\":\"Bound inbox recall cannot restore required context.\"}\n"
+
+func failure(err error) Result {
 	err = classify(err)
 	class := errorFamily(err)
 	if isRequired(err) {
 		class = "RequiredContextRefused"
+	} else if errors.Is(err, syscall.EAGAIN) {
+		class = "BlockingIOError"
 	}
 	diagnostic := "Cairn lifecycle diagnostic: phase=handle error_class=" + class + "\n"
 	if isRequired(err) {
-		return Result{Stdout: "{\"continue\":false,\"stopReason\":\"Bound inbox recall cannot restore required context.\"}\n", Stderr: diagnostic}
+		return Result{Stdout: stopOutput, Stderr: diagnostic}
 	}
 	message := "invalid lifecycle input or unavailable local file"
 	var h *hookError
@@ -591,7 +751,7 @@ func failure(err error, bound bool) Result {
 	}
 	return Result{Stderr: diagnostic + "Cairn lifecycle: " + message + "; use native tools or an explicit handoff.\n", ExitCode: 1}
 }
-func report(ctx context.Context, api *localapi.Client, client *memoryclient.Client, config *value.Value, started time.Time, operationTime map[string]time.Duration, injected int, err error) {
+func report(ctx context.Context, api *localapi.Client, client *memoryclient.Client, config *value.Value, started time.Time, recallElapsed time.Duration, operationTime map[string]time.Duration, injected int, err error) {
 	if setting := config.Get("recall_observations"); setting != nil && setting.Kind == value.Bool && !setting.Boolean {
 		return
 	}
@@ -604,7 +764,7 @@ func report(ctx context.Context, api *localapi.Client, client *memoryclient.Clie
 	}
 	remaining = min(remaining, time.Second)
 	accounting := client.Accounting()
-	elapsed, search, pulls, selector, bytes := time.Since(started).Milliseconds(), operationTime["search"].Milliseconds(), operationTime["pull"].Milliseconds(), int64(0), int64(injected)
+	elapsed, search, pulls, selector, bytes := recallElapsed.Milliseconds(), operationTime["search"].Milliseconds(), operationTime["pull"].Milliseconds(), int64(0), int64(injected)
 	searchCalls, pullCalls := accounting.OperationCalls["search"], accounting.OperationCalls["pull"]
 	status, errorClass := "completed", ""
 	if err != nil {

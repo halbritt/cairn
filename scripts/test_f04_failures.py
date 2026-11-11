@@ -72,7 +72,7 @@ class F04FailureTests(unittest.TestCase):
         cls.build=tempfile.TemporaryDirectory()
         directory=Path(cls.build.name)
         for name in ('go.mod','go.sum'): shutil.copyfile(ROOT/name,directory/name)
-        for name in ('internal','core'): shutil.copytree(ROOT/name,directory/name)
+        for name in ('internal','core','localapi'): shutil.copytree(ROOT/name,directory/name)
         package=directory/'cmd'/'f04-failure'
         package.mkdir(parents=True)
         (package/'main.go').write_text(CHILD)

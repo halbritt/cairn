@@ -257,12 +257,21 @@ class InvocationContext:
             raise subprocess.SubprocessError('invalid memory reply')
         try:
             frame = json.loads(out.decode('utf-8'))
-            if (err or set(frame) != {'stdout', 'stderr', 'exit_code'}
+            if (err or set(frame) != {'stdout', 'stderr', 'exit_code', 'trace'}
                     or type(frame['stdout']) is not str or type(frame['stderr']) is not str
                     or type(frame['exit_code']) is not int or frame['exit_code'] not in (0, 1)
                     or len(frame['stdout'].encode()) > 512*1024
                     or len(frame['stderr'].encode()) > 4096):
                 raise ValueError('invalid memory result')
+            trace = frame['trace']
+            if (type(trace) is not dict
+                    or set(trace) - {'phase','stage','outcome','error_class','cause','bound','context_bytes'}
+                    or any(type(v) is not str or len(v) > 64 for k,v in trace.items()
+                           if k not in ('bound','context_bytes'))
+                    or type(trace.get('bound')) is not bool
+                    or ('context_bytes' in trace and (type(trace['context_bytes']) is not int
+                        or not 0 <= trace['context_bytes'] <= 1024*1024))):
+                raise ValueError('invalid memory trace')
         except (ValueError, TypeError, UnicodeError):
             raise subprocess.SubprocessError('invalid memory reply') from None
         self.enabled = True  # this invocation has consumed its sole Go dispatch

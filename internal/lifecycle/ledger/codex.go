@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"math/big"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 	"github.com/halbritt/cairn/internal/statefile"
 )
 
 // CodexBudget is the strict reader consumed by the SessionStart memory hook.
-// The caller holds the memory session lock. Unknown fields remain lossless.
+// Writers hold the memory session lock; a read-only refusal boundary may inspect
+// an atomic snapshot without it. Unknown fields remain lossless.
 func CodexBudget(path, session string, budget int) (*value.Value, error) {
 	marker := strings.TrimSuffix(path, ".json") + ".initialized"
 	initialized, err := exists(marker)
@@ -22,6 +25,10 @@ func CodexBudget(path, session string, budget int) (*value.Value, error) {
 	if initialized {
 		v, err := read(marker)
 		if err != nil {
+			var source *value.Error
+			if errors.As(err, &source) {
+				return nil, invalid("native-turn memory initialization marker is corrupt")
+			}
 			return nil, err
 		}
 		if !markerMatches(v, value.Mapping(value.Field("schema", value.Text(codexSchema)), value.Field("session_id", value.Text(session)))) {
@@ -40,6 +47,10 @@ func CodexBudget(path, session string, budget int) (*value.Value, error) {
 	}
 	v, err := read(path)
 	if err != nil {
+		var source *value.Error
+		if errors.As(err, &source) {
+			return nil, invalid("native-turn memory ledger is corrupt; no allowance renewed")
+		}
 		return nil, err
 	}
 	bad := func() (*value.Value, error) {
@@ -98,19 +109,8 @@ func integerValue(v *value.Value) *big.Int {
 }
 func validNonnegative(v *value.Value) bool { n := integerValue(v); return n != nil && n.Sign() >= 0 }
 func uuidText(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	for i, c := range s {
-		if i == 8 || i == 13 || i == 18 || i == 23 {
-			if c != '-' {
-				return false
-			}
-		} else if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
-			return false
-		}
-	}
-	return true
+	id, err := uuid.Parse(s)
+	return err == nil && id != uuid.Nil && id.String() == s
 }
 
 // SaveCodexBudget durably writes the anti-reset marker before the ledger.
