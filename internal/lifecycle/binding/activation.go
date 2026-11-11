@@ -17,6 +17,20 @@ type ActivationError struct {
 	Err           error
 }
 
+// ResolveMemoryStart performs the single SessionStart activation and returns its
+// checked inputs. SessionStart never creates a native-turn activation decision.
+func ResolveMemoryStart(ctx context.Context, in admission.HookInvocation) (*CheckResult, error) {
+	if in.EntryPoint != "memory" || !validDigest(in.ConfigSHA256) || !validDigest(in.BindingSHA256) {
+		return nil, errors.New("checked memory parent observation required")
+	}
+	return checkInvocation(ctx, in, func(config, manifest, event *value.Value, enabled bool) (bool, error) {
+		if !value.SameText(config.Get("harness"), "codex") || !value.SameText(config.Get("recall_mode"), "agent_tools") || !value.SameText(event.Get("hook_event_name"), "SessionStart") {
+			return false, errors.New("unsupported private memory cell")
+		}
+		return enabled, nil
+	})
+}
+
 func (e *ActivationError) Error() string { return e.Err.Error() }
 func (e *ActivationError) Unwrap() error { return e.Err }
 

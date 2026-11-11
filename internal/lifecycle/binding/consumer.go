@@ -22,11 +22,15 @@ var ErrLegacyBinding = errors.New("legacy /2 binding requires its retained pinne
 // Event bytes and the captured process environment/cwd are never reconstructed.
 type Invocation = admission.HookInvocation
 type CheckResult struct {
-	Disposition   string `json:"disposition"`
-	Verdict       string `json:"verdict"`
-	Reason        string `json:"reason,omitempty"`
-	ConfigSHA256  string `json:"config_sha256,omitempty"`
-	BindingSHA256 string `json:"binding_sha256,omitempty"`
+	// Config and Event are the checked snapshots for the reached memory consumer.
+	// They never enter the public read-only binding-check response.
+	Config        *value.Value `json:"-"`
+	Event         *value.Value `json:"-"`
+	Disposition   string       `json:"disposition"`
+	Verdict       string       `json:"verdict"`
+	Reason        string       `json:"reason,omitempty"`
+	ConfigSHA256  string       `json:"config_sha256,omitempty"`
+	BindingSHA256 string       `json:"binding_sha256,omitempty"`
 }
 
 func sourceString(v *value.Value) (string, error) {
@@ -200,7 +204,7 @@ func checkInvocation(ctx context.Context, in Invocation, activate func(*value.Va
 	if config.Kind != value.Object {
 		return nil, errors.New("configuration must be an object")
 	}
-	result := &CheckResult{Disposition: "unbound", Verdict: "skip", ConfigSHA256: digest(raw)}
+	result := &CheckResult{Disposition: "unbound", Verdict: "skip", ConfigSHA256: digest(raw), Config: config}
 	opt := config.Get("inbox_recall_binding")
 	if !profileTruthy(opt) {
 		return result, nil
@@ -212,6 +216,7 @@ func checkInvocation(ctx context.Context, in Invocation, activate func(*value.Va
 	if err != nil {
 		return nil, err
 	}
+	result.Event = event
 	env := capturedEnvironment(in.Environment)
 	probe := admission.OSProbe{Directory: in.Directory}
 	decision, err := admission.Decide(admission.Invocation{Kind: "inbox_recall", Config: config, Event: event, Environment: env, Home: func() ([]rune, error) { return sourceHome(env) }, Filesystem: probe})

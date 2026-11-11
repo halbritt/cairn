@@ -232,6 +232,52 @@ class InvocationContext:
                 '--receipt', self.args.receipt, '--receipt-sha256', self.args.receipt_sha256,
                 '--deadline', str(self.deadline)]
         out, err, code = self.child(argv, raw)
+        return self.activation_result(out, err, code)
+
+    def memory_start(self, config, event, raw):
+        """The selected /3 Codex start cell is wholly executed by checked Go."""
+        if not (self.args.role == 'memory' and config.get('harness') == 'codex'
+                and config.get('recall_mode') == 'agent_tools'
+                and config.get('inbox_recall_binding')
+                and event.get('hook_event_name') == 'SessionStart'):
+            return None
+        if config is not self.current or type(raw) is not bytes or self.enabled is not None:
+            raise ValueError('checked parent observation required')
+        if float(self.args.hook_timeout) != 13:
+            raise CompatibilityPreflightError()
+        argv = [self.receipt['binary']['path'], 'lifecycle', 'memory', 'recall',
+                '--entrypoint', 'memory', '--config', self.args.config,
+                '--config-sha256', hashlib.sha256(self.current_raw).hexdigest(),
+                '--binding-sha256', self.receipt['binding']['sha256'],
+                '--receipt', self.args.receipt, '--receipt-sha256', self.args.receipt_sha256,
+                '--deadline', str(self.deadline)]
+        out, err, code = self.child(argv, raw, stdout_limit=1024*1024)
+        if code != 0:
+            self.activation_result(out, err, code)
+            raise subprocess.SubprocessError('invalid memory reply')
+        try:
+            frame = json.loads(out.decode('utf-8'))
+            if (err or set(frame) != {'stdout', 'stderr', 'exit_code', 'trace'}
+                    or type(frame['stdout']) is not str or type(frame['stderr']) is not str
+                    or type(frame['exit_code']) is not int or frame['exit_code'] not in (0, 1)
+                    or len(frame['stdout'].encode()) > 512*1024
+                    or len(frame['stderr'].encode()) > 4096):
+                raise ValueError('invalid memory result')
+            trace = frame['trace']
+            if (type(trace) is not dict
+                    or set(trace) - {'phase','stage','outcome','error_class','cause','bound','context_bytes'}
+                    or any(type(v) is not str or len(v) > 64 for k,v in trace.items()
+                           if k not in ('bound','context_bytes'))
+                    or type(trace.get('bound')) is not bool
+                    or ('context_bytes' in trace and (type(trace['context_bytes']) is not int
+                        or not 0 <= trace['context_bytes'] <= 1024*1024))):
+                raise ValueError('invalid memory trace')
+        except (ValueError, TypeError, UnicodeError):
+            raise subprocess.SubprocessError('invalid memory reply') from None
+        self.enabled = True  # this invocation has consumed its sole Go dispatch
+        return frame
+
+    def activation_result(self, out, err, code):
         if code == 0 and err == b'' and out in (b'{"enabled":true}\n', b'{"enabled":false}\n'):
             return out == b'{"enabled":true}\n'
         if code != 1 or out or len(err) > 4096:
@@ -268,7 +314,7 @@ class InvocationContext:
             raise cls('utf-8', '\ud800', 0, 1, 'lifecycle activation input')
         raise cls('lifecycle activation input')
 
-    def child(self, argv, raw):
+    def child(self, argv, raw, *, stdout_limit=64):
         if time.monotonic() >= self.deadline:
             raise TimeoutError(errno.ETIMEDOUT, 'lifecycle activation deadline')
         if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
@@ -299,7 +345,7 @@ class InvocationContext:
                                      pass_fds=(self.binary_fd,), stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if interrupted is not None: raise ParentSignal(interrupted)
-            result = self.child_io(child, raw)
+            result = self.child_io(child, raw, stdout_limit=stdout_limit)
         except ParentSignal as stop:
             interrupted = stop.number
         except BaseException as error:
@@ -317,8 +363,8 @@ class InvocationContext:
         if failure is not None: raise failure
         return result
 
-    def child_io(self, child, raw):
-        streams = {child.stdout: (bytearray(), 64), child.stderr: (bytearray(), 4096)}
+    def child_io(self, child, raw, *, stdout_limit=64):
+        streams = {child.stdout: (bytearray(), stdout_limit), child.stderr: (bytearray(), 4096)}
         selector = selectors.DefaultSelector()
         for pipe in streams:
             os.set_blocking(pipe.fileno(), False)

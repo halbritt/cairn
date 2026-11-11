@@ -16,6 +16,7 @@ import (
 
 	"github.com/halbritt/cairn/internal/lifecycle/admission"
 	"github.com/halbritt/cairn/internal/lifecycle/binding"
+	"github.com/halbritt/cairn/internal/lifecycle/memoryhook"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 	"golang.org/x/sys/unix"
 )
@@ -28,7 +29,8 @@ func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 	if parent < 2 || os.Getppid() != parent {
 		return refuse(diagnostic, errors.New("lifecycle parent exited"))
 	}
-	if len(args) < 3 || args[0] != "lifecycle" || args[1] != "binding" || args[2] != "activation" {
+	memoryStart := len(args) >= 3 && args[0] == "lifecycle" && args[1] == "memory" && args[2] == "recall"
+	if !memoryStart && (len(args) < 3 || args[0] != "lifecycle" || args[1] != "binding" || args[2] != "activation") {
 		return refuse(diagnostic, errors.New("invalid private activation operation"))
 	}
 	flags := flag.NewFlagSet("private activation", flag.ContinueOnError)
@@ -67,6 +69,17 @@ func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 		return refuse(diagnostic, err)
 	}
 	in.Environment = os.Environ()
+	if memoryStart {
+		checked, err := binding.ResolveMemoryStart(ctx, in)
+		if err != nil {
+			return refuse(diagnostic, err)
+		}
+		result := memoryhook.RunStart(ctx, checked.Config, checked.Event, checked.Disposition == "checked", in.Directory, in.Environment)
+		if err = json.NewEncoder(output).Encode(result); err != nil {
+			return refuse(diagnostic, err)
+		}
+		return 0
+	}
 	enabled, err := binding.ResolveActivation(ctx, in)
 	if err != nil {
 		return refuse(diagnostic, err)

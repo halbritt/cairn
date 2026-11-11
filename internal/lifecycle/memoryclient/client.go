@@ -47,6 +47,9 @@ type Options struct {
 	Context       *core.ContextPins
 	CommandPrefix []string
 	Diagnostics   localapi.ClientDiagnostics
+	// ObserveOperation reports actual initiated search/pull durations to the
+	// reached hook meter. Known-zero pull refusals never start an operation.
+	ObserveOperation func(string, time.Duration)
 }
 
 type SearchOptions struct {
@@ -69,18 +72,19 @@ type Accounting struct {
 
 // Client is serial, like the Source Memory object. It never closes the SDK.
 type Client struct {
-	api           *localapi.Client
-	scope         core.Scope
-	context       core.ContextPins
-	commandPrefix []string
-	accounting    Accounting
+	api              *localapi.Client
+	scope            core.Scope
+	context          core.ContextPins
+	commandPrefix    []string
+	accounting       Accounting
+	observeOperation func(string, time.Duration)
 }
 
 func New(api *localapi.Client, options Options) (*Client, error) {
 	if api == nil {
 		return nil, &core.Error{Code: "INVALID_REQUEST", Message: "memory client requires an API client"}
 	}
-	c := &Client{api: api.WithDiagnostics(options.Diagnostics), scope: options.Scope,
+	c := &Client{api: api.WithDiagnostics(options.Diagnostics), scope: options.Scope, observeOperation: options.ObserveOperation,
 		commandPrefix: slices.Clone(options.CommandPrefix),
 		accounting: Accounting{OperationCalls: map[string]int{"search": 0, "pull": 0},
 			PullCalls: map[string]int{}, ReceiptCredits: map[string]int{}, SearchReceipts: []string{}}}
@@ -91,6 +95,12 @@ func New(api *localapi.Client, options Options) (*Client, error) {
 }
 
 func (c *Client) Search(ctx context.Context, query string, options SearchOptions) (indexview.View, error) {
+	started := time.Now()
+	defer func() {
+		if c.observeOperation != nil {
+			c.observeOperation("search", time.Since(started))
+		}
+	}()
 	c.accounting.OperationCalls["search"]++
 	room, timeout, requestID := searchRoom, callTimeout, ""
 	if options.Room != nil {
@@ -152,6 +162,12 @@ func (c *Client) Pull(ctx context.Context, request core.ExpandRequest, timeout t
 		c.accounting.PullCalls[receipt]++
 	}
 	c.accounting.OperationCalls["pull"]++
+	started := time.Now()
+	defer func() {
+		if c.observeOperation != nil {
+			c.observeOperation("pull", time.Since(started))
+		}
+	}()
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var raw json.RawMessage
