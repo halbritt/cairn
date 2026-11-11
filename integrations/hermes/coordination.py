@@ -39,17 +39,37 @@ def register(ctx):
     client_semaphore = threading.BoundedSemaphore(MAX_CONCURRENT_CLIENTS)
 
     def invoke(session_id, event, task_id='', model='', turn_id='', **selected):
+        if type(config) is not dict:
+            raise ValueError('Invalid selected coordination command')
+        if 'commands' not in config:
+            argv = [config.get('python', sys.executable), config.get('script'), 'hook', '--config', config.get('config')]
+        else:
+            commands = config['commands']
+            argv = commands.get(event) if type(commands) is dict else None
+        if type(argv) is not list or not argv or any(type(value) is not str or not value or '\0' in value for value in argv):
+            raise ValueError('Invalid selected coordination command')
         cwd = (get_session_cwd(task_id) or get_session_cwd(session_id)
                or resolve_task_overrides(task_id).get('cwd') or os.environ.get('TERMINAL_CWD') or os.getcwd())
         payload = dict(session_id=session_id, hook_event_name=event, cwd=cwd, host_pid=os.getpid(), model=model, **selected)
         if turn_id:
             payload['turn_id'] = turn_id
-        result = subprocess.run([sys.executable, config['script'], 'hook', '--config', config['config']],
+        result = subprocess.run(argv,
             input=json.dumps(payload),
             text=True, capture_output=True, timeout=15)
         if result.returncode:
             raise RuntimeError('Cairn session presence unavailable')
-        return json.loads(result.stdout).get('hookSpecificOutput', {}).get('additionalContext', '')
+        data = json.loads(result.stdout)
+        if type(data) is not dict:
+            raise ValueError('Invalid Cairn presence response')
+        output = data.get('hookSpecificOutput')
+        if output is None:
+            output = {}
+        elif type(output) is not dict:
+            raise ValueError('Invalid Cairn presence response')
+        context = output.get('additionalContext', '')
+        if type(context) is not str:
+            raise ValueError('Invalid Cairn presence response')
+        return context
 
     def before(session_id='', turn_id='', task_id='', model='', parent_session_id='', platform='', user_message='', **_):
         if not session_id or parent_session_id or platform in ('cron', 'subagent', 'flush', 'auxiliary'):
