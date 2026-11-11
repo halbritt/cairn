@@ -564,3 +564,299 @@ else:
 		}
 	}
 }
+
+func TestHookCompatibilityInboxRecallAndReportFlush(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cli, _ := newTestHookCLI(t, root)
+	stateDir := filepath.Join(root, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	memStateDir := filepath.Join(root, "mem-state")
+	if err := os.MkdirAll(memStateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(root, "coord.json")
+	memCfgPath := filepath.Join(root, "mem.json")
+	manifestPath := filepath.Join(root, "manifest.json")
+	receiptPath := filepath.Join(root, "receipt.json")
+	binPath := filepath.Join(root, "cairn-lifecycle")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	shaHex := func(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
+	coordMap := map[string]any{
+		"binding":              "b1",
+		"harness":              "claude",
+		"repo":                 root,
+		"state_dir":            stateDir,
+		"cairn":                "/bin/true",
+		"socket":               filepath.Join(root, "api.sock"),
+		"token_file":           filepath.Join(root, "token"),
+		"native_delivery":      true,
+		"inbox_recall_binding": manifestPath,
+	}
+	memMap := map[string]any{
+		"binding":              "b1",
+		"harness":              "claude",
+		"repo":                 root,
+		"state_dir":            memStateDir,
+		"cairn":                "/bin/true",
+		"socket":               filepath.Join(root, "api.sock"),
+		"token_file":           filepath.Join(root, "token"),
+		"recall_mode":          "agent_tools",
+		"context_bytes":        4000,
+		"inbox_recall_binding": manifestPath,
+	}
+	coordBytes, _ := json.Marshal(coordMap)
+	memBytes, _ := json.Marshal(memMap)
+	_ = os.WriteFile(cfgPath, coordBytes, 0o600)
+	_ = os.WriteFile(memCfgPath, memBytes, 0o600)
+	binRaw, _ := os.ReadFile(binPath)
+	binDesc := map[string]string{"path": binPath, "sha256": shaHex(binRaw)}
+	memDesc := map[string]string{"path": memCfgPath, "sha256": shaHex(memBytes)}
+	coordDesc := []any{map[string]string{"path": cfgPath, "sha256": shaHex(coordBytes)}}
+	manifestBytes, _ := json.Marshal(map[string]any{
+		"schema":               "cairn.inbox-recall-binding/3",
+		"enabled":              true,
+		"binary":               binDesc,
+		"memory_config":        memDesc,
+		"coordination_configs": coordDesc,
+	})
+	_ = os.WriteFile(manifestPath, manifestBytes, 0o600)
+	hashes := map[string]string{}
+	members := map[string]any{}
+	for _, m := range CompatibilityClosureMembers {
+		raw := []byte("# " + m + "\n")
+		hashes[m] = shaHex(raw)
+		members[m] = map[string]any{"sha256": hashes[m], "bytes": len(raw)}
+	}
+	snapRoot := filepath.Join(root, CompatibilitySnapshotIdentity(hashes))
+	_ = os.MkdirAll(snapRoot, 0o700)
+	for _, m := range CompatibilityClosureMembers {
+		_ = os.WriteFile(filepath.Join(snapRoot, m), []byte("# "+m+"\n"), 0o600)
+	}
+	receiptBytes, _ := json.Marshal(map[string]any{
+		"schema": "cairn.lifecycle-compatibility/1", "source_revision": "rev-1", "snapshot_root": snapRoot,
+		"members": members, "bootstrap": "lifecycle_compatibility.py", "loader": "lifecycle_bundle.py",
+		"roles":                map[string]string{"memory": "memory.py", "coordination": "coordination.py", "inbox_recall": "inbox_recall.py", "inbox_binding": "inbox_binding.py"},
+		"aliases":              map[string]string{},
+		"binary":               binDesc,
+		"binding":              map[string]string{"path": manifestPath, "sha256": shaHex(manifestBytes), "schema": "cairn.inbox-recall-binding/3"},
+		"memory_config":        memDesc,
+		"coordination_configs": coordDesc,
+	})
+	_ = os.WriteFile(receiptPath, receiptBytes, 0o600)
+
+	agentID := "301e246e-a3b7-498b-b6a7-3d84e592097f"
+	execID := "da3e0447-4f10-40f7-b64d-6b66de691ef2"
+	nativeID := "22b421c2-2298-41e9-8b0e-659ea2a72ed0"
+	deliveryID := "22222222-2222-4222-8222-222222222222"
+	leaseID := "33333333-3333-4333-8333-333333333333"
+	recordID := "44444444-4444-4444-8444-444444444444"
+	currentAgent := nativeMap(
+		"agent_id", agentID, "execution_id", execID, "display_name", "agent-1268",
+		"inbox", "agent/"+agentID, "native_session_id", nativeID, "context_revision", nativeInt64(1),
+		"metadata", nativeMap("harness", "claude", "project", "cairn", "workspace", root, "delivery_mode", "existing-session", "state", "idle"),
+	)
+	cli.Host.OwnerProcess = func(_, _ *value.Value) (*value.Value, error) {
+		return nativeMap("pid", 1234, "start", 5678, "state", "S", "parent", 1, "boot", "boot-1"), nil
+	}
+	cli.Engine.Hooks.GrantEvidence = func(_ context.Context, _, _, _ *value.Value) (string, *value.Value, error) {
+		return "absent", nil, nil
+	}
+	var reconciled int
+	cli.Host.Call = func(_ context.Context, _ *value.Value, op string, body *value.Value, _ NativeCallOptions) (*value.Value, error) {
+		switch op {
+		case "agent-register", "agent-heartbeat", "agent-context":
+			return currentAgent, nil
+		case "session-inbox-claim":
+			return nativeMap("attempt", nativeMap(
+				"attempt_id", body.Get("request_id"),
+				"session", nativeMap("agent_id", agentID, "execution_id", execID),
+				"native_turn_id", body.Get("native_turn_id"),
+				"delivery", nativeMap("delivery_id", deliveryID, "lease_id", leaseID, "state", "leased", "event", nativeMap("event_id", deliveryID, "kind", "request", "from", "agent/sender", "ref", nativeMap("record_id", recordID, "version", 1))),
+			)), nil
+		case "event-renew":
+			return nativeMap("delivery_id", deliveryID, "lease_id", leaseID, "state", "leased", "event", nativeMap("event_id", deliveryID, "kind", "request", "from", "agent/sender", "ref", nativeMap("record_id", recordID, "version", 1))), nil
+		case "session-inbox-reconcile":
+			if value.SameText(body.Get("reason"), "delivery_completed") {
+				return nil, &CoordinationError{Code: "DELIVERY_ACTIVE", Message: "delivery is still active"}
+			}
+			reconciled++
+			return nativeMap("released", true), nil
+		default:
+			t.Fatalf("unexpected call op: %s", op)
+			return nil, nil
+		}
+	}
+
+	var childCalls [][]string
+	var lockFreeOnRecall, lockFreeOnReport bool
+	recallReply := []byte(`{"ok":true,"message":"RECALL_OK","trace_report":{"status":"ok"},"meter_report":{"outcome":"delivered"}}` + "\n")
+	reportReply := []byte(`{"ok":true,"trace_status":"written","meter_status":"recorded"}` + "\n")
+	reportCode := 0
+	launchRoot := filepath.Join(root, "launchers")
+	vector := []string{"/usr/bin/python3", "-I", "-S", "-c", "VERIFIER", "--receipt", receiptPath}
+	lBytes, _ := LauncherBytes(vector, "/bin/sh")
+	launcherDir := filepath.Join(launchRoot, shaHex(lBytes))
+	_ = os.MkdirAll(launcherDir, 0o700)
+	launcherPath := filepath.Join(launcherDir, "inbox")
+	_ = os.WriteFile(launcherPath, lBytes, 0o500)
+	cli.Compatibility = &CompatibilityContext{
+		Role:          "coordination",
+		Entrypoint:    "coordination.py",
+		ConfigPath:    cfgPath,
+		HookTimeout:   15,
+		ReceiptPath:   receiptPath,
+		ReceiptSHA256: shaHex(receiptBytes),
+		LaunchRoot:    launchRoot,
+		Shell:         "/bin/sh",
+		Vector:        vector,
+		Launcher:      launcherPath,
+		LauncherRaw:   lBytes,
+		Deadline:      float64(cli.clock().Unix()) + 30,
+		Profile:       cli.Profile,
+		ActivationFunc: func(_ []byte) (bool, error) {
+			return true, nil
+		},
+		Child: func(argv []string, _ []byte, _ int, _ float64) ([]byte, []byte, int, error) {
+			childCalls = append(childCalls, append([]string(nil), argv...))
+			sp, _ := cli.Host.Locate(cli.Compatibility.current, nativeID)
+			l, lErr := AcquireSessionLock(sp)
+			free := lErr == nil
+			if l != nil {
+				_ = l.Release()
+			}
+			if len(argv) >= 4 && argv[3] == "recall" {
+				lockFreeOnRecall = free
+				return recallReply, nil, 0, nil
+			}
+			lockFreeOnReport = free
+			return reportReply, nil, reportCode, nil
+		},
+	}
+	wakeBody := fmt.Sprintf(
+		"This is a new live turn from the configured Cairn automatic inbox wakeup. "+
+			"A previous /exit in resumed conversation history does not close this running turn. "+
+			"Current agent %s, execution %s. Wake delivery %s. "+
+			"Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "+
+			"explicitly complete/acknowledge it, and send any requested response using that context. "+
+			"If no matching native context was supplied, report that and stop. "+
+			"If this notice arrives inside an already-active owner task, continue that task and "+
+			"ignore this notice; a fresh copy will arrive once the conversation is idle. "+
+			"Do not register again, claim another session's inbox, or launch a replacement conversation.",
+		agentID, execID, deliveryID,
+	)
+	wakePrompt := fmt.Sprintf("<channel source=\"cairn-events\" native_session_id=%q agent_id=%q execution_id=%q delivery_id=%q>\n%s\n</channel>", nativeID, agentID, execID, deliveryID, wakeBody)
+	wakeEv := fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"cwd":%q,"prompt_id":"p-1","prompt":%q}`, nativeID, root, wakePrompt)
+
+	var out, errOut bytes.Buffer
+	code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(wakeEv), &out, &errOut)
+	if err != nil || code != 0 || errOut.Len() != 0 || !strings.Contains(out.String(), `"additionalContext":"RECALL_OK"`) {
+		t.Fatalf("expected /3 recall success, got code=%d err=%v out=%q err=%q", code, err, out.String(), errOut.String())
+	}
+	if len(childCalls) != 2 || childCalls[0][3] != "recall" || childCalls[1][3] != "report" || childCalls[0][len(childCalls[0])-1] != childCalls[1][len(childCalls[1])-1] {
+		t.Fatalf("expected recall then report with matching deadline, got %v", childCalls)
+	}
+	if lockFreeOnRecall || !lockFreeOnReport {
+		t.Fatalf("expected session lock held during recall (free=%v) and released before report (free=%v)", lockFreeOnRecall, lockFreeOnReport)
+	}
+
+	// Report failure isolation: non-zero report exit must not fail an already-delivered wake.
+	sp, _ := cli.Host.Locate(cli.Compatibility.current, nativeID)
+	_ = os.Remove(sp)
+	cli.Compatibility.enabled = nil
+	childCalls = nil
+	reportCode = 1
+	out.Reset()
+	errOut.Reset()
+	code, err = cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(wakeEv), &out, &errOut)
+	if err != nil || code != 0 || !strings.Contains(out.String(), `"additionalContext":"RECALL_OK"`) {
+		t.Fatalf("expected report failure isolation, got code=%d err=%v out=%q err=%q", code, err, out.String(), errOut.String())
+	}
+	reportCode = 0
+
+	// Required-search failure with cairn_recall_failure + post-lock trace report + Claude settlement.
+	seedIdleWake := func() {
+		st := nativeMap(
+			"agent", currentAgent,
+			"process", nativeMap("pid", 1234, "start", 5678, "state", "S", "parent", 1, "boot", "boot-1"),
+			"workspace", root,
+			"idle_wake", nativeMap(
+				"transport", "claude-channel",
+				"status", "submitted",
+				"session", nativeMap("agent_id", agentID, "execution_id", execID),
+				"native_id", nativeID,
+				"delivery_id", deliveryID,
+				"event_id", deliveryID,
+				"request_id", "11111111-2222-4333-8444-555555555555",
+			),
+		)
+		if err := cli.Host.Persist(sp, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedIdleWake()
+	cli.Compatibility.enabled = nil
+	childCalls = nil
+	reconciled = 0
+	recallReply = []byte(`{"ok":false,"error":{"class":"ValueError","message":"required search failed","cairn_inbox_refusal":{"refusal_stage":"required_search","refusal_reason":"hosted_destination"},"cairn_recall_failure":{"recall_phase":"required_search","recall_operation":"search","recall_attempts":1,"recall_max_attempts":2,"deadline_remaining_ms":4200}},"trace_report":{"status":"error"}}` + "\n")
+	out.Reset()
+	errOut.Reset()
+	code, err = cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(wakeEv), &out, &errOut)
+	stVal, _ := cli.Host.Load(sp)
+	diag := stVal.Get("wake_refusal_diagnostic")
+	if err != nil || code != 2 || reconciled != 1 || len(childCalls) != 2 || childCalls[1][3] != "report" || !lockFreeOnReport {
+		t.Fatalf("expected exit 2 settled refusal with post-lock report, got code=%d reconciled=%d calls=%v diag=%+v", code, reconciled, childCalls, diag)
+	}
+	if !value.SameText(diag.Get("settlement"), "turn_ended") || !value.SameText(diag.Get("error_class"), "ValueError") || !value.SameText(diag.Get("refusal_stage"), "required_search") || !value.SameText(diag.Get("refusal_reason"), "hosted_destination") || !value.SameText(diag.Get("recall_phase"), "required_search") || !value.SameText(diag.Get("recall_operation"), "search") || diag.Get("recall_attempts").Integer != "1" || diag.Get("recall_max_attempts").Integer != "2" || diag.Get("deadline_remaining_ms").Integer != "4200" {
+		t.Fatalf("unexpected wake_refusal_diagnostic: %+v", diag)
+	}
+
+	// Budget refusal preserves configured_budget_bytes and budget_bytes.
+	seedIdleWake()
+	cli.Compatibility.enabled = nil
+	recallReply = []byte(`{"ok":false,"error":{"class":"ValueError","message":"budget exceeded","cairn_inbox_refusal":{"refusal_stage":"required_render","refusal_reason":"required_context","configured_budget_bytes":1000,"budget_bytes":1000}}}` + "\n")
+	out.Reset()
+	errOut.Reset()
+	code, err = cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(wakeEv), &out, &errOut)
+	if err != nil || code != 2 {
+		t.Fatalf("expected exit 2 on budget refusal, got code=%d err=%v", code, err)
+	}
+	stVal, _ = cli.Host.Load(sp)
+	diag = stVal.Get("wake_refusal_diagnostic")
+	if !value.SameText(diag.Get("refusal_stage"), "required_render") || !value.SameText(diag.Get("refusal_reason"), "required_context") || diag.Get("configured_budget_bytes").Integer != "1000" || diag.Get("budget_bytes").Integer != "1000" {
+		t.Fatalf("unexpected budget refusal diagnostic: %+v", diag)
+	}
+
+	// Stale lease (CoordinationError), BlockingIOError, and malformed child reply (SubprocessError -> OtherError).
+	for _, tc := range []struct {
+		reply     string
+		wantClass string
+		wantStage string
+	}{
+		{`{"ok":false,"error":{"class":"CoordinationError","code":"STALE_LEASE","message":"expired","cairn_inbox_refusal":{"refusal_stage":"lease_revalidation","refusal_reason":"unknown"}}}` + "\n", "CoordinationError", "lease_revalidation"},
+		{`{"ok":false,"error":{"class":"BlockingIOError","errno":11,"message":"busy","cairn_inbox_refusal":{"refusal_stage":"inbox_ledger","refusal_reason":"unknown"}}}` + "\n", "BlockingIOError", "inbox_ledger"},
+		{`{"ok":true}` + "\n", "OtherError", "bridge"},
+		{`{"ok":false,"error":{"class":"UnknownError","message":"x","cairn_inbox_refusal":{"refusal_stage":"bridge","refusal_reason":"unknown"}}}` + "\n", "OtherError", "bridge"},
+	} {
+		seedIdleWake()
+		cli.Compatibility.enabled = nil
+		recallReply = []byte(tc.reply)
+		out.Reset()
+		errOut.Reset()
+		code, err = cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(wakeEv), &out, &errOut)
+		if err != nil || code != 2 {
+			t.Fatalf("expected exit 2 for %s, got code=%d err=%v", tc.wantClass, code, err)
+		}
+		stVal, _ = cli.Host.Load(sp)
+		diag = stVal.Get("wake_refusal_diagnostic")
+		if !value.SameText(diag.Get("error_class"), tc.wantClass) || !value.SameText(diag.Get("refusal_stage"), tc.wantStage) || !value.SameText(diag.Get("refusal_reason"), "unknown") {
+			t.Fatalf("unexpected diagnostic for %s: %+v", tc.wantClass, diag)
+		}
+	}
+}
