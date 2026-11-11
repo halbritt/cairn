@@ -482,6 +482,41 @@ class BoundMemoryTests(BoundMemoryCase):
         self.assertEqual(self.pair().returncode, 0)
         self.assertTrue(self.state()[SESSION + '.memory-budget.json']['turns'][TURN]['granted'])
 
+    def test_invocation_trace_keeps_source_success_activation_error_and_required_refusal(self):
+        directory = self.f.memory_path.parent / 'invocation-trace'
+        directory.mkdir(mode=0o700)
+        original = self.f.coord_path.read_bytes()
+        for kind in ('success', 'activation_error', 'required_late_refusal'):
+            with self.subTest(boundary=kind):
+                self.reset_state({})
+                trace = directory / 'trace.jsonl'
+                trace.unlink(missing_ok=True)
+                self.overwrite(self.f.coord_path, original)
+                self.prepare_run = self.index_hook = None
+                self.selected = []
+                if kind == 'activation_error':
+                    self.overwrite(self.f.coord_path, original + b' ')
+                elif kind == 'required_late_refusal':
+                    self.prepare_run = lambda side: self.overwrite(self.f.coord_path, original)
+                    self.index_hook = lambda: self.overwrite(self.f.coord_path, original + b' ')
+                    self.selected = [dict(record=dict(record_id='55555555-5555-4555-8555-555555555555', version=1,
+                                                     body='Required checked Source fixture.'), mandatory=True, reason='required',
+                                          evidence=[], authority=[])]
+                self.pair()
+                rows = [json.loads(line) for line in trace.read_text().splitlines()]
+                self.assertEqual([row['kind'] for row in rows], ['entry', 'parsed', 'exit'] * 2)
+                def stable(row):
+                    row = dict(row)
+                    invocation = row.pop('inv')
+                    self.assertEqual(len(invocation), 32)
+                    self.assertGreaterEqual(int(invocation, 16), 0)
+                    for key in ('at', 'duration_ms', 'pid', 'ppid'):
+                        if key in row:
+                            self.assertIs(type(row[key]), int)
+                            self.assertGreaterEqual(row.pop(key), 0)
+                    return row
+                self.assertEqual([stable(row) for row in rows[3:]], [stable(row) for row in rows[:3]])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -116,6 +116,8 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	}()
 	var result memoryhook.Result
 	if snapshot.Bound() {
+		trace.fields["phase"] = "activation"
+		trace.fields["stage"] = "activation"
 		result = runCheckedBound(ctx, snapshot, event, rawEvent, directory, timeout)
 	} else {
 		result = memoryhook.RunOrdinary(ctx, snapshot.Config(), event, directory, os.Environ())

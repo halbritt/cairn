@@ -42,6 +42,9 @@ identity, account/privacy exclusions, both locks, capture CAS and concurrent
 recall state, failed replacement and retry. Go-only negatives reject external
 deadline/vector/descriptor/authentication flags and reach the original deadline
 with stdin still open, before API or state effects.
+Actual owner-only invocation traces are compared on success, activation failure
+and late required refusal. Only validated process IDs, invocation IDs and timing
+fields differ; activation stage/error labels and required outcomes retain Source.
 
 Native turn UUID syntax, including the Source's accepted zero UUID, is metadata.
 Extra event agent/execution/lease/expiry fields do not authorize an inbox claim.
