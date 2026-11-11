@@ -256,6 +256,7 @@ Its group matcher, group metadata and unrelated hooks remain. If none matches,
 a new group is appended. Multiple matches refuse, rather than deleting a
 possibly distinct conditional hook. The exact newly selected command is also
 recognized, so rendering already-rendered settings adds no duplicate hooks.
+Naming a newly selected command in the other role's previous-command list refuses.
 Unknown events and other settings remain, including commands the operator did
 not select for replacement. Supply the complete owned command lists; this
 tool does not identify stale lifecycle hooks by basename or remove them for you.

@@ -189,6 +189,23 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
         self.assertFalse(list(f.hook_root.glob('selection-*')))
         self.assertEqual(f.api_calls(), [])
 
+    def test_previous_commands_cannot_repurpose_another_selected_role(self):
+        f = self.fixture('cross-role-plan')
+        _, _, metadata = self.selected(f)
+        for role, other in (('memory', 'coordination'), ('coordination', 'memory')):
+            with self.subTest(role=role):
+                command = next(row['hook']['command'] for row in metadata['rows']
+                               if (row['role'], row['event']) == (other, 'SessionStart'))
+                plan = dict(f.hook_plan, id=str(uuid.uuid4()), replace_commands=dict(memory=[], coordination=[]))
+                plan['replace_commands'][role] = [command]
+                result = self.stage(f, plan)
+                self.assertEqual((result.returncode, result.stdout), (1, b''))
+                self.assertIn(b'previous command selects another current role', result.stderr)
+                self.assertFalse((f.hook_root / ('selection-' + plan['id'])).exists())
+                self.assertEqual(f.settings.read_bytes(), b'{}')
+                self.assertEqual(f.api_calls(), [])
+                self.assertFalse(Path(f.memory['state_dir']).exists())
+
     def test_publication_failure_reconciles_and_interrupted_renderer_joins_its_child(self):
         f = self.fixture('publication')
         real = f.stager

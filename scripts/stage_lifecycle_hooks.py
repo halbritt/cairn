@@ -86,12 +86,15 @@ def render(plan, rows):
     if type(replacements) is not dict or set(replacements) != {'memory', 'coordination'}:
         raise ValueError('explicit previous command lists for both roles required')
     seen = set()
-    for values in replacements.values():
+    selected_roles = {row['hook']['command']: row['role'] for row in rows}
+    for role, values in replacements.items():
         if type(values) is not list:
             raise ValueError('previous commands must be lists')
         for command in values:
             if type(command) is not str or not command or command in seen:
                 raise ValueError('previous commands must be distinct nonempty strings')
+            if command in selected_roles and selected_roles[command] != role:
+                raise ValueError('previous command selects another current role')
             seen.add(command)
     for row in rows:
         groups = hooks.setdefault(row['event'], [])
