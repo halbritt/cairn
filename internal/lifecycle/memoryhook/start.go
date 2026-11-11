@@ -111,7 +111,11 @@ func rounded(d time.Duration) *value.Value {
 
 // RunStart recovers every unexpected supported-boundary panic to the declared
 // fixed diagnostic. Nothing from a panic, API body or profile enters stderr.
-func RunStart(ctx context.Context, config, event *value.Value, bound bool, directory string, environment []string, coordinators ...*value.Value) (result Result) {
+func RunStart(ctx context.Context, config, event *value.Value, bound bool, directory string, environment []string, coordinators ...*value.Value) Result {
+	return runMemory(ctx, config, event, bound, directory, environment, false, coordinators...)
+}
+
+func runMemory(ctx context.Context, config, event *value.Value, bound bool, directory string, environment []string, ordinary bool, coordinators ...*value.Value) (result Result) {
 	trace := map[string]any{"phase": "handle", "bound": bound}
 	defer func() {
 		if recover() != nil {
@@ -150,7 +154,7 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 		}
 		return out
 	}
-	if !value.SameText(config.Get("harness"), "codex") || !value.SameText(config.Get("recall_mode"), "agent_tools") || (!value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")) {
+	if !ordinary && (!value.SameText(config.Get("harness"), "codex") || !value.SameText(config.Get("recall_mode"), "agent_tools") || (!value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit"))) {
 		return failure(event, fail("unsupported private memory cell"))
 	}
 	env := make(map[string][]rune)
@@ -178,6 +182,10 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 		return Result{Stdout: "{}\n"}
 	}
 	trace["stage"] = "validated"
+	if ordinary && (decision.Reason == "stop_not_boundary" || decision.Reason == "unsupported_event") {
+		trace["outcome"] = "early_return:" + decision.Reason
+		return Result{Stdout: "{}\n"}
+	}
 	if decision.Verdict == "invalid" {
 		return boundary(fail(decision.Message))
 	}
@@ -188,6 +196,9 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 	if !decision.Run() {
 		trace["outcome"] = "early_return:no_memory_marker"
 		return Result{Stdout: "{}\n"}
+	}
+	if ordinary && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
+		return boundary(fail("ordinary memory capture and observation cells remain unavailable"))
 	}
 	if prompt := event.Get("prompt"); prompt != nil && !validText(prompt) {
 		return boundary(fail("invalid memory hook input"))
@@ -336,7 +347,7 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 		if err == nil {
 			diagnostics := localapi.ClientDiagnostics{Surface: "cli", Harness: "unknown", Origin: &localapi.ClientOrigin{Component: "lifecycle-memory", ImplementationID: executingSHA(), Basis: "reported"}, RetrievalCapabilities: localapi.CurrentRetrievalCapabilities(), ReaderCapabilities: localapi.CurrentReaderCapabilities()}
 			api = api.WithDiagnostics(diagnostics)
-			scope := core.Scope{Repo: text(config.Get("repo")), TaskID: "codex/" + session, RunID: session}
+			scope := core.Scope{Repo: text(config.Get("repo")), TaskID: text(config.Get("harness")) + "/" + session, RunID: session}
 			if v := config.Get("task_id"); v != nil {
 				scope.TaskID = text(v)
 			}
@@ -346,7 +357,11 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 			pins := contextPins(config.Get("context"))
 			client, err = memoryclient.New(api, memoryclient.Options{Scope: scope, Context: &pins, CommandPrefix: []string{text(config.Get("cairn")), "agent", "--socket", text(config.Get("socket")), "--token-file", text(config.Get("token_file"))}, Diagnostics: diagnostics, ObserveOperation: func(name string, elapsed time.Duration) { operationTime[name] += elapsed }})
 			if err == nil {
-				body, err = recall(ctx, client, config, event, state, status, project, bound)
+				if ordinary {
+					body, err = ordinaryRecall(ctx, client, config, event, state, status, project)
+				} else {
+					body, err = recall(ctx, client, config, event, state, status, project, bound)
+				}
 			}
 		}
 		if err != nil {
@@ -844,7 +859,7 @@ func report(ctx context.Context, api *localapi.Client, client *memoryclient.Clie
 			status = "timeout"
 		}
 	}
-	body := core.RecallObservationRequest{RequestID: uuid.NewString(), Repo: text(config.Get("repo")), ReceiptIDs: accounting.SearchReceipts, Harness: "codex", HookEvent: text(event.Get("hook_event_name")), Method: "cairn-lifecycle/recall-meter/1", Status: status, ErrorClass: errorClass, ElapsedMS: &elapsed, SearchMS: &search, PullsMS: &pulls, SelectorMS: &selector, SearchCalls: &searchCalls, PullCalls: &pullCalls, SelectorCalls: []core.RecallSelectorCall{}, InjectedBytes: &bytes}
+	body := core.RecallObservationRequest{RequestID: uuid.NewString(), Repo: text(config.Get("repo")), ReceiptIDs: accounting.SearchReceipts, Harness: text(config.Get("harness")), HookEvent: text(event.Get("hook_event_name")), Method: "cairn-lifecycle/recall-meter/1", Status: status, ErrorClass: errorClass, ElapsedMS: &elapsed, SearchMS: &search, PullsMS: &pulls, SelectorMS: &selector, SearchCalls: &searchCalls, PullCalls: &pullCalls, SelectorCalls: []core.RecallSelectorCall{}, InjectedBytes: &bytes}
 	limited, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
 	var response json.RawMessage
