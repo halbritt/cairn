@@ -81,8 +81,7 @@ def definitions(stager, plan):
                 if (role == 'memory' and plan['harness'] == 'opencode'
                         and event in ('SessionStart', 'UserPromptSubmit')):
                     if config.get('recall_mode') == 'agent_tools':
-                        argv = [receipt['binary']['path'], 'memory', '--config', profile['path']]
-                        implementation, reason = 'go', 'unbound ordinary agent_tools recall'
+                        reason = 'receipt-checked ordinary Go consumer unavailable; checked Python recall'
                     else:
                         reason = 'provider-selected recall'
             hook = dict(type='command', command=shlex.join(argv), timeout=timeout)

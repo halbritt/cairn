@@ -77,7 +77,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
             if path.is_file(): self.assertEqual(path.stat().st_mode & 0o777, 0o400)
         return selected, directory, record
 
-    def test_opencode_go_recall_and_coordination_keep_source_capture_and_reverse_inputs(self):
+    def test_opencode_uses_checked_source_cells_and_preserves_reverse_inputs(self):
         f = self.fixture('ordinary host')
         calls = self.recall_api(f)
         selected, directory, record = self.selected(f)
@@ -86,9 +86,10 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         for selected_config, input_pin in [(f.memory_path, f.plan['memory_config']), (f.coord_path, f.plan['coordination_configs'][0])]:
             self.assertEqual(selected_config.read_bytes(), Path(input_pin['path']).read_bytes())
         implementations = {(r['role'], r['event']): r['implementation'] for r in record['rows']}
-        self.assertEqual({key for key, impl in implementations.items() if impl == 'go'},
-                         {('memory', 'SessionStart'), ('memory', 'UserPromptSubmit')})
-        self.assertTrue(all(r['implementation'] == 'python' for r in record['rows'] if r['role'] == 'coordination'))
+        self.assertTrue(all(impl == 'python' for impl in implementations.values()))
+        self.assertTrue(all('receipt-checked ordinary Go consumer unavailable' in r['reason']
+                            for r in record['rows'] if r['role'] == 'memory'
+                            and r['event'] in ('SessionStart', 'UserPromptSubmit')))
         self.assertTrue(all(implementations['memory', event] == 'python'
                             for event in ('PreCompact', 'SessionEnd', 'PostToolUse', 'PostToolUseFailure')))
         # Arrange the documented staged layout only in a disposable account.
@@ -103,15 +104,15 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                                  str(home), str(f.root)], env=f.env(), cwd=f.root, capture_output=True, timeout=45)
         self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout)
         self.assertEqual(json.loads(result.stdout), {'memory': True, 'coordination': True})
-        self.assertIn('index', [operation for operation, _ in calls])
-        self.assertTrue(all(auth == 'Bearer r04-synthetic-token' for _, auth in calls))
+        self.assertEqual(calls, [], 'No cell may select the unchecked ordinary Go consumer')
+        self.assertIn('search', [call['operation'] for call in f.api_calls()])
         states = [json.loads(path.read_bytes()) for path in Path(f.coord['state_dir']).glob('*.json')]
         self.assertEqual(len(states), 1)
         self.assertEqual(states[0]['agent']['agent_id'], '33333333-3333-4333-8333-333333333333')
         memory_state = json.loads((Path(f.memory['state_dir']) / 'ses_wiring.json').read_bytes())
         self.assertIn(memory_state['last_capture']['outcome'], ('courtesy', 'unchanged'))
 
-    def test_shell_transport_runs_go_opencode_recall_and_keeps_other_harnesses_on_source(self):
+    def test_shell_transport_keeps_all_harnesses_on_checked_source(self):
         for harness in ('opencode', 'codex', 'claude'):
             with self.subTest(harness=harness):
                 f = self.fixture(harness, harness=harness)
@@ -119,8 +120,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 _, _, record = self.selected(f)
                 memory = next(r for r in record['rows'] if r['role'] == 'memory' and r['event'] == 'SessionStart')
                 coord = next(r for r in record['rows'] if r['role'] == 'coordination')
-                self.assertEqual((memory['implementation'], coord['implementation']),
-                                 ('go' if harness == 'opencode' else 'python', 'python'))
+                self.assertEqual((memory['implementation'], coord['implementation']), ('python', 'python'))
                 session = 'ses_shell' if harness == 'opencode' else SESSION
                 event = dict(hook_event_name='SessionStart', session_id=session, cwd=str(f.root), host_pid=os.getpid())
                 shutil.rmtree(f.package)

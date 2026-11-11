@@ -1,4 +1,4 @@
-// Actual staged plugins/Go/retained Source; host dialogue is the boundary fixture.
+// Actual staged plugins and receipt-checked Source; host dialogue is the fixture.
 import assert from 'node:assert/strict'
 import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'

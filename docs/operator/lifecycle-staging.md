@@ -282,13 +282,15 @@ a checkout. `test_r02_installed_contracts.py` applies the existing F-04 ledger,
 failure and deadline oracles to actual installer output, including separately
 pinned test child images. Those disposable fault images are not release builds.
 
-### Staged OpenCode ordinary recall
+### Staged OpenCode adapters
 
-The OpenCode selection wires only unbound `agent_tools` memory SessionStart
-and UserPromptSubmit to `[IMAGE, memory, --config, PATH]`. `IMAGE` and `PATH`
-come from the inspected immutable R-02 generation. It does not enable the
-public `cairn lifecycle` command. Shell transport uses the same literal argv
-through the selected row's shell-quoted `hook.command`; shell is not a harness.
+The OpenCode selection wires each callback to its exact checked R-02 launcher.
+Start and prompt recall remain on Python until the receipt-checked ordinary Go
+consumer lands. The bare `[IMAGE, memory, --config, PATH]` entry is not selected:
+it lacks the runtime receipt, image, closure and configuration checks and the
+original H/V/L frame. The public `cairn lifecycle` command stays disabled. Shell
+transport uses the same literal argv through the selected row's shell-quoted
+`hook.command`; shell is not a harness.
 
 For an ordinary installation, add `"profile_mode": "unbound"` to the R-02
 compatibility plan and set `"enabled": false`. Every supplied memory and
@@ -338,17 +340,18 @@ Every row records its `implementation` and `reason`. Current routing is:
 
 | Cell | Route |
 | --- | --- |
-| OpenCode unbound `agent_tools` SessionStart/UserPromptSubmit | Private Go ordinary-memory entry. |
+| OpenCode unbound `agent_tools` SessionStart/UserPromptSubmit | Checked R-02 Python caller; receipt-checked ordinary Go consumer not yet available. |
 | Bound callbacks or provider-selected recall | Existing receipt-selected Python caller. |
 | Codex/Claude unbound ordinary recall | Existing Python caller. |
 | PreCompact/SessionEnd capture and tool observation | Existing receipt-selected Python caller. |
 | Coordination hooks for all supported harnesses | Existing Python caller; the private Go hook handler and its `/3` launch-vector construction are not yet on main. |
 | Agy ordinary memory hook | Not installed; this tool adds none. |
 
-The direct ordinary Go entry reads the staged config; it does not authenticate
-a compatibility receipt or qualify a bound callback. The immutable paths and
-pins are inspected during staging. No runtime trust, activation, cached-client
-refresh, production apply or full R-04 acceptance is claimed by this output.
+Every selected command retains the R-02 runtime receipt checks. Foundation owns
+the missing checked ordinary-memory Go consumer; Release switches the rows only
+after that consumer lands. No native-client trust operation, activation,
+cached-client refresh, production apply or full R-04 acceptance is claimed by
+this output.
 `test_r04_host_wiring.py` runs the staged OpenCode plugins and shell argv in
-disposable homes against the real Go image and retained Source, including
+disposable homes against the checked R-02 path and retained Source, including
 reverse bytes, excluded cells and changed-input refusal.

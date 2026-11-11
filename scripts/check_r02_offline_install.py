@@ -52,14 +52,14 @@ def packaged_check():
         case.doCleanups()
     print('R04 standalone-package settings and every emitted host hook: PASS', flush=True)
     from test_r04_host_wiring import R04HostWiringTests
-    case = R04HostWiringTests('test_opencode_go_recall_and_coordination_keep_source_capture_and_reverse_inputs')
+    case = R04HostWiringTests('test_opencode_uses_checked_source_cells_and_preserves_reverse_inputs')
     case.binary, case.stager = ROOT / 'assets/private-activation', ROOT / 'assets/stager'
     case.setUp()
     try:
-        case.test_opencode_go_recall_and_coordination_keep_source_capture_and_reverse_inputs()
+        case.test_opencode_uses_checked_source_cells_and_preserves_reverse_inputs()
     finally:
         case.doCleanups()
-    print('R04 standalone-package OpenCode Go recall and retained Source hooks: PASS', flush=True)
+    print('R04 standalone-package OpenCode receipt-checked Source hooks: PASS', flush=True)
 
 
 # Runs only inside the first namespace. The stdout archive is extracted as data
