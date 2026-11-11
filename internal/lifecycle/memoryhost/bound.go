@@ -18,7 +18,7 @@ func runCheckedBound(ctx context.Context, entry *binding.MemoryEntry, event *val
 	claude := value.SameText(config.Get("harness"), "claude")
 	recall := value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")
 	capture := value.SameText(event.Get("hook_event_name"), "PreCompact") || codex && value.SameText(event.Get("hook_event_name"), "Stop") || claude && value.SameText(event.Get("hook_event_name"), "SessionEnd")
-	if !(recall && codex && value.SameText(config.Get("recall_mode"), "agent_tools") || capture && (codex || claude)) {
+	if !(recall && (codex || claude) && value.SameText(config.Get("recall_mode"), "agent_tools") || capture && (codex || claude)) {
 		return memoryhook.InvalidInput("activation", "checked bound memory cell remains unavailable")
 	}
 	if recall && timeout != 13*time.Second || capture && timeout != 150*time.Second {

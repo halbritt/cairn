@@ -43,11 +43,18 @@ func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, ev
 	if lifecycle := config.Get("context_lifecycle"); lifecycle != nil && !value.SameText(lifecycle, "full") {
 		return "", fail("context_lifecycle compact/1 requires Codex agent_tools recall")
 	}
-	if config.Get("recall_task_key") != nil {
+	if boundClaude(config) {
+		if _, err := claudeTaskKey(config); err != nil {
+			return "", err
+		}
+	} else if config.Get("recall_task_key") != nil {
 		return "", fail("invalid explicit recall_task_key or unsupported recall route")
 	}
 	notification := value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") && strip(text(event.Get("workstream"))) == "" && text(event.Get("source")) != "resume" && text(event.Get("source")) != "compact" && binding.TasklessNotification(event.Get("prompt"))
 	deferred := notification || value.SameText(event.Get("hook_event_name"), "SessionStart") && strip(text(event.Get("prompt"))) == "" && strip(text(event.Get("workstream"))) == "" && text(event.Get("source")) != "resume" && text(event.Get("source")) != "compact"
+	if boundClaude(config) && value.SameText(event.Get("hook_event_name"), "SessionStart") {
+		deferred = true
+	}
 	agentTools := value.SameText(mode, "agent_tools")
 	if !agentTools && !deferred && value.Truth(config.Get("semantic_fallback")) {
 		return "", fail("ordinary provider-selected recall remains unavailable")
@@ -101,11 +108,34 @@ func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, ev
 	if err != nil {
 		return "", err
 	}
-	if len(selectedBody) > budget {
+	if !boundClaude(config) && len(selectedBody) > budget {
 		return "", fail("retrieval exceeds lifecycle context budget; no partial instructions injected")
 	}
 	var body string
-	if !deferred && agentTools {
+	if boundClaude(config) {
+		body, err = claudeAgentContext(deadline, client, config, event, result, selected, status, view.Index, budget)
+		if err != nil {
+			return "", err
+		}
+		discovery := "lexical"
+		search := status.Get("search_discovery")
+		switch text(search.Get("state")) {
+		case "ready":
+			discovery = "semantic"
+		case "unavailable", "invalid_result":
+			discovery = "lexical_fallback"
+		case "not_needed":
+			discovery = "not_needed"
+		default:
+			if semantic || search != nil {
+				discovery = "unknown"
+			}
+		}
+		if value.Truth(status.Get("optional_deferred")) {
+			discovery = "deferred"
+		}
+		status.Set("discovery", value.Text(discovery))
+	} else if !deferred && agentTools {
 		body, err = eagerCandidates(deadline, client, config, selected, result, view.Index, budget, status, func(s string) int { return len(s) })
 		status.Set("discovery", value.Text("agent_tools"))
 		status.Set("bytes", integer(len(body)))

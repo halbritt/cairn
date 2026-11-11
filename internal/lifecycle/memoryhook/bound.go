@@ -18,6 +18,9 @@ func RunBound(ctx context.Context, invocation *binding.MemoryInvocation) Result 
 	if captureEventName(checked.Event) {
 		return runMemory(ctx, checked.Config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
 	}
+	if value.SameText(checked.Config.Get("harness"), "claude") {
+		return runMemory(ctx, checked.Config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
+	}
 	return RunStart(ctx, checked.Config, checked.Event, checked.Disposition == "checked", directory, environment, checked.Coordinators...)
 }
 
@@ -34,9 +37,9 @@ func BoundFailure(phase string, config, event *value.Value, err error) Result {
 	if class == "BlockingIOError" {
 		out.Trace["cause"] = "blocking_io"
 	}
-	if value.SameText(config.Get("harness"), "codex") && nativeUUID(event.Get("session_id")) && (value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")) {
+	if (value.SameText(config.Get("harness"), "codex") || boundClaude(config)) && nativeUUID(event.Get("session_id")) && (value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")) {
 		if isRequired(requiredFailure(config, event, classify(err), true, false)) {
-			refused := requiredOutput(event, diagnostic)
+			refused := requiredMemoryOutput(config, event, required("current required Claude context could not be restored"), diagnostic)
 			out.Trace["outcome"] = "required_refused"
 			refused.Trace = out.Trace
 			return refused

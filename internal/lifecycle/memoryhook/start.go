@@ -152,9 +152,9 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	boundary := func(err error) Result {
 		original := classify(err)
 		converted := requiredFailure(config, event, original, bound, false)
-		out := failure(event, original)
+		out := claudeFailure(config, event, original)
 		if isRequired(converted) && !isRequired(original) {
-			out = requiredOutput(event, strings.SplitN(out.Stderr, "\n", 2)[0]+"\n")
+			out = requiredMemoryOutput(config, event, converted, strings.SplitN(out.Stderr, "\n", 2)[0]+"\n")
 		}
 		return out
 	}
@@ -810,6 +810,9 @@ func classify(err error) error {
 	return &hookError{class: "HookError", message: fmt.Sprintf("memory command exited %d; operation not confirmed", refusal.Classify(core.Code(err)).ExitCode), reason: "NONZERO_EXIT"}
 }
 func requiredFailure(config, event *value.Value, err error, bound, persist bool) error {
+	if boundClaude(config) {
+		return claudeRequiredError(config, event, err, persist)
+	}
 	if !bound || isRequired(err) {
 		return err
 	}
