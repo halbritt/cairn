@@ -55,8 +55,9 @@ func transitionRoundTrip(t *testing.T) {
 	d := transitionDatabase(t)
 	python := transitionFixture(t, "python-like")
 	rust := transitionFixture(t, "rust-like")
+	var sources []core.SemanticNote
 	for _, repo := range []string{"s05-a", "s05-b", "s05-c"} {
-		d.source(t, repo, "database-wide source é in "+repo)
+		sources = append(sources, d.source(t, repo, "database-wide source é in "+repo))
 	}
 	launcher, err := os.ReadFile(python.path)
 	if err != nil {
@@ -67,9 +68,6 @@ func transitionRoundTrip(t *testing.T) {
 	stopPython()
 	python.reaped(t)
 	for phase, w := range []transitionWorker{rust, python} {
-		if err = transitionFence([]*transitionWriter{{name: "old combined API", joined: true}, {name: "alternate collection", joined: true}}); err != nil {
-			t.Fatal(err)
-		}
 		d.exec(t, `UPDATE cairn.s05_phase SET phase=$1`, phase+1)
 		start := time.Now()
 		var stop func()
@@ -93,6 +91,9 @@ func transitionRoundTrip(t *testing.T) {
 		if n := d.count(t, `SELECT count(*) FROM cairn.s05_publication WHERE phase=$1 AND model=$2`, phase+1, old); n != 0 {
 			t.Fatal("old identity published after fence")
 		}
+		if n := d.count(t, `SELECT count(*) FROM cairn.s05_publication WHERE phase=$1 AND model=$2`, phase+1, w.hash); n != 3 {
+			t.Fatal("publication observer did not record selected-generation positive control")
+		}
 		t.Logf("fixture-only phase=%d full_population=3 rebuild=%s", phase+1, time.Since(start))
 	}
 	after, err := os.ReadFile(python.path)
@@ -101,6 +102,11 @@ func transitionRoundTrip(t *testing.T) {
 	}
 	if n := d.count(t, `SELECT count(*) FROM cairn.memory_record WHERE lifecycle='active'`); n != 3 {
 		t.Fatal("rebuild changed source population")
+	}
+	for _, s := range sources {
+		if n := d.count(t, `SELECT count(*) FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=m.current_version WHERE m.record_id=$1 AND v.version=$2 AND v.body=$3 AND v.payload_deleted_by IS NULL`, s.RecordID, s.Version, s.Body); n != 1 {
+			t.Fatal("transition changed an operational source/version/body")
+		}
 	}
 }
 
@@ -345,6 +351,9 @@ func transitionPartial(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("cold query deadline: %v", err)
 	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatal("cold query exceeded the two-second budget plus scheduling margin")
+	}
 	t.Logf("fixture cold-query cancellation=%s; production StartIndex budget remains 2s", time.Since(start))
 	stopQuery()
 	queryWorker.reaped(t)
@@ -392,6 +401,9 @@ func transitionCompeting(t *testing.T) {
 	transitionRequireCoverage(t, d, next.hash, 3, 3)
 	if n := d.count(t, `SELECT count(*) FROM cairn.s05_publication WHERE phase=1 AND model=$1`, old.hash); n != 0 {
 		t.Fatal("old publication after joined fence")
+	}
+	if d.count(t, `SELECT count(*) FROM cairn.s05_publication WHERE phase=1 AND model=$1`, next.hash) != 3 {
+		t.Fatal("publication observer missed selected-generation control")
 	}
 	// Empty queue is deliberately NOT a fence: these closed old owners cannot
 	// restart on a query, while an inventory would still refuse restartability.
@@ -492,6 +504,13 @@ func TestSemanticTransitionPassageGateBounds(t *testing.T) {
 	if problem := transitionPassageProblem("é", []transitionPassage{valid}); problem != "" {
 		t.Fatal(problem)
 	}
+	maximum := make([]transitionPassage, 256)
+	for n := range maximum {
+		maximum[n] = transitionPassage{n, n * 2, 2, transitionVector(1)}
+	}
+	if problem := transitionPassageProblem(strings.Repeat("é", 256), maximum); problem != "" {
+		t.Fatal("valid maximum passage population refused: " + problem)
+	}
 	for _, c := range []struct {
 		name   string
 		ps     []transitionPassage
@@ -508,6 +527,37 @@ func TestSemanticTransitionPassageGateBounds(t *testing.T) {
 				t.Fatalf("%s want %s", got, c.reason)
 			}
 		})
+	}
+}
+
+func TestSemanticTransitionCompletionUsesCurrentDatabaseWidePopulation(t *testing.T) {
+	d := transitionDatabase(t)
+	w := transitionFixture(t, "population")
+	current := d.source(t, "s05-a", "original current body")
+	d.source(t, "s05-b", "other collection remains eligible")
+	deleted := d.source(t, "s05-c", "inactive source")
+	forgotten := d.source(t, "s05-d", "payload-deleted source")
+	if _, err := d.store.Revise(context.Background(), core.ReviseRequest{RequestID: uuid.NewString(), RecordID: current.RecordID, ExpectedVersion: 1, Repo: "s05-a", Body: "current version two é"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.store.Delete(context.Background(), core.DeleteRequest{RequestID: uuid.NewString(), RecordID: deleted.RecordID, ExpectedVersion: 1}); err != nil {
+		t.Fatal(err)
+	}
+	transitionForget(t, d, forgotten)
+	// Isolate the payload-marker predicate from lifecycle: a constructed active
+	// row with a deletion marker must still be excluded by seeding/completion.
+	d.exec(t, `UPDATE cairn.memory_record SET lifecycle='active' WHERE record_id=$1`, forgotten.RecordID)
+	if d.count(t, `SELECT count(*) FROM cairn.memory_record WHERE lifecycle='active'`) != 3 {
+		t.Fatal("population negative did not isolate active/payload eligibility")
+	}
+	i := transitionIndex(t, d, w)
+	transitionDrain(t, i)
+	transitionRequireCoverage(t, d, w.hash, 2, 2)
+	if d.count(t, `SELECT count(*) FROM cairn.semantic_document WHERE record_id=$1 AND version=2`, current.RecordID) != 1 {
+		t.Fatal("old source version used as rebuild denominator")
+	}
+	if d.count(t, `SELECT count(*) FROM cairn.s05_publication WHERE record_id=$1 OR record_id=$2`, deleted.RecordID, forgotten.RecordID) != 0 {
+		t.Fatal("excluded source was published")
 	}
 }
 

@@ -30,11 +30,15 @@ pathlib.Path('/tmp/bin').mkdir(exist_ok=True)
 pathlib.Path('/tmp/bin/cc').symlink_to('/usr/bin/gcc')
 env['PATH']='/tmp/bin:'+env['PATH']
 commands=[];started=False;code=1;pg=None
+def input_inventory():
+ return {str(p.relative_to('/work')):hashlib.sha256(p.read_bytes()).hexdigest() for p in pathlib.Path('/work').rglob('*') if p.is_file() and p.suffix in ('.go','.sql','.mod','.sum','.py')}
+source_inputs=input_inventory()
 def run(argv,name,timeout=180,selected_env=None):
  commands.append(dict(argv=argv,log=name))
  with (artifacts/name).open('wb') as log:
   return subprocess.run(argv,env=selected_env or env,stdout=log,stderr=subprocess.STDOUT,timeout=timeout,check=True)
 try:
+ run(['go','version'],'go-version.log')
  run(['go','test','-c','-race','-o',str(binary),'./semantic'],'build-semantic.log')
  run(['go','build','-buildvcs=false','-o',str(cli),'./cmd/cairn'],'build-api.log')
  pg=pathlib.Path(subprocess.check_output(['pg_config','--bindir'],env=env,text=True).strip())
@@ -45,6 +49,7 @@ try:
  (root/'owned-cluster').write_text('semantic-transition-fixture/1\n')
  selected=dict(env,CAIRN_TRANSITION_DISPOSABLE_ROOT=str(root),CAIRN_TEST_DATABASE_URL='host='+str(root/'socket')+' dbname=postgres sslmode=disable',CAIRN_TRANSITION_CLI=str(cli),CAIRN_TRANSITION_REPORT_DIR=str(artifacts))
  run(['go','tool','test2json','-t','-p','semantic',str(binary),'-test.v','-test.run=^TestSemanticTransition','-test.timeout=120s'],'tests.jsonl',timeout=150,selected_env=selected)
+ if input_inventory()!=source_inputs:raise RuntimeError('source changed during build/fixture execution')
  events=[json.loads(line) for line in (artifacts/'tests.jsonl').read_text().splitlines()]
  passed=[e['Test'] for e in events if e['Action']=='pass' and 'Test' in e]
  failed=[e.get('Test','package') for e in events if e['Action']=='fail']
@@ -61,7 +66,7 @@ finally:
   except BaseException:
    (artifacts/'cleanup-failure.txt').write_text(traceback.format_exc());code=1
  (artifacts/'commands.json').write_text(json.dumps(commands,indent=2)+'\n')
- (artifacts/'source-inputs.json').write_text(json.dumps({str(p.relative_to('/work')):hashlib.sha256(p.read_bytes()).hexdigest() for p in pathlib.Path('/work').rglob('*') if p.is_file() and p.suffix in ('.go','.sql','.mod','.sum','.py')},sort_keys=True)+'\n')
+ (artifacts/'source-inputs.json').write_text(json.dumps(source_inputs,sort_keys=True)+'\n')
  with tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz') as archive:archive.add(artifacts,arcname='artifacts')
 sys.exit(code)
 '''

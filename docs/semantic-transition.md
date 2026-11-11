@@ -69,6 +69,12 @@ vectors. Gate boundary cases cover empty/oversized passage sets, wrong vector
 dimensions and nonfinite encodings. These tests protect the acceptance gate;
 they do not add an installed repair mechanism.
 
+The population fixture separately checks current versus historical versions,
+another collection, ordinary deletion, and a constructed active row whose
+payload-deletion marker still excludes it. The full round trip checks that
+operational source IDs, versions and original bodies are unchanged. Selected
+generation insertions are positive controls for the publication observer.
+
 ## Population and completion gate
 
 Use a consistent database snapshot of **every active record's current version
@@ -86,6 +92,11 @@ reads these facts in a repeatable-read, read-only transaction. It retains every
 unresolved record ID/reason and the queue's attempts, retry time and lease state.
 Final evidence also needs the writer/source-mutation fence: a snapshot does not
 prove that the state will remain current after that snapshot.
+
+An earlier caller deadline can leave its lease in place because retry scheduling
+uses the expired caller context. Retain and report that lease until expiry;
+do not assume every failure immediately produces an unleased retry row. The
+fixture advances that private lease before testing recovery.
 
 Blank, token-empty, otherwise unembeddable, failed and backed-off records remain
 in the denominator. The whitespace negative is an explicitly constructed
