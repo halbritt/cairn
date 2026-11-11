@@ -50,6 +50,7 @@ type Options struct {
 	// ObserveOperation reports actual initiated search/pull durations to the
 	// reached hook meter. Known-zero pull refusals never start an operation.
 	ObserveOperation func(string, time.Duration)
+	ObserveRPC       func(string, time.Time, json.RawMessage, json.RawMessage, error)
 }
 
 type SearchOptions struct {
@@ -78,6 +79,8 @@ type Client struct {
 	commandPrefix    []string
 	accounting       Accounting
 	observeOperation func(string, time.Duration)
+	observeRPC       func(string, time.Time, json.RawMessage, json.RawMessage, error)
+	rpcComplete      bool
 }
 
 func New(api *localapi.Client, options Options) (*Client, error) {
@@ -85,6 +88,7 @@ func New(api *localapi.Client, options Options) (*Client, error) {
 		return nil, &core.Error{Code: "INVALID_REQUEST", Message: "memory client requires an API client"}
 	}
 	c := &Client{api: api.WithDiagnostics(options.Diagnostics), scope: options.Scope, observeOperation: options.ObserveOperation,
+		observeRPC: options.ObserveRPC, rpcComplete: true,
 		commandPrefix: slices.Clone(options.CommandPrefix),
 		accounting: Accounting{OperationCalls: map[string]int{"search": 0, "pull": 0},
 			PullCalls: map[string]int{}, ReceiptCredits: map[string]int{}, SearchReceipts: []string{}}}
@@ -116,6 +120,7 @@ func (c *Client) Search(ctx context.Context, query string, options SearchOptions
 	defer cancel()
 	entities, err := fileEntities(options.Entities)
 	if err != nil {
+		c.observedRPC("search", started, nil, nil, err)
 		return indexview.View{}, err
 	}
 	prepared, err := indexview.PrepareSearch(indexview.SearchInput{
@@ -124,12 +129,15 @@ func (c *Client) Search(ctx context.Context, query string, options SearchOptions
 		Semantic: options.Semantic, Offset: options.Offset, RequestID: requestID,
 	})
 	if err != nil {
+		c.observedRPC("search", started, nil, nil, err)
 		return indexview.View{}, err
 	}
 	view, err := indexview.RetrieveCLI(callCtx, indexview.NewClientTransport(c.api, nil), prepared, c.commandPrefix)
 	if err != nil {
+		c.observedRPC("search", started, prepared.Request, nil, err)
 		return indexview.View{}, classifyCallError(err)
 	}
+	c.observedRPC("search", started, prepared.Request, view, nil)
 	c.recordReceipt(view.ReceiptID)
 	switch view.Status {
 	case "READY", "SCOPE_EMPTY", "DEGRADED_NO_EMBEDDINGS":
@@ -172,8 +180,10 @@ func (c *Client) Pull(ctx context.Context, request core.ExpandRequest, timeout t
 	defer cancel()
 	var raw json.RawMessage
 	if err := c.api.Call(callCtx, "expand", request, &raw); err != nil {
+		c.observedRPC("pull", started, request, nil, err)
 		return nil, classifyCallError(err)
 	}
+	c.observedRPC("pull", started, request, raw, nil)
 	var members map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &members); err != nil || members == nil {
 		return nil, &responseError{reason: ErrNotConfirmed, cause: err}
