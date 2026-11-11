@@ -199,10 +199,10 @@ raise SystemExit('unresolved /3 was accepted')
 
     def test_whole_frontend_uses_one_checked_fd_go_exec_and_one_parent_config_read(self):
         for role in ('memory','coordination'):
-            f=self.fixture('trace-'+role)
+            f=self.fixture('trace-'+role,harness='claude' if role=='memory' else 'codex')
             # F04 retains its activation-only cell. F02 separately checks the
-            # migrated SessionStart body with a real private API fixture.
-            f.raw=encoded(dict(f.event,hook_event_name='UserPromptSubmit' if role=='memory' else 'SessionStart',prompt='',host_pid=os.getpid()))
+            # migrated Codex Start and prompt bodies with a real private API.
+            f.raw=encoded(dict(f.event,hook_event_name='SessionStart',prompt='',host_pid=os.getpid()))
             log=f.root/'trace'
             result=subprocess.run(['/usr/bin/strace','-f','-qq','-o',str(log),'-s','1024','-e','trace=execve,openat',str(f.launcher(role))],
                                   input=f.raw,capture_output=True,cwd=f.root,env=f.env(),timeout=18)
@@ -222,6 +222,7 @@ raise SystemExit('unresolved /3 was accepted')
                 for enabled in (False,True):
                     with self.subTest(harness=harness,role=role,enabled=enabled):
                         f=self.fixture(harness+role+str(enabled),harness=harness,enabled=enabled)
+                        if harness=='codex' and role=='memory' and not enabled: self.addCleanup(f.recall_api())
                         f.raw=encoded(dict(f.event,hook_event_name='SessionStart' if role=='coordination' else 'UserPromptSubmit',
                                            prompt='' if role=='coordination' else f.wake(),host_pid=os.getpid()))
                         new=f.public(role)

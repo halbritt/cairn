@@ -110,7 +110,7 @@ func integerValue(v *value.Value) *big.Int {
 func validNonnegative(v *value.Value) bool { n := integerValue(v); return n != nil && n.Sign() >= 0 }
 func uuidText(s string) bool {
 	id, err := uuid.Parse(s)
-	return err == nil && id != uuid.Nil && id.String() == s
+	return err == nil && id.String() == s
 }
 
 // SaveCodexBudget durably writes the anti-reset marker before the ledger.

@@ -289,14 +289,7 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 		if text(topic) != "" {
 			state.Set("workstream", value.Text(workstreamPrefix(project)+text(topic)))
 		}
-		priorRaw, err := encoded(state, false)
-		if err != nil {
-			return err
-		}
-		prior, err := value.DecodeText(priorRaw, "utf-8", 0)
-		if err != nil {
-			return err
-		}
+		prior := clone(state)
 		recallStarted := time.Now()
 		trace["stage"] = "recall"
 		status := value.Mapping(value.Field("at", floating(float64(time.Now().UnixNano())/1e9)), value.Field("hook_event_name", event.Get("hook_event_name")), value.Field("outcome", value.Text("empty")), value.Field("records", array()), value.Field("bytes", integer(0)), value.Field("discovery", value.Text("lexical")), value.Field("inspected", integer(0)), value.Field("rejected", value.Mapping()))
@@ -461,7 +454,7 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 	if budget < 1000 || budget > 65536 {
 		return "", fail("invalid context_bytes; expected an integer from 1000 to 65536")
 	}
-	if id, err := uuid.Parse(text(event.Get("session_id"))); err != nil || id == uuid.Nil || id.String() != text(event.Get("session_id")) {
+	if id, err := uuid.Parse(text(event.Get("session_id"))); err != nil || id.String() != text(event.Get("session_id")) {
 		return "", fail("native-turn memory requires a canonical session UUID")
 	}
 	stateDir, err := pathValue(config.Get("state_dir"))
@@ -603,7 +596,7 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 			}
 		}
 		if eligible && !value.Truth(grant.Get("granted")) {
-			body, err = renderCandidates(config, selected, viewValue, remaining, status, cost)
+			body, err = eagerCandidates(deadline, client, config, selected, viewValue, view.Index, remaining, status, cost)
 			if err != nil {
 				return "", err
 			}
@@ -627,6 +620,13 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 		if bound {
 			grant.Set("serialized_hook_bytes", grant.Get("emitted_hook_bytes"))
 		}
+		// Source records the completed charge before the final durable save.
+		// A directory-sync failure must retain those facts in failure telemetry.
+		status.Set("discovery", value.Text("agent_tools"))
+		status.Set("bytes", integer(len(body)))
+		status.Set("native_turn_id", grants.Get("active_turn_id"))
+		status.Set("cumulative_hook_bytes", grant.Get("emitted_hook_bytes"))
+		status.Set("reserved_native_bytes", grant.Get("reserved_native_bytes"))
 		if err := persist(); err != nil {
 			return "", err
 		}
@@ -853,7 +853,7 @@ func report(ctx context.Context, api *localapi.Client, client *memoryclient.Clie
 
 func nativeUUID(v *value.Value) bool {
 	id, err := uuid.Parse(text(v))
-	return err == nil && id != uuid.Nil && id.String() == text(v)
+	return err == nil && id.String() == text(v)
 }
 func requiredOutput(event *value.Value, diagnostic string) Result {
 	if value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {

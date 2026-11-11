@@ -17,6 +17,7 @@ import (
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/indexview"
 	"github.com/halbritt/cairn/internal/jsontext"
+	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
 
 type CheckpointRefreshInput struct {
@@ -190,8 +191,11 @@ func (c *Client) refreshPull(ctx context.Context, entry indexview.Entry) (json.R
 	version, versionErr := strconv.Atoi(string(bytes.TrimSpace(record["version"])))
 	body, bodyOK := captureText(record["body"])
 	if !idOK || id != entry.RecordID || versionErr != nil || version != entry.Version || !bodyOK ||
-		jsontext.CheckUnicode(record["record_id"]) != nil || jsontext.CheckUnicode(record["body"]) != nil {
+		jsontext.CheckUnicode(record["record_id"]) != nil {
 		return nil, "", errors.New("optional body identity or version changed")
+	}
+	if jsontext.CheckUnicode(record["body"]) != nil {
+		return nil, "", &value.Error{Class: "UnicodeEncodeError", Message: "optional body has invalid Unicode"}
 	}
 	if entry.BodySHA256 != "" {
 		sum := sha256.Sum256([]byte(body))
@@ -200,6 +204,14 @@ func (c *Client) refreshPull(ctx context.Context, entry indexview.Entry) (json.R
 		}
 	}
 	return raw, body, nil
+}
+
+// CurrentWhole is the consumed eager recall operation. Like checkpoint refresh,
+// it derives an internal UUIDv5 without spending the caller's supplied intent.
+// Pull records actual initiated calls and confirmed credits before validation.
+func (c *Client) CurrentWhole(ctx context.Context, entry indexview.Entry) (json.RawMessage, error) {
+	raw, _, err := c.refreshPull(ctx, entry)
+	return raw, err
 }
 
 func refreshText(entry indexview.Entry, body string) string {

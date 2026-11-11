@@ -1,54 +1,79 @@
 # F02 bound Codex UserPromptSubmit recall
 
-Construction continues from the landed SessionStart consumer at `a5319d15`.
-The checked `/3` Codex `agent_tools` prompt now enters the same private
-`lifecycle memory recall` operation with the original H13 deadline and one
-binding activation. Public lifecycle commands remain disabled; `/2`, other
-harnesses, capture, and tool-event consumers retain their existing paths.
+This tranche extends the landed SessionStart consumer at `a5319d15` with the
+checked `/3` Codex `agent_tools` prompt memory body. The private
+`lifecycle memory recall` dispatch retains the original H13 deadline, captured
+event/config/binding observations, receipt-selected executing image and one
+binding activation. The reached body uses the authenticated SDK directly.
+Public lifecycle commands remain disabled. No installed selection was changed.
 
-The reached Go body uses the provisioned authenticated SDK for current search,
-preserves the native turn ledger, transfers startup charges once, reserves the
-native allowance before output, and does not reopen retired turns. The prompt
-envelope determines its serialized wire charge. SessionStart refresh and
-arbitrary-size refresh counters retain their landed behavior. The caller keeps
-the session flock through durable grant writes and the ordinary state save.
-The meter records the actual event and SDK operations after the lock releases.
+Ordinary prompts allocate one grant for an eligible native turn, transfer
+startup charges once, and reserve the native allowance before output. Repeated
+or retired turns do not renew it. Canonical turn syntax follows the retained
+Source, including its accepted zero UUID shape; it is metadata, never store
+authentication. The actual prompt envelope determines the serialized wire
+charge. SessionStart refresh, unknown ledger fields and arbitrary-size refresh
+counters retain their existing meanings. The existing session flock spans grant
+writes and ordinary state save. The initialization marker and ledger use durable
+replace; a committed replace followed by uncertain directory sync cannot refund
+its charge. Failure telemetry retains the completed charge before the final save.
+
+Eager recall derives the same internal whole-pull UUIDv5 without spending the
+caller's supplied intent. It checks current record/version/body hashes and
+complete competing groups, retains actual receipt accounting, and delivers at
+most two records within the automatic allowance. Optional whole-budget or
+context refusal can use a checked A/B passage. Whole-paid bytes require no
+second read. Span/source-opening identity, source hash, exact UTF-8 bytes and
+bounds are checked; fitting retains the entire displayed preview. Required or
+competing sources are never replaced with excerpts. A stale compact-view handle
+retains the Source recovery instruction. These views remain unverified data.
 
 Required prompt failures produce empty stdout, the fixed diagnostic and fixed
 required-context line, and exit 2. Optional caught failures retain both fixed
-diagnostic lines and exit 1; unexpected Go faults have the redacted exit-1
-boundary. A private process or malformed protocol reply cannot produce the
-blocking exit. The parent's protocol accepts a required outcome only in the
-exact prompt frame. Start retains its whole stop response and exit 0.
+lines and exit 1. Unexpected Go faults produce the redacted exit-1 diagnostic.
+Only the successful bounded private result frame carries a required outcome;
+private process or malformed protocol failure cannot borrow an earlier required
+grant and acquire blocking exit 2. Start retains its whole stop response and
+exit 0. The parent performs no Python rendering or store fallback after dispatch. It
+retains the post-dispatch binding/configuration recheck; failure keeps its fixed
+category and cannot refund any Go charge. The F04 private-error cases retain
+their categories and assertions; the two Codex required-status expectations now
+follow this private-refusal policy. Actual required Go outcomes remain paired
+against Source with exact blocking streams.
 
-The memory consumer checks the wake relation using already-checked coordinator
-snapshots, active profile, environment and privacy guard. A qualified reserved
-wake returns before memory search; the coordination producer owns its delivery
-and inbox meter. A coordination opt-out retains the independent current
-required check. This relation does not authenticate notice text or claim an
-inbox. No coordination, journal, watcher, installer or adapter policy is changed.
+The actual SDK operations supply recall receipts, calls and timings. The meter
+uses the actual hook event after releasing the memory lock; injected bytes match
+the emitted UTF-8 context. Reporting is best effort. The invocation trace retains
+the actual result, context size and fixed failure class. Source and Go image
+identities are asserted separately from server-owned principal/channel attribution.
 
-The first construction checkpoint implements actual preview delegation and its
-native reservation. Eager whole candidate bodies, span/opening recovery and
-their receipt bookkeeping are still being added. This checkpoint is not ready
-for landing or full prompt-cell acceptance. The next concrete operation is the
-consumed whole-pull path, followed by source-checked span/opening recovery.
+| Cell or relation | Current implementation |
+| --- | --- |
+| Bound `/3` Codex Start and ordinary prompt, agent_tools | Reached Go memory consumer |
+| Qualified reserved-wake memory relation | Go checks captured coordinator profiles, environment and privacy; skips memory search |
+| Coordination opt-out on a reserved wake | Independent current required check, with no new optional turn |
+| Claimed-inbox context delivery and inbox meter/route trace | Existing Python `coordination.handle_event` → `inbox_recall.output` → `deliver`; Go producer relation remains unresolved |
+| `/2`, other harnesses, tool events, capture | Retained paths; no new port claim |
+| Installer, adapter, coordination/journal/watcher policy | Outside this author scope |
 
-`scripts/test_f02_prompt.py` retains the 28 landed Start cases and adds actual
-checked-launcher prompt processes with the real pinned `/2` bridge oracle. It
-compares exact hook streams, scalar types and ordered persisted state; API
-caller identities are checked separately against Python source and the actual
-Go executable. Each fixture uses its own Unix API and synthetic token. The
-test result record distinguishes construction runs from final exact-commit
-checks and leaves unported cells explicit.
+The producer callable receives config, event, observation, live attempt/delivery
+state, control text, lease-revalidation callback, original enclosing deadline and
+deferred reports. The memory wake skip does not prove those claims, source reads,
+grants, deliveries or credits. Foundation owns cross-lane settlement; this tranche
+does not claim that all prompt/inbox cells or F02/R04 are complete.
 
-The initial construction run passes all 36 paired cases (28 retained Start
-cases and eight prompt cases), including successive turns, restart accounting,
-degraded recall, optional failure, exact required refusal, qualified wake and
-coordination opt-out. The affected Go package checks also pass. Those runs are
-construction evidence; final clean-commit checks remain separate.
+`scripts/test_f02_prompt.py` retains the 28 landed Start cases and adds checked
+launcher prompt processes against a private Unix API with synthetic credentials.
+The oracle executes a complete owner-controlled pinned `/2` bridge and the real
+API CLI. It compares exact streams, scalar types and ordered persisted state;
+corruption remains exact bytes. Normal processes retain real randomness; candidate
+body cases control only UUID generation at the boundary and compare complete
+RPC intents, including derived pulls. The executing temporary Go image is still
+checked separately. Adversarial private images test failed process/protocol
+handling without claiming a valid producer. No production entropy/fault switch
+is added. Exact final checks and limitations are recorded in the author result;
+construction runs and clean committed checks are distinct claims.
 
-Rollback is a source rollback of this tranche before staging a new complete
-receipt. No installed profile or activation was changed by construction.
-The larger F02, R04 harness matrix, native provider/runtime and production holds
-are unchanged. A partial prompt consumer does not satisfy them.
+Rollback uses Release's explicit drain and repin to a retained complete immutable
+snapshot. Production, controller/runtime, failed/F03/native-provider and all other
+existing holds remain. This source change grants no activation or deployment.

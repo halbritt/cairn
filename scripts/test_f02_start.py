@@ -59,6 +59,11 @@ class F02StartTests(unittest.TestCase):
         self.checkpoint = None
         self.index_raw = None
         self.index_delay = 0
+        self.optional = []
+        self.discovery = None
+        self.expand_refusal = None
+        self.expand_transform = None
+        self.confirmed_expands = 0
         self.calls = []
         owner = self
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -71,6 +76,7 @@ class F02StartTests(unittest.TestCase):
                 if operation == 'version':
                     data = dict(preview_capabilities=dict(schema='cairn.preview-capabilities/1',entities_omitted=True))
                 elif operation == 'index':
+                    owner.confirmed_expands=0
                     if owner.index_delay:
                         time.sleep(owner.index_delay)
                     if owner.index_raw is not None:
@@ -90,6 +96,11 @@ class F02StartTests(unittest.TestCase):
                                                            query='sha256:fixture-query',available_tokens=32000,
                                                            selected=owner.selected,omitted={},index=[])),
                                 handles=[],expires_at='2030-01-01T00:00:00Z',credits_remaining=4,bytes_remaining=24000)
+                    if owner.optional:
+                        data['package']['semantic']['index']=[item['entry'] for item in owner.optional]
+                        data['handles']=[dict(record_id=item['entry']['record_id'],version=item['entry']['version'],handle='optional-'+str(i)) for i,item in enumerate(owner.optional)]
+                    if owner.discovery is not None:
+                        data['package']['semantic']['discovery']=owner.discovery
                     if owner.checkpoint and body.get('query') == '"'+owner.checkpoint['title']+'"':
                         record = owner.checkpoint
                         semantic = data['package']['semantic']
@@ -99,9 +110,30 @@ class F02StartTests(unittest.TestCase):
                         data['handles'] = [dict(record_id=record['id'],version=3,handle='checkpoint-handle')]
                         semantic['selected'] = []
                 elif operation == 'expand':
-                    record = owner.checkpoint
-                    data = dict(selection=dict(record=dict(record_id=record['id'],version=3,body=record['body'])),
-                                credits_remaining=3)
+                    if owner.optional:
+                        if owner.expand_refusal and not body.get('span'):
+                            self.send_response(422)
+                            self.end_headers()
+                            self.wfile.write(encoded(dict(schema='cairn.response/1',ok=False,status=owner.expand_refusal,message='fixture expansion refusal')))
+                            return
+                        item=owner.optional[int(body['handle'].removeprefix('optional-'))]
+                        entry=item['entry']
+                        owner.confirmed_expands+=1
+                        data=dict(selection=dict(record=dict(record_id=entry['record_id'],version=entry['version'],kind='note',**{'class':entry['class']},body=item['body']),
+                                                 mandatory=False,reason='candidate',evidence=[],authority=[],conflicts=entry.get('conflicts',[])),
+                                  credits_remaining=4-owner.confirmed_expands,bytes_remaining=20000)
+                        if body.get('span'):
+                            hint=body['span']; raw=item['body'].encode(); part=raw[hint['offset']:hint['offset']+hint['length']]
+                            data['selection']['record']['body']=''
+                            data['span']=dict(offset=hint['offset'],end=hint['offset']+len(part),total_bytes=len(raw),sha256=sha(part),source_sha256=sha(raw))
+                            try: data['span']['body']=part.decode()
+                            except UnicodeDecodeError: data['span']['body_base64']=base64.b64encode(part).decode()
+                        if owner.expand_transform is not None:
+                            owner.expand_transform(body,data)
+                    else:
+                        record = owner.checkpoint
+                        data = dict(selection=dict(record=dict(record_id=record['id'],version=3,body=record['body'])),
+                                    credits_remaining=3)
                 elif operation == 'recall-observation':
                     data = {}
                 else:
@@ -187,10 +219,10 @@ with (nullcontext() if bridge else patch.object(hook,'load_inbox_recall',return_
                 result[path.name] = body
         return result
 
-    def pair(self,prefix=()):
+    def pair(self,prefix=(),*,controlled_ids=False):
         directory = Path(self.f.memory['state_dir'])
         seed = {p.name:(p.read_bytes(),p.stat().st_mode & 0o7777) for p in directory.iterdir()} if directory.exists() else {}
-        source = self.source(prefix)
+        source = self.source(prefix,controlled_ids=controlled_ids)
         source_state = self.state()
         source_calls = list(self.calls)
         shutil.rmtree(self.f.memory['state_dir'],ignore_errors=True)
@@ -210,10 +242,14 @@ with (nullcontext() if bridge else patch.object(hook,'load_inbox_recall',return_
         self.assertEqual([c[0] for c in self.calls],[c[0] for c in source_calls])
         for (operation,actual,headers),(_,expected,source_headers) in zip(self.calls,source_calls):
             actual,expected = dict(actual),dict(expected)
+            if operation=='recall-observation':
+                for request in (actual,expected):
+                    for key in ('elapsed_ms','search_ms','pulls_ms','selector_ms'):
+                        self.assertGreaterEqual(request.pop(key),0)
             # These are fresh process UUIDs, not persisted mutation identities.
             # Assert their shape and one initiation separately from deterministic fields.
             for request in (actual,expected):
-                ident = request.pop('request_id',None)
+                ident = request.get('request_id') if controlled_ids else request.pop('request_id',None)
                 if operation != 'version':
                     self.assertEqual(str(uuid.UUID(ident)),ident)
                     self.assertNotEqual(uuid.UUID(ident).int,0)
@@ -539,7 +575,7 @@ with (nullcontext() if bridge else patch.object(hook,'load_inbox_recall',return_
         self.f.env = lambda:{k:v for k,v in environment().items() if k!='HOME'}
         self.assertEqual(self.pair().stdout,b'{}\n')
 
-    def test_complete_rpc_request_ids_match_with_controlled_randomness(self):
+    def controlled_image(self):
         build = self.root/'uuid-build'
         build.mkdir()
         for name in ('go.mod','go.sum'):
@@ -562,6 +598,10 @@ func main() { uuid.SetRand(&sequence{}); os.Exit(activationipc.Run(os.Args[1:],o
 ''')
         helper = build/'ids'
         subprocess.run(['go','build','-buildvcs=false','-o',str(helper),'./cmd/f02-ids'],cwd=build,check=True)
+        return helper
+
+    def test_complete_rpc_request_ids_match_with_controlled_randomness(self):
+        helper=self.controlled_image()
         self.f.binary.chmod(0o700)
         write(self.f.binary,helper.read_bytes(),0o500)
         manifest = json.loads(self.f.binding.read_text())

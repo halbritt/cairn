@@ -3508,6 +3508,7 @@ def _main(args):
             config = effective_inbox_config(config, event, raw_event=raw) if compatibility is not None else effective_inbox_config(config, event)
         except subprocess.SubprocessError:
             print('Cairn lifecycle diagnostic: phase=activation error_class=UnexpectedError', file=sys.stderr)
+            _trace_note(error_class='UnexpectedError', outcome='unexpected')
             return 1
         _trace_note(bound=bool(config.get("inbox_recall_binding")))
         phase = "handle"

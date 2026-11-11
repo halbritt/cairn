@@ -312,6 +312,7 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
 
     def test_new_settings_selection_keeps_the_old_command_and_its_enabled_binding(self):
         f = self.fixture('cached')
+        self.recall_api(f)
         old, _, metadata = self.selected(f)
         previous_settings = Path(old['settings']['path']).read_bytes()
         previous = next(row['hook']['command'] for row in metadata['rows']
