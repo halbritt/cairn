@@ -50,7 +50,11 @@ type Options struct {
 	// ObserveOperation reports actual initiated search/pull durations to the
 	// reached hook meter. Known-zero pull refusals never start an operation.
 	ObserveOperation func(string, time.Duration)
-	ObserveRPC       func(string, time.Time, json.RawMessage, json.RawMessage, error)
+	// ObserveRPC receives invocation-owned snapshots before local policy and
+	// post-call validation. It is optional, serial and must do no I/O. Snapshot
+	// or callback loss never changes the operation; RPCObservationComplete
+	// distinguishes that loss from a measured zero.
+	ObserveRPC func(string, time.Time, json.RawMessage, json.RawMessage, error)
 }
 
 type SearchOptions struct {

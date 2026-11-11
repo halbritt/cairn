@@ -24,7 +24,12 @@ type InboxResult struct {
 	Message, Stage           string
 	Err                      error
 	TraceReport, MeterReport *value.Value
+	FailureMeta              *value.Value
 }
+
+type inboxCoordinationError struct{ code, message string }
+
+func (e *inboxCoordinationError) Error() string { return e.code + ": " + e.message }
 
 func (r InboxResult) Wire() *value.Value {
 	result := value.Mapping(value.Field("ok", value.Boolean(r.Err == nil)))
@@ -35,12 +40,20 @@ func (r InboxResult) Wire() *value.Value {
 		var source *value.Error
 		var refused *ledger.InboxRefusal
 		var number syscall.Errno
+		var coordination *inboxCoordinationError
 		if errors.As(r.Err, &source) {
 			class, message = source.Class, source.Message
 		}
 		failure := value.Mapping()
+		if errors.As(r.Err, &coordination) {
+			class = "CoordinationError"
+			failure.Set("code", value.Text(coordination.code))
+		}
 		if errors.As(r.Err, &number) {
 			class = "OSError"
+			if number == syscall.EAGAIN {
+				class = "BlockingIOError"
+			}
 			failure.Set("errno", integer(int(number)))
 		}
 		failure.Set("class", value.Text(class))
@@ -56,6 +69,9 @@ func (r InboxResult) Wire() *value.Value {
 			}
 		}
 		failure.Set("cairn_inbox_refusal", details)
+		if r.FailureMeta != nil {
+			failure.Set("cairn_recall_failure", r.FailureMeta)
+		}
 		result.Set("error", failure)
 	}
 	if r.TraceReport != nil {
@@ -96,10 +112,4 @@ func RunInbox(ctx context.Context, in InboxInvocation) (out InboxResult) {
 		return out
 	}
 	return inboxDeliver(ctx, in, identity)
-}
-
-func inboxDeliver(ctx context.Context, in InboxInvocation, identity inboxIdentity) InboxResult {
-	// This reached constructor refuses until the remaining search/grant body is
-	// installed; it must never turn an unfinished supported branch into success.
-	return InboxResult{Stage: "inbox_ledger", Err: &value.ProfileUnavailable{}}
 }

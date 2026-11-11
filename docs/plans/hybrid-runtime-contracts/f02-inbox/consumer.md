@@ -12,24 +12,39 @@ configuration, binding, receipt and executing-image pins in argv. No activation
 flag in that frame creates a decision. The child reads the previously resolved
 activation and never calls the decision writer.
 
-Current construction checkpoint: the private process, checked inputs, identity
-and privacy guards, and inbox ledger/compaction primitives are implemented.
-`test_f02_inbox_identity.py` compares four real Codex/Claude owner/session
-refusals with the retained pinned `/2` bridge, exact streams and unchanged grant
-bytes. The reference uses its real `/2` descriptors; it does not pretend that
-Python accepts the new `/3` image protocol. No API call is expected in those
-identity-refusal cases.
+The consumer implements Codex and Claude claim/privacy guards, memory session
+locking, initialized ledger reads, required search with its retained retry ID
+and deadline, checked whole task-source history, optional search and the landed
+eager whole/group/span helper. Its byte measure includes the actual hook event,
+control text and source envelope. It preserves prior Codex charges, repeat and
+retired-turn refusals, exact-source fallback, lease renewal before publication,
+durable grants and ledger compaction. It does not rewrite captured dialogue.
 
-Search, required/task-source/optional rendering, lease renewal, grant delivery
-and materialized post-lock reporting are still under construction. A valid
-recall reaching that unfinished body refuses with `compatibility_profile`;
-this checkpoint makes no claim about those branches or full F-02 acceptance.
-Both Codex and Claude remain in the full target scope. The existing eager
-candidate helper on `c9bfb9f3` will be reused with the same authenticated client,
-receipt accounting and the whole control/source-envelope cost function.
+`test_f02_inbox_identity.py` and `test_f02_inbox_delivery.py` compare real
+checked Go processes against the literal retained `/2` Source and real CLI,
+using a disposable authenticated Unix API. Comparisons include private streams,
+typed ordered grant state and actual request payloads. Separate candidate
+cases exercise paid whole/span pulls, deferred reports, changed pins and report
+failure. The reference uses its real `/2` descriptors; it does not assert that
+Python accepts the `/3` image protocol. These fixtures do not prove production
+delivery, a live store result, or full F-02 acceptance.
 
-The working report proposal is a separate private `lifecycle inbox report`
-operation after the coordination lock releases, under the same original
-deadline. Its exact caller/result schema is being settled with Coordination.
-No Python rendering/store fallback, API-CLI substitute or invented meter is
-permitted. Reports must not change output, refusal or grant state.
+`memoryclient.Options.ObserveRPC` supplies owned snapshots before search policy
+and post-pull validation. The optional observer cannot mutate live data or
+accounting; loss remains incomplete. Known-zero pulls do not initiate a call.
+
+The separate private `lifecycle inbox report` operation accepts exactly
+`trace_report`, `meter_report` and `started_monotonic`, after Coordination
+releases its lock. It checks the same code/configuration generation without an
+event, admission decision or session-state mutation. Recall returns materialized
+JSON only; report uses the Go SDK and actual executing-image diagnostics under
+the original deadline. Failed, expired or unavailable reports remain unknown
+and cannot change output, refusal or grants. Traces contain selected bounded
+metadata, never query/source bodies, credentials or callable objects.
+
+The pending Coordination handshake owns actual post-lock scheduling and native
+settlement. Existing eager helpers currently expose their final delivered view
+without tentative route/render events; the inbox trace marks that observation
+gap explicitly. Foundation owns the small shared-helper seam allocation and
+the final joined disposition. Public lifecycle dispatch remains disabled, and
+existing runtime, provider and failed-work holds remain in force.

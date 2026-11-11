@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -29,7 +30,7 @@ func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 	if parent < 2 || os.Getppid() != parent {
 		return refuse(output, "binding", errors.New("lifecycle parent exited"))
 	}
-	if len(args) < 3 || args[0] != "lifecycle" || args[1] != "inbox" || args[2] != "recall" {
+	if len(args) < 3 || args[0] != "lifecycle" || args[1] != "inbox" || (args[2] != "recall" && args[2] != "report") {
 		return refuse(output, "binding", errors.New("invalid private inbox operation"))
 	}
 	flags := flag.NewFlagSet("private inbox", flag.ContinueOnError)
@@ -51,7 +52,7 @@ func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 	}
 	nowMono := float64(now.Sec) + float64(now.Nsec)/1e9
 	remaining := *deadline - nowMono
-	if remaining <= 0 || math.IsNaN(remaining) || math.IsInf(remaining, 0) {
+	if remaining <= 0 || remaining > float64(math.MaxInt64)/float64(time.Second) || math.IsNaN(remaining) || math.IsInf(remaining, 0) {
 		return refuse(output, "binding", context.DeadlineExceeded)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(remaining*float64(time.Second)))
@@ -64,8 +65,41 @@ func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 	if err != nil {
 		return refuse(output, "binding", err)
 	}
-	if frame.Kind != value.Object || len(frame.Members) != 5 {
+	count := 5
+	if args[2] == "report" {
+		count = 3
+	}
+	if frame.Kind != value.Object || len(frame.Members) != count {
 		return refuse(output, "binding", errors.New("invalid inbox producer frame"))
+	}
+	started := frame.Get("started_monotonic")
+	if started == nil || (started.Kind != value.Float && started.Kind != value.Int) {
+		return refuse(output, "binding", errors.New("invalid inbox producer timing"))
+	}
+	startMono := started.Number
+	if started.Kind == value.Int {
+		startMono, err = strconv.ParseFloat(started.Integer, 64)
+	}
+	if err != nil || math.IsNaN(startMono) || math.IsInf(startMono, 0) || startMono < 0 || startMono > nowMono {
+		return refuse(output, "binding", errors.New("invalid inbox producer timing"))
+	}
+	// Reconstruct the parent's actual start on Go's monotonic time base; never
+	// restart the report/recall budget at this subprocess's launch.
+	startedAt := time.Now().Add(-time.Duration((nowMono - startMono) * float64(time.Second)))
+	in.Directory, err = os.Getwd()
+	if err != nil {
+		return refuse(output, "binding", err)
+	}
+	in.Environment = os.Environ()
+	if args[2] == "report" {
+		if frame.Get("trace_report") == nil || frame.Get("meter_report") == nil {
+			return refuse(output, "binding", errors.New("invalid inbox report frame"))
+		}
+		checked, err := binding.ResolveInboxReport(ctx, in)
+		if err != nil {
+			return refuse(output, "binding", err)
+		}
+		return reply(output, memoryhook.RunInboxReports(ctx, checked.Memory, frame.Get("trace_report"), frame.Get("meter_report"), startedAt))
 	}
 	for _, key := range []string{"event", "observation", "state"} {
 		v := frame.Get(key)
@@ -73,8 +107,8 @@ func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 			return refuse(output, "binding", errors.New("invalid inbox producer snapshot"))
 		}
 	}
-	control, started := frame.Get("control"), frame.Get("started_monotonic")
-	if control == nil || control.Kind != value.String || started == nil || (started.Kind != value.Float && started.Kind != value.Int) {
+	control := frame.Get("control")
+	if control == nil || control.Kind != value.String {
 		return refuse(output, "binding", errors.New("invalid inbox producer control or timing"))
 	}
 	var event bytes.Buffer
@@ -84,16 +118,11 @@ func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 		return refuse(output, "binding", err)
 	}
 	in.Event = event.Bytes()
-	in.Directory, err = os.Getwd()
-	if err != nil {
-		return refuse(output, "binding", err)
-	}
-	in.Environment = os.Environ()
 	checked, err := binding.ResolveInbox(ctx, in)
 	if err != nil {
 		return refuse(output, "binding", err)
 	}
-	result := memoryhook.RunInbox(ctx, memoryhook.InboxInvocation{Config: checked.Config, Memory: checked.Memory, Event: checked.Event, Observation: frame.Get("observation"), State: frame.Get("state"), Control: string(control.String), Started: time.Now(), Directory: in.Directory})
+	result := memoryhook.RunInbox(ctx, memoryhook.InboxInvocation{Config: checked.Config, Memory: checked.Memory, Event: checked.Event, Observation: frame.Get("observation"), State: frame.Get("state"), Control: string(control.String), Started: startedAt, Directory: in.Directory})
 	return reply(output, result.Wire())
 }
 
