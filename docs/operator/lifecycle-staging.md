@@ -169,9 +169,12 @@ Inspect with the independent manifest pin:
 
 Inspection verifies the generation and every referenced binary/snapshot/launcher
 directory, then reads back each exact launcher byte count, digest and parsed
-argv, verifier digest and retained argv. The original input package is no
+argv, verifier digest and retained argv. It compares the selected receipt with
+the verified generation member, its snapshot/binary with the verified components,
+and each launcher's receipt arguments with that same pin. The original input package is no
 longer needed. `inspect --legacy` instead verifies an explicitly selected old
-generation and returns its exact retained argv. It provides no automatic
+generation and returns its exact retained argv. It refuses compatibility
+generations, which require full inspection. It provides no automatic
 fallback and never converts a `/2` descriptor into `/3`.
 
 ### Durability and transition boundary
@@ -191,7 +194,8 @@ locks; hooks and watchers do not participate in them.
 A failure emits no successful selection. It can leave published, unselected
 immutable components or a complete generation, so reconcile the original UUID
 and pins. An exact retry verifies before reuse; differing bytes never replace
-the old identity. SIGTERM unwinds and kills/joins the assembler's owned stager.
+the old identity. SIGTERM is deferred during the child's exec handshake; once
+ownership is established, interruption kills and joins the owned child.
 SIGKILL can leave unselected `.prepare-*` or `.stage-*` files. Keep them for
 reconciliation; there is no automatic pruning. Existing selections remain.
 

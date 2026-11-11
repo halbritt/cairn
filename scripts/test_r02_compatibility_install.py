@@ -380,6 +380,78 @@ sys.stdout.buffer.write(result.stdout)
         result = subprocess.run(argv, input=f.raw, capture_output=True, timeout=18, env=f.env())
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b'{}\n', b''))
 
+    def test_inspection_rejects_inconsistent_metadata_even_under_a_valid_manifest_pin(self):
+        # Model an assembler defect with otherwise authenticated files. Changing
+        # these disposable sealed files is fault injection, never an install API.
+        for kind in ('receipt-pin', 'snapshot-path', 'snapshot-members', 'binary-pin',
+                     'component-path', 'launcher-receipt', 'short-vector', 'empty-argv'):
+            with self.subTest(kind=kind):
+                f = self.fixture('metadata-' + kind)
+                root = Path(f.selected['path']).parent
+                selection = json.loads((root / 'selection.json').read_bytes())
+                receipt = json.loads(f.receipt_path.read_bytes())
+                writes = {}
+                if kind == 'receipt-pin':
+                    selection['receipt']['sha256'] = '0' * 64
+                elif kind in ('snapshot-path', 'snapshot-members', 'binary-pin'):
+                    if kind == 'snapshot-path': receipt['snapshot_root'] += '-wrong'
+                    elif kind == 'snapshot-members': receipt['members']['memory.py']['sha256'] = '0' * 64
+                    else: receipt['binary']['sha256'] = '0' * 64
+                    writes['receipt.json'] = encoded(receipt)
+                    selection['receipt']['sha256'] = hashlib.sha256(writes['receipt.json']).hexdigest()
+                elif kind == 'component-path':
+                    selection['components'][0]['directory']['path'] += '-wrong'
+                elif kind == 'empty-argv':
+                    selection['launchers'][next(iter(selection['launchers']))] = []
+                else:
+                    anchor = next(iter(selection['anchors'].values()))
+                    if kind == 'short-vector': anchor['vector'] = []
+                    else: anchor['vector'][anchor['vector'].index('--receipt-sha256') + 1] = '0' * 64
+                writes['selection.json'] = encoded(selection)
+                manifest = json.loads(Path(f.selected['path']).read_bytes())
+                for name, raw in writes.items():
+                    target = root / name
+                    target.chmod(0o600); target.write_bytes(raw); target.chmod(0o400)
+                    entry = next(member for member in manifest['files'] if member['name'] == name)
+                    entry.update(sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw))
+                raw = encoded(manifest)
+                target = Path(f.selected['path'])
+                target.chmod(0o600); target.write_bytes(raw); target.chmod(0o400)
+                result = f.installer_call('inspect', '--path', str(target), '--sha256', hashlib.sha256(raw).hexdigest())
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, b'')
+                self.assertIn(b'lifecycle staging failed:', result.stderr)
+                self.assertNotIn(b'Traceback', result.stderr)
+                self.assertEqual(f.api_calls(), [])
+
+    def test_compatibility_selection_cannot_use_weaker_legacy_inspection(self):
+        f = self.fixture('legacy-inspection')
+        result = f.installer_call('inspect', '--legacy', '--path', f.selected['path'], '--sha256', f.selected['sha256'])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b'')
+        self.assertIn(b'full inspection', result.stderr)
+
+    def test_sigterm_during_spawn_constructor_still_joins_the_owned_child(self):
+        producer = activation.module('r02_producer_spawn', ROOT / 'scripts/stage_lifecycle_compatibility.py')
+        original = subprocess.Popen
+        children = []
+        before = signal.getsignal(signal.SIGTERM)
+
+        def interrupted_constructor(*args, **kwargs):
+            process = original(*args, **kwargs)
+            children.append(process)
+            os.kill(os.getpid(), signal.SIGTERM)
+            return process
+
+        with patch.object(producer.subprocess, 'Popen', side_effect=interrupted_constructor):
+            with self.assertRaises(producer.InstallationInterrupted):
+                producer.run_owned([sys.executable, '-c', 'import time;time.sleep(30)'], timeout=5)
+        self.assertEqual(signal.getsignal(signal.SIGTERM), before)
+        self.assertEqual(len(children), 1)
+        self.assertIsNotNone(children[0].returncode)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(children[0].pid, 0)
+
 
 class R02InstalledIssuedTests(InstalledTools, issued.F04IssuedTests):
     """The unchanged F-04 command assertions over real installer output."""

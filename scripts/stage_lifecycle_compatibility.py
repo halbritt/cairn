@@ -93,9 +93,31 @@ def read_selected(descriptor, limit):
         return raw
 
 
+def run_owned(argv, *, payload=None, timeout, env=None):
+    # Defer SIGTERM during Popen's exec handshake so an asynchronous exception
+    # cannot escape after fork but before ownership of the child is returned.
+    pending = []
+    previous = signal.signal(signal.SIGTERM, lambda *args: pending.append(True))
+    process = None
+    try:
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE if payload is not None else None,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        signal.signal(signal.SIGTERM, previous)
+        if pending:
+            raise InstallationInterrupted('installation interrupted during spawn; reconcile selected paths')
+        stdout, stderr = process.communicate(payload, timeout=timeout)
+        return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+    except BaseException:
+        if process is not None:
+            process.kill()
+            process.communicate()
+        raise
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
 def backend(stager, args, plan=None):
-    result = subprocess.run([stager, *args], input=encoded(plan) if plan is not None else None,
-                            capture_output=True, timeout=120, check=False)
+    result = run_owned([stager, *args], payload=encoded(plan) if plan is not None else None, timeout=120)
     if result.returncode:
         raise RuntimeError('stager refused; reconcile immutable paths before retry: ' + result.stderr.decode(errors='replace'))
     return decoded(result.stdout)
@@ -118,7 +140,7 @@ def qualify_launch_anchors(plan, scratch):
     probe.write_text('#!' + plan['shell'] + '\nexec ' + shlex.join(vector) + '\n')
     probe.chmod(0o500)
     env = dict(os.environ, ENV=str(startup), BASH_ENV=str(startup))
-    result = subprocess.run([str(probe)], capture_output=True, timeout=15, env=env)
+    result = run_owned([str(probe)], timeout=15, env=env)
     if result.returncode or result.stderr or marker.exists():
         raise ValueError('selected shell/interpreter failed isolated startup qualification')
     profile = decoded(result.stdout)
@@ -284,6 +306,8 @@ def inspect(stager, selected, legacy=False):
     generation = backend(stager, ['inspect-generation', '--path', selected['path'], '--sha256', selected['sha256']])
     files = {member['name']: member for member in generation['files']}
     if legacy:
+        if 'selection.json' in files:
+            raise ValueError('compatibility generations require full inspection, not --legacy')
         member = files['retained-argv.json']
         launches = decoded(read_selected({key: member[key] for key in ('path', 'sha256')}, 1024 * 1024))
         return dict(selection=selected, launchers=launches, retained='explicit-legacy')
@@ -291,12 +315,35 @@ def inspect(stager, selected, legacy=False):
     selection = decoded(read_selected({key: member[key] for key in ('path', 'sha256')}, 1024 * 1024))
     if selection['schema'] != SELECTION_SCHEMA:
         raise ValueError('unsupported installation selection')
+    receipt_pin = {key: files['receipt.json'][key] for key in ('path', 'sha256')}
+    if selection['receipt'] != receipt_pin:
+        raise ValueError('selection receipt differs from verified generation member')
+    receipt = decoded(read_selected(receipt_pin, 1024 * 1024))
+    components = {}
     for component in selection['components']:
         d = component['directory']
+        if (not canonical(d['path']) or d['path'] != str(Path(d['path']).parent / d['identity'])
+                or d['path'] in components):
+            raise ValueError('component path differs from its selected identity')
         backend(stager, ['inspect-directory', '--root', str(Path(d['path']).parent)],
                 dict(identity=d['identity'], files=component['files']))
+        components[d['path']] = {member['name']: member for member in component['files']}
+    snapshot = components[receipt['snapshot_root']]
+    if {name: member['sha256'] for name, member in snapshot.items()} != {name: member['sha256'] for name, member in receipt['members'].items()}:
+        raise ValueError('receipt snapshot differs from verified components')
+    binary = components[str(Path(receipt['binary']['path']).parent)]['cairn']
+    if {key: binary[key] for key in ('path', 'sha256')} != receipt['binary']:
+        raise ValueError('receipt binary differs from verified components')
     for label, argv in selection['launchers'].items():
+        if type(argv) is not list or len(argv) != 1 or not canonical(argv[0]):
+            raise ValueError('invalid selected launcher argv')
         anchor = selection['anchors'][label]
+        vector = anchor['vector']
+        if type(vector) is not list or len(vector) < 5 or any(type(value) is not str for value in vector):
+            raise ValueError('invalid selected launch vector')
+        for flag, value in (('--receipt', receipt_pin['path']), ('--receipt-sha256', receipt_pin['sha256'])):
+            if vector.count(flag) != 1 or vector[vector.index(flag) + 1:][:1] != [value]:
+                raise ValueError('launcher receipt differs from verified generation member')
         raw = read_selected(dict(path=argv[0], sha256=anchor['sha256']), 65536)
         prefix = ('#!' + anchor['shell'] + '\nexec ').encode()
         if (len(raw) != anchor['bytes'] or not raw.startswith(prefix)
@@ -312,7 +359,7 @@ def inspect(stager, selected, legacy=False):
 
 def main():
     def interrupted(signum, frame):
-        # subprocess.run kills and joins its owned child when this unwinds.
+        # run_owned defers this exception until child ownership is established.
         raise InstallationInterrupted('installation interrupted; reconcile the selected UUID before retry')
     signal.signal(signal.SIGTERM, interrupted)
     parser = argparse.ArgumentParser(description=__doc__)
