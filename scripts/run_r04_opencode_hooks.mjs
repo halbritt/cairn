@@ -14,11 +14,17 @@ const client = { session: {
 } }
 const memory = (await import(pathToFileURL(join(home, 'plugins/cairn-lifecycle.ts')))).default
 const memoryHooks = await memory({ client, directory, worktree: directory })
+assert.equal(memoryHooks['tool.execute.before'], undefined)
 const output = { messages: structuredClone([owner]) }
 await memoryHooks['experimental.chat.messages.transform']({}, output)
 assert.deepEqual(owner.parts, [{ type: 'text', text: 'Repair lifecycle recall implementation.' }])
 await memoryHooks['tool.execute.after']({ tool: 'read', sessionID: 'ses_wiring' },
   { metadata: { display: { type: 'file', path: join(directory, 'store.go') } } })
+await memoryHooks.event({ event: { type: 'message.part.updated', properties: {
+  part: { type: 'tool', sessionID: 'ses_wiring', state: {
+    status: 'error', error: 'private tool output EACCES ParseError EACCES',
+  } },
+} } })
 await memoryHooks['experimental.session.compacting']({ sessionID: 'ses_wiring' }, { context: [] })
 await memoryHooks.event({ event: { type: 'session.idle', properties: { sessionID: 'ses_wiring' } } })
 await memoryHooks.dispose()

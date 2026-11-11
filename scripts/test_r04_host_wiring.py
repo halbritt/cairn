@@ -2,12 +2,14 @@
 import copy
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 import uuid
 
@@ -247,15 +249,17 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         for selected_config, input_pin in [(f.memory_path, f.plan['memory_config']), (f.coord_path, f.plan['coordination_configs'][0])]:
             self.assertEqual(selected_config.read_bytes(), Path(input_pin['path']).read_bytes())
         implementations = {(r['role'], r['event']): r['implementation'] for r in record['rows']}
-        self.assertTrue(all(impl == ('go' if role == 'coordination' or event in ('SessionStart', 'UserPromptSubmit') else 'python')
+        ordinary = ('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure')
+        self.assertTrue(all(impl == ('go' if role == 'coordination' or event in ordinary else 'python')
                             for (role, event), impl in implementations.items()))
         for row in record['rows']:
-            if row['role'] == 'memory' and row['event'] in ('SessionStart', 'UserPromptSubmit'):
+            if row['role'] == 'memory' and row['event'] in ordinary:
                 self.assertEqual(row['argv'], row['checked_launcher'])
                 self.assertNotEqual(row['checked_launcher'], row['retained_launcher'])
-                self.assertEqual(row['reason'], 'receipt-checked ordinary Go recall')
+                reason = 'recall' if row['event'] in ('SessionStart', 'UserPromptSubmit') else 'tool observation'
+                self.assertEqual(row['reason'], 'receipt-checked ordinary Go ' + reason)
         self.assertTrue(all(implementations['memory', event] == 'python'
-                            for event in ('PreCompact', 'SessionEnd', 'PostToolUse', 'PostToolUseFailure')))
+                            for event in ('PreCompact', 'SessionEnd')))
         # Arrange the documented staged layout only in a disposable account.
         home = f.root / 'installed home with spaces'
         (home / 'plugins').mkdir(parents=True, mode=0o700)
@@ -275,6 +279,87 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         self.assertEqual(states[0]['agent']['agent_id'], '33333333-3333-4333-8333-333333333333')
         memory_state = json.loads((Path(f.memory['state_dir']) / 'ses_wiring.json').read_bytes())
         self.assertIn(memory_state['last_capture']['outcome'], ('courtesy', 'unchanged'))
+        self.assertEqual(list(memory_state['hints']['files']), ['store.go'])
+        self.assertEqual(memory_state['hints']['errors'], ['EACCES', 'ParseError'])
+
+    def test_opencode_tool_rows_match_retained_source_after_package_removal(self):
+        f = self.fixture('ordinary installed tools')
+        calls = self.recall_api(f)
+        _, _, record = self.selected(f)
+        rows = {r['event']: r for r in record['rows'] if r['role'] == 'memory'}
+        events = [dict(hook_event_name='PreToolUse', tool_name='Grep',
+                       tool_input=dict(path='alpha.py', pattern='StateManager token')),
+                  dict(hook_event_name='PostToolUse', tool_name='Read', tool_input=dict(file_path='alpha.py')),
+                  dict(hook_event_name='PostToolUseFailure', error='private output EACCES ParseError EACCES')]
+        for event in events:
+            row = rows[event['hook_event_name']]
+            self.assertEqual(row['implementation'], 'go')
+            self.assertEqual(row['hook']['timeout'], 13)
+            self.assertEqual(row['argv'], row['checked_launcher'])
+            self.assertEqual(row['retained_launcher'], [str(f.launcher('memory', 13))])
+        (f.root / 'alpha.py').write_text('alpha')
+        shutil.rmtree(f.package)
+        state_dir = Path(f.memory['state_dir'])
+        observations = []
+        for side in ('source', 'go'):
+            shutil.rmtree(state_dir, ignore_errors=True)
+            outputs, started = [], time.time()
+            for event in events:
+                row = rows[event['hook_event_name']]
+                argv = row['retained_launcher'] if side == 'source' else row['argv']
+                raw = encoded(dict(event, session_id='ses_tools', cwd=str(f.root)))
+                result = subprocess.run(['/bin/sh', '-c', shlex.join(argv)], input=raw,
+                                        cwd=f.root, env=f.env(), capture_output=True, timeout=20)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b'{}\n', b''))
+                outputs.append((result.returncode, result.stdout, result.stderr))
+            ended = time.time()
+            state = json.loads((state_dir / 'ses_tools.json').read_bytes())
+            hints = state['hints']
+            self.assertEqual(list(hints['files']), ['alpha.py'])
+            self.assertEqual(list(hints['searches']), ['statemanager', 'token'])
+            self.assertEqual(hints['errors'], ['EACCES', 'ParseError'])
+            self.assertNotIn('private output', json.dumps(state))
+            for values in (hints['files'], hints['searches'], {'error_at': hints['error_at']}):
+                for key, stamp in values.items():
+                    self.assertIsInstance(stamp, float)
+                    self.assertTrue(math.isfinite(stamp) and started <= stamp <= ended)
+                    values[key] = 'wallclock'
+            hints['error_at'] = 'wallclock'
+            observations.append((outputs, state))
+            self.assertEqual(calls, [])
+            self.assertEqual(f.api_calls(), [])
+            self.assertFalse(Path(f.coord['state_dir']).exists())
+        self.assertEqual(observations[0], observations[1])
+
+    def test_opencode_tool_rows_refuse_changed_selection_before_nohint_skip(self):
+        for artifact in ('receipt', 'profile', 'image', 'closure', 'launcher'):
+            with self.subTest(artifact=artifact):
+                f = self.fixture('tool refusal ' + artifact)
+                calls = self.recall_api(f)
+                _, _, record = self.selected(f)
+                rows = {r['event']: r for r in record['rows'] if r['role'] == 'memory'}
+                target = dict(receipt=f.receipt_path, profile=f.memory_path, image=f.binary,
+                              closure=Path(f.receipt['snapshot_root']) / 'memory.py',
+                              launcher=Path(rows['PostToolUse']['checked_launcher'][0]))[artifact]
+                mode = target.stat().st_mode & 0o777
+                target.chmod(0o700)
+                target.write_bytes(target.read_bytes() + b'\n')
+                target.chmod(mode)
+                shutil.rmtree(f.package)
+                for event in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure'):
+                    with self.subTest(event=event):
+                        row = rows[event]
+                        self.assertEqual(row['implementation'], 'go')
+                        raw = encoded(dict(hook_event_name=event, session_id='ses_refusal',
+                                           cwd=str(f.root), tool_name='Other', tool_input={}))
+                        result = subprocess.run(row['argv'], input=raw, cwd=f.root, env=f.env(),
+                                                capture_output=True, timeout=20)
+                        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                         (1, b'', b'Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n'))
+                        self.assertEqual(calls, [])
+                        self.assertEqual(f.api_calls(), [])
+                        self.assertFalse(Path(f.memory['state_dir']).exists())
+                        self.assertFalse(Path(f.coord['state_dir']).exists())
 
     def test_shell_transport_keeps_checked_memory_and_selects_go_coordination(self):
         for harness in ('opencode', 'codex', 'claude'):
@@ -311,6 +396,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 _, _, record = self.selected(f)
                 rows = [r for r in record['rows'] if r['role'] == 'memory']
                 self.assertTrue(all(r['implementation'] == 'python' for r in rows))
+                self.assertNotIn('PreToolUse', [r['event'] for r in rows])
                 self.assertTrue(any(r['reason'] == ('bound callback' if route == 'bound' else 'provider-selected recall') for r in rows))
                 self.assertTrue(all(r['implementation'] == 'go' for r in record['rows'] if r['role'] == 'coordination'))
 

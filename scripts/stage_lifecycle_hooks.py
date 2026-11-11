@@ -93,7 +93,12 @@ def definitions(stager, plan):
             raise ValueError('hook harness differs from selected configuration')
         if config.get('config_home') and config['config_home'] != plan['account_home']:
             raise ValueError('hook account differs from selected configuration')
-        events = MEMORY[plan['harness']] if role == 'memory' else COORDINATION[plan['harness']]
+        ordinary_events = (('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure')
+                           if role == 'memory' and plan['harness'] == 'opencode'
+                           and config.get('recall_mode') == 'agent_tools' and all_unbound else ())
+        events = dict(MEMORY[plan['harness']] if role == 'memory' else COORDINATION[plan['harness']])
+        if ordinary_events:
+            events['PreToolUse'] = 13
         for event, timeout in events.items():
             label = role + ':' + str(0 if role == 'memory' else index + 1) + ':' + str(timeout)
             retained = install['launchers'][label]
@@ -106,10 +111,7 @@ def definitions(stager, plan):
             reason = ('bound callback' if config.get('inbox_recall_binding') else
                       'ordinary recall for this harness remains Python' if event in ('SessionStart', 'UserPromptSubmit') else
                       'capture or tool observation')
-            ordinary_go = (role == 'memory' and plan['harness'] == 'opencode'
-                           and event in ('SessionStart', 'UserPromptSubmit')
-                           and config.get('recall_mode') == 'agent_tools'
-                           and all_unbound)
+            ordinary_go = event in ordinary_events
             if role == 'coordination' or ordinary_go:
                 if label not in go_launchers:
                     go_launchers[label] = checked_go_launcher(stager, receipt['binary']['path'], role, vector)
@@ -118,7 +120,8 @@ def definitions(stager, plan):
             if role == 'coordination':
                 reason = 'receipt-checked Go coordination hook'
             elif ordinary_go:
-                reason = 'receipt-checked ordinary Go recall'
+                reason = ('receipt-checked ordinary Go recall' if event in ('SessionStart', 'UserPromptSubmit')
+                          else 'receipt-checked ordinary Go tool observation')
             elif (not config.get('inbox_recall_binding') and role == 'memory'
                   and plan['harness'] == 'opencode' and event in ('SessionStart', 'UserPromptSubmit')
                   and config.get('recall_mode') != 'agent_tools'):
