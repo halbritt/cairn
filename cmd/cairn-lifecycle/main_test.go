@@ -95,7 +95,7 @@ func TestCoordinationSubprocessInboxAndRecovery(t *testing.T) {
 	t.Setenv("CAIRN_INBOX_ROOT", filepath.Join(root, "inbox-journal"))
 
 	fakeCairn := filepath.Join(root, "fake-cairn")
-	fakeScript := "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    ack)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"state\":\"handled\",\"attempts\":1}}\\n'\n      exit 0\n      ;;\n    event-next)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"delivery\":{\"delivery_id\":\"22222222-2222-4222-8222-222222222222\",\"lease_id\":\"33333333-3333-4333-8333-333333333333\",\"event\":{\"event_id\":\"22222222-2222-4222-8222-222222222222\",\"kind\":\"notice\",\"from\":\"agent/sender\",\"ref\":{\"record_id\":\"44444444-4444-4444-8444-444444444444\",\"version\":1}}}}}\\n'\n      exit 0\n      ;;\n  esac\ndone\nprintf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{}}\\n'\n"
+	fakeScript := "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    ack)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"state\":\"handled\",\"attempts\":1}}\\n'\n      exit 0\n      ;;\n    agent-heartbeat|agent-context|agent-register)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"agent_id\":\"11111111-1111-4111-8111-111111111111\",\"execution_id\":\"22222222-2222-4222-8222-222222222222\",\"native_session_id\":\"conv-1\",\"display_name\":\"agent-1\",\"inbox\":\"agent/11111111-1111-4111-8111-111111111111\"}}\\n'\n      exit 0\n      ;;\n    session-inbox-pending)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"events\":[]}}\\n'\n      exit 0\n      ;;\n    event-next)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"delivery\":{\"delivery_id\":\"22222222-2222-4222-8222-222222222222\",\"lease_id\":\"33333333-3333-4333-8333-333333333333\",\"event\":{\"event_id\":\"22222222-2222-4222-8222-222222222222\",\"kind\":\"notice\",\"from\":\"agent/sender\",\"ref\":{\"record_id\":\"44444444-4444-4444-8444-444444444444\",\"version\":1}}}}}\\n'\n      exit 0\n      ;;\n  esac\ndone\nprintf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{}}\\n'\n"
 	if err := os.WriteFile(fakeCairn, []byte(fakeScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -288,5 +288,103 @@ func TestCoordinationSubprocessInboxAndRecovery(t *testing.T) {
 	code, err = transcript.ExecuteCoordinationCLIWithOptions(context.Background(), transcript.CoordinationCLIOptions{CompatibilityVector: vector}, append(baseSel, "inbox", "--context", cAck[3].(string), "ack"), strings.NewReader(""), &cOut, &cErr)
 	if err != nil || code != 0 || !strings.Contains(cOut.String(), `"state":"handled"`) {
 		t.Fatalf("expected /3 ack with CompatibilityVector to succeed, got code=%d err=%v out=%q stderr=%q", code, err, cOut.String(), cErr.String())
+	}
+
+	// Verify RunCoordinationProcess subprocess resolves the 21-element /3 launcher vector directly from launch_root without out-of-band options.
+	fullVec := append([]string{"/usr/bin/python3", "-I", "-S", "-c", "VERIFIER"}, baseSel[:16]...)
+	fullLBytes, _ := coordination.LauncherBytes(fullVec, "/bin/sh")
+	fullLDir := filepath.Join(launchRoot, shaHex(fullLBytes))
+	_ = os.MkdirAll(fullLDir, 0o700)
+	_ = os.Chmod(fullLDir, 0o700)
+	fullLPath := filepath.Join(fullLDir, "inbox")
+	_ = os.WriteFile(fullLPath, fullLBytes, 0o500)
+	_ = os.Chmod(fullLPath, 0o500)
+	procDrainOut, err := exec.Command(binPath, append([]string{"coordination"}, append(baseSel, "inbox", "drain", "--config", cfgPath, "--agent-id", "11111111-1111-4111-8111-111111111111", "--execution-id", "22222222-2222-4222-8222-222222222222")...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected subprocess /3 drain with resolved CompatibilityVector to succeed, got err=%v out=%q", err, procDrainOut)
+	}
+	var procDrain map[string]any
+	_ = json.Unmarshal(procDrainOut, &procDrain)
+	procAck, _ := procDrain["acknowledgement"].([]any)
+	if len(procAck) != 5 || procAck[0] != fullLPath {
+		t.Fatalf("expected resolved /3 launcher acknowledgement vector, got %v", procAck)
+	}
+
+	// Verify direct staged hook entry `[image, coordination, hook, --config, PATH]` on an unbound profile.
+	unboundCfgPath := filepath.Join(root, "unbound-config.json")
+	unboundCfgData, _ := json.Marshal(map[string]any{
+		"cairn":      fakeCairn,
+		"socket":     sockPath,
+		"token_file": tokPath,
+		"state_dir":  stateDir,
+		"harness":    "codex",
+		"repo":       filepath.Join(root, "repo"),
+		"binding":    "fixture",
+	})
+	_ = os.WriteFile(unboundCfgPath, unboundCfgData, 0o600)
+	hookCmd := exec.Command(binPath, "coordination", "hook", "--config", unboundCfgPath)
+	hookCmd.Stdin = strings.NewReader(`{"hook_event_name":"SessionStart","session_id":"conv-1","cwd":"` + root + `","host_pid":` + strconv.Itoa(os.Getpid()) + `}`)
+	hookOut, err := hookCmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(hookOut), "Cairn session") {
+		t.Fatalf("expected direct subprocess coordination hook to succeed, got err=%v out=%q", err, hookOut)
+	}
+
+	// Verify /3 --receipt hook entry with UnboundProfiles (`stage_lifecycle_compatibility.py` unbound role profiles).
+	unboundMemCfg := filepath.Join(root, "unbound-memory.json")
+	unboundMemData, _ := json.Marshal(map[string]any{
+		"cairn":         fakeCairn,
+		"socket":        sockPath,
+		"token_file":    tokPath,
+		"state_dir":     filepath.Join(root, "mem-state"),
+		"harness":       "codex",
+		"repo":          filepath.Join(root, "repo"),
+		"binding":       "mem-fixture",
+		"recall_mode":   "agent_tools",
+		"context_bytes": 2000,
+	})
+	_ = os.WriteFile(unboundMemCfg, unboundMemData, 0o600)
+	unboundMemDesc := map[string]string{"path": unboundMemCfg, "sha256": shaHex(unboundMemData)}
+	unboundCoordDesc := []any{map[string]string{"path": unboundCfgPath, "sha256": shaHex(unboundCfgData)}}
+	unboundBindingPath := filepath.Join(root, "unbound-binding.json")
+	unboundBindingRaw, _ := json.Marshal(map[string]any{
+		"schema":               "cairn.inbox-recall-binding/3",
+		"enabled":              false,
+		"binary":               binDesc,
+		"memory_config":        unboundMemDesc,
+		"coordination_configs": unboundCoordDesc,
+	})
+	_ = os.WriteFile(unboundBindingPath, unboundBindingRaw, 0o600)
+	unboundReceiptPath := filepath.Join(root, "unbound-receipt.json")
+	unboundReceiptRaw, _ := json.Marshal(map[string]any{
+		"schema": "cairn.lifecycle-compatibility/1", "source_revision": "rev-1", "snapshot_root": snapRoot,
+		"members": members, "bootstrap": "lifecycle_compatibility.py", "loader": "lifecycle_bundle.py",
+		"roles":                map[string]string{"memory": "memory.py", "coordination": "coordination.py", "inbox_recall": "inbox_recall.py", "inbox_binding": "inbox_binding.py"},
+		"aliases":              map[string]string{},
+		"binary":               binDesc,
+		"binding":              map[string]string{"path": unboundBindingPath, "sha256": shaHex(unboundBindingRaw), "schema": "cairn.inbox-recall-binding/3"},
+		"memory_config":        unboundMemDesc,
+		"coordination_configs": unboundCoordDesc,
+	})
+	_ = os.WriteFile(unboundReceiptPath, unboundReceiptRaw, 0o600)
+	unboundReceiptSHA := shaHex(unboundReceiptRaw)
+	unboundSel := []string{
+		"--receipt", unboundReceiptPath, "--receipt-sha256", unboundReceiptSHA,
+		"--role", "coordination", "--entrypoint", "coordination.py",
+		"--config", unboundCfgPath, "--hook-timeout", "15",
+		"--launch-root", launchRoot, "--shell", "/bin/sh",
+	}
+	unboundVec := append([]string{"/usr/bin/python3", "-I", "-S", "-c", "VERIFIER"}, unboundSel...)
+	unboundLBytes, _ := coordination.LauncherBytes(unboundVec, "/bin/sh")
+	unboundLDir := filepath.Join(launchRoot, shaHex(unboundLBytes))
+	_ = os.MkdirAll(unboundLDir, 0o700)
+	_ = os.Chmod(unboundLDir, 0o700)
+	unboundLPath := filepath.Join(unboundLDir, "inbox")
+	_ = os.WriteFile(unboundLPath, unboundLBytes, 0o500)
+	_ = os.Chmod(unboundLPath, 0o500)
+	compatHookCmd := exec.Command(binPath, append([]string{"coordination"}, append(unboundSel, "--", "hook", "--config", unboundCfgPath)...)...)
+	compatHookCmd.Stdin = strings.NewReader(`{"hook_event_name":"SessionStart","session_id":"conv-1","cwd":"` + root + `","host_pid":` + strconv.Itoa(os.Getpid()) + `}`)
+	compatHookOut, err := compatHookCmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(compatHookOut), "Cairn session") {
+		t.Fatalf("expected /3 subprocess coordination hook on unbound profile to succeed, got err=%v out=%q", err, compatHookOut)
 	}
 }

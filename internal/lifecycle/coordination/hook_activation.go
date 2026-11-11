@@ -626,7 +626,6 @@ func (c *CompatibilityContext) InboxRecallFlush(
 	return frame, nil
 }
 
-
 func (c *CLI) effectiveInboxConfig(ctx context.Context, config, event *value.Value, raw []byte) (*value.Value, error) {
 	if c.Compatibility != nil {
 		if raw == nil {

@@ -551,13 +551,29 @@ func (c *CLI) resumeStaleHookSession(ctx context.Context, ns *NativeSession, con
 	return ns.Save()
 }
 
+func cloneObjectOrEmpty(v *value.Value, field string) (*value.Value, error) {
+	if !value.Truth(v) {
+		return value.Mapping(), nil
+	}
+	if v.Kind != value.Object {
+		return nil, &journal.NonObjectError{Field: field}
+	}
+	return nativeClone(v), nil
+}
+
 func (c *CLI) handleHookPostSession(ctx context.Context, ns *NativeSession, config, event, observation, wakeVal *value.Value, hookConfigPath string, bridgeDeadline float64, reports *[]InboxRecallReport) (*value.Value, error) {
 	state := ns.Record
 	if value.SameText(observation.Get("event"), "ToolStart") || value.SameText(observation.Get("event"), "ToolEnd") {
 		return c.opencodeToolEvent(ctx, config, state, ns.Path, observation, event)
 	}
 	current := state.Get("agent")
-	metadata := nativeClone(current.Get("metadata"))
+	if current == nil || current.Kind != value.Object {
+		return nil, &journal.NonObjectError{Field: "agent"}
+	}
+	metadata, err := cloneObjectOrEmpty(current.Get("metadata"), "metadata")
+	if err != nil {
+		return nil, err
+	}
 	mode := "existing-session"
 	if value.Truth(wakeVal) {
 		mode = "fresh-worker"
@@ -649,7 +665,10 @@ func (c *CLI) handleHookInboxAndOutput(ctx context.Context, ns *NativeSession, c
 			if err != nil {
 				return nil, err
 			}
-			meta := nativeClone(current.Get("metadata"))
+			meta, err := cloneObjectOrEmpty(current.Get("metadata"), "metadata")
+			if err != nil {
+				return nil, err
+			}
 			meta.Set("state", value.Text("busy"))
 			updated, err := c.call(ctx, config, "agent-context", nativeMap("request_id", c.newUUID(), "session", ref, "expected_revision", current.Get("context_revision"), "metadata", meta), NativeCallOptions{})
 			if err != nil {

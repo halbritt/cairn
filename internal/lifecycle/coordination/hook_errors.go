@@ -241,7 +241,6 @@ func (e *InboxRecallError) Unwrap() error {
 	return e.Cause
 }
 
-
 func nativePromptRefused(message string) *CoordinationError {
 	return &CoordinationError{Code: "NATIVE_PROMPT_REFUSED", Message: message}
 }

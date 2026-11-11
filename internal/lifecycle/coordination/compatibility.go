@@ -154,7 +154,16 @@ func NewCompatibilityContext(sel CompatibilitySelection) (*CompatibilityContext,
 		Profile:        sel.Profile,
 	}
 	c.Deadline = c.now() + timeout
-	raw, err := LauncherBytes(sel.Vector, sel.Shell)
+	vec := sel.Vector
+	if len(vec) == 0 {
+		resolved, rErr := resolveCompatibilityVector(sel, c.uid())
+		if rErr != nil {
+			return nil, preflightError(rErr.Error())
+		}
+		vec = resolved
+		c.Vector = vec
+	}
+	raw, err := LauncherBytes(vec, sel.Shell)
 	if err != nil {
 		return nil, preflightError(err.Error())
 	}
@@ -326,6 +335,73 @@ func LauncherPath(launchRoot string, launcherRaw []byte) string {
 	return sourceJoin(sourceJoin(launchRoot, hex.EncodeToString(sum[:])), "inbox")
 }
 
+func resolveCompatibilityVector(sel CompatibilitySelection, uid uint32) ([]string, error) {
+	if !compatibilityCanonical(sel.LaunchRoot) || !compatibilityCanonical(sel.Shell) {
+		return nil, preflightError("selection")
+	}
+	wantTail := []string{
+		"--receipt", sel.ReceiptPath, "--receipt-sha256", sel.ReceiptSHA256,
+		"--role", sel.Role, "--entrypoint", sel.Entrypoint,
+		"--config", sel.ConfigPath, "--hook-timeout", sel.HookTimeout,
+		"--launch-root", sel.LaunchRoot, "--shell", sel.Shell,
+	}
+	entries, err := os.ReadDir(sel.LaunchRoot)
+	if err != nil {
+		return nil, preflightError("launch root unavailable")
+	}
+	prefix := "#!" + sel.Shell + "\nexec "
+	var matched []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if !hexText([]rune(name), 64) {
+			continue
+		}
+		path := sourceJoin(sourceJoin(sel.LaunchRoot, name), "inbox")
+		raw, sha, err := compatibilityOpened(path, 65536, uid)
+		if err != nil || sha != name {
+			continue
+		}
+		var st syscall.Stat_t
+		if syscall.Lstat(path, &st) != nil || st.Mode&0o7777 != 0o500 {
+			continue
+		}
+		text := string(raw)
+		if !strings.HasPrefix(text, prefix) || !strings.HasSuffix(text, "\n") {
+			continue
+		}
+		tokens, ok := shlexSplitPosix(strings.TrimSuffix(text[len(prefix):], "\n"))
+		if !ok || len(tokens) != 23 || tokens[21] != "--" || tokens[22] != "$@" {
+			continue
+		}
+		vec := tokens[:21]
+		if !compatibilityCanonical(vec[0]) || vec[1] != "-I" || vec[2] != "-S" || vec[3] != "-c" {
+			continue
+		}
+		same := true
+		for i, want := range wantTail {
+			if vec[5+i] != want {
+				same = false
+				break
+			}
+		}
+		if !same {
+			continue
+		}
+		rebuilt, err := LauncherBytes(vec, sel.Shell)
+		if err != nil || !bytes.Equal(rebuilt, raw) {
+			continue
+		}
+		if matched != nil {
+			return nil, preflightError("ambiguous compatibility launcher")
+		}
+		matched = vec
+	}
+	if matched == nil {
+		return nil, preflightError("launcher vector unavailable")
+	}
+	return matched, nil
+}
+
 func validUTF8String(s string) bool {
 	if !utf8.ValidString(s) {
 		return false
@@ -347,6 +423,65 @@ func shlexJoinStrings(items []string) (string, error) {
 		parts[i] = shlexQuote(s)
 	}
 	return strings.Join(parts, " "), nil
+}
+
+func shlexSplitPosix(s string) ([]string, bool) {
+	var out []string
+	var cur strings.Builder
+	inToken, single, double := false, false, false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if single {
+			if ch == '\'' {
+				single = false
+			} else {
+				cur.WriteByte(ch)
+			}
+			continue
+		}
+		if double {
+			if ch == '"' {
+				double = false
+			} else if ch == '\\' && i+1 < len(s) && (s[i+1] == '"' || s[i+1] == '\\' || s[i+1] == '$' || s[i+1] == '`') {
+				i++
+				cur.WriteByte(s[i])
+			} else {
+				cur.WriteByte(ch)
+			}
+			continue
+		}
+		switch ch {
+		case ' ', '\t', '\r', '\n':
+			if inToken {
+				out = append(out, cur.String())
+				cur.Reset()
+				inToken = false
+			}
+		case '\'':
+			inToken = true
+			single = true
+		case '"':
+			inToken = true
+			double = true
+		case '\\':
+			if i+1 >= len(s) {
+				return nil, false
+			}
+			inToken = true
+			i++
+			cur.WriteByte(s[i])
+		default:
+			inToken = true
+			cur.WriteByte(ch)
+		}
+	}
+	if single || double {
+		return nil, false
+	}
+	if inToken {
+		out = append(out, cur.String())
+	}
+	return out, true
 }
 
 func compatibilityCanonical(path string) bool {
@@ -1056,6 +1191,14 @@ func (c *CompatibilityContext) EffectiveConfig(fallbackProfile *value.SourceRead
 	if expected, ok := rows[name]; ok && c.HookTimeout != expected {
 		return nil, preflightError("hook timeout mismatch")
 	}
+	if !value.Truth(config.Get("inbox_recall_binding")) {
+		if err := c.UnboundProfiles(fallbackProfile); err != nil {
+			return nil, err
+		}
+		enabled := false
+		c.enabled = &enabled
+		return config, nil
+	}
 	actFn := c.ActivationFunc
 	if actFn == nil {
 		actFn = func(in []byte) (bool, error) {
@@ -1076,6 +1219,106 @@ func (c *CompatibilityContext) EffectiveConfig(fallbackProfile *value.SourceRead
 		return nil, err
 	}
 	return config, nil
+}
+
+func (c *CompatibilityContext) UnboundProfiles(fallbackProfile *value.SourceReaderProfile) error {
+	prof := c.profile(fallbackProfile)
+	receipt, err := c.ensureReceipt(prof)
+	if err != nil {
+		return err
+	}
+	bindingDesc, err := nativeRequired(receipt, "binding")
+	if err != nil || bindingDesc.Kind != value.Object {
+		return preflightError("unbound binding descriptor")
+	}
+	bPathVal, err := nativeRequired(bindingDesc, "path")
+	if err != nil {
+		return preflightError("unbound binding path")
+	}
+	bSHAVal, err := nativeRequired(bindingDesc, "sha256")
+	if err != nil {
+		return preflightError("unbound binding sha256")
+	}
+	bPath, err := sourcePathText(prof, bPathVal)
+	if err != nil {
+		return err
+	}
+	raw, err := controlledData(bPath, true, c.uid())
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(raw)
+	manifest, err := decodeCompatibilityJSON(prof, SiteCompatibilityManifest, raw)
+	if err != nil {
+		return err
+	}
+	if manifest == nil || manifest.Kind != value.Object ||
+		!value.SameText(bSHAVal, hex.EncodeToString(sum[:])) ||
+		!value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/3") ||
+		manifest.Get("enabled") == nil || manifest.Get("enabled").Kind != value.Bool || manifest.Get("enabled").Boolean {
+		return preflightError("unbound manifest")
+	}
+	for _, key := range []string{"binary", "memory_config", "coordination_configs"} {
+		if !nativeEqual(manifest.Get(key), receipt.Get(key)) {
+			return preflightError("unbound manifest selection")
+		}
+	}
+	return c.verifyUnboundRoleProfiles(prof, receipt)
+}
+
+func (c *CompatibilityContext) verifyUnboundRoleProfiles(prof *value.SourceReaderProfile, receipt *value.Value) error {
+	memDesc, err := nativeRequired(receipt, "memory_config")
+	if err != nil {
+		return preflightError("unbound memory_config")
+	}
+	coordList, err := nativeRequired(receipt, "coordination_configs")
+	if err != nil || coordList.Kind != value.Array {
+		return preflightError("unbound coordination_configs")
+	}
+	descriptors := append([]*value.Value{memDesc}, coordList.Items...)
+	for _, desc := range descriptors {
+		if desc == nil || desc.Kind != value.Object {
+			return preflightError("unbound descriptor")
+		}
+		dPathVal, e := nativeRequired(desc, "path")
+		if e != nil {
+			return preflightError("unbound descriptor path")
+		}
+		dSHAVal, e := nativeRequired(desc, "sha256")
+		if e != nil {
+			return preflightError("unbound descriptor sha256")
+		}
+		dPath, e := sourcePathText(prof, dPathVal)
+		if e != nil {
+			return e
+		}
+		var raw []byte
+		if dPath == c.ConfigPath && c.currentRaw != nil {
+			raw = c.currentRaw
+		} else {
+			raw, e = controlledData(dPath, false, c.uid())
+			if e != nil {
+				return e
+			}
+		}
+		sum := sha256.Sum256(raw)
+		if !value.SameText(dSHAVal, hex.EncodeToString(sum[:])) {
+			return preflightError("unbound profile pin mismatch")
+		}
+		var cfg *value.Value
+		if dPath == c.ConfigPath && c.current != nil {
+			cfg = c.current
+		} else {
+			cfg, e = decodeCompatibilityJSON(prof, SiteCompatibilityConfig, raw)
+			if e != nil {
+				return e
+			}
+		}
+		if cfg == nil || cfg.Kind != value.Object || value.Truth(cfg.Get("inbox_recall_binding")) {
+			return preflightError("unbound profile has binding")
+		}
+	}
+	return nil
 }
 
 func (c *CompatibilityContext) Remaining(limit time.Duration) (time.Duration, error) {
