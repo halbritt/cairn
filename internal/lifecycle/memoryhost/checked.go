@@ -104,6 +104,9 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	trace := newTrace(selection.ConfigPath)
 	trace.entry()
 	trace.parsed(event)
+	if member(string(event.Get("hook_event_name").String), "PreToolUse", "PostToolUse", "PostToolUseFailure") {
+		trace.fields["stage"] = "activation"
+	}
 	defer func() {
 		if recover() != nil {
 			panicDiagnostic(diagnostic, "handle")

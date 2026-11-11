@@ -145,6 +145,9 @@ func observeToolState(event, state *value.Value, directory string) error {
 			entries = value.Mapping()
 		}
 		if entries.Kind != value.Object {
+			if entries.Kind == value.Array {
+				return &value.Error{Class: "TypeError", Message: "stored tool hint list cannot pop a named entry"}
+			}
 			return fail("stored tool hint entries shape remains unavailable")
 		}
 		for _, name := range group.names {
@@ -257,7 +260,7 @@ func observationIsFile(root, name string) bool {
 
 var observationGlobExtension = regexp.MustCompile(`\*\.[A-Za-z0-9_]+`)
 var observationPatternCleanup = regexp.MustCompile(`\\[bBdsSwWdD]|[^A-Za-z0-9_.-]+`)
-var observationErrorIdentifier = regexp.MustCompile(`E[A-Z_]{3,40}|[A-Za-z]{3,40}(?:Error|Exception)`)
+var observationErrorIdentifier = regexp.MustCompile(`^(?:E[A-Z_]{3,40}|[A-Za-z]{3,40}(?:Error|Exception))$`)
 
 func observationPatternTerms(pattern string) []string {
 	if utf8.RuneCountInString(pattern) > 512 {
@@ -287,21 +290,10 @@ func observationPatternTerms(pattern string) []string {
 func observationWord(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' }
 func observationErrors(message string) []string {
 	var out []string
-	for _, match := range observationErrorIdentifier.FindAllStringIndex(message, -1) {
-		if match[0] > 0 {
-			previous, _ := utf8.DecodeLastRuneInString(message[:match[0]])
-			if observationWord(previous) {
-				continue
-			}
-		}
-		if match[1] < len(message) {
-			next, _ := utf8.DecodeRuneInString(message[match[1]:])
-			if observationWord(next) {
-				continue
-			}
-		}
-		identifier := message[match[0]:match[1]]
-		if !contains(out, identifier) {
+	// Both alternatives contain only Source word characters. Matching complete
+	// Unicode-word tokens keeps the boundary inside alternative selection.
+	for _, identifier := range strings.FieldsFunc(message, func(r rune) bool { return !observationWord(r) }) {
+		if observationErrorIdentifier.MatchString(identifier) && !contains(out, identifier) {
 			out = append(out, identifier)
 			if len(out) == 8 {
 				break
