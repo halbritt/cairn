@@ -1,7 +1,7 @@
 """Class A producer-shaped SessionStart processes against a private Unix API.
 
-The oracle bypasses only the already-characterized F04 binding/bridge prefix;
-its entire memory body, real CLI transport, rendering and persistence run.
+The oracle uses retained /2 activation and bypasses only the unused start bridge
+loader; its entire memory body, real CLI, rendering and persistence run.
 The candidate runs the actual receipt-selected public launcher and checked Go.
 """
 import base64
@@ -119,22 +119,39 @@ class F02StartTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join()
 
-    def source(self,prefix=()):
+    def source(self,prefix=(),*,controlled_ids=False):
         script = '''import importlib.util,sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('source_memory',sys.argv[1])
 hook=importlib.util.module_from_spec(spec); spec.loader.exec_module(hook)
-config=Path(sys.argv[2]); sys.argv=[sys.argv[1],'--config',str(config)]
+config=Path(sys.argv[2]); controlled=sys.argv[3]=='controlled'; sys.argv=[sys.argv[1],'--config',str(config)]
 with patch.object(hook,'load_inbox_recall',return_value=None):
- sys.exit(hook.main())
+ if not controlled:
+  sys.exit(hook.main())
+ # Control only the randomness boundary. The actual CLI, memory body, API,
+ # paired arguments and UUIDv5 derivation still execute.
+ import uuid
+ counter=0
+ def next_uuid():
+  global counter
+  result=uuid.UUID(bytes=bytes([counter])*16,version=4); counter+=1; return result
+ original=hook.Memory.search
+ def search(self,*args,**kwargs):
+  kwargs['request_id']=str(next_uuid())
+  result=original(self,*args,**kwargs)
+  for entry in result.get('index',[]): entry['pull_arguments']['request_id']=str(next_uuid())
+  return result
+ with patch.object(hook.Memory,'search',search),patch.object(hook.uuid,'uuid4',next_uuid):
+  sys.exit(hook._main(SimpleNamespace(config=config)))
 '''
         original = self.f.binding.read_bytes()
         manifest = json.loads(original)
         manifest['schema'] = 'cairn.inbox-recall-binding/2'
         write(self.f.binding,encoded(manifest))
         try:
-            return subprocess.run([*prefix,sys.executable,'-B','-c',script,str(ROOT/'integrations/lifecycle/memory.py'),str(self.f.memory_path)],
+            return subprocess.run([*prefix,sys.executable,'-B','-c',script,str(ROOT/'integrations/lifecycle/memory.py'),str(self.f.memory_path),'controlled' if controlled_ids else 'normal'],
                                   input=self.f.raw,capture_output=True,cwd=self.f.root,env=self.f.env(),timeout=18)
         finally:
             write(self.f.binding,original)
@@ -477,3 +494,75 @@ with patch.object(hook,'load_inbox_recall',return_value=None):
         environment = self.f.env
         self.f.env = lambda:{k:v for k,v in environment().items() if k!='HOME'}
         self.assertEqual(self.pair().stdout,b'{}\n')
+
+    def test_complete_rpc_request_ids_match_with_controlled_randomness(self):
+        build = self.root/'uuid-build'
+        build.mkdir()
+        for name in ('go.mod','go.sum'):
+            shutil.copyfile(ROOT/name,build/name)
+        for name in ('internal','core','localapi'):
+            shutil.copytree(ROOT/name,build/name)
+        package = build/'cmd'/'f02-ids'
+        package.mkdir(parents=True)
+        (package/'main.go').write_text('''package main
+import (
+ "os"
+ "github.com/google/uuid"
+ "github.com/halbritt/cairn/internal/lifecycle/activationipc"
+)
+type sequence struct { n byte }
+func (s *sequence) Read(p []byte) (int,error) {
+ for i:=range p { p[i]=s.n }; s.n++; return len(p),nil
+}
+func main() { uuid.SetRand(&sequence{}); os.Exit(activationipc.Run(os.Args[1:],os.Stdin,os.Stdout,os.Stderr)) }
+''')
+        helper = build/'ids'
+        subprocess.run(['go','build','-buildvcs=false','-o',str(helper),'./cmd/f02-ids'],cwd=build,check=True)
+        self.f.binary.chmod(0o700)
+        write(self.f.binary,helper.read_bytes(),0o500)
+        manifest = json.loads(self.f.binding.read_text())
+        manifest['binary']['sha256'] = sha(helper.read_bytes())
+        write(self.f.binding,encoded(manifest))
+        self.f.receipt['binary'] = manifest['binary']
+        title = 'Handoff: project / Request identity checkpoint'
+        self.charged_grant(workstream=title)
+        self.f.memory.update(context_lifecycle='compact/1',recall_observations=True)
+        self.f.event['source'] = 'compact'
+        self.f.raw = encoded(self.f.event)
+        self.f.publish_configuration()
+        self.checkpoint = dict(id='55555555-5555-4555-8555-555555555555',title=title,
+                               body=title+'\nStatus: unfinished\nContinue the selected work.')
+        directory = Path(self.f.memory['state_dir'])
+        seed = {p.name:(p.read_bytes(),p.stat().st_mode & 0o7777) for p in directory.iterdir()}
+        source = self.source(controlled_ids=True)
+        source_state,source_calls = self.state(),list(self.calls)
+        shutil.rmtree(directory)
+        directory.mkdir(mode=0o700)
+        for name,(raw,mode) in seed.items():
+            write(directory/name,raw,mode)
+        self.calls.clear()
+        candidate = self.f.public('memory')
+        self.assertEqual((candidate.returncode,candidate.stdout,candidate.stderr),(source.returncode,source.stdout,source.stderr))
+        candidate_state = self.state()
+        self.assertEqual(candidate_state.keys(),source_state.keys())
+        for name in source_state:
+            self.assertEqual(scalar_tree(candidate_state[name]),scalar_tree(source_state[name]))
+        for _,_,headers in self.calls:
+            declaration = headers['Cairn-Client-Diagnostics']
+            diagnostic = json.loads(base64.urlsafe_b64decode(declaration+'='*(-len(declaration)%4)))
+            self.assertEqual(diagnostic['origin']['implementation_id'],sha(helper.read_bytes()))
+        actual,expected = [],[]
+        for calls,output in ((self.calls,actual),(source_calls,expected)):
+            for operation,body,headers in calls:
+                body = dict(body)
+                if operation=='recall-observation':
+                    for field in ('elapsed_ms','search_ms','pulls_ms','selector_ms'):
+                        self.assertGreaterEqual(body.pop(field),0)
+                output.append((operation,body))
+        self.assertEqual(actual,expected)  # request_id is retained unchanged
+        requests = [body['request_id'] for op,body in actual if 'request_id' in body]
+        self.assertEqual(requests[0],'00000000-0000-4000-8000-000000000000')
+        self.assertEqual(requests[1],'01010101-0101-4101-8101-010101010101')
+        self.assertEqual(uuid.UUID(requests[2]).version,5)
+        self.assertEqual(requests[3],'03030303-0303-4303-8303-030303030303')
+        self.assertEqual(len(set(requests)),4)

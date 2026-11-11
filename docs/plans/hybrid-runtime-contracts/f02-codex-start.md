@@ -41,7 +41,7 @@ from the server's authenticated principal and observation channel.
 | Claude memory and every other harness | Retained Python; unported here |
 | Coordination/journal/watcher and installer/adapter | Outside author scope |
 
-`scripts/test_f02_start.py` contains 26 process tests, with additional table
+`scripts/test_f02_start.py` contains 27 process tests, with additional table
 cases. Class A cases use producer-shaped configuration, native start events,
 source grant writers, real files/flocks and a private Unix HTTP fixture. The
 candidate enters through the actual receipt-selected public launcher. The
@@ -63,16 +63,22 @@ A separate Go test faults inside the body and asserts its fixed unexpected
 exit-1 diagnostic; it adds no production fault switch.
 
 Wall-clock timestamps and observed elapsed measurements differ between real
-processes and are checked separately. Generated random RPC UUIDs have canonical
-non-nil shape assertions; deterministic request fields, receipt IDs and grants
-are compared unchanged. The fixed whole-pull UUID derivation and unchanged
+processes and are checked separately. The 26 cases using the real private command retain normal randomness and check
+generated RPC UUIDs for canonical non-nil shape. An additional controlled-randomness
+process case compares every complete RPC body, keeping request IDs unchanged,
+including the derived whole-pull and meter IDs. That test uses a temporary Go
+entrypoint which seeds only `uuid.SetRand` before the actual private dispatcher;
+the Source controls only generated UUIDs, retaining its actual CLI/API/body. It
+also asserts the temporary executable identity separately. No production entropy
+knob is added. Deterministic request fields, receipt IDs and grants are compared
+unchanged in every case. The fixed whole-pull UUID derivation and unchanged
 paired arguments are separately covered by the existing checkpoint-refresh
 component tests. Executing identities are asserted separately: the source
 memory file SHA for Python and the actual private executable SHA for Go. Neither
 identity is erased from comparison. These declarations do not authenticate the
 store principal or observation channel.
 
-The 26 process tests pass, as do the four affected Go packages and all 48 F04
+The 27 process tests pass, as do the four affected Go packages and all 48 F04
 regression tests. The retained source corpus runs 494 tests across 27 modules;
 493 execute successfully and one requires `OPENCODE_TEST_BINARY` to name a
 patched native OpenCode build. That unavailable native probe remains a coverage
@@ -96,9 +102,14 @@ construction; subsequent comparisons retain the literal Python body.
 
 All checks run in the shared namespace wrapper, with `CC=gcc`, a `cc` alias to
 gcc, `TZ=America/Los_Angeles`, `TMPDIR=/tmp` and `GOFLAGS=-buildvcs=false`.
-`make check` passes. Disposable `make test-integration` is recorded separately;
-Foundation owns final exact-candidate/trunk integration and any linked-worktree
-Git-clone environment disposition. Focused results do not establish full F02,
+`make check` passes. Disposable `make test-integration` passed all 31 Go packages.
+Its Python stage needed the permitted minimal OpenSSL configuration; resumption
+then reached the known linked-worktree `git clone /work` failure. The later
+independent Python checks pass separately. The source-opening Git-history probe
+and systemd user-manager probes remain unavailable in that namespace, as do
+unsupplied native/semantic worker probes. This is partial integration evidence,
+with Foundation owning the final exact-candidate/trunk and Git environment
+disposition. Focused results do not establish full F02,
 installed qualification, production acceptance or measured usefulness.
 
 During construction the corpus caught Unicode escaping, persisted field order,
