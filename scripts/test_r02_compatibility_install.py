@@ -364,6 +364,22 @@ sys.stdout.buffer.write(result.stdout)
                 self.assertEqual((inspected.returncode, inspected.stderr), (0, b''))
                 self.assertEqual(f.api_calls(), [])
 
+    def test_configuration_bytes_preserve_duplicate_last_and_lossless_opaque_values(self):
+        f = self.fixture('profile-domain')
+        plan = f.configuration_plan()
+        source = Path(plan['memory_config']['path'])
+        raw = source.read_bytes().replace(b'{', b'{"context_bytes":123,', 1)
+        raw = raw[:-1] + b',"opaque":{"key":1,"key":2,"large":9007199254740993123456789,"nan":NaN,"surrogate":"\\ud800"}}\n'
+        source.write_bytes(raw)
+        plan['memory_config']['sha256'] = hashlib.sha256(raw).hexdigest()
+        result = f.installer_call('stage', '--root', str(f.install_root), body=plan)
+        self.assertEqual((result.returncode, result.stderr), (0, b''))
+        root = Path(json.loads(result.stdout)['selection']['path']).parent
+        self.assertEqual((root / 'memory.json').read_bytes(), raw)
+        argv = next(value for label, value in json.loads(result.stdout)['launchers'].items() if label == 'memory:0:13')
+        result = subprocess.run(argv, input=f.raw, capture_output=True, timeout=18, env=f.env())
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b'{}\n', b''))
+
 
 class R02InstalledIssuedTests(InstalledTools, issued.F04IssuedTests):
     """The unchanged F-04 command assertions over real installer output."""

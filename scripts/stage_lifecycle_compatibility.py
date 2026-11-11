@@ -182,7 +182,9 @@ class Assembler:
         for index, pin in enumerate(inputs):
             name = 'memory.json' if index == 0 else 'coordination-' + str(index - 1) + '.json'
             raw = read_selected(pin, 1024 * 1024)
-            config = decoded(raw)
+            # Configuration keeps the source interpreter's duplicate-last and
+            # opaque-value semantics. Only plans/receipts require unique keys.
+            config = json.loads(raw.decode('utf-8'))
             if not isinstance(config, dict) or config.get('inbox_recall_binding') != str(self.generation / 'binding.json'):
                 raise ValueError('profile must already name its new versioned binding path')
             self.payloads[name] = raw

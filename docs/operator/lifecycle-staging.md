@@ -132,6 +132,9 @@ The assembler copies those exact bytes; it does not discover or edit a live
 profile. Credential selectors, collection/account fields, custom state paths
 and unknown configuration fields stay intact. It never opens the credential
 selected by `token_file`.
+Configuration parsing keeps the selected Python source's duplicate-last and
+opaque-value behavior; the stricter unique-key rule applies to installation
+plans and receipts. The copied configuration bytes are not reserialized.
 
 The assembler uses the pinned Foundation material writer to guard the complete
 18-member snapshot, duplicate the declared aliases, construct the exact
