@@ -4,7 +4,6 @@ import fcntl
 import json
 import os
 from pathlib import Path
-import re
 import select
 import signal
 import subprocess
@@ -12,7 +11,6 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
 
 from test_f04_activation import ROOT, SESSION, TURN, Fixture, encoded, oracle, scalar_tree, write, overwrite_fixture
 
@@ -126,33 +124,57 @@ class F04StateTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stderr)['error']['class'],'ValueError')
         self.assertEqual({p.name:p.read_bytes() for p in path.parent.iterdir() if p.is_file()},before)
 
-    @patch.dict(os.environ, GOMAXPROCS='1', GODEBUG='asyncpreemptoff=1')
     def test_real_write_sync_and_rename_failures_preserve_the_publication_boundary(self):
-        # strace counts injections per syscall and TID. Keep ordinal writes on
-        # publication rather than Go's scheduler eventfd. All errno/trace/state
-        # assertions below remain; other concurrency tests use normal scheduling.
+        # Write/sync faults match actual publication fds across all Go threads.
+        # Renames select their exact destination and inject its first call.
+        # No injection depends on per-thread syscall ordinals or scheduling.
+        control=self.fixture('unselected-write-directory')
+        control_trace=control.root/'write-control'
+        result=subprocess.run([sys.executable,'-I','-B',str(ROOT/'scripts/fixture_publication_fault.py'),
+            '--directory',str(control.root/'unselected'),'--nth','1','--trace',str(control_trace),
+            '--',*control.activation_argv()],input=control.raw,capture_output=True,
+            cwd=control.root,env=control.env(),timeout=15)
+        self.assertEqual((result.returncode,result.stdout,result.stderr),(0,b'{"enabled":true}\n',b''))
+        self.assertTrue(self.ledger(control).exists())
+        self.assertFalse(any(json.loads(row)['injected'] for row in control_trace.read_text().splitlines()))
         for operation,number,published_marker,published_state in (
-                ('write',1,False,False),('write','1+',False,False),('fsync',1,False,False),('fsync',2,True,False),
+                ('write',1,False,False),('write',2,True,False),('fsync',1,False,False),('fsync',2,True,False),
                 ('fsync',3,True,False),('fsync',4,True,True),('renameat',1,False,False),('renameat',2,True,False)):
             with self.subTest(operation=operation,number=number):
                 f=self.fixture(operation+str(number))
                 trace=f.root/'fault-syscalls'
-                result=subprocess.run(['/usr/bin/strace','-qq','-f','-yy','-o',str(trace),'-e','trace='+operation,
-                    '-e',f'inject={operation}:error=EIO:when={number}',*f.activation_argv()],input=f.raw,
-                    capture_output=True,cwd=f.root,env=f.env(),timeout=15)
-                self.assertEqual((result.returncode,result.stdout),(1,b''),trace.read_text())
-                if result.stderr:
-                    self.assertEqual(json.loads(result.stderr)['error'],{'class':'OSError','reason':'activation','errno':5})
+                if operation in ('write', 'fsync'):
+                    command=[sys.executable,'-I','-B',str(ROOT/'scripts/fixture_publication_fault.py'),
+                             '--directory',str(self.ledger(f).parent),'--operation',operation,'--nth',str(number),
+                             '--trace',str(trace),'--',*f.activation_argv()]
                 else:
-                    # strace's counter is per Linux task. A migrated Go
-                    # goroutine can hit another first-write injection while
-                    # reporting the original file error. Only an observed
-                    # injected stderr failure permits a missing frame here;
-                    # the public parent treats it as transport failure.
-                    text=trace.read_text()
-                    self.assertEqual(operation,'write',text)
-                    self.assertRegex(text,r'write\(2(?:<[^>]*>)?,[^\n]*= -1 EIO[^\n]*INJECTED')
-                    self.assertRegex(text,r'write\(\d+<'+re.escape(str(self.ledger(f).parent))+r'/[^\n]*= -1 EIO[^\n]*INJECTED')
+                    destination=self.ledger(f).with_suffix('.initialized') if number==1 else self.ledger(f)
+                    command=['/usr/bin/strace','-qq','-f','-yy','-o',str(trace),'-P',str(destination),
+                             '-e','trace=renameat','-e','inject=renameat:error=EIO:when=1',*f.activation_argv()]
+                result=subprocess.run(command,input=f.raw,
+                    capture_output=True,cwd=f.root,env=f.env(),timeout=15)
+                self.assertTrue(trace.is_file(),result.stderr)
+                self.assertEqual((result.returncode,result.stdout),(1,b''),trace.read_text())
+                self.assertEqual(json.loads(result.stderr)['error'],{'class':'OSError','reason':'activation','errno':5})
+                if operation in ('write', 'fsync'):
+                    observations=[json.loads(row) for row in trace.read_text().splitlines()]
+                    faults=[row for row in observations if row['injected']]
+                    self.assertEqual(len(faults),1,observations)
+                    self.assertEqual(faults[0]['publication_call'],number)
+                    self.assertEqual(faults[0]['operation'],operation)
+                    if operation=='fsync' and number in (2,4):
+                        self.assertTrue(faults[0]['directory'])
+                        self.assertEqual(Path(faults[0]['path']),self.ledger(f).parent)
+                    else:
+                        self.assertTrue(faults[0]['regular'])
+                        self.assertEqual(Path(faults[0]['path']).parent,self.ledger(f).parent)
+                    self.assertEqual(faults[0]['errno'],5)
+                    self.assertTrue(all(not row['injected'] for row in observations
+                                        if row['path'] and 'eventfd' in row['path']))
+                else:
+                    injected=[row for row in trace.read_text().splitlines() if 'INJECTED' in row]
+                    self.assertEqual(len(injected),1,trace.read_text())
+                    self.assertIn(str(destination),injected[0])
                 path=self.ledger(f)
                 self.assertEqual(path.with_suffix('.initialized').exists(),published_marker,trace.read_text())
                 self.assertEqual(path.exists(),published_state,trace.read_text())

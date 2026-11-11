@@ -78,6 +78,17 @@ handling without claiming a valid producer. No production entropy/fault switch
 is added. Exact final checks and limitations are recorded in the author result;
 construction runs and clean committed checks are distinct claims.
 
+The B1 repair at `37394947` passed the separate original Start oracle (28
+process tests), the prompt corpus (56), six lifecycle Go packages, all 49 F04
+tests, all nine R04 hook-setting tests and `make check`, with clean commit and
+tree identities before and after each batch. The existing reviewer accepted
+that repair. Full host `make test-integration` passed on its parent `1ec870c9`:
+32 tested Go packages, eight packages without tests and all Python stages,
+including 26 protocol combinations. The repair changes only the Python parent,
+tests and this document. Native OpenCode and optional semantic worker probes
+were not supplied. These checks cover this bounded source tranche; the claimed
+inbox producer and the other cells above remain open.
+
 Rollback uses Release's explicit drain and repin to a retained complete immutable
 snapshot. Production, controller/runtime, failed/F03/native-provider and all other
 existing holds remain. This source change grants no activation or deployment.
