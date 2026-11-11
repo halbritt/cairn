@@ -165,7 +165,15 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
                         row = next(row for row in metadata['rows'] if (row['role'], row['event']) == (role, event))
                         self.assertEqual(row['hook']['timeout'], budget)
                         self.assertEqual(shlex.split(row['hook']['command']), row['argv'])
-                        self.assertEqual(row['argv'], f.installed['launchers'][role + ':' + ('0' if role == 'memory' else '1') + ':' + str(budget)])
+                        launcher = f.installed['launchers'][role + ':' + ('0' if role == 'memory' else '1') + ':' + str(budget)]
+                        self.assertEqual(row['retained_launcher'], launcher)
+                        if role == 'memory':
+                            self.assertEqual(row['checked_launcher'], launcher)
+                            self.assertEqual(row['argv'], launcher)
+                        else:
+                            self.assertEqual(row['implementation'], 'go')
+                            self.assertNotEqual(row['checked_launcher'], launcher)
+                            self.assertEqual(row['argv'], [*row['checked_launcher'], 'hook', '--config', str(f.coord_path)])
                         self.assertEqual(row['hook'].get('async'), True if (harness, role, event) == ('codex', 'memory', 'Stop') else None)
                         limit = 12000 if harness == 'codex' and role == 'memory' and event in ('SessionStart', 'UserPromptSubmit') else None
                         self.assertEqual(row['hook'].get('additionalContextLimit'), limit)
@@ -258,9 +266,9 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
         f = self.fixture('cross-role-plan')
         _, _, metadata = self.selected(f)
         for role, other in (('memory', 'coordination'), ('coordination', 'memory')):
-            with self.subTest(role=role):
-                command = next(row['hook']['command'] for row in metadata['rows']
-                               if (row['role'], row['event']) == (other, 'SessionStart'))
+            row = next(row for row in metadata['rows'] if (row['role'], row['event']) == (other, 'SessionStart'))
+            for command in dict.fromkeys((row['hook']['command'], shlex.join(row['checked_launcher']),
+                                          shlex.join(row['retained_launcher']))):
                 plan = dict(f.hook_plan, id=str(uuid.uuid4()), replace_commands=dict(memory=[], coordination=[]))
                 plan['replace_commands'][role] = [command]
                 result = self.stage(f, plan)
@@ -274,14 +282,15 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
     def test_publication_failure_reconciles_and_interrupted_renderer_joins_its_child(self):
         f = self.fixture('publication')
         real = f.stager
-        for side in ('before', 'after'):
-            with self.subTest(side=side):
+        # Two H-specific Go launchers precede the settings generation.
+        for number, side in ((number, side) for number in (1, 2, 3) for side in ('before', 'after')):
+            with self.subTest(number=number, side=side):
                 f.hook_plan['id'] = str(uuid.uuid4())
-                wrapper, _ = installed.R02CompatibilityInstallationTests.fault_stager(self, f, abort=[1, side])
+                wrapper, _ = installed.R02CompatibilityInstallationTests.fault_stager(self, f, abort=[number, side])
                 f.stager = wrapper
                 result = self.stage(f)
                 self.assertEqual((result.returncode, result.stdout), (1, b''))
-                self.assertEqual((f.hook_root / ('selection-' + f.hook_plan['id'])).exists(), side == 'after')
+                self.assertEqual((f.hook_root / ('selection-' + f.hook_plan['id'])).exists(), number == 3 and side == 'after')
                 f.stager = real
                 selected, _, _ = self.selected(f)
                 repeated, _, _ = self.selected(f)
