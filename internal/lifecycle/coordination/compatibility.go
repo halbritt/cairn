@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,6 +18,7 @@ import (
 	"syscall"
 	"time"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -81,12 +83,159 @@ type CompatibilityContext struct {
 	UID            *uint32
 	RandomBytes    func(int) ([]byte, error)
 
-	currentRaw   []byte
-	current      *value.Value
-	manifest     *value.Value
-	memory       *value.Value
-	coordinators []*value.Value
-	enabled      *bool
+	currentRaw      []byte
+	current         *value.Value
+	manifest        *value.Value
+	memory          *value.Value
+	coordinators    []*value.Value
+	enabled         *bool
+	receiptVerified bool
+}
+
+// CompatibilityClosureMembers lists the 18 canonical module names required in
+// a /3 compatibility receipt closure (lifecycle_compatibility.py:18-23, 95).
+var CompatibilityClosureMembers = [...]string{
+	"lifecycle_bundle.py", "memory.py", "coordination.py", "inbox_recall.py",
+	"inbox_binding.py", "grant_ledger.py", "transcript_recovery.py",
+	"unix_peer_transport.py", "wake_transport.py", "process_scan.py",
+	"codex_queue.py", "claude_channel.py", "opencode_queue.py", "hermes_queue.py",
+	"recall_dispatch.py", "hook_admission.py", "native_session.py",
+	"lifecycle_compatibility.py",
+}
+
+// CompatibilitySelection holds the external /3 compatibility selection flags
+// matching lifecycle_compatibility.py's launch_vector.
+type CompatibilitySelection struct {
+	ReceiptPath   string
+	ReceiptSHA256 string
+	Role          string
+	Entrypoint    string
+	ConfigPath    string
+	HookTimeout   string
+	LaunchRoot    string
+	Shell         string
+	Tail          []string
+	Vector        []string
+	Profile       *value.SourceReaderProfile
+	Now           func() float64
+	Activation    func([]byte) (bool, error)
+}
+
+// NewCompatibilityContext establishes and verifies a /3 compatibility selection
+// before any hook/command execution, matching lifecycle_compatibility.py:86-129.
+func NewCompatibilityContext(sel CompatibilitySelection) (*CompatibilityContext, error) {
+	if sel.Role != "memory" && sel.Role != "coordination" {
+		return nil, preflightError("selection")
+	}
+	if !compatibilityCanonical(sel.ConfigPath) || !compatibilityCanonical(sel.LaunchRoot) || !compatibilityCanonical(sel.Shell) {
+		return nil, preflightError("selection")
+	}
+	if strings.ContainsAny(sel.HookTimeout, "xXpP") {
+		return nil, preflightError("timeout")
+	}
+	timeout, err := strconv.ParseFloat(strings.TrimSpace(sel.HookTimeout), 64)
+	if err != nil || math.IsNaN(timeout) || math.IsInf(timeout, 0) {
+		return nil, preflightError("timeout")
+	}
+	c := &CompatibilityContext{
+		Role:           sel.Role,
+		Entrypoint:     sel.Entrypoint,
+		ConfigPath:     sel.ConfigPath,
+		HookTimeout:    timeout,
+		LaunchRoot:     sel.LaunchRoot,
+		Shell:          sel.Shell,
+		Tail:           sel.Tail,
+		ReceiptPath:    sel.ReceiptPath,
+		ReceiptSHA256:  sel.ReceiptSHA256,
+		Now:            sel.Now,
+		Vector:         sel.Vector,
+		ActivationFunc: sel.Activation,
+		Profile:        sel.Profile,
+	}
+	c.Deadline = c.now() + timeout
+	raw, err := LauncherBytes(sel.Vector, sel.Shell)
+	if err != nil {
+		return nil, preflightError(err.Error())
+	}
+	c.LauncherRaw = raw
+	c.Launcher = LauncherPath(sel.LaunchRoot, raw)
+	if err := c.VerifyReceipt(sel.Profile); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// ParseCompatibilityCommand parses the 8 required /3 selection flags and
+// optional "-- <tail...>" remainder (matching lifecycle_compatibility.py:82-121,
+// 467-474), verifies the receipt, and returns the CompatibilityContext and
+// effective target tail.
+func ParseCompatibilityCommand(args []string, vector []string, prof *value.SourceReaderProfile) (*CompatibilityContext, []string, error) {
+	vals := make(map[string]string, 8)
+	var tail []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			tail = append([]string{"--"}, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "--") {
+			tail = append([]string{}, args[i:]...)
+			break
+		}
+		key, val, hasEq := strings.Cut(arg[2:], "=")
+		switch key {
+		case "receipt", "receipt-sha256", "role", "entrypoint", "config", "hook-timeout", "launch-root", "shell":
+			if !hasEq {
+				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+					return nil, nil, preflightError("missing selection value")
+				}
+				i++
+				val = args[i]
+			}
+			vals[key] = val
+		default:
+			return nil, nil, preflightError("unknown selection flag")
+		}
+	}
+	for _, req := range []string{"receipt", "receipt-sha256", "role", "entrypoint", "config", "hook-timeout", "launch-root", "shell"} {
+		if _, ok := vals[req]; !ok {
+			return nil, nil, preflightError("missing required selection flag")
+		}
+	}
+	if len(tail) > 0 {
+		if tail[0] != "--" {
+			return nil, nil, preflightError("tail separator")
+		}
+		tail = tail[1:]
+	}
+	compat, err := NewCompatibilityContext(CompatibilitySelection{
+		ReceiptPath:   vals["receipt"],
+		ReceiptSHA256: vals["receipt-sha256"],
+		Role:          vals["role"],
+		Entrypoint:    vals["entrypoint"],
+		ConfigPath:    vals["config"],
+		HookTimeout:   vals["hook-timeout"],
+		LaunchRoot:    vals["launch-root"],
+		Shell:         vals["shell"],
+		Tail:          tail,
+		Vector:        vector,
+		Profile:       prof,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	effectiveTail := tail
+	if len(effectiveTail) == 0 {
+		if compat.role() == "memory" {
+			effectiveTail = []string{"--config", compat.ConfigPath}
+		} else {
+			effectiveTail = []string{"hook", "--config", compat.ConfigPath}
+		}
+	}
+	if err := compat.VerifyTail(effectiveTail); err != nil {
+		return nil, nil, err
+	}
+	return compat, effectiveTail, nil
 }
 
 func (c *CompatibilityContext) uid() uint32 {
@@ -214,6 +363,15 @@ func sameDataIdentity(a, b syscall.Stat_t) bool {
 }
 
 func compatibilityOpened(path string, limit int64, uid uint32) ([]byte, string, error) {
+	return compatibilityOpen(path, limit, false, uid)
+}
+
+func compatibilityOpenedBinary(path string, uid uint32) (string, error) {
+	_, sha, err := compatibilityOpen(path, -1, true, uid)
+	return sha, err
+}
+
+func compatibilityOpen(path string, limit int64, binary bool, uid uint32) ([]byte, string, error) {
 	if !compatibilityCanonical(path) {
 		return nil, "", &value.Error{Class: "ValueError", Message: "path"}
 	}
@@ -255,21 +413,36 @@ func compatibilityOpened(path string, limit int64, uid uint32) ([]byte, string, 
 	if err != nil {
 		return nil, "", &os.PathError{Op: "openat", Path: path, Err: err}
 	}
-	return readOpenedFD(fd, path, limit, uid)
+	return readOpenedFD(fd, path, limit, binary, uid)
 }
 
-func readOpenedFD(fd int, path string, limit int64, uid uint32) ([]byte, string, error) {
+func readOpenedFD(fd int, path string, limit int64, binary bool, uid uint32) ([]byte, string, error) {
 	file := os.NewFile(uintptr(fd), path)
 	defer func() { _ = file.Close() }()
 	var s syscall.Stat_t
 	if err := syscall.Fstat(int(file.Fd()), &s); err != nil {
 		return nil, "", &os.PathError{Op: "fstat", Path: path, Err: err}
 	}
-	if s.Mode&syscall.S_IFMT != syscall.S_IFREG || s.Uid != uid || s.Mode&0o022 != 0 {
+	if s.Mode&syscall.S_IFMT != syscall.S_IFREG || s.Uid != uid || s.Mode&0o022 != 0 || (binary && (s.Mode&0o100 == 0 || s.Mode&0o7000 != 0)) {
 		return nil, "", &value.Error{Class: "ValueError", Message: "file"}
 	}
 	if limit >= 0 && s.Size > limit {
 		return nil, "", &value.Error{Class: "ValueError", Message: "size"}
+	}
+	if binary {
+		h := sha256.New()
+		count, err := io.Copy(h, file)
+		if err != nil {
+			return nil, "", err
+		}
+		var end syscall.Stat_t
+		if err := syscall.Fstat(int(file.Fd()), &end); err != nil {
+			return nil, "", &os.PathError{Op: "fstat", Path: path, Err: err}
+		}
+		if count != s.Size || !sameStatIdentity(s, end) {
+			return nil, "", &value.Error{Class: "ValueError", Message: "changed"}
+		}
+		return nil, hex.EncodeToString(h.Sum(nil)), nil
 	}
 	var reader io.Reader = file
 	if limit >= 0 {
@@ -344,10 +517,32 @@ func (c *CompatibilityContext) Config(fallbackProfile *value.SourceReaderProfile
 	return c.current, nil
 }
 
+func decodeCompatibilityReceiptJSON(prof *value.SourceReaderProfile, raw []byte) (*value.Value, error) {
+	if prof != nil {
+		if _, ok := prof.Definition.Readers[SiteCompatibilityReceipt]; ok {
+			return prof.DecodeWithObjectPolicy(SiteCompatibilityReceipt, raw, value.DuplicateReject)
+		}
+		if _, ok := prof.Definition.Readers[SiteConfigRead]; ok {
+			return prof.DecodeWithObjectPolicy(SiteConfigRead, raw, value.DuplicateReject)
+		}
+	}
+	return value.DecodeTextWithObjectPolicy(raw, "utf-8", 0, value.DuplicateReject)
+}
+
+// VerifyReceipt validates the external selection and full /3 compatibility
+// receipt closure on disk, matching lifecycle_compatibility.py:86-118.
+func (c *CompatibilityContext) VerifyReceipt(fallbackProfile *value.SourceReaderProfile) error {
+	_, err := c.ensureReceipt(c.profile(fallbackProfile))
+	return err
+}
+
 func (c *CompatibilityContext) ensureReceipt(prof *value.SourceReaderProfile) (*value.Value, error) {
 	if c.Receipt != nil {
-		if err := c.validateReceiptSelection(c.Receipt); err != nil {
-			return nil, err
+		if !c.receiptVerified {
+			if err := c.validateReceiptSelection(c.Receipt); err != nil {
+				return nil, err
+			}
+			c.receiptVerified = true
 		}
 		return c.Receipt, nil
 	}
@@ -361,7 +556,7 @@ func (c *CompatibilityContext) ensureReceipt(prof *value.SourceReaderProfile) (*
 	if !hexText([]rune(c.ReceiptSHA256), 64) || sha != c.ReceiptSHA256 {
 		return nil, preflightError("receipt pin mismatch")
 	}
-	decoded, err := decodeCompatibilityJSON(prof, SiteCompatibilityReceipt, raw)
+	decoded, err := decodeCompatibilityReceiptJSON(prof, raw)
 	if err != nil || decoded == nil || decoded.Kind != value.Object {
 		return nil, preflightError("receipt decode failed")
 	}
@@ -369,33 +564,281 @@ func (c *CompatibilityContext) ensureReceipt(prof *value.SourceReaderProfile) (*
 		return nil, err
 	}
 	c.Receipt = decoded
+	c.receiptVerified = true
 	return c.Receipt, nil
 }
 
+func hasSurrogateRunes(runes []rune) bool {
+	for _, r := range runes {
+		if r >= 0xd800 && r <= 0xdfff {
+			return true
+		}
+	}
+	return false
+}
+
+func exactReceiptObject(v *value.Value, keys ...string) bool {
+	if v == nil || v.Kind != value.Object || len(v.Members) != len(keys) {
+		return false
+	}
+	for _, k := range keys {
+		if v.Get(k) == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func canonicalReceiptRunes(v *value.Value) bool {
+	if v == nil || v.Kind != value.String || len(v.String) == 0 || v.String[0] != '/' {
+		return false
+	}
+	for _, r := range v.String {
+		if r == 0 {
+			return false
+		}
+	}
+	if len(v.String) == 1 {
+		return true
+	}
+	if v.String[len(v.String)-1] == '/' {
+		return false
+	}
+	start := 1
+	for i := 1; i <= len(v.String); i++ {
+		if i == len(v.String) || v.String[i] == '/' {
+			seg := v.String[start:i]
+			if len(seg) == 0 || (len(seg) == 1 && seg[0] == '.') || (len(seg) == 2 && seg[0] == '.' && seg[1] == '.') {
+				return false
+			}
+			start = i + 1
+		}
+	}
+	return true
+}
+
+func validReceiptDescriptor(d *value.Value, keys ...string) bool {
+	if !exactReceiptObject(d, keys...) || !canonicalReceiptRunes(d.Get("path")) {
+		return false
+	}
+	sha := d.Get("sha256")
+	return sha != nil && sha.Kind == value.String && hexText(sha.String, 64)
+}
+
 func (c *CompatibilityContext) validateReceiptSelection(receipt *value.Value) error {
-	if receipt == nil || receipt.Kind != value.Object {
-		return preflightError("receipt decode failed")
+	role := c.role()
+	if (role != "memory" && role != "coordination") || !compatibilityCanonical(c.ConfigPath) || !compatibilityCanonical(c.LaunchRoot) || !compatibilityCanonical(c.shell()) {
+		return preflightError("selection")
+	}
+	if math.IsNaN(c.HookTimeout) || math.IsInf(c.HookTimeout, 0) {
+		return preflightError("timeout")
+	}
+	if role == "memory" {
+		if c.HookTimeout != 13 && c.HookTimeout != 150 {
+			return preflightError("timeout")
+		}
+	} else if c.HookTimeout != 2 && c.HookTimeout != 15 {
+		return preflightError("timeout")
+	}
+	if !exactReceiptObject(receipt, "schema", "source_revision", "snapshot_root", "members", "bootstrap", "loader", "roles", "aliases", "binary", "binding", "memory_config", "coordination_configs") {
+		return preflightError("receipt")
+	}
+	if !value.SameText(receipt.Get("schema"), "cairn.lifecycle-compatibility/1") || !value.SameText(receipt.Get("bootstrap"), "lifecycle_compatibility.py") || !value.SameText(receipt.Get("loader"), "lifecycle_bundle.py") || !canonicalReceiptRunes(receipt.Get("snapshot_root")) {
+		return preflightError("receipt")
+	}
+	return c.validateReceiptClosureAndPins(role, receipt)
+}
+
+func (c *CompatibilityContext) validateReceiptClosureAndPins(role string, receipt *value.Value) error {
+	srcRev := receipt.Get("source_revision")
+	if srcRev == nil || srcRev.Kind != value.String || hasSurrogateRunes(srcRev.String) {
+		return preflightError("provenance")
+	}
+	roles := receipt.Get("roles")
+	if !exactReceiptObject(roles, "memory", "coordination", "inbox_recall", "inbox_binding") {
+		return preflightError("roles")
+	}
+	for _, rName := range []string{"memory", "coordination", "inbox_recall", "inbox_binding"} {
+		if !value.SameText(roles.Get(rName), rName+".py") {
+			return preflightError("roles")
+		}
+	}
+	aliases := receipt.Get("aliases")
+	if aliases == nil || aliases.Kind != value.Object {
+		return preflightError("roles")
+	}
+	baseNames := make(map[string]bool, len(CompatibilityClosureMembers))
+	expectedClosure := make(map[string]bool, len(CompatibilityClosureMembers)+len(aliases.Members))
+	for _, name := range CompatibilityClosureMembers {
+		baseNames[name] = true
+		expectedClosure[name] = true
+	}
+	for _, m := range aliases.Members {
+		if len(m.Key) == 0 || hasSurrogateRunes(m.Key) {
+			return preflightError("alias")
+		}
+		name := string(m.Key)
+		if name == "." || name == ".." || strings.ContainsRune(name, '/') || strings.ContainsRune(name, '\\') || strings.ContainsRune(name, 0) || baseNames[name] {
+			return preflightError("alias")
+		}
+		if m.Value == nil || m.Value.Kind != value.String || (!value.SameText(m.Value, "memory.py") && !value.SameText(m.Value, "coordination.py")) {
+			return preflightError("alias")
+		}
+		expectedClosure[name] = true
+	}
+	members := receipt.Get("members")
+	if members == nil || members.Kind != value.Object || len(members.Members) != len(expectedClosure) {
+		return preflightError("closure")
+	}
+	for _, m := range members.Members {
+		if hasSurrogateRunes(m.Key) || !expectedClosure[string(m.Key)] {
+			return preflightError("closure")
+		}
+	}
+	if !validReceiptDescriptor(receipt.Get("binary"), "path", "sha256") || !validReceiptDescriptor(receipt.Get("memory_config"), "path", "sha256") || !validReceiptDescriptor(receipt.Get("binding"), "path", "sha256", "schema") {
+		return preflightError("descriptor")
 	}
 	coordList := receipt.Get("coordination_configs")
-	if coordList == nil || coordList.Kind != value.Array || len(coordList.Items) < 1 || len(coordList.Items) > 8 {
-		return preflightError("invalid coordination_configs count")
-	}
-	if c.ConfigPath == "" {
-		return nil
-	}
-	if c.role() == "memory" {
-		memDesc := receipt.Get("memory_config")
-		if memDesc == nil || memDesc.Kind != value.Object || !value.SameText(memDesc.Get("path"), c.ConfigPath) {
-			return preflightError("config is not selected by receipt")
-		}
-		return nil
+	if !value.SameText(receipt.Get("binding").Get("schema"), "cairn.inbox-recall-binding/3") || coordList == nil || coordList.Kind != value.Array || len(coordList.Items) < 1 || len(coordList.Items) > 8 {
+		return preflightError("binding")
 	}
 	for _, item := range coordList.Items {
-		if item != nil && item.Kind == value.Object && value.SameText(item.Get("path"), c.ConfigPath) {
-			return nil
+		if !validReceiptDescriptor(item, "path", "sha256") {
+			return preflightError("descriptor")
 		}
 	}
-	return preflightError("config is not selected by receipt")
+	return c.validateReceiptRoleAndDiskPins(role, receipt, aliases, members, coordList)
+}
+
+func (c *CompatibilityContext) validateReceiptRoleAndDiskPins(role string, receipt, aliases, members, coordList *value.Value) error {
+	if role == "memory" {
+		if !value.SameText(receipt.Get("memory_config").Get("path"), c.ConfigPath) {
+			return preflightError("config role")
+		}
+	} else {
+		matched := false
+		for _, item := range coordList.Items {
+			if value.SameText(item.Get("path"), c.ConfigPath) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return preflightError("config role")
+		}
+	}
+	wantEntry := role + ".py"
+	if c.Entrypoint != wantEntry && !value.SameText(aliases.Get(c.Entrypoint), wantEntry) {
+		return preflightError("entrypoint")
+	}
+	snapshotRootVal := receipt.Get("snapshot_root")
+	if hasSurrogateRunes(snapshotRootVal.String) {
+		return preflightError("receipt")
+	}
+	snapshotRoot := string(snapshotRootVal.String)
+	sources := make(map[string][]byte, len(members.Members))
+	hashes := make(map[string]string, len(members.Members))
+	for _, m := range members.Members {
+		name := string(m.Key)
+		d := m.Value
+		if !exactReceiptObject(d, "sha256", "bytes") {
+			return preflightError("member")
+		}
+		bVal := d.Get("bytes")
+		sVal := d.Get("sha256")
+		if bVal == nil || bVal.Kind != value.Int || sVal == nil || sVal.Kind != value.String || hasSurrogateRunes(sVal.String) || !hexText(sVal.String, 64) {
+			return preflightError("member")
+		}
+		nBytes, err := strconv.ParseInt(bVal.Integer, 10, 64)
+		if err != nil || nBytes < 0 || nBytes > 2097152 {
+			return preflightError("member")
+		}
+		data, h, err := compatibilityOpened(sourceJoin(snapshotRoot, name), 2097152, c.uid())
+		if err != nil || h != string(sVal.String) || int64(len(data)) != nBytes {
+			return preflightError("member pin")
+		}
+		sources[name] = data
+		hashes[name] = h
+	}
+	return c.validateSnapshotAndBinaryPins(snapshotRoot, receipt, aliases, sources, hashes)
+}
+
+func (c *CompatibilityContext) validateSnapshotAndBinaryPins(snapshotRoot string, receipt, aliases *value.Value, sources map[string][]byte, hashes map[string]string) error {
+	identity := CompatibilitySnapshotIdentity(hashes)
+	if filepath.Base(snapshotRoot) != identity {
+		return preflightError("snapshot")
+	}
+	for _, m := range aliases.Members {
+		name := string(m.Key)
+		target := string(m.Value.String)
+		if !bytes.Equal(sources[name], sources[target]) {
+			return preflightError("alias pin")
+		}
+	}
+	binPathVal := receipt.Get("binary").Get("path")
+	binSHAVal := receipt.Get("binary").Get("sha256")
+	if hasSurrogateRunes(binPathVal.String) {
+		return preflightError("binary pin")
+	}
+	binSHA, err := compatibilityOpenedBinary(string(binPathVal.String), c.uid())
+	if err != nil || binSHA != string(binSHAVal.String) {
+		return preflightError("binary pin")
+	}
+	return nil
+}
+
+// CompatibilitySnapshotIdentity computes sha256(json.dumps(hashes, sort_keys=True,
+// separators=(',', ':'), ensure_ascii=True)) matching lifecycle_compatibility.py:113.
+func CompatibilitySnapshotIdentity(hashes map[string]string) string {
+	keys := make([]string, 0, len(hashes))
+	for k := range hashes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var ascii bytes.Buffer
+	ascii.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			ascii.WriteByte(',')
+		}
+		writeASCIIJSONString(&ascii, k)
+		ascii.WriteByte(':')
+		writeASCIIJSONString(&ascii, hashes[k])
+	}
+	ascii.WriteByte('}')
+	sum := sha256.Sum256(ascii.Bytes())
+	return hex.EncodeToString(sum[:])
+}
+
+func writeASCIIJSONString(out *bytes.Buffer, s string) {
+	out.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"', '\\':
+			out.WriteByte('\\')
+			out.WriteRune(r)
+		case '\b':
+			out.WriteString(`\b`)
+		case '\f':
+			out.WriteString(`\f`)
+		case '\n':
+			out.WriteString(`\n`)
+		case '\r':
+			out.WriteString(`\r`)
+		case '\t':
+			out.WriteString(`\t`)
+		default:
+			if r >= 0x20 && r <= 0x7e {
+				out.WriteByte(byte(r))
+			} else if r <= 0xffff {
+				fmt.Fprintf(out, "\\u%04x", r)
+			} else {
+				high, low := utf16.EncodeRune(r)
+				fmt.Fprintf(out, "\\u%04x\\u%04x", high, low)
+			}
+		}
+	}
+	out.WriteByte('"')
 }
 
 func (c *CompatibilityContext) VerifyTail(tail []string) error {
@@ -1493,7 +1936,11 @@ func (c *CLI) InboxCueText(pending, config, agent *value.Value, hookConfigPath s
 	}
 	extra := ""
 	if hookConfigPath != "" && len(c.Command) >= 2 {
-		extra = fmt.Sprintf(", or run `%s %s inbox drain --config %s --agent-id %s --execution-id %s`, which claims one item and prints its exact read, completion and reply commands", shlexQuote(c.Command[0]), shlexQuote(c.Command[1]), shlexQuote(hookConfigPath), nativeText(agentID), nativeText(execID))
+		quotedPrefix := make([]string, len(c.Command))
+		for i, part := range c.Command {
+			quotedPrefix[i] = shlexQuote(part)
+		}
+		extra = fmt.Sprintf(", or run `%s inbox drain --config %s --agent-id %s --execution-id %s`, which claims one item and prints its exact read, completion and reply commands", strings.Join(quotedPrefix, " "), shlexQuote(hookConfigPath), nativeText(agentID), nativeText(execID))
 	}
 	return fmt.Sprintf("Cairn inbox: %s waiting for this session. Native delivery hands them over only at a turn boundary, one per turn. When the current step reaches a safe stopping point, end your turn so they can arrive. If native delivery has not delivered for ~10 minutes, drain your own inbox with `cairn inbox next --token-file %s --agent-id %s --execution-id %s` (see the cairn skill references/events.md)%s. Never claim another session's inbox. This notice repeats only when new items arrive.", strings.Join(parts, ", "), shlexQuote(nativeText(tok)), nativeText(agentID), nativeText(execID), extra), nil
 }

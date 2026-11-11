@@ -1,11 +1,22 @@
-// cairn-lifecycle is the private receipt-selected activation image. It exposes
-// no store or public command dispatcher and has no flag that enables cairn's
-// separately disabled public lifecycle registration.
+// cairn-lifecycle is the private receipt-selected activation and coordination
+// image. It exposes no store or public command dispatcher and has no flag that
+// enables cairn's separately disabled public lifecycle registration.
 package main
 
 import (
-	"github.com/halbritt/cairn/internal/lifecycle/activationipc"
+	"context"
+	"io"
 	"os"
+
+	"github.com/halbritt/cairn/internal/lifecycle/activationipc"
+	"github.com/halbritt/cairn/internal/lifecycle/transcript"
 )
 
-func main() { os.Exit(activationipc.Run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
+func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
+
+func run(args []string, input io.Reader, output, diagnostic io.Writer) int {
+	if len(args) > 0 && args[0] == "coordination" {
+		return transcript.RunCoordinationProcess(context.Background(), args[1:], input, output, diagnostic)
+	}
+	return activationipc.Run(args, input, output, diagnostic)
+}

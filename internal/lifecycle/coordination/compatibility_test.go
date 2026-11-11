@@ -80,7 +80,7 @@ func newCompatFixture(t *testing.T) *compatFixture {
 	}
 	binDir := filepath.Join(root, "bin")
 	cairnBin := filepath.Join(binDir, "cairn")
-	writePrivateFile(t, cairnBin, []byte("#!/bin/sh\nexit 0\n"), 0o700)
+	cairnBinSHA := writePrivateFile(t, cairnBin, []byte("#!/bin/sh\nexit 0\n"), 0o700)
 	sockPath := filepath.Join(root, "sock", "api.sock")
 	writePrivateFile(t, sockPath, []byte("sock"), 0o600)
 	tokPath := filepath.Join(root, "tok", "token")
@@ -119,7 +119,24 @@ func newCompatFixture(t *testing.T) *compatFixture {
 	configPath := filepath.Join(coordRoot, "generations", "selection-fixture", "coordination-0.json")
 	coordSHA := writePrivateFile(t, configPath, encodeFixtureJSON(t, coordCfg), 0o600)
 
-	binDesc := nativeMap("path", cairnBin, "sha256", strings.Repeat("a", 64))
+	hashes := make(map[string]string, len(CompatibilityClosureMembers))
+	memberBodies := make(map[string][]byte, len(CompatibilityClosureMembers))
+	for _, name := range CompatibilityClosureMembers {
+		raw := []byte("# " + name + "\ndef run_checked(*a): return 0\n")
+		sum := sha256.Sum256(raw)
+		hashes[name] = hex.EncodeToString(sum[:])
+		memberBodies[name] = raw
+	}
+	snapID := CompatibilitySnapshotIdentity(hashes)
+	snapshotRoot := filepath.Join(root, "snapshots", snapID)
+	membersObj := value.Mapping()
+	for _, name := range CompatibilityClosureMembers {
+		raw := memberBodies[name]
+		writePrivateFile(t, filepath.Join(snapshotRoot, name), raw, 0o400)
+		membersObj.Set(name, nativeMap("sha256", hashes[name], "bytes", len(raw)))
+	}
+
+	binDesc := nativeMap("path", cairnBin, "sha256", cairnBinSHA)
 	memDesc := nativeMap("path", memCfgPath, "sha256", memSHA)
 	coordDesc := &value.Value{Kind: value.Array, Items: []*value.Value{nativeMap("path", configPath, "sha256", coordSHA)}}
 	manifest := nativeMap(
@@ -131,7 +148,15 @@ func newCompatFixture(t *testing.T) *compatFixture {
 	)
 	bindingSHA := writePrivateFile(t, bindingPath, encodeFixtureJSON(t, manifest), 0o600)
 	receipt := nativeMap(
-		"binding", nativeMap("path", bindingPath, "sha256", bindingSHA),
+		"schema", "cairn.lifecycle-compatibility/1",
+		"source_revision", "test-rev",
+		"snapshot_root", snapshotRoot,
+		"members", membersObj,
+		"bootstrap", "lifecycle_compatibility.py",
+		"loader", "lifecycle_bundle.py",
+		"roles", nativeMap("memory", "memory.py", "coordination", "coordination.py", "inbox_recall", "inbox_recall.py", "inbox_binding", "inbox_binding.py"),
+		"aliases", value.Mapping(),
+		"binding", nativeMap("path", bindingPath, "sha256", bindingSHA, "schema", "cairn.inbox-recall-binding/3"),
 		"binary", binDesc,
 		"memory_config", memDesc,
 		"coordination_configs", coordDesc,
@@ -150,7 +175,7 @@ func newCompatFixture(t *testing.T) *compatFixture {
 
 	compat := &CompatibilityContext{
 		Role:           "coordination",
-		Entrypoint:     "/entry.py",
+		Entrypoint:     "coordination.py",
 		ConfigPath:     configPath,
 		HookTimeout:    15,
 		LaunchRoot:     launchRoot,
@@ -226,10 +251,12 @@ func TestCompatibilityHandoffAndInboxCommandPreflight(t *testing.T) {
 			"correlation_id", "corr-1",
 		),
 	)
+	var storeCalls []string
 	host := NewFileHost(FileHostOptions{
 		Profile:       f.profile,
 		Compatibility: f.compat,
 		Call: func(_ context.Context, _ *value.Value, op string, _ *value.Value, _ NativeCallOptions) (*value.Value, error) {
+			storeCalls = append(storeCalls, op)
 			if op == "event-next" {
 				return nativeMap("delivery", delivery), nil
 			}
@@ -242,6 +269,18 @@ func TestCompatibilityHandoffAndInboxCommandPreflight(t *testing.T) {
 		Compatibility: f.compat,
 		Root:          f.root,
 		Engine:        &RecoveryEngine{Hooks: RecoveryHooks{Alive: func(*value.Value) (bool, error) { return true, nil }}},
+	}
+
+	// If the compatibility launcher is invalid (or Vector is empty), drain fails preflight before claiming (0 store calls).
+	noVecCompat := *f.compat
+	noVecCompat.Vector = nil
+	noVecCompat.LauncherRaw = nil
+	cNoVec := *c
+	cNoVec.Compatibility = &noVecCompat
+	var preOut, preErr bytes.Buffer
+	code, err := cNoVec.RunCLI(context.Background(), []string{"inbox", "drain", "--config", f.configPath, "--agent-id", stage2Agent, "--execution-id", stage2Execution}, strings.NewReader(""), &preOut, &preErr)
+	if err != nil || code != 7 || len(storeCalls) != 0 || !strings.Contains(preOut.String(), `"status": "INVALID_HOST"`) || preErr.Len() != 0 {
+		t.Fatalf("expected drain without vector to fail before event-next: code=%d err=%v calls=%v out=%q stderr=%q", code, err, storeCalls, preOut.String(), preErr.String())
 	}
 	code, result, stderr := stage2CLIResult(t, c, "inbox", "drain", "--config", f.configPath, "--agent-id", stage2Agent, "--execution-id", stage2Execution)
 	if code != 0 || stderr != "" {
@@ -820,4 +859,183 @@ print(json.dumps({"prompt": prompt, "req_ctx_raw": req_ctx_raw, "req_state_raw":
 			t.Fatalf("%s mismatch:\nGo: %q\nPy: %q", tc.key, tc.goVal, nativeText(pyOut.Get(tc.key)))
 		}
 	}
+}
+
+func runPythonVerifierLiteral(t *testing.T, argv []string) bool {
+	t.Helper()
+	pyScript := `import sys
+sys.path.insert(0, "../../../integrations/lifecycle")
+import lifecycle_compatibility as lc
+sys.argv = ["verifier"] + sys.argv[1:]
+try:
+    exec(compile(lc.VERIFIER_LITERAL, "<verifier>", "exec"), {"__name__": "__main__"})
+    print("OK")
+except SystemExit as e:
+    print("OK" if e.code == 0 else "REFUSED")
+`
+	res, err := (journal.CommandRunner{}).Run(context.Background(), append([]string{"/usr/bin/python3", "-I", "-B", "-c", pyScript}, argv...), "")
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("python verifier script failed: err=%v exit=%d stderr=%s", err, res.ExitCode, res.Stderr)
+	}
+	out := strings.TrimSpace(res.Stdout)
+	if out != "OK" && out != "REFUSED" {
+		t.Fatalf("unexpected python verifier output: %q (argv=%v)", out, argv)
+	}
+	return out == "OK"
+}
+
+func TestCompatibilityReceiptVerifierPythonParity(t *testing.T) {
+	baseArgv := func(f *compatFixture) []string {
+		return []string{
+			"--receipt", f.receiptPath,
+			"--receipt-sha256", f.compat.ReceiptSHA256,
+			"--role", "coordination",
+			"--entrypoint", "coordination.py",
+			"--config", f.configPath,
+			"--hook-timeout", "15",
+			"--launch-root", f.launchRoot,
+			"--shell", DefaultCompatibilityShell,
+			"--", "inbox", "drain",
+		}
+	}
+	readRaw := func(p string) []byte {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	checkParity := func(name string, f *compatFixture, argv []string, wantOK bool) {
+		t.Helper()
+		_, _, goErr := ParseCompatibilityCommand(argv, f.compat.Vector, f.profile)
+		goOK := goErr == nil
+		pyOK := runPythonVerifierLiteral(t, argv)
+		if goOK != wantOK || pyOK != wantOK {
+			t.Fatalf("%s parity mismatch: wantOK=%v goOK=%v (err=%v) pyOK=%v", name, wantOK, goOK, goErr, pyOK)
+		}
+	}
+
+	fValid := newCompatFixture(t)
+	checkParity("valid_base", fValid, baseArgv(fValid), true)
+	if err := fValid.compat.VerifyReceipt(fValid.profile); err != nil {
+		t.Fatalf("VerifyReceipt on valid fixture failed: %v", err)
+	}
+	if _, _, err := ParseCompatibilityCommand(baseArgv(fValid), nil, fValid.profile); err == nil {
+		t.Fatal("expected ParseCompatibilityCommand without a launch vector to fail closed")
+	}
+
+	// Valid receipt with non-ASCII alias (`coord_選.py` -> `coordination.py`) and dash-prefixed alias (`-x.py` -> `coordination.py`).
+	fAlias := newCompatFixture(t)
+	recAlias, err := value.DecodeBytes(readRaw(fAlias.receiptPath), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapRootOld := nativeText(recAlias.Get("snapshot_root"))
+	coordRaw := readRaw(filepath.Join(snapRootOld, "coordination.py"))
+	coordSum := sha256.Sum256(coordRaw)
+	coordHex := hex.EncodeToString(coordSum[:])
+	recAlias.Get("aliases").Set("coord_選.py", value.Text("coordination.py"))
+	recAlias.Get("aliases").Set("-x.py", value.Text("coordination.py"))
+	recAlias.Get("members").Set("coord_選.py", nativeMap("sha256", coordHex, "bytes", len(coordRaw)))
+	recAlias.Get("members").Set("-x.py", nativeMap("sha256", coordHex, "bytes", len(coordRaw)))
+	hashes := make(map[string]string)
+	for _, m := range recAlias.Get("members").Members {
+		hashes[string(m.Key)] = nativeText(m.Value.Get("sha256"))
+	}
+	snapRootNew := filepath.Join(filepath.Dir(snapRootOld), CompatibilitySnapshotIdentity(hashes))
+	if err := os.Rename(snapRootOld, snapRootNew); err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(t, filepath.Join(snapRootNew, "coord_選.py"), coordRaw, 0o400)
+	writePrivateFile(t, filepath.Join(snapRootNew, "-x.py"), coordRaw, 0o400)
+	recAlias.Set("snapshot_root", value.Text(snapRootNew))
+	fAlias.compat.ReceiptSHA256 = writePrivateFile(t, fAlias.receiptPath, encodeFixtureJSON(t, recAlias), 0o600)
+	aliasArgv := baseArgv(fAlias)
+	aliasArgv[7] = "coord_選.py"
+	checkParity("valid_non_ascii_alias", fAlias, aliasArgv, true)
+
+	// `--entrypoint=-x.py` is accepted by both, whereas separate `--entrypoint -x.py` is refused by both.
+	dashEqArgv := append([]string{"--entrypoint=-x.py"}, baseArgv(fAlias)...)
+	// Remove the separate `--entrypoint coordination.py` pair at indices 7..8.
+	dashEqArgv = append(dashEqArgv[:7], dashEqArgv[9:]...)
+	checkParity("valid_dash_alias_equals_form", fAlias, dashEqArgv, true)
+	dashSepArgv := baseArgv(fAlias)
+	dashSepArgv[7] = "-x.py"
+	checkParity("refuse_dash_alias_separate_form", fAlias, dashSepArgv, false)
+
+	// Refusal cases: selection, timeout (including hex floats), receipt pin, duplicate key, fields/schema/provenance/roles/aliases/closure/pins/binary.
+	badRole := baseArgv(fValid)
+	badRole[5] = "other"
+	checkParity("refuse_role", fValid, badRole, false)
+	badTimeout := baseArgv(fValid)
+	badTimeout[11] = "16"
+	checkParity("refuse_timeout_range", fValid, badTimeout, false)
+	for _, hexTimeout := range []string{"15x", "0xfp0", "0x1.ep3", "0XFP0"} {
+		badTimeoutSyntax := baseArgv(fValid)
+		badTimeoutSyntax[11] = hexTimeout
+		checkParity("refuse_timeout_"+hexTimeout, fValid, badTimeoutSyntax, false)
+	}
+	badShell := baseArgv(fValid)
+	badShell[15] = "bin/sh"
+	checkParity("refuse_shell", fValid, badShell, false)
+	badPin := baseArgv(fValid)
+	badPin[3] = strings.Repeat("0", 64)
+	checkParity("refuse_receipt_pin", fValid, badPin, false)
+	noSep := append(baseArgv(fValid)[:16:16], "inbox", "drain")
+	checkParity("refuse_missing_separator", fValid, noSep, false)
+
+	mutateReceipt := func(name string, mutate func(f *compatFixture, rec *value.Value) []byte) {
+		f := newCompatFixture(t)
+		rec, err := value.DecodeBytes(readRaw(f.receiptPath), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw := mutate(f, rec)
+		if raw == nil {
+			raw = encodeFixtureJSON(t, rec)
+		}
+		f.compat.ReceiptSHA256 = writePrivateFile(t, f.receiptPath, raw, 0o600)
+		checkParity(name, f, baseArgv(f), false)
+	}
+	mutateReceipt("refuse_duplicate_key", func(_ *compatFixture, rec *value.Value) []byte {
+		raw := encodeFixtureJSON(t, rec)
+		return append([]byte(`{"schema":"cairn.lifecycle-compatibility/1",`), raw[1:]...)
+	})
+	mutateReceipt("refuse_extra_field", func(_ *compatFixture, rec *value.Value) []byte {
+		rec.Set("extra", value.Text("1"))
+		return nil
+	})
+	mutateReceipt("refuse_provenance_surrogate", func(_ *compatFixture, rec *value.Value) []byte {
+		return bytes.Replace(encodeFixtureJSON(t, rec), []byte(`"test-rev"`), []byte(`"rev-\ud800"`), 1)
+	})
+	mutateReceipt("refuse_binding_schema", func(_ *compatFixture, rec *value.Value) []byte {
+		rec.Get("binding").Set("schema", value.Text("cairn.inbox-recall-binding/2"))
+		return nil
+	})
+	mutateReceipt("refuse_closure_mismatch", func(_ *compatFixture, rec *value.Value) []byte {
+		rec.Get("aliases").Set("extra.py", value.Text("coordination.py"))
+		return nil
+	})
+	mutateReceipt("refuse_snapshot_identity", func(f *compatFixture, rec *value.Value) []byte {
+		oldSnap := nativeText(rec.Get("snapshot_root"))
+		wrongSnap := filepath.Join(filepath.Dir(oldSnap), strings.Repeat("b", 64))
+		_ = os.Rename(oldSnap, wrongSnap)
+		rec.Set("snapshot_root", value.Text(wrongSnap))
+		return nil
+	})
+	mutateReceipt("refuse_member_bytes_bool", func(_ *compatFixture, rec *value.Value) []byte {
+		rec.Get("members").Get("coordination.py").Set("bytes", value.Boolean(true))
+		return nil
+	})
+	mutateReceipt("refuse_member_disk_tamper", func(_ *compatFixture, rec *value.Value) []byte {
+		snap := nativeText(rec.Get("snapshot_root"))
+		p := filepath.Join(snap, "coordination.py")
+		_ = os.Chmod(p, 0o600)
+		_ = os.WriteFile(p, []byte("# tampered\n"), 0o400)
+		return nil
+	})
+	mutateReceipt("refuse_binary_not_executable", func(_ *compatFixture, rec *value.Value) []byte {
+		_ = os.Chmod(nativeText(rec.Get("binary").Get("path")), 0o600)
+		return nil
+	})
 }

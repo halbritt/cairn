@@ -554,6 +554,11 @@ func (c *CLI) advanceCompact(ctx context.Context, config *value.Value, path stri
 	if !nativeEqual(fresh.Get("attempt_id"), oldID) || !nativeEqual(intent.Get("request_id"), oldID) {
 		return 0, nativeRefusal("STALE_SESSION", "native batch item changed during advance")
 	}
+	if c.Compatibility != nil {
+		if _, err := c.Compatibility.IssuedArgv([]string{"inbox"}); err != nil {
+			return 0, err
+		}
+	}
 	request := nativeMap("request_id", requestID, "session", attempt.Get("session"), "attempt_id", oldID, "version", 1)
 	s := &NativeSession{Config: config, Record: state, Path: path, Host: c.Host}
 	var result *value.Value

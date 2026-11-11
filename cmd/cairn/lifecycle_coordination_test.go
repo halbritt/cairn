@@ -619,15 +619,13 @@ func TestLifecycleCoordinationMemoryBindingValidation(t *testing.T) {
 }
 
 func TestLifecycleCoordinationHomeAndClaimInstant(t *testing.T) {
-	fsEmpty := lifecycleFilesystemRoutes{
-		lookupEnv: func(k string) (string, bool) {
-			if k == "HOME" {
-				return "", true
-			}
-			return "", false
-		},
-	}
-	homeRunes, err := fsEmpty.Home()
+	profEmpty := newLifecycleCoordinationProfile("/tmp", func(string) string { return "" }, func(k string) (string, bool) {
+		if k == "HOME" {
+			return "", true
+		}
+		return "", false
+	})
+	homeRunes, err := profEmpty.Routes.Filesystem().Home()
 	if err != nil || string(homeRunes) != "/" {
 		t.Fatalf("HOME=\"\" must return \"/\" (matching Path.home()), got=%q err=%v", string(homeRunes), err)
 	}

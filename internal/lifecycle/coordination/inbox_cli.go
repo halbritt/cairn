@@ -484,6 +484,11 @@ func (c *CLI) DrainCommand(ctx context.Context, argv []string, out io.Writer) (i
 	if err != nil {
 		return 0, err
 	}
+	if c.Compatibility != nil {
+		if _, err := c.Compatibility.IssuedArgv([]string{"inbox"}); err != nil {
+			return 0, err
+		}
+	}
 	claimed, err := c.Host.Call(ctx, config, "event-next", nativeMap("repo", repo, "lease_seconds", value.IntegerText(seconds.String())), NativeCallOptions{Session: session})
 	if err != nil {
 		return 0, err
