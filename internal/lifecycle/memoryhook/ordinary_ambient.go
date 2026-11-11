@@ -284,7 +284,7 @@ func ambientRecall(ctx context.Context, client *memoryclient.Client, event, stat
 				seen.Members = seen.Members[len(seen.Members)-256:]
 			}
 		}
-	} else if number(status.Get("rejected").Get("unavailable")) > 0 {
+	} else if len(previews) > 0 && number(status.Get("rejected").Get("unavailable")) > 0 {
 		warning := "Optional body unavailable; search again before relying on its preview.\n"
 		if len(warning)+len(body) <= budget {
 			body = warning + body

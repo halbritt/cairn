@@ -432,5 +432,87 @@ class OrdinaryHostTests(unittest.TestCase):
                 if name!='provider':self.assertFalse(Path(self.f.memory['state_dir']).exists())
                 self.f.memory.pop('inbox_recall_binding',None);self.f.memory.pop('semantic_fallback',None)
 
+    def unavailable_preview_pair(self, relevant):
+        # B-1: a confirmed whole read can be charged and then rejected for
+        # changed version. Only a remaining preview justifies the warning.
+        self.f.memory.pop('recall_mode')
+        self.f.memory.update(semantic_fallback=False,recall_observations=True)
+        self.f.publish_configuration()
+        self.selected=[dict(record=dict(record_id=SESSION,version=1,body='Required project decision\nKeep the current host contract.'),mandatory=True,reason='required',evidence=[],authority=[],conflicts=[])]
+        entry=self.optional_note('Unrelated gardening context\nUse a different planting season.')
+        entry['summary']='lifecycle recall implementation' if relevant else 'Unrelated gardening context'
+        charged=[]
+        def changed_version(request,response):
+            response['selection']['record']['version']=99
+            charged.append(response['credits_remaining'])
+        self.expand_transform=changed_version
+        trace=self.f.root/'invocation-trace';trace.mkdir(mode=0o700)
+        source=self.source()
+        expected_state=self.state();expected_calls=list(self.calls)
+        expected_trace=[json.loads(line) for line in (trace/'trace.jsonl').read_text().splitlines()]
+        self.assertEqual((self.confirmed_expands,charged),(1,[3]))
+        shutil.rmtree(self.f.memory['state_dir'])
+        (trace/'trace.jsonl').unlink();self.calls.clear();charged.clear()
+        candidate=subprocess.run([str(self.binary),'memory','--config',str(self.f.memory_path)],input=self.f.raw,
+                                 cwd=self.f.root,env=self.f.env(),capture_output=True,timeout=18)
+        actual_state=self.state()
+        actual_trace=[json.loads(line) for line in (trace/'trace.jsonl').read_text().splitlines()]
+        self.assertEqual((self.confirmed_expands,charged),(1,[3]))
+        actual_stdout,actual_arguments=self.normalized_stream(candidate.stdout)
+        expected_stdout,expected_arguments=self.normalized_stream(source.stdout)
+        self.assertEqual((candidate.returncode,actual_stdout,candidate.stderr),(source.returncode,expected_stdout,source.stderr))
+        self.assertEqual(candidate.returncode,0)
+        self.assertEqual(scalar_tree(actual_state),scalar_tree(expected_state))
+        self.assertEqual([op for op,_,_ in self.calls],['version','index','expand','recall-observation'])
+        self.assertEqual([op for op,_,_ in self.calls],[op for op,_,_ in expected_calls])
+        for calls,arguments in ((self.calls,actual_arguments),(expected_calls,expected_arguments)):
+            if relevant:
+                self.check_pull_intents(calls,arguments)
+            else:
+                # No caller pull intent is displayed in this branch. The
+                # private whole-read UUID must still be canonical UUIDv5.
+                self.assertEqual(arguments,[])
+                ident=next(body['request_id'] for op,body,_ in calls if op=='expand')
+                self.assertEqual(str(uuid.UUID(ident)),ident)
+                self.assertEqual(uuid.UUID(ident).version,5)
+        for (op,actual,headers),(_,expected,source_headers) in zip(self.calls,expected_calls):
+            actual,expected=dict(actual),dict(expected)
+            for request in (actual,expected):
+                ident=request.pop('request_id',None)
+                if op!='version':self.assertEqual(str(uuid.UUID(ident)),ident)
+                if op=='recall-observation':
+                    for key in ('elapsed_ms','search_ms','pulls_ms','selector_ms'):self.assertGreaterEqual(request.pop(key),0)
+            self.assertEqual(actual,expected)
+            for declared,image in ((headers,sha(self.binary.read_bytes())),(source_headers,sha((start_fixture.ROOT/'integrations/lifecycle/memory.py').read_bytes()))):
+                self.assertEqual(declared['Authorization'],'Bearer f02-synthetic-token')
+                raw=declared['Cairn-Client-Diagnostics'];diagnostic=json.loads(base64.urlsafe_b64decode(raw+'='*(-len(raw)%4)))
+                self.assertEqual(diagnostic['origin']['component'],'lifecycle-memory')
+                self.assertEqual(diagnostic['origin']['implementation_id'],image)
+        for records in (actual_trace,expected_trace):
+            self.assertEqual([row['kind'] for row in records],['entry','parsed','exit'])
+            self.assertEqual(len({row['inv'] for row in records}),1)
+            for record in records:
+                for key in ('at','duration_ms','pid','ppid'):
+                    if key in record:self.assertGreaterEqual(record.pop(key),0)
+                self.assertRegex(record.pop('inv'),r'^[0-9a-f]{32}$')
+        self.assertEqual(actual_trace,expected_trace)
+        context=json.loads(candidate.stdout)['hookSpecificOutput']['additionalContext']
+        payload=self.context(candidate)
+        self.assertEqual(bool(payload['index']),relevant)
+        self.assertEqual('Optional body unavailable; search again before relying on its preview.\n' in context,relevant)
+        status=actual_state['ses_OrdinaryA1.json']['last_recall']
+        self.assertEqual(status['rejected'],{'unavailable':1})
+        self.assertEqual(status['records'],[dict(record_id=entry['record_id'],version=3)] if relevant else [])
+        self.assertEqual(status['bytes'],len(context.encode()))
+        self.assertEqual(actual_trace[-1]['context_bytes'],len(context.encode()))
+        report=next(body for op,body,_ in self.calls if op=='recall-observation')
+        self.assertEqual((report['pull_calls'],report['injected_bytes']),(1,len(context.encode())))
+
+    def test_unavailable_body_without_displayed_preview_keeps_only_required_context(self):
+        self.unavailable_preview_pair(False)
+
+    def test_unavailable_body_with_relevant_preview_displays_warning(self):
+        self.unavailable_preview_pair(True)
+
 
 if __name__=='__main__':unittest.main()
