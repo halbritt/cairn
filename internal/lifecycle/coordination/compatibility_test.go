@@ -39,6 +39,7 @@ func writePrivateFile(t *testing.T, path string, data []byte, perm os.FileMode) 
 	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	_ = os.Chmod(path, 0o600)
 	if err := os.WriteFile(path, data, perm); err != nil {
 		t.Fatal(err)
 	}
@@ -1038,4 +1039,291 @@ func TestCompatibilityReceiptVerifierPythonParity(t *testing.T) {
 		_ = os.Chmod(nativeText(rec.Get("binary").Get("path")), 0o600)
 		return nil
 	})
+}
+
+func TestCompatibilityWatchMultiProfileAndPreflight(t *testing.T) {
+	f := newCompatFixture(t)
+	cfgDir := filepath.Dir(f.configPath)
+	secondStateDir := filepath.Join(f.root, "state", "fixture-two")
+	if err := os.MkdirAll(filepath.Join(secondStateDir, "inbox"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.config.Set("config_home", value.Text(filepath.Join(f.root, "home-0")))
+	coord0SHA := writePrivateFile(t, f.configPath, encodeFixtureJSON(t, f.config), 0o600)
+	secondCfg := nativeClone(f.config)
+	secondCfg.Set("state_dir", value.Text(secondStateDir))
+	secondCfg.Set("config_home", value.Text(filepath.Join(f.root, "home-1")))
+	secondCfg.Set("binding", value.Text("fixture-two"))
+	secondPath := filepath.Join(cfgDir, "coordination-1.json")
+	secondSHA := writePrivateFile(t, secondPath, encodeFixtureJSON(t, secondCfg), 0o600)
+
+	receipt, err := value.DecodeBytes(func() []byte { b, _ := os.ReadFile(f.receiptPath); return b }(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordDesc := &value.Value{Kind: value.Array, Items: []*value.Value{
+		nativeMap("path", f.configPath, "sha256", coord0SHA),
+		nativeMap("path", secondPath, "sha256", secondSHA),
+	}}
+	receipt.Set("coordination_configs", coordDesc)
+	manifest, err := value.DecodeBytes(func() []byte { b, _ := os.ReadFile(f.bindingPath); return b }(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Set("coordination_configs", coordDesc)
+	bindingSHA := writePrivateFile(t, f.bindingPath, encodeFixtureJSON(t, manifest), 0o600)
+	receipt.Get("binding").Set("sha256", value.Text(bindingSHA))
+	f.compat.ReceiptSHA256 = writePrivateFile(t, f.receiptPath, encodeFixtureJSON(t, receipt), 0o600)
+	f.compat.Receipt = nil
+	f.compat.Vector[8] = f.compat.ReceiptSHA256
+	launcherRaw, err := LauncherBytes(f.compat.Vector, DefaultCompatibilityShell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstLauncher := LauncherPath(f.launchRoot, launcherRaw)
+	writePrivateFile(t, firstLauncher, launcherRaw, 0o500)
+	secondVec := vectorWithConfig(f.compat.Vector, f.configPath, secondPath)
+	secondLauncherRaw, err := LauncherBytes(secondVec, DefaultCompatibilityShell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondLauncher := LauncherPath(f.launchRoot, secondLauncherRaw)
+	writePrivateFile(t, secondLauncher, secondLauncherRaw, 0o500)
+
+	args := []string{
+		"--receipt", f.receiptPath,
+		"--receipt-sha256", f.compat.ReceiptSHA256,
+		"--role", "coordination",
+		"--entrypoint", "coordination.py",
+		"--config", f.configPath,
+		"--hook-timeout", "15",
+		"--launch-root", f.launchRoot,
+		"--shell", DefaultCompatibilityShell,
+		"--", "watch", "--config-dir", cfgDir, "--once",
+	}
+	compat, tail, err := ParseCompatibilityCommand(args, f.compat.Vector, f.profile)
+	if err != nil {
+		t.Fatalf("ParseCompatibilityCommand watch failed: %v", err)
+	}
+	compat.Now = func() float64 { return compat.Deadline + 60 }
+	if compat.isHook() {
+		t.Fatal("expected isHook() == false for watch tail")
+	}
+	if rem, err := compat.Remaining(30 * time.Second); err != nil || rem != 30*time.Second {
+		t.Fatalf("expected watch Remaining uncapped at 30s past hook deadline, got rem=%v err=%v", rem, err)
+	}
+
+	host := NewFileHost(FileHostOptions{
+		Profile:       f.profile,
+		Compatibility: compat,
+	})
+	cli := &CLI{
+		Host:          host,
+		Profile:       f.profile,
+		Compatibility: compat,
+		Root:          f.root,
+	}
+	var outBuf, errBuf bytes.Buffer
+	code, err := cli.RunCLI(context.Background(), tail, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 0 || outBuf.Len() != 0 || errBuf.Len() != 0 {
+		t.Fatalf("expected watch --once exit 0, got code=%d err=%v out=%q stderr=%q", code, err, outBuf.String(), errBuf.String())
+	}
+	if _, err := compat.Config(f.profile, secondPath); err != nil {
+		t.Fatalf("expected watch Config(secondPath) ok: %v", err)
+	}
+	issuedSecond, err := compat.IssuedArgv([]string{"inbox"})
+	if err != nil || len(issuedSecond) != 2 || issuedSecond[0] != secondLauncher {
+		t.Fatalf("expected IssuedArgv on secondPath to select secondLauncher=%q, got %v err=%v", secondLauncher, issuedSecond, err)
+	}
+	if _, err := compat.Config(f.profile, f.configPath); err != nil {
+		t.Fatalf("expected watch Config(firstPath) ok: %v", err)
+	}
+	issuedFirst, err := compat.IssuedArgv([]string{"inbox"})
+	if err != nil || len(issuedFirst) != 2 || issuedFirst[0] != firstLauncher {
+		t.Fatalf("expected IssuedArgv on firstPath to select firstLauncher=%q, got %v err=%v", firstLauncher, issuedFirst, err)
+	}
+
+	// Missing second launcher fails preflight with exit 1 and zero lock effect.
+	_ = os.Remove(secondLauncher)
+	_ = os.Remove(filepath.Join(cfgDir, ".watch.lock"))
+	outBuf.Reset()
+	errBuf.Reset()
+	code, err = cli.RunCLI(context.Background(), tail, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || outBuf.Len() != 0 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatalf("expected preflight failure on missing second launcher, got code=%d err=%v stderr=%q", code, err, errBuf.String())
+	}
+	if _, statErr := os.Stat(filepath.Join(cfgDir, ".watch.lock")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected zero .watch.lock effect on missing second launcher, got statErr=%v", statErr)
+	}
+	writePrivateFile(t, secondLauncher, secondLauncherRaw, 0o500)
+
+	// Extra unpinned JSON file in --config-dir fails preflight with exit 1 and zero lock effect in a fresh dir.
+	extraPath := filepath.Join(cfgDir, "unpinned.json")
+	writePrivateFile(t, extraPath, encodeFixtureJSON(t, secondCfg), 0o600)
+	_ = os.Remove(filepath.Join(cfgDir, ".watch.lock"))
+	outBuf.Reset()
+	errBuf.Reset()
+	code, err = cli.RunCLI(context.Background(), tail, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || outBuf.Len() != 0 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatalf("expected preflight failure on extra unpinned config, got code=%d err=%v stderr=%q", code, err, errBuf.String())
+	}
+	if _, statErr := os.Stat(filepath.Join(cfgDir, ".watch.lock")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected zero .watch.lock effect on preflight failure, got statErr=%v", statErr)
+	}
+	_ = os.Remove(extraPath)
+
+	// Tampered binding.json when coordination_configs still match fails CheckedBinding (W6) before .watch.lock.
+	writePrivateFile(t, secondPath, encodeFixtureJSON(t, secondCfg), 0o600)
+	writePrivateFile(t, f.bindingPath, append(encodeFixtureJSON(t, manifest), ' '), 0o600)
+	_ = os.Remove(filepath.Join(cfgDir, ".watch.lock"))
+	outBuf.Reset()
+	errBuf.Reset()
+	code, err = cli.RunCLI(context.Background(), tail, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatalf("expected preflight failure on tampered binding.json (W6), got code=%d err=%v stderr=%q", code, err, errBuf.String())
+	}
+	if _, statErr := os.Stat(filepath.Join(cfgDir, ".watch.lock")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected zero .watch.lock effect on tampered binding.json, got statErr=%v", statErr)
+	}
+	writePrivateFile(t, f.bindingPath, encodeFixtureJSON(t, manifest), 0o600)
+
+	// Tampered second config bytes fail preflight before acquiring .watch.lock.
+	writePrivateFile(t, secondPath, append(encodeFixtureJSON(t, secondCfg), ' '), 0o600)
+	outBuf.Reset()
+	errBuf.Reset()
+	code, err = cli.RunCLI(context.Background(), tail, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatalf("expected preflight failure on tampered second config, got code=%d err=%v stderr=%q", code, err, errBuf.String())
+	}
+	if _, statErr := os.Stat(filepath.Join(cfgDir, ".watch.lock")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected zero .watch.lock effect on tampered config preflight failure, got statErr=%v", statErr)
+	}
+
+	// Unbound multi-profile selection (enabled=false, no inbox_recall_binding) also passes preflight.
+	memCfgPath, err := sourcePathText(f.profile, receipt.Get("memory_config").Get("path"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	memCfg, err := value.DecodeBytes(func() []byte { b, _ := os.ReadFile(memCfgPath); return b }(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativePop(memCfg, "inbox_recall_binding")
+	memSHA := writePrivateFile(t, memCfgPath, encodeFixtureJSON(t, memCfg), 0o600)
+	nativePop(f.config, "inbox_recall_binding")
+	coord0SHA = writePrivateFile(t, f.configPath, encodeFixtureJSON(t, f.config), 0o600)
+	nativePop(secondCfg, "inbox_recall_binding")
+	coord1SHA := writePrivateFile(t, secondPath, encodeFixtureJSON(t, secondCfg), 0o600)
+	unboundCoordDesc := &value.Value{Kind: value.Array, Items: []*value.Value{
+		nativeMap("path", f.configPath, "sha256", coord0SHA),
+		nativeMap("path", secondPath, "sha256", coord1SHA),
+	}}
+	manifest.Set("enabled", &value.Value{Kind: value.Bool, Boolean: false})
+	manifest.Get("memory_config").Set("sha256", value.Text(memSHA))
+	manifest.Set("coordination_configs", unboundCoordDesc)
+	unboundBindingSHA := writePrivateFile(t, f.bindingPath, encodeFixtureJSON(t, manifest), 0o600)
+	receipt.Get("memory_config").Set("sha256", value.Text(memSHA))
+	receipt.Set("coordination_configs", unboundCoordDesc)
+	receipt.Get("binding").Set("sha256", value.Text(unboundBindingSHA))
+	unboundReceiptSHA := writePrivateFile(t, f.receiptPath, encodeFixtureJSON(t, receipt), 0o600)
+	args[3] = unboundReceiptSHA
+	unboundVector := []string{
+		"/usr/bin/python3", "-I", "-S", "-c", "pass",
+		"--receipt", f.receiptPath, "--receipt-sha256", unboundReceiptSHA,
+		"--role", "coordination", "--entrypoint", "coordination.py",
+		"--config", f.configPath, "--hook-timeout", "15",
+	}
+	unboundLauncherRaw, err := LauncherBytes(unboundVector, DefaultCompatibilityShell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(t, LauncherPath(f.launchRoot, unboundLauncherRaw), unboundLauncherRaw, 0o500)
+	unboundSecondVec := vectorWithConfig(unboundVector, f.configPath, secondPath)
+	unboundSecondLauncherRaw, err := LauncherBytes(unboundSecondVec, DefaultCompatibilityShell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unboundSecondLauncher := LauncherPath(f.launchRoot, unboundSecondLauncherRaw)
+	writePrivateFile(t, unboundSecondLauncher, unboundSecondLauncherRaw, 0o500)
+	bindingsDir := filepath.Join(f.root, "bindings")
+	firstBindingsPath := filepath.Join(bindingsDir, "codex-one.json")
+	writePrivateFile(t, firstBindingsPath, encodeFixtureJSON(t, f.config), 0o600)
+	secondBindingsPath := filepath.Join(bindingsDir, "codex-two.json")
+	writePrivateFile(t, secondBindingsPath, encodeFixtureJSON(t, secondCfg), 0o600)
+	_ = os.Remove(filepath.Join(cfgDir, ".watch.lock"))
+	args[len(args)-2] = bindingsDir
+	unboundCompat, unboundTail, err := ParseCompatibilityCommand(args, unboundVector, f.profile)
+	if err != nil {
+		t.Fatalf("ParseCompatibilityCommand unbound watch failed: %v", err)
+	}
+	unboundHost := NewFileHost(FileHostOptions{Profile: f.profile, Compatibility: unboundCompat})
+	unboundCLI := &CLI{Host: unboundHost, Profile: f.profile, Compatibility: unboundCompat, Root: f.root}
+	outBuf.Reset()
+	errBuf.Reset()
+	code, err = unboundCLI.RunCLI(context.Background(), unboundTail, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 0 || outBuf.Len() != 0 || errBuf.Len() != 0 {
+		t.Fatalf("expected unbound watch --once exit 0, got code=%d err=%v out=%q stderr=%q", code, err, outBuf.String(), errBuf.String())
+	}
+	if _, statErr := os.Stat(filepath.Join(cfgDir, ".watch.lock")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected generation dir %q to remain untouched by .watch.lock, got statErr=%v", cfgDir, statErr)
+	}
+	if _, err := unboundCompat.Config(f.profile, secondBindingsPath); err != nil {
+		t.Fatalf("expected unbound watch Config(secondBindingsPath) ok: %v", err)
+	}
+	unboundIssuedSecond, err := unboundCompat.IssuedArgv([]string{"inbox"})
+	if err != nil || len(unboundIssuedSecond) != 2 || unboundIssuedSecond[0] != unboundSecondLauncher {
+		t.Fatalf("expected unbound IssuedArgv on secondBindingsPath to select %q, got %v err=%v", unboundSecondLauncher, unboundIssuedSecond, err)
+	}
+
+	// W4: fewer files in config-dir than receipt.coordination_configs fails count check.
+	if err := unboundCompat.VerifyWatchConfigDir(f.profile, []string{firstBindingsPath}); err == nil || err.Error() != "watch config-dir membership mismatch" {
+		t.Fatalf("expected W4 count mismatch error, got %v", err)
+	}
+
+	// W5: duplicate copy of profile 0 in config-dir fails 1-to-1 pin usage check.
+	writePrivateFile(t, secondBindingsPath, encodeFixtureJSON(t, f.config), 0o600)
+	if err := unboundCompat.VerifyWatchConfigDir(f.profile, []string{firstBindingsPath, secondBindingsPath}); err == nil || err.Error() != "config path mismatch" {
+		t.Fatalf("expected W5 duplicate pin error, got %v", err)
+	}
+	writePrivateFile(t, secondBindingsPath, encodeFixtureJSON(t, secondCfg), 0o600)
+
+	// W2 (N1): two-cycle watch without --once re-verifies on cycle 2 and exits 1 when a binding is removed after cycle 1.
+	twoCycleTail := []string{"watch", "--config-dir", bindingsDir}
+	var tick float64
+	unboundCompat.Now = func() float64 {
+		tick += 30
+		if tick == 120 {
+			_ = os.Remove(secondBindingsPath)
+		}
+		return tick
+	}
+	outBuf.Reset()
+	errBuf.Reset()
+	code, err = unboundCLI.RunCLI(context.Background(), twoCycleTail, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || outBuf.Len() != 0 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatalf("expected W2 cycle-2 preflight exit 1 on removed second binding, got code=%d err=%v stderr=%q", code, err, errBuf.String())
+	}
+	writePrivateFile(t, secondBindingsPath, encodeFixtureJSON(t, secondCfg), 0o600)
+
+	// W3: two-cycle watch without --once resets cached receipt/manifest on cycle 2 and exits 1 when a snapshot member changes after cycle 1.
+	coordSnapPath := filepath.Join(string(receipt.Get("snapshot_root").String), "coordination.py")
+	origCoordSnap, err := os.ReadFile(coordSnapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tick = 0
+	unboundCompat.Now = func() float64 {
+		tick += 30
+		if tick == 120 {
+			writePrivateFile(t, coordSnapPath, append(append([]byte{}, origCoordSnap...), '\n'), 0o400)
+		}
+		return tick
+	}
+	outBuf.Reset()
+	errBuf.Reset()
+	code, err = unboundCLI.RunCLI(context.Background(), twoCycleTail, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || outBuf.Len() != 0 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatalf("expected W3 cycle-2 preflight exit 1 on tampered snapshot member, got code=%d err=%v stderr=%q", code, err, errBuf.String())
+	}
+	writePrivateFile(t, coordSnapPath, origCoordSnap, 0o400)
 }

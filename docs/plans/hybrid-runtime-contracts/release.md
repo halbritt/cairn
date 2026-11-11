@@ -222,15 +222,26 @@ Per-turn activation ledger decisions remain the compatible mutable state
 surface; they are outside receipt hashes and do not publish a new selection.
 No `/2` descriptor, frozen trial or cached legacy callback is edited in place.
 
-This temporary launch covers Codex/Claude memory and coordination **hooks** and
-their issued inbox commands, including compact operations below. The retained
-watch, recovery and offline/operator inspection modes, such as
-`inspect-held-refusal`,
-remain on their explicit retained `/2` route until J-05/R-06 qualifies their
-replacement. They are not silently redirected from an unsupported compatibility
-invocation. `codex_queue.py:_open` lazily imports `websocket` for those retained
+This temporary Python `-I -S` launch (`V`/`L`) covers Codex/Claude memory and
+coordination **hooks** and their issued inbox commands, including compact
+operations below. The retained recovery and offline/operator inspection modes,
+such as `inspect-held-refusal`, plus `watch --config-dir` under Python `V`/`L`,
+remain on their explicit retained `/2` route until J-06/R-06 qualifies their
+replacement. For the presence watcher, the direct Go `/3` entry
+(`cairn-lifecycle coordination --receipt PATH --receipt-sha256 SHA --role
+coordination --entrypoint ALIAS --config ABS --hook-timeout H --launch-root ROOT
+--shell SHELL -- watch --config-dir DIR [--once]`) provides the receipt-checked
+J-05/R-06 Go replacement over a dedicated copies directory `DIR` (enforcing
+exact 1-to-1 membership between `DIR/*.json` and `receipt.coordination_configs`
+with canonical generation-file verification, per-profile `--config`-substituted
+mode `0500` launcher verification in `LaunchRoot`, no hook deadline, and
+pre-lock plus per-cycle receipt/manifest/profile re-verification exiting `1`
+with `CompatibilityPreflightError` and zero `.watch.lock` effect on initial
+preflight failure; not an active production route before R-06 qualification).
+Unsupported compatibility invocations are not silently redirected.
+`codex_queue.py:_open` lazily imports `websocket` for those retained Python
 modes; `-I -S` does not authorize an unchecked site-packages search. This hook
-receipt does not claim their dependency closure or full native migration.
+receipt does not claim their Python dependency closure or full native migration.
 
 ### Public launch and issued commands
 
@@ -629,7 +640,11 @@ callback entrypoints and account/repository/session selections. Any shared
 runtime root, ledger or native-session state expands the unit to include its
 other users. One release owner controls it. `/2` and `/3` may coexist across
 independent units; this contract does not permit two production watchers or
-executors concurrently owning the same unit. A mixed unit stays on its retained
+executors concurrently owning the same unit (because `<DIR>/.watch.lock` is
+scoped to `--config-dir`, R-06 unit cutover must stop the retained `/2`
+watcher or reuse the unit's single active bindings copies directory under
+service ownership so `/2` and `/3` watchers never concurrently serve bindings
+sharing a `state_dir`). A mixed unit stays on its retained
 legacy selection until every member can transition safely. No Go watcher is
 assumed to serve `/2` sessions without an explicit separately tested contract.
 

@@ -91,6 +91,8 @@ type CompatibilityContext struct {
 	coordinators    []*value.Value
 	enabled         *bool
 	receiptVerified bool
+	baseConfigPath  string
+	baseVector      []string
 }
 
 // CompatibilityClosureMembers lists the 18 canonical module names required in
@@ -295,7 +297,7 @@ func (c *CompatibilityContext) isHook() bool {
 	if c.Hook != nil {
 		return *c.Hook
 	}
-	return !(c.role() == "coordination" && len(c.Tail) > 0 && c.Tail[0] == "inbox")
+	return !(c.role() == "coordination" && len(c.Tail) > 0 && (c.Tail[0] == "inbox" || c.Tail[0] == "watch"))
 }
 
 func (c *CompatibilityContext) now() float64 {
@@ -634,7 +636,14 @@ func controlledData(path string, private bool, uid uint32) ([]byte, error) {
 	return raw, nil
 }
 
+func (c *CompatibilityContext) isWatchTail() bool {
+	return c != nil && c.role() == "coordination" && len(c.Tail) > 0 && c.Tail[0] == "watch"
+}
+
 func (c *CompatibilityContext) Config(fallbackProfile *value.SourceReaderProfile, path string) (*value.Value, error) {
+	if c.isWatchTail() {
+		return c.watchPinnedConfig(fallbackProfile, path)
+	}
 	if purePosixPath(path) != c.ConfigPath && path != c.ConfigPath {
 		return nil, preflightError("config path mismatch")
 	}
@@ -1003,10 +1012,201 @@ func (c *CompatibilityContext) VerifyTail(tail []string) error {
 		}
 		return nil
 	}
-	if len(tail) == 0 || (tail[0] != "hook" && tail[0] != "inbox") {
+	if len(tail) == 0 || (tail[0] != "hook" && tail[0] != "inbox" && tail[0] != "watch") {
 		return preflightError("unexpected coordination tail")
 	}
+	if len(c.Tail) == 0 {
+		c.Tail = append([]string{}, tail...)
+	}
 	return nil
+}
+
+func vectorWithConfig(baseVec []string, baseConfig, targetConfig string) []string {
+	out := append([]string{}, baseVec...)
+	for i := 0; i+1 < len(out); i++ {
+		if out[i] == "--config" {
+			out[i+1] = targetConfig
+			return out
+		}
+	}
+	for i := range out {
+		if out[i] == baseConfig {
+			out[i] = targetConfig
+		}
+	}
+	return out
+}
+
+func (c *CompatibilityContext) watchPinnedConfig(fallbackProfile *value.SourceReaderProfile, path string) (*value.Value, error) {
+	prof := c.profile(fallbackProfile)
+	if c.baseConfigPath == "" {
+		c.baseConfigPath = c.ConfigPath
+	}
+	if len(c.baseVector) == 0 && len(c.Vector) > 0 {
+		c.baseVector = append([]string{}, c.Vector...)
+	}
+	receipt, err := c.ensureReceipt(prof)
+	if err != nil {
+		return nil, err
+	}
+	coordList, err := nativeRequired(receipt, "coordination_configs")
+	if err != nil || coordList.Kind != value.Array {
+		return nil, preflightError("watch coordination_configs")
+	}
+	raw, err := controlledData(path, false, c.uid())
+	if err != nil {
+		return nil, preflightError(err.Error())
+	}
+	sum := sha256.Sum256(raw)
+	sumHex := hex.EncodeToString(sum[:])
+	clean := purePosixPath(path)
+	var canonicalPath string
+	var expectedSHA *value.Value
+	for _, item := range coordList.Items {
+		if item == nil || item.Kind != value.Object {
+			return nil, preflightError("watch descriptor")
+		}
+		dPath, e := sourcePathText(prof, item.Get("path"))
+		if e != nil {
+			return nil, preflightError(e.Error())
+		}
+		cleanDPath := purePosixPath(dPath)
+		if cleanDPath == clean || dPath == path {
+			canonicalPath = cleanDPath
+			expectedSHA = item.Get("sha256")
+			break
+		}
+		if filepath.Dir(cleanDPath) != filepath.Dir(clean) && value.SameText(item.Get("sha256"), sumHex) {
+			canonicalPath = cleanDPath
+			expectedSHA = item.Get("sha256")
+			break
+		}
+	}
+	if expectedSHA == nil || !value.SameText(expectedSHA, sumHex) {
+		return nil, preflightError("config path mismatch")
+	}
+	if canonicalPath != clean {
+		dRaw, dErr := controlledData(canonicalPath, false, c.uid())
+		if dErr != nil {
+			return nil, preflightError(dErr.Error())
+		}
+		dSum := sha256.Sum256(dRaw)
+		if !value.SameText(expectedSHA, hex.EncodeToString(dSum[:])) {
+			return nil, preflightError("config pin mismatch")
+		}
+	}
+	decoded, err := decodeCompatibilityJSON(prof, SiteCompatibilityConfig, raw)
+	if err != nil {
+		return nil, preflightError(err.Error())
+	}
+	c.ConfigPath = canonicalPath
+	c.currentRaw = raw
+	c.current = decoded
+	if len(c.baseVector) > 0 && c.LaunchRoot != "" {
+		vec := vectorWithConfig(c.baseVector, c.baseConfigPath, canonicalPath)
+		lRaw, err := LauncherBytes(vec, c.shell())
+		if err != nil {
+			return nil, preflightError(err.Error())
+		}
+		c.Vector = vec
+		c.LauncherRaw = lRaw
+		c.Launcher = LauncherPath(c.LaunchRoot, lRaw)
+		if _, err := c.IssuedArgv([]string{"inbox"}); err != nil {
+			return nil, preflightError(err.Error())
+		}
+	}
+	return decoded, nil
+}
+
+func (c *CompatibilityContext) VerifyWatchConfigDir(fallbackProfile *value.SourceReaderProfile, matches []string) error {
+	prof := c.profile(fallbackProfile)
+	if c.baseConfigPath == "" {
+		c.baseConfigPath = c.ConfigPath
+	}
+	if len(c.baseVector) == 0 && len(c.Vector) > 0 {
+		c.baseVector = append([]string{}, c.Vector...)
+	}
+	if c.ReceiptPath != "" {
+		c.Receipt = nil
+		c.receiptVerified = false
+	}
+	c.manifest = nil
+	c.ConfigPath = c.baseConfigPath
+	receipt, err := c.ensureReceipt(prof)
+	if err != nil {
+		return err
+	}
+	if _, err := c.watchPinnedConfig(prof, c.baseConfigPath); err != nil {
+		return err
+	}
+	if value.Truth(c.current.Get("inbox_recall_binding")) {
+		if err := c.CheckedBinding(prof); err != nil {
+			return preflightError(err.Error())
+		}
+	} else {
+		if err := c.UnboundProfiles(prof); err != nil {
+			return preflightError(err.Error())
+		}
+	}
+	coordList := receipt.Get("coordination_configs")
+	type descPin struct {
+		path string
+		sha  string
+	}
+	pins := make([]descPin, 0, len(coordList.Items))
+	seenDesc := make(map[string]bool, len(coordList.Items))
+	for _, item := range coordList.Items {
+		dPath, e := sourcePathText(prof, item.Get("path"))
+		if e != nil {
+			return preflightError(e.Error())
+		}
+		cleanDPath := purePosixPath(dPath)
+		if seenDesc[cleanDPath] {
+			return preflightError("duplicate watch coordination config")
+		}
+		seenDesc[cleanDPath] = true
+		if _, err := c.watchPinnedConfig(prof, cleanDPath); err != nil {
+			return err
+		}
+		pins = append(pins, descPin{path: cleanDPath, sha: nativeText(item.Get("sha256"))})
+	}
+	if len(matches) != len(pins) {
+		return preflightError("watch config-dir membership mismatch")
+	}
+	used := make([]bool, len(pins))
+	for _, p := range matches {
+		raw, err := controlledData(p, false, c.uid())
+		if err != nil {
+			return preflightError(err.Error())
+		}
+		sum := sha256.Sum256(raw)
+		sumHex := hex.EncodeToString(sum[:])
+		cleanP := purePosixPath(p)
+		matched := false
+		for i, pin := range pins {
+			if used[i] {
+				continue
+			}
+			if pin.path == cleanP && pin.sha == sumHex {
+				used[i] = true
+				matched = true
+				break
+			}
+			if filepath.Dir(pin.path) != filepath.Dir(cleanP) && pin.sha == sumHex {
+				used[i] = true
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return preflightError("config path mismatch")
+		}
+		if _, err := c.watchPinnedConfig(prof, p); err != nil {
+			return err
+		}
+	}
+	_, err = c.watchPinnedConfig(prof, c.baseConfigPath)
+	return err
 }
 
 func (c *CompatibilityContext) CheckedBinding(fallbackProfile *value.SourceReaderProfile) error {

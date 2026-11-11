@@ -101,7 +101,7 @@ func TestCoordinationSubprocessInboxAndRecovery(t *testing.T) {
 	t.Setenv("CAIRN_INBOX_ROOT", filepath.Join(root, "inbox-journal"))
 
 	fakeCairn := filepath.Join(root, "fake-cairn")
-	fakeScript := "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    ack)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"state\":\"handled\",\"attempts\":1}}\\n'\n      exit 0\n      ;;\n    agent-heartbeat|agent-context|agent-register)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"agent_id\":\"11111111-1111-4111-8111-111111111111\",\"execution_id\":\"22222222-2222-4222-8222-222222222222\",\"native_session_id\":\"conv-1\",\"display_name\":\"agent-1\",\"inbox\":\"agent/11111111-1111-4111-8111-111111111111\"}}\\n'\n      exit 0\n      ;;\n    session-inbox-pending)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"events\":[]}}\\n'\n      exit 0\n      ;;\n    event-next)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"delivery\":{\"delivery_id\":\"22222222-2222-4222-8222-222222222222\",\"lease_id\":\"33333333-3333-4333-8333-333333333333\",\"event\":{\"event_id\":\"22222222-2222-4222-8222-222222222222\",\"kind\":\"notice\",\"from\":\"agent/sender\",\"ref\":{\"record_id\":\"44444444-4444-4444-8444-444444444444\",\"version\":1}}}}}\\n'\n      exit 0\n      ;;\n  esac\ndone\nprintf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{}}\\n'\n"
+	fakeScript := "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    ack)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"state\":\"handled\",\"attempts\":1}}\\n'\n      exit 0\n      ;;\n    agent-heartbeat|agent-context|agent-register)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"agent_id\":\"11111111-1111-4111-8111-111111111111\",\"execution_id\":\"22222222-2222-4222-8222-222222222222\",\"native_session_id\":\"conv-1\",\"display_name\":\"agent-1\",\"inbox\":\"agent/11111111-1111-4111-8111-111111111111\",\"metadata\":{}}}\\n'\n      exit 0\n      ;;\n    session-inbox-pending)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"events\":[]}}\\n'\n      exit 0\n      ;;\n    event-next)\n      printf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{\"delivery\":{\"delivery_id\":\"22222222-2222-4222-8222-222222222222\",\"lease_id\":\"33333333-3333-4333-8333-333333333333\",\"event\":{\"event_id\":\"22222222-2222-4222-8222-222222222222\",\"kind\":\"notice\",\"from\":\"agent/sender\",\"ref\":{\"record_id\":\"44444444-4444-4444-8444-444444444444\",\"version\":1}}}}}\\n'\n      exit 0\n      ;;\n  esac\ndone\nprintf '{\"schema\":\"cairn.response/1\",\"ok\":true,\"data\":{}}\\n'\n"
 	if err := os.WriteFile(fakeCairn, []byte(fakeScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,9 @@ func TestCoordinationSubprocessInboxAndRecovery(t *testing.T) {
 	}
 
 	// Verify direct staged hook entry `[image, coordination, hook, --config, PATH]` on an unbound profile.
-	unboundCfgPath := filepath.Join(root, "unbound-config.json")
+	unboundCfgDir := filepath.Join(root, "unbound-configs")
+	_ = os.MkdirAll(unboundCfgDir, 0o700)
+	unboundCfgPath := filepath.Join(unboundCfgDir, "coordination-0.json")
 	unboundCfgData, _ := json.Marshal(map[string]any{
 		"cairn":      fakeCairn,
 		"socket":     sockPath,
@@ -392,6 +394,10 @@ func TestCoordinationSubprocessInboxAndRecovery(t *testing.T) {
 	compatHookOut, err := compatHookCmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(compatHookOut), "Cairn session") {
 		t.Fatalf("expected /3 subprocess coordination hook on unbound profile to succeed, got err=%v out=%q", err, compatHookOut)
+	}
+	compatWatchCmd := exec.Command(binPath, append([]string{"coordination"}, append(unboundSel, "--", "watch", "--config-dir", unboundCfgDir, "--once")...)...)
+	if compatWatchOut, err := compatWatchCmd.CombinedOutput(); err != nil || len(compatWatchOut) != 0 {
+		t.Fatalf("expected /3 subprocess coordination watch --once on unbound profile to succeed, got err=%v out=%q", err, compatWatchOut)
 	}
 
 	// Verify direct hook entry with a bound /2 manifest refuses a wake UserPromptSubmit in phase=activation (exit 2) before claiming any delivery.

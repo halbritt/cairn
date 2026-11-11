@@ -205,6 +205,9 @@ func (c *CLI) handleHookResolved(ctx context.Context, config, event *value.Value
 }
 
 func (c *CLI) monotonicSeconds() float64 {
+	if c.Compatibility != nil && c.Compatibility.Now != nil {
+		return c.Compatibility.Now()
+	}
 	var ts unix.Timespec
 	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err == nil {
 		return float64(ts.Sec) + float64(ts.Nsec)/1e9

@@ -601,13 +601,27 @@ The approved interpreter and standard library belong to Release's offline
 restoration closure. Owner-controlled launch configuration is the explicit
 trust root; its selection changes require install/readback, not self-authentication.
 
-This isolated launch covers the two hook frontends and their existing issued
-inbox command tails as specified below. It does not cover watcher, recovery,
-inspection or other operator modes without separately pinning/testing their
-dependency closure: `codex_queue` lazily imports third-party `websocket` on
-those paths, outside the qualified hook/issued-inbox call graph. `-I -S` does
-not load that package from user/site paths. Those modes retain their `/2`
-executor until their real migration consumer lands. Class A differential
+This isolated Python `-I -S` launch (`V`/`L`) covers the two hook frontends and
+their existing issued inbox command tails as specified below. It does not cover
+watcher, recovery, inspection or other operator modes without separately
+pinning/testing their dependency closure: `codex_queue` lazily imports
+third-party `websocket` on those paths, outside the qualified hook/issued-inbox
+call graph. `-I -S` does not load that package from user/site paths. Those
+modes retain their `/2` executor until their real migration consumer lands:
+for `watch`, the direct Go `/3` entry (`cairn-lifecycle coordination --receipt
+PATH --receipt-sha256 SHA --role coordination --entrypoint ALIAS --config ABS
+--hook-timeout H --launch-root ROOT --shell SHELL -- watch --config-dir DIR
+[--once]`, while Python `V` continues to reject `watch`) provides the
+`J-05`/`R-06` replacement, re-verifying the receipt, snapshot closure, binary
+pin, `/3` binding (`CheckedBinding` when bound, `UnboundProfiles` when
+unbound), exact 1-to-1 membership between `DIR/*.json` (a dedicated copies
+directory separate from the 8-file generation directory, where each file's
+SHA-256 matches an unused pinned descriptor and the canonical file in the
+generation directory must also still match its pin) and
+`receipt.coordination_configs`, and every profile's `--config`-substituted mode
+`0500` launcher in `LaunchRoot` before acquiring `<DIR>/.watch.lock` and on
+every watch cycle, with no hook deadline (`isHook() == false`) and exit `1`
+`CompatibilityPreflightError` on mismatch. Class A differential
 fixtures run both implementations on the same corpus with recorded source
 profile provenance; interpreter-limit parity is not required.
 
@@ -725,9 +739,12 @@ trusted literal, `--receipt PATH --receipt-sha256 SHA`, `--role memory|coordinat
 `--entrypoint ALIAS` and `--config ABS`, plus the trusted hook timeout selection.
 The alias must map to that role's canonical member and the config must be its
 corresponding receipt selection. Execute `V + ["--", *original_command_tail]`;
-the separator and tail are argv elements, not shell text. Memory retains its
-original memory CLI arguments; coordination retains its original `hook` or
-qualified `inbox` mode/arguments. No new command capability is added.
+the separator and tail are argv elements, not shell text. Under Python `V`,
+memory retains its original memory CLI arguments and coordination retains its
+original `hook` or qualified `inbox` mode/arguments; the direct Go `/3`
+`cairn-lifecycle coordination --receipt ...` entry additionally admits
+`watch --config-dir DIR [--once]` under the per-cycle multi-profile
+verification rules above (not an active production route before `R-06`).
 
 The verifier/bootstrap dispatches that tail through the checked role before
 reading stdin as a hook event. Inbox completion stdin remains the original

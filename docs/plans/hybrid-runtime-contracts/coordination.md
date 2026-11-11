@@ -112,6 +112,7 @@ multi-binding watcher entrypoint:
      `claude-two`, `codex-one`, `agy-one`, etc.), runs `watch_once` per binding
      (any malformed binding or unhandled exception aborts the loop with exit `1` for
      service restart; `lines 4497-4515`), and waits up to `WATCH_INTERVAL`.
+     Under the receipt-checked Go `/3` entry (`cairn-lifecycle coordination --receipt PATH --receipt-sha256 SHA --role coordination --entrypoint ALIAS --config ABS --hook-timeout H --launch-root ROOT --shell SHELL -- watch --config-dir DIR [--once]`, whereas Python `V` `lifecycle_compatibility.py` continues to reject `watch`), `VerifyTail` admits `watch --config-dir DIR [--once]` without a hook deadline (`isHook() == false`). Before acquiring `<DIR>/.watch.lock` and at the start of every watch cycle, `VerifyWatchConfigDir` resets cached receipt/manifest state and re-verifies the receipt, snapshot closure, binary pin, `/3` binding (`CheckedBinding` when bound, `UnboundProfiles` when unbound), exact 1-to-1 membership between sorted `<DIR>/*.json` and `receipt.coordination_configs` (where a file in a separate copies directory `DIR` whose SHA-256 equals an unused pinned descriptor stands for that descriptor's canonical path while the canonical file in the generation directory must also still match its pin), and every profile's mode `0500` launcher in `LaunchRoot` derived by substituting that profile's canonical path for `--config` in the base vector; any initial or per-cycle mismatch exits `1` with empty `stdout`, fixed `stderr` `Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n`, and zero `.watch.lock`/state/API effect on initial preflight. Because a staged generation directory contains non-coordination JSON artifacts, staged `--config-dir` uses a dedicated copies directory (such as `<root>/bindings`), and `<DIR>/.watch.lock` is scoped to `DIR`; `R-06` unit cutover must stop the retained `/2` watcher or reuse the unit's single active bindings directory so two watchers never serve the same `state_dir` concurrently.
 2. **Explicit Journaled Inbox Commands, Drain, Compact Operations, and `C1` Authenticated Launch Closure:**
    - `inbox --context <context.json> {complete|ack|respond|finish-reply} [--disposition {handled|ignored|failed}] [--code {unsupported_kind|source_unavailable|processing_failed}] [--version V RECORD_UUID]`:
      reads up to `1048576` **decoded UTF-8 characters** on `stdin` (`> 1 MiB` chars
@@ -236,10 +237,14 @@ multi-binding watcher entrypoint:
      `recover-codex-refused-wake`, `recover-codex-ended-turn`,
      `recover-daemon-start-claim`, `check-codex-native-health`,
      `reconcile-codex-queue-wake`, and `inspect-held-refusal` (`lines 4381-4464`).
-     Together with `watch --config-dir`, these modes are **not** admitted through `V`/`L`
-     (`codex_queue.py:_open` lazily imports `websocket`, unavailable under `-I -S`) and
-     remain on their explicit retained `/2` route until `J-05`/`J-06`/`R-06` qualify
-     their Go replacement.
+     Together with `watch --config-dir` under the Python `-I -S` verifier `V`/`L`
+     (`codex_queue.py:_open` lazily imports `websocket`, unavailable under `-I -S`),
+     these offline recovery and inspection modes are **not** admitted through `V`/`L`
+     and remain on their explicit retained `/2` route until `J-06`/`R-06` qualify
+     their Go replacement, whereas the receipt-checked Go `/3` entry
+     (`cairn-lifecycle coordination --receipt ... -- watch --config-dir DIR [--once]`)
+     provides the `J-05`/`R-06` Go watcher replacement above (not an active production
+     route before `R-06` qualification).
 
 ### Exit-code, stream, and serialization parity rules
 
@@ -255,7 +260,7 @@ multi-binding watcher entrypoint:
 | `inbox` subprocess `OSError` / `TimeoutExpired` (`2130-2133`) | JSON `API_CONNECTION_FAILED` | empty | `7` |
 | `inbox` / `drain` / `compact`: `OSError\|ValueError\|KeyError\|TypeError` (e.g. invalid UUID or missing `result["version"]` on `respond`, `2051, 2109, 4376-4379`) | JSON `INVALID_HOST` | empty | `7` |
 | `compact settle` (`2293-2305`): confirmed `ack` / inner nonzero (`1\|2\|3\|4\|7`) / unconfirmed inner `0` (`CONFIRMATION_MISMATCH` printed directly at `2300-2302`) | `cairn.compact-inbox/1` JSON | empty | `0` / inner (`1\|2\|3\|4\|7`, fallback `7`) / `7` |
-| `hook` (`C3`) **or** fresh `L`/`V`-launched `inbox` / `drain` / `compact` (`C1`) compatibility preflight failure before role dispatch: missing/unsafe/tampered receipt, Python closure, or Go executable, or invalid `--role`/`--entrypoint`/tail `--config` (even on excluded callbacks; `/2` unchanged; **zero** journal write-before-send, lock, state, refusal-record, lease, token, or API effect) | empty | `Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n` | `1` |
+| `hook` (`C3`), fresh `L`/`V`-launched `inbox` / `drain` / `compact` (`C1`), **or** receipt-checked Go `/3` `watch --config-dir` (before `.watch.lock` and at the start of every cycle) compatibility preflight failure: missing/unsafe/tampered receipt, Python closure, Go executable, `/3` binding, `coordination_configs` 1-to-1 membership/canonical pins, or per-profile mode `0500` launcher, or invalid `--role`/`--entrypoint`/tail `--config` (even on excluded callbacks; `/2` unchanged; **zero** journal write-before-send, `.watch.lock`, state, refusal-record, lease, token, or API effect on initial preflight) | empty | `Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n` | `1` |
 | `hook`: normal / `NATIVE_PROMPT_REFUSED` (`4508-4510`) / any other error (`4511-4515`, or unhandled traceback on escaping `AttributeError` in `record_activation_refusal`) | JSON + `\n` / empty / empty | optional diag / rejection line / unavailable line (or traceback on escaping `AttributeError`) | `0` / `2` / `1` |
 | `watch --config-dir`: `.watch.lock` `SESSION_BUSY` or malformed binding / unhandled error (`4497-4515`, or escaping `AttributeError` in `watch_once`) | empty | unavailable line / traceback | `1` |
 

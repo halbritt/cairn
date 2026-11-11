@@ -30,6 +30,13 @@ func (c *CLI) WatchCommand(ctx context.Context, a cliArgs, errOut io.Writer) (in
 	if err != nil {
 		return 0, err
 	}
+	if c.Compatibility != nil {
+		initialMatches, _ := filepath.Glob(filepath.Join(configDir, "*.json"))
+		sort.Strings(initialMatches)
+		if err := c.Compatibility.VerifyWatchConfigDir(c.profile(), initialMatches); err != nil {
+			return 0, err
+		}
+	}
 	stopCh := make(chan struct{})
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -54,6 +61,11 @@ func (c *CLI) WatchCommand(ctx context.Context, a cliArgs, errOut io.Writer) (in
 		started := c.monotonicSeconds()
 		matches, _ := filepath.Glob(filepath.Join(configDir, "*.json"))
 		sort.Strings(matches)
+		if c.Compatibility != nil {
+			if err := c.Compatibility.VerifyWatchConfigDir(c.profile(), matches); err != nil {
+				return 0, err
+			}
+		}
 		var configs []*value.Value
 		for _, p := range matches {
 			cfg, err := c.loadConfig(p)
