@@ -57,6 +57,9 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 		}
 		title = text(v)
 	}
+	if strings.ContainsRune(title, 0) {
+		return nil, fail("checkpoint title contains NUL")
+	}
 	previousRaw, err := client.Checkpoint(ctx, title)
 	if err != nil {
 		return nil, classify(err)
