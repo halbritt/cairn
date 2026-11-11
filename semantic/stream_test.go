@@ -75,9 +75,16 @@ func TestStreamReusesWorkerAndClosesIt(t *testing.T) {
 }
 
 func TestStreamFailuresDiscardChildAndNextRequestStartsFresh(t *testing.T) {
+	testStreamFailureRecovery(t, func(t *testing.T) (core.SemanticRanker, func(), error) {
+		return StreamCommand(context.Background(), streamWorker(t))
+	})
+}
+
+func testStreamFailureRecovery(t *testing.T, start func(*testing.T) (core.SemanticRanker, func(), error)) {
+	t.Helper()
 	for _, query := range []string{"crash", "oversize", "partial", "wrong-id", "unknown", "extra", "change-model", "null"} {
 		t.Run(query, func(t *testing.T) {
-			rank, stop, err := StreamCommand(context.Background(), streamWorker(t))
+			rank, stop, err := start(t)
 			if err != nil {
 				t.Fatal(err)
 			}

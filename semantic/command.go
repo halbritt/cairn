@@ -60,6 +60,10 @@ func Command(path string) (core.SemanticRanker, error) {
 	if err := validateCommand(path); err != nil {
 		return nil, err
 	}
+	return command(workerLaunch{path: path, env: workerEnvironment()}), nil
+}
+
+func command(launch workerLaunch) core.SemanticRanker {
 	busy := make(chan struct{}, 1)
 	return func(ctx context.Context, req core.SemanticRankRequest) (core.SemanticRankResult, error) {
 		select {
@@ -76,8 +80,8 @@ func Command(path string) (core.SemanticRanker, error) {
 		}
 		output := &boundedOutput{}
 		command, runErr := startRetryingBusy(ctx, func() (*exec.Cmd, error) {
-			command := exec.CommandContext(ctx, path)
-			command.Env = workerEnvironment()
+			command := exec.CommandContext(ctx, launch.path, launch.args...)
+			command.Env = append([]string(nil), launch.env...)
 			command.Stdin = bytes.NewReader(input)
 			command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
@@ -104,7 +108,7 @@ func Command(path string) (core.SemanticRanker, error) {
 		var result core.SemanticRankResult
 		err = decodeOne(&output.buffer, &result)
 		return result, err
-	}, nil
+	}
 }
 
 // groupKill is the process-signal boundary, injectable for tests.
