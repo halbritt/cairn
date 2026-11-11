@@ -1,9 +1,9 @@
-"""Run deterministic S-05 Go/index/PostgreSQL fixtures in the common wrapper.
+"""Run S-05 fixtures through the unchanged common isolation wrapper.
 
-This is host orchestration only. Builds, generated protocol workers, the actual
-Go API, PostgreSQL, assertions and report classification run inside the unchanged
-test_hybrid_runtime_operations.py namespace. No model is loaded. Real Python /
-Rust transition qualification remains a separate, prerequisite-gated matrix.
+The default runs deterministic protocol workers. --real-case1 opts into the
+explicitly supplied retained Python/Rust/Python local transition. Every build,
+worker, Go API, disposable PostgreSQL cluster and assertion runs inside the
+wrapper; the host transports data. Local execution does not close full S-05.
 """
 
 import argparse
@@ -66,7 +66,7 @@ try:
  skipped=[e.get('Test','package') for e in events if e['Action']=='skip']
  matrix=[name for name in passed if name.startswith('TestSemanticTransitionDeterministicMatrix/') and name.count('/')==1]
  if failed or skipped or (not real and len(matrix)!=10) or (real and 'TestSemanticRealTransitionCase1' not in passed):raise RuntimeError('incomplete selected transition case/matrix')
- report=dict(schema='cairn.semantic-transition-fixture/1',kind='deterministic-protocol-workers-real-go-and-postgresql',matrix_cases=matrix,passed=passed,failed=failed,skipped=skipped,real_worker_acceptance='BLOCKED: accepted S04R Python closure and S04/R01 supported-class/identity qualification required',binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),api_sha256=hashlib.sha256(cli.read_bytes()).hexdigest())
+ report=dict(schema='cairn.semantic-transition-fixture/1',kind='deterministic-protocol-workers-real-go-and-postgresql',matrix_cases=matrix,passed=passed,failed=failed,skipped=skipped,real_worker_acceptance='not executed by deterministic run; full S05/R01/fleet acceptance remains open',binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),api_sha256=hashlib.sha256(cli.read_bytes()).hexdigest())
  if real:
   report.update(kind='local-real-worker-transition-case1',matrix_cases=['full_forward_reverse_rebuild'],real_worker_acceptance='local case1 evidence only; full S05/R01/fleet acceptance remains open')
  (artifacts/'report.json').write_text(json.dumps(report,indent=2)+'\n');code=0
@@ -154,7 +154,7 @@ def main():
     if code or not report.get('passed'):
         raise SystemExit('transition fixture failed; retained artifacts: ' + str(output))
     print(('S05 local real case1 passed; full transition qualification remains open. ' if args.real_case1 else
-           'S05 deterministic transition fixtures passed; real-worker qualification remains blocked. ') + str(output))
+           'S05 deterministic transition fixtures passed; full real-worker qualification remains open. ') + str(output))
 
 
 if __name__ == '__main__':

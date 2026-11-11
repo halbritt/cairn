@@ -172,7 +172,8 @@ func transitionRealQuery(t *testing.T, query func(any) (json.RawMessage, error))
 	if err = json.Unmarshal(raw, &reply); err != nil || !reply.OK {
 		t.Fatalf("actual API index envelope: %s: %v", raw, err)
 	}
-	return map[string]any{"elapsed_ns": time.Since(start).Nanoseconds(), "state": reply.Data.Package.Semantic.Discovery.State, "reply": json.RawMessage(raw)}
+	completed := time.Now()
+	return map[string]any{"started_at": start, "completed_at": completed, "elapsed_ns": completed.Sub(start).Nanoseconds(), "state": reply.Data.Package.Semantic.Discovery.State, "reply": json.RawMessage(raw)}
 }
 
 func transitionRealWriters(writers []*transitionWriter) []map[string]any {
@@ -202,15 +203,26 @@ func transitionRealRoundTrip(t *testing.T) {
  CREATE TRIGGER s05_observe_tuple AFTER INSERT ON cairn.semantic_document FOR EACH ROW EXECUTE FUNCTION cairn.s05_observe_tuple();`)
 	start, probe, query := transitionAPIProcess(t, d)
 	stop := start("real-default-no-semantic")
-	definitions := []*transitionWriter{{name: "combined API", collection: "all three collections", restartable: true, stop: stop},
-		{name: "inactive alternate collection definition", collection: "s05-b", restartable: true, joined: true},
-		{name: "inactive restartable reverse definition", collection: "s05-c", restartable: true, joined: true}}
+	definitions := []*transitionWriter{{name: "combined API", collection: "all three collections", model: "disabled", restartable: true, stop: stop},
+		{name: "inactive alternate collection definition", collection: "s05-b", model: selected.Python.EmbedIdentity, restartable: true, joined: true},
+		{name: "inactive restartable reverse definition", collection: "s05-c", model: selected.Rust.EmbedIdentity, restartable: true, joined: true}}
 	phases := []map[string]any{}
 	for number, w := range []transitionRealWorker{selected.Python, selected.Rust, selected.Python} {
-		phaseStarted := time.Now()
 		beforeFence := transitionRealWriters(definitions)
+		var preStopSemantic map[string]any
+		if number > 0 {
+			preStopSemantic = transitionRealQuery(t, query)
+			if preStopSemantic["state"] != "ready" {
+				t.Fatal("old semantic service unavailable before transition")
+			}
+		}
 		if !probe() {
 			t.Fatal("last whole-API probe failed before transition")
+		}
+		phaseStarted := time.Now()
+		semanticStarted := phaseStarted
+		if preStopSemantic != nil {
+			semanticStarted = preStopSemantic["completed_at"].(time.Time)
 		}
 		if transitionFence(definitions) == nil {
 			t.Fatal("active/restartable writer inventory falsely fenced")
@@ -223,6 +235,7 @@ func transitionRealRoundTrip(t *testing.T) {
 		if probe() {
 			t.Fatal("whole API remained available after joined stop")
 		}
+		joinedAt := time.Now()
 		if number > 0 {
 			previous := selected.Python
 			if number == 2 {
@@ -248,6 +261,7 @@ func transitionRealRoundTrip(t *testing.T) {
 		definitions[0].stop = stop
 		definitions[0].model = w.EmbedIdentity
 		wholeOutage := time.Since(phaseStarted)
+		apiReadyAt := time.Now()
 		cold := transitionRealQuery(t, query)
 		rebuildStart := time.Now()
 		deadline := time.Now().Add(180 * time.Second)
@@ -281,6 +295,10 @@ func transitionRealRoundTrip(t *testing.T) {
 		if post["state"] != "ready" {
 			t.Fatalf("post-rebuild actual API semantic availability: %s", transitionJSON(post))
 		}
+		semanticReadyAt := post["completed_at"].(time.Time)
+		if cold["state"] == "ready" {
+			semanticReadyAt = cold["completed_at"].(time.Time)
+		}
 		if !reflect.DeepEqual(before, d.realPopulation(t)) {
 			t.Fatal("full current source population/hash changed")
 		}
@@ -295,7 +313,15 @@ func transitionRealRoundTrip(t *testing.T) {
 			t.Fatal("stale source/model/hash/version publication")
 		}
 		w.verify(t)
-		phase := map[string]any{"phase": number, "rank_identity": w.RankIdentity, "embed_identity": w.EmbedIdentity, "population": coverage, "source_population_sha256": transitionHash(transitionJSON(before)), "identity_probe_ns": identityElapsed.Nanoseconds(), "whole_api_observed_outage_ns": wholeOutage.Nanoseconds(), "rebuild_observed_ns": rebuildElapsed.Nanoseconds(), "cold_api_query": cold, "post_rebuild_query": post, "writers_before_fence": beforeFence, "writers_at_joined_fence": joinedFence, "active_writer_definitions": transitionRealWriters(definitions), "timing_scope": "local transition including identity probes; first API query can precede index readiness, not a forced query-worker restart", "no_stale_publications": true}
+		phase := map[string]any{"phase": number, "rank_identity": w.RankIdentity, "embed_identity": w.EmbedIdentity, "population": coverage,
+			"source_population_sha256": transitionHash(transitionJSON(before)), "identity_probe_ns": identityElapsed.Nanoseconds(),
+			"whole_api_observed_outage_ns": wholeOutage.Nanoseconds(), "semantic_observed_outage_ns": semanticReadyAt.Sub(semanticStarted).Nanoseconds(),
+			"last_version_probe_at": phaseStarted, "old_api_joined_at": joinedAt, "new_api_version_ready_at": apiReadyAt,
+			"semantic_observation_start_at": semanticStarted, "semantic_first_ready_at": semanticReadyAt,
+			"semantic_window_kind": map[bool]string{true: "last observed ready to new first ready", false: "initial unavailability to first ready"}[number > 0],
+			"rebuild_observed_ns":  rebuildElapsed.Nanoseconds(), "pre_stop_semantic_query": preStopSemantic, "cold_api_query": cold, "post_rebuild_query": post,
+			"writers_before_fence": beforeFence, "writers_at_joined_fence": joinedFence, "active_writer_definitions": transitionRealWriters(definitions),
+			"timing_scope": "local sampled outage windows including identity probes, not continuous availability or forced query-worker restart", "no_stale_publications": true}
 		phases = append(phases, phase)
 		transitionRealFile(t, name+".json", phase)
 	}

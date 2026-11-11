@@ -76,8 +76,11 @@ controls check failed-connect and store-write detection. Actual Python mapped
 bytes/environment and Rust sealed native images are observed. Private worker
 HOME/cache must remain empty. Both Python identities must restore exactly.
 
-Whole-API outage, first API query, rebuild completion and post-rebuild query are
-separate observations. The first query can report unavailability while the
+Whole-API and semantic outage windows, first API query, rebuild completion and
+post-rebuild query are separate observations with retained timestamps. Forward
+and reverse windows start from the last observed healthy old service; initial
+startup begins with semantics disabled. They are sampled windows, not a claim
+of continuously measured availability. The first query can report unavailability while the
 asynchronous index initializes; this is not a forced cold query-worker restart.
 Identity probes while the API is stopped are included in observed outage.
 Product deadlines stay unchanged; the outer fixture budget accommodates real
