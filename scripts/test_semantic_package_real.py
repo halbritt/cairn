@@ -123,7 +123,8 @@ def process_snapshot(payload, known):
             require('OPENBLAS_NUM_THREADS=2' in environment, 'thread cap missing from worker')
             require(not any(e.startswith(('LD_LIBRARY_PATH=', 'LD_PRELOAD=', 'LD_AUDIT=')) for e in environment),
                     'ambient loader setting reached worker')
-            # The clean root has neither source checkout nor any Python executable.
+            # The standalone root has no development checkout. Bootstrap Python
+            # remains visible and is recorded rather than claimed absent.
             checkout_visible = ((proc / 'root/work/go.mod').exists() or (proc / 'root/work/.git').exists())
             python_visible = bool(list((proc / 'root/usr/bin').glob('python*')))
             require(not checkout_visible, 'development checkout exposed in standalone fixture')

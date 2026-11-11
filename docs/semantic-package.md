@@ -62,8 +62,9 @@ bash scripts/install-semantic.sh --stage-rust \
 ABI prerequisites are an array of absolute resolved `path` and `sha256` pairs.
 They describe required host loader/system-library bytes, rather than claiming
 the native runtime is self-contained. The local real-package fixture derives
-its initial closure from ELF dependencies and then checks actual worker
-mappings. A missing prerequisite list is not complete dependency evidence.
+its initial closure from ELF dependencies and separately records actual worker
+mappings. It does not prove that list is the complete future dependency closure.
+An omitted prerequisite list is null and named unobserved.
 
 Staging refuses symlinked selected paths, mismatched source/build/binary/log
 inputs, incomplete provenance, an untagged nonempty destination and the existing
@@ -82,6 +83,12 @@ Three independent addresses avoid a circular hash:
   `cairn.semantic-worker-manifest/1`. Its address hashes its canonical content,
   excluding its own address. Later observations produce a new manifest path.
 
+Addresses use compact sorted-key JSON without a final newline. Stored
+`payload.json` and `manifest.json` append a newline, so their whole-file hashes
+differ from the generation addresses. The stage result's `sha256` is the
+whole-manifest-file hash. A launcher-set address hashes the canonical mapping
+from mode names to rendered launcher byte hashes.
+
 Every generation is published by a same-parent rename. Generation files and
 directories are read-only. Staging verifies an existing generation's exact
 bytes, modes and tree; a discrepancy refuses without repairing it. This is an
@@ -89,6 +96,10 @@ owned-filesystem immutability convention, not protection against the owner or
 root changing the filesystem. No `current` symlink or mutable selection is
 created. Release must select one exact absolute launcher through its separately
 authorized configuration transition.
+
+Updating a listed host library makes the old launcher refuse on its next start.
+Re-stage the new bytes and use Release's controlled re-selection; the old
+immutable generation is retained rather than repaired.
 
 Each launcher takes zero arguments, checks the selected payload and ABI hashes,
 refuses inherited loader overrides, then executes one fixed mode with an empty
@@ -153,7 +164,9 @@ This explicit derivation is not represented as an observation made inside the
 worker. Rank and stream share the rank binary identity; embedding has its own.
 
 The standalone fixture verifies its complete input-file inventory and refuses
-a development checkout or a visible host checkout. Python and bootstrap tools
+a development checkout at `/work`. It probes the canonical host checkout path;
+the wrapper's independent self-checks mask all production homes, including the
+author worktree. Python and bootstrap tools
 remain mounted by the existing wrapper. Literal no-Python qualification is an
 explicit gap. The fixture creates no nested namespace, changes no wrapper
 restriction and provides no unconfined model fallback.

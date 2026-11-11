@@ -159,9 +159,10 @@ def build(source, output):
         binaries[mode] = file_record(data, True)
     # Keep local/registry inputs and actual per-unit command output available;
     # do not promote them to a complete linker attestation.
-    registry = {}
+    registry = None
     directory = os.environ.get('CAIRN_CARGO_DIRECTORY_SOURCE')
     if directory:
+        registry = {}
         for path in sorted(absolute(directory).rglob('*')):
             if path.is_file():
                 registry[path.relative_to(directory).as_posix()] = file_record(regular_bytes(path))
@@ -181,6 +182,8 @@ def build(source, output):
         'logs': {name: file_record(regular_bytes(output / name)) for name in ('cargo.stdout.jsonl', 'cargo.stderr')},
         'unobserved': ['complete linked-input attestation', 'complete effective linker input closure'],
     }
+    if registry is None:
+        receipt['unobserved'].append('directory_source_inputs')
     # Detect edited sources rather than binding a post-build snapshot to old output.
     if records(source_files(source)) != records(inputs):
         raise PackageError('source changed during build')
@@ -323,7 +326,7 @@ def elf_requirements(path):
             'version_requirements': capture(['/usr/bin/readelf', '-V', str(path)])}
 
 
-def stage(root, source, build_root, model, libraries, provenance, abi=()):
+def stage(root, source, build_root, model, libraries, provenance, abi=None):
     source, build_root, model = map(absolute, (source, build_root, model))
     receipt = read_json(build_root / 'build.json')
     if receipt['schema'] != 'cairn.semantic-build/1' or receipt['target'] != TARGET:
@@ -352,7 +355,7 @@ def stage(root, source, build_root, model, libraries, provenance, abi=()):
                 or not evidence['source'] or evidence.get('sha256') != digest(files[name])):
             raise PackageError('missing or mismatched provenance: ' + role)
     checked_abi = []
-    for entry in abi:
+    for entry in abi or ():
         path = absolute(entry['path'])
         data = regular_bytes(path)
         if digest(data) != entry['sha256']:
@@ -369,7 +372,7 @@ def stage(root, source, build_root, model, libraries, provenance, abi=()):
     requirements.update({role: elf_requirements(path) for role, path in libraries.items()})
     payload_data = {'schema': 'cairn.semantic-payload/1', 'files': records(files),
                     'provenance': provenance, 'native_elf': requirements,
-                    'host_abi_prerequisites': checked_abi}
+                    'host_abi_prerequisites': checked_abi if abi is not None else None}
     address = digest(canonical(payload_data))
     files['payload.json'] = canonical(payload_data) + b'\n'
     with stage_root(root) as destination:
@@ -384,7 +387,7 @@ def stage(root, source, build_root, model, libraries, provenance, abi=()):
                                 'sha256': digest(canonical(receipt['source_inputs']))},
             'build_identity': {'scheme': 'sha256-canonical-build-receipt/1', 'sha256': digest(canonical(receipt))},
             'build': receipt, 'target': TARGET, 'linkage': 'dynamic; see ELF requirements and observations',
-            'requirements': {'host_abi_prerequisites': checked_abi,
+            'requirements': {'host_abi_prerequisites': checked_abi if abi is not None else None,
                              'cpu': {'compile_target_cfg': receipt.get('target_cfg'),
                                      'complete_effective_cpu_kernel_class': 'unobserved'},
                              'launcher_environment': worker_environment()},
@@ -396,6 +399,8 @@ def stage(root, source, build_root, model, libraries, provenance, abi=()):
                               'complete_upstream_artifact_provenance': 'unobserved; retained selected input provenance is recorded',
                               'worker_connect_and_telemetry_writes': 'unobserved'},
         }
+        if abi is None:
+            manifest['qualification']['unobserved_observations'] = ['host_abi_prerequisites']
         manifest_address = digest(canonical(manifest))
         manifest_root = publish_tree(destination / 'manifests', manifest_address,
                                      {'manifest.json': canonical(manifest) + b'\n'})
@@ -427,7 +432,7 @@ def main():
         else:
             result = stage(args.destination, args.source_root, args.build, args.model_dir,
                            {role: getattr(args, role) for role in LIBRARIES}, read_json(args.provenance),
-                           read_json(args.abi_prerequisites) if args.abi_prerequisites else [])
+                           read_json(args.abi_prerequisites) if args.abi_prerequisites else None)
         print(json.dumps(result, sort_keys=True))
     except (PackageError, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, 'semantic package refused: ' + str(error) + '\n')

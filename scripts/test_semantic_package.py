@@ -68,7 +68,7 @@ class PackageTests(unittest.TestCase):
                     path.chmod(0o600)
         self.temp.cleanup()
 
-    def stage(self, destination=None, abi=()):
+    def stage(self, destination=None, abi=None):
         return package.stage(destination or self.destination, self.source, self.build,
                              self.model, self.libraries, self.provenance, abi)
 
@@ -159,19 +159,21 @@ class PackageTests(unittest.TestCase):
             self.assertIn(b'loader override refused', p.stderr)
 
     def test_launcher_refuses_missing_and_mismatched_selected_files(self):
+        env = {key: value for key, value in os.environ.items()
+               if key not in ('LD_LIBRARY_PATH', 'LD_PRELOAD', 'LD_AUDIT')}
         result = self.stage()
         selected = Path(result['payload']) / 'native/ort'
         selected.chmod(0o644)
         selected.write_bytes(b'wrong library')
         selected.chmod(0o444)
         for item in result['launchers'].values():
-            p = subprocess.run([item['path']], capture_output=True)
-            self.assertNotEqual(p.returncode, 0)
+            p = subprocess.run([item['path']], env=env, capture_output=True)
+            self.assertEqual(p.returncode, 1)
             self.assertEqual(p.stdout, b'')
         selected.parent.chmod(0o755)
         selected.unlink()
         for item in result['launchers'].values():
-            self.assertNotEqual(subprocess.run([item['path']], capture_output=True).returncode, 0)
+            self.assertEqual(subprocess.run([item['path']], env=env, capture_output=True).returncode, 1)
 
     def test_host_abi_prerequisite_mismatch_refuses(self):
         prerequisite = self.root / 'abi.so'
@@ -188,6 +190,13 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(observation['observed_mode'], 0o640)
         self.assertNotIn('mode', observation)
 
+    def test_omitted_abi_inventory_remains_named_unobserved(self):
+        staged = self.stage()
+        manifest = package.read_json(staged['manifest'])
+        self.assertIsNone(manifest['requirements']['host_abi_prerequisites'])
+        self.assertIsNone(manifest['payload']['host_abi_prerequisites'])
+        self.assertIn('host_abi_prerequisites', manifest['qualification']['unobserved_observations'])
+
     def test_fifo_asset_refuses_without_waiting_for_a_writer(self):
         selected = self.model / 'config.json'
         selected.unlink()
@@ -203,8 +212,10 @@ class PackageTests(unittest.TestCase):
         extra.write_bytes(b'new unmanifested identity input')
         extra.chmod(0o444)
         root.chmod(0o555)
-        result = subprocess.run([staged['launchers']['rank']['path']], capture_output=True)
-        self.assertNotEqual(result.returncode, 0)
+        env = {key: value for key, value in os.environ.items()
+               if key not in ('LD_LIBRARY_PATH', 'LD_PRELOAD', 'LD_AUDIT')}
+        result = subprocess.run([staged['launchers']['rank']['path']], env=env, capture_output=True)
+        self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, b'')
         with self.assertRaisesRegex(package.PackageError, 'refusing repair'):
             self.stage()
