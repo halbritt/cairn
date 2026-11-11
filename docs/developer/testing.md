@@ -20,6 +20,25 @@ and test scripts define the checks that run for this checkout.
 and pinned design-source validation. It does not run the test suites or the
 separate documentation checker.
 
+### Lifecycle publication and deadline fixtures
+
+The F-04 state/failure tests and `test_r02_installed_contracts` exercise actual
+Go activation, with the latter using the installed R-02 file producer. Their
+Linux syscall-fault cases need `strace`, `libseccomp.so.2` and kernel seccomp user
+notification support. `scripts/fixture_publication_fault.py` selects actual regular
+`.cairn-state-*` file descriptors and parent-directory syncs in the fixture's
+exact ledger directory. Renames select their exact destination in `strace`.
+Fault ordinals span Go threads; scheduler eventfds and diagnostic writes continue. Missing support fails the
+fixture rather than replacing the fault with a simulated result.
+
+The retained-cue test compares the absolute deadline observed by Go with the
+retained phase's deadline, then controls that phase's clock to check the actual
+pending-lookup timeout against an eighth-second remainder. The fixture repins its
+test-only observer through its selected source producer. The public parent's
+timer and subprocess clocks stay real; separate parent-timer cases cover the
+full trusted hook budgets. This avoids requiring process startup within the
+last 400 milliseconds of a two-second deadline on a loaded host.
+
 ## Run database integration tests
 
 ```sh

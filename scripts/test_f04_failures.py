@@ -9,7 +9,7 @@ import tempfile
 import time
 import unittest
 
-from test_f04_activation import ROOT, SESSION, TURN, Fixture, encoded, module, oracle, write
+from test_f04_activation import ROOT, SESSION, TURN, Fixture, encoded, module, oracle, sha, write
 
 
 CHILD = r'''package main
@@ -41,12 +41,19 @@ func main(){
  case "timeout-frame": frame("TimeoutError","110");os.Exit(1)
  case "sleep":
   fmt.Fprint(os.Stderr,"");time.Sleep(30*time.Second)
- case "slow-cue":
+ case "deadline-cue":
   raw,e:=io.ReadAll(os.Stdin);if e!=nil {panic(e)}
   var out,err bytes.Buffer
   code:=activationipc.Run(os.Args[1:],bytes.NewReader(raw),&out,&err)
   var event map[string]interface{};json.Unmarshal(raw,&event)
-  if code==0 && event["hook_event_name"]=="PostToolUse" {time.Sleep(1600*time.Millisecond)}
+  if code==0 && event["hook_event_name"]=="PostToolUse" {
+   config:="";deadline:=""
+   for i,arg:=range os.Args {if arg=="--config" {config=os.Args[i+1]};if arg=="--deadline" {deadline=os.Args[i+1]}}
+   var settings map[string]interface{};body,e:=os.ReadFile(config);if e!=nil {panic(e)}
+   if e=json.Unmarshal(body,&settings);e!=nil {panic(e)}
+   path:=filepath.Join(filepath.Dir(settings["state_dir"].(string)),"go-deadline")
+   if e=os.WriteFile(path,[]byte(deadline),0600);e!=nil {panic(e)}
+  }
   os.Stdout.Write(out.Bytes());os.Stderr.Write(err.Bytes());os.Exit(code)
  case "post-persist", "changed-target":
   var out,err bytes.Buffer
@@ -68,6 +75,60 @@ func main(){
  default: os.Exit(3)
  }
 }'''
+
+
+DEADLINE_PROBE = b'''
+# Test-only observer in this fixture's explicitly repinned source closure.
+_fixture_original_tool_cue = tool_cue
+def tool_cue(config, event):
+    if event.get('hook_event_name') != 'PostToolUse':
+        return _fixture_original_tool_cue(config, event)
+    context = _BUNDLE.compatibility_context
+    root = Path(config['state_dir']).parent
+    go_deadline = float((root / 'go-deadline').read_text())
+    audit = dict(go_deadline=go_deadline, retained_deadline=context.deadline, timeouts=[])
+    namespace = context.remaining.__func__.__globals__
+    original_time, original_run = namespace['time'], subprocess.run
+    class Clock:
+        def monotonic(self): return context.deadline - 0.125
+        def __getattr__(self, name): return getattr(original_time, name)
+    def observed(command, *args, **kwargs):
+        if 'session-inbox-pending' in command:
+            audit['timeouts'].append(kwargs['timeout'])
+        return original_run(command, *args, **kwargs)
+    # The real Go activation has already run with the original absolute
+    # deadline. Only this retained phase sees a fixed eighth-second remainder;
+    # subprocess and the public parent's actual timer keep their real clocks.
+    namespace['time'], subprocess.run = Clock(), observed
+    try:
+        return _fixture_original_tool_cue(config, event)
+    finally:
+        namespace['time'], subprocess.run = original_time, original_run
+        (root / 'deadline-probe.json').write_text(json.dumps(audit))
+'''
+
+
+def install_deadline_probe(f):
+    if hasattr(f, 'sources'):
+        path = f.sources / 'coordination.py'
+        path.write_bytes(path.read_bytes() + DEADLINE_PROBE)
+        f.publish_configuration()  # Exercise the actual immutable R-02 producer.
+        return
+    sources = {name: (Path(f.receipt['snapshot_root']) / name).read_bytes()
+               for name in f.receipt['members']}
+    sources['coordination.py'] += DEADLINE_PROBE
+    sources['coordination-hook.py'] = sources['coordination.py']
+    # This is the same explicit snapshot/pin operation as the other F-04
+    # test-only source observers; no production source is changed.
+    hashes = {name: sha(raw) for name, raw in sources.items()}
+    identity = sha(json.dumps(hashes, sort_keys=True, separators=(',', ':')).encode())
+    snapshot = f.root / identity
+    snapshot.mkdir(mode=0o700)
+    for name, raw in sources.items(): write(snapshot / name, raw)
+    f.receipt.update(snapshot_root=str(snapshot), source_revision='TEST same-deadline observer',
+                     members={name: dict(sha256=hashes[name], bytes=len(raw)) for name, raw in sources.items()})
+    write(f.receipt_path, encoded(f.receipt))
+    f.receipt_sha = sha(f.receipt_path.read_bytes())
 
 
 class F04FailureTests(unittest.TestCase):
@@ -255,19 +316,20 @@ class F04FailureTests(unittest.TestCase):
                 self.assertFalse(Path(f.memory['state_dir']).exists())
 
     def test_retained_cue_uses_the_remaining_same_deadline_after_real_go_activation(self):
-        f=self.fixture('remaining-cue','slow-cue')
+        f=self.fixture('remaining-cue','deadline-cue')
+        install_deadline_probe(f)
         f.event.update(hook_event_name='UserPromptSubmit',prompt='ordinary active owner task',host_pid=os.getpid())
         f.raw=encoded(f.event)
         self.assertEqual(f.public('coordination').returncode,0)
         f.replies({'session-inbox-pending':[dict(ok=True,status='OK',data=dict(requests=0,notices=1,responses=0),delay=2)]})
         f.raw=encoded(dict(f.event,hook_event_name='PostToolUse'))
-        began=time.monotonic()
         result=f.public('coordination',timeout=2)
-        elapsed=time.monotonic()-began
         self.assertEqual((result.returncode,result.stdout,result.stderr),(0,b'{}\n',b''))
-        self.assertGreaterEqual(elapsed,1.95)
-        self.assertLess(elapsed,2.2,'retained lookup restarted the enclosing hook deadline')
-        self.assertEqual([c['operation'] for c in f.api_calls()].count('session-inbox-pending'),1)
+        audit=json.loads((f.root/'deadline-probe.json').read_text())
+        self.assertEqual(audit['go_deadline'],audit['retained_deadline'],
+                         'retained phase restarted the enclosing hook deadline')
+        self.assertEqual(audit['timeouts'],[0.125],
+                         'pending lookup did not use the remaining enclosing budget')
 
     def test_parent_signal_is_preserved_and_the_owned_child_is_reaped(self):
         for role in ('memory','coordination'):
