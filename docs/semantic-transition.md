@@ -60,7 +60,8 @@ The host enters only the unchanged common wrapper. The retained Python stage is
 read-only at its qualified `/opt/s04r-selection` guest root, through real fixed
 control paths. Ambient locale/gconv data is masked as in its qualification.
 The unchanged Rust stage is copied as data into its original private absolute
-layout; member modes/hashes, fixed launcher bytes and ABI prerequisites are
+layout. Safe tar exports omit directory modes, so sealed-format modes are
+restored only on this private copy. Member hashes, fixed launcher bytes and ABI prerequisites are
 checked. Neither package nor control generation is re-derived.
 
 Case 1 records the full active-current-version source population/hash, coverage

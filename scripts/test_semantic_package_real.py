@@ -83,7 +83,15 @@ def descendant_of(pid, ancestor):
     return False
 
 
-def process_snapshot(payload, known, *, ancestor=None, minimal_root=False):
+def worker_root_visibility(proc, *, standalone=True):
+    checkout = ((proc / 'root/work/go.mod').exists() or (proc / 'root/work/.git').exists())
+    python = bool(list((proc / 'root/usr/bin').glob('python*')))
+    if standalone:
+        require(not checkout, 'development checkout exposed in standalone fixture')
+    return checkout, python
+
+
+def process_snapshot(payload, known, *, ancestor=None, minimal_root=False, standalone=True):
     found = []
     for proc in Path('/proc').iterdir():
         if not proc.name.isdigit() or int(proc.name) in known:
@@ -141,9 +149,7 @@ def process_snapshot(payload, known, *, ancestor=None, minimal_root=False):
                     'ambient loader setting reached worker')
             # The standalone root has no development checkout. Bootstrap Python
             # remains visible and is recorded rather than claimed absent.
-            checkout_visible = ((proc / 'root/work/go.mod').exists() or (proc / 'root/work/.git').exists())
-            python_visible = bool(list((proc / 'root/usr/bin').glob('python*')))
-            require(not checkout_visible, 'development checkout exposed in standalone fixture')
+            checkout_visible, python_visible = worker_root_visibility(proc, standalone=standalone)
             if minimal_root:
                 require(not python_visible, 'Python exposed in native fixture worker root')
             binary_sha = package.digest((proc / 'exe').read_bytes())

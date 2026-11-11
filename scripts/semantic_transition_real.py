@@ -8,6 +8,7 @@ import shutil
 import signal
 import subprocess
 import threading
+import traceback
 
 
 def load(name, path):
@@ -15,6 +16,22 @@ def load(name, path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def restore_private_rust_modes(stage):
+    """Safe tar exports omit directory modes; restore the sealed format on a copy."""
+    for category in ('payloads', 'launchers', 'manifests'):
+        for generation in (stage / category).iterdir():
+            for base, directories, files in os.walk(generation):
+                directory = Path(base)
+                for name in [*directories, *files]:
+                    if (directory / name).is_symlink():
+                        raise RuntimeError('Rust immutable generation contains a symlink')
+                for name in files:
+                    path = directory / name
+                    executable = category == 'launchers' or path.relative_to(generation).parts[0] == 'bin'
+                    path.chmod(0o555 if executable else 0o444)
+                directory.chmod(0o555)
 
 
 def prepare(artifacts):
@@ -30,7 +47,8 @@ def prepare(artifacts):
     if str(target) != '/tmp/semantic-package-fixtures/stage':
         raise RuntimeError('retained Rust absolute selection differs')
     target.parent.mkdir(mode=0o700)
-    shutil.copytree('/opt/s05-rust-stage', target, copy_function=shutil.copy2)
+    shutil.copytree('/opt/s05-rust-stage', target, copy_function=shutil.copy2, symlinks=True)
+    restore_private_rust_modes(target)
     original = package.tree_records(Path(stage['payload']))
     descriptor = json.loads((Path(stage['payload']) / 'payload.json').read_bytes())
     expected = dict(descriptor['files'])
@@ -84,6 +102,18 @@ def worker_trace_scope(traces, launchers):
     return roots, selected
 
 
+def mapping_permission(proc, pending, exit_races, terminal):
+    """Use the qualified S04R observer's bounded live/terminal race policy."""
+    pid = int(proc.name)
+    if terminal(proc):
+        exit_races.add(pid)
+        pending.pop(pid, None)
+        return
+    pending[pid] = pending.get(pid, 0) + 1
+    if pending[pid] > 2:
+        raise RuntimeError('live worker mapping access denied after two retries: ' + str(pid))
+
+
 def run_observed(command, env, artifacts, selected, python, rust_payload):
     python_observer = load('transition_python_observer', '/work/scripts/check_semantic_python_closure.py')
     closure = load('transition_python_environment', '/work/scripts/semantic_python_closure.py')
@@ -91,6 +121,7 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
     python_observer.observer_controls(artifacts)
     done, errors = threading.Event(), []
     python_workers, rust_workers = {}, {}
+    pending_permissions, exit_races = {}, set()
     payload = Path(python['payload']['path'])
     entries = python['payload']['descriptor']['entries']
     argv = ['/usr/bin/strace', '-ff', '-qq', '-s', '256', '-yy', '-e',
@@ -121,13 +152,20 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
                             prior = python_workers.get(row['pid'])
                             if prior is None or len(row['images']) + len(row['data_mappings']) >= len(prior['images']) + len(prior['data_mappings']):
                                 python_workers[row['pid']] = row
+                                pending_permissions.pop(row['pid'], None)
                     except (FileNotFoundError, ProcessLookupError):
                         continue
-                for row in rust_observer.process_snapshot(rust_payload, rust_workers, ancestor=child.pid):
+                    except PermissionError:
+                        mapping_permission(proc, pending_permissions, exit_races, python_observer.process_terminal)
+                for row in rust_observer.process_snapshot(rust_payload, rust_workers, ancestor=child.pid, standalone=False):
                     rust_workers[row['pid']] = row
-                done.wait(0.05)
+                for pid in list(pending_permissions):
+                    if python_observer.process_terminal(Path('/proc') / str(pid)):
+                        exit_races.add(pid)
+                        pending_permissions.pop(pid)
+                done.wait(0.02)
         except BaseException as error:
-            errors.append(repr(error))
+            errors.append(traceback.format_exc())
 
     with (artifacts / 'tests.jsonl').open('wb') as output:
         child = subprocess.Popen(argv, env=env, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
@@ -146,9 +184,11 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
             done.set()
             thread.join()
     observations = {'python_workers': list(python_workers.values()), 'rust_workers': list(rust_workers.values()),
-                    'mapping_errors': errors, 'returncode': child.returncode}
+                    'mapping_errors': errors, 'returncode': child.returncode,
+                    'terminal_mapping_races': sorted(exit_races),
+                    'unresolved_live_mapping_pids': [pid for pid in pending_permissions if not python_observer.process_terminal(Path('/proc') / str(pid))]}
     (artifacts / 'real-worker-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
-    if child.returncode or errors:
+    if child.returncode or errors or observations['unresolved_live_mapping_pids']:
         raise RuntimeError('real transition execution/mapping failed: ' + repr(errors))
     traces = {int(path.name.rsplit('.', 1)[1]): path.read_text() for path in artifacts.glob('worker-trace.*')}
     launchers = [selected[label][mode] for label in ('python', 'rust') for mode in ('rank', 'embed')]
