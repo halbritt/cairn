@@ -39,6 +39,26 @@ image attribution independently. Producer-shaped inputs require paired parity;
 malformed inputs require safe stable refusal; resource/interpreter limits remain
 documented exclusions under owner decision `98d46758/v1`.
 
+The corpus exercises every supported producer cell with substantive selection,
+null and existing-record no-op selections, ordered and partial writes, retry
+reconciliation, CAS/replace failure, transcript append/truncate/missing cases,
+owner-text filtering, duplicate/stop coalescing, crash lock release and post-lock
+reporting. It changes each of eight pinned coordinator profiles independently
+and refuses changed code, receipt, image, launcher and profile selections before
+body effects. Source SDK identity follows the actual selected alias: canonical
+and `.py` aliases report the checked member digest; a non-`.py` alias reports an
+unknown implementation ID. Go reports its independently checked executable
+digest. These differences are asserted explicitly, rather than normalized away.
+
+The original-deadline pair leaves stdin open for 130 seconds, then enters real
+retrieval and a 35-second synthetic selector. Both actual processes must stop
+between 148 and 162 seconds without a write or committed capture state. This
+tests the new caller's original H150 allowance across stdin and body work.
+The existing input cap is 1 MiB; larger input refuses before body effects. Receipt,
+member, config, selector-output and subprocess limits remain those of the reused
+components. Legacy lossless integer decoding and Source argv/interpreter limits
+do not acquire an all-input parity claim through this entry.
+
 This is a source construction candidate for the existing Foundation review and
 integration path. It establishes neither full CAIRN-319 acceptance nor installed
 cutover, provider usefulness, native session policy or permission for production
