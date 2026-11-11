@@ -38,7 +38,11 @@ func BoundFailure(phase string, config, event *value.Value, err error) Result {
 		out.Trace["cause"] = "blocking_io"
 	}
 	if (value.SameText(config.Get("harness"), "codex") || boundClaude(config)) && nativeUUID(event.Get("session_id")) && (value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")) {
-		if isRequired(requiredFailure(config, event, classify(err), true, false)) {
+		converted := requiredFailure(config, event, classify(err), true, false)
+		if boundClaude(config) {
+			converted = claudeBoundaryError(config, event, converted)
+		}
+		if isRequired(converted) {
 			refused := requiredMemoryOutput(config, event, required("current required Claude context could not be restored"), diagnostic)
 			out.Trace["outcome"] = "required_refused"
 			refused.Trace = out.Trace

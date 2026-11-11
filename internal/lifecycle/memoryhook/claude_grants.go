@@ -1,6 +1,7 @@
 package memoryhook
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/halbritt/cairn/internal/lifecycle/ledger"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
+	"github.com/halbritt/cairn/internal/statefile"
 )
 
 func boundClaude(config *value.Value) bool {
@@ -197,4 +199,23 @@ func claudeRequiredError(config, event *value.Value, original error, persist boo
 func claudeGrantKey(identity *value.Value) (string, error) {
 	raw, err := encoded(identity, false)
 	return hashText(string(raw)), err
+}
+
+// The first classification is read-only. Source's public boundary may then
+// preserve a proven failure under the same nonblocking session lock. A busy
+// writer cannot be claimed durable, and no optional allowance is renewed.
+func claudeBoundaryError(config, event *value.Value, err error) error {
+	err = claudeRequiredError(config, event, err, false)
+	if !isRequired(err) {
+		return err
+	}
+	directory, pathErr := pathValue(config.Get("state_dir"))
+	if pathErr != nil {
+		return err
+	}
+	_ = statefile.LegacyLock(context.Background(), filepath.Join(directory, text(event.Get("session_id"))+".lock"), 0, func() error {
+		err = claudeRequiredError(config, event, err, true)
+		return nil
+	})
+	return err
 }

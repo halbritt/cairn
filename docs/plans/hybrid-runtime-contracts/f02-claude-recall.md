@@ -33,8 +33,10 @@ loads the existing inbox ledger with its initialized marker, charges complete
 serialized hook output, and publishes the grant durably before output. Startup
 required bytes transfer into the first prompt allowance. Existing prompt or
 launcher-task owners receive required refreshes without renewing optional bytes.
-The public failure guard reads durable requirements; only the locked body may
-persist a failed requirement. A Claude required Start refusal returns exit 1
+The public failure guard first reads durable requirements. After a proven
+failure it may acquire the same session lock nonblockingly, recheck status and
+persist pending requirements; a busy lock leaves bytes unchanged. Neither the
+read-only predicate nor that failure save renews optional allowance. A Claude required Start refusal returns exit 1
 with its two diagnostic lines; a required prompt returns exit 2. Codex keeps its
 own Start stop output. Prompt labels and task UUIDs remain accounting metadata.
 
@@ -42,9 +44,38 @@ The first bound checkpoint adds five independent Python/Go process pairs to the
 four unbound pairs: startup, first prompt, repeated owner, required Start refusal,
 and required prompt refusal. All four methods pass, including exact state,
 normalized API bodies/order, streams, reported SDK identity and lock release.
-These are constructed local fixtures, not native writer admission. Further
-owner/task, anti-reset, failed-write and optional-credit controls remain required
-before the final author result. This unit does not claim whole CAIRN-318,
+These are constructed local fixtures, not native writer admission. Expanded
+controls now cover launcher-task reuse, different prompt owners, pending
+restoration, absent owners, surviving initialized markers, busy locks, failed
+final state replacement and malformed prompts. The failed-replacement pair
+found and retained an actual mismatch: Go originally left required.pending=false
+after its matching refusal; Source's lock-and-recheck boundary now preserves it.
+
+The final focused corpus has 18 methods, 33 exact process pairs and one separate
+malformed-prompt control. Whole optional bodies, changed hashes, whole competing
+groups, checked spans, per-receipt credits, degraded success and optional failure
+run through the real Claude caller and SDK. Invocation trace fields, complete
+streams, state, normalized timing fields, API bodies/order, grant identities and
+post-lock recall-meter/1 reports are compared. Source and Go implementation IDs
+are asserted separately. The original tests and Source remain unchanged.
+
+Optional context contains freshly generated request IDs. Those eight pairs
+control only UUID randomness and retain IDs literally in context and RPCs. Go
+uses the actual private command with a test-only init overlay selecting its UUID
+reader; no command dispatch, handler, SDK or admission code is replaced. Python's
+public main uses the complete retained /2 Source bundle with the equivalent
+UUID entropy sequence; its actual search/call/render/grant code runs unchanged.
+The other 25 pairs separately exercise the real installed Source frontend and
+receipt-checked Go frame, normalizing independently generated RPC UUIDs only
+after validating their canonical shape. All grant keys, charges, selection
+digests, output text and persisted identities remain exact. Only validated
+wall/elapsed/process fields differ in trace comparisons.
+
+The malformed lone-surrogate prompt is owner98d class b: Go retains its stable
+early refusal with no API effect, and the observed Source result is recorded
+separately. Constructed native-owner labels and forged payload identity fields
+never authenticate a profile or inbox. No all-input CPython parity or recorded
+native writer/corpus admission is claimed. This unit does not claim whole CAIRN-318,
 deployment, native delivery or measured usefulness acceptance.
 
 Source memory.py remains pinned at SHA256

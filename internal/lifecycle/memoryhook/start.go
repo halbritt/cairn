@@ -152,6 +152,9 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	boundary := func(err error) Result {
 		original := classify(err)
 		converted := requiredFailure(config, event, original, bound, false)
+		if boundClaude(config) {
+			converted = claudeBoundaryError(config, event, converted)
+		}
 		out := claudeFailure(config, event, original)
 		if isRequired(converted) && !isRequired(original) {
 			out = requiredMemoryOutput(config, event, converted, strings.SplitN(out.Stderr, "\n", 2)[0]+"\n")
