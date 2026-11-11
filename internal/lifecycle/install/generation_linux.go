@@ -12,8 +12,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -73,13 +71,9 @@ func stageGeneration(ctx context.Context, root, id string, files []File, observe
 	if len(files) == 0 {
 		return result, errors.New("generation requires selected files")
 	}
-	ordered := append([]File(nil), files...)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Name < ordered[j].Name })
-	for i, f := range ordered {
-		pin, e := hex.DecodeString(f.SHA256)
-		if !memberName(f.Name) || !canonical(f.Path) || e != nil || len(pin) != sha256.Size || hex.EncodeToString(pin) != f.SHA256 || (i > 0 && ordered[i-1].Name == f.Name) {
-			return result, errors.New("generation files require unique basenames, canonical source paths and lowercase SHA-256 pins")
-		}
+	ordered, err := selectedFiles(files, false)
+	if err != nil {
+		return result, err
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
@@ -201,7 +195,7 @@ func stageGeneration(ctx context.Context, root, id string, files []File, observe
 }
 
 func memberName(name string) bool {
-	return utf8.ValidString(name) && name != "" && name != "." && name != ".." && name != "manifest.json" && !strings.ContainsAny(name, "/\\\x00")
+	return fileName(name) && name != "manifest.json"
 }
 
 // ReadGeneration verifies an independent manifest pin and every installed member
@@ -341,11 +335,15 @@ func verifyGeneration(ctx context.Context, root, name string, manifest generatio
 		return err
 	}
 	defer func() { err = errors.Join(err, dir.Close()) }()
-	names, err := dir.Readdirnames(-1)
-	if err != nil || len(names) != len(manifest.Files)+1 {
-		return errors.Join(err, errors.New("generation membership differs"))
-	}
 	expected := append([]generationMember{{Name: "manifest.json", SHA256: generationPin(root, name, raw).SHA256, Bytes: int64(len(raw)), Mode: 0400}}, manifest.Files...)
+	return verifyInstalledFiles(ctx, dir, expected)
+}
+
+func verifyInstalledFiles(ctx context.Context, dir *os.File, expected []generationMember) error {
+	names, err := dir.Readdirnames(-1)
+	if err != nil || len(names) != len(expected) {
+		return errors.Join(err, errors.New("immutable directory membership differs"))
+	}
 	for _, member := range expected {
 		fd, err := unix.Openat(int(dir.Fd()), member.Name, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
@@ -360,7 +358,7 @@ func verifyGeneration(ctx context.Context, root, name string, manifest generatio
 		n, readErr := io.Copy(h, contextReader{ctx, f})
 		after, afterErr := generationStat(f, member.Mode)
 		closeErr := f.Close()
-		if readErr != nil || afterErr != nil || closeErr != nil || *before != *after || n != member.Bytes || hex.EncodeToString(h.Sum(nil)) != member.SHA256 {
+		if readErr != nil || afterErr != nil || closeErr != nil || *before != *after || member.Bytes >= 0 && n != member.Bytes || hex.EncodeToString(h.Sum(nil)) != member.SHA256 {
 			return errors.Join(readErr, afterErr, closeErr, errors.New("generation member changed"))
 		}
 	}
