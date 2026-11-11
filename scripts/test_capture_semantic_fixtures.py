@@ -64,9 +64,10 @@ def fake_onnx_worker(output, mode='rank', corruption=None):
     sys.meta_path.insert(0, NoModel())
     import numpy as np
     rank, embed = capture._load_frozen_sources(Path(capture.__file__).parent)
-    packages = Path(np.__file__).resolve().parent.parent
-    normalize_path = packages / 'fastembed/common/utils.py'
-    onnx_path = packages / 'fastembed/text/onnx_text_model.py'
+    # Manufactured trace mechanics must not depend on where NumPy or a model
+    # package is installed. Real reference collection keeps its own source pins.
+    normalize_path = Path(__file__).with_name('fixtures') / 'capture_mechanics.py'
+    onnx_path = normalize_path
     normalize_source = normalize_path.read_bytes()
 
     def function(path, name):
@@ -775,6 +776,26 @@ class CaptureSemanticFixturesTest(unittest.TestCase):
                     self.assertEqual(trace['mapped_duplicate_rows'], 1)
                     self.assertEqual(len((output / 'cls_f32le.bin').read_bytes()), 4 * 384 * 4)
                     self.assertEqual(len((output / 'lengths_i64le.bin').read_bytes()), 4 * 8)
+
+    def test_manufactured_trace_is_independent_of_numpy_package_location(self):
+        script = '''
+import json, pathlib, runpy, sys
+import numpy as np
+np.__file__ = sys.argv[1]
+sys.path.insert(0, str(pathlib.Path(sys.argv[2]).resolve().parent))
+module = runpy.run_path(sys.argv[2], run_name="manufactured_location_test")
+module["fake_onnx_worker"](pathlib.Path(sys.argv[3]))
+assert not any(name.split('.')[0] in {'fastembed','onnxruntime','tokenizers'} for name in sys.modules)
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            for location in ('dist-packages/numpy', 'other-root/site-packages/numpy'):
+                with self.subTest(location=location):
+                    output = Path(directory) / location.split('/')[0]
+                    result = subprocess.run([sys.executable, '-B', '-c', script,
+                        str(Path(directory) / location / '__init__.py'), __file__, str(output)],
+                        capture_output=True, text=True, timeout=20)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertTrue(json.loads(result.stdout)['manufactured'])
 
     def test_frozen_trace_refuses_bad_fake_onnx_tensors(self):
         for corruption in ('mask', 'nonfinite', 'shape', 'exception'):
