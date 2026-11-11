@@ -215,6 +215,48 @@ class ToolObservationTests(unittest.TestCase):
                 if expected is None:self.assertFalse(self.directory.exists())
                 else:self.assertEqual(list(json.loads((self.directory/'ses_CheckedOrdinary1.json').read_bytes())['hints']['files']),[expected])
 
+    def test_relative_symlink_parent_escape_and_nohint_skip_for_all_tools(self):
+        outside=self.root/'outside'/'dir';outside.mkdir(parents=True)
+        (self.f.root/'link').symlink_to(outside,target_is_directory=True)
+        (self.f.root/'b.py').write_text('lexical decoy')
+        path='link/../b.py'
+        cases=[(tool,dict(file_path=path),[]) for tool in ('Read','Edit','Write')]
+        cases += [('Grep',dict(path=path),[]),('Glob',dict(path=path),[]),
+                  ('Glob',dict(pattern=path),['link','b.py']),
+                  ('Bash',dict(command='rg foo '+path),['foo','link','b.py'])]
+        for checked in (False,True):
+            for tool,tool_input,searches in cases:
+                with self.subTest(checked=checked,tool=tool,tool_input=tool_input):
+                    shutil.rmtree(self.directory,ignore_errors=True);self.checked=checked
+                    self.event('PostToolUse',tool,tool_input)
+                    self.assertEqual(self.pair().returncode,0)
+                    self.assertEqual(self.directory.exists(),bool(searches))
+                    if searches:
+                        hints=json.loads((self.directory/'ses_CheckedOrdinary1.json').read_bytes())['hints']
+                        self.assertEqual(list(hints.get('files',{})),[])
+                        self.assertEqual(list(hints['searches']),searches)
+
+    def test_relative_symlink_parent_internal_controls_and_hint_order(self):
+        target=self.f.root/'sub'/'dir';target.mkdir(parents=True)
+        (target.parent/'beta.txt').write_text('resolved internal file')
+        (self.f.root/'internal').symlink_to(target,target_is_directory=True)
+        for path,expected in (('internal/../beta.txt','sub/beta.txt'),('sub/../beta.txt','beta.txt')):
+            cases=[(tool,dict(file_path=path)) for tool in ('Read','Edit','Write')]
+            cases += [('Grep',dict(path=path)),('Glob',dict(path=path)),('Glob',dict(pattern=path))]
+            for tool,tool_input in cases:
+                with self.subTest(path=path,tool=tool,tool_input=tool_input):
+                    shutil.rmtree(self.directory,ignore_errors=True)
+                    self.event('PreToolUse',tool,tool_input)
+                    self.assertEqual(self.pair().returncode,0)
+                    hints=json.loads((self.directory/'ses_CheckedOrdinary1.json').read_bytes())['hints']
+                    self.assertEqual(list(hints['files']),[expected])
+        self.seed(dict(binding=[None,''],hints=dict(files={'alpha.py':1.0,'sub/beta.txt':2.0},searches={'foo':3.0,'old':4.0})))
+        self.event('PostToolUse','Bash',dict(command='rg foo internal/../beta.txt alpha.py internal/../beta.txt'))
+        self.assertEqual(self.pair().returncode,0)
+        hints=json.loads((self.directory/'ses_CheckedOrdinary1.json').read_bytes())['hints']
+        self.assertEqual(list(hints['files']),['sub/beta.txt','alpha.py'])
+        self.assertEqual(list(hints['searches']),['old','foo'])
+
     def test_disabled_privacy_identity_and_workspace_admission(self):
         original=self.f.env
         self.f.env=lambda:dict(original(),CAIRN_LIFECYCLE_DISABLED='1');self.pair();self.assertFalse(self.directory.exists())

@@ -237,7 +237,8 @@ func observationFileHint(v *value.Value, cwd, root, directory string) (string, e
 		return "", nil
 	}
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(cwd, path)
+		// Preserve parent components until resolved follows preceding symlinks.
+		path = cwd + string(filepath.Separator) + path
 	}
 	full, err := resolved(path, directory)
 	if err != nil {

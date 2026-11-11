@@ -21,7 +21,7 @@ matching the alternatives, including uppercase-prefixed exception names.
 Source's non-Hermes Pre/Post no-project/no-workstream/no-hint skip precedes state
 creation. Shared identity/account/privacy/workspace admission precedes observation.
 
-The actual-process corpus has24 methods using the complete installed Source
+The actual-process observation corpus has26 methods using the complete installed Source
 verifier/frontend and independently compiled Go. It reaches all six tools;
 ordinary native harness identities and Hermes status/hash naming; all three
 checked OpenCode events; receipt refusal before skip; ordered recency/dedup/caps;
@@ -43,13 +43,28 @@ The corpus asserts each side's refusal and absence of effects separately. Stored
 file/search lists instead have a reached TypeError matching Source, with exact
 state preservation. No all-input Python interpreter reconstruction is claimed.
 
+Relative file hints preserve parent components until the existing resolver
+follows symlinks. This matches Source Path(cwd)/path followed by resolve(),
+including link/../file paths that leave the project. Lexical cleaning before
+resolution would infer a different file or create state instead of skipping.
+Actual Source/Go pairs cover all six tools, checked entries, internal controls,
+search-term and recency order, and no-hint skips. A separate checked-recall
+process regression reaches the same narrow fix in retrieval intent, comparing
+the actual search query, entities, API order, streams and state.
+
+Three limits remain explicit: Go 1.25 uses Unicode 15.0 word classes while the
+Python 3.14 Source uses Unicode 16.0, so newly added letters can change error
+identifier boundaries (N-1). Bound tool events remain unavailable (N-2).
+Absent/unknown harnesses and nonobject stored hints retain the existing strict
+subset refusals, including cases where Source could skip or save (N-3).
+This repair does not expand those cells or claim all-Unicode equivalence.
+
 Source is pinned by its raw memory.py hash0e1076bf and independent installed
 closure hashes in the process logs. The first committed pair is1ced53c7;
-5b466798/v1 was delivered before the08:50 checkpoint. The existing ordinary-host
-unsupported observation tuple conflicts with the newly reached Source skip.
-Exact original Source/Go evidence and minimal corpus-join request36ccdd95/v1
-are with Foundation; the author does not edit that existing corpus or weaken
-its Source oracle. Author readiness requires the affected regression gates;
+5b466798/v1 was delivered before the08:50 checkpoint. Foundation's exact selected
+corpus join4282a0fb/v1 removed only the obsolete unsupported observation tuple
+as e62df1f8; all other existing corpus bytes and Source assertions are unchanged.
+Author readiness requires the affected regression gates;
 existing1279 review, Foundation integration/landing/cleanup and all prior holds
 remain separate. Current staged rows remain checked Python until a separately
 authorized reviewed switch.
