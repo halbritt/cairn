@@ -245,8 +245,14 @@ consumer's runtime account-admission behavior. Staging does not verify a live
 client's environment, native trust or loaded settings.
 
 Each supported row selects the installation's exact role, configuration and
-trusted timeout vector before rendering its single immutable `L` path as shell
-text. Codex memory keeps its 12,000-byte context limits on SessionStart and
+trusted timeout vector. Memory renders its immutable `L` path as shell text.
+Coordination selects the pinned private Go image with `coordination`, the eight
+`/3` receipt-selection flags from that vector, and
+`-- hook --config PATH`. Every row records its inspected `L` as
+`checked_launcher`; retain that launcher and its complete selection. The Go
+coordination entry reconstructs and verifies the original 21-element vector
+from this retained launcher before handling the event. Codex memory keeps its
+12,000-byte context limits on SessionStart and
 UserPromptSubmit and its asynchronous Stop row. The remaining supported rows
 and timeouts match the existing Codex, Claude and coordination installers.
 No OpenCode or Agy bound-recall support is inferred from this shell format.
@@ -256,7 +262,8 @@ Its group matcher, group metadata and unrelated hooks remain. If none matches,
 a new group is appended. Multiple matches refuse, rather than deleting a
 possibly distinct conditional hook. The exact newly selected command is also
 recognized, so rendering already-rendered settings adds no duplicate hooks.
-Naming a newly selected command in the other role's previous-command list refuses.
+Naming a newly selected command or its retained `L` in the other role's
+previous-command list refuses.
 Unknown events and other settings remain, including commands the operator did
 not select for replacement. Supply the complete owned command lists; this
 tool does not identify stale lifecycle hooks by basename or remove them for you.
@@ -284,7 +291,8 @@ pinned test child images. Those disposable fault images are not release builds.
 
 ### Staged OpenCode adapters
 
-The OpenCode selection wires each callback to its exact checked R-02 launcher.
+The OpenCode selection wires memory callbacks to their checked R-02 launcher
+and coordination callbacks to the receipt-checked Go hook entry.
 Start and prompt recall remain on Python until the receipt-checked ordinary Go
 consumer lands. The bare `[IMAGE, memory, --config, PATH]` entry is not selected:
 it lacks the runtime receipt, image, closure and configuration checks and the
@@ -344,7 +352,7 @@ Every row records its `implementation` and `reason`. Current routing is:
 | Bound callbacks or provider-selected recall | Existing receipt-selected Python caller. |
 | Codex/Claude unbound ordinary recall | Existing Python caller. |
 | PreCompact/SessionEnd capture and tool observation | Existing receipt-selected Python caller. |
-| Coordination hooks for all supported harnesses | Existing Python caller; the private Go hook handler and its `/3` launch-vector construction are not yet on main. |
+| Coordination hooks for all supported harnesses | Receipt-checked Go `/3` hook entry, with the exact retained R-02 launcher for its selection and issued commands. |
 | Agy ordinary memory hook | Not installed; this tool adds none. |
 
 Every selected command retains the R-02 runtime receipt checks. Foundation owns
@@ -352,6 +360,17 @@ the missing checked ordinary-memory Go consumer; Release switches the rows only
 after that consumer lands. No native-client trust operation, activation,
 cached-client refresh, production apply or full R-04 acceptance is claimed by
 this output.
+
+### HC-05 coordination cutover constraint
+
+The direct Go entry refuses a bound `/2` wake with exit 2
+(`NATIVE_PROMPT_REFUSED`) during activation, before a session lock or inbox
+claim. A session reached only by those wakes receives no wake deliveries until
+its selection is repinned to `/3` and it uses the receipt-checked `/3` entry.
+Ordinary turn boundaries such as Stop and SessionStart continue to deliver.
+Keep this distinction in the later authorized HC-05 cutover and readback; staged
+row generation does not repin or change a live session.
+
 `test_r04_host_wiring.py` runs the staged OpenCode plugins and shell argv in
 disposable homes against the checked R-02 path and retained Source, including
 reverse bytes, excluded cells and changed-input refusal.

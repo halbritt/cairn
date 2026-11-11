@@ -165,7 +165,13 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
                         row = next(row for row in metadata['rows'] if (row['role'], row['event']) == (role, event))
                         self.assertEqual(row['hook']['timeout'], budget)
                         self.assertEqual(shlex.split(row['hook']['command']), row['argv'])
-                        self.assertEqual(row['argv'], f.installed['launchers'][role + ':' + ('0' if role == 'memory' else '1') + ':' + str(budget)])
+                        launcher = f.installed['launchers'][role + ':' + ('0' if role == 'memory' else '1') + ':' + str(budget)]
+                        self.assertEqual(row['checked_launcher'], launcher)
+                        if role == 'memory': self.assertEqual(row['argv'], launcher)
+                        else:
+                            self.assertEqual(row['implementation'], 'go')
+                            self.assertEqual(row['argv'][:2], [str(f.binary), 'coordination'])
+                            self.assertEqual(row['argv'][-4:], ['--', 'hook', '--config', str(f.coord_path)])
                         self.assertEqual(row['hook'].get('async'), True if (harness, role, event) == ('codex', 'memory', 'Stop') else None)
                         limit = 12000 if harness == 'codex' and role == 'memory' and event in ('SessionStart', 'UserPromptSubmit') else None
                         self.assertEqual(row['hook'].get('additionalContextLimit'), limit)

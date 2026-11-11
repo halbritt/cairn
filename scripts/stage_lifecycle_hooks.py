@@ -66,7 +66,8 @@ def definitions(stager, plan):
         events = MEMORY[plan['harness']] if role == 'memory' else COORDINATION[plan['harness']]
         for event, timeout in events.items():
             label = role + ':' + str(0 if role == 'memory' else index + 1) + ':' + str(timeout)
-            argv = install['launchers'][label]
+            launcher = install['launchers'][label]
+            argv = launcher
             vector = metadata['anchors'][label]['vector']
             for flag, value in (('--role', role), ('--config', profile['path']), ('--hook-timeout', str(timeout))):
                 if vector.count(flag) != 1 or vector[vector.index(flag) + 1:][:1] != [value]:
@@ -76,7 +77,14 @@ def definitions(stager, plan):
                       'ordinary recall for this harness remains Python' if event in ('SessionStart', 'UserPromptSubmit') else
                       'capture or tool observation')
             if role == 'coordination':
-                reason = 'coordination hook process entry unavailable in Go'
+                flags = ['--receipt', '--receipt-sha256', '--role', '--entrypoint',
+                         '--config', '--hook-timeout', '--launch-root', '--shell']
+                if len(vector) != 21 or vector[5::2] != flags:
+                    raise ValueError('unsupported checked coordination launch vector')
+                argv = [receipt['binary']['path'], 'coordination', *vector[5:],
+                        '--', 'hook', '--config', profile['path']]
+                implementation = 'go'
+                reason = 'receipt-checked Go coordination hook'
             if not config.get('inbox_recall_binding'):
                 if (role == 'memory' and plan['harness'] == 'opencode'
                         and event in ('SessionStart', 'UserPromptSubmit')):
@@ -88,7 +96,7 @@ def definitions(stager, plan):
             if role == 'memory' and plan['harness'] == 'codex':
                 if event in ('SessionStart', 'UserPromptSubmit'): hook['additionalContextLimit'] = 12000
                 if event == 'Stop': hook['async'] = True
-            rows.append(dict(role=role, event=event, argv=argv, hook=hook,
+            rows.append(dict(role=role, event=event, argv=argv, checked_launcher=launcher, hook=hook,
                              implementation=implementation, reason=reason))
     return rows, profiles
 
@@ -105,7 +113,8 @@ def render(plan, rows):
     if type(replacements) is not dict or set(replacements) != {'memory', 'coordination'}:
         raise ValueError('explicit previous command lists for both roles required')
     seen = set()
-    selected_roles = {row['hook']['command']: row['role'] for row in rows}
+    selected_roles = {command: row['role'] for row in rows
+                      for command in (row['hook']['command'], shlex.join(row['checked_launcher']))}
     for role, values in replacements.items():
         if type(values) is not list:
             raise ValueError('previous commands must be lists')

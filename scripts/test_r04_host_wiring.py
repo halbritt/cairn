@@ -77,6 +77,29 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
             if path.is_file(): self.assertEqual(path.stat().st_mode & 0o777, 0o400)
         return selected, directory, record
 
+    def test_coordination_rows_select_receipt_checked_go_hook(self):
+        for harness in ('codex', 'claude', 'opencode'):
+            for bound in (False, True):
+                with self.subTest(harness=harness, bound=bound):
+                    f = self.fixture(harness + str(bound), harness=harness, bound=bound)
+                    _, _, record = self.selected(f)
+                    for row in record['rows']:
+                        if row['role'] != 'coordination':
+                            continue
+                        self.assertEqual(row['implementation'], 'go')
+                        self.assertEqual(row['argv'][:2], [str(f.binary), 'coordination'])
+                        self.assertEqual(row['checked_launcher'], [str(f.launcher('coordination', row['hook']['timeout']))])
+                        self.assertIn('--receipt', row['argv'])
+                        split = row['argv'].index('--')
+                        self.assertEqual(row['argv'][split + 1:], ['hook', '--config', str(f.coord_path)])
+                        for flag, expected in (('--receipt', str(f.receipt_path)),
+                                               ('--receipt-sha256', f.receipt_sha),
+                                               ('--role', 'coordination'),
+                                               ('--hook-timeout', str(row['hook']['timeout'])),
+                                               ('--launch-root', str(f.launch_root))):
+                            self.assertEqual(row['argv'].count(flag), 1)
+                            self.assertEqual(row['argv'][row['argv'].index(flag) + 1], expected)
+
     def test_opencode_uses_checked_source_cells_and_preserves_reverse_inputs(self):
         f = self.fixture('ordinary host')
         calls = self.recall_api(f)
@@ -86,7 +109,8 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         for selected_config, input_pin in [(f.memory_path, f.plan['memory_config']), (f.coord_path, f.plan['coordination_configs'][0])]:
             self.assertEqual(selected_config.read_bytes(), Path(input_pin['path']).read_bytes())
         implementations = {(r['role'], r['event']): r['implementation'] for r in record['rows']}
-        self.assertTrue(all(impl == 'python' for impl in implementations.values()))
+        self.assertTrue(all(impl == ('go' if role == 'coordination' else 'python')
+                            for (role, _), impl in implementations.items()))
         self.assertTrue(all('receipt-checked ordinary Go consumer unavailable' in r['reason']
                             for r in record['rows'] if r['role'] == 'memory'
                             and r['event'] in ('SessionStart', 'UserPromptSubmit')))
@@ -112,7 +136,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         memory_state = json.loads((Path(f.memory['state_dir']) / 'ses_wiring.json').read_bytes())
         self.assertIn(memory_state['last_capture']['outcome'], ('courtesy', 'unchanged'))
 
-    def test_shell_transport_keeps_all_harnesses_on_checked_source(self):
+    def test_shell_transport_keeps_checked_memory_and_selects_go_coordination(self):
         for harness in ('opencode', 'codex', 'claude'):
             with self.subTest(harness=harness):
                 f = self.fixture(harness, harness=harness)
@@ -120,7 +144,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 _, _, record = self.selected(f)
                 memory = next(r for r in record['rows'] if r['role'] == 'memory' and r['event'] == 'SessionStart')
                 coord = next(r for r in record['rows'] if r['role'] == 'coordination')
-                self.assertEqual((memory['implementation'], coord['implementation']), ('python', 'python'))
+                self.assertEqual((memory['implementation'], coord['implementation']), ('python', 'go'))
                 session = 'ses_shell' if harness == 'opencode' else SESSION
                 event = dict(hook_event_name='SessionStart', session_id=session, cwd=str(f.root), host_pid=os.getpid())
                 shutil.rmtree(f.package)
@@ -128,6 +152,12 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                                         cwd=f.root, env=f.env(), capture_output=True, timeout=20)
                 self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout)
                 self.assertIsInstance(json.loads(result.stdout), dict)
+                result = subprocess.run(['/bin/sh', '-c', coord['hook']['command']], input=encoded(event),
+                                        cwd=f.root, env=f.env(), capture_output=True, timeout=20)
+                self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout)
+                key = hashlib.sha256((f.coord['binding'] + '\0' + session).encode()).hexdigest()
+                state = json.loads((Path(f.coord['state_dir']) / (key + '.json')).read_bytes())
+                self.assertEqual(state['agent']['agent_id'], '33333333-3333-4333-8333-333333333333')
 
     def test_bound_and_provider_cells_never_silently_select_ordinary_go(self):
         for route in ('bound', 'provider'):
@@ -141,7 +171,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 rows = [r for r in record['rows'] if r['role'] == 'memory']
                 self.assertTrue(all(r['implementation'] == 'python' for r in rows))
                 self.assertTrue(any(r['reason'] == ('bound callback' if route == 'bound' else 'provider-selected recall') for r in rows))
-                if route == 'bound': self.assertTrue(all(r['implementation'] == 'python' for r in record['rows']))
+                self.assertTrue(all(r['implementation'] == 'go' for r in record['rows'] if r['role'] == 'coordination'))
 
     def test_unbound_mode_refuses_a_bound_input_and_cannot_enable_binding(self):
         f = self.fixture('refusal')
