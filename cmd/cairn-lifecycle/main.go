@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/halbritt/cairn/internal/lifecycle/activationipc"
 	"github.com/halbritt/cairn/internal/lifecycle/inboxipc"
@@ -21,6 +22,9 @@ func run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 		return inboxipc.Run(args, input, output, diagnostic)
 	}
 	if len(args) > 0 && args[0] == "memory" {
+		if len(args) > 1 && (args[1] == "--receipt" || strings.HasPrefix(args[1], "--receipt=")) {
+			return memoryhost.RunChecked(context.Background(), args[1:], input, output, diagnostic)
+		}
 		return memoryhost.Run(context.Background(), args[1:], input, output, diagnostic)
 	}
 	if len(args) > 0 && args[0] == "coordination" {

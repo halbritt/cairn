@@ -1,0 +1,170 @@
+package memoryhost
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"flag"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/halbritt/cairn/internal/lifecycle/binding"
+	"github.com/halbritt/cairn/internal/lifecycle/memoryhook"
+	"github.com/halbritt/cairn/internal/lifecycle/value"
+)
+
+// RunChecked consumes only the direct Go R04 selection agreed with Release.
+// H and V come from the actual entry; no payload/vector/deadline flag grants
+// authority. Every immutable pin and the actual L precedes config/body use.
+func RunChecked(parent context.Context, args []string, input io.Reader, out, diagnostic io.Writer) (code int) {
+	entered := time.Now()
+	refuse := func() int {
+		prefix := "Cairn lifecycle"
+		for i, a := range args {
+			if a == "--role" && i+1 < len(args) && args[i+1] == "coordination" {
+				prefix = "Cairn coordination"
+				break
+			}
+		}
+		_, _ = io.WriteString(diagnostic, prefix+" diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n")
+		return 1
+	}
+	selection, launchRoot, shell, err := checkedArguments(args)
+	if err != nil {
+		return refuse()
+	}
+	ctx, cancel := context.WithDeadline(parent, entered.Add(13*time.Second))
+	defer cancel()
+	vector := append([]string(nil), os.Args...)
+	for i, a := range vector {
+		if a == "--" {
+			vector = vector[:i]
+			break
+		}
+	}
+	if len(vector) < 2 || vector[1] != "memory" {
+		return refuse()
+	}
+	raw, err := checkedLauncherBytes(vector, shell)
+	if err != nil {
+		return refuse()
+	}
+	sum := sha256.Sum256(raw)
+	path := filepath.Join(launchRoot, hex.EncodeToString(sum[:]), "inbox")
+	if err = binding.VerifyOrdinaryLauncher(path, raw); err != nil {
+		return refuse()
+	}
+	selection.ImagePath = vector[0]
+	snapshot, err := binding.VerifyOrdinary(ctx, selection)
+	if err != nil {
+		return refuse()
+	}
+	defer snapshot.Close()
+	rawEvent, err := io.ReadAll(io.LimitReader(input, 1024*1024+1))
+	if err != nil {
+		return checkedEmit(memoryhook.HostFailure("input", err), out, diagnostic)
+	}
+	if len(rawEvent) > 1024*1024 {
+		return checkedEmit(memoryhook.InvalidInput("input", "host event exceeds input limit"), out, diagnostic)
+	}
+	event, err := value.DecodeBytes(rawEvent, 0)
+	if err != nil {
+		return checkedEmit(memoryhook.HostFailure("input", err), out, diagnostic)
+	}
+	if event.Kind != value.Object {
+		return checkedEmit(memoryhook.InvalidInput("input", "configuration and host event must be objects"), out, diagnostic)
+	}
+	if !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
+		return refuse()
+	}
+	directory, err := os.Getwd()
+	if err != nil {
+		return checkedEmit(memoryhook.HostFailure("handle", err), out, diagnostic)
+	}
+	trace := newTrace(selection.ConfigPath)
+	trace.entry()
+	trace.parsed(event)
+	defer func() {
+		if recover() != nil {
+			panicDiagnostic(diagnostic, "handle")
+			code = 1
+		}
+		trace.finish(code, "handle")
+	}()
+	result := memoryhook.RunOrdinary(ctx, snapshot.Config, event, directory, os.Environ())
+	for k, v := range result.Trace {
+		trace.fields[k] = v
+	}
+	return checkedEmit(result, out, diagnostic)
+}
+
+func checkedEmit(result memoryhook.Result, out, diagnostic io.Writer) int {
+	if _, err := io.WriteString(out, result.Stdout); err != nil {
+		return 1
+	}
+	if _, err := io.WriteString(diagnostic, result.Stderr); err != nil {
+		return 1
+	}
+	return result.ExitCode
+}
+
+func checkedArguments(args []string) (binding.OrdinarySelection, string, string, error) {
+	fail := func() (binding.OrdinarySelection, string, string, error) {
+		return binding.OrdinarySelection{}, "", "", errors.New("invalid checked memory selection")
+	}
+	flags := flag.NewFlagSet("checked memory", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	vals := map[string]*string{}
+	for _, key := range []string{"receipt", "receipt-sha256", "role", "entrypoint", "config", "hook-timeout", "launch-root", "shell"} {
+		vals[key] = flags.String(key, "", "")
+	}
+	if flags.Parse(args) != nil {
+		return fail()
+	}
+	for _, v := range vals {
+		if *v == "" {
+			return fail()
+		}
+	}
+	h, err := strconv.ParseFloat(*vals["hook-timeout"], 64)
+	if err != nil || h != 13 || *vals["role"] != "memory" || !filepath.IsAbs(*vals["launch-root"]) || filepath.Clean(*vals["launch-root"]) != *vals["launch-root"] {
+		return fail()
+	}
+	tail := flags.Args()
+	if len(tail) != 0 && (len(tail) != 2 || tail[0] != "--config" || tail[1] != *vals["config"]) {
+		return fail()
+	}
+	return binding.OrdinarySelection{ReceiptPath: *vals["receipt"], ReceiptSHA256: *vals["receipt-sha256"], Role: *vals["role"], Entrypoint: *vals["entrypoint"], ConfigPath: *vals["config"]}, *vals["launch-root"], *vals["shell"], nil
+}
+
+var checkedShellWord = regexp.MustCompile(`^[a-zA-Z0-9_@%+=:,./-]+$`)
+
+func checkedLauncherBytes(vector []string, shell string) ([]byte, error) {
+	if !filepath.IsAbs(shell) || filepath.Clean(shell) != shell || strings.ContainsRune(shell, 0) {
+		return nil, errors.New("invalid shell")
+	}
+	for _, r := range shell {
+		if unicode.IsSpace(r) || r < 32 {
+			return nil, errors.New("invalid shell")
+		}
+	}
+	words := make([]string, len(vector))
+	for i, s := range vector {
+		if strings.ContainsRune(s, 0) {
+			return nil, errors.New("invalid vector")
+		}
+		if checkedShellWord.MatchString(s) {
+			words[i] = s
+		} else {
+			words[i] = "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+		}
+	}
+	return []byte("#!" + shell + "\nexec " + strings.Join(words, " ") + " -- \"$@\"\n"), nil
+}
