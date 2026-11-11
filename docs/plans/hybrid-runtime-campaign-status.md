@@ -45,6 +45,26 @@ retry-policy holds remain.
 
 ## Inspect the implementation
 
+The S-02 stream follow-through adds an external, test-only observer around the
+landed Go driver. A selected isolated run completed all 38 frozen inventory
+cells on one Rust child, with one initial cold process and 37 subsequent
+requests on that same child. All 538 repeated score entries matched the retained
+19-case scalar oracle exactly. A separately counted idle case made three
+exchanges: the old process entry disappeared after 30.049786554 seconds, a new
+PID appeared, and its first wire request contained the prior reply's exact JSON
+cache state (25546 canonical bytes). Both Go owners were reaped with no live
+Rust children. Ten observer mechanics tests passed. Production supervision,
+the 25-second request deadline and 30-second idle lifetime are unchanged.
+
+The retained Python stream transcript supplies 34 frames for 17 workload
+queries. Its original note aliases are mapped by the committed fixture
+producer's UUID5/URL rule; source bytes, versions, body hashes and numeric scores
+are preserved and the mapping is recorded. Four historical stream-reference
+cells remain unavailable: `long-tail/cold`, `long-tail/warm`, `64-short/cold`
+and `64-short/warm`. Scalar-reference reuse is reported explicitly for the
+38-frame run. The observer does not generate replacement Python references or
+claim an ORT-call count, a cache performance benefit or full S-02 acceptance.
+
 The Go supervisors now accept explicit Rust worker configuration through
 `serve --semantic-rust-config`; Rust remains disabled when the flag is absent.
 Rank, stream and embed use fixed arguments for the six absolute asset/library/

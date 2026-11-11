@@ -148,6 +148,34 @@ protocol fixtures do not count as real Rust/model evidence. These Go checks
 and measurements do not by themselves complete S-01, S-02, S-03, numerical
 qualification or production acceptance.
 
+## Observed continuous stream and idle handoff
+
+`scripts/semantic_stream_evidence.py` drives the existing Go comparison binary
+in stream mode inside `scripts/semantic_acceptance_isolation.py`. It requires
+`strace` with `--trace-fds`, a stream configuration, the committed inventory,
+frozen request/scalar-reference files, a retained capture manifest and a new
+output directory. Its required options are `--driver`, `--config`, `--inventory`,
+`--requests`, `--reference`, `--retained-stream-manifest` and `--output`.
+
+The 38 inventory cells keep their case order and `cold`/`warm` labels. The
+harness separately records one initial cold process and 37 requests on that
+same child. It validates the complete frozen input digest and observes the
+actual Rust input/output pipe frames; it does not launch 19 independent workers.
+A separate idle case makes three exchanges: initial, warm and post-idle. It
+requires the old `/proc` entry to disappear after the unchanged 30-second idle
+lifetime, observes a distinct new PID, and compares the old reply's cache state
+with the new child's first input. This establishes the cache handoff without
+claiming an ORT inference-call count or a performance benefit.
+
+The retained Python capture uses historical note aliases. The harness applies
+the committed fixture producer's UUID5/URL ID adapter, records that mapping and
+its source digest, and preserves every body, version, body hash and numeric
+score. Missing retained stream cells remain named in the report. Reusing a
+frozen scalar reference for repeated scores does not manufacture a missing
+stream transcript. Raw traces and caches stay in the external output directory.
+The observer's mechanics tests are in `scripts/test_semantic_stream_evidence.py`;
+protocol fixtures and selected observations remain separate from full acceptance.
+
 ## Fixed workers and evidence gates
 
 The CLI requires `--output` to name a new directory outside this checkout.
