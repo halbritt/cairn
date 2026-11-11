@@ -14,6 +14,7 @@ import (
 // Source report_capture is best effort after all capture/shared locks release.
 // No metric can change a capture disposition, marker, or retry eligibility.
 func captureReport(ctx context.Context, config, event *value.Value, started time.Time, observed *value.Value) {
+	elapsed := time.Since(started).Milliseconds()
 	setting := config.Get("capture_observations")
 	if setting == nil || setting.Kind != value.Bool || !setting.Boolean {
 		return
@@ -39,7 +40,6 @@ func captureReport(ctx context.Context, config, event *value.Value, started time
 	}
 	defer api.Close()
 	api = api.WithDiagnostics(localapi.ClientDiagnostics{Surface: "cli", Harness: "unknown", Origin: &localapi.ClientOrigin{Component: "lifecycle-memory", ImplementationID: executingSHA(), Basis: "reported"}, RetrievalCapabilities: localapi.CurrentRetrievalCapabilities(), ReaderCapabilities: localapi.CurrentReaderCapabilities()})
-	elapsed := time.Since(started).Milliseconds()
 	outcome := text(observed.Get("outcome"))
 	if outcome == "" {
 		outcome = "error"

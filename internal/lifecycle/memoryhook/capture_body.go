@@ -28,7 +28,7 @@ func captureState(path string) (*value.Value, error) {
 	}
 	state, err := value.DecodeText(raw, "utf-8", 0)
 	if err == nil && state.Kind != value.Object {
-		err = &value.Error{Class: "TypeError", Message: "memory state must be an object"}
+		panic("unexpected memory state shape")
 	}
 	return state, err
 }
@@ -122,12 +122,6 @@ func captureStatus(state *value.Value, outcome string) {
 
 func runCapture(ctx context.Context, config, event *value.Value, directory string, started time.Time, trace map[string]any) (result Result) {
 	observed := value.Mapping()
-	defer func() {
-		if observed.Get("outcome") == nil {
-			observed.Set("outcome", value.Text("error"))
-		}
-		captureReport(ctx, config, event, started, observed)
-	}()
 	boundary := func(err error) Result { return failure(event, err) }
 	for _, key := range []string{"repo", "cairn", "socket", "token_file", "state_dir"} {
 		if config.Get(key) == nil {
@@ -150,6 +144,12 @@ func runCapture(ctx context.Context, config, event *value.Value, directory strin
 	trace["stage"] = "lock_attempt"
 	captureEntered := false
 	var output *value.Value
+	defer func() {
+		if observed.Get("outcome") == nil {
+			observed.Set("outcome", value.Text("error"))
+		}
+		captureReport(ctx, config, event, started, observed)
+	}()
 	err = statefile.LegacyLock(ctx, filepath.Join(dir, session+".capture.lock"), 0, func() error {
 		captureEntered = true
 		var original, state *value.Value
@@ -341,6 +341,9 @@ func captureNoProvider(config, event, state, observed *value.Value, directory st
 	if supplied := event.Get("messages"); supplied != nil {
 		messages, err = captureBounded(supplied)
 	} else {
+		if event.Get("transcript_path") == nil {
+			return nil, &value.Error{Class: "KeyError", Message: "transcript_path"}
+		}
 		path, e := pathValue(event.Get("transcript_path"))
 		if e != nil {
 			return nil, e
@@ -379,7 +382,19 @@ func captureNoProvider(config, event, state, observed *value.Value, directory st
 		captureStatus(state, "unchanged")
 		return value.Mapping(), nil
 	}
-	count := number(state.Get("captured_messages"))
+	count := 0
+	if previous := state.Get("captured_messages"); previous != nil {
+		switch previous.Kind {
+		case value.Int, value.Bool:
+			count = int(captureOffset(previous))
+		case value.Float:
+			if previous.Number > 0 && previous.Number <= float64(len(messages.Items)) {
+				return nil, &value.Error{Class: "TypeError", Message: "capture prefix requires an integer"}
+			}
+		default:
+			return nil, &value.Error{Class: "TypeError", Message: "capture prefix requires a number"}
+		}
+	}
 	next := messages
 	if count > 0 && count <= len(messages.Items) {
 		prefix := array(messages.Items[:count]...)

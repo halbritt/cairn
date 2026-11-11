@@ -89,34 +89,62 @@ func captureOwnerParts(payload *value.Value) ([]string, error) {
 		return nil, nil
 	}
 	if content.Kind != value.Array {
-		return nil, &value.Error{Class: "TypeError", Message: "invalid transcript content"}
+		panic("unexpected transcript content shape")
 	}
 	var parts []*value.Value
 	for _, part := range content.Items {
+		if part == nil || part.Kind != value.Object {
+			panic("unexpected transcript part shape")
+		}
 		if contains([]string{"input_text", "output_text"}, text(part.Get("type"))) {
 			parts = append(parts, part)
 		}
 	}
+	ownerText := func(part *value.Value) (string, error) {
+		v := part.Get("text")
+		if v == nil {
+			return "", nil
+		}
+		if v.Kind != value.String {
+			panic("unexpected transcript text shape")
+		}
+		if !validText(v) {
+			return "", &value.Error{Class: "UnicodeEncodeError", Message: "invalid transcript text"}
+		}
+		return text(v), nil
+	}
 	var result []string
 	if value.SameText(payload.Get("role"), "assistant") {
 		for _, part := range parts {
-			if !validText(part.Get("text")) {
-				return nil, &value.Error{Class: "TypeError", Message: "invalid transcript text"}
+			s, err := ownerText(part)
+			if err != nil {
+				return nil, err
 			}
-			result = append(result, text(part.Get("text")))
+			result = append(result, s)
 		}
 		return result, nil
 	}
-	kinds := payload.Get("internal_chat_message_metadata_passthrough").Get("content_item_kinds")
+	metadata := payload.Get("internal_chat_message_metadata_passthrough")
+	if value.Truth(metadata) && metadata.Kind != value.Object {
+		panic("unexpected transcript metadata shape")
+	}
+	kinds := metadata.Get("content_item_kinds")
 	if kinds != nil && kinds.Kind == value.Array && len(kinds.Items) == len(content.Items) {
 		for i, part := range content.Items {
 			if value.SameText(kinds.Items[i], "user.text") && value.SameText(part.Get("type"), "input_text") {
-				result = append(result, text(part.Get("text")))
+				s, err := ownerText(part)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, s)
 			}
 		}
 	} else {
 		for _, part := range parts {
-			s := text(part.Get("text"))
+			s, err := ownerText(part)
+			if err != nil {
+				return nil, err
+			}
 			if strings.HasPrefix(strings.TrimLeftFunc(s, pySpace), "# AGENTS.md instructions") {
 				continue
 			}
@@ -186,11 +214,14 @@ func captureConversation(path string) (*value.Value, []int64, error) {
 			return nil, nil, e
 		}
 		if record.Kind != value.Object {
-			return nil, nil, &value.Error{Class: "TypeError", Message: "invalid transcript record"}
+			panic("unexpected transcript record shape")
 		}
 		var role, body string
 		if value.SameText(record.Get("type"), "response_item") {
 			payload := record.Get("payload")
+			if value.Truth(payload) && payload.Kind != value.Object {
+				panic("unexpected transcript payload shape")
+			}
 			role = text(payload.Get("role"))
 			if !value.SameText(payload.Get("type"), "message") || !contains([]string{"user", "assistant"}, role) {
 				continue
@@ -211,13 +242,23 @@ func captureConversation(path string) (*value.Value, []int64, error) {
 			if !contains([]string{"user", "assistant"}, role) || value.Truth(record.Get("isSidechain")) || value.Truth(record.Get("isCompactSummary")) || value.Truth(record.Get("isMeta")) {
 				continue
 			}
-			content := record.Get("message").Get("content")
+			message := record.Get("message")
+			if message != nil && message.Kind != value.Object {
+				panic("unexpected transcript message shape")
+			}
+			content := message.Get("content")
 			if content != nil && content.Kind == value.String {
 				body = text(content)
 			} else if content != nil && content.Kind == value.Array {
 				var parts []string
 				for _, block := range content.Items {
+					if block == nil || block.Kind != value.Object {
+						panic("unexpected transcript block shape")
+					}
 					if value.SameText(block.Get("type"), "text") {
+						if block.Get("text") == nil {
+							return nil, nil, &value.Error{Class: "KeyError", Message: "text"}
+						}
 						if !validText(block.Get("text")) {
 							return nil, nil, &value.Error{Class: "TypeError", Message: "invalid transcript text"}
 						}
@@ -225,11 +266,16 @@ func captureConversation(path string) (*value.Value, []int64, error) {
 					}
 				}
 				body = strings.Join(parts, "\n")
+			} else if content != nil {
+				return nil, nil, &value.Error{Class: "TypeError", Message: "invalid transcript content"}
 			}
 			if strings.HasPrefix(body, "<command-name>") || strings.HasPrefix(body, "<local-command-stdout>") || strings.HasPrefix(body, "<local-command-caveat>") {
 				continue
 			}
 			if id := record.Get("uuid"); value.Truth(id) {
+				if id.Kind == value.Array || id.Kind == value.Object {
+					return nil, nil, &value.Error{Class: "TypeError", Message: "invalid transcript identity"}
+				}
 				key, e := encoded(id, false)
 				if e != nil {
 					return nil, nil, e

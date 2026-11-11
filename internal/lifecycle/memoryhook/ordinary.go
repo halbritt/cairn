@@ -10,7 +10,7 @@ import (
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
 
-// RunOrdinary runs actual non-Codex recall. Bound callbacks must use their
+// RunOrdinary runs admitted unbound memory cells. Bound callbacks must use their
 // checked activation path; an ordinary entry never downgrades that binding.
 func RunOrdinary(ctx context.Context, config, event *value.Value, directory string, environment []string) Result {
 	return runMemory(ctx, config, event, false, directory, environment, true)

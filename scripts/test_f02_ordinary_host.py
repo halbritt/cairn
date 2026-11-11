@@ -419,7 +419,7 @@ class OrdinaryHostTests(unittest.TestCase):
     def test_unported_cells_refuse_before_api_or_state(self):
         cases=(('bound',dict(inbox_recall_binding=str(self.f.binding)),'UserPromptSubmit'),
                ('provider',dict(recall_mode='ambient',semantic_fallback=True),'UserPromptSubmit'),
-               ('capture',{},'PreCompact'),('observation',{},'PostToolUse'),('invented-shell',dict(harness='shell'),'SessionStart'))
+               ('observation',{},'PostToolUse'),('invented-shell',dict(harness='shell'),'SessionStart'))
         for name,changes,event in cases:
             with self.subTest(cell=name):
                 shutil.rmtree(self.f.memory.get('state_dir',self.state_directory),ignore_errors=True)

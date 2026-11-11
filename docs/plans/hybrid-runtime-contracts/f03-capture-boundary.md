@@ -6,7 +6,7 @@ admission, event binding, capture/shared locks, a bounded transcript snapshot,
 owned-state CAS, status/marker persistence and post-lock capture observations.
 It does not enable public lifecycle registration or select a provider.
 
-The initial reached set is empty dialogue, missing Codex transcript pending,
+The reached set is empty dialogue, missing Codex transcript pending,
 short Codex Stop, confirmed duplicate and courtesy-only dialogue. The Source
 fingerprint includes the literal capture prompt/schema, configured model value
 and bounded dialogue. A fingerprint is identity data, not selector execution.
@@ -34,9 +34,21 @@ state, report requests, owner-only synthetic authorization and separately checke
 executing image SHA. Capture timestamps, request UUIDs and measured durations are
 validated before normalization. No replacement Source capture body is used.
 
-Current evidence and precise remaining concurrency/append/truncate/failure cases
-are recorded in the author artifact, not inferred from the component or this
-initial checkpoint. The legacy F02 unavailable-capture assertion needs an owner
-join because capture events now reach Source state-directory/lock admission;
-that original test is not silently edited here. Source/provider/failed F03 and
-all other campaign holds remain. Same existing1279 review and lead integration.
+The process corpus covers capture/shared contention, final commit wait/timeout,
+changed binding and absent/null capture fields, concurrent recall/hints,
+repeated text and append/truncate offsets, append after snapshot, failed replace
+and retry, post-lock report failure, actual supported capture event families,
+bounded transcript tails and owner filtering, invocation trace dispositions,
+preparation failures without reporting, and redacted unexpected transcript failures. Source timestamps in Hermes output
+are the same declared wall-clock normalization as persisted capture status.
+
+Ownership join 0d9c15b1/v1 moves only the obsolete capture row from the old F02
+unported table to the new exact missing-OpenCode-transcript pair. That pair resets
+the whole state directory independently for Source and Go and verifies both locks
+and directory creation, exact KeyError streams, no API calls and no committed
+JSON/marker/saved status. Bound/provider/observation/invented-shell rows stay intact.
+Unexpected Source exceptions retain Go’s declared redacted diagnostic; ordinary
+caught errors keep exact streams and exits. Source/provider/failed F03 and all
+other campaign holds remain. This is a finite
+frontend construction, not full F03/319/318/R04 or native host acceptance. Same
+existing1279 review and lead integration remain required.
