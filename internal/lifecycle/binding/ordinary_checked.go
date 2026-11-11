@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"syscall"
 
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
@@ -19,6 +20,15 @@ type OrdinarySelection struct {
 	Role, Entrypoint, ConfigPath string
 	ImagePath                    string
 }
+
+// OrdinaryDataError retains the Source phase for controlled data failures.
+type OrdinaryDataError struct {
+	Phase string
+	Err   error
+}
+
+func (e *OrdinaryDataError) Error() string { return e.Err.Error() }
+func (e *OrdinaryDataError) Unwrap() error { return e.Err }
 
 // OrdinarySnapshot owns the exact selected config and retained executing image.
 // The caller must close it after the complete ordinary invocation.
@@ -65,14 +75,14 @@ func VerifyOrdinary(ctx context.Context, in OrdinarySelection) (_ *OrdinarySnaps
 
 	raw, err := readData(r.Binding.Path, true)
 	if err != nil {
-		return nil, err
+		return nil, ordinaryDataFailure("activation", err)
 	}
 	if digest(raw) != r.Binding.SHA256 {
 		return nil, errors.New("binding differs from receipt")
 	}
 	manifest, err := decodeData(raw)
 	if err != nil {
-		return nil, err
+		return nil, ordinaryDataFailure("activation", err)
 	}
 	if manifest.Kind != value.Object || !value.SameText(manifest.Get("schema"), binaryBindingSchema) || manifest.Get("enabled") == nil || manifest.Get("enabled").Kind != value.Bool || manifest.Get("enabled").Boolean {
 		return nil, errors.New("explicit disabled ordinary generation required")
@@ -102,9 +112,22 @@ func VerifyOrdinary(ctx context.Context, in OrdinarySelection) (_ *OrdinarySnaps
 	for i, d := range descriptors {
 		configs[i], err = readData(d.Path, false)
 		if err != nil {
-			return nil, err
+			phase := "activation"
+			if i == 0 {
+				phase = "configuration"
+			}
+			return nil, ordinaryDataFailure(phase, err)
 		}
 		if digest(configs[i]) != d.SHA256 {
+			// The pin has already failed. Decode only to retain Source's
+			// refused-data diagnostic; no rejected value can reach policy.
+			if _, decodeErr := decodeData(configs[i]); decodeErr != nil {
+				phase := "activation"
+				if i == 0 {
+					phase = "configuration"
+				}
+				return nil, ordinaryDataFailure(phase, decodeErr)
+			}
 			return nil, errors.New("ordinary profile changed")
 		}
 	}
@@ -112,7 +135,11 @@ func VerifyOrdinary(ctx context.Context, in OrdinarySelection) (_ *OrdinarySnaps
 	for i, raw := range configs {
 		cfg, e := decodeData(raw)
 		if e != nil {
-			return nil, e
+			phase := "activation"
+			if i == 0 {
+				phase = "configuration"
+			}
+			return nil, ordinaryDataFailure(phase, e)
 		}
 		if cfg.Kind != value.Object || profileTruthy(cfg.Get("inbox_recall_binding")) {
 			return nil, errors.New("all selected profiles must be unbound")
@@ -204,4 +231,14 @@ func VerifyOrdinaryLauncher(path string, raw []byte) error {
 		return errors.New("selected launcher changed")
 	}
 	return nil
+}
+
+func ordinaryDataFailure(phase string, err error) error {
+	var path *os.PathError
+	var number syscall.Errno
+	var source *value.Error
+	if !errors.As(err, &path) && !errors.As(err, &number) && !errors.As(err, &source) {
+		err = &value.Error{Class: "ValueError", Message: "invalid controlled data"}
+	}
+	return &OrdinaryDataError{Phase: phase, Err: err}
 }

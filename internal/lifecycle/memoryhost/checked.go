@@ -64,11 +64,18 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	selection.ImagePath = vector[0]
 	snapshot, err := binding.VerifyOrdinary(ctx, selection)
 	if err != nil {
+		var data *binding.OrdinaryDataError
+		if errors.As(err, &data) {
+			return checkedEmit(memoryhook.HostFailure(data.Phase, data.Err), out, diagnostic)
+		}
 		return refuse()
 	}
 	defer snapshot.Close()
-	rawEvent, err := io.ReadAll(io.LimitReader(input, 1024*1024+1))
+	rawEvent, err := checkedInput(ctx, input)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return refuse()
+		}
 		return checkedEmit(memoryhook.HostFailure("input", err), out, diagnostic)
 	}
 	if len(rawEvent) > 1024*1024 {
@@ -167,4 +174,27 @@ func checkedLauncherBytes(vector []string, shell string) ([]byte, error) {
 		}
 	}
 	return []byte("#!" + shell + "\nexec " + strings.Join(words, " ") + " -- \"$@\"\n"), nil
+}
+
+// The direct entry is one process per hook. Closing its owned stdin at D also
+// releases a blocked read; no late event gets a fresh body/SDK allowance.
+func checkedInput(ctx context.Context, input io.Reader) ([]byte, error) {
+	type result struct {
+		raw []byte
+		err error
+	}
+	done := make(chan result, 1)
+	go func() { raw, err := io.ReadAll(io.LimitReader(input, 1024*1024+1)); done <- result{raw, err} }()
+	select {
+	case value := <-done:
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return value.raw, value.err
+	case <-ctx.Done():
+		if closer, ok := input.(io.Closer); ok {
+			_ = closer.Close()
+		}
+		return nil, ctx.Err()
+	}
 }
