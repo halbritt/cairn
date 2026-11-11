@@ -1,0 +1,80 @@
+{
+  "schema": "cairn.semantic-refusal-baseline/1",
+  "revision": "91a97fdb862e190ea196704b3c446dab06be2b2b",
+  "review_record": "97fee45b-2a15-4a79-9387-9884d8bad48d/v1",
+  "inventory_sha256": "3ca0bba5dcd5bc45e10421603bb9e56b7a2b559df8ab30bda7c4ae3a27dff646",
+  "ledger_sha256": "870a5d891bcbe5e8e78a60f6c83496d9e0223fbe0a67ff817ab4c99034e97715",
+  "ledger_sources": {
+    "core/query_projection.go": "c78072b1f0a4b3ea214a0d6d7f2a55fb7d5324bb8f4a34159f2a234cfb9e199b",
+    "scripts/check_semantic_reference.py": "05da2dfca1663478ef76947f5d0c297e6f46b47eb1aeeac156f69aa99e9a6104",
+    "scripts/embedding_worker.py": "f8b134f92523eb53ab21f7d4878283f5a6dc401ecb605c7e8d7e2df2aa673ae8",
+    "scripts/semantic_rank.py": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
+    "scripts/semantic_refusal_fixture.py": "d60ddb139ec81c42deea5c15f1f87461b596cb8b33d657ce468f934d25f02704",
+    "scripts/semantic_refusal_processes.py": "3fe35053658ca444f64746a1992bc3de134b0d941aadd0881b3a929b4c2c0b4e",
+    "scripts/semantic_refusal_source.py": "2edcdea694eb4dce9a0a17d73906bf931690ebb7f9aca1dfd35208feb9eb9896",
+    "scripts/test_embedding_worker.py": "4f59d3a03eeb35b322ad37eafdcafb860c5819338730778dc43b8e5178efb257",
+    "scripts/test_semantic_cache.py": "7ad59f4fa492b5528f08b644c5372eb06b4f01da51b0fbe36ffea6b0ff4a849e",
+    "scripts/test_semantic_cache_resume.py": "fd2a8ecc097dd6afd786ecb8b5bf847fcb1257c990e92f8e3a3e76ffad62d161",
+    "scripts/testdata/semantic-refusal-driver/main.go": "691412ed12cb2c0e739d8d2770a0b1fac11028f414c3f6246799e20851d42580",
+    "scripts/testdata/semantic-refusal-inputs.json": "294f3a349cf78b4b7c0180ce45d676b57e7a03153e8bb96dc8b509429ba9923b",
+    "semantic/command.go": "e2126b3226eb022f3c1ec4b4e07905f5f7f81762d1cbaff631404e49c6609fab",
+    "semantic/embedding_command.go": "40109e99a7415647a9d7887349c0058b2f87d62ccf0a786cf7a3335da7366097",
+    "semantic/index.go": "737a5b55a5c9930b6b25055160d7e18a5c1c9833ce0cc28ba76d0c492ecae343",
+    "semantic/stream.go": "e167f5b77b62ab64532337d366e00204a8fb1a523407946ad6c05d019eddadb0",
+    "semantic/stream_test.go": "e13e4ac3e718d515936fe315a47049ac8c8277fc79cdbb0e922630977f149955"
+  },
+  "actors": {
+    "scripts/semantic_rank.py": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
+    "scripts/embedding_worker.py": "f8b134f92523eb53ab21f7d4878283f5a6dc401ecb605c7e8d7e2df2aa673ae8",
+    "scripts/semantic_fixture_cases.py": "3b3f3f6e3472c83e01f1f6992bb0441307d79b3c820900e3bf7d7ee251651038",
+    "scripts/compare_semantic_workers.py": "3482ccacfebffda580d3e621694164d6c96ebcef94007f8f0ee3cd9405b893cc",
+    "scripts/semantic_acceptance_isolation.py": "c9c5159e27f4aa59316be80c0955a6b6266a2e2a441fde27f6470d28f930bc5c",
+    "scripts/test_embedding_worker.py": "4f59d3a03eeb35b322ad37eafdcafb860c5819338730778dc43b8e5178efb257",
+    "scripts/test_semantic_stream.py": "7aad74c0b29b3daa5df52ac18778b855869f4f8a3eb111d936b7a60dee524f87",
+    "scripts/test_semantic_cache.py": "7ad59f4fa492b5528f08b644c5372eb06b4f01da51b0fbe36ffea6b0ff4a849e",
+    "scripts/test_semantic_cache_resume.py": "fd2a8ecc097dd6afd786ecb8b5bf847fcb1257c990e92f8e3a3e76ffad62d161",
+    "scripts/test_compare_semantic_workers.py": "1a922448489b465ae929e8632ff86efa7a25f9181f95839f41a06c4b8824edf9",
+    "semantic/command.go": "e2126b3226eb022f3c1ec4b4e07905f5f7f81762d1cbaff631404e49c6609fab",
+    "semantic/stream.go": "e167f5b77b62ab64532337d366e00204a8fb1a523407946ad6c05d019eddadb0",
+    "semantic/worker_acceptance_test.go": "5695d92b1c258179f6c5efea0c49a5b816762952cff279fb2b27857e2d38a5b9",
+    "semantic/testdata/executable-harness/protocol-worker.c": "a064610932516a0201795d84fa7cfe5b9f3afd1b0dbad600bfb299ccc24032cb",
+    "semantic/testdata/executable-harness/reference-inventory.json": "569ebf8ba2aa636ba3df06f31945dcc94b9bed43abbcfbfb77bef2993e8c1fd1",
+    "core/testdata/retrieval-quality.json": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+    "semantic/embedding_command.go": "40109e99a7415647a9d7887349c0058b2f87d62ccf0a786cf7a3335da7366097",
+    "scripts/capture_semantic_fixtures.py": "c336906e488a6540905dac8d7ebf04519a2432bb54926b174122200ac529e3ca",
+    "core/query_projection.go": "c78072b1f0a4b3ea214a0d6d7f2a55fb7d5324bb8f4a34159f2a234cfb9e199b",
+    "scripts/semantic_refusal_fixture.py": "d60ddb139ec81c42deea5c15f1f87461b596cb8b33d657ce468f934d25f02704",
+    "scripts/testdata/semantic-refusal-driver/main.go": "691412ed12cb2c0e739d8d2770a0b1fac11028f414c3f6246799e20851d42580",
+    "semantic/index.go": "737a5b55a5c9930b6b25055160d7e18a5c1c9833ce0cc28ba76d0c492ecae343",
+    "semantic/stream_test.go": "e13e4ac3e718d515936fe315a47049ac8c8277fc79cdbb0e922630977f149955"
+  },
+  "tool_sha256": {
+    "check_semantic_reference.py": "05da2dfca1663478ef76947f5d0c297e6f46b47eb1aeeac156f69aa99e9a6104",
+    "test_check_semantic_reference.py": "6dfbd62f8b9c449720bc20b6be471678e1ebb38037383f66b2905dcf3b4c277b",
+    "semantic_refusal_processes.py": "3fe35053658ca444f64746a1992bc3de134b0d941aadd0881b3a929b4c2c0b4e",
+    "semantic_refusal_fixture.py": "d60ddb139ec81c42deea5c15f1f87461b596cb8b33d657ce468f934d25f02704",
+    "test_semantic_refusal_processes.py": "f791a9cab029b12d1446a0dbe42c6e0cd0ce7b18a990b17eb015ba8320163fc7",
+    "semantic_refusal_source.py": "2edcdea694eb4dce9a0a17d73906bf931690ebb7f9aca1dfd35208feb9eb9896",
+    "test_semantic_refusal_source.py": "0add08631b83afe9697bf82329c004c3061e2821fbb1eddc0043180f4266c434",
+    "testdata/semantic-refusal-driver/main.go": "691412ed12cb2c0e739d8d2770a0b1fac11028f414c3f6246799e20851d42580",
+    "testdata/semantic-refusal-driver/main_test.go": "852d96425a5be5176788ed3a56528b461837605b636735c5552f39c3097b03a7"
+  },
+  "reports": {
+    "early": {
+      "relative": "semantic-author1375/s01b-refusal-ledger-20261111/early-process-05/failure-report.json",
+      "sha256": "dacc33f56a0d0d084f01811c1e7580d2970a5e5ad7bf32c41c5bbb817c6c503c"
+    },
+    "process": {
+      "relative": "semantic-author1375/s01b-refusal-ledger-20261111/go-process-05/qualified/process-report.json",
+      "sha256": "c38de601ccf9028187c0d2cdaf301cf78e47e621c1cf4e669e03e5fedb77ef21"
+    },
+    "source": {
+      "relative": "semantic-author1375/s01b-refusal-ledger-20261111/source-process-03/source-report.json",
+      "sha256": "13a5ea380751e6bac83ea72ac2aeb6a15e2ab269341fad77943cd93f0814ee1d"
+    },
+    "tests": {
+      "relative": "semantic-author1375/s01b-refusal-ledger-20261111/reference-tests-04/test-report.json",
+      "sha256": "035472f34a6acd2e7606f44a89cd425c13a4857608c2352757aa3d1ad8237bc5"
+    }
+  }
+}

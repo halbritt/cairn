@@ -263,8 +263,9 @@ def verify(value, path, expected_hash):
         report['schema']=='cairn.semantic-process-refusals/1' and report['model_execution'] is False,
         'unsupported process observed/accepted claim')
     reference.require(report['failed']==[],'process report retains failed probes; no complete tuple claim')
-    reference.require(report['ledger_sha256']==value['failure_ledger']['sha256'] and report['sources']==ledger['source_sha256'] and
-        report['tool_sha256']==reference.tool_pins() and report['fixture_sha256']==reference.digest(reference.PROJECT/'scripts/semantic_refusal_fixture.py') and
+    binding=reference.producer_binding(value,'process',expected_hash)
+    reference.require(report['ledger_sha256']==binding['ledger'] and report['sources']==binding['sources'] and
+        report['tool_sha256']==binding['tools'] and report['fixture_sha256']==reference.digest(reference.PROJECT/'scripts/semantic_refusal_fixture.py') and
         report['go_source_sha256']==reference.digest(reference.PROJECT/'scripts/testdata/semantic-refusal-driver/main.go'),
         'process source/input binding changed')
     provenance=report['capture_provenance']

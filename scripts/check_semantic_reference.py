@@ -96,7 +96,37 @@ def inventory(path=INVENTORY):
     for relative, expected_hash in value["source_sha256"].items():
         pinned(PROJECT, relative, expected_hash)
     failure_inventory(value)
+    if "failure_baseline" in value:
+        accepted_baseline(value)
     return value
+
+
+def accepted_baseline(value):
+    spec=value['failure_baseline']
+    baseline=load(pinned(PROJECT,spec['relative'],spec['sha256']))
+    require(set(baseline)=={'schema','revision','review_record','inventory_sha256','ledger_sha256',
+            'ledger_sources','actors','tool_sha256','reports'} and
+            baseline['schema']=='cairn.semantic-refusal-baseline/1' and
+            baseline['revision']=='91a97fdb862e190ea196704b3c446dab06be2b2b' and
+            baseline['review_record']=='97fee45b-2a15-4a79-9387-9884d8bad48d/v1',
+            'unsupported accepted-baseline claim')
+    require(set(baseline['reports'])=={'early','process','source','tests'},'missing accepted report pin')
+    for relative,sha in baseline['actors'].items():
+        pinned(PROJECT,relative,sha)
+    return baseline
+
+
+def producer_binding(value,kind,report_sha):
+    """Exact accepted bytes may outlive collector/test edits; executed actors may not."""
+    require(kind in ('early','process','source','tests'),'unknown refusal report kind')
+    if 'failure_baseline' in value:
+        baseline=accepted_baseline(value)
+        if report_sha==baseline['reports'][kind]['sha256']:
+            return dict(ledger=baseline['ledger_sha256'],sources=baseline['ledger_sources'],
+                        tools=baseline['tool_sha256'],inventory=baseline['inventory_sha256'],
+                        origin='exact accepted91a97fdb report; actors and raw tuples rechecked')
+    return dict(ledger=value['failure_ledger']['sha256'],sources=failure_inventory(value)['source_sha256'],
+                tools=tool_pins(),inventory=digest(INVENTORY),origin='current collector')
 
 
 FAILURE_COUNTS = {"F-RANK": 19, "F-STREAM": 25, "F-EMBED": 19,
@@ -366,8 +396,9 @@ def verify_early_failures(value, path, expected_hash):
                             "cases", "model_execution", "receipts_sha256"} and
             report["schema"] == "cairn.semantic-early-refusals/1" and report["model_execution"] is False,
             "unsupported observed/accepted failure report claim")
-    require(report["ledger_sha256"] == value["failure_ledger"]["sha256"] and
-            report["sources"] == ledger["source_sha256"] and report["tool_sha256"] == tool_pins() and
+    binding=producer_binding(value,'early',expected_hash)
+    require(report["ledger_sha256"] == binding['ledger'] and
+            report["sources"] == binding['sources'] and report["tool_sha256"] == binding['tools'] and
             report["python_sha256"] == value["python_sha256"], "failure source/input/collector binding changed")
     expected = {row["id"]: row for row in early_failure_inputs()}
     ids = [row["id"] for row in report["cases"]]
@@ -624,6 +655,8 @@ def tool_pins():
                          "semantic_refusal_processes.py", "semantic_refusal_fixture.py",
                          "test_semantic_refusal_processes.py",
                          "semantic_refusal_source.py", "test_semantic_refusal_source.py",
+                         "semantic_refusal_functions.py", "test_semantic_refusal_functions.py",
+                         "semantic_refusal_function_evidence.py",
                          "testdata/semantic-refusal-driver/main.go",
                          "testdata/semantic-refusal-driver/main_test.go")}
 
@@ -700,9 +733,10 @@ def verify_test_report(value, path, expected_hash):
     require(expected_hash and digest(path) == expected_hash,
             "independently pinned test report required")
     tests = load(path)
-    require(tests.get("inventory_sha256") == digest(INVENTORY), "test inventory binding changed")
+    binding=producer_binding(value,'tests',expected_hash)
+    require(tests.get("inventory_sha256") == binding['inventory'], "test inventory binding changed")
     require(tests.get("sources") == value["source_sha256"], "test source binding changed")
-    require(tests.get("tool_sha256") == tests.get("tool_after_sha256") == tool_pins(),
+    require(tests.get("tool_sha256") == tests.get("tool_after_sha256") == binding['tools'],
             "test checker/source binding changed")
     require(set(tests.get("results", {})) == {"prepared", "mechanics", "go", "typed"}, "missing test phase")
     for phase in ("prepared", "mechanics", "go"):
@@ -800,6 +834,10 @@ def main(argv=None):
     check.add_argument("--processes-sha256")
     check.add_argument("--source-refusals", type=Path)
     check.add_argument("--source-refusals-sha256")
+    check.add_argument("--functions", type=Path)
+    check.add_argument("--functions-sha256")
+    check.add_argument("--reuse-accepted", action="store_true",
+                       help="recheck exact accepted report bytes and unchanged actors without replaying captures")
     check.add_argument("--output", type=Path, required=True)
     run = sub.add_parser("tests", help="run only the fixed model-free suites in the unchanged wrapper")
     for option in ("python-home", "runtime-binding", "site", "assets", "go-binary", "go-test2json", "output"):
@@ -820,9 +858,16 @@ def main(argv=None):
         source.add_argument("--" + option, type=Path, required=True)
     source.add_argument("--reuse-capture-manifest", type=Path)
     source.add_argument("--reuse-capture-manifest-sha256")
+    functions = sub.add_parser("function-refusals", help="collect remaining source-function guards with labelled external doubles")
+    for option in ("python-home", "site", "runtime-binding", "assets", "output"):
+        functions.add_argument("--" + option, type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         value = inventory()
+        if args.command == "function-refusals":
+            from semantic_refusal_function_evidence import collect
+            collect(args,value)
+            return 0
         if args.command == "source-failures":
             from semantic_refusal_source import collect
             report = collect(args, value)
@@ -842,6 +887,14 @@ def main(argv=None):
                           stream_reference=value["stream_reference"],
                           failure_ledger=failure_inventory(value), complete=False)
         else:
+            if args.reuse_accepted:
+                require(not any((args.tests,args.refusals,args.processes,args.source_refusals)),
+                        "accepted report selectors cannot be mixed with replacement selectors")
+                baseline=accepted_baseline(value)
+                for kind,option in (("tests","tests"),("early","refusals"),("process","processes"),("source","source_refusals")):
+                    pin=baseline['reports'][kind]
+                    setattr(args,option,pinned(args.evidence_root,pin['relative'],pin['sha256']))
+                    setattr(args,option+'_sha256',pin['sha256'])
             tests = None
             if args.tests:
                 tests = verify_test_report(value, args.tests, args.tests_sha256)
@@ -857,11 +910,21 @@ def main(argv=None):
                 source = verify(value, args.evidence_root, args.source_refusals, args.source_refusals_sha256)
                 require(not set(source) & set(failures or {}), "overlapping refusal scopes need an explicit combined obligation")
                 failures = dict(failures or {}, **source)
+            if args.functions:
+                from semantic_refusal_function_evidence import verify
+                functions=verify(value,args.evidence_root,args.functions,args.functions_sha256)
+                require(not set(functions)&set(failures or {}),'overlapping function obligations')
+                failures=dict(failures or {},**functions)
             sources = {kind: dict(path=str(path), sha256=sha) for kind, path, sha in (
                 ("early", args.refusals, args.refusals_sha256),
                 ("Go-process", args.processes, args.processes_sha256),
                 ("source-model", args.source_refusals, args.source_refusals_sha256)) if path}
+            if args.functions:
+                sources['functions']=dict(path=str(args.functions),sha256=args.functions_sha256)
             report = audit(value, args.evidence_root, tests, failures, sources)
+            if args.reuse_accepted:
+                report['accepted_report_reuse']=dict(revision=baseline['revision'],review_record=baseline['review_record'],
+                    reports=baseline['reports'],scope='reused exact accepted bytes; unchanged actors and raw tuples rechecked; no captures replayed')
         require(not args.output.exists(), "report output already exists")
         save(args.output, report)
         return 0 if report["complete"] else 3

@@ -1671,6 +1671,10 @@
   "retained_native_harness_note": "Original12 tests remain accepted under unchanged source. Fresh nested attempt reference-tests-01 failed namespace preflight; six new fixture tests execute directly inside the existing wrapper, not a weaker wrapper.",
   "failure_ledger": {
     "relative": "scripts/testdata/semantic-refusal-ledger.json",
-    "sha256": "870a5d891bcbe5e8e78a60f6c83496d9e0223fbe0a67ff817ab4c99034e97715"
+    "sha256": "ba84fba59e740c23f0fccfc7e55dab899970f7829ca1526278cdff3fe34f6502"
+  },
+  "failure_baseline": {
+    "relative": "scripts/testdata/semantic-refusal-baseline.json",
+    "sha256": "c8ad4c34e63585fbcb674673353548eab690fdd4ea70fb41e869aefebcc5e69e"
   }
 }
