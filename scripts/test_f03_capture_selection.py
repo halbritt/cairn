@@ -349,7 +349,13 @@ sys.exit(spec.get('exit',0))
                         operations=operations, provider_calls=len(provider), records=self.records,
                         state_unchanged=path.read_bytes()==raw), sort_keys=True))
                     self.assertEqual((result.returncode, result.stdout), (1, b''))
-                    self.assertNotIn(b'UnexpectedError', result.stderr)
+                    family = b'ValueError' if side == 'source' else b'HookError'
+                    message = (b'invalid lifecycle input or unavailable local file' if side == 'source' else
+                               b'memory selection returned an invalid workstream topic' if label == 'workstream' else
+                               b'memory selection returned an invalid topic title')
+                    self.assertEqual(result.stderr,
+                                     b'Cairn lifecycle diagnostic: phase=handle error_class='+family+b'\n'
+                                     b'Cairn lifecycle: '+message+b'; use native tools or an explicit handoff.\n')
                     self.assertFalse(any(op in ('create', 'revise') for op in operations))
                     self.assertEqual(len(provider), 1)
                     self.assertFalse(Path('/proc', str(provider[0]['pid'])).exists())
@@ -368,6 +374,15 @@ sys.exit(spec.get('exit',0))
         self.assertEqual(self.pair().returncode, 0)
         self.assertEqual([op for op, _, _ in self.calls].count('create'), 2)
         self.assertEqual(len(self.records), 2)
+        self.assertEqual(len(self.provider_calls), 1)
+
+    def test_existing_record_edit_keeps_ignoring_unused_nul_title(self):
+        old = self.record('project: postgres retention policy\nUse fourteen days.')
+        self.selection['memories'] = [self.note(title='a\x00b', body=old['body']+'\nUse thirty days.',
+                                              record_id=old['record_id'])]
+        self.assertEqual(self.pair().returncode, 0)
+        self.assertEqual([op for op, _, _ in self.calls].count('revise'), 1)
+        self.assertEqual(self.records[0]['record_id'], old['record_id'])
         self.assertEqual(len(self.provider_calls), 1)
 
     def test_invalid_selector_json(self):
