@@ -24,7 +24,7 @@ class ReferenceRunnerTest(unittest.TestCase):
         return SimpleNamespace(returncode=code, stdout=(json.dumps(document) + "\n").encode())
 
     def go(self, names):
-        rows = [dict(Action=action, Test=name) for name in names for action in ("run", "pass")]
+        rows = [dict(Action=action, Test=name, Package="semantic") for name in names for action in ("run", "pass")]
         rows.append(dict(Action="pass", Package="semantic"))
         return SimpleNamespace(returncode=0, stdout=b"\n".join(json.dumps(r).encode() for r in rows))
 
@@ -96,6 +96,9 @@ class ReferenceRunnerTest(unittest.TestCase):
                     json.dumps(dict(document, tests_ran=True)).encode()):
             with self.assertRaises(ValueError):
                 reference.python_events(raw, ["Class.test_one"])
+        for change in (dict(successful=1), dict(skipped=False)):
+            with self.assertRaises(ValueError):
+                reference.python_events(json.dumps(dict(document, **change)).encode(), ["Class.test_one"])
 
     def test_actual_python_outcome_is_required_instead_of_ok_text(self):
         with self.assertRaisesRegex(ValueError, "actual unittest"):
@@ -145,6 +148,21 @@ class ReferenceRunnerTest(unittest.TestCase):
                 reference.save(path, dict(files=files))
                 with self.assertRaises(ValueError):
                     reference.verify_manifest(path)
+
+    def test_manifest_counts_and_verifies_separate_native_traces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "artifact").write_bytes(b"artifact")
+            (root / "attempt-02").mkdir()
+            trace = root / "attempt-02/trace"
+            trace.write_bytes(b"native trace")
+            manifest = root / "manifest.json"
+            reference.save(manifest, dict(files={"artifact": reference.digest(root / "artifact")},
+                                          stream_trace_files={"trace": reference.digest(trace)}))
+            self.assertEqual(reference.verify_manifest(manifest), 2)
+            trace.unlink()
+            with self.assertRaisesRegex(ValueError, "missing regular"):
+                reference.verify_manifest(manifest)
 
     def test_test_summary_needs_pinned_raw_outcomes(self):
         value = reference.load(reference.INVENTORY)

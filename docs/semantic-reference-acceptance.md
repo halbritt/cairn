@@ -13,12 +13,18 @@ with a passing count cannot replace the pinned raw outcomes. Modifying a score,
 span, order or projection breaks the reviewed retained artifact binding.
 
 The 23 prepared Python selectors include the actual tokenizer test; that test
-is one of the 23, not a twenty-fourth test. The 12 executable harness tests use
+is one of the 23, not a twenty-fourth test. The six native harness tests use
 compiled native process fixtures and invoke candidates directly. Their synthetic
 values establish process and comparison mechanics. They do not establish native
 model quality. The 21 Go selectors exercise the existing process owners without
 selecting model workers or a database. S-01 does not require an unimplemented
 Rust worker.
+
+The unchanged earlier 12-test comparator suite starts its own isolation wrapper.
+A retained attempt to run it inside another wrapper failed because the inner
+`bwrap` could not read `/proc/sys/kernel/overflowuid`. The six new native fixture
+tests run directly inside the existing boundary. The earlier suite's accepted
+tooling results remain separate; the failed attempt is retained.
 
 ## Evidence and remaining criteria
 
@@ -41,6 +47,19 @@ The producer tooling and combined model-free seam were accepted and landed as
 `58b48092` (CAIRN-409). These closures do not qualify model captures or the
 conditional punctuation proof. This slice preserves those distinctions rather
 than reopening the accepted tooling findings.
+
+The selected local run passed all 23 prepared tests, six native fixture tests,
+21 Go process tests and 63 typed-text refusal cases. The typed cases use the
+actual prepared tokenizer and the frozen worker's response method with inference
+forbidden. Their tuple is exception type/message, absent result and zero
+inference calls; they do not claim a model worker's process-exit tuple.
+The report verifies 248 files under the retained characterization seal and
+61 vector-closure, 61 Go-comparison and 65 packaged-result artifacts, including
+28 separately listed stream traces. Nineteen historical direct-Python refusal
+tuples remain labelled observations. Unbound failure case IDs require exact
+source/input/test reconciliation before deciding that a new execution is needed.
+They are not an automatic capture list. F-PACKAGE and F-REBUILD retain their
+separate S-04/S-05 owners.
 
 ## Retrieval-quality decision gap
 
@@ -75,6 +94,11 @@ disabled, inputs read-only and a disposable mapped OS home/cache. It verifies
 481 retained module hashes, seven numeric native hashes and the interpreter
 digest before invoking Python. It never initializes the model or selects an
 installed worker. No host fallback is available.
+
+An already-passed prepared phase can be supplied with `--prepared-report` and
+`--prepared-report-sha256`. Reuse requires the exact current source bindings and
+all 23 actual names in the pinned raw outcome. The new report records the source
+receipt and original inventory hash rather than claiming a fresh execution.
 
 `plan --output PATH` writes the required criteria without running tests or
 workers. `audit --evidence-root PATH --output PATH` verifies the selected retained

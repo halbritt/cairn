@@ -95,7 +95,7 @@ def verify_manifest(path):
     # The package's stream traces are a separate named section of its seal.
     for relative, expected in document.get("stream_trace_files", {}).items():
         pinned(path.parent / "attempt-02", relative, expected)
-    return len(rows)
+    return len(rows) + len(document.get("stream_trace_files", {}))
 
 
 def verify_assets(value, root):
@@ -115,6 +115,8 @@ def python_events(raw, expected):
     require(len(documents) == 1, "exactly one actual unittest outcome required")
     document = documents[0]
     require(type(document.get("tests_ran")) is int, "invalid unittest count")
+    require(document.get("successful") is True and document.get("skipped") == [],
+            "invalid or unsuccessful unittest outcome")
     try:
         return verify_python_events(document, expected)
     except ComparisonFailure as error:
@@ -130,6 +132,7 @@ def command_result(result, expected, kind):
     except ComparisonFailure as error:
         raise ValueError(str(error)) from error
     events = [json.loads(line) for line in result.stdout.splitlines() if line]
+    require(all(row.get("Package") == "semantic" for row in events), "unexpected Go package")
     require(any(row.get("Action") == "pass" and "Test" not in row for row in events),
             "Go package completion missing")
     return summary
@@ -222,9 +225,26 @@ def run_tests(args, value):
         with SemanticIsolation(read_only_paths=mounts, output_dir=output) as isolated:
             for phase in ("prepared", "mechanics", "go"):
                 expected = value["go_process" if phase == "go" else "python_" + phase]
+                if phase == "prepared" and args.prepared_report:
+                    previous_path = args.prepared_report
+                    require(args.prepared_report_sha256 and digest(previous_path) == args.prepared_report_sha256,
+                            "pinned prepared report required")
+                    previous = load(previous_path)
+                    require(previous["sources"] == value["source_sha256"], "prepared source binding changed")
+                    raw = pinned(previous_path.parent, "prepared.stdout", previous["logs_sha256"]["prepared.stdout"]).read_bytes()
+                    result = SimpleNamespace(returncode=previous["exit_codes"]["prepared"], stdout=raw)
+                    report["results"][phase] = command_result(result, expected, "python")
+                    report["commands"][phase] = previous["commands"][phase]
+                    report["exit_codes"][phase] = result.returncode
+                    (output / "prepared.stdout").write_bytes(raw)
+                    (output / "prepared.stderr").write_bytes((previous_path.parent / "prepared.stderr").read_bytes())
+                    report["prepared_reuse"] = dict(report_sha256=args.prepared_report_sha256,
+                                                   inventory_sha256=previous["inventory_sha256"],
+                                                   reason="same 23 actual names and exact source bindings; no rerun")
+                    continue
                 if phase == "go":
                     argv = [str(args.go_test2json), "-t", "-p", "semantic", str(args.go_binary),
-                            "-test.v", "-test.run", "^(" + "|".join(expected) + ")$"]
+                            "-test.v=test2json", "-test.run", "^(" + "|".join(expected) + ")$"]
                 else:
                     argv = [str(args.python_home / "bin/python3.11"), "-I", "-S", "-B", "-c",
                             DRIVER, str(PROJECT / "scripts"), str(args.site), json.dumps(expected)]
@@ -301,6 +321,8 @@ def audit(value, root, tests=None):
                   stream_reference=value["stream_reference"],
                   historical_refusals=value.get("historical_refusals", []),
                   unbound_failure_families=value.get("failure_families", {}),
+                  tests=None if tests is None else tests["results"],
+                  prepared_reuse=None if tests is None else tests.get("prepared_reuse"),
                   model_execution=False, full_s01_accepted=False)
     if tests is not None:
         for row in result["criteria"]:
@@ -324,6 +346,8 @@ def main(argv=None):
     run = sub.add_parser("tests", help="run only the fixed model-free suites in the unchanged wrapper")
     for option in ("python-home", "runtime-binding", "site", "assets", "go-binary", "go-test2json", "output"):
         run.add_argument("--" + option, type=Path, required=True)
+    run.add_argument("--prepared-report", type=Path)
+    run.add_argument("--prepared-report-sha256")
     args = parser.parse_args(argv)
     try:
         value = inventory()
