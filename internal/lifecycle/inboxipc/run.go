@@ -137,7 +137,7 @@ func reply(out io.Writer, frame *value.Value) int {
 	if err != nil || encoded.Len() > ReplyLimit {
 		return 1
 	}
-	if _, err = out.Write(encoded.Bytes()); err != nil {
+	if n, writeErr := out.Write(encoded.Bytes()); writeErr != nil || n != encoded.Len() {
 		return 1
 	}
 	return 0

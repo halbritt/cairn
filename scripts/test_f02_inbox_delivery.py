@@ -427,5 +427,27 @@ class InboxDeliveryProcesses(unittest.TestCase):
         failed=subprocess.run(argv,input=encoded(report),capture_output=True,cwd=self.f.root,env=self.f.env(),timeout=18)
         self.assertFalse(json.loads(failed.stdout)['ok']);self.assertEqual(self.calls,[]);self.assertEqual(self.state(),before)
 
+    def test_memory_lock_contention_is_bounded_and_does_not_lookup(self):
+        before=self.state();started=time.monotonic()
+        with (Path(self.f.memory['state_dir'])/(SESSION+'.lock')).open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            result=json.loads(self.candidate().stdout)
+        self.assertFalse(result['ok']);self.assertEqual(result['error']['class'],'BlockingIOError')
+        self.assertEqual(result['error']['errno'],11)
+        self.assertLess(time.monotonic()-started,6)
+        self.assertEqual(self.state(),before);self.assertEqual(self.calls,[])
+
+    def test_inbox_filesystem_failure_before_lookup_cannot_create_a_grant(self):
+        path=Path(self.f.memory['state_dir'])/(SESSION+'.inbox-recall.json');path.mkdir()
+        result=json.loads(self.candidate().stdout)
+        self.assertFalse(result['ok']);self.assertEqual(result['error']['class'],'OSError')
+        self.assertEqual(result['error']['errno'],21)
+        self.assertEqual(self.calls,[]);self.assertTrue(path.is_dir())
+
+    def test_original_expired_deadline_refuses_before_state_or_api(self):
+        before=self.state()
+        result=json.loads(self.candidate(deadline=time.monotonic()-1).stdout)
+        self.assertFalse(result['ok']);self.assertEqual(self.calls,[]);self.assertEqual(self.state(),before)
+
 
 if __name__=='__main__':unittest.main()
