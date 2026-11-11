@@ -401,6 +401,27 @@ class CaptureBoundaryTests(unittest.TestCase):
         state=self.state()[SESSION+'.json'];self.assertEqual(state['captured_messages'],4)
         self.assertEqual(state['codex_capture_marker']['offset'],path.stat().st_size-len(encoded(records[-1]))-1)
 
+    def test_only_ascii_blank_transcript_lines_are_skipped(self):
+        # B1: bytes.strip in Source does not discard a Unicode-space record.
+        dialogue=b''.join(encoded(dict(type=role,message=dict(content=text)))+b'\n'
+                          for role,text in (('user','thanks'),('assistant','no problem')))
+        print('B1 process images Source='+sha((ROOT/'integrations/lifecycle/memory.py').read_bytes())+' Go='+sha(self.binary.read_bytes()))
+        for name,raw,status in (('nbsp',b'\xc2\xa0\n',1),
+                                ('nbsp-before-dialogue',b'\xc2\xa0\n'+dialogue,1),
+                                ('ascii-blank',b' \t\n\r\v\f\n',0),
+                                ('ascii-before-dialogue',b' \t\n\r\v\f\n'+dialogue,0)):
+            with self.subTest(case=name):
+                shutil.rmtree(self.f.memory['state_dir'],ignore_errors=True)
+                path=self.root/'blank-lines.jsonl';path.write_bytes(raw)
+                self.configure('claude','PreCompact',transcript_path=str(path))
+                result=self.pair();self.assertEqual(result.returncode,status)
+                self.assertEqual([operation for operation,_,_ in self.calls],['capture-observation'])
+                if status:
+                    self.assertEqual(result.stdout,b'');self.assertIn(b'error_class=ValueError',result.stderr)
+                    self.assertEqual(self.state(),{});self.assertEqual(self.outcome(),'error')
+                else:
+                    self.assertEqual(self.outcome(),'courtesy' if name.endswith('dialogue') else 'empty')
+
     def test_unexpected_transcript_shape_is_redacted_one_without_marker(self):
         path=self.root/'malformed.jsonl';path.write_text('[]\n')
         self.configure('codex','PreCompact',transcript_path=str(path))

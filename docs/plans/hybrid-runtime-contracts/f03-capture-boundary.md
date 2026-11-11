@@ -54,3 +54,16 @@ caught errors keep exact streams and exits. Source/provider/failed F03 and all
 other campaign holds remain. This is a finite
 frontend construction, not full F03/319/318/R04 or native host acceptance. Same
 existing1279 review and lead integration remain required.
+
+The transcript blank-line predicate matches Source bytes.strip: ASCII space,
+tab, LF, CR, vertical tab and form feed only. Unicode-space-only records reach
+the unchanged JSON decoder and fail; they cannot become empty capture or permit
+later dialogue to commit past the invalid record.
+
+For the unsupported substantive Go cell, the actual attempted-capture error
+observation remains guarded by capture_observations=True, after both locks and
+admission/privacy. It reports error, with no selector, save or successful capture.
+A final state read/decode failure has a retained metric-label difference: Go
+reports state_commit_error while Source keeps the capture outcome. Both fail
+without a new commit; this malformed/environment input residual stays outside
+B1's predicate repair and does not establish full F03 acceptance.

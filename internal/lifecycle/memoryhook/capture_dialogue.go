@@ -206,7 +206,7 @@ func captureConversation(path string) (*value.Value, []int64, error) {
 		line := raw[:end]
 		raw = raw[end:]
 		position += int64(end)
-		if len(bytes.TrimSpace(line)) == 0 {
+		if len(bytes.Trim(line, " \t\n\r\v\f")) == 0 {
 			continue
 		}
 		record, e := value.DecodeBytes(line, 0)
