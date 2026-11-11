@@ -30,6 +30,8 @@ func mcpFlags(f *flag.FlagSet) *mcpOptions {
 	f.IntVar(&o.config.MaxTokens, "max-tokens", 1000000, "maximum explicit search input room and pull output; --tokens remains the default")
 	f.StringVar(&o.config.SearchView, "search-view", "", "optional model-facing search presentation: compact/1")
 	f.StringVar(&o.config.ToolProfile, "tool-profile", "", "optional shorter model-facing tool descriptions: compact/1 (search/pull), compact/2 (all tools)")
+	f.BoolVar(&o.config.Messaging, "messaging", false, "also expose session inbox tools (agents, send, inbox, ack, complete, renew, event status)")
+	f.StringVar(&o.config.NativeSessionID, "native-session", "", "native conversation ID registered for this session (requires --messaging; defaults to CLAUDE_CODE_SESSION_ID)")
 	f.StringVar(&o.pins.Revision, "revision", "", "declared repository revision")
 	f.StringVar(&o.pins.WorkspaceSHA256, "workspace-sha256", "", "declared workspace digest")
 	f.StringVar(&o.pins.TaskClass, "task-class", "", "task category")
@@ -50,6 +52,8 @@ func (o *mcpOptions) validate(positional int) error {
 	if o.harness != "" && !map[string]bool{"codex": true, "claude": true, "opencode": true, "hermes": true, "agy": true, "other": true}[o.harness] {
 		return invalid("--client-harness must be one of codex, claude, opencode, hermes, agy, other")
 	}
+	// The host conversation is declared by the launcher, never inferred from
+	// the model or account. Codex declares it per tool call instead.
 	if o.pins != (core.ContextPins{}) {
 		o.config.Context = &o.pins
 	}
@@ -74,6 +78,12 @@ func serveMCP(ctx context.Context, args []string) error {
 	}
 	if err := o.validate(f.NArg()); err != nil {
 		return err
+	}
+	// The host conversation is declared by the launcher, never inferred from
+	// the model or account. Codex declares it per tool call instead. Generated
+	// configuration never captures the generating shell's conversation.
+	if o.config.Messaging && !o.config.CodexThread && o.config.NativeSessionID == "" {
+		o.config.NativeSessionID = os.Getenv("CLAUDE_CODE_SESSION_ID")
 	}
 	client, err := localapi.NewClient(o.socket, o.token)
 	if err != nil {

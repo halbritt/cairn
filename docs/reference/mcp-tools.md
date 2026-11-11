@@ -1,6 +1,7 @@
 # MCP tool reference
 
-Cairn exposes ten ordinary-memory tools through `cairn mcp`. The configured
+Cairn exposes ten ordinary-memory tools through `cairn mcp`, and seven opt-in
+[session messaging](#session-messaging-opt-in) tools with `--messaging`. The configured
 profile determines collection access, identity, and destination; the tool call
 cannot choose a different authenticated principal. Use the [MCP setup guide](../mcp/overview.md)
 to connect a client and [memory search](../guides/memory-search.md) for a walkthrough.
@@ -149,3 +150,36 @@ memory benefit. See [use and outcome](../use-outcome-loop.md).
 Accepts `{}` and reports the running facade's build, active presentation options,
 and declared capabilities separately from the authenticated API. Unknown
 capability support is not compatibility. See [build identity](../build-identity.md).
+
+## Session messaging (opt-in)
+
+`cairn mcp --messaging` adds seven tools that call the same API operations as
+the `cairn agent` event commands, through the same profile. Without the flag the
+tool list is unchanged. The source is [mcpapi/messaging.go](../../mcpapi/messaging.go);
+[agent events](../agent-event-fabric.md), [agent sessions](../agent-sessions.md) and [native inbox](../native-inbox.md)
+hold the contracts.
+
+Each tool acts as the caller's registered session. The session is the online
+directory entry whose native session ID equals the host conversation:
+`--native-session ID`, or `CLAUDE_CODE_SESSION_ID` from the launching harness
+when the flag is absent, or the tool-call `_meta.threadId` with `--codex-thread`.
+When no single online session matches, the tool refuses with `IDENTITY_UNKNOWN`
+or `IDENTITY_AMBIGUOUS`; pass `agent_id` and `execution_id` from the session
+context instead. The UUIDs select a session within the profile and are not
+credentials; the API checks them on every call.
+
+| Tool | Purpose |
+| --- | --- |
+| `cairn_agents` | Read one session (`agent`: `self`, `agent-N` or a UUID) or list online sessions by exact `project`, `harness` or `state`. `self` also returns the execution UUID. |
+| `cairn_send` | Save `body` as a note under `coordination/<request_id>` and publish that version to `to` (`agent-N`, an agent UUID, `agent/NAME` or `topic/NAME`), or publish an existing `source`. `kind` is `notice` (default), `request` or `response`; `urgency` applies to notices. A stopped `agent-N` recipient refuses before any write. |
+| `cairn_inbox` | Claim the next delivery from the caller's inbox under a lease and return it with the exact source text; `peek` only counts waiting items. A source too large for the result is omitted and the claimed delivery is still returned. |
+| `cairn_ack` | Record handling of a claimed notice or response. `ignored` and `failed` need a `code`. |
+| `cairn_complete` | Save `body` as the result of a claimed request, record handling, and publish the result to the requester as a response caused by the request. `reply_pending` reports a recorded completion whose response was not published. |
+| `cairn_renew` | Extend the lease on a claimed delivery. |
+| `cairn_event_status` | Read an event's deliveries: consumer, state, attempts, lease, code and result reference. |
+
+`cairn_send` and `cairn_complete` each make two writes from one `request_id`.
+The second write uses a key derived from it, so a retry with identical
+arguments repeats neither. `cairn_inbox` is for draining an inbox when native
+delivery has stalled. When the host delivers `cairn.session-inbox/1` context it
+already owns that claim; use the arguments it supplies.

@@ -26,6 +26,11 @@ type Config struct {
 	CodexThread     bool
 	SearchView      string
 	ToolProfile     string
+	// Messaging adds the opt-in session inbox tools. NativeSessionID is the
+	// host conversation they resolve to a registered session; with CodexThread
+	// the tool-call thread is used instead.
+	Messaging       bool
+	NativeSessionID string
 }
 
 // Validate checks startup scope, text integrity and room; the API validates pin semantics on retrieval.
@@ -35,6 +40,12 @@ func (c Config) Validate() error {
 	}
 	if c.SearchView != "" && c.SearchView != "compact/1" {
 		return fmt.Errorf("MCP search view must be compact/1 or omitted")
+	}
+	if c.NativeSessionID != "" && (!c.Messaging || c.CodexThread) {
+		return fmt.Errorf("a native session ID requires --messaging and cannot be combined with --codex-thread")
+	}
+	if len(c.NativeSessionID) > 256 || !utf8.ValidString(c.NativeSessionID) || strings.ContainsRune(c.NativeSessionID, 0) {
+		return fmt.Errorf("native session ID requires at most 256 UTF-8 bytes without NUL")
 	}
 	if strings.TrimSpace(c.Scope.Repo) == "" || c.Scope.Repo == "*" {
 		return fmt.Errorf("MCP requires an explicit repository")
@@ -213,6 +224,9 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull_evidence", Description: "Pull evidence referenced by an expanded memory, using its evidence ID and full-object expected SHA256 plus the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse a request UUID only for identical retries. Shares the same expansion budget."}), tools.pullEvidence)
 	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_remember", Description: "Save an explicitly selected note as ordinary A testimony. When it may replace existing guidance, use cairn_prepare_note and pull possible predecessors before saving; use cairn_edit for a correction to the same A note. Scope defaults to repository-wide; explicitly choose task or run for narrower applicability. Does not promote claims or grant authority. Choose shareable only for content suitable for hosted models; default local notes will not appear in hosted searches. Preserve the request UUID when retrying."}), tools.remember)
 	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: new(bool)}, Name: "cairn_edit", Description: "Revise a previously pulled active Class A note. Supply its record_id and expected_version, a new request_id UUID, and body to change only the text while preserving all stored metadata. For an additive update, supply append with the exact suffix, including separating whitespace; existing text is preserved and the combined body must fit 65536 bytes. For a targeted correction, supply replace with old_text and new_text; old_text must occur exactly once, and all other text is preserved. For a heading-level update, supply set_sections mapping Markdown ## heading titles to nonblank replacement section bodies (a new title appends a ## section). Alternatively supply the complete replacement draft or evidence_citations to replace source references ([] clears them). Supply exactly one of body, append, replace, set_sections, draft or evidence_citations. Text edits preserve citations and earlier versions retain their sources. Citations remain testimony, not qualification. For a full draft, copy kind, scope, pins, entities, sensitivity, relations and attribution fields from the pulled record; change only the intended content. Scope and sensitivity changes and privileged records are refused. The authenticated writer is recorded. Retry with exactly the same arguments; VERSION_CONFLICT requires a fresh search/pull and reconciliation, not blind overwrite. Returns identifiers without echoing the body."}), tools.edit)
+	if config.Messaging {
+		addMessagingTools(server, messagingTools{client: client, config: config})
+	}
 	return server, nil
 }
 
