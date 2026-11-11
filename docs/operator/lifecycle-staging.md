@@ -1,4 +1,4 @@
-# Stage a lifecycle executable
+# Stage lifecycle selections
 
 The Linux `cairn-stage-lifecycle` tool implements the binary-staging part of
 R-02. It copies an independently pinned executable into an existing private
@@ -27,9 +27,11 @@ A failure prints a diagnostic and emits no success descriptor. Verification or
 root-sync failure after publication identifies the path that already exists.
 Retain that state for reconciliation rather than assuming no write occurred.
 Staging alone does not authorize activation, live replacement or removal of a legacy runtime.
-The remaining R-02 work joins this descriptor to Foundation's actual F-01/F-04
-admission and compatibility interfaces and exercises installation/reverse
-selection in disposable homes.
+The compatibility assembler below joins this descriptor to Foundation's
+F-01/F-04 interfaces. Build its `/3` executable from **`./cmd/cairn-lifecycle`**.
+The ordinary `./cmd/cairn` image remains the API/store CLI and its public
+`cairn lifecycle` command remains disabled. Configuration field `cairn` continues
+to select that ordinary API CLI; it is not replaced by the private image.
 
 ## Versioned configuration generations
 
@@ -74,11 +76,133 @@ error, including a deferred-close error. A killed publisher may leave an unselec
 `.stage-*` directory, which is retained for reconciliation, never selected or
 automatically pruned. Exact published generations are verified before reuse.
 
-Foundation F-01's read-only `binding.Check` is callable only in the selected
-running image; it does not validate a different installed binary on behalf of
-an installer. The public `cairn lifecycle` command remains disabled. R-02's
-available file publication and reverse-selection primitives therefore do not
-provide an activation bypass. F-04 must supply its real activation consumer,
-checked frontend continuation and shared grant/ledger decisions before installed
-end-to-end activation or rollback can be qualified. Supported refresh, drain
-and the full watcher unit remain required by the release contract.
+Foundation's validator and activation run in the selected private image, with
+the checked frontend continuation and shared activation ledger. File readback
+does not replace that consumer or validate an arbitrary binary on its behalf.
+Supported refresh, drain and the full watcher unit remain required by the
+release contract before a live transition.
+
+## Hash-named component directories
+
+`cairn-stage-lifecycle directory --root ROOT` reads exactly `identity` and
+`files` from stdin. `identity` is a selected lowercase SHA-256 directory name;
+the consumer defines what it hashes. The file descriptors have the generation
+plan's shape. The result is `{path, identity}` for `ROOT/identity`, containing
+only those files. There is no added manifest, so a compatibility alias named
+`manifest.json` remains legal. The files are sealed as `0400` or `0500` and
+the directory as `0700`. No-replace publication, root locking, durable syncing,
+readback and exact reuse have the same rules as configuration generations.
+
+`inspect-directory --root ROOT` reads the same plan with each member's path
+pointing into `ROOT/identity`. It verifies exact membership, modes and bytes
+without publishing or repairing anything. It does not infer an expected digest
+from the installed bytes; the independent generation selection supplies it.
+
+## Assemble a compatibility installation offline
+
+Use the selected `scripts/stage_lifecycle_compatibility.py` and built stager
+with an offline package containing the pinned inputs. The package needs no
+Git checkout or Go toolchain for installation. Invoke the assembler through
+the approved isolated interpreter:
+
+```sh
+/usr/bin/python3 -I -S -B /package/stage_lifecycle_compatibility.py \
+  --stager /package/cairn-stage-lifecycle stage --root /private/release < plan.json
+```
+
+The plan has exactly these fields:
+
+| Field | Selection |
+| --- | --- |
+| `id` | A canonical nonzero UUID chosen before rendering the new configuration paths. |
+| `enabled` | The explicit Boolean for this immutable binding. Publishing either value performs no activation or hook switch. |
+| `sources` | Map of all 18 canonical F-04 source basenames to independent `{path, sha256}` input pins, including `lifecycle_compatibility.py`. |
+| `source_revision` | Source provenance text; it grants no authority. |
+| `binary` | `{path, sha256}` for the independently selected `cmd/cairn-lifecycle` build. |
+| `memory_config` | `{path, sha256}` for already-rendered memory configuration bytes. |
+| `coordination_configs` | Ordered list of one to eight already-rendered `{path, sha256}` selections. |
+| `aliases` | Public alias basename to `memory.py` or `coordination.py`; aliases cannot shadow canonical members. |
+| `python`, `shell` | Approved absolute interpreter and noninteractive shell paths, external to receipt authentication. |
+
+Each input is an owned, singly linked regular file, without group/other write
+permission or symlink ancestors. Source files are bounded at 2 MiB and each
+configuration at 1 MiB. Every configuration must already name
+`ROOT/generations/selection-ID/binding.json` in `inbox_recall_binding`.
+The assembler copies those exact bytes; it does not discover or edit a live
+profile. Credential selectors, collection/account fields, custom state paths
+and unknown configuration fields stay intact. It never opens the credential
+selected by `token_file`.
+
+The assembler uses the pinned Foundation material writer to guard the complete
+18-member snapshot, duplicate the declared aliases, construct the exact
+receipt and render `L` from `V`. It publishes:
+
+- `bin/B/cairn`, where `B` hashes the selected private executable;
+- `snapshots/H/*`, where `H` hashes Foundation's sorted name-to-digest map;
+- `launch/S/inbox`, where `S` hashes the exact launcher bytes;
+- `generations/selection-ID/manifest.json` with the configuration snapshots,
+  `/3` binding, compatibility receipt, installation selection and retained argv.
+
+Memory has distinct 13- and 150-second launch selections; each coordination
+profile has distinct 2- and 15-second selections. Choose the applicable host
+hook row when configuring a qualified unit. Issued inbox commands retain their
+own command deadlines. The emitted JSON records the generation pin, receipt pin
+and launch argv, and says `activation: not-performed`.
+
+The selected shell is probed with controlled `ENV` and `BASH_ENV` sentinels;
+reading either startup file refuses publication. The probe records the actual
+isolated, no-site interpreter profile. Python, its stdlib/dependency closure,
+the shell, stager and owner-controlled launch selection remain external trust
+anchors. Retain those approved dependencies with every still-referenced
+selection. Recording a version or `sys.path` is not whole-image authentication
+or permission to retire or replace them.
+
+Inspect with the independent manifest pin:
+
+```sh
+/usr/bin/python3 -I -S -B /package/stage_lifecycle_compatibility.py \
+  --stager /package/cairn-stage-lifecycle inspect --path MANIFEST --sha256 SHA256
+```
+
+Inspection verifies the generation and every referenced binary/snapshot/launcher
+directory, then reads back each exact launcher byte count, digest and parsed
+argv, verifier digest and retained argv. The original input package is no
+longer needed. `inspect --legacy` instead verifies an explicitly selected old
+generation and returns its exact retained argv. It provides no automatic
+fallback and never converts a `/2` descriptor into `/3`.
+
+### Durability and transition boundary
+
+The assembler holds an exclusive nonblocking lock on `ROOT` across composition.
+Each component publisher also locks its own namespace. These are installer
+locks; hooks and watchers do not participate in them.
+
+| Order | Durable selection |
+| --- | --- |
+| 1 | Capture independently pinned source and configuration bytes; qualify the selected launch anchors. |
+| 2 | Copy, seal, sync, publish and verify the private binary and complete snapshot. |
+| 3 | Finalize binding and receipt bytes, render each exact `V`/`L`, then sync, publish and verify each `L`. |
+| 4 | Copy and sync configuration, binding, receipt and retained selection files; sync their generation, publish without replacement, verify and sync its root. |
+| 5 | Verify all referenced components and actual launcher byte/argv readback before emitting the independent generation pin. |
+
+A failure emits no successful selection. It can leave published, unselected
+immutable components or a complete generation, so reconcile the original UUID
+and pins. An exact retry verifies before reuse; differing bytes never replace
+the old identity. SIGTERM unwinds and kills/joins the assembler's owned stager.
+SIGKILL can leave unselected `.prepare-*` or `.stage-*` files. Keep them for
+reconciliation; there is no automatic pruning. Existing selections remain.
+
+Publishing a generation does not publish an active host configuration, prove
+that cached callbacks refreshed, or establish a drain barrier. An old enabled
+launcher remains enabled when a new disabled generation is staged. Live
+watcher/config-directory/shared-user cutover and reverse rollout still require
+R-06/R-07's supported drain, refresh and whole-unit verification. R-02's
+disposable process fixtures prove file selection and actual installed consumers,
+not those live transition claims.
+
+Run the installed process tests through the campaign wrapper, and run
+`python3 -I -B scripts/check_r02_offline_install.py` for the standalone-package
+check. That host orchestration entrypoint builds inside the existing wrapper,
+then starts a second wrapper namespace with only the package bound at `/work`.
+The second namespace contains no checkout or production home. It installs and
+invokes the selected real frontend again after removing the producer inputs.

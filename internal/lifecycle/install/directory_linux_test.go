@@ -2,6 +2,7 @@ package install
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -183,5 +184,40 @@ func TestDirectoryConflictingInstallerAndInvalidPlansRefuse(t *testing.T) {
 	names, err := os.ReadDir(root)
 	if err != nil || len(names) != 0 {
 		t.Fatalf("refusals published files: %v %v", names, err)
+	}
+}
+
+// The observer stops an actual subprocess on either side of every fsync or
+// no-replace publication. SIGKILL is joined before file-only reconciliation.
+func TestDirectorySIGKILLReconciliationRetainsPreviousSelection(t *testing.T) {
+	for _, point := range []string{"member-sync/coordination.json", "member-sync/launcher", "member-sync/memory.json", "directory-sync", "publication", "root-sync"} {
+		for _, side := range []string{"before:", "after:"} {
+			t.Run(side+point, func(t *testing.T) {
+				root, files := generationInputs(t)
+				old, err := StageDirectory(context.Background(), root, strings.Repeat("a", 64), files)
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw, err := json.Marshal(generationCrashInput{Root: root, Files: files, At: side + point, Directory: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				input := filepath.Join(filepath.Dir(root), "crash-input.json")
+				if err := os.WriteFile(input, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+				killPublisherAtBoundary(t, input)
+				if _, err := ReadDirectory(context.Background(), old, directoryFiles(old, files)); err != nil {
+					t.Fatal(err)
+				}
+				next, err := StageDirectory(context.Background(), root, strings.Repeat("b", 64), files)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := ReadDirectory(context.Background(), next, directoryFiles(next, files)); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
 	}
 }

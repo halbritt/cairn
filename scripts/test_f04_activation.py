@@ -318,6 +318,7 @@ class F04ActivationTests(unittest.TestCase):
     def test_invalid_code_refuses_before_ledger_even_for_excluded_event(self):
         f=self.fixture()
         member=Path(f.receipt['snapshot_root'])/'memory.py'
+        member.chmod(0o600)  # actual installer output is sealed 0400
         write(member,b'raise RuntimeError("unchecked code must never execute")\n')
         f.raw=encoded(dict(f.event,hook_event_name='Stop'))
         result=f.public('memory')

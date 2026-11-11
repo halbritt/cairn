@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Disposable R-02 installation/reverse-selection checks; no live activation.
 
-Run through make test-isolated after building the actual stager and cairn. F-04
-frontend activation is deliberately outside this fixture's implemented claims.
+Run inside the campaign wrapper, either through unittest discovery or with
+explicit --stager and --cairn images. This fixture preserves the retained /2
+route; test_r02_compatibility_install covers actual F-04 installation.
 """
 import argparse
 import hashlib
@@ -28,6 +29,26 @@ def digest(raw):
 
 
 class GenerationInstallation(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        global STAGER, CAIRN
+        cls.build = None
+        cls.original_images = STAGER, CAIRN
+        if STAGER is None or CAIRN is None:
+            cls.build = tempfile.TemporaryDirectory()
+            for variable, target in (("stager", "./cmd/cairn-stage-lifecycle"), ("cairn", "./cmd/cairn")):
+                output = Path(cls.build.name) / variable
+                subprocess.run(["go", "build", "-buildvcs=false", "-o", str(output), target], cwd=ROOT, check=True)
+                output.chmod(0o500)
+            STAGER, CAIRN = str(Path(cls.build.name) / "stager"), str(Path(cls.build.name) / "cairn")
+
+    @classmethod
+    def tearDownClass(cls):
+        global STAGER, CAIRN
+        STAGER, CAIRN = cls.original_images
+        if cls.build is not None:
+            cls.build.cleanup()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="cairn-r02-install-", dir="/dev/shm")
         self.addCleanup(self.temp.cleanup)

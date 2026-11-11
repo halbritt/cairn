@@ -237,9 +237,10 @@ func TestGenerationLockAndCanceledContextRefuseBeforeWrites(t *testing.T) {
 }
 
 type generationCrashInput struct {
-	Root  string
-	Files []File
-	At    string
+	Root      string
+	Files     []File
+	At        string
+	Directory bool
 }
 
 func TestGenerationCrashChild(t *testing.T) {
@@ -255,7 +256,7 @@ func TestGenerationCrashChild(t *testing.T) {
 	if err := json.Unmarshal(raw, &in); err != nil {
 		t.Fatal(err)
 	}
-	_, err = stageGeneration(context.Background(), in.Root, nextID, in.Files, func(at string) error {
+	observe := func(at string) error {
 		if at == in.At {
 			if _, err := os.Stdout.WriteString("at-boundary\n"); err != nil {
 				return err
@@ -265,7 +266,12 @@ func TestGenerationCrashChild(t *testing.T) {
 			return err
 		}
 		return nil
-	})
+	}
+	if in.Directory {
+		_, err = stageDirectory(context.Background(), in.Root, strings.Repeat("b", 64), in.Files, observe)
+	} else {
+		_, err = stageGeneration(context.Background(), in.Root, nextID, in.Files, observe)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +287,7 @@ func TestGenerationSIGKILLReconciliationRetainsPreviousGeneration(t *testing.T) 
 				if err != nil {
 					t.Fatal(err)
 				}
-				raw, err := json.Marshal(generationCrashInput{root, files, side + point})
+				raw, err := json.Marshal(generationCrashInput{Root: root, Files: files, At: side + point})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -289,48 +295,7 @@ func TestGenerationSIGKILLReconciliationRetainsPreviousGeneration(t *testing.T) 
 				if err := os.WriteFile(input, raw, 0600); err != nil {
 					t.Fatal(err)
 				}
-				self, err := os.Executable()
-				if err != nil {
-					t.Fatal(err)
-				}
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				cmd := exec.CommandContext(ctx, self, "-test.run=^TestGenerationCrashChild$")
-				cmd.Env = append(os.Environ(), "CAIRN_R02_CRASH_INPUT="+input)
-				stdin, err := cmd.StdinPipe()
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer stdin.Close()
-				stdout, err := cmd.StdoutPipe()
-				if err != nil {
-					t.Fatal(err)
-				}
-				var diagnostic bytes.Buffer
-				cmd.Stderr = &diagnostic
-				if err := cmd.Start(); err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() {
-					if cmd.ProcessState == nil {
-						if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
-							t.Error(err)
-						}
-						if err := cmd.Wait(); err == nil {
-							t.Error("expected terminated fixture")
-						}
-					}
-				})
-				line, err := bufio.NewReader(stdout).ReadString('\n')
-				if err != nil || line != "at-boundary\n" {
-					t.Fatalf("child did not reach boundary: %q %v %s", line, err, diagnostic.String())
-				}
-				if err := cmd.Process.Kill(); err != nil {
-					t.Fatal(err)
-				}
-				if err := cmd.Wait(); err == nil || cmd.ProcessState.Success() {
-					t.Fatalf("child did not terminate under SIGKILL: %v", err)
-				}
+				killPublisherAtBoundary(t, input)
 				if _, err := ReadGeneration(context.Background(), old); err != nil {
 					t.Fatalf("previous generation invalid after crash: %v", err)
 				}
@@ -343,5 +308,51 @@ func TestGenerationSIGKILLReconciliationRetainsPreviousGeneration(t *testing.T) 
 				}
 			})
 		}
+	}
+}
+
+func killPublisherAtBoundary(t *testing.T, input string) {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, self, "-test.run=^TestGenerationCrashChild$")
+	cmd.Env = append(os.Environ(), "CAIRN_R02_CRASH_INPUT="+input)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var diagnostic bytes.Buffer
+	cmd.Stderr = &diagnostic
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+				t.Error(err)
+			}
+			if err := cmd.Wait(); err == nil {
+				t.Error("expected terminated fixture")
+			}
+		}
+	})
+	line, err := bufio.NewReader(stdout).ReadString('\n')
+	if err != nil || line != "at-boundary\n" {
+		t.Fatalf("child did not reach boundary: %q %v %s", line, err, diagnostic.String())
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err == nil || cmd.ProcessState.Success() {
+		t.Fatalf("child did not terminate under SIGKILL: %v", err)
 	}
 }

@@ -115,3 +115,67 @@ func TestGenerationCommandRejectsNullExecutableBeforeWrites(t *testing.T) {
 		t.Fatalf("invalid executable field wrote state: %v %v %q", entries, err, out.String())
 	}
 }
+
+func TestDirectoryCommandPublishesAndInspectsManifestNamedAlias(t *testing.T) {
+	base, err := os.MkdirTemp("/dev/shm", "cairn-directory-command-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(base); err != nil {
+			t.Error(err)
+		}
+	})
+	root := filepath.Join(base, "release")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(base, "source")
+	raw := []byte("guarded alias bytes\n")
+	if err := os.WriteFile(source, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.Sum256(raw)
+	identity := strings.Repeat("a", 64)
+	plan := fmt.Sprintf(`{"identity":%q,"files":[{"name":"manifest.json","path":%q,"sha256":%q}]}`, identity, source, hex.EncodeToString(h[:]))
+	var out, diagnostic bytes.Buffer
+	if err := runCommand(context.Background(), []string{"directory", "--root", root}, strings.NewReader(plan), &out, &diagnostic); err != nil {
+		t.Fatal(err)
+	}
+	var selected install.Directory
+	if err := json.Unmarshal(out.Bytes(), &selected); err != nil {
+		t.Fatal(err)
+	}
+	if selected.Path != filepath.Join(root, identity) {
+		t.Fatal(selected)
+	}
+	installed := strings.Replace(plan, source, filepath.Join(selected.Path, "manifest.json"), 1)
+	out.Reset()
+	if err := runCommand(context.Background(), []string{"inspect-directory", "--root", root}, strings.NewReader(installed), &out, &diagnostic); err != nil {
+		t.Fatal(err)
+	}
+	var read struct {
+		Selection install.Directory
+		Files     []install.File
+	}
+	if err := json.Unmarshal(out.Bytes(), &read); err != nil {
+		t.Fatal(err)
+	}
+	if read.Selection != selected || len(read.Files) != 1 || read.Files[0].Name != "manifest.json" {
+		t.Fatal(read)
+	}
+	out.Reset()
+	target := filepath.Join(selected.Path, "manifest.json")
+	if err := os.Chmod(target, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("changed alias"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(target, 0400); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCommand(context.Background(), []string{"inspect-directory", "--root", root}, strings.NewReader(installed), &out, &diagnostic); err == nil || out.Len() != 0 {
+		t.Fatal("tampered alias yielded a successful selection", err, out.String())
+	}
+}
