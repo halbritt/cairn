@@ -471,19 +471,58 @@ sys.exit(spec.get('exit',0))
                 self.assertEqual(reports[0]['outcome'], 'error')
                 self.assertEqual(self.state(), {self.session_key()+'.json': seed})
 
-    def test_absent_and_empty_stored_workstream_keep_source_checkpoint_queries(self):
+    def test_stored_lone_surrogate_workstream_refuses_before_discovery(self):
         self.configure('claude', 'PreCompact', messages=[
             dict(role='user', text='Keep the postgres retention policy for this project.'),
             dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
-        for present in (False, True):
-            with self.subTest(present=present):
+        for escaped in (b'\\ud800', b'\\udc00', b'\\udc80', b'\\udcff'):
+            with self.subTest(workstream=escaped):
+                raw = b'{"workstream":"'+escaped+b'","sentinel":["preserve"]}'
+                directory = Path(self.f.memory['state_dir'])
+                path = directory/(self.session_key()+'.json')
+                for side in ('source', 'go'):
+                    shutil.rmtree(directory, ignore_errors=True)
+                    write(path, raw)
+                    self.calls.clear()
+                    self.report_locks.clear()
+                    self.index_count = self.write_count = 0
+                    (self.root/'provider.calls').unlink(missing_ok=True)
+                    write(self.root/'provider.json', encoded(dict(result=dict(structured_output=self.selection))))
+                    if side == 'source':
+                        result = self.source()
+                    else:
+                        result = subprocess.run([str(self.binary), 'memory', '--config', str(self.f.memory_path)],
+                                                input=self.f.raw, cwd=self.f.root, env=self.f.env(),
+                                                capture_output=True, timeout=45)
+                    if side == 'source' and escaped in (b'\\udc80', b'\\udcff'):
+                        # Python's surrogateescape permits these argv bytes. Go's
+                        # finite Unicode domain deliberately refuses them too.
+                        self.assertTrue(any(op == 'index' for op, _, _ in self.calls))
+                        continue
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (1, b'', b'Cairn lifecycle diagnostic: phase=handle error_class=HookError\n'))
+                    self.assertEqual([op for op, _, _ in self.calls], ['capture-observation'])
+                    self.assertFalse((self.root/'provider.calls').exists())
+                    self.assertEqual(self.records, [])
+                    self.assertEqual(path.read_bytes(), raw)
+                    self.assertEqual(sorted(p.name for p in directory.iterdir() if p.suffix != '.lock'), [path.name])
+                    self.assertEqual(len(self.report_locks), 1)
+                    self.assertTrue(all(self.report_locks[0].values()))
+                    self.assertEqual(self.calls[0][1]['outcome'], 'error')
+
+    def test_absent_empty_and_unicode_stored_workstream_keep_source_checkpoint_queries(self):
+        self.configure('claude', 'PreCompact', messages=[
+            dict(role='user', text='Keep the postgres retention policy for this project.'),
+            dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
+        for stored in (None, '', 'retention 日本語 😀'):
+            with self.subTest(workstream=stored):
                 directory = Path(self.f.memory['state_dir'])
                 shutil.rmtree(directory, ignore_errors=True)
                 directory.mkdir(mode=0o700)
-                seed = dict(workstream='') if present else {}
+                seed = dict(workstream=stored) if stored is not None else {}
                 write(directory/(self.session_key()+'.json'), encoded(seed))
                 self.assertEqual(self.pair().returncode, 0)
-                title = '' if present else 'Handoff: project / Claude session '+self.f.event['session_id']
+                title = stored if stored is not None else 'Handoff: project / Claude session '+self.f.event['session_id']
                 queries = [body['query'] for op, body, _ in self.calls if op == 'index']
                 self.assertEqual(queries[0], '"'+title+'"')
                 self.assertEqual(len(self.provider_calls), 1)
