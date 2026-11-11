@@ -128,3 +128,13 @@ func ordinaryRender(selected, entries, expanded, discovery *value.Value) (string
 	raw, err := encoded(view, false)
 	return guidance + string(raw), err
 }
+
+// Source raises these existing admission identities before noting "validated".
+// This classification selects trace ordering only, never admission policy.
+func ordinaryIdentityMessage(message string) bool {
+	switch message {
+	case "missing or invalid host session identity", "invalid OpenCode session identity", "invalid Hermes session identity", "host session identity must be a UUID":
+		return true
+	}
+	return false
+}

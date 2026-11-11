@@ -514,5 +514,37 @@ class OrdinaryHostTests(unittest.TestCase):
     def test_unavailable_body_with_relevant_preview_displays_warning(self):
         self.unavailable_preview_pair(True)
 
+    def test_trace_failure_stages_and_nil_uuid_match_source(self):
+        original_env=self.f.env
+        for case in ('disabled','identity','nil_uuid'):
+            with self.subTest(case=case):
+                self.calls.clear();self.f.env=original_env
+                self.configure('agy' if case=='nil_uuid' else 'opencode')
+                if case=='disabled':
+                    self.f.env=lambda:dict(original_env(),CAIRN_LIFECYCLE_DISABLED='1')
+                elif case=='identity':self.f.event['session_id']='invalid'
+                else:
+                    self.f.event.update(session_id=str(uuid.UUID(int=0)),turn_id=str(uuid.UUID(int=0)))
+                self.f.raw=encoded(self.f.event)
+                directory=self.f.root/'invocation-trace';directory.mkdir(mode=0o700,exist_ok=True)
+                path=directory/'trace.jsonl'
+                if path.exists():path.unlink()
+                self.pair()
+                records=[json.loads(line) for line in path.read_text().splitlines()]
+                self.assertEqual([r['kind'] for r in records],['entry','parsed','exit']*2)
+                left,right=records[:3],records[3:]
+                for rows in (left,right):
+                    self.assertEqual(len({r['inv'] for r in rows}),1)
+                    for record in rows:
+                        for key in ('at','duration_ms','pid','ppid'):
+                            if key in record:self.assertGreaterEqual(record.pop(key),0)
+                        self.assertRegex(record.pop('inv'),r'^[0-9a-f]{32}$')
+                self.assertEqual(left,right)
+                if case in ('disabled','identity'):self.assertEqual(right[-1]['stage'],'activation')
+                else:
+                    for record in right:
+                        self.assertNotIn('session',record)
+                        self.assertNotIn('turn',record)
+
 
 if __name__=='__main__':unittest.main()

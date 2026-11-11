@@ -18,7 +18,9 @@ Missing `recall_mode` selects ambient. Agent-tools semantic search uses actual
 SDK discovery and entities without Codex's native-turn gate. The five/eleven
 second recall deadline starts at recall entry and respects any earlier enclosing
 context deadline. Actual best-effort recall observations run after releasing the
-session lock. Source's observation harness allowlist excludes Agy; no observation
+session lock. An unavailable optional body adds its warning only when
+relevant previews remain, following Source; selected-only context keeps its
+original text and byte accounting. Source's observation harness allowlist excludes Agy; no observation
 is invented for that manually supplied identity.
 
 OpenCode's current plugin emits recall at SessionStart/UserPromptSubmit and
@@ -30,7 +32,8 @@ establish an installed hook. No Agy hook or adapter is added here.
 The optional invocation trace follows Source's owner-only directory/file checks,
 no-follow opens, nonblocking trace lock, 512-byte line and 8 MiB file limits.
 It records actual entry/parsed/exit metadata; dropped observations remain unknown.
-OpenCode's non-UUID session label is omitted from this trace, as in Source.
+OpenCode's non-UUID session label is omitted from this trace, as in Source. Nil UUIDs
+are also omitted; early disabled/identity failures retain the activation stage.
 Unexpected public process faults return one, including a fault while writing the
 fixed panic diagnostic. No panic is promoted to required-context exit two.
 

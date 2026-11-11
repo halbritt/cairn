@@ -184,6 +184,9 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		trace["outcome"] = "early_return:disabled_env"
 		return Result{Stdout: "{}\n"}
 	}
+	if ordinary && decision.Verdict == "invalid" && ordinaryIdentityMessage(decision.Message) {
+		return boundary(fail(decision.Message))
+	}
 	trace["stage"] = "validated"
 	if ordinary && (decision.Reason == "stop_not_boundary" || decision.Reason == "unsupported_event") {
 		trace["outcome"] = "early_return:" + decision.Reason

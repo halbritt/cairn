@@ -88,6 +88,8 @@ func Run(ctx context.Context, args []string, input io.Reader, out, diagnostic io
 		return emit(memoryhook.InvalidInput(phase, "configuration and host event must be objects"))
 	}
 	trace.parsed(event)
+	phase = "activation"
+	trace.fields["stage"] = "activation"
 	trace.fields["bound"] = false
 	phase = "handle"
 	cwd, err := os.Getwd()

@@ -105,7 +105,7 @@ func (t *invocationTrace) parsed(event *value.Value) {
 		}
 		s := string(v.String)
 		id, err := uuid.Parse(s)
-		if err == nil && id.String() == s {
+		if err == nil && id != uuid.Nil && id.String() == s {
 			t.fields[pair[1]] = s
 			r[pair[1]] = s
 		}
