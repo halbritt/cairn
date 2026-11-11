@@ -16,8 +16,16 @@ delegation block. Neither result supports a general message-level NUL ban.
 Only the external Unix API and selector are synthetic. These JSON events
 exercise real Source bodies, bounded dialogue and retrieval intent; they are
 not recorded native writer evidence. Further quoted phrases with retained
-terms must be tested separately before deciding whether the shared Search
-boundary needs repair. The first exploratory run's equality assertions passed;
+terms were tested separately. With `"alpha\u0000beta"`, Source capture performs
+its initial valid checkpoint lookup, then raises ValueError before the selector
+and preserves exact seed bytes. Go performs two NUL-bearing candidate searches,
+invokes the selector, creates two records and commits state. Source prompt recall
+raises ValueError before any API call; Go queries and emits context. This is an
+actual Source/Go RED in `search1374-retained-nul-red.log`. The run used dirty
+`a26c5a75` with only the new regression methods added and unchanged production
+code; it is not mislabeled as a clean committed run.
+
+The first exploratory run's equality assertions passed;
 its incorrectly predicted refusal assertions failed. That log is retained as
 `search1374-first-pairs.log`, not presented as a Source/Go RED.
 

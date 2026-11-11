@@ -62,6 +62,16 @@ class CaptureQueryDomainTests(unittest.TestCase):
         self.assertEqual(row['reports'][0]['outcome'], 'saved')
         self.assertTrue(all(row['locks'][0].values()))
 
+    def test_03_retained_quoted_nul_capture_refuses_before_selector(self):
+        row = self.capture_pair('Keep "alpha\x00beta" policy for postgres retention.')
+        self.assertEqual((row['exit'], row['stdout'], row['providers']), (1, '', 0))
+        self.assertIn('error_class=ValueError', row['stderr'])
+        self.assertTrue(row['state_unchanged'])
+        self.assertEqual(row['operations'], ['version', 'index', 'capture-observation'])
+        self.assertEqual(row['records'], [])
+        self.assertEqual(row['reports'][0]['outcome'], 'error')
+        self.assertTrue(all(row['locks'][0].values()))
+
 
 class RecallQueryDomainTests(unittest.TestCase):
     setUpClass = classmethod(recall.CheckedOrdinaryTests.setUpClass.__func__)
@@ -93,3 +103,10 @@ class RecallQueryDomainTests(unittest.TestCase):
         self.assertEqual((row['exit'], row['stderr']), (0, ''))
         self.assertEqual(row['operations'], ['version', 'index'])
         self.assertFalse(any('\x00' in query for query in row['queries']))
+
+    def test_04_retained_quoted_nul_recall_refuses_before_api(self):
+        row = self.recall_pair('Repair "alpha\x00beta" policy for postgres retention.')
+        self.assertEqual((row['exit'], row['stdout']), (1, ''))
+        self.assertIn('error_class=ValueError', row['stderr'])
+        self.assertEqual(row['operations'], [])
+        self.assertEqual(row['state'], {})
