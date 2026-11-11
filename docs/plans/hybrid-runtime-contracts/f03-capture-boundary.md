@@ -15,7 +15,9 @@ Source selection. No record save or `saved` status is claimed by this body.
 Existing `CommitCaptureSelection` remains a separate component and is unchanged.
 
 The capture lock spans one attempt. The shared session lock covers only initial
-state and final commit. Final CAS compares the original binding and exact
+state and final commit. The final commit keeps Source’s 50 ms retry cadence
+and stops retrying at its remaining deadline; the shared lock helper is unchanged.
+Final CAS compares the original binding and exact
 presence/values of CAPTURE_STATE_FIELDS, preserves concurrent recall/hint data,
 and advances markers only after a successful replace. The capture-meter/2 report
 uses the authenticated SDK after both locks release; failure remains best effort.

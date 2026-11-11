@@ -248,7 +248,7 @@ func runCapture(ctx context.Context, config, event *value.Value, directory strin
 			}
 		}
 		commitEntered := false
-		err = statefile.LegacyLock(ctx, lockPath, wait, func() error {
+		err = captureCommitLock(ctx, lockPath, wait, func() error {
 			commitEntered = true
 			current, e := captureState(path)
 			if e != nil {
@@ -311,6 +311,40 @@ func runCapture(ctx context.Context, config, event *value.Value, directory strin
 		return boundary(err)
 	}
 	return Result{Stdout: string(raw) + "\n"}
+}
+
+// Capture's final commit has Source's 50 ms cadence and never tries again after
+// its wait expires. The shared LegacyLock has a different retry policy.
+func captureCommitLock(ctx context.Context, path string, wait time.Duration, run func() error) error {
+	lock, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	deadline := time.Now().Add(wait)
+	for {
+		err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return run()
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+			return err
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return err
+		}
+		timer := time.NewTimer(min(50*time.Millisecond, remaining))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+		if !time.Now().Before(deadline) {
+			return err
+		}
+	}
 }
 
 func captureOffset(v *value.Value) int64 {
