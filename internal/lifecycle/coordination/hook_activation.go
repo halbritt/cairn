@@ -204,15 +204,9 @@ func (c *CompatibilityContext) defaultActivation(fallbackProfile *value.SourceRe
 		return false, err
 	}
 	binPath := nativeText(receipt.Get("binary").Get("path"))
-	binSHA := nativeText(receipt.Get("binary").Get("sha256"))
 	bindingSHA := nativeText(receipt.Get("binding").Get("sha256"))
 	cfgSum := sha256.Sum256(c.currentRaw)
 	cfgSHA := hex.EncodeToString(cfgSum[:])
-	binFile, err := openCompatibilityBinaryFile(binPath, binSHA, c.uid())
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = binFile.Close() }()
 	argv := []string{
 		binPath, "lifecycle", "binding", "activation",
 		"--entrypoint", c.role(),
@@ -223,14 +217,65 @@ func (c *CompatibilityContext) defaultActivation(fallbackProfile *value.SourceRe
 		"--receipt-sha256", c.ReceiptSHA256,
 		"--deadline", strconv.FormatFloat(c.Deadline, 'g', -1, 64),
 	}
-	out, errBytes, code, err := c.runActivationChild(binFile, argv, raw, 64)
+	out, errBytes, code, err := c.runCompatibilityChild(fallbackProfile, argv, raw, 64, c.Deadline)
 	if err != nil {
 		return false, err
 	}
 	return parseActivationResult(out, errBytes, code)
 }
 
-func (c *CompatibilityContext) runActivationChild(binFile *os.File, argv []string, raw []byte, stdoutLimit int) ([]byte, []byte, int, error) {
+func (c *CompatibilityContext) InboxArgv(fallbackProfile *value.SourceReaderProfile, operation string, limit float64) ([]string, error) {
+	prof := c.profile(fallbackProfile)
+	receipt, err := c.ensureReceipt(prof)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.Config(prof, c.ConfigPath); err != nil {
+		return nil, err
+	}
+	binPath := nativeText(receipt.Get("binary").Get("path"))
+	bindingSHA := nativeText(receipt.Get("binding").Get("sha256"))
+	cfgSum := sha256.Sum256(c.currentRaw)
+	cfgSHA := hex.EncodeToString(cfgSum[:])
+	return []string{
+		binPath, "lifecycle", "inbox", operation,
+		"--entrypoint", "coordination",
+		"--config", c.ConfigPath,
+		"--config-sha256", cfgSHA,
+		"--binding-sha256", bindingSHA,
+		"--receipt", c.ReceiptPath,
+		"--receipt-sha256", c.ReceiptSHA256,
+		"--deadline", strconv.FormatFloat(limit, 'g', -1, 64),
+	}, nil
+}
+
+func (c *CompatibilityContext) runCompatibilityChild(fallbackProfile *value.SourceReaderProfile, argv []string, raw []byte, stdoutLimit int, deadline float64) ([]byte, []byte, int, error) {
+	limit := c.CapDeadline(deadline)
+	if c.Child != nil {
+		return c.Child(argv, raw, stdoutLimit, limit)
+	}
+	if c.now() >= limit {
+		return nil, nil, 0, &os.SyscallError{Syscall: "lifecycle_activation_deadline", Err: syscall.ETIMEDOUT}
+	}
+	if signal.Ignored(syscall.SIGCHLD) {
+		return nil, nil, 0, &SubprocessError{Message: "activation wait status unavailable"}
+	}
+	prof := c.profile(fallbackProfile)
+	receipt, err := c.ensureReceipt(prof)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	binPath := nativeText(receipt.Get("binary").Get("path"))
+	binSHA := nativeText(receipt.Get("binary").Get("sha256"))
+	binFile, err := openCompatibilityBinaryFile(binPath, binSHA, c.uid())
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	defer func() { _ = binFile.Close() }()
+	return c.runActivationChild(binFile, argv, raw, stdoutLimit, limit)
+}
+
+func (c *CompatibilityContext) runActivationChild(binFile *os.File, argv []string, raw []byte, stdoutLimit int, limit float64) ([]byte, []byte, int, error) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	defer signal.Stop(sigCh)
@@ -274,7 +319,7 @@ func (c *CompatibilityContext) runActivationChild(binFile *os.File, argv []strin
 		}
 		errCh <- activationStreamResult{b, e}
 	}()
-	return c.waitActivationChild(cmd, sigCh, boundCh, outCh, errCh)
+	return c.waitActivationChild(cmd, sigCh, boundCh, outCh, errCh, limit)
 }
 
 type activationStreamResult struct {
@@ -287,8 +332,9 @@ func (c *CompatibilityContext) waitActivationChild(
 	sigCh chan os.Signal,
 	boundCh chan error,
 	outCh, errCh chan activationStreamResult,
+	limit float64,
 ) ([]byte, []byte, int, error) {
-	rem := c.Deadline - c.now()
+	rem := limit - c.now()
 	if rem <= 0 {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
@@ -351,6 +397,233 @@ func (c *CompatibilityContext) waitActivationChild(
 		}
 		return outRes.data, errRes.data, code, nil
 	}
+}
+
+func (c *CompatibilityContext) InboxRecallOutput(
+	fallbackProfile *value.SourceReaderProfile,
+	config, event, observation, state *value.Value,
+	control string,
+	outerDeadline float64,
+	reports *[]InboxRecallReport,
+) (string, error) {
+	if _, err := c.Validate(fallbackProfile, config, true); err != nil {
+		return "", err
+	}
+	if event == nil || event.Kind != value.Object || observation == nil || observation.Kind != value.Object || state == nil || state.Kind != value.Object {
+		return "", &value.Error{Class: "ValueError", Message: "invalid inbox recall producer state"}
+	}
+	started := c.now()
+	limit := c.CapDeadline(outerDeadline)
+	payload := nativeMap(
+		"event", event,
+		"observation", observation,
+		"state", state,
+		"control", control,
+		"started_monotonic", &value.Value{Kind: value.Float, Number: started},
+	)
+	raw, err := formatValueJSON(payload, false, true, false)
+	if err != nil {
+		return "", err
+	}
+	if len(raw) > 1024*1024 {
+		return "", &value.Error{Class: "ValueError", Message: "inbox recall input exceeds limit"}
+	}
+	argv, err := c.InboxArgv(fallbackProfile, "recall", limit)
+	if err != nil {
+		return "", err
+	}
+	out, errBytes, code, err := c.runCompatibilityChild(fallbackProfile, argv, raw, 256*1024, limit)
+	if err != nil {
+		return "", err
+	}
+	return c.parseInboxRecallOutput(fallbackProfile, out, errBytes, code, started, limit, reports)
+}
+
+func (c *CompatibilityContext) parseInboxRecallOutput(
+	fallbackProfile *value.SourceReaderProfile,
+	out, errBytes []byte,
+	code int,
+	started, limit float64,
+	reports *[]InboxRecallReport,
+) (string, error) {
+	if code != 0 || len(errBytes) > 0 || len(out) == 0 || len(out) > 256*1024 {
+		return "", &SubprocessError{Message: "invalid inbox recall reply"}
+	}
+	frame, err := value.DecodeTextWithObjectPolicy(out, "utf-8", 0, value.DuplicateLast)
+	if err != nil || frame == nil || frame.Kind != value.Object {
+		return "", &SubprocessError{Message: "invalid inbox recall reply"}
+	}
+	okVal := frame.Get("ok")
+	if okVal == nil || okVal.Kind != value.Bool {
+		return "", &SubprocessError{Message: "invalid inbox recall reply"}
+	}
+	for _, m := range frame.Members {
+		switch string(m.Key) {
+		case "ok", "message", "error", "trace_report", "meter_report":
+		default:
+			return "", &SubprocessError{Message: "invalid inbox recall reply"}
+		}
+	}
+	traceReport := frame.Get("trace_report")
+	meterReport := frame.Get("meter_report")
+	if (!nativeNone(traceReport) && traceReport.Kind != value.Object) || (!nativeNone(meterReport) && meterReport.Kind != value.Object) {
+		return "", &SubprocessError{Message: "invalid inbox recall reply"}
+	}
+	if okVal.Boolean {
+		if frame.Get("error") != nil || frame.Get("message") == nil || frame.Get("message").Kind != value.String {
+			return "", &SubprocessError{Message: "invalid inbox recall reply"}
+		}
+	} else {
+		if frame.Get("message") != nil || frame.Get("error") == nil || frame.Get("error").Kind != value.Object {
+			return "", &SubprocessError{Message: "invalid inbox recall reply"}
+		}
+	}
+	if reports != nil && (!nativeNone(traceReport) || !nativeNone(meterReport)) {
+		tr := traceReport
+		mr := meterReport
+		*reports = append(*reports, func() error {
+			_, flushErr := c.InboxRecallFlush(fallbackProfile, tr, mr, started, limit)
+			return flushErr
+		})
+	}
+	if okVal.Boolean {
+		return string(frame.Get("message").String), nil
+	}
+	return "", c.InboxRecallError(frame.Get("error"))
+}
+
+func (c *CompatibilityContext) InboxRecallError(errObj *value.Value) error {
+	if errObj == nil || errObj.Kind != value.Object {
+		return &SubprocessError{Message: "invalid inbox recall reply"}
+	}
+	for _, m := range errObj.Members {
+		switch string(m.Key) {
+		case "class", "message", "code", "errno", "reason", "cairn_inbox_refusal", "cairn_recall_failure":
+		default:
+			return &SubprocessError{Message: "invalid inbox recall reply"}
+		}
+	}
+	classVal := errObj.Get("class")
+	msgVal := errObj.Get("message")
+	refusal := errObj.Get("cairn_inbox_refusal")
+	if classVal == nil || classVal.Kind != value.String || msgVal == nil || msgVal.Kind != value.String || refusal == nil || refusal.Kind != value.Object {
+		return &SubprocessError{Message: "invalid inbox recall reply"}
+	}
+	stageVal := refusal.Get("refusal_stage")
+	reasonVal := refusal.Get("refusal_reason")
+	if stageVal == nil || stageVal.Kind != value.String || reasonVal == nil || reasonVal.Kind != value.String {
+		return &SubprocessError{Message: "invalid inbox recall reply"}
+	}
+	name := string(classVal.String)
+	message := string(msgVal.String)
+	osClasses := []string{"OSError", "FileNotFoundError", "PermissionError", "BlockingIOError", "FileExistsError", "NotADirectoryError", "IsADirectoryError", "TimeoutError"}
+	otherClasses := []string{"ValueError", "TypeError", "KeyError", "AttributeError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError"}
+	var errnoPtr *int
+	switch {
+	case name == "CoordinationError":
+		codeVal := errObj.Get("code")
+		if codeVal == nil || codeVal.Kind != value.String || len(codeVal.String) == 0 {
+			return &SubprocessError{Message: "invalid inbox recall reply"}
+		}
+	case nativeContains(osClasses, name):
+		errnoVal := errObj.Get("errno")
+		if !nativeNone(errnoVal) {
+			if errnoVal.Kind != value.Int {
+				return &SubprocessError{Message: "invalid inbox recall reply"}
+			}
+			n, parseErr := strconv.Atoi(errnoVal.Integer)
+			if parseErr != nil || n < 0 {
+				return &SubprocessError{Message: "invalid inbox recall reply"}
+			}
+			errnoPtr = &n
+		}
+	case nativeContains(otherClasses, name):
+	default:
+		return &SubprocessError{Message: "invalid inbox recall reply"}
+	}
+	var recallFailure *value.Value
+	if rf := errObj.Get("cairn_recall_failure"); rf != nil {
+		if rf.Kind != value.Object {
+			return &SubprocessError{Message: "invalid inbox recall reply"}
+		}
+		recallFailure = nativeClone(rf)
+	}
+	var codeStr, reasonStr string
+	if cv := errObj.Get("code"); cv != nil && cv.Kind == value.String {
+		codeStr = string(cv.String)
+	}
+	if rv := errObj.Get("reason"); rv != nil && rv.Kind == value.String {
+		reasonStr = string(rv.String)
+	}
+	return &InboxRecallError{
+		Class:            name,
+		Message:          message,
+		Code:             codeStr,
+		Reason:           reasonStr,
+		Errno:            errnoPtr,
+		RefusalStage:     string(stageVal.String),
+		RefusalReason:    string(reasonVal.String),
+		RefusalRaw:       nativeClone(refusal),
+		RecallFailureRaw: recallFailure,
+	}
+}
+
+func (c *CompatibilityContext) InboxRecallFlush(
+	fallbackProfile *value.SourceReaderProfile,
+	traceReport, meterReport *value.Value,
+	started, deadline float64,
+) (*value.Value, error) {
+	if nativeNone(traceReport) && nativeNone(meterReport) {
+		return nativeMap("ok", true, "trace_status", "not_requested", "meter_status", "not_requested"), nil
+	}
+	if (!nativeNone(traceReport) && traceReport.Kind != value.Object) || (!nativeNone(meterReport) && meterReport.Kind != value.Object) {
+		return nil, &value.Error{Class: "ValueError", Message: "invalid inbox report payload"}
+	}
+	if started == 0 {
+		started = c.now()
+	}
+	limit := c.CapDeadline(deadline)
+	payload := value.Mapping()
+	if nativeNone(traceReport) {
+		payload.Set("trace_report", &value.Value{Kind: value.Null})
+	} else {
+		payload.Set("trace_report", traceReport)
+	}
+	if nativeNone(meterReport) {
+		payload.Set("meter_report", &value.Value{Kind: value.Null})
+	} else {
+		payload.Set("meter_report", meterReport)
+	}
+	payload.Set("started_monotonic", &value.Value{Kind: value.Float, Number: started})
+	raw, err := formatValueJSON(payload, false, true, false)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 1024*1024 {
+		return nil, &value.Error{Class: "ValueError", Message: "inbox report input exceeds limit"}
+	}
+	argv, err := c.InboxArgv(fallbackProfile, "report", limit)
+	if err != nil {
+		return nil, err
+	}
+	out, errBytes, code, err := c.runCompatibilityChild(fallbackProfile, argv, raw, 4096, limit)
+	if err != nil {
+		return nil, err
+	}
+	if code != 0 || len(errBytes) > 0 || len(out) == 0 {
+		return nil, &SubprocessError{Message: "invalid inbox report reply"}
+	}
+	frame, err := value.DecodeTextWithObjectPolicy(out, "utf-8", 0, value.DuplicateLast)
+	if err != nil || !exactReceiptObject(frame, "ok", "trace_status", "meter_status") {
+		return nil, &SubprocessError{Message: "invalid inbox report reply"}
+	}
+	okVal := frame.Get("ok")
+	if okVal == nil || okVal.Kind != value.Bool || !okVal.Boolean ||
+		!nativeContains([]string{"written", "unknown", "not_requested"}, nativeText(frame.Get("trace_status"))) ||
+		!nativeContains([]string{"recorded", "unknown", "not_requested"}, nativeText(frame.Get("meter_status"))) {
+		return nil, &SubprocessError{Message: "invalid inbox report reply"}
+	}
+	return frame, nil
 }
 
 

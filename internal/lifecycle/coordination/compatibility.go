@@ -79,6 +79,7 @@ type CompatibilityContext struct {
 	Launcher       string
 	LauncherRaw    []byte
 	ActivationFunc func([]byte) (bool, error)
+	Child          func(argv []string, raw []byte, stdoutLimit int, deadline float64) ([]byte, []byte, int, error)
 	Profile        *value.SourceReaderProfile
 	UID            *uint32
 	RandomBytes    func(int) ([]byte, error)

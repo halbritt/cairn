@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/google/uuid"
@@ -179,8 +178,10 @@ func (c *CLI) grants() GrantBindings {
 
 // SubprocessError models Python subprocess.SubprocessError for activation and hook boundaries.
 type SubprocessError struct {
-	Message string
-	Cause   error
+	Message       string
+	RefusalStage  string
+	RefusalReason string
+	Cause         error
 }
 
 func (e *SubprocessError) Error() string {
@@ -202,6 +203,7 @@ type InboxRecallError struct {
 	Class             string
 	Code              string
 	Reason            string
+	Errno             *int
 	Message           string
 	RecallPhase       string
 	RecallOperation   string
@@ -210,6 +212,8 @@ type InboxRecallError struct {
 	DeadlineRemaining *int
 	RefusalStage      string
 	RefusalReason     string
+	RefusalRaw        *value.Value
+	RecallFailureRaw  *value.Value
 	Cause             error
 }
 
@@ -272,96 +276,124 @@ func refusalErrorClass(err error) string {
 	return "OtherError"
 }
 
+func errorInboxRefusalRaw(err error) *value.Value {
+	switch e := err.(type) {
+	case *InboxRecallError:
+		if e != nil {
+			if e.RefusalRaw != nil {
+				return e.RefusalRaw
+			}
+			if e.RefusalStage != "" || e.RefusalReason != "" {
+				return nativeMap("refusal_stage", e.RefusalStage, "refusal_reason", e.RefusalReason)
+			}
+		}
+	case *CoordinationError:
+		if e != nil && (e.RefusalStage != "" || e.RefusalReason != "") {
+			return nativeMap("refusal_stage", e.RefusalStage, "refusal_reason", e.RefusalReason)
+		}
+	case *SubprocessError:
+		if e != nil && (e.RefusalStage != "" || e.RefusalReason != "") {
+			return nativeMap("refusal_stage", e.RefusalStage, "refusal_reason", e.RefusalReason)
+		}
+	}
+	return nil
+}
+
+func errorRecallFailureRaw(err error) *value.Value {
+	e, ok := err.(*InboxRecallError)
+	if !ok || e == nil {
+		return nil
+	}
+	if e.RecallFailureRaw != nil {
+		return e.RecallFailureRaw
+	}
+	if e.RecallPhase == "" && e.RecallOperation == "" && e.RecallAttempts <= 0 && e.RecallMaxAttempts <= 0 && e.DeadlineRemaining == nil {
+		return nil
+	}
+	raw := nativeMap("recall_phase", e.RecallPhase, "recall_operation", e.RecallOperation)
+	if e.RecallAttempts > 0 {
+		raw.Set("recall_attempts", nativeInt64(int64(e.RecallAttempts)))
+	}
+	if e.RecallMaxAttempts > 0 {
+		raw.Set("recall_max_attempts", nativeInt64(int64(e.RecallMaxAttempts)))
+	}
+	if e.DeadlineRemaining != nil {
+		raw.Set("deadline_remaining_ms", nativeInt64(int64(*e.DeadlineRemaining)))
+	}
+	return raw
+}
+
 func annotateInboxRefusal(err error, stage string) error {
 	if err == nil {
 		return nil
 	}
+	if raw := errorInboxRefusalRaw(err); raw != nil {
+		tmp := value.Mapping()
+		copyInboxRefusalDetails(raw, tmp)
+		if len(tmp.Members) > 0 {
+			return err
+		}
+	}
 	switch e := err.(type) {
 	case *CoordinationError:
 		e.RefusalStage = stage
-		if strings.TrimSpace(e.RefusalReason) == "" {
-			if stage == "event_renew" {
-				e.RefusalReason = "renew_failed"
-			} else if stage == "inbox_recall_bridge" {
-				e.RefusalReason = "recall_refused"
-			}
-		}
+		e.RefusalReason = "unknown"
 		return e
 	case *InboxRecallError:
 		e.RefusalStage = stage
-		if strings.TrimSpace(e.RefusalReason) == "" {
-			if stage == "event_renew" {
-				e.RefusalReason = "renew_failed"
-			} else if stage == "inbox_recall_bridge" {
-				e.RefusalReason = "recall_refused"
-			}
-		}
+		e.RefusalReason = "unknown"
+		e.RefusalRaw = nativeMap("refusal_stage", stage, "refusal_reason", "unknown")
+		return e
+	case *SubprocessError:
+		e.RefusalStage = stage
+		e.RefusalReason = "unknown"
 		return e
 	default:
-		return err
-	}
-}
-
-func refusalStageAndReason(err error) (string, string) {
-	switch e := err.(type) {
-	case *CoordinationError:
-		if e != nil {
-			return e.RefusalStage, e.RefusalReason
-		}
-	case *InboxRecallError:
-		if e != nil {
-			return e.RefusalStage, e.RefusalReason
+		return &InboxRecallError{
+			Class:         refusalErrorClass(err),
+			Message:       err.Error(),
+			RefusalStage:  stage,
+			RefusalReason: "unknown",
+			RefusalRaw:    nativeMap("refusal_stage", stage, "refusal_reason", "unknown"),
 		}
 	}
-	return "", ""
 }
 
 func refusalCauseDetails(cause, wrapper error) *value.Value {
 	details := value.Mapping()
-	stage, refusalReason := refusalStageAndReason(wrapper)
-	if stage == "" {
-		stage, _ = refusalStageAndReason(cause)
-	}
-	if refusalReason == "" {
-		_, refusalReason = refusalStageAndReason(cause)
-	}
-	if stage != "" && refusalReason != "" {
-		copyInboxRefusalDetails(nativeMap("refusal_stage", stage, "refusal_reason", refusalReason), details)
-	}
-	if cause == nil {
-		return details
-	}
-	var code, reason string
-	switch e := cause.(type) {
-	case *InboxRecallError:
-		if e != nil {
-			code, reason = e.Code, e.Reason
-			raw := nativeMap("recall_phase", e.RecallPhase, "recall_operation", e.RecallOperation)
-			if e.RecallAttempts > 0 {
-				raw.Set("recall_attempts", nativeInt64(int64(e.RecallAttempts)))
+	if cause != nil && nativeContains([]string{"HookError", "BudgetRefused", "RequiredContextRefused", "ContextRefused", "CoordinationError"}, refusalErrorClass(cause)) {
+		var code, reason string
+		switch e := cause.(type) {
+		case *InboxRecallError:
+			if e != nil {
+				code, reason = e.Code, e.Reason
 			}
-			if e.RecallMaxAttempts > 0 {
-				raw.Set("recall_max_attempts", nativeInt64(int64(e.RecallMaxAttempts)))
+		case *CoordinationError:
+			if e != nil {
+				code = e.Code
 			}
-			if e.DeadlineRemaining != nil {
-				raw.Set("deadline_remaining_ms", nativeInt64(int64(*e.DeadlineRemaining)))
+		case *journal.Error:
+			if e != nil {
+				code = e.Code
 			}
-			sanitizeRecallMeta(raw, details)
 		}
-	case *CoordinationError:
-		if e != nil {
-			code = e.Code
+		if nativeContains(causeCodes, code) {
+			details.Set("cause_code", value.Text(code))
 		}
-	case *journal.Error:
-		if e != nil {
-			code = e.Code
+		if nativeContains(causeReasons, reason) {
+			details.Set("cause_reason", value.Text(reason))
 		}
 	}
-	if nativeContains(causeCodes, code) {
-		details.Set("cause_code", value.Text(code))
-	}
-	if nativeContains(causeReasons, reason) {
-		details.Set("cause_reason", value.Text(reason))
+	for _, src := range []error{cause, wrapper} {
+		if src == nil {
+			continue
+		}
+		if rf := errorRecallFailureRaw(src); rf != nil {
+			sanitizeRecallMeta(rf, details)
+		}
+		if ir := errorInboxRefusalRaw(src); ir != nil {
+			copyInboxRefusalDetails(ir, details)
+		}
 	}
 	return details
 }

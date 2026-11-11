@@ -737,32 +737,37 @@ func (c *CLI) invokeInboxRecallBridge(ctx context.Context, ns *NativeSession, co
 	}
 	refusalStage := "loader"
 	var err error
-	if c.Host != nil && c.Host.LoadInboxRecall != nil {
-		err = c.Host.LoadInboxRecall(ctx, config)
-	} else if c.Compatibility != nil {
-		_, err = c.Compatibility.Validate(c.profile(), config, false)
-	} else {
-		err = c.validateManifestInboxRecallBinding(config)
-	}
-	if err == nil {
+	if c.Compatibility != nil && (c.Host == nil || c.Host.InboxRecallOutput == nil) {
 		refusalStage = "bridge"
-		if c.Host == nil || c.Host.InboxRecallOutput == nil {
-			err = &value.ProfileUnavailable{}
+		message, err = c.Compatibility.InboxRecallOutput(c.profile(), config, event, observation, state, message, bridgeDeadline, reports)
+	} else {
+		if c.Host != nil && c.Host.LoadInboxRecall != nil {
+			err = c.Host.LoadInboxRecall(ctx, config)
+		} else if c.Compatibility != nil {
+			_, err = c.Compatibility.Validate(c.profile(), config, false)
 		} else {
-			message, err = c.Host.InboxRecallOutput(ctx, InboxRecallRequest{
-				Config:        config,
-				Event:         event,
-				Observation:   observation,
-				State:         state,
-				Message:       message,
-				Revalidate:    revalidate,
-				OuterDeadline: bridgeDeadline,
-				Reports:       reports,
-			})
+			err = c.validateManifestInboxRecallBinding(config)
+		}
+		if err == nil {
+			refusalStage = "bridge"
+			if c.Host == nil || c.Host.InboxRecallOutput == nil {
+				err = &value.ProfileUnavailable{}
+			} else {
+				message, err = c.Host.InboxRecallOutput(ctx, InboxRecallRequest{
+					Config:        config,
+					Event:         event,
+					Observation:   observation,
+					State:         state,
+					Message:       message,
+					Revalidate:    revalidate,
+					OuterDeadline: bridgeDeadline,
+					Reports:       reports,
+				})
+			}
 		}
 	}
 	if err != nil {
-		if !hookActivationCaught(err) && !isCoordErr(err) {
+		if !hookHandleCaught(err) {
 			return "", err
 		}
 		err = annotateInboxRefusal(err, refusalStage)
