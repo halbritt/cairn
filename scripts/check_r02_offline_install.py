@@ -76,6 +76,19 @@ def packaged_check():
     finally:
         case.doCleanups()
     print('R04 standalone-package Agy coordination Go/Source hooks: PASS', flush=True)
+    from test_r04_bound_wiring import R04BoundWiringTests
+    for method in ('test_codex_bound_start_and_prompt_match_source_after_package_removal',
+                   'test_codex_bound_capture_rows_save_selected_note_after_package_removal',
+                   'test_claude_bound_capture_rows_save_selected_note_after_package_removal'):
+        case = R04BoundWiringTests(method)
+        case.binary, case.stager, case.cli = (ROOT / 'assets' / name
+                                             for name in ('private-activation', 'stager', 'api-client'))
+        case.setUp()
+        try:
+            getattr(case, method)()
+        finally:
+            case.doCleanups()
+    print('R04 standalone-package bound recall and provider-capture Go/Source pairs: PASS', flush=True)
 
 
 # Runs only inside the first namespace. The stdout archive is extracted as data
@@ -85,7 +98,8 @@ import os, pathlib, shutil, subprocess, sys, tarfile
 os.umask(0o077)
 root=pathlib.Path('/work'); package=pathlib.Path('/tmp/r02-package'); package.mkdir(mode=0o700)
 for sub in ('assets','scripts','integrations/lifecycle','integrations/opencode'): (package/sub).mkdir(parents=True,exist_ok=True)
-for name,target in (('stager','./cmd/cairn-stage-lifecycle'),('private-activation','./cmd/cairn-lifecycle')):
+for name,target in (('stager','./cmd/cairn-stage-lifecycle'),('private-activation','./cmd/cairn-lifecycle'),
+                    ('api-client','./cmd/cairn')):
  path=package/'assets'/name
  subprocess.run(['go','build','-buildvcs=false','-o',str(path),target],cwd=root,check=True)
  path.chmod(0o500)
@@ -100,7 +114,8 @@ for name in ('lifecycle.ts','coordination.ts'):
 for name in ('check_r02_offline_install.py','stage_lifecycle_compatibility.py','test_r02_compatibility_install.py',
              'test_f04_activation.py','test_f04_issued.py','test_lifecycle_generation_install.py',
              'stage_lifecycle_hooks.py','test_r04_hook_settings.py','test_f04_deadlines.py',
-             'test_r04_host_wiring.py','run_r04_opencode_hooks.mjs'):
+             'test_r04_host_wiring.py','run_r04_opencode_hooks.mjs',
+             'test_f02_bound_memory.py','test_r04_bound_wiring.py'):
  path=package/'scripts'/name;shutil.copyfile(root/'scripts'/name,path);path.chmod(0o600)
 with tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz') as archive:
  for path in sorted(package.iterdir()): archive.add(path,arcname=path.name)

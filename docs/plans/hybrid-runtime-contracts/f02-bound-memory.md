@@ -3,8 +3,9 @@
 The private `IMAGE memory --receipt ...` entry runs receipt-selected Codex
 `agent_tools` SessionStart/UserPromptSubmit recall and the 150-second capture
 cells: Codex PreCompact/Stop and Claude PreCompact/SessionEnd. Each invocation
-reaches the actual F04 `ResolveActivation` decision. This is source construction;
-staged bound rows and the public lifecycle command remain held.
+reaches the actual F04 `ResolveActivation` decision. The hook stager selects these
+supported bound rows through the checked entry and retains their Python launchers
+for reverse selection. Live apply and the public lifecycle command remain held.
 
 V is the actual process argv. L is derived from its exact shell-quoted bytes in
 the persistent content-addressed launch root. Receipt, whole retained closure,

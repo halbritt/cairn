@@ -168,8 +168,11 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
                         launcher = f.installed['launchers'][role + ':' + ('0' if role == 'memory' else '1') + ':' + str(budget)]
                         self.assertEqual(row['retained_launcher'], launcher)
                         if role == 'memory':
-                            self.assertEqual(row['checked_launcher'], launcher)
-                            self.assertEqual(row['argv'], launcher)
+                            self.assertEqual(row['argv'], row['checked_launcher'])
+                            if row['implementation'] == 'go':
+                                self.assertNotEqual(row['checked_launcher'], launcher)
+                            else:
+                                self.assertEqual(row['checked_launcher'], launcher)
                         else:
                             self.assertEqual(row['implementation'], 'go')
                             self.assertNotEqual(row['checked_launcher'], launcher)
@@ -283,16 +286,18 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
     def test_publication_failure_reconciles_and_interrupted_renderer_joins_its_child(self):
         f = self.fixture('publication')
         real = f.stager
-        # Two H-specific Go launchers precede the settings generation.
-        for number, side in ((number, side) for number in (1, 2, 3) for side in ('before', 'after')):
+        # Memory H=13/150 and coordination H=15/2 precede settings publication.
+        for number, side in ((number, side) for number in range(1, 6) for side in ('before', 'after')):
             with self.subTest(number=number, side=side):
                 f.hook_plan['id'] = str(uuid.uuid4())
                 wrapper, _ = installed.R02CompatibilityInstallationTests.fault_stager(self, f, abort=[number, side])
                 f.stager = wrapper
-                result = self.stage(f)
+                try:
+                    result = self.stage(f)
+                finally:
+                    f.stager = real
                 self.assertEqual((result.returncode, result.stdout), (1, b''))
-                self.assertEqual((f.hook_root / ('selection-' + f.hook_plan['id'])).exists(), number == 3 and side == 'after')
-                f.stager = real
+                self.assertEqual((f.hook_root / ('selection-' + f.hook_plan['id'])).exists(), number == 5 and side == 'after')
                 selected, _, _ = self.selected(f)
                 repeated, _, _ = self.selected(f)
                 self.assertEqual(selected['selection'], repeated['selection'])
