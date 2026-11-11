@@ -2185,6 +2185,7 @@ def compact_inbox_command(argv):
         raise CoordinationError('INVALID_HOST', 'invalid compact inbox binding')
     config_path = root / 'bindings' / (binding + '.json')
     if compatibility is not None:
+        config_path = Path(compatibility.args.config)
         compatibility.bind_lookup(root, binding, config_path)
     config_info = config_path.stat()
     if config_info.st_uid != os.getuid() or config_info.st_mode & 0o077:

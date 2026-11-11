@@ -39,9 +39,22 @@ class F04IssuedTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root=Path(self.directory.name)
 
+    def fixture(self, root, **kwargs):
+        return Fixture(root, self.binary, **kwargs)
+
     def prepare(self, name, kind='request', compact=False, *, legacy=False, remind=False, body=NOTE,
-                unavailable=False,api_suffix='',state_suffix='',refused=False):
-        f=Fixture(self.root/('選択 '+name+" ' quoted"),self.binary,compact=compact)
+                unavailable=False,api_suffix='',state_suffix='',refused=False,versioned_config=False):
+        root=self.root/('選択 '+name+" ' quoted")
+        f=(Fixture(root,self.binary,compact=compact) if legacy else self.fixture(root,compact=compact))
+        if versioned_config and f.coord_path == f.root/'bindings'/(f.coord['binding']+'.json'):
+            old_config=f.coord_path
+            f.coord_path=f.root/'generations'/'selection-fixture'/'coordination-0.json'
+            f.coord_path.parent.mkdir(mode=0o700,parents=True)
+            manifest=json.loads(f.binding.read_text())
+            manifest['coordination_configs'][0]['path']=str(f.coord_path)
+            write(f.binding,encoded(manifest))
+            f.publish_configuration()
+            old_config.unlink()
         if api_suffix:
             target=f.api.with_name(f.api.name+api_suffix);f.api.rename(target);f.api=target
             f.memory['cairn']=f.coord['cairn']=str(target)
@@ -137,28 +150,32 @@ class F04IssuedTests(unittest.TestCase):
                 self.assertFalse(before.exists(),'issued commands must not re-enter activation')
 
     def test_compact_read_inspect_settle_execute_exact_public_cue_commands(self):
-        f,c,path,public=self.prepare('compact','notice',True)
-        handle=c['compact_handle']
-        prefix=shlex.join([str(f.launcher('coordination')),'inbox','compact'])
-        env=dict(CAIRN_INBOX_ROOT=str(f.root),CODEX_THREAD_ID=SESSION)
-        for operation in ('read','inspect'):
-            result=self.run_text(f,prefix+' '+operation+' '+handle,extra_env=env)
-            self.assertEqual((result.returncode,result.stderr),(0,b''))
-            data=json.loads(result.stdout)
-            self.assertTrue(data['ok'])
-            if operation=='read': self.assertEqual(data['body'],NOTE)
-            else: self.assertEqual(data['context']['attempt_id'],c['attempt_id'])
-        cue=json.loads(public.stdout)['hookSpecificOutput']['additionalContext']
-        exact=prefix+' settle '+handle+' handled'
-        self.assertIn(exact,cue)
-        settled=self.run_text(f,exact,extra_env=env)
-        self.assertEqual((settled.returncode,settled.stderr),(0,b''))
-        self.assertEqual(json.loads(settled.stdout)['status'],'handled')
-        self.assertEqual([r['operation'] for r in f.api_calls()].count('ack'),1)
-        self.assertGreaterEqual([r['operation'] for r in f.api_calls()].count('event-renew'),4)
+        for versioned in (False,True):
+            with self.subTest(versioned_config=versioned):
+                f,c,path,public=self.prepare('compact'+str(versioned),'notice',True,versioned_config=versioned)
+                if versioned:
+                    self.assertNotEqual(f.coord_path,f.root/'bindings'/(f.coord['binding']+'.json'))
+                handle=c['compact_handle']
+                prefix=shlex.join([str(f.launcher('coordination')),'inbox','compact'])
+                env=dict(CAIRN_INBOX_ROOT=str(f.root),CODEX_THREAD_ID=SESSION)
+                for operation in ('read','inspect'):
+                    result=self.run_text(f,prefix+' '+operation+' '+handle,extra_env=env)
+                    self.assertEqual((result.returncode,result.stderr),(0,b''))
+                    data=json.loads(result.stdout)
+                    self.assertTrue(data['ok'])
+                    if operation=='read': self.assertEqual(data['body'],NOTE)
+                    else: self.assertEqual(data['context']['attempt_id'],c['attempt_id'])
+                cue=json.loads(public.stdout)['hookSpecificOutput']['additionalContext']
+                exact=prefix+' settle '+handle+' handled'
+                self.assertIn(exact,cue)
+                settled=self.run_text(f,exact,extra_env=env)
+                self.assertEqual((settled.returncode,settled.stderr),(0,b''))
+                self.assertEqual(json.loads(settled.stdout)['status'],'handled')
+                self.assertEqual([r['operation'] for r in f.api_calls()].count('ack'),1)
+                self.assertGreaterEqual([r['operation'] for r in f.api_calls()].count('event-renew'),4)
 
     def test_wrong_compact_root_and_context_selection_refuse_before_api_effect(self):
-        f,c,path,_=self.prepare('selection','notice',True)
+        f,c,path,_=self.prepare('selection','notice',True,versioned_config=True)
         before=len(f.api_calls())
         text=shlex.join([str(f.launcher('coordination')),'inbox','compact','inspect',c['compact_handle']])
         result=self.run_text(f,text,extra_env={'CAIRN_INBOX_ROOT':str(self.root/'wrong')})
@@ -167,6 +184,13 @@ class F04IssuedTests(unittest.TestCase):
         other=f.root/'unselected-context.json'
         other.write_bytes(path.read_bytes());other.chmod(0o600)
         result=self.run_text(f,shlex.join([str(f.launcher('coordination')),'inbox','--context',str(other),'ack']))
+        self.assertEqual((result.returncode,result.stdout),(1,b''))
+        self.assertEqual(len(f.api_calls()),before)
+        index=Path(f.coord['state_dir'])/'compact'/(c['compact_handle']+'.json')
+        entry=json.loads(index.read_text())
+        entry['binding']='unselected-binding'
+        write(index,encoded(entry))
+        result=self.run_text(f,text,extra_env={'CAIRN_INBOX_ROOT':str(f.root)})
         self.assertEqual((result.returncode,result.stdout),(1,b''))
         self.assertEqual(len(f.api_calls()),before)
 

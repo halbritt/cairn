@@ -100,6 +100,9 @@ read/inspect/settle/advance paths use the selected short launcher and original
 tail. Fresh issued processes revalidate their selection without re-entering
 activation. Compact lookup root, resolved binding/config and command context
 are checked before derived config loading or existing effects.
+Compatibility compact commands use the config selected by the checked launcher;
+its immutable generation path is independent of the mutable state directory.
+Legacy `/2` compact commands retain the conventional `root/bindings` lookup.
 
 `shell_commands` records shell-quoted presentation alongside the retained argv
 fields. Inner store CLI argv and direct history reads keep their machine forms.
