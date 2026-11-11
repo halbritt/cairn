@@ -52,6 +52,9 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 		if v.Kind != value.String {
 			return nil, &value.Error{Class: "TypeError", Message: "checkpoint title must be a string"}
 		}
+		if !validText(v) {
+			return nil, fail("checkpoint title is outside the supported Unicode domain")
+		}
 		title = text(v)
 	}
 	previousRaw, err := client.Checkpoint(ctx, title)

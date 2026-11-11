@@ -36,6 +36,14 @@ list and object values raise `TypeError` before checkpoint discovery or the
 selector, preserve the saved state and retain the Source error report. An
 absent workstream still uses the derived session title; an empty string still
 performs the empty-title checkpoint lookup.
+The string must also contain valid Unicode before conversion to Go text.
+Raw stored lone-surrogate escapes receive a stable Go domain refusal before
+checkpoint retrieval, selector execution or state mutation. This deliberately
+refuses low surrogates U+DC80 through U+DCFF too: Python can pass their bytes
+through `surrogateescape`, whereas this Go consumer accepts valid Unicode.
+The Go domain diagnostic is distinct from the Source subprocess encoding or
+CLI refusal. These malformed inputs do not claim equal diagnostics. Valid
+Unicode, including astral characters, retains the exact Source checkpoint query.
 
 Owner decision `98d46758-c61c-42b4-9912-76cf9dfb0dc0/v1` supplies the three
 input classes: Python-writer and recorded hook inputs require paired exact
@@ -57,8 +65,9 @@ are best effort and never change capture success or retry eligibility. SDK
 diagnostics report the actual Go image hash; the Source CLI reports the Python
 body hash. Those implementation IDs intentionally differ.
 
-The selection fixture has 25 test methods: 24 execute 37 complete Source/Go
-pairs, and one exercises three malformed pulled-version refusals in Go. The
+The selection fixture has 26 test methods: 24 execute 38 complete Source/Go
+pairs, one exercises three malformed pulled-version refusals in Go, and one
+checks four raw stored lone-surrogate refusals with separate Source observations. The
 pairs cover null selection, new durable/checkpoint writes, revision, no-op,
 candidate discovery and budget refusal, prewrite invalidation, provider
 protocol/UTF-8/output-limit failures, timeout, bounded metadata, partial writes
