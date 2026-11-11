@@ -69,6 +69,31 @@ after the actual 30-second idle expiry, embedding identity, normalized
 processes. The ordinary semantic and CLI race suites plus `make check` also
 passed in the wrapper.
 
+Independent source review accepted exact candidate `fea6475b`
+(`ea22a262-29f5-4935-9aee-2d24f4afe9ad@1`); its four advisories require no
+correction for this landing. The tester's separate Go-driven comparison on the
+same candidate completed all 19 rank and 19 stream cases, with all 269 scores
+exact and all 3138 ordering relations unchanged in each mode
+(`69b57ab0-e20b-43b4-874a-4526e8c0b5bd@1`). Embed completed 37 cases and paired
+all 549 vectors, including all 44 vectors from the 22 two-passage documents.
+All vectors were float32 bit-exact against the frozen references and within
+the `1e-6` cosine criterion; the maximum observed absolute cosine difference
+was `4.440892098500626e-16`. Counts, original UTF-8 spans, substrings and query
+projection metadata matched. The whole measurement exited 0 in 309.105591539
+seconds; the longest document took 67.295834 seconds within the unchanged
+90-second limit. No closed model, vector or idle measurement is repeated for
+landing. The prior 97-row/Latin-reference gap strings in author artifacts are
+historical and superseded by the tester's current paired result.
+
+The review identifies the author idle test's limit: it establishes equal
+results after a 31-second wait without independently observing the restarted
+PID or cache restoration. The tester retains a supplemental cleanup status 98
+from its immediate process-group check; subsequent reconciliation found the
+owned group absent and the private namespace ended. That preserved cleanup
+observation is separate from the successful worker comparisons. Final landing
+validation runs the ordinary race suites and `make check` on the committed,
+rebased source to bind their evidence to that exact tree.
+
 A separate Go-driven sample in each mode matched the four mapped, sealed
 memory-file images to the selected ORT/math library hashes and inspected the
 actual sanitized child environments. The samples had no observed `connect`
@@ -81,9 +106,10 @@ on its first real stream request after one-shot had completed. That failed run
 is retained separately; the release-profile pass does not erase it. No timeout
 was extended and no protocol fixture replaced a model failure. The new
 `TestRustReal*` cases skip when their explicit asset/config selectors are absent.
-These selected Go-path results do not complete S-01, S-02, S-03, vector parity,
-near-tie/retrieval evaluation, T1/CPU-FENV, runtime qualification or production
-acceptance. Earlier rows below retain their component evidence boundaries.
+These measurements establish their selected comparison and process boundaries.
+Full S-01, S-02, S-03, near-tie/retrieval evaluation, T1/CPU-FENV, numerical and
+runtime qualification, and production acceptance remain open. Earlier rows
+below retain their component evidence boundaries.
 
 The rank initialization follow-through applies the same ten-field rule-C policy
 to `ConstructionReport::rank_identity`, which the shipped
