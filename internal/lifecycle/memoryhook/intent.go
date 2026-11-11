@@ -217,7 +217,8 @@ func recentNumber(v *value.Value) float64 {
 	return 0
 }
 
-func retrievalIntent(event, state *value.Value, project string) (string, []string, error) {
+func retrievalIntent(event, state *value.Value, project string, semanticMode ...bool) (string, []string, error) {
+	semantic := len(semanticMode) > 0 && semanticMode[0]
 	prompt := text(event.Get("prompt"))
 	paths := []string{}
 	cwd, err := pathValue(event.Get("project_path"))
@@ -338,7 +339,11 @@ func retrievalIntent(event, state *value.Value, project string) (string, []strin
 		}
 	}
 	var anchors []string
-	for _, anchor := range append(append(append([]string{}, paths...), phrases...), errorTerms...) {
+	anchorPaths := paths
+	if semantic {
+		anchorPaths = nil
+	}
+	for _, anchor := range append(append(append([]string{}, anchorPaths...), phrases...), errorTerms...) {
 		if !contains(anchors, anchor) {
 			anchors = append(anchors, anchor)
 		}
@@ -379,6 +384,11 @@ func retrievalIntent(event, state *value.Value, project string) (string, []strin
 	var parts []string
 	for _, a := range anchors {
 		parts = append(parts, "\""+a+"\"")
+	}
+	if semantic {
+		for _, path := range paths {
+			parts = append(parts, strings.ReplaceAll(path, "\"", " "))
+		}
 	}
 	parts = append(parts, errorTerms...)
 	parts = append(parts, keywords...)

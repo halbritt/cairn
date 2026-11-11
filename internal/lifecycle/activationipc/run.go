@@ -74,7 +74,7 @@ func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 		if err != nil {
 			return refuse(diagnostic, err)
 		}
-		result := memoryhook.RunStart(ctx, checked.Config, checked.Event, checked.Disposition == "checked", in.Directory, in.Environment)
+		result := memoryhook.RunStart(ctx, checked.Config, checked.Event, checked.Disposition == "checked", in.Directory, in.Environment, checked.Coordinators...)
 		if err = json.NewEncoder(output).Encode(result); err != nil {
 			return refuse(diagnostic, err)
 		}

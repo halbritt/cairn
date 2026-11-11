@@ -239,7 +239,7 @@ class InvocationContext:
         if not (self.args.role == 'memory' and config.get('harness') == 'codex'
                 and config.get('recall_mode') == 'agent_tools'
                 and config.get('inbox_recall_binding')
-                and event.get('hook_event_name') == 'SessionStart'):
+                and event.get('hook_event_name') in ('SessionStart', 'UserPromptSubmit')):
             return None
         if config is not self.current or type(raw) is not bytes or self.enabled is not None:
             raise ValueError('checked parent observation required')
@@ -253,13 +253,15 @@ class InvocationContext:
                 '--deadline', str(self.deadline)]
         out, err, code = self.child(argv, raw, stdout_limit=1024*1024)
         if code != 0:
-            self.activation_result(out, err, code)
+            # Only a successful private result can carry a required outcome.
+            # Process/transport failures must not borrow an earlier requirement
+            # through the Python exception boundary and acquire blocking exit 2.
             raise subprocess.SubprocessError('invalid memory reply')
         try:
             frame = json.loads(out.decode('utf-8'))
             if (err or set(frame) != {'stdout', 'stderr', 'exit_code', 'trace'}
                     or type(frame['stdout']) is not str or type(frame['stderr']) is not str
-                    or type(frame['exit_code']) is not int or frame['exit_code'] not in (0, 1)
+                    or type(frame['exit_code']) is not int or frame['exit_code'] not in (0, 1, 2)
                     or len(frame['stdout'].encode()) > 512*1024
                     or len(frame['stderr'].encode()) > 4096):
                 raise ValueError('invalid memory result')
@@ -272,6 +274,13 @@ class InvocationContext:
                     or ('context_bytes' in trace and (type(trace['context_bytes']) is not int
                         or not 0 <= trace['context_bytes'] <= 1024*1024))):
                 raise ValueError('invalid memory trace')
+            if frame['exit_code'] == 2 and not (
+                    event.get('hook_event_name') == 'UserPromptSubmit'
+                    and frame['stdout'] == '' and trace.get('outcome') == 'required_refused'
+                    and frame['stderr'] == ('Cairn lifecycle diagnostic: phase=handle error_class='
+                         + trace.get('error_class', '') + '\n'
+                         + 'Cairn: current required context could not be restored.\n')):
+                raise ValueError('invalid required memory result')
         except (ValueError, TypeError, UnicodeError):
             raise subprocess.SubprocessError('invalid memory reply') from None
         self.enabled = True  # this invocation has consumed its sole Go dispatch

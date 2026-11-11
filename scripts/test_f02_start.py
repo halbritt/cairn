@@ -20,7 +20,7 @@ import time
 import unittest
 import uuid
 
-from test_f04_activation import Fixture, ROOT, SESSION, encoded, oracle, scalar_tree, sha, write
+from test_f04_activation import Fixture, ROOT, SESSION, encoded, oracle, scalar_tree, sha, write, module
 
 
 class Server(socketserver.ThreadingMixIn,socketserver.UnixStreamServer):
@@ -119,15 +119,16 @@ class F02StartTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join()
 
-    def source(self,prefix=(),*,controlled_ids=False):
+    def source(self,prefix=(),*,controlled_ids=False,bridge=False):
         script = '''import importlib.util,sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from contextlib import nullcontext
 spec=importlib.util.spec_from_file_location('source_memory',sys.argv[1])
 hook=importlib.util.module_from_spec(spec); spec.loader.exec_module(hook)
-config=Path(sys.argv[2]); controlled=sys.argv[3]=='controlled'; sys.argv=[sys.argv[1],'--config',str(config)]
-with patch.object(hook,'load_inbox_recall',return_value=None):
+config=Path(sys.argv[2]); controlled=sys.argv[3]=='controlled'; bridge=sys.argv[4]=='bridge'; sys.argv=[sys.argv[1],'--config',str(config)]
+with (nullcontext() if bridge else patch.object(hook,'load_inbox_recall',return_value=None)):
  if not controlled:
   sys.exit(hook.main())
  # Control only the randomness boundary. The actual CLI, memory body, API,
@@ -149,9 +150,18 @@ with patch.object(hook,'load_inbox_recall',return_value=None):
         original = self.f.binding.read_bytes()
         manifest = json.loads(original)
         manifest['schema'] = 'cairn.inbox-recall-binding/2'
+        if bridge:
+            # The complete retained source bundle, not a naked entrypoint hash.
+            loader=module('prompt_source_bundle',ROOT/'integrations/lifecycle/lifecycle_bundle.py')
+            source_root=self.root/'oracle-source'
+            loader.stage_runtime(ROOT/'integrations/lifecycle',source_root)
+            descriptor=loader.bundle_descriptor(source_root)
+            for key, filename in (('bridge','inbox_recall.py'),('engine','memory.py')):
+                path=source_root/filename
+                manifest[key]=dict(path=str(path),sha256=sha(path.read_bytes()),bundle=descriptor)
         write(self.f.binding,encoded(manifest))
         try:
-            return subprocess.run([*prefix,sys.executable,'-B','-c',script,str(ROOT/'integrations/lifecycle/memory.py'),str(self.f.memory_path),'controlled' if controlled_ids else 'normal'],
+            return subprocess.run([*prefix,sys.executable,'-B','-c',script,str(ROOT/'integrations/lifecycle/memory.py'),str(self.f.memory_path),'controlled' if controlled_ids else 'normal','bridge' if bridge else 'stub'],
                                   input=self.f.raw,capture_output=True,cwd=self.f.root,env=self.f.env(),timeout=18)
         finally:
             write(self.f.binding,original)

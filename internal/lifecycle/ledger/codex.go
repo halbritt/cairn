@@ -156,6 +156,67 @@ func CodexCurrentGrant(state *value.Value) *value.Value {
 	return state.Get("turns").Get(string(active.String))
 }
 
+// CodexPromptGrant transfers startup delivery exactly once. Retired turn IDs
+// never reopen an epoch, and clearing startup fields preserves unknown members.
+func CodexPromptGrant(state *value.Value, event *value.Value, budget int, ordinary bool) (*value.Value, bool, string) {
+	if !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
+		return CodexCurrentGrant(state), false, "startup"
+	}
+	if !ordinary {
+		return CodexCurrentGrant(state), false, "taskless_prompt"
+	}
+	turn := event.Get("turn_id")
+	if turn == nil || turn.Kind != value.String || !uuidText(string(turn.String)) {
+		return CodexCurrentGrant(state), false, "missing_or_invalid_turn"
+	}
+	name := string(turn.String)
+	turns := state.Get("turns")
+	if turns.Get(name) != nil && !value.SameText(state.Get("active_turn_id"), name) {
+		return CodexCurrentGrant(state), false, "retired_turn"
+	}
+	if turns.Get(name) == nil {
+		pending := state.Get("pending")
+		limit := budget
+		if value.Truth(pending.Get("emitted_hook_bytes")) {
+			limit = min(budget, int(integerValue(pending.Get("limit_bytes")).Int64()))
+		}
+		grant := value.Mapping(value.Field("limit_bytes", integer(limit)), value.Field("emitted_hook_bytes", pending.Get("emitted_hook_bytes")), value.Field("reserved_native_bytes", integer(0)), value.Field("granted", value.Boolean(false)))
+		if serialized := pending.Get("serialized_hook_bytes"); serialized != nil && integerValue(serialized).Cmp(integerValue(pending.Get("emitted_hook_bytes"))) == 0 {
+			grant.Set("serialized_hook_bytes", pending.Get("emitted_hook_bytes"))
+		}
+		turns.Set(name, grant)
+		pending.Set("emitted_hook_bytes", integer(0))
+		state.Set("pending", pending.Without("serialized_hook_bytes").Without("required"))
+	}
+	state.Set("active_turn_id", turn)
+	return CodexCurrentGrant(state), true, "eligible"
+}
+
+// CodexRequiredGrant inspects the incoming turn without borrowing a retired or
+// unrelated active turn's requirement. The failure boundary never allocates.
+func CodexRequiredGrant(state, event *value.Value) *value.Value {
+	turn := event.Get("turn_id")
+	if value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") && turn != nil && turn.Kind == value.String && uuidText(string(turn.String)) {
+		if grant := state.Get("turns").Get(string(turn.String)); grant != nil {
+			return grant
+		}
+		if active := state.Get("active_turn_id"); active != nil && active.Kind != value.Null {
+			return nil
+		}
+		return state.Get("pending")
+	}
+	return CodexCurrentGrant(state)
+}
+
+// CodexFailedRequiredTurn is used only under the memory lock after an actual
+// policy refusal establishes a requirement for a not-yet-allocated turn.
+func CodexFailedRequiredTurn(state, event *value.Value, budget int) *value.Value {
+	grant := value.Mapping(value.Field("limit_bytes", integer(budget)), value.Field("emitted_hook_bytes", integer(0)), value.Field("reserved_native_bytes", integer(0)), value.Field("granted", value.Boolean(false)))
+	state.Get("turns").Set(string(event.Get("turn_id").String), grant)
+	state.Set("active_turn_id", event.Get("turn_id"))
+	return grant
+}
+
 // AddCodexCounter preserves arbitrary-size integer counters written by Python.
 func AddCodexCounter(grant *value.Value, key string, n int) {
 	previous := integerValue(grant.Get(key))
