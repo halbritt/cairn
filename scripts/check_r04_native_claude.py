@@ -1,7 +1,8 @@
-"""Disposable native Claude SDK hook selections and session-targeted refresh.
+"""Disposable native Claude hook selections and same-conversation resume.
 
-This checks the explicit --settings/flag-settings layer, not filesystem watcher
-reload or an interactive trust menu. All provider and Cairn responses are local.
+This checks explicit --settings snapshots across an orderly process restart,
+not an in-process patch, filesystem watcher or interactive trust menu. All
+provider and Cairn responses are local.
 """
 import argparse
 import base64
@@ -10,9 +11,9 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import selectors
 import shlex
-import signal
 import subprocess
 import tarfile
 import tempfile
@@ -67,9 +68,9 @@ class MessagesFixture:
 
 
 class ClaudeSession:
-    def __init__(self, binary, root, account, settings, provider, output, work):
+    def __init__(self, binary, root, account, settings, provider, output, work, *, resume=None):
         self.root, self.output = root, output
-        self.identity = str(uuid.uuid4())
+        self.identity = resume or str(uuid.uuid4())
         root.mkdir(mode=0o700)
         home = root / 'home'
         home.mkdir(mode=0o700)
@@ -92,7 +93,7 @@ class ClaudeSession:
              '--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
              '--setting-sources', '', '--settings', str(settings), '--strict-mcp-config', '--mcp-config',
              '{"mcpServers":{}}', '--tools', '', '--permission-mode', 'dontAsk', '--max-turns', '3',
-             '--model', 'sonnet', '--session-id', self.identity],
+             '--model', 'sonnet', '--resume' if resume else '--session-id', self.identity],
             cwd=work, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr,
             start_new_session=True)
         self.selector = selectors.DefaultSelector()
@@ -155,31 +156,42 @@ class ClaudeSession:
         return result
 
     def close(self):
-        if self.process.poll() is None:
-            self.process.stdin.close()
-            try:
-                # Continue draining stdout: a pending SessionEnd can emit hook
-                # messages, and a full pipe must not block orderly shutdown.
-                deadline = time.monotonic() + 30
-                while self.process.poll() is None and time.monotonic() < deadline:
-                    if self.selector.select(timeout=0.1):
-                        chunk = os.read(self.process.stdout.fileno(), 65536)
-                        if chunk:
-                            self.buffer.extend(chunk)
-                self.process.wait(timeout=max(0.1, deadline-time.monotonic()))
-            except subprocess.TimeoutExpired:
-                os.killpg(self.process.pid, signal.SIGTERM)
+        forced = False
+        try:
+            if self.process.poll() is None:
+                self.process.stdin.close()
                 try:
-                    self.process.wait(timeout=5)
+                    # Continue draining stdout: a pending SessionEnd can emit hook
+                    # messages, and a full pipe must not block orderly shutdown.
+                    deadline = time.monotonic() + 30
+                    while self.process.poll() is None and time.monotonic() < deadline:
+                        if self.selector.select(timeout=0.1):
+                            chunk = os.read(self.process.stdout.fileno(), 65536)
+                            if chunk:
+                                self.buffer.extend(chunk)
+                    self.process.wait(timeout=max(0.1, deadline-time.monotonic()))
                 except subprocess.TimeoutExpired:
-                    os.killpg(self.process.pid, signal.SIGKILL)
-                    self.process.wait(timeout=5)
-                raise AssertionError('Native Claude required forced shutdown')
-        self.selector.close()
-        self.stderr.close()
-        self.log.close()
+                    forced = True
+                    if self.process.pid <= 1:
+                        raise AssertionError('Refusing to signal an unsafe native client PID')
+                    self.process.terminate()
+                    try:
+                        self.process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        self.process.kill()
+                        self.process.wait(timeout=5)
+        finally:
+            self.selector.close()
+            self.process.stdout.close()
+            self.stderr.close()
+            self.log.close()
+        if forced:
+            raise AssertionError('Native Claude required forced shutdown')
         if self.process.returncode != 0:
             raise AssertionError('Native Claude shutdown exit: ' + str(self.process.returncode))
+        if any(line.startswith('SessionEnd hook [') and 'failed:' in line
+               for line in self.diagnostics.read_text().splitlines()):
+            raise AssertionError('Native Claude SessionEnd hook failed: ' + str(self.diagnostics))
 
 
 class NativeFixture(InstalledTools, unittest.TestCase):
@@ -197,6 +209,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                             'print(json.dumps({"structured_output":{"checkpoint":None,"workstream":None,"memories":[]}}))\n')
         selector.chmod(0o500)
         f.memory['claude'] = str(selector)
+        f.coord.update(process_names=[binary.name], process_exe_dirs=[])
         f.publish_configuration(enabled=False)
         original = encoded(dict(alwaysThinkingEnabled=False, permissions=dict(defaultMode='dontAsk')))
         overwrite_fixture(f.settings, original)
@@ -207,12 +220,18 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         work = self.root / 'work'
         work.mkdir(mode=0o700)
         subprocess.run(['git', 'init', '--quiet', str(work)], check=True, capture_output=True, timeout=5)
-        observations = []
+        observations, refreshes = [], []
+        self.addCleanup(lambda: (output / 'provider-requests.json').write_bytes(encoded(provider.requests)))
+        self.addCleanup(lambda: (output / 'cairn-api-calls.json').write_bytes(encoded(f.api_calls())))
+        self.addCleanup(lambda: (output / 'observations.json').write_bytes(encoded(observations)))
 
-        def start(name, selection):
+        def start(name, selection, *, resume=None):
             client = ClaudeSession(binary, self.root / name, f.account, Path(selection[0]['settings']['path']),
-                                   provider, output, work)
+                                   provider, output, work, resume=resume)
             self.addCleanup(client.close)
+            readback(client, selection)
+            self.assertEqual([e for e in client.events if e.get('subtype') == 'hook_response' and
+                              (e.get('exit_code') != 0 or e.get('outcome') != 'success')], [], name)
             return client
 
         def state():
@@ -264,6 +283,10 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             quiet(client)
             trace = client.trace.read_text()[offset:]
             executions = list(successful_execs(trace))
+            launch_root = str(f.root / 'release' / 'launch') + '/'
+            selected_launchers = {row['argv'][0] for row in selection[2]['rows']}
+            self.assertEqual([e for e in executions if e['path'].startswith(launch_root)
+                              and e['path'] not in selected_launchers], [], label)
             reached = []
             for role in ('memory', 'coordination'):
                 row = next(r for r in selection[2]['rows'] if r['role'] == role and r['event'] == 'UserPromptSubmit')
@@ -277,15 +300,19 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 actual = [e for e in executions if e['pid'] in {i['pid'] for i in issued} and
                           e['path'] == vector[0] and e['argv'] == vector[:-1]+row['argv'][1:]]
                 self.assertTrue(actual, (label, role, trace[-5000:]))
+                exits = {e['pid']: re.findall(r'^' + e['pid'] + r'\s+\+\+\+ exited with (\d+) \+\+\+$',
+                                             trace, flags=re.MULTILINE) for e in actual}
+                self.assertEqual(exits, {e['pid']: ['1' if refused else '0'] for e in actual},
+                                 (label, role, exits))
                 reached.append(dict(role=role, implementation=row['implementation'], argv=row['argv'],
                                     launcher=dict(path=launcher, sha256=digest(Path(launcher))),
-                                    program=dict(path=vector[0], sha256=digest(Path(vector[0]))), execs=actual))
+                                    program=dict(path=vector[0], sha256=digest(Path(vector[0]))),
+                                    execs=actual, exits=exits))
             hook_errors = [e for e in client.events[events_at:] if e.get('subtype') == 'hook_response' and
                            (e.get('exit_code') != 0 or e.get('outcome') != 'success')]
             if refused:
                 self.assertEqual(state(), before[0])
                 self.assertEqual(len(f.api_calls()), before[1])
-                self.assertTrue(hook_errors or result.get('is_error'), (label, result))
             else:
                 self.assertEqual(result.get('subtype'), 'success', result)
                 self.assertFalse(result.get('is_error'), result)
@@ -322,11 +349,22 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         prompt(fresh, 'fresh-b', b)
 
         def refresh(selection):
-            hooks = json.loads(Path(selection[0]['settings']['path']).read_bytes())['hooks']
-            before = len(f.api_calls()), len(provider.requests), state()
-            target.control('apply_flag_settings', settings=dict(hooks=hooks))
+            nonlocal target
+            previous = target
+            before_provider = len(provider.requests)
+            # apply_flag_settings appends hook lists in the selected native
+            # client. Restart with the exact settings and resume its history.
+            previous.close()
+            self.assertEqual(previous.process.returncode, 0)
+            target = start('resumed-client-' + str(len(refreshes) + 1), selection,
+                           resume=previous.identity)
+            self.assertEqual(target.identity, previous.identity)
+            self.assertNotEqual(target.process.pid, previous.process.pid)
             readback(target, selection)
-            self.assertEqual((len(f.api_calls()), len(provider.requests), state()), before)
+            self.assertEqual(len(provider.requests), before_provider)
+            refreshes.append(dict(session_id=target.identity, previous_client=previous.root.name,
+                                  client=target.root.name, previous_exit=previous.process.returncode,
+                                  selection=selection[0]['selection']))
 
         refresh(b)
         prompt(target, 'refreshed-b', b)
@@ -352,11 +390,14 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         (output / 'cairn-api-calls.json').write_bytes(encoded(f.api_calls()))
         (output / 'provider-requests.json').write_bytes(encoded(provider.requests))
         return dict(schema='cairn.r04-native-claude/1', passed=True, cases=observations,
+                    fixture=dict(sha256=digest(Path(__file__))),
                     client=dict(path=str(binary), sha256=digest(binary),
                                 version=subprocess.check_output([binary, '--version'], text=True, timeout=10).strip()),
-                    refresh=dict(operation='apply_flag_settings', scope='one persistent SDK process/session',
-                                 settings_layer='flagSettings', control_remained_a=True),
-                    limits=['Explicit --settings/SDK flag-settings snapshots only; no filesystem watcher or interactive trust claim.',
+                    refresh=dict(operation='orderly stop/join, then --resume with --settings',
+                                 scope='same conversation UUID and history; new process',
+                                 settings_layer='flagSettings', transitions=refreshes,
+                                 control_remained_a=True),
+                    limits=['Explicit --settings snapshots and same-conversation process restart only; no in-process patch, filesystem watcher or interactive trust claim.',
                             'Same private Go image with different receipt/config/V/L; not a code-image upgrade.',
                             'Source Python memory and checked Go coordination are labelled separately.',
                             'Local scripted provider and synthetic Cairn API; no real model/account or production apply.',

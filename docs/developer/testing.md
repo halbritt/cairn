@@ -130,6 +130,11 @@ node scripts/check_opencode_recent_files.mjs
 node scripts/check_opencode_lifecycle.mjs
 ```
 
+For staged hooks in a disposable native Claude client, use the
+[native Claude hook fixture](native-claude-hook-fixture.md). It checks cached
+selections, receipt refusals and same-conversation resume through the existing
+hybrid-runtime isolation wrapper.
+
 ### Shared Go lifecycle primitives
 
 The Go CLI's state-file wrapper and Claude channel bridge use the shared
