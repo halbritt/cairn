@@ -81,6 +81,12 @@ func NewFileHost(options FileHostOptions) *Host {
 	if adapter == nil {
 		adapter = &SessionJournalAdapter{Options: options.JournalOptions, Now: clock, Log: log}
 	}
+	if adapter.Now == nil {
+		adapter.Now = clock
+	}
+	if adapter.Log == nil {
+		adapter.Log = log
+	}
 	if adapter.PathText == nil {
 		adapter.PathText = func(v *value.Value) (string, error) { return sourcePathText(options.Profile, v) }
 	}

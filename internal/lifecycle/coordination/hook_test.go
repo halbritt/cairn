@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -151,8 +150,11 @@ func TestHookLifecycleAndToolCue(t *testing.T) {
 		case "event-renew":
 			return nativeMap("delivery_id", deliveryID, "lease_id", leaseID, "state", "leased", "event", nativeMap("event_id", deliveryID, "kind", "request", "from", "agent/sender", "ref", nativeMap("record_id", recordID, "version", 1))), nil
 		case "session-inbox-reconcile":
+			if value.SameText(body.Get("reason"), "delivery_completed") {
+				return nil, &CoordinationError{Code: "DELIVERY_ACTIVE", Message: "delivery is still active"}
+			}
 			return nativeMap("released", true), nil
-		case "agent-unregister":
+		case "agent-leave":
 			return nativeMap("unregistered", true), nil
 		default:
 			t.Fatalf("unexpected call op: %s", op)
@@ -204,8 +206,13 @@ func TestHookLifecycleAndToolCue(t *testing.T) {
 	if err != nil || code != 0 || strings.TrimSpace(out.String()) != "{}" {
 		t.Fatalf("SessionEnd failed: code=%d err=%v out=%q", code, err, out.String())
 	}
-	if _, statErr := os.Stat(filepath.Join(stateDir, nativeID+".json")); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("expected state file to be removed after SessionEnd, got err=%v", statErr)
+	statePath, locErr := cli.Host.Locate(nativeMap("binding", "b1", "state_dir", stateDir), nativeID)
+	if locErr != nil {
+		t.Fatal(locErr)
+	}
+	retiredState, loadErr := cli.Host.Load(statePath)
+	if loadErr != nil || !value.Truth(retiredState.Get("retired")) || value.Truth(retiredState.Get("inbox_attempt")) {
+		t.Fatalf("expected state file %s to be retired with cleared attempt after SessionEnd, got state=%v err=%v", statePath, retiredState, loadErr)
 	}
 }
 
@@ -332,6 +339,9 @@ func TestHookInboxRecallBridgeAndRefusalSettlement(t *testing.T) {
 			observedReports = append(observedReports, body)
 			return nativeMap("ok", true), nil
 		case "session-inbox-reconcile":
+			if value.SameText(body.Get("reason"), "delivery_completed") {
+				return nil, &CoordinationError{Code: "DELIVERY_ACTIVE", Message: "delivery is still active"}
+			}
 			return nativeMap("released", true), nil
 		default:
 			t.Fatalf("unexpected call op: %s", op)
@@ -422,7 +432,7 @@ func TestHookInboxRecallBridgeAndRefusalSettlement(t *testing.T) {
 	out.Reset()
 	errOut.Reset()
 	code, err = cli2.RunCLI(context.Background(), []string{"hook", "--config", cfgPath2}, strings.NewReader(wakeEv), &out, &errOut)
-	if err != nil || code != 2 || out.Len() != 0 || !strings.Contains(errOut.String(), "NATIVE_PROMPT_REFUSED: bound inbox recall unavailable; no source or memory grant delivered; prompt refused") {
+	if err != nil || code != 2 || out.Len() != 0 || !strings.Contains(errOut.String(), "NATIVE_PROMPT_REFUSED: bound inbox recall unavailable; no source or memory grant delivered; channel text rejected, owner prompt continues") {
 		t.Fatalf("expected exit 2 NATIVE_PROMPT_REFUSED on bridge refusal, got code=%d err=%v out=%q errOut=%q", code, err, out.String(), errOut.String())
 	}
 	if !releasedOnRefusal {
@@ -483,7 +493,8 @@ else:
 	}
 	pyCfg := filepath.Join(root, "py-coord.json")
 	goCfg := filepath.Join(root, "go-coord.json")
-	exePath, err := os.Executable()
+	hostPID := os.Getppid()
+	exePath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", hostPID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +502,7 @@ else:
 	if err != nil {
 		exeResolved = exePath
 	}
-	commBytes, _ := os.ReadFile("/proc/self/comm")
+	commBytes, _ := os.ReadFile(fmt.Sprintf("/proc/%d/comm", hostPID))
 	selfComm := strings.TrimSpace(string(commBytes))
 	writeCfg := func(p, sd string) {
 		b, _ := json.Marshal(map[string]any{
@@ -514,18 +525,18 @@ else:
 	writeCfg(goCfg, goState)
 
 	cli, _ := newTestHookCLI(t, root)
-	cli.Command = []string{"python3", pyScript}
+	cli.Command = []string{"/usr/bin/python3", pyScript}
 
 	events := []string{
-		fmt.Sprintf(`{"hook_event_name":"SessionStart","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, os.Getpid()),
-		fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"cwd":%q,"prompt":"hello","host_pid":%d}`, nativeID, root, os.Getpid()),
-		fmt.Sprintf(`{"hook_event_name":"PostToolUse","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, os.Getpid()),
-		fmt.Sprintf(`{"hook_event_name":"PostToolUse","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, os.Getpid()),
-		fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, os.Getpid()),
-		fmt.Sprintf(`{"hook_event_name":"SessionEnd","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, os.Getpid()),
+		fmt.Sprintf(`{"hook_event_name":"SessionStart","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID),
+		fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"cwd":%q,"prompt":"hello","host_pid":%d}`, nativeID, root, hostPID),
+		fmt.Sprintf(`{"hook_event_name":"PostToolUse","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID),
+		fmt.Sprintf(`{"hook_event_name":"PostToolUse","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID),
+		fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID),
+		fmt.Sprintf(`{"hook_event_name":"SessionEnd","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID),
 	}
 	for i, ev := range events {
-		pyCmd := exec.Command("python3", pyScript, "hook", "--config", pyCfg)
+		pyCmd := exec.Command("/usr/bin/python3", pyScript, "hook", "--config", pyCfg)
 		pyCmd.Stdin = strings.NewReader(ev)
 		pyCmd.Env = append(os.Environ(), "HOME="+root, "CAIRN_INBOX_ROOT="+filepath.Join(root, "py-journal"))
 		var pyOut, pyErr bytes.Buffer
