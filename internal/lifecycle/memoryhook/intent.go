@@ -217,7 +217,21 @@ func recentNumber(v *value.Value) float64 {
 	return 0
 }
 
+// recallIntent keeps the Source body/preview relevance inputs alongside the
+// existing query/files view. Existing consumer helper signatures are unchanged.
+type recallIntent struct {
+	query                 string
+	files, phrases, words []string
+	project               string
+	startup               bool
+}
+
 func retrievalIntent(event, state *value.Value, project string, semanticMode ...bool) (string, []string, error) {
+	intent, err := detailedRetrievalIntent(event, state, project, semanticMode...)
+	return intent.query, intent.files, err
+}
+
+func detailedRetrievalIntent(event, state *value.Value, project string, semanticMode ...bool) (recallIntent, error) {
 	semantic := len(semanticMode) > 0 && semanticMode[0]
 	prompt := text(event.Get("prompt"))
 	paths := []string{}
@@ -226,7 +240,7 @@ func retrievalIntent(event, state *value.Value, project string, semanticMode ...
 		cwd, err = pathValue(event.Get("cwd"))
 	}
 	if err != nil {
-		return "", nil, err
+		return recallIntent{}, err
 	}
 	var fileParts []string
 	for _, part := range strings.FieldsFunc(prompt, pySpace) {
@@ -246,7 +260,7 @@ func retrievalIntent(event, state *value.Value, project string, semanticMode ...
 		}
 		full, err := resolved(candidate, cwd)
 		if err != nil {
-			return "", nil, err
+			return recallIntent{}, err
 		}
 		rel, err := filepath.Rel(project, full)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, "../") || rel == "." || len(rel) > 512 {
@@ -266,7 +280,7 @@ func retrievalIntent(event, state *value.Value, project string, semanticMode ...
 	now := float64(time.Now().UnixNano()) / 1e9
 	hints := state.Get("hints")
 	if hints != nil {
-		invalid := func() (string, []string, error) { return "", nil, fail("invalid stored memory hints") }
+		invalid := func() (recallIntent, error) { return recallIntent{}, fail("invalid stored memory hints") }
 		if hints.Kind != value.Object {
 			return invalid()
 		}
@@ -353,7 +367,7 @@ func retrievalIntent(event, state *value.Value, project string, semanticMode ...
 	}
 	if source := text(event.Get("source")); source == "resume" || source == "compact" {
 		if saved := state.Get("workstream"); saved != nil && saved.Kind != value.String {
-			return "", nil, fail("invalid stored memory workstream")
+			return recallIntent{}, fail("invalid stored memory workstream")
 		}
 		title := text(state.Get("workstream"))
 		if state.Get("workstream") == nil {
@@ -374,6 +388,7 @@ func retrievalIntent(event, state *value.Value, project string, semanticMode ...
 		}
 	}
 	anchors = filtered
+	intentPhrases := append([]string{}, anchors...)
 	if continuation(prompt) {
 		anchors = append([]string{strings.TrimRightFunc(workstreamPrefix(project), pySpace)}, anchors...)
 		if len(anchors) > 8 {
@@ -397,7 +412,13 @@ func retrievalIntent(event, state *value.Value, project string, semanticMode ...
 			query += " " + part
 		}
 	}
-	return query, paths, nil
+	words := append([]string{}, keywords...)
+	for _, word := range terms(strings.Join(errorTerms, " ")) {
+		if !contains(words, word) {
+			words = append(words, word)
+		}
+	}
+	return recallIntent{query: query, files: paths, phrases: intentPhrases, words: words, project: baseName(project), startup: value.SameText(event.Get("hook_event_name"), "SessionStart")}, nil
 }
 
 func timestamp(v *value.Value) bool {

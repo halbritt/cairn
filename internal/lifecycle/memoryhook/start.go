@@ -143,6 +143,9 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 				trace["context_bytes"] = 0
 			}
 		}
+		for key, v := range result.Trace {
+			trace[key] = v
+		}
 		result.Trace = trace
 	}()
 	boundary := func(err error) Result {
@@ -197,6 +200,12 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		trace["outcome"] = "early_return:no_memory_marker"
 		return Result{Stdout: "{}\n"}
 	}
+	if ordinary && value.Truth(config.Get("inbox_recall_binding")) {
+		return HostFailure("activation", fail("bound ordinary memory requires receipt-selected activation"))
+	}
+	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") {
+		return boundary(fail("ordinary memory harness remains unavailable"))
+	}
 	if ordinary && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
 		return boundary(fail("ordinary memory capture and observation cells remain unavailable"))
 	}
@@ -232,6 +241,13 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		}
 	}
 	started := time.Now()
+	if ordinary {
+		for _, key := range []string{"repo", "cairn", "socket", "token_file", "state_dir"} {
+			if config.Get(key) == nil {
+				return boundary(&value.Error{Class: "KeyError", Message: key})
+			}
+		}
+	}
 	session := text(event.Get("session_id"))
 	stateDir, err := pathValue(config.Get("state_dir"))
 	if err != nil {
@@ -836,6 +852,9 @@ func failure(event *value.Value, err error) Result {
 	return Result{Stderr: diagnostic + "Cairn lifecycle: " + message + "; use native tools or an explicit handoff.\n", ExitCode: 1}
 }
 func report(ctx context.Context, api *localapi.Client, client *memoryclient.Client, config, event *value.Value, started time.Time, recallElapsed time.Duration, operationTime map[string]time.Duration, injected int, err error) {
+	if !contains([]string{"claude", "codex", "opencode", "hermes"}, text(config.Get("harness"))) {
+		return
+	}
 	if setting := config.Get("recall_observations"); setting != nil && setting.Kind == value.Bool && !setting.Boolean {
 		return
 	}

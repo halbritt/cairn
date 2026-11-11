@@ -13,12 +13,6 @@ import (
 // RunOrdinary runs actual non-Codex recall. Bound callbacks must use their
 // checked activation path; an ordinary entry never downgrades that binding.
 func RunOrdinary(ctx context.Context, config, event *value.Value, directory string, environment []string) Result {
-	if value.Truth(config.Get("inbox_recall_binding")) {
-		return HostFailure("activation", fail("bound ordinary memory requires receipt-selected activation"))
-	}
-	if !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") {
-		return HostFailure("handle", fail("ordinary memory harness remains unavailable"))
-	}
 	return runMemory(ctx, config, event, false, directory, environment, true)
 }
 
@@ -27,6 +21,9 @@ func RunOrdinary(ctx context.Context, config, event *value.Value, directory stri
 func HostFailure(phase string, err error) Result {
 	out := failure(nil, err)
 	out.Stderr = strings.Replace(out.Stderr, "phase=handle ", "phase="+phase+" ", 1)
+	if out.Trace == nil {
+		out.Trace = map[string]any{"phase": phase, "outcome": "error"}
+	}
 	return out
 }
 
@@ -36,9 +33,10 @@ func InvalidInput(phase, message string) Result { return HostFailure(phase, fail
 func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, event, state, status *value.Value, project string) (string, error) {
 	started := time.Now()
 	mode := config.Get("recall_mode")
-	if !value.SameText(mode, "agent_tools") {
-		return "", fail("ordinary ambient recall remains unavailable")
+	if mode != nil && !value.SameText(mode, "ambient") && !value.SameText(mode, "agent_tools") {
+		return "", fail("invalid lifecycle recall_mode: expected ambient or agent_tools")
 	}
+
 	if view := config.Get("recall_view"); view != nil && !value.SameText(view, "full") && !value.SameText(view, "compact/1") {
 		return "", fail("invalid lifecycle recall_view: expected full or compact/1")
 	}
@@ -48,12 +46,21 @@ func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, ev
 	if config.Get("recall_task_key") != nil {
 		return "", fail("invalid explicit recall_task_key or unsupported recall route")
 	}
-	deadline, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 	notification := value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") && strip(text(event.Get("workstream"))) == "" && text(event.Get("source")) != "resume" && text(event.Get("source")) != "compact" && binding.TasklessNotification(event.Get("prompt"))
 	deferred := notification || value.SameText(event.Get("hook_event_name"), "SessionStart") && strip(text(event.Get("prompt"))) == "" && strip(text(event.Get("workstream"))) == "" && text(event.Get("source")) != "resume" && text(event.Get("source")) != "compact"
-	semantic := !deferred && value.Truth(config.Get("semantic_fallback"))
-	query, entities, err := retrievalIntent(event, state, project, semantic)
+	agentTools := value.SameText(mode, "agent_tools")
+	if !agentTools && !deferred && value.Truth(config.Get("semantic_fallback")) {
+		return "", fail("ordinary provider-selected recall remains unavailable")
+	}
+	duration := 11 * time.Second
+	if agentTools {
+		duration = 5 * time.Second
+	}
+	deadline, cancel := context.WithDeadline(ctx, started.Add(duration))
+	defer cancel()
+	semantic := agentTools && !deferred && value.Truth(config.Get("semantic_fallback"))
+	intent, err := detailedRetrievalIntent(event, state, project, semantic)
+	query, entities := intent.query, intent.files
 	if err != nil {
 		return "", err
 	}
@@ -98,26 +105,14 @@ func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, ev
 		return "", fail("retrieval exceeds lifecycle context budget; no partial instructions injected")
 	}
 	var body string
-	if !deferred {
+	if !deferred && agentTools {
 		body, err = eagerCandidates(deadline, client, config, selected, result, view.Index, budget, status, func(s string) int { return len(s) })
 		status.Set("discovery", value.Text("agent_tools"))
 		status.Set("bytes", integer(len(body)))
 	} else {
-		status.Set("discovery", value.Text("deferred"))
-		why := "taskless_startup"
-		if notification {
-			why = "taskless_notification"
-		}
-		status.Set("optional_deferred", value.Text(why))
-		if len(selected.Items) > 0 {
-			body = selectedBody
-			status.Set("outcome", value.Text("recalled"))
-			status.Set("bytes", integer(len(body)))
-			status.Set("expanded", nil)
-			status.Set("partial_record", nil)
-			status.Set("source_extent", nil)
-		}
+		body, err = ambientRecall(deadline, client, event, state, status, result, selected, view.Index, intent, budget, deferred, notification, project)
 	}
+
 	status.Set("elapsed_seconds", rounded(time.Since(started)))
 	return body, err
 }
