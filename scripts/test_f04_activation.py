@@ -159,8 +159,9 @@ print(json.dumps({'ok':True,'status':'OK','data':data}))
     def env(self):
         return {k:v for k,v in os.environ.items() if not k.startswith('CAIRN_') and k not in ('CODEX_HOME','CLAUDE_CONFIG_DIR')}
 
-    def recall_api(self):
+    def recall_api(self, *, selected=None):
         """Provision the external SDK boundary for newly consumed recall rows."""
+        selected=[] if selected is None else selected
         token=self.root/'recall-token'; socket=self.root/'recall.sock'
         write(token,b'f04-synthetic-token',0o600)
         for config in (self.memory,self.coord): config.update(socket=str(socket),token_file=str(token))
@@ -175,7 +176,7 @@ print(json.dumps({'ok':True,'status':'OK','data':data}))
                 elif operation=='index':
                     data=dict(package=dict(receipt_id='11111111-1111-4111-8111-111111111111',nonce='',seal='blake3:'+'a'*64,
                         semantic=dict(schema='cairn.semantic/17',mode='index',status='READY',scope=request['scope'],purpose='context',
-                            destination=dict(name='hosted',allow_local=False),query='sha256:fixture-query',available_tokens=32000,selected=[],omitted={},index=[])),
+                            destination=dict(name='hosted',allow_local=False),query='sha256:fixture-query',available_tokens=32000,selected=selected,omitted={},index=[])),
                         handles=[],expires_at='2030-01-01T00:00:00Z',credits_remaining=4,bytes_remaining=24000)
                 elif operation=='recall-observation': data={}
                 else: inner.send_error(400);return
@@ -317,6 +318,7 @@ class F04ActivationTests(unittest.TestCase):
                     f.raw=(json.dumps(f.event,ensure_ascii=False).encode(codec) if codec!='duplicates' else
                            encoded(f.event).replace(b'"hook_event_name":"UserPromptSubmit"',
                              b'"Hook_Event_Name":"Stop","hook_event_name":"Stop","hook_event_name":"UserPromptSubmit"'))
+                    if role=='coordination': self.addCleanup(f.recall_api())
                     result=f.public(role)
                     self.assertEqual((result.returncode,result.stderr),(0,b''),result.stdout)
                     state=json.loads((Path(f.memory['state_dir'])/(SESSION+'.inbox-recall.json')).read_text())
@@ -379,6 +381,7 @@ class F04ActivationTests(unittest.TestCase):
         result=dict(status='READY',destination=dict(name='hosted',allow_local=False),
                     selected=[dict(mandatory=True,record=dict(body=body))],index=[],omitted={})
         f.replies({'search':[dict(ok=True,status='OK',data=result)]})
+        self.addCleanup(f.recall_api(selected=result['selected']))
         return f,f.public('coordination')
 
     def test_complete_reserved_wake_retains_whole_required_context_at_exact_wire_limit(self):
