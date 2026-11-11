@@ -188,6 +188,61 @@ made. Raw traces and caches stay in the external output directory.
 The observer's mechanics tests are in `scripts/test_semantic_stream_evidence.py`;
 protocol fixtures and selected observations remain separate from full acceptance.
 
+## Indexed Python/Rust comparison
+
+`TestIndexedPythonRustComparison` in `semantic/indexed_comparison_test.go`
+uses the real `Index.Search` and compiler integration on one owned disposable
+PostgreSQL/pgvector database. It creates the source records once, then rebuilds
+their derivations sequentially with the prepared Python worker and the Rust
+embedding worker through their existing Go owners. Producer model identities
+are recorded separately; the embedding algorithm must agree.
+
+The committed `semantic/testdata/indexed-comparison-inventory.json` binds the
+17 workload queries, nine query boundaries and their input hashes. The test
+also verifies the original workload bytes and each source's UUID5 alias,
+version, body and body hash before creating the disposable source records.
+Additional cases exercise actual equal-distance duplicate-text vectors,
+partial coverage and unavailable coverage. SQL result order and compiler
+returned order are preserved separately. Only the specified passage digest
+uses a copy sorted by record ID; it does not reorder either observed result.
+
+The selected isolated run on PostgreSQL 18.6/pgvector 0.8.7 processed 15 source
+jobs and stored 21 passages per backend. Across 29 cases per backend, all 326
+paired SQL hits and 137 paired compiler entries matched exactly, including
+versions, hashes, original UTF-8 spans, integer scores, projections, discovery
+state and coverage. Each compiler receipt replayed with its original seal.
+Partial coverage was ready at 11/12; unavailable coverage was 0/12. The closest
+positive SQL-distance gap among the frozen queries was
+`1.522471887227539e-6` for `failure-lessons`, an observation without a new quality
+threshold. The 29 query vectors and 21 stored-passage vectors were all bit-exact
+between backends and passed the existing cosine tolerance. Indexed integer
+assertions remain exact; Go `math.Round` and pgvector own these scores.
+
+Run this test inside `scripts/semantic_acceptance_isolation.py`, with private
+PGDATA, Unix socket, OS home and cache, networking disabled and assets read-only.
+Configure `CAIRN_TEST_DATABASE_URL`, `CAIRN_EMBEDDING_WORKER`,
+`CAIRN_RUST_EMBED_TEST_CONFIG`, `CAIRN_INDEXED_COMPARISON_INPUT` and
+`CAIRN_INDEXED_COMPARISON_REPORT`. The Rust configuration's `source_root` names
+the pinned checkout. Generate input from the unchanged
+`scripts/semantic_fixture_cases.py`: its first 17 `ranking_cases()` and the
+nine query entries from `embedding_cases()`. Input contains `workload_sha256`,
+12 `notes` and 26 ordered `cases` with `id`, `query` and `family`
+(`workload` or `query-boundary`). Write inputs and reports outside the checkout.
+
+```sh
+# Inside that boundary, after configuring both real backends and the owned DSN:
+go test -race -count=1 -run '^TestIndexedPythonRustComparison$' ./semantic
+```
+
+The three required real-model tests select Python or Rust with
+`CAIRN_REAL_EMBEDDING_BACKEND=python` or `rust`; the unset selector preserves
+legacy worker selection and skipping. The six named tests per backend and two
+retained-ranking fixture tests passed with `-race`, with no skips. Fixture store
+tests remain distinct from model evidence. Three input controls refused changed
+query bytes, source bodies and case order. The private clusters stopped cleanly.
+The initial invalid harness memory budget is retained as a failed attempt; its
+correction changes no worker deadline, score policy or production behavior.
+
 ## Fixed workers and evidence gates
 
 The CLI requires `--output` to name a new directory outside this checkout.

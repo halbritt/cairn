@@ -45,6 +45,21 @@ retry-policy holds remain.
 
 ## Inspect the implementation
 
+The scoped S-02 implementation is landed and CAIRN-325 is Done. The S-03 indexed
+comparison now exercises the real `Index.Search` and compiler with sequential
+Python/Rust rebuilds of the same sources on a private PostgreSQL/pgvector
+instance. All 17 workload queries, nine query boundaries and three tie/coverage
+cases matched: 326 paired SQL hits and 137 compiler entries, with exact discrete
+fields/order/projections/coverage and successful receipt replay. Each backend
+processed 15 source jobs and stored 21 passages. The 50 paired vectors were
+bit-exact; the existing cosine tolerance and exact indexed integer assertions
+are unchanged. The six required named tests per backend and two retained-ranking
+fixture tests passed under `-race`, with no skips. Input-integrity controls and
+owned cluster shutdown passed. These selected observations do not establish
+broader runtime or production qualification. The
+[indexed comparison procedure](../semantic-worker-comparison.md#indexed-pythonrust-comparison)
+records its inputs, selectors and limits.
+
 The S-02 stream follow-through adds an external, test-only observer around the
 landed Go driver. A selected isolated run completed all 38 frozen inventory
 cells on one Rust child, with one initial cold process and 37 subsequent
@@ -139,9 +154,9 @@ is retained separately; the release-profile pass does not erase it. No timeout
 was extended and no protocol fixture replaced a model failure. The new
 `TestRustReal*` cases skip when their explicit asset/config selectors are absent.
 These measurements establish their selected comparison and process boundaries.
-Full S-01, S-02, S-03, near-tie/retrieval evaluation, T1/CPU-FENV, numerical and
-runtime qualification, and production acceptance remain open. Earlier rows
-below retain their component evidence boundaries.
+Full S-01 acceptance, broader near-tie/retrieval evaluation, T1/CPU-FENV,
+full numerical and runtime qualification, and production acceptance remain
+open. Earlier rows below retain their component evidence boundaries.
 
 The rank initialization follow-through applies the same ten-field rule-C policy
 to `ConstructionReport::rank_identity`, which the shipped
