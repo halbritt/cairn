@@ -357,6 +357,44 @@ def compare_embedding_reply(expected, actual, candidate, vectors):
             'embedding identity differs')
 
 
+def compare_failure(record, row, is_go, mode, stdout, stderr):
+    """Preserve the frozen failure class, not merely absence of success."""
+    expected_id = (record['name'] if mode == 'rank' else
+                   json.loads(record['input'].splitlines()[-1])['id']) if is_go else None
+    if record['status'] == 'timeout':
+        require(row['seconds'] >= record['timeout_seconds'], 'frozen deadline ended early')
+        if is_go:
+            require(row['returncode'] == 0 and not row['timed_out'],
+                    'Go supervisor did not return its own deadline result')
+            replies = [json.loads(line) for line in stdout.splitlines()]
+            require(replies == [{'id': expected_id, 'error': 'context deadline exceeded'}],
+                    'frozen timeout changed failure class')
+        else:
+            require(row['timed_out'] and row['returncode'] == -signal.SIGKILL,
+                    'frozen timeout changed failure class')
+        return
+    require(record['status'] == 'observed' and record['exit_code'] == 1,
+            'unsupported frozen failure class')
+    require(not row['timed_out'], 'frozen refusal became timeout')
+    if is_go:
+        require(row['returncode'] == 0, 'Go supervisor failed instead of returning refusal')
+        replies = [json.loads(line) for line in stdout.splitlines()]
+        errors = [reply for reply in replies if 'error' in reply]
+        expected = ('semantic worker failed: exit status 1' if mode == 'rank' else
+                    'semantic worker response framing: EOF' if mode == 'stream' else
+                    {'embed-query-byte-overflow': 'embedding query exceeds limit',
+                     'embed-document-byte-overflow': 'embedding document exceeds limit'}
+                    .get(record['name'], 'EOF'))
+        require(errors == [{'id': expected_id, 'error': expected}] and replies[-1] == errors[0],
+                'Go refusal changed failure class')
+    else:
+        require(row['returncode'] == record['exit_code'], 'frozen refusal exit differs')
+        reference = record['stderr'].strip().splitlines()
+        actual = stderr.strip().splitlines()
+        require(reference and actual and reference[-1] == actual[-1],
+                'frozen refusal exception differs')
+
+
 def observer_controls(output):
     code = ("import pathlib,socket; s=socket.socket();s.connect_ex(('127.0.0.1',1));s.close();"
             "p=pathlib.Path('/tmp/s04r-observer-home/.cache/Microsoft/DeveloperTools/.onnxruntime/onnxruntime.db');"
@@ -370,7 +408,7 @@ def observer_controls(output):
     (output / 'positive-control.json').write_text(json.dumps(observed, indent=2))
 
 
-def internal_route(route, output):
+def internal_route(route, output, recheck_only=False):
     output = Path(output)
     output.mkdir(mode=0o700)
     closure = load('closure', Path(__file__).with_name('semantic_python_closure.py'))
@@ -426,6 +464,7 @@ def internal_route(route, output):
             if prior_type_error:
                 row['prior_comparison_failure'] = 'embedding identity differs (SHA/object comparer defect)'
         else:
+            require(not recheck_only, 'recheck requires a completed selected case receipt')
             row = observe(command, input_bytes, limit, selected, payload, mode)
         row['case'] = record['name']
         actual_text = selected.with_suffix('.stdout').read_text()
@@ -455,11 +494,9 @@ def internal_route(route, output):
                 require(row['returncode'] == 0 and not row['timed_out'], 'expected successful case failed')
                 require(any(any('onnxruntime_pybind11_state' in image['path'] for image in worker['images'])
                             for worker in row['workers']), 'successful model case has no mapped runtime evidence')
-            elif is_go:
-                raw = [json.loads(x) for x in actual_text.splitlines()]
-                require(row['timed_out'] or any('error' in r for r in raw), 'expected failure became success')
             else:
-                require(row['timed_out'] or row['returncode'] != 0, 'expected failure became success')
+                compare_failure(record, row, is_go, mode, actual_text,
+                                selected.with_suffix('.stderr').read_text())
             require(not list(home.rglob('*')), 'worker HOME/cache changed')
             row['comparison'] = 'PASS'
         except RuntimeError as error:
@@ -492,6 +529,7 @@ def internal_route(route, output):
                                            cosine(a['actual'], b['actual'])))
     require(pair_loss <= 1e-6, 'query/passage cosine difference exceeded')
     result = {'route': route, 'cases': len(records), 'failed': failed,
+              'recheck_only': recheck_only,
               'model_workers_observed': len(model_workers), 'vectors': len(vectors),
               'vectors_bit_exact': sum(v['bit_exact'] for v in vectors),
               'max_vector_cosine_loss': max((v['cosine_loss'] for v in vectors), default=0),
@@ -513,14 +551,18 @@ def main():
     parser.add_argument('--frozen-reference')
     parser.add_argument('--resume-artifact', help='reuse this exact prepared worker and revalidate completed case evidence')
     parser.add_argument('--stage-source', help='retained immutable stage when the resumed package references an earlier export')
+    parser.add_argument('--recheck-only', action='store_true',
+                        help='compare completed receipts only; never execute a model worker')
     parser.add_argument('--internal-route', choices=ROUTES)
     parser.add_argument('--output')
     args = parser.parse_args()
     if args.internal_route:
-        internal_route(args.internal_route, args.output)
+        internal_route(args.internal_route, args.output, args.recheck_only)
         return
     require(all((args.artifact_dir, args.inputs, args.metadata, args.frozen_reference)),
             'artifact-dir, inputs, metadata and frozen-reference are required')
+    require(not args.recheck_only or args.resume_artifact,
+            'recheck-only requires a completed prior artifact')
     output = Path(args.artifact_dir)
     output.mkdir(mode=0o700)
     frozen = output / 'selected-frozen.json'
@@ -602,7 +644,9 @@ def main():
     for route in ROUTES:
         code = ("import pathlib,subprocess,sys,tarfile;out=pathlib.Path('/tmp/s04r-route');"
                 "r=subprocess.run(['/usr/bin/python3','-I','-B','/work/scripts/check_semantic_python_closure.py',"
-                "'--internal-route',"+repr(route)+",'--output',str(out)],stdout=sys.stderr,stderr=sys.stderr);"
+                "'--internal-route',"+repr(route)+",'--output',str(out)]"+
+                ("+['--recheck-only']" if args.recheck_only else "")+
+                ",stdout=sys.stderr,stderr=sys.stderr);"
                 "a=tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz');a.add(out,arcname='route');a.close();"
                 "sys.exit(r.returncode)")
         directory = output/route

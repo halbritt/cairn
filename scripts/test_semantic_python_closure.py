@@ -21,6 +21,14 @@ closure = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(closure)
 
 
+def closure_test_qualification():
+    spec = importlib.util.spec_from_file_location('qualification', MODULE.with_name(
+        'check_semantic_python_closure.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class ClosureTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -340,6 +348,43 @@ class ClosureTests(unittest.TestCase):
             qualification.compare_embedding_reply(reply, wrong, candidate, [])
         with self.assertRaisesRegex(RuntimeError, 'identity differs'):
             qualification.compare_embedding_reply(wrong, wrong, candidate, [])
+
+    def test_frozen_timeout_cannot_be_replaced_by_crash_or_supervisor_eof(self):
+        qualification = closure_test_qualification()
+        record = {'name': 'embed-dense-max-ascii', 'status': 'timeout',
+                  'timeout_seconds': 90, 'input': '{"id":"dense-max-ascii"}\n'}
+        direct = {'seconds': 90.1, 'returncode': -signal.SIGKILL, 'timed_out': True}
+        qualification.compare_failure(record, direct, False, 'embed', '', '')
+        crashed = direct | {'returncode': 1, 'timed_out': False}
+        with self.assertRaisesRegex(RuntimeError, 'changed failure class'):
+            qualification.compare_failure(record, crashed, False, 'embed', '', '')
+        go = direct | {'returncode': 0, 'timed_out': False}
+        reply = {'id': 'dense-max-ascii', 'error': 'context deadline exceeded'}
+        qualification.compare_failure(record, go, True, 'embed', json.dumps(reply), '')
+        for wrong in (reply | {'error': 'EOF'}, reply | {'id': 'wrong'}):
+            with self.assertRaisesRegex(RuntimeError, 'changed failure class'):
+                qualification.compare_failure(record, go, True, 'embed', json.dumps(wrong), '')
+        with self.assertRaisesRegex(RuntimeError, 'deadline ended early'):
+            qualification.compare_failure(record, go | {'seconds': 1}, True, 'embed',
+                                          json.dumps(reply), '')
+
+    def test_frozen_refusal_requires_original_exception_and_exact_go_error(self):
+        qualification = closure_test_qualification()
+        record = {'name': 'embed-document-whitespace', 'status': 'observed', 'exit_code': 1,
+                  'input': '{"id":"document-whitespace"}\n',
+                  'stderr': 'Traceback at frozen path\nValueError: document exceeds input bounds\n'}
+        row = {'seconds': 6, 'returncode': 1, 'timed_out': False}
+        qualification.compare_failure(record, row, False, 'embed', '', record['stderr'])
+        with self.assertRaisesRegex(RuntimeError, 'exception differs'):
+            qualification.compare_failure(record, row, False, 'embed', '', 'ImportError: missing runtime')
+        with self.assertRaisesRegex(RuntimeError, 'became timeout'):
+            qualification.compare_failure(record, row | {'timed_out': True}, False, 'embed', '', '')
+        go = row | {'returncode': 0}
+        reply = {'id': 'document-whitespace', 'error': 'EOF'}
+        qualification.compare_failure(record, go, True, 'embed', json.dumps(reply), '')
+        for wrong in (reply | {'error': 'context deadline exceeded'}, reply | {'id': 'wrong'}):
+            with self.assertRaisesRegex(RuntimeError, 'changed failure class'):
+                qualification.compare_failure(record, go, True, 'embed', json.dumps(wrong), '')
 
     def test_atomic_no_replace_refuses_a_concurrent_wrong_generation(self):
         commit = closure.commit_pending

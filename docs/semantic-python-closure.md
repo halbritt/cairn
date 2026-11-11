@@ -83,3 +83,11 @@ capture bytes as the oracle, actual production Go supervisors and their existing
 positive observer controls. Results, raw outputs, mappings, failures and frozen
 input/output hashes stay outside Git. A successful local check does not perform
 Release acceptance or activate a service.
+
+Frozen refusals must retain their exception and exit status through direct
+entries, and the specific existing supervisor error through Go entries. A
+frozen timeout requires the same deadline population; a crash or ordinary EOF
+does not satisfy it. `--resume-artifact PATH --recheck-only` rechecks complete
+captured receipts inside the wrapper and refuses a missing case instead of
+executing a worker. This permits a comparer correction without replaying model
+calls. Original failed qualification artifacts remain available.
