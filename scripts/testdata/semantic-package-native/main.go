@@ -290,6 +290,41 @@ func decoded(raw []byte) (any, error) {
 	return document, nil
 }
 
+func positiveReply(document any, mode, route string) error {
+	reply, ok := document.(map[string]any)
+	if !ok {
+		return errors.New("positive reply is not an object")
+	}
+	if _, present := reply["error"]; present {
+		return errors.New("worker or Go supervisor returned an error reply")
+	}
+	if route == "go" || mode == "stream" {
+		reply, ok = reply["result"].(map[string]any)
+	} else if mode == "embed" {
+		reply, ok = reply["identity"].(map[string]any)
+	}
+	if !ok {
+		return errors.New("positive reply has no result or identity object")
+	}
+	if _, present := reply["error"]; present {
+		return errors.New("worker returned a nested error reply")
+	}
+	identity, _ := reply["model_sha256"].(string)
+	digest, err := hex.DecodeString(identity)
+	if err != nil || len(digest) != sha256.Size {
+		return errors.New("positive reply has no valid model identity")
+	}
+	algorithm, _ := reply["algorithm"].(string)
+	if mode == "embed" {
+		if algorithm != "bge-original-passages/1" || reply["dimensions"] != json.Number("384") {
+			return errors.New("positive embedding reply has invalid protocol identity fields")
+		}
+	} else if algorithm != "bge-max-chunk/1" {
+		return errors.New("positive rank reply has invalid protocol identity fields")
+	}
+	return nil
+}
+
 func workerCommand(selected selection, mode, route string) (*exec.Cmd, error) {
 	launch, ok := selected.Launchers[mode]
 	if !ok || (route != "direct" && route != "go") {
@@ -373,6 +408,9 @@ func run(report *result, selected selection, mode, route string, negative, contr
 	}
 	actual, err := decoded(report.Stdout)
 	if err != nil {
+		return err
+	}
+	if err := positiveReply(actual, mode, route); err != nil {
 		return err
 	}
 	expected, err := decoded(selected.Expected[route+"-"+mode])
