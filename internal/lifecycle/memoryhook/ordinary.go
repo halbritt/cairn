@@ -13,7 +13,7 @@ import (
 // RunOrdinary runs admitted unbound memory cells. Bound callbacks must use their
 // checked activation path; an ordinary entry never downgrades that binding.
 func RunOrdinary(ctx context.Context, config, event *value.Value, directory string, environment []string) Result {
-	return runMemory(ctx, config, event, false, directory, environment, true)
+	return runMemory(ctx, config, event, false, directory, environment, true, nil)
 }
 
 // HostFailure preserves Source's optional public failure. A process panic or

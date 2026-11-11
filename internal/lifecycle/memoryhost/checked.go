@@ -52,11 +52,11 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 			return refuse()
 		}
 	}
-	selection, launchRoot, shell, err := checkedArguments(args)
+	selection, launchRoot, shell, timeout, err := checkedArguments(args)
 	if err != nil {
 		return refuse()
 	}
-	ctx, cancel := context.WithDeadline(parent, entered.Add(13*time.Second))
+	ctx, cancel := context.WithDeadline(parent, entered.Add(timeout))
 	defer cancel()
 	raw, err := checkedLauncherBytes(vector, shell)
 	if err != nil {
@@ -68,7 +68,7 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 		return refuse()
 	}
 	selection.ImagePath = vector[0]
-	snapshot, err := binding.VerifyOrdinary(ctx, selection)
+	snapshot, err := binding.VerifyMemoryEntry(ctx, selection)
 	if err != nil {
 		var data *binding.OrdinaryDataError
 		if errors.As(err, &data) {
@@ -77,6 +77,9 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 		return refuse()
 	}
 	defer snapshot.Close()
+	if !snapshot.Bound() && timeout != 13*time.Second {
+		return refuse()
+	}
 	rawEvent, err := checkedInput(ctx, input)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -94,7 +97,7 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	if event.Kind != value.Object {
 		return checkedEmit(memoryhook.InvalidInput("input", "configuration and host event must be objects"), out, diagnostic)
 	}
-	if name := event.Get("hook_event_name"); !value.SameText(name, "SessionStart") && !value.SameText(name, "UserPromptSubmit") && !value.SameText(name, "PreToolUse") && !value.SameText(name, "PostToolUse") && !value.SameText(name, "PostToolUseFailure") {
+	if name := event.Get("hook_event_name"); !snapshot.Bound() && !value.SameText(name, "SessionStart") && !value.SameText(name, "UserPromptSubmit") && !value.SameText(name, "PreToolUse") && !value.SameText(name, "PostToolUse") && !value.SameText(name, "PostToolUseFailure") {
 		return refuse()
 	}
 	directory, err := os.Getwd()
@@ -104,7 +107,7 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	trace := newTrace(selection.ConfigPath)
 	trace.entry()
 	trace.parsed(event)
-	if member(string(event.Get("hook_event_name").String), "PreToolUse", "PostToolUse", "PostToolUseFailure") {
+	if name := event.Get("hook_event_name"); value.SameText(name, "PreToolUse") || value.SameText(name, "PostToolUse") || value.SameText(name, "PostToolUseFailure") {
 		trace.fields["stage"] = "activation"
 	}
 	defer func() {
@@ -114,7 +117,14 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 		}
 		trace.finish(code, "handle")
 	}()
-	result := memoryhook.RunOrdinary(ctx, snapshot.Config, event, directory, os.Environ())
+	var result memoryhook.Result
+	if snapshot.Bound() {
+		trace.fields["phase"] = "activation"
+		trace.fields["stage"] = "activation"
+		result = runCheckedBound(ctx, snapshot, event, rawEvent, directory, timeout)
+	} else {
+		result = memoryhook.RunOrdinary(ctx, snapshot.Config(), event, directory, os.Environ())
+	}
 	for k, v := range result.Trace {
 		trace.fields[k] = v
 	}
@@ -131,9 +141,9 @@ func checkedEmit(result memoryhook.Result, out, diagnostic io.Writer) int {
 	return result.ExitCode
 }
 
-func checkedArguments(args []string) (binding.OrdinarySelection, string, string, error) {
-	fail := func() (binding.OrdinarySelection, string, string, error) {
-		return binding.OrdinarySelection{}, "", "", errors.New("invalid checked memory selection")
+func checkedArguments(args []string) (binding.OrdinarySelection, string, string, time.Duration, error) {
+	fail := func() (binding.OrdinarySelection, string, string, time.Duration, error) {
+		return binding.OrdinarySelection{}, "", "", 0, errors.New("invalid checked memory selection")
 	}
 	flags := flag.NewFlagSet("checked memory", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -170,14 +180,14 @@ func checkedArguments(args []string) (binding.OrdinarySelection, string, string,
 		return fail()
 	}
 	h, err := strconv.ParseFloat(*vals["hook-timeout"], 64)
-	if err != nil || h != 13 || *vals["role"] != "memory" || !filepath.IsAbs(*vals["launch-root"]) || filepath.Clean(*vals["launch-root"]) != *vals["launch-root"] {
+	if err != nil || (h != 13 && h != 150) || *vals["role"] != "memory" || !filepath.IsAbs(*vals["launch-root"]) || filepath.Clean(*vals["launch-root"]) != *vals["launch-root"] {
 		return fail()
 	}
 	tail := flags.Args()
 	if len(tail) != 0 && (len(tail) != 2 || tail[0] != "--config" || tail[1] != *vals["config"]) {
 		return fail()
 	}
-	return binding.OrdinarySelection{ReceiptPath: *vals["receipt"], ReceiptSHA256: *vals["receipt-sha256"], Role: *vals["role"], Entrypoint: *vals["entrypoint"], ConfigPath: *vals["config"]}, *vals["launch-root"], *vals["shell"], nil
+	return binding.OrdinarySelection{ReceiptPath: *vals["receipt"], ReceiptSHA256: *vals["receipt-sha256"], Role: *vals["role"], Entrypoint: *vals["entrypoint"], ConfigPath: *vals["config"]}, *vals["launch-root"], *vals["shell"], time.Duration(h) * time.Second, nil
 }
 
 var (
