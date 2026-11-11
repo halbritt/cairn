@@ -47,11 +47,11 @@ func (e *fixtureEmbedder) Identity(context.Context) (EmbeddingIdentity, error) {
 }
 
 func TestRealPersistentPassageDiscovery(t *testing.T) {
-	path := os.Getenv("CAIRN_EMBEDDING_WORKER")
 	dsn := os.Getenv("CAIRN_TEST_DATABASE_URL")
-	if path == "" || dsn == "" {
-		t.Skip("requires local prepared embedding worker and disposable PostgreSQL")
+	if dsn == "" {
+		t.Skip("requires disposable PostgreSQL")
 	}
+	model := realEmbeddingForTest(t)
 	ctx := context.Background()
 	s, err := core.Open(ctx, dsn, core.Channel{Principal: "real-index-fixture"})
 	if err != nil {
@@ -74,11 +74,6 @@ func TestRealPersistentPassageDiscovery(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	model, err := EmbeddingCommand(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer model.Close()
 	idx, err := OpenIndex(ctx, dsn, model)
 	if err != nil {
 		t.Fatal(err)

@@ -13,15 +13,7 @@ import (
 )
 
 func TestRealMaximumDocumentEmbeddingCompletes(t *testing.T) {
-	path := os.Getenv("CAIRN_EMBEDDING_WORKER")
-	if path == "" {
-		t.Skip("requires a prepared local embedding worker")
-	}
-	e, err := EmbeddingCommand(context.Background(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer e.Close()
+	e := realEmbeddingForTest(t)
 	body := strings.Repeat("abc def ghi jkl mno pqr stu vwx yz. ", 2000)[:65536]
 	start := time.Now()
 	passages, err := e.Document(context.Background(), body)
@@ -212,18 +204,7 @@ for line in sys.stdin:
 }
 
 func TestRealProjectedLongQuery(t *testing.T) {
-	path := os.Getenv("CAIRN_EMBEDDING_WORKER")
-	if path == "" {
-		t.Skip("requires a prepared local embedding worker")
-	}
-	e, err := EmbeddingCommand(context.Background(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer e.Close()
-	if _, err = e.Identity(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	e := realEmbeddingForTest(t)
 	query := strings.Repeat("é漢🙂 tokenize pathological constraints! ", 75)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
