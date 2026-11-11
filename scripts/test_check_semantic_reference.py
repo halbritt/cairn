@@ -43,6 +43,74 @@ class ReferenceRunnerTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "committed inventory"):
                 reference.inventory(path)
 
+    def test_inventory_content_guards_refuse_omissions_after_digest_check(self):
+        original = reference.load(reference.INVENTORY)
+        mutations = [
+            ("prepared selector", lambda v: v["python_prepared"].pop()),
+            ("actual tokenizer selector", lambda v: v.update(actual_tokenizer="missing")),
+            ("Go selector", lambda v: v["go_process"].pop()),
+            ("native mechanics selector", lambda v: v["python_mechanics"].pop()),
+            ("required criterion", lambda v: v["criteria"].pop(0)),
+            ("five model assets", lambda v: v["assets_sha256"].pop("tokenizer.json")),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "committed-inventory.json"
+            for message, mutate in mutations:
+                value = copy.deepcopy(original)
+                mutate(value)
+                reference.save(path, value)
+                with self.subTest(message=message), patch.object(reference, "INVENTORY", path):
+                    with self.assertRaisesRegex(ValueError, message):
+                        reference.inventory(path)
+
+    def test_native_executable_missing_or_wrong_format_refuses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "native"
+            with self.assertRaises(FileNotFoundError):
+                reference.native_executable(path)
+            path.write_bytes(b"#!/usr/bin/python3\n")
+            with self.assertRaisesRegex(ValueError, "native Go executables"):
+                reference.native_executable(path)
+
+    def test_runtime_binding_missing_mismatched_or_incomplete_refuses(self):
+        value = dict(retained={"runtime-binding": dict(sha256="a" * 64)}, python_sha256="b" * 64)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "binding.json"
+            with self.assertRaises(FileNotFoundError):
+                reference.verify_runtime(value, path, Path(directory), Path(directory))
+            reference.save(path, {})
+            with self.assertRaisesRegex(ValueError, "reviewed runtime binding"):
+                reference.verify_runtime(value, path, Path(directory), Path(directory))
+            rows = dict(frozen_loaded_module_files=[dict(relative="module", sha256="c" * 64)] * 481,
+                        frozen_numeric_native_files=[dict(relative="native", sha256="d" * 64)] * 7)
+            for key in rows:
+                broken = copy.deepcopy(rows)
+                broken[key].pop()
+                with patch.object(reference, "digest", return_value="a" * 64), \
+                     patch.object(reference, "load", return_value=broken), \
+                     patch.object(reference, "pinned", return_value=path):
+                    with self.assertRaisesRegex(ValueError, "runtime inventory count changed"):
+                        reference.verify_runtime(value, path, Path(directory), Path(directory))
+
+    def test_reused_cell_needs_nonempty_known_retained_evidence(self):
+        for evidence in ([], ["unknown"], [None]):
+            value = dict(retained={}, criteria=[dict(id="rank/case", state="reused", evidence=evidence)])
+            with self.subTest(evidence=evidence), self.assertRaisesRegex(ValueError, "unqualified reference cell"):
+                reference.audit(value, Path("/unused"))
+
+    def test_prepared_row_names_fresh_or_exact_reused_provenance(self):
+        value = dict(retained={}, criteria=[dict(id="tests/prepared-23", state="missing", evidence=[])],
+                     stream_reference={})
+        reuse = dict(report_sha256="a" * 64, inventory_sha256="b" * 64)
+        with patch.object(reference, "verify_characterization", return_value=0):
+            fresh = reference.audit(value, Path("/unused"), dict(results={}))
+            reused = reference.audit(value, Path("/unused"), dict(results={}, prepared_reuse=reuse))
+        self.assertIn("fresh", fresh["criteria"][0]["evidence"][0])
+        evidence = reused["criteria"][0]["evidence"]
+        self.assertNotIn("fresh", " ".join(evidence))
+        self.assertIn("report-sha256:" + reuse["report_sha256"], evidence)
+        self.assertIn("original-inventory-sha256:" + reuse["inventory_sha256"], evidence)
+
     def test_missing_changed_and_symlinked_assets_refuse(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -99,6 +167,9 @@ class ReferenceRunnerTest(unittest.TestCase):
         for change in (dict(successful=1), dict(skipped=False)):
             with self.assertRaises(ValueError):
                 reference.python_events(json.dumps(dict(document, **change)).encode(), ["Class.test_one"])
+        with self.assertRaisesRegex(ValueError, "expected failure"):
+            reference.python_events(json.dumps(dict(document, expected_failures=["Class.test_one"])).encode(),
+                                    ["Class.test_one"])
 
     def test_actual_python_outcome_is_required_instead_of_ok_text(self):
         with self.assertRaisesRegex(ValueError, "actual unittest"):
@@ -168,6 +239,7 @@ class ReferenceRunnerTest(unittest.TestCase):
         value = reference.load(reference.INVENTORY)
         document = dict(inventory_sha256=reference.digest(reference.INVENTORY),
                         sources=value["source_sha256"],
+                        tool_sha256=reference.tool_pins(), tool_after_sha256=reference.tool_pins(),
                         results={phase: dict(tests_ran=23, skipped=0) for phase in ("prepared", "mechanics", "go", "typed")},
                         logs_sha256={"prepared.stdout": "a" * 64})
         with tempfile.TemporaryDirectory() as directory:

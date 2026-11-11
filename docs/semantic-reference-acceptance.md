@@ -48,8 +48,10 @@ The producer tooling and combined model-free seam were accepted and landed as
 conditional punctuation proof. This slice preserves those distinctions rather
 than reopening the accepted tooling findings.
 
-The selected local run passed all 23 prepared tests, six native fixture tests,
-21 Go process tests and 63 typed-text refusal cases. The typed cases use the
+The selected report reuses the isolated 23-test prepared pass from the earlier
+named phase, with its report SHA and original inventory SHA. It records six
+native fixture tests, 21 Go process tests and 63 typed-text refusal cases from
+the later run. The typed cases use the
 actual prepared tokenizer and the frozen worker's response method with inference
 forbidden. Their tuple is exception type/message, absent result and zero
 inference calls; they do not claim a model worker's process-exit tuple.
@@ -99,6 +101,9 @@ An already-passed prepared phase can be supplied with `--prepared-report` and
 `--prepared-report-sha256`. Reuse requires the exact current source bindings and
 all 23 actual names in the pinned raw outcome. The new report records the source
 receipt and original inventory hash rather than claiming a fresh execution.
+Reuse does not compare the earlier invocation's interpreter, site, runtime
+binding or asset paths with the new invocation. It retains that original command
+as provenance; the current supplied runtime and assets pass their own preflight.
 
 `plan --output PATH` writes the required criteria without running tests or
 workers. `audit --evidence-root PATH --output PATH` verifies the selected retained

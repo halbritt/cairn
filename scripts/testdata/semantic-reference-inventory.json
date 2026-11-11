@@ -845,25 +845,6 @@
       "evidence": []
     }
   ],
-  "negative_controls": [
-    "missing-executable",
-    "missing-asset",
-    "go-skip",
-    "python-skip",
-    "zero-ran-suite",
-    "missing-case",
-    "score-mismatch",
-    "span-mismatch",
-    "order-mismatch",
-    "projection-mismatch",
-    "unqualified-reference-cell",
-    "runtime-observer-missing",
-    "missing-selector",
-    "command-failed",
-    "python-skipped-class",
-    "asset-changed",
-    "held-cell-cannot-pass"
-  ],
   "stream_reference": {
     "actual_python_frames": 34,
     "actual_python_scores": 408,

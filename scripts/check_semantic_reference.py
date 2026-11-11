@@ -117,6 +117,8 @@ def python_events(raw, expected):
     require(type(document.get("tests_ran")) is int, "invalid unittest count")
     require(document.get("successful") is True and document.get("skipped") == [],
             "invalid or unsuccessful unittest outcome")
+    require(not document.get("expected_failures", []) and not document.get("unexpected_successes", []),
+            "expected failure is not passing required coverage")
     try:
         return verify_python_events(document, expected)
     except ComparisonFailure as error:
@@ -150,7 +152,9 @@ class Result(unittest.TextTestResult):
 suite=unittest.TestLoader().loadTestsFromNames(json.loads(sys.argv[3]))
 result=unittest.TextTestRunner(resultclass=Result,verbosity=2).run(suite)
 print(json.dumps(dict(schema='cairn.semantic-test-events/1',ids=ids,skipped=skipped,
- tests_ran=result.testsRun,successful=result.wasSuccessful())))
+ tests_ran=result.testsRun,successful=result.wasSuccessful(),
+ expected_failures=[test.id() for test,_ in result.expectedFailures],
+ unexpected_successes=[test.id() for test in result.unexpectedSuccesses])))
 sys.exit(0 if result.wasSuccessful() else 1)
 '''
 
@@ -206,13 +210,22 @@ def verify_runtime(value, binding_path, site, python_home):
     return counts
 
 
+def native_executable(path):
+    with path.open("rb") as stream:
+        require(stream.read(4) == b"\x7fELF", "native Go executables required")
+
+
+def tool_pins():
+    return {name: digest(PROJECT / "scripts" / name)
+            for name in ("check_semantic_reference.py", "test_check_semantic_reference.py")}
+
+
 def run_tests(args, value):
     """Only fixed selectors; model execution and arbitrary candidate argv are absent."""
     assets = verify_assets(value, args.assets)
     runtime = verify_runtime(value, args.runtime_binding, args.site, args.python_home)
     for executable in (args.go_binary, args.go_test2json):
-        with executable.open("rb") as stream:
-            require(stream.read(4) == b"\x7fELF", "native Go executables required")
+        native_executable(executable)
     output = args.output.absolute()
     require(not output.exists(), "test output must be fresh")
     env = dict(WORKER_ENV, CAIRN_EMBEDDING_TOKENIZER=assets["tokenizer.json"])
@@ -220,7 +233,8 @@ def run_tests(args, value):
     mounts = [PROJECT, args.python_home, args.site, args.assets,
               args.go_binary, args.go_test2json]
     report = dict(schema="cairn.semantic-reference-tests/1", inventory_sha256=digest(INVENTORY),
-                  sources=value["source_sha256"], runtime=runtime, commands={}, results={}, exit_codes={})
+                  sources=value["source_sha256"], runtime=runtime, commands={}, results={}, exit_codes={},
+                  tool_sha256=tool_pins())
     try:
         with SemanticIsolation(read_only_paths=mounts, output_dir=output) as isolated:
             for phase in ("prepared", "mechanics", "go"):
@@ -268,7 +282,9 @@ def run_tests(args, value):
     finally:
         if output.exists():
             report["logs_sha256"] = {p.name: digest(p) for p in output.glob("*.stdout")}
+            report["tool_after_sha256"] = tool_pins()
             save(output / "test-report.json", report)
+            require(report["tool_sha256"] == report["tool_after_sha256"], "tool changed during tests")
     return report
 
 
@@ -278,6 +294,8 @@ def verify_test_report(value, path, expected_hash):
     tests = load(path)
     require(tests.get("inventory_sha256") == digest(INVENTORY), "test inventory binding changed")
     require(tests.get("sources") == value["source_sha256"], "test source binding changed")
+    require(tests.get("tool_sha256") == tests.get("tool_after_sha256") == tool_pins(),
+            "test checker/source binding changed")
     require(set(tests.get("results", {})) == {"prepared", "mechanics", "go", "typed"}, "missing test phase")
     for phase in ("prepared", "mechanics", "go"):
         expected = value["go_process" if phase == "go" else "python_" + phase]
@@ -307,6 +325,12 @@ def verify_characterization(value, root):
 
 
 def audit(value, root, tests=None):
+    for row in value["criteria"]:
+        if row["state"] == "reused":
+            evidence = row.get("evidence")
+            require(isinstance(evidence, list) and evidence and
+                    all(isinstance(key, str) and key in value["retained"] for key in evidence),
+                    "unqualified reference cell: " + row["id"])
     artifacts, manifests = {}, {}
     for name, pin in value["retained"].items():
         path = pinned(root, pin["relative"], pin["sha256"])
@@ -323,11 +347,17 @@ def audit(value, root, tests=None):
                   unbound_failure_families=value.get("failure_families", {}),
                   tests=None if tests is None else tests["results"],
                   prepared_reuse=None if tests is None else tests.get("prepared_reuse"),
+                  checker_sha256=tool_pins(),
                   model_execution=False, full_s01_accepted=False)
     if tests is not None:
         for row in result["criteria"]:
             if row["id"] == "tests/prepared-23":
-                row.update(state="verified", evidence=["fresh named prepared tests; tokenizer is one of 23"])
+                reused = tests.get("prepared_reuse")
+                evidence = (["reused named prepared tests; tokenizer is one of 23",
+                             "report-sha256:" + reused["report_sha256"],
+                             "original-inventory-sha256:" + reused["inventory_sha256"]]
+                            if reused is not None else ["fresh named prepared tests; tokenizer is one of 23"])
+                row.update(state="verified", evidence=evidence)
     result["remaining"] = [row["id"] for row in result["criteria"] if row["state"] not in ("reused", "verified")]
     result["complete"] = not result["remaining"]
     return result
