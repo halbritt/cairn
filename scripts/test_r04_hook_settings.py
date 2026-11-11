@@ -1,20 +1,23 @@
 """Real installed launchers selected into disposable Codex/Claude settings."""
 import copy
 import hashlib
+import http.server
 import json
 import os
 from pathlib import Path
 import shlex
 import shutil
 import signal
+import socketserver
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import uuid
 
-from test_f04_activation import ROOT, encoded
+from test_f04_activation import ROOT, SESSION, encoded, write
 from test_f04_deadlines import ROWS
 from test_r02_compatibility_install import InstalledFixture, InstalledTools
 import test_r02_compatibility_install as installed
@@ -75,6 +78,63 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
         metadata = json.loads((root / 'hook-selection.json').read_bytes())
         return selected, settings, metadata
 
+    def recall_api(self, f):
+        # SessionStart now reaches the real Go SDK. Keep the CLI fixture for
+        # retained rows and provision its new external API boundary as well.
+        token = f.root / 'recall-token'
+        socket = f.root / 'recall.sock'
+        write(token, b'r04-synthetic-token', 0o600)
+        for config in (f.memory, f.coord):
+            config.update(socket=str(socket), token_file=str(token))
+        f.publish_configuration()
+        f.hook_plan['selection'] = f.selected
+        calls = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                operation = self.path.removeprefix('/v1/')
+                authorization = self.headers.get('Authorization')
+                calls.append((operation, authorization))
+                if authorization != 'Bearer r04-synthetic-token':
+                    self.send_error(401)
+                    return
+                if operation == 'version':
+                    data = dict(preview_capabilities=dict(schema='cairn.preview-capabilities/1', entities_omitted=True))
+                elif operation == 'index':
+                    data = dict(package=dict(receipt_id='11111111-1111-4111-8111-111111111111', nonce='',
+                                             seal='blake3:' + 'a' * 64,
+                                             semantic=dict(schema='cairn.semantic/17', mode='index', status='READY',
+                                                           scope=dict(repo='fixture', task_id='codex/' + SESSION, run_id=SESSION),
+                                                           purpose='context', destination=dict(name='hosted', allow_local=False),
+                                                           query='sha256:fixture-query', available_tokens=32000,
+                                                           selected=[], omitted={}, index=[])),
+                                handles=[], expires_at='2030-01-01T00:00:00Z', credits_remaining=4, bytes_remaining=24000)
+                else:
+                    self.send_error(400)
+                    return
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(encoded(dict(schema='cairn.response/1', ok=True, status='OK', data=data)))
+
+        class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+            daemon_threads = True
+
+        server = Server(str(socket), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        def close():
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+        self.addCleanup(close)
+        return calls
+
     def test_preserves_other_settings_and_group_position_and_exact_previous_bytes(self):
         foreign = dict(type='command', command='/other/hook --unrelated', timeout=123, custom=True)
         data = dict(env=dict(OTHER='keep'), opaque=[900719925474099312345, 'unchanged'], hooks={
@@ -118,6 +178,7 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
     def test_each_emitted_hook_runs_selected_real_activation_after_producer_inputs_are_removed(self):
         for harness in ('codex', 'claude'):
             f = self.fixture(harness + " hook's profile", harness)
+            recall_calls = self.recall_api(f) if harness == 'codex' else None
             _, _, metadata = self.selected(f)
             shutil.rmtree(f.package)
             for row in metadata['rows']:
@@ -137,6 +198,10 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
             suffix = '.memory-budget.json' if harness == 'codex' else '.inbox-recall.json'
             self.assertTrue(list(Path(f.memory['state_dir']).glob('*' + suffix)))
             self.assertIn('agent-register', [call['operation'] for call in f.api_calls()])
+            if recall_calls is not None:
+                self.assertIn('index', [operation for operation, _ in recall_calls])
+                self.assertTrue(all(authorization == 'Bearer r04-synthetic-token'
+                                    for _, authorization in recall_calls))
 
     def test_repeat_rendering_has_no_duplicate_hooks_and_old_settings_selection_remains(self):
         f = self.fixture('repeat')
