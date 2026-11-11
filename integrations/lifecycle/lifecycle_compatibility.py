@@ -325,8 +325,9 @@ class InvocationContext:
             raise cls('utf-8', '\ud800', 0, 1, 'lifecycle activation input')
         raise cls('lifecycle activation input')
 
-    def child(self, argv, raw, *, stdout_limit=64):
-        if time.monotonic() >= self.deadline:
+    def child(self, argv, raw, *, stdout_limit=64, deadline=None):
+        limit = self.deadline if deadline is None else min(self.deadline, float(deadline))
+        if time.monotonic() >= limit:
             raise TimeoutError(errno.ETIMEDOUT, 'lifecycle activation deadline')
         if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
             # Popen maps ECHILD to status zero when SIGCHLD is ignored. That
@@ -356,7 +357,7 @@ class InvocationContext:
                                      pass_fds=(self.binary_fd,), stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if interrupted is not None: raise ParentSignal(interrupted)
-            result = self.child_io(child, raw, stdout_limit=stdout_limit)
+            result = self.child_io(child, raw, stdout_limit=stdout_limit, deadline=limit)
         except ParentSignal as stop:
             interrupted = stop.number
         except BaseException as error:
@@ -374,7 +375,8 @@ class InvocationContext:
         if failure is not None: raise failure
         return result
 
-    def child_io(self, child, raw, *, stdout_limit=64):
+    def child_io(self, child, raw, *, stdout_limit=64, deadline=None):
+        limit = self.deadline if deadline is None else min(self.deadline, float(deadline))
         streams = {child.stdout: (bytearray(), stdout_limit), child.stderr: (bytearray(), 4096)}
         selector = selectors.DefaultSelector()
         for pipe in streams:
@@ -385,7 +387,7 @@ class InvocationContext:
         sent = 0
         try:
             while selector.get_map():
-                remaining = self.deadline - time.monotonic()
+                remaining = limit - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError(errno.ETIMEDOUT, 'lifecycle activation deadline')
                 for key, _ in selector.select(remaining):
@@ -406,7 +408,7 @@ class InvocationContext:
                             data.extend(chunk)
                             if len(data) > maximum:
                                 raise subprocess.SubprocessError('activation reply exceeds bound')
-            remaining = self.deadline - time.monotonic()
+            remaining = limit - time.monotonic()
             if remaining <= 0: raise TimeoutError(errno.ETIMEDOUT, 'lifecycle activation deadline')
             try: code = child.wait(timeout=remaining)
             except subprocess.TimeoutExpired: raise TimeoutError(errno.ETIMEDOUT, 'lifecycle activation deadline') from None
@@ -460,6 +462,145 @@ class InvocationContext:
         if require_enabled and not enabled: raise ValueError('inbox recall binding is disabled')
         if config not in [self.memory, *self.coordinators]: raise ValueError('incompatible inbox recall profile binding')
         return self.bundle.load('memory'), self.memory
+
+    def inbox_argv(self, operation, limit):
+        return [self.receipt['binary']['path'], 'lifecycle', 'inbox', operation,
+                '--entrypoint', 'coordination', '--config', self.args.config,
+                '--config-sha256', hashlib.sha256(self.current_raw).hexdigest(),
+                '--binding-sha256', self.receipt['binding']['sha256'],
+                '--receipt', self.args.receipt, '--receipt-sha256', self.args.receipt_sha256,
+                '--deadline', str(limit)]
+
+    def inbox_recall_output(self, config, event, observation, state, control, *, outer_deadline=None, reports=None):
+        """Consume the claimed inbox recall turn in checked Go without loading memory.py."""
+        self.checked_binding()
+        enabled = self.enabled if self.enabled is not None else self.manifest['enabled']
+        if not enabled:
+            raise ValueError('inbox recall binding is disabled')
+        if config not in [self.memory, *self.coordinators]:
+            raise ValueError('incompatible inbox recall profile binding')
+        if (not isinstance(event, dict) or not isinstance(observation, dict)
+                or not isinstance(state, dict) or type(control) is not str):
+            raise ValueError('invalid inbox recall producer state')
+        started = time.monotonic()
+        limit = self.deadline if outer_deadline is None else min(self.deadline, float(outer_deadline))
+        raw = json.dumps({
+            'event': event,
+            'observation': observation,
+            'state': state,
+            'control': control,
+            'started_monotonic': started,
+        }, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
+        if len(raw) > 1024 * 1024:
+            raise ValueError('inbox recall input exceeds limit')
+        out, err, code = self.child(self.inbox_argv('recall', limit), raw, stdout_limit=256*1024, deadline=limit)
+        if code != 0 or err or not out or len(out) > 256 * 1024:
+            raise subprocess.SubprocessError('invalid inbox recall reply')
+        try:
+            frame = json.loads(out.decode('utf-8'))
+            if (type(frame) is not dict or type(frame.get('ok')) is not bool
+                    or set(frame) - {'ok', 'message', 'error', 'trace_report', 'meter_report'}):
+                raise ValueError('invalid inbox recall frame')
+            trace_report = frame.get('trace_report')
+            meter_report = frame.get('meter_report')
+            if ((trace_report is not None and type(trace_report) is not dict)
+                    or (meter_report is not None and type(meter_report) is not dict)):
+                raise ValueError('invalid inbox recall report')
+            if frame['ok'] and ('error' in frame or type(frame.get('message')) is not str):
+                raise ValueError('invalid inbox recall success')
+            if not frame['ok'] and ('message' in frame or type(frame.get('error')) is not dict):
+                raise ValueError('invalid inbox recall error')
+        except (ValueError, TypeError, UnicodeError):
+            raise subprocess.SubprocessError('invalid inbox recall reply') from None
+        if reports is not None and (trace_report is not None or meter_report is not None):
+            reports.append((self.inbox_recall_flush, dict(
+                trace_report=trace_report,
+                meter_report=meter_report,
+                started_monotonic=started,
+                deadline=limit,
+            )))
+        if frame['ok']:
+            return frame['message']
+        raise self.inbox_recall_error(frame['error'])
+
+    def inbox_recall_error(self, error):
+        if (type(error) is not dict
+                or set(error) - {'class', 'message', 'code', 'errno', 'reason', 'cairn_inbox_refusal', 'cairn_recall_failure'}
+                or type(error.get('class')) is not str or type(error.get('message')) is not str
+                or type(error.get('cairn_inbox_refusal')) is not dict):
+            raise subprocess.SubprocessError('invalid inbox recall reply')
+        refusal = error['cairn_inbox_refusal']
+        if type(refusal.get('refusal_stage')) is not str or type(refusal.get('refusal_reason')) is not str:
+            raise subprocess.SubprocessError('invalid inbox recall reply')
+        name, message = error['class'], error['message']
+        classes = {k: getattr(__import__('builtins'), k) for k in (
+            'ValueError', 'TypeError', 'KeyError', 'AttributeError', 'OSError', 'FileNotFoundError',
+            'PermissionError', 'BlockingIOError', 'FileExistsError', 'NotADirectoryError', 'IsADirectoryError', 'TimeoutError')}
+        if name == 'CoordinationError':
+            code = error.get('code')
+            if type(code) is not str or not code:
+                raise subprocess.SubprocessError('invalid inbox recall reply')
+            coord = self.bundle.modules.get('coordination') if self.bundle is not None else None
+            cls = getattr(coord, 'CoordinationError', None) or self.bundle.load('coordination').CoordinationError
+            exc = cls(code, message)
+        elif name == 'JSONDecodeError':
+            exc = json.JSONDecodeError(message, '', 0)
+        elif name == 'UnicodeDecodeError':
+            exc = UnicodeDecodeError('utf-8', b'\xff', 0, 1, message)
+        elif name == 'UnicodeEncodeError':
+            exc = UnicodeEncodeError('utf-8', '\ud800', 0, 1, message)
+        elif name in classes:
+            cls = classes[name]
+            if issubclass(cls, OSError):
+                number = error.get('errno')
+                if number is not None and (type(number) is not int or number < 0):
+                    raise subprocess.SubprocessError('invalid inbox recall reply')
+                exc = cls(number, message) if number is not None else cls(message)
+            else:
+                exc = cls(message)
+        else:
+            raise subprocess.SubprocessError('invalid inbox recall reply')
+        exc.cairn_inbox_refusal = dict(refusal)
+        if 'cairn_recall_failure' in error:
+            if type(error['cairn_recall_failure']) is not dict:
+                raise subprocess.SubprocessError('invalid inbox recall reply')
+            exc.cairn_recall_failure = dict(error['cairn_recall_failure'])
+        for key in ('code', 'reason'):
+            if key in error and type(error[key]) is str and not hasattr(exc, key):
+                setattr(exc, key, error[key])
+        return exc
+
+    def inbox_recall_flush(self, *, trace_report=None, meter_report=None, started_monotonic=None, deadline=None):
+        """Materialize already-captured inbox reports after Coordination releases its lock."""
+        if trace_report is None and meter_report is None:
+            return {'ok': True, 'trace_status': 'not_requested', 'meter_status': 'not_requested'}
+        if ((trace_report is not None and type(trace_report) is not dict)
+                or (meter_report is not None and type(meter_report) is not dict)):
+            raise ValueError('invalid inbox report payload')
+        started = time.monotonic() if started_monotonic is None else float(started_monotonic)
+        limit = self.deadline if deadline is None else min(self.deadline, float(deadline))
+        raw = json.dumps({
+            'trace_report': trace_report,
+            'meter_report': meter_report,
+            'started_monotonic': started,
+        }, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
+        if len(raw) > 1024 * 1024:
+            raise ValueError('inbox report input exceeds limit')
+        out, err, code = self.child(self.inbox_argv('report', limit), raw, stdout_limit=4096, deadline=limit)
+        if code != 0 or err or not out:
+            raise subprocess.SubprocessError('invalid inbox report reply')
+        try:
+            frame = json.loads(out.decode('utf-8'))
+            if (type(frame) is not dict or frame.get('ok') is not True
+                    or set(frame) != {'ok', 'trace_status', 'meter_status'}
+                    or frame['trace_status'] not in ('written', 'unknown', 'not_requested')
+                    or frame['meter_status'] not in ('recorded', 'unknown', 'not_requested')):
+                raise ValueError('invalid inbox report frame')
+        except (ValueError, TypeError, UnicodeError):
+            raise subprocess.SubprocessError('invalid inbox report reply') from None
+        return frame
+
+    flush_inbox_report = inbox_recall_flush
 
     def issued_argv(self, tail):
         raw, _ = self.opened(str(self.launcher), 65536)
