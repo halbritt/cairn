@@ -750,11 +750,12 @@ func TestProcessScanMarkers(t *testing.T) {
 		}
 		var marked procpeer.ProcessRef
 		for _, carry := range []bool{true, false} {
-			cmd := exec.Command("sleep", "5")
-			cmd.Env = []string{"UNRELATED=1"}
+			wantEnv := "UNRELATED=1"
 			if carry {
-				cmd.Env = []string{"CAIRN_REQUEST_ID=owned-delivery"}
+				wantEnv = "CAIRN_REQUEST_ID=owned-delivery"
 			}
+			cmd := exec.Command("sleep", "60")
+			cmd.Env = []string{wantEnv}
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
@@ -784,6 +785,20 @@ func TestProcessScanMarkers(t *testing.T) {
 				if err := os.Symlink(filepath.Join("/proc", strconv.Itoa(ref.PID), name), filepath.Join(directory, name)); err != nil {
 					t.Fatal(err)
 				}
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				environ, envErr := os.ReadFile(filepath.Join(directory, "environ"))
+				cmdline, cmdErr := os.ReadFile(filepath.Join(directory, "cmdline"))
+				if envErr == nil && cmdErr == nil && slices.ContainsFunc(bytes.Split(environ, []byte{0}), func(item []byte) bool {
+					return bytes.Equal(item, []byte(wantEnv))
+				}) && len(bytes.TrimSpace(cmdline)) > 0 {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("child %d /proc environ/cmdline not ready: env=%q (%v) cmd=%q (%v)", ref.PID, environ, envErr, cmdline, cmdErr)
+				}
+				time.Sleep(time.Millisecond)
 			}
 		}
 		result, err := ScanMarkersAt(root, uint32(os.Getuid()), "CAIRN_REQUEST_ID", "owned-delivery", 0)
