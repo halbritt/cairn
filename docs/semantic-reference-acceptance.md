@@ -36,7 +36,7 @@ tooling results remain separate; the failed attempt is retained.
 | Idle restore | Separate accepted Go observation: one case, three exchanges, observed old-child exit and replacement, retained cache bytes. It is not a thirty-ninth selected stream reply or a fresh Python reference. |
 | Embeddings | Nine positive query and six positive document cases; retained vector closure supplies maximum Latin and overlapping tails. Exact input, projection, UTF-8 span and vector counts remain bound to their accepted artifacts. |
 | Prepared tests | A fresh isolated 23-test run is required; an old unisolated `OK` does not supply it. |
-| Failure evidence | The full per-case S-01b refusal ledger remains required. Passing process tests alone cannot replace every reference-worker failure tuple. |
+| Failure evidence | The checked S-01b ledger names all 78 required IDs and expands compound cases. Its audit reports observed scopes and exact residual subcase IDs. A complete catalogue or passing test count does not close missing tuples. |
 | Raw/FENV | Historical first-normalized vectors do not establish original raw CLS, actual historical mappings or floating-point environment. Unproved evidence remains named. |
 | Maximum punctuation | The direct-supervisor 90-second observation and consumed, unqualified 180-second attempt remain historical. The protected raw/A-B/real-Go route is held; this runner never invokes it. |
 | Retrieval quality | Rule C's fourth clause remains unassessed until its PASS contract is selected. |
@@ -62,6 +62,83 @@ tuples remain labelled observations. Unbound failure case IDs require exact
 source/input/test reconciliation before deciding that a new execution is needed.
 They are not an automatic capture list. F-PACKAGE and F-REBUILD retain their
 separate S-04/S-05 owners.
+
+## Per-case refusal ledger
+
+[The ledger](../scripts/testdata/semantic-refusal-ledger.json) binds the existing
+19 F-RANK, 25 F-STREAM, 19 F-EMBED, ten F-PROCESS and five F-IDENTITY IDs to
+source hashes/anchors, fixture inputs and six expected disposition fields:
+Go error/result, discovery/coverage, process exit/kill, stdout prefix, cache
+custody and restarts. The separate
+[input catalogue](../scripts/testdata/semantic-refusal-inputs.json) expands 238
+named boundaries. These authored recipes are expectations, not execution
+records. Accepted boundaries such as 128 occurrences, ignored keys, echoed
+version types, wrong-model cache and omitted legacy projection remain successes.
+
+Each audit preserves the 19 historical direct-Python refusals, the 63 typed
+function refusals, three historical positive controls and selected accepted
+package/idle observations with their original scope. Where an accepted report
+does not record exit status or stdout bytes for an individual case, those fields
+remain unknown. Existing Go test outcomes locate protection but do not supply
+unrecorded per-case tuples. Source inspection cannot fill an observed field.
+
+Three fixed collectors add missing observations without changing production
+workers or owners:
+
+- `failures --python-home PATH --output NEW` captures 32 source-worker refusals
+  before model construction. The model path is deliberately nonexistent.
+- `processes --driver NATIVE_ELF --output NEW` exercises the unchanged Go owners
+  against disposable process doubles. Build
+  [the native driver](../scripts/testdata/semantic-refusal-driver/main.go) inside
+  the unchanged isolation wrapper. Raw Go results survive alongside errors.
+  Per-process traces retain actual exit/kill status, group signals, direct-child
+  waits and stdout bytes received by Go. These fixtures do not use a real model.
+  The decoder handles `strace -xx` descriptor escapes and unfinished writes;
+  absent retained reads after a write remain unknown. `processes --reuse-report
+  PATH --reuse-report-sha256 SHA --output NEW` requalifies retained raw traces
+  without another worker execution. It preserves the prior report and its
+  original tool pins, verifies unchanged actors/binary/raw files, and records
+  the withdrawn projection separately from the new decoder result.
+- `source-failures --evidence-root PATH --python-home PATH --site PATH
+  --runtime-binding PATH --assets PATH --output NEW` runs fixed missing source
+  controls through the frozen Python runtime and five assets. Each case has a
+  fresh mapped disposable home and records its own correlated ORT process,
+  seven native library bindings, exact input/output/error bytes and cleanup.
+  These are protocol controls, not a new numerical reference or quality corpus.
+
+All collectors use the existing isolation wrapper, offline inputs and new
+output directories. The source-model controls use the original worker settings;
+no thread-cap or telemetry suppression experiment is added. Selected telemetry
+metadata records only whether the disposable mapped-store path exists; it never
+reads database contents or owner identifiers and does not claim zero effects.
+A cache field in these captures describes wire snapshots; an internal atomic
+restore assertion still needs its own function observation.
+
+Bind these reports to `audit` with `--refusals PATH --refusals-sha256 SHA`,
+`--processes PATH --processes-sha256 SHA` and `--source-refusals PATH
+--source-refusals-sha256 SHA`. The audit reuses their sealed bytes and names
+their report pins. It checks exact membership, current source/input bindings,
+raw dispositions and cleanup before attaching an observation. The early and Go
+collectors also bind the current collector/test files. Source-model reuse
+independently rechecks the unchanged worker, wrapper, runtime, assets, input
+bytes and actual runtime mappings; an unrelated checker/test edit does not
+require another model execution. An interrupted capture prefix can be supplied
+with `--reuse-capture-manifest PATH --reuse-capture-manifest-sha256 SHA`.
+That sealed manifest retains every selected raw file. Qualification rechecks
+each case before copying completed proof intact; unqualified prior cases remain
+named. Missing original collector provenance remains unknown, separately from
+the recorded tool pins of the later sealing/continuation phase. The audit
+preserves each case's original or reused capture origin.
+
+The `failure_ledger.remaining_ids`, each row's `residual_subcase_ids` and
+`missing_evidence` name incomplete proof and its prerequisite. Function-only
+tokenizer/model doubles remain separate from actual model processes. Transport
+decoding remains separate from Index span/count/vector validation. The retained
+idle proof does not invent a missing exit/kill tuple. F-IDENTITY mutation
+mechanics, unobserved compound members and store-bound semantic checks remain
+explicit until their own bound observations exist. `failures/s01b` stays partial
+while any required subcase is missing; the other S-01 holds and separate S-04/S-05
+ownership are unchanged.
 
 ## Retrieval-quality decision gap
 

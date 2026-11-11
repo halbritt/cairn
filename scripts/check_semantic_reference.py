@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Audit frozen S-01 evidence and run named, model-free reference tests.
+"""Audit frozen S-01 evidence and collect fixed refusal-boundary observations.
 
-This tool never captures a model reference or authorizes a held experiment.
+The source-failures command uses the pinned model for missing protocol controls.
+It does not regenerate the numerical oracle or authorize held experiments.
 """
 
 import argparse
@@ -58,6 +59,21 @@ def pinned(root, relative, expected):
     return path
 
 
+def pinned_case_files(root, folder, hashes, required):
+    """Every file consumed by a case decoder must belong to its selected seal."""
+    relative = Path(folder)
+    require(not relative.is_absolute() and ".." not in relative.parts and
+            len(relative.parts) == 1, "case folder must be one relative component")
+    directory = Path(root) / relative
+    files = {str(p.relative_to(root)) for p in directory.iterdir() if p.is_file()}
+    require(set(hashes) == files and
+            {str(relative / name) for name in required} <= files,
+            "missing or unsealed case artifact")
+    for name, sha in hashes.items():
+        pinned(root, name, sha)
+    return directory
+
+
 def inventory(path=INVENTORY):
     require(digest(path) == digest(INVENTORY), "complete committed inventory required")
     value = load(path)
@@ -79,7 +95,394 @@ def inventory(path=INVENTORY):
     require(len(value["assets_sha256"]) == 5, "five model assets required")
     for relative, expected_hash in value["source_sha256"].items():
         pinned(PROJECT, relative, expected_hash)
+    failure_inventory(value)
     return value
+
+
+FAILURE_COUNTS = {"F-RANK": 19, "F-STREAM": 25, "F-EMBED": 19,
+                  "F-PROCESS": 10, "F-IDENTITY": 5}
+DISPOSITION_FIELDS = {"go_error_or_result", "discovery_coverage", "process_exit_kill",
+                      "stdout_prefix", "cache", "restarts"}
+
+
+def failure_inventory(value):
+    """Read authored expectations, never promote them to observed evidence."""
+    spec = value["failure_ledger"]
+    ledger = load(pinned(PROJECT, spec["relative"], spec["sha256"]))
+    require(set(ledger) == {"schema", "source_sha256", "retained", "cases"} and
+            ledger.get("schema") == "cairn.semantic-refusal-ledger/1", "unsupported failure ledger schema/claim")
+    expected = []
+    for family, count in FAILURE_COUNTS.items():
+        ids = value["failure_families"][family]["unbound_case_ids"]
+        require(len(ids) == count and all(i.startswith(family + "/") for i in ids),
+                "failure case IDs changed: " + family)
+        expected.extend(ids)
+    actual = [row["id"] for row in ledger["cases"]]
+    require(hashlib.sha256(json.dumps(sorted(expected), separators=(",", ":")).encode()).hexdigest() ==
+            "0d9287a45075db06c03e258f4f8f0d0ad53643801bc55de123ad5b71299b8291",
+            "failure case IDs differ from the accepted 78-cell inventory")
+    require(len(actual) == len(set(actual)) and set(actual) == set(expected),
+            "missing, duplicate or changed failure case IDs")
+    for relative, sha in ledger["source_sha256"].items():
+        pinned(PROJECT, relative, sha)
+    fixture_rows = load(PROJECT / "scripts/testdata/semantic-refusal-inputs.json")["cases"]
+    require(len(fixture_rows) == len({r["id"] for r in fixture_rows}) and
+            {r["id"] for r in fixture_rows} == set(expected), "failure fixture IDs changed")
+    fixtures = {r["id"]: r["subcases"] for r in fixture_rows}
+    subcases = set()
+    for row in ledger["cases"]:
+        require(set(row) == {"id", "source", "fixture", "subcases", "expected_disposition", "evidence"},
+                "unsupported failure claim/fields: " + row["id"])
+        require(row["source"] and row["fixture"] and row["subcases"], "missing failure binding: " + row["id"])
+        require(row["subcases"] == fixtures[row["id"]], "failure input/expected binding changed: " + row["id"])
+        for source in row["source"]:
+            require(set(source) == {"file", "anchor"} and source["file"] in ledger["source_sha256"],
+                    "unbound failure source: " + row["id"])
+            require(source["anchor"] and source["anchor"] in (PROJECT / source["file"]).read_text(),
+                    "failure source anchor missing: " + row["id"])
+        require(set(row["expected_disposition"]) == DISPOSITION_FIELDS and
+                all(isinstance(v, str) and v for v in row["expected_disposition"].values()),
+                "absent expected disposition field: " + row["id"])
+        for case in row["subcases"]:
+            require(set(case) == {"id", "input", "expected"} and
+                    case["id"].startswith(row["id"] + "/") and case["id"] not in subcases and
+                    case["input"] and isinstance(case["expected"], str) and case["expected"],
+                    "missing/duplicate failure subcase binding: " + row["id"])
+            subcases.add(case["id"])
+        for fixture in row["fixture"]:
+            require(set(fixture) == {"file", "anchor"} and fixture["file"] in ledger["source_sha256"] and
+                    fixture["anchor"] and fixture["anchor"] in (PROJECT / fixture["file"]).read_text(),
+                    "unbound failure fixture: " + row["id"])
+        require(isinstance(row["evidence"], list), "failure evidence must be a list")
+    return ledger
+
+
+def unobserved(reason, state="not-exercised"):
+    return dict(state=state, reason=reason)
+
+
+def historical_failure_observation(value, root, identifier, *, positive=False):
+    expected = next((r for r in value["historical_refusals"] if r["id"] == identifier), None)
+    require(expected is not None or (positive and identifier in
+            {"rank-128-occurrences", "rank-request-wide-128", "embed-identity"}),
+            "unbound historical case: " + identifier)
+    base = Path(value["retained"]["python-characterization"]["relative"]).parent
+    capture_path = pinned(root, value["retained"]["python-characterization"]["relative"],
+                          value["retained"]["python-characterization"]["sha256"])
+    captures = [r for r in load(capture_path)["records"] if r["name"] == identifier]
+    require(len(captures) == 1 and captures[0]["status"] == "observed", "historical case missing/duplicate")
+    capture = captures[0]
+    if positive:
+        expected = dict(expected_exit=0, **{key + "_sha256": capture[key + "_sha256"]
+                                           for key in ("input", "stdout", "stderr")})
+    paths = {key: pinned(root, base / relative, expected[key + "_sha256"])
+             for key, relative in (("input", "inputs/" + identifier + ".stdin"),
+                                   ("stdout", "raw/" + identifier + ".stdout"),
+                                   ("stderr", "raw/" + identifier + ".stderr"))}
+    require(capture["exit_code"] == capture["expected_exit"] == expected["expected_exit"],
+            "historical case exit changed")
+    return dict(id=identifier, scope="historical/direct-python-process", freshness="reused",
+                input_sha256=expected["input_sha256"],
+                disposition=dict(go_error_or_result=unobserved("direct Python, no Go owner"),
+                  discovery_coverage=unobserved("no discovery call"),
+                  process_exit_kill=dict(state="observed", exit_code=capture["exit_code"],
+                                         killed=capture["exit_code"] < 0),
+                  stdout_prefix=dict(state="observed", hex=paths["stdout"].read_bytes()[:64].hex(),
+                                     sha256=expected["stdout_sha256"]),
+                  cache=unobserved("capture did not observe cache custody", "unknown"),
+                  restarts=unobserved("capture did not record restart count", "unknown")))
+
+
+def accepted_route_observation(value, root, route):
+    """Retain only actually recorded fields, without inferring a missing process tuple."""
+    if route in ("stream-idle", "stream-cold-warm"):
+        pin = value["retained"]["stream38-idle"]
+        report = load(pinned(root, pin["relative"], pin["sha256"]))
+        block = report["idle" if route == "stream-idle" else "stream"]
+        frames = block["frames"]
+        require(len(frames) == (3 if route == "stream-idle" else 38), "accepted stream case binding changed")
+        disposition = {key: unobserved("not recorded per exchange", "unknown") for key in DISPOSITION_FIELDS}
+        disposition["discovery_coverage"] = unobserved("no discovery call")
+        disposition["go_error_or_result"] = dict(state="observed", frames=[dict(cell=f["cell"],
+             result_sha256=hashlib.sha256(json.dumps(f["result"],sort_keys=True).encode()).hexdigest()) for f in frames])
+        if route == "stream-idle":
+            require(block["old_child_absent_before_restart"] is True and block["new_child_observed"] is True and
+                    block["state"]["exact_json_state_handoff"] is True, "accepted idle disposition changed")
+            disposition["cache"] = dict(state="observed", **block["state"])
+            disposition["restarts"] = dict(state="observed", replacements=1,
+                                             old_child=block["old_child"], new_child=block["new_child"])
+            disposition["process_exit_kill"] = dict(state="partial", old_child_absent=True,
+                                                      exit_code="unknown", kill="unknown")
+        else:
+            require(block["actual_phases"] == ["initial_cold"] + ["warm_same_child"] * 37 and
+                    frames[0]["result"] == frames[1]["result"], "accepted cold/warm binding changed")
+        return dict(id=route, scope="accepted/Rust-Go-supervised-model", freshness="reused", disposition=disposition)
+    allowed = {"query-ascii", "document-ascii", "document-maximum-latin", "document-maximum-cjk"}
+    require(route in allowed, "unsupported accepted route")
+    pin = value["retained"]["package-comparison-manifest"]
+    manifest_path = pinned(root, pin["relative"], pin["sha256"])
+    files = load(manifest_path)["files"]
+    inputs = pinned(manifest_path.parent, "attempt-02/embed-inputs.jsonl", files["attempt-02/embed-inputs.jsonl"])
+    output = pinned(manifest_path.parent, "attempt-02/embed.stdout", files["attempt-02/embed.stdout"])
+    requests = [json.loads(line) for line in inputs.read_bytes().splitlines()]
+    replies = [json.loads(line) for line in output.read_bytes().splitlines()]
+    request = [r for r in requests if r["id"] == route]
+    reply = [r for r in replies if r["id"] == route]
+    require(len(request) == len(reply) == 1, "accepted package case missing/duplicate")
+    raw = json.dumps(reply[0],sort_keys=True,separators=(",", ":")).encode()
+    disposition = {key: unobserved("not recorded for individual case in the multi-case capture", "unknown")
+                   for key in DISPOSITION_FIELDS}
+    disposition["go_error_or_result"] = dict(state="observed", identity=reply[0]["identity"],
+         result_sha256=hashlib.sha256(raw).hexdigest(), passages=len(reply[0].get("passages", [])))
+    disposition["discovery_coverage"] = unobserved("no discovery call")
+    disposition["cache"] = unobserved("embedding has no rank stream cache")
+    return dict(id=route, scope="accepted/packaged-Rust-Go-model", freshness="reused",
+                input_text_bytes=len(request[0]["text"].encode()),
+                input_sha256=hashlib.sha256(json.dumps(request[0],sort_keys=True).encode()).hexdigest(),
+                disposition=disposition)
+
+
+def typed_failure_observation(row):
+    require(set(row) == {"id", "expected_exception", "expected_message", "scope", "inference_calls", "result"}
+            and row["scope"] == "function/no-model" and type(row["inference_calls"]) is int
+            and row["inference_calls"] == 0 and row["result"] is None,
+            "unsupported typed failure scope/claim")
+    return dict(id=row["id"], scope="function/no-model", freshness="reused",
+                exception=row["expected_exception"], message=row["expected_message"], inference_calls=0,
+                disposition={key: unobserved("function call has no process/Go/cache/restart observation")
+                             for key in DISPOSITION_FIELDS})
+
+
+def early_failure_inputs():
+    """Exact missing pre-initialization process fixtures; no model can be selected."""
+    note = dict(record_id="record", version=1, body="body",
+                body_sha256=hashlib.sha256(b"body").hexdigest())
+    good = dict(query="query", notes=[note])
+    cases = []
+
+    def add(identifier, request, error, *, stream=False, raw=None):
+        if raw is None:
+            raw = json.dumps(request, separators=(",", ":"), ensure_ascii=False).encode() + b"\n"
+        cases.append(dict(id=identifier, mode="stream" if stream else "rank", input=raw, error=error))
+
+    bounded = "ValueError: worker requires a bounded query and 1-64 notes"
+    large_body = "x" * (1048576 + 1)
+    for name, request, error in [
+        ("zero-notes", dict(good, notes=[]), bounded),
+        ("65-notes", dict(good, notes=[note] * 65), bounded),
+        ("empty-query", dict(good, query=""), bounded),
+        ("oversize-query", dict(good, query="x" * 4097), bounded),
+        ("wrong-body-hash", dict(good, notes=[dict(note, body_sha256="wrong")]),
+         "ValueError: note content hash mismatch"),
+        ("body-byte-overflow", dict(good, notes=[dict(note, body=large_body,
+          body_sha256=hashlib.sha256(large_body.encode()).hexdigest())]),
+         "ValueError: note bytes exceed limit"),
+    ]:
+        add("F-RANK/" + name + "/boundary", request, error)
+    add("F-RANK/malformed-json/boundary", None, "json.decoder.JSONDecodeError:", raw=b"{")
+    add("F-RANK/one-shot-over8MiB/boundary", None,
+        "ValueError: worker request exceeds limit", raw=b"x" * (8 * 1024 * 1024 + 1))
+    shape = [
+        ("missing-query", dict(notes=[note]), "KeyError: 'query'"),
+        ("missing-notes", dict(query="query"), "KeyError: 'notes'"),
+        ("query-null", dict(good, query=None), "AttributeError:"),
+        ("query-list", dict(good, query=[]), "AttributeError:"),
+        ("notes-null", dict(good, notes=None), "TypeError:"),
+        ("notes-object", dict(good, notes={"x": note}), "TypeError:"),
+        ("note-null", dict(good, notes=[None]), "TypeError:"),
+        ("missing-body", dict(good, notes=[{}]), "KeyError: 'body'"),
+        ("body-null", dict(good, notes=[dict(note, body=None)]), "AttributeError:"),
+        ("missing-body-sha256", dict(good, notes=[{k: v for k, v in note.items() if k != "body_sha256"}]),
+         "KeyError: 'body_sha256'"),
+    ]
+    for name, request, error in shape:
+        add("F-RANK/structural-errors/" + name, request, error)
+    envelope = dict(id="one", request=good)
+    framing = "ValueError: worker requires a bounded JSON line"
+    add("F-STREAM/incomplete-line/Python-input-without-newline", None, framing, stream=True,
+        raw=json.dumps(envelope).encode())
+    add("F-STREAM/oversize-line/Python-input-over8MiB", None, framing, stream=True,
+        raw=b"x" * (8 * 1024 * 1024 + 2))
+    for name, frame in [("missing-id", dict(request=good)), ("missing-request", dict(id="one"))]:
+        add("F-STREAM/missing-envelope-key/" + name, frame,
+            "ValueError: worker requires id and request", stream=True)
+    add("F-STREAM/extra-envelope-key/boundary", dict(envelope, extra=True),
+        "ValueError: worker requires id and request", stream=True)
+    for name, identifier in [("null", None), ("boolean", False), ("integer", 1), ("array", []), ("object", {})]:
+        add("F-STREAM/wrong-id-type/" + name, dict(envelope, id=identifier),
+            "ValueError: invalid worker request id", stream=True)
+    add("F-STREAM/empty-id/boundary", dict(envelope, id=""),
+        "ValueError: invalid worker request id", stream=True)
+    for name, identifier in [("ascii65", "x" * 65), ("unicode65", "漢" * 65)]:
+        add("F-STREAM/over64-id/" + name, dict(envelope, id=identifier),
+            "ValueError: invalid worker request id", stream=True)
+    add("F-STREAM/unadvertised-cache/input-extra-cache", dict(envelope, cache={}),
+        "ValueError: worker requires id and request", stream=True)
+    return cases
+
+
+def collect_failures(args, value):
+    ledger = failure_inventory(value)
+    allowed = {sub["id"] for row in ledger["cases"] for sub in row["subcases"]}
+    fixtures = early_failure_inputs()
+    require({row["id"] for row in fixtures} <= allowed, "early fixture outside failure ledger")
+    python = pinned(args.python_home, "bin/python3.11", value["python_sha256"])
+    output = args.output.absolute()
+    require(not output.exists(), "failure output must be fresh")
+    report = dict(schema="cairn.semantic-early-refusals/1", ledger_sha256=value["failure_ledger"]["sha256"],
+                  sources=ledger["source_sha256"], tool_sha256=tool_pins(),
+                  python_sha256=value["python_sha256"], cases=[], model_execution=False)
+    with SemanticIsolation(read_only_paths=[PROJECT, args.python_home], output_dir=output) as isolated:
+        for index, case in enumerate(fixtures):
+            name = str(index).zfill(3)
+            argv = [str(python), "-I", "-S", "-B", str(PROJECT / "scripts/semantic_rank.py"),
+                    "--model-dir", "/nonexistent-s01b-model"]
+            if case["mode"] == "stream":
+                argv.append("--stream")
+            (output / (name + ".stdin")).write_bytes(case["input"])
+            result = isolated.run(argv, input=case["input"], timeout=10, env=dict(WORKER_ENV),
+                                  role="S01b-early-source-process", mode=case["id"], stdout_limit=65536)
+            (output / (name + ".stdout")).write_bytes(result.stdout)
+            (output / (name + ".stderr")).write_bytes(result.stderr)
+            require(result.returncode == 1 and result.stdout == b"" and
+                    result.stderr.decode().splitlines()[-1].startswith(case["error"]),
+                    "early source refusal changed: " + case["id"])
+            report["cases"].append(dict(id=case["id"], mode=case["mode"], prefix=name,
+                   exit_code=result.returncode, invocation=result.invocation,
+                   files_sha256={suffix: digest(output / (name + "." + suffix))
+                                 for suffix in ("stdin", "stdout", "stderr")}))
+    require(report["tool_sha256"] == tool_pins(), "failure collector changed during execution")
+    report["receipts_sha256"] = {name: digest(output / name)
+                                  for name in ("isolation-proof.json", "cleanup.json")}
+    save(output / "failure-report.json", report)
+    return report
+
+
+def verify_early_failures(value, path, expected_hash):
+    require(expected_hash and digest(path) == expected_hash, "pinned failure report required")
+    report = load(path)
+    ledger = failure_inventory(value)
+    require(set(report) == {"schema", "ledger_sha256", "sources", "tool_sha256", "python_sha256",
+                            "cases", "model_execution", "receipts_sha256"} and
+            report["schema"] == "cairn.semantic-early-refusals/1" and report["model_execution"] is False,
+            "unsupported observed/accepted failure report claim")
+    require(report["ledger_sha256"] == value["failure_ledger"]["sha256"] and
+            report["sources"] == ledger["source_sha256"] and report["tool_sha256"] == tool_pins() and
+            report["python_sha256"] == value["python_sha256"], "failure source/input/collector binding changed")
+    expected = {row["id"]: row for row in early_failure_inputs()}
+    ids = [row["id"] for row in report["cases"]]
+    require(len(ids) == len(set(ids)) and set(ids) == set(expected), "missing/duplicate early failure case IDs")
+    for row in report["cases"]:
+        require(set(row) == {"id", "mode", "prefix", "exit_code", "invocation", "files_sha256"} and
+                set(row["files_sha256"]) == {"stdin", "stdout", "stderr"}, "absent failure disposition/binding field")
+    require(set(report["receipts_sha256"]) == {"isolation-proof.json", "cleanup.json"}, "missing failure process receipts")
+    receipts = {name: load(pinned(path.parent, name, sha)) for name, sha in report["receipts_sha256"].items()}
+    proof, cleanup = receipts["isolation-proof.json"], receipts["cleanup.json"]
+    require(proof["wrapper_sha256"] == value["source_sha256"]["scripts/semantic_acceptance_isolation.py"] and
+            proof["profile"] == "default" and all(r["read_only"] for r in proof["read_only_mounts"]),
+            "failure isolation/source binding changed")
+    require(cleanup["all_observed_processes_exited"] is True and cleanup["backing_removed"] is True and
+            cleanup["errors"] == [] and cleanup["launcher_exit_codes"] == [0] + [1] * len(expected) and
+            cleanup["isolation_proof_sha256"] == report["receipts_sha256"]["isolation-proof.json"],
+            "failure process cleanup/disposition changed")
+    invocations = cleanup["invocations"][1:]
+    require(len(invocations) == len(expected) and
+            all(type(i["pid"]) is int and i["pid"] > 1 for i in invocations) and
+            len({(i["pid"], i["start_ticks"]) for i in invocations}) == len(expected),
+            "missing/duplicate failure process identities")
+    require(len({row["prefix"] for row in report["cases"]}) == len(expected),
+            "duplicate early failure file prefixes")
+    observed = {}
+    for row in report["cases"]:
+        case = expected[row["id"]]
+        raw = {suffix: pinned(path.parent, row["prefix"] + "." + suffix, sha).read_bytes()
+               for suffix, sha in row["files_sha256"].items()}
+        require(row["mode"] == case["mode"] and raw["stdin"] == case["input"] and
+                type(row["exit_code"]) is int and row["exit_code"] == 1 and not raw["stdout"] and
+                raw["stderr"].decode().splitlines()[-1].startswith(case["error"]),
+                "early failure input/disposition changed: " + row["id"])
+        require(row["invocation"]["role"] == "S01b-early-source-process" and
+                row["invocation"]["mode"] == row["id"] and row["invocation"] in invocations,
+                "failure invocation scope changed")
+        invocation = row["invocation"]
+        command = invocation["argv"][invocation["argv"].index("--") + 1:]
+        require(len(command) == (8 if case["mode"] == "stream" else 7) and
+                command[0].endswith("/bin/python3.11") and command[1:4] == ["-I", "-S", "-B"] and
+                command[4].endswith("/scripts/semantic_rank.py") and
+                command[5:7] == ["--model-dir", "/nonexistent-s01b-model"] and
+                (case["mode"] != "stream" or command[-1] == "--stream") and
+                invocation["contract"]["environment"] == dict(WORKER_ENV, PWD="/"),
+                "early failure command/model boundary changed")
+        observed[row["id"]] = dict(id=row["id"], scope="Python/source-process/pre-initialization",
+            freshness="reused", capture_origin="selected isolated early-process collection",
+            input_sha256=row["files_sha256"]["stdin"],
+            disposition=dict(go_error_or_result=unobserved("direct Python; no Go owner"),
+                discovery_coverage=unobserved("no discovery call"),
+                process_exit_kill=dict(state="observed", exit_code=1, killed=False),
+                stdout_prefix=dict(state="observed", hex="", sha256=row["files_sha256"]["stdout"]),
+                cache=unobserved("refused before Scorer construction; no cache created"),
+                restarts=dict(state="observed", count=0, invocations=1)))
+    return observed
+
+
+def failure_evidence(value, root, fresh=None):
+    ledger = failure_inventory(value)
+    retained = {name: pinned(root, pin["relative"], pin["sha256"])
+                for name, pin in ledger["retained"].items()}
+    typed = load(retained["typed"])
+    require(typed.get("schema") == "cairn.semantic-typed-refusals/1" and
+            typed.get("cases") == value["typed_failures"], "retained typed case binding changed")
+    report = load(retained["test-report"])
+    require(report["sources"] == value["source_sha256"] and report["exit_codes"]["typed"] == 0 and
+            report["logs_sha256"]["typed.stdout"] == ledger["retained"]["typed"]["sha256"],
+            "retained typed source/input binding changed")
+    # These outcomes locate existing fixture protection; a test pass is not a raw disposition tuple.
+    go_raw = retained["go-events"].read_bytes()
+    go = command_result(SimpleNamespace(returncode=report["exit_codes"]["go"], stdout=go_raw),
+                        value["go_process"], "go")
+    require(report["logs_sha256"]["go.stdout"] == ledger["retained"]["go-events"]["sha256"],
+            "retained Go outcome binding changed")
+    cases = []
+    historical_ids = set()
+    for row in ledger["cases"]:
+        observed = []
+        for reference in row["evidence"]:
+            if reference.get("kind") == "historical-python":
+                require(set(reference) == {"kind", "case"}, "unsupported historical failure claim")
+                observed.append(historical_failure_observation(value, root, reference["case"]))
+                historical_ids.add(reference["case"])
+            elif reference.get("kind") == "historical-positive":
+                require(set(reference) == {"kind", "case"}, "unsupported historical positive claim")
+                observed.append(historical_failure_observation(value, root, reference["case"], positive=True))
+            elif reference.get("kind") == "accepted-route":
+                require(set(reference) == {"kind", "route"}, "unsupported accepted route claim")
+                observed.append(accepted_route_observation(value, root, reference["route"]))
+            elif reference.get("kind") == "typed-function":
+                require(set(reference) == {"kind", "prefix"} and reference["prefix"], "unsupported typed claim")
+                matches = [r for r in typed["cases"] if r["id"].startswith(reference["prefix"])]
+                require(matches, "missing typed failure binding")
+                observed.extend(typed_failure_observation(r) for r in matches)
+            else:
+                raise ValueError("unsupported failure evidence kind/accepted claim")
+        fresh_rows = [fresh[s["id"]] for s in row["subcases"] if fresh and s["id"] in fresh]
+        observed.extend(fresh_rows)
+        remaining = [s["id"] for s in row["subcases"] if not fresh or s["id"] not in fresh or
+                     fresh[s["id"]].get("complete") is False]
+        cases.append(dict(id=row["id"], state="verified-boundary" if not remaining else
+                          ("partial" if observed else "missing"),
+                          expected_disposition=row["expected_disposition"], observations=observed,
+                          residual_subcase_ids=remaining,
+                          missing_evidence=[dict(id=s["id"], input=s["input"], expected=s["expected"],
+                              prerequisite=("Go supervisor fixture with raw error/result, child exit/kill, cache and restart observations"
+                                            if row["id"].startswith("F-PROCESS/") else
+                                            "source-linked fixture execution with its declared real-model/test-double scope and raw disposition"))
+                                            for s in row["subcases"] if s["id"] in remaining]))
+    return dict(schema="cairn.semantic-refusal-evidence/1", cases=cases,
+                reused_historical_ids=sorted(historical_ids), typed_function_count=len(typed["cases"]),
+                supporting_go_tests=go, go_tuple_scope="named test outcomes only; not observed per-case tuples",
+                remaining_ids=[row["id"] for row in cases if row["residual_subcase_ids"]],
+                complete=all(not row["residual_subcase_ids"] for row in cases),
+                separate_phases={name: value["failure_families"][name] for name in ("F-PACKAGE", "F-REBUILD")})
 
 
 def verify_manifest(path):
@@ -217,7 +620,12 @@ def native_executable(path):
 
 def tool_pins():
     return {name: digest(PROJECT / "scripts" / name)
-            for name in ("check_semantic_reference.py", "test_check_semantic_reference.py")}
+            for name in ("check_semantic_reference.py", "test_check_semantic_reference.py",
+                         "semantic_refusal_processes.py", "semantic_refusal_fixture.py",
+                         "test_semantic_refusal_processes.py",
+                         "semantic_refusal_source.py", "test_semantic_refusal_source.py",
+                         "testdata/semantic-refusal-driver/main.go",
+                         "testdata/semantic-refusal-driver/main_test.go")}
 
 
 def run_tests(args, value):
@@ -324,7 +732,7 @@ def verify_characterization(value, root):
     return len(sealed)
 
 
-def audit(value, root, tests=None):
+def audit(value, root, tests=None, failures=None, failure_sources=None):
     for row in value["criteria"]:
         if row["state"] == "reused":
             evidence = row.get("evidence")
@@ -348,7 +756,21 @@ def audit(value, root, tests=None):
                   tests=None if tests is None else tests["results"],
                   prepared_reuse=None if tests is None else tests.get("prepared_reuse"),
                   checker_sha256=tool_pins(),
+                  selected_refusal_reports=failure_sources or {},
                   model_execution=False, full_s01_accepted=False)
+    if "failure_ledger" in value:
+        evidence = failure_evidence(value, root, failures)
+        result["failure_ledger"] = evidence
+        result["unbound_failure_families"] = {name: dict(row) for name, row in value["failure_families"].items()}
+        for name in FAILURE_COUNTS:
+            result["unbound_failure_families"][name].update(
+                state="per-case-ledger", expected_refusal_tuple="see failure_ledger.cases",
+                unbound_case_ids=[identifier for identifier in evidence["remaining_ids"]
+                                  if identifier.startswith(name + "/")])
+        for row in result["criteria"]:
+            if row["id"] == "failures/s01b":
+                row.update(state="verified" if evidence["complete"] else "partial",
+                           evidence=["checked per-case ledger; residual IDs in failure_ledger.remaining_ids"])
     if tests is not None:
         for row in result["criteria"]:
             if row["id"] == "tests/prepared-23":
@@ -372,26 +794,74 @@ def main(argv=None):
     check.add_argument("--evidence-root", type=Path, required=True)
     check.add_argument("--tests", type=Path)
     check.add_argument("--tests-sha256")
+    check.add_argument("--refusals", type=Path)
+    check.add_argument("--refusals-sha256")
+    check.add_argument("--processes", type=Path)
+    check.add_argument("--processes-sha256")
+    check.add_argument("--source-refusals", type=Path)
+    check.add_argument("--source-refusals-sha256")
     check.add_argument("--output", type=Path, required=True)
     run = sub.add_parser("tests", help="run only the fixed model-free suites in the unchanged wrapper")
     for option in ("python-home", "runtime-binding", "site", "assets", "go-binary", "go-test2json", "output"):
         run.add_argument("--" + option, type=Path, required=True)
     run.add_argument("--prepared-report", type=Path)
     run.add_argument("--prepared-report-sha256")
+    failures = sub.add_parser("failures", help="collect fixed missing early Python refusals without initializing a model")
+    failures.add_argument("--python-home", type=Path, required=True)
+    failures.add_argument("--output", type=Path, required=True)
+    processes = sub.add_parser("processes", help="collect missing Go dispositions with labelled disposable process doubles")
+    producer = processes.add_mutually_exclusive_group(required=True)
+    producer.add_argument("--driver", type=Path)
+    producer.add_argument("--reuse-report", type=Path)
+    processes.add_argument("--reuse-report-sha256")
+    processes.add_argument("--output", type=Path, required=True)
+    source = sub.add_parser("source-failures", help="collect fixed missing source-worker controls using the pinned runtime and assets")
+    for option in ("evidence-root", "python-home", "site", "runtime-binding", "assets", "output"):
+        source.add_argument("--" + option, type=Path, required=True)
+    source.add_argument("--reuse-capture-manifest", type=Path)
+    source.add_argument("--reuse-capture-manifest-sha256")
     args = parser.parse_args(argv)
     try:
         value = inventory()
+        if args.command == "source-failures":
+            from semantic_refusal_source import collect
+            report = collect(args, value)
+            return 2 if report["failed"] else 0
+        if args.command == "processes":
+            from semantic_refusal_processes import collect
+            report = collect(args, value)
+            return 2 if report["failed"] else 0
+        if args.command == "failures":
+            collect_failures(args, value)
+            return 0
         if args.command == "tests":
             run_tests(args, value)
             return 0
         if args.command == "plan":
             report = dict(schema="cairn.semantic-reference-plan/1", criteria=value["criteria"],
-                          stream_reference=value["stream_reference"], complete=False)
+                          stream_reference=value["stream_reference"],
+                          failure_ledger=failure_inventory(value), complete=False)
         else:
             tests = None
             if args.tests:
                 tests = verify_test_report(value, args.tests, args.tests_sha256)
-            report = audit(value, args.evidence_root, tests)
+            failures = None
+            if args.refusals:
+                failures = verify_early_failures(value, args.refusals, args.refusals_sha256)
+            if args.processes:
+                from semantic_refusal_processes import verify
+                processes = verify(value, args.processes, args.processes_sha256)
+                failures = dict(failures or {}, **processes)
+            if args.source_refusals:
+                from semantic_refusal_source import verify
+                source = verify(value, args.evidence_root, args.source_refusals, args.source_refusals_sha256)
+                require(not set(source) & set(failures or {}), "overlapping refusal scopes need an explicit combined obligation")
+                failures = dict(failures or {}, **source)
+            sources = {kind: dict(path=str(path), sha256=sha) for kind, path, sha in (
+                ("early", args.refusals, args.refusals_sha256),
+                ("Go-process", args.processes, args.processes_sha256),
+                ("source-model", args.source_refusals, args.source_refusals_sha256)) if path}
+            report = audit(value, args.evidence_root, tests, failures, sources)
         require(not args.output.exists(), "report output already exists")
         save(args.output, report)
         return 0 if report["complete"] else 3

@@ -16,6 +16,144 @@ from semantic_acceptance_isolation import WORKER_ENV
 
 
 class ReferenceRunnerTest(unittest.TestCase):
+    def early_report(self, root):
+        value = reference.inventory()
+        report = dict(schema='cairn.semantic-early-refusals/1',ledger_sha256=value['failure_ledger']['sha256'],
+            sources=reference.failure_inventory(value)['source_sha256'],tool_sha256=reference.tool_pins(),
+            python_sha256=value['python_sha256'],cases=[],model_execution=False)
+        invocations=[]
+        for index,case in enumerate(reference.early_failure_inputs()):
+            prefix=str(index).zfill(3)
+            command=['/fixture/bin/python3.11','-I','-S','-B','/fixture/scripts/semantic_rank.py',
+                     '--model-dir','/nonexistent-s01b-model']+(['--stream'] if case['mode']=='stream' else [])
+            invocation=dict(pid=index+10,start_ticks=str(index+100),role='S01b-early-source-process',mode=case['id'],
+                argv=['/usr/bin/bwrap','--',*command],contract=dict(environment=dict(reference.WORKER_ENV,PWD='/')))
+            invocations.append(invocation)
+            for suffix,raw in [('stdin',case['input']),('stdout',b''),('stderr',(case['error']+'\n').encode())]:
+                (root/(prefix+'.'+suffix)).write_bytes(raw)
+            report['cases'].append(dict(id=case['id'],mode=case['mode'],prefix=prefix,exit_code=1,invocation=invocation,
+                files_sha256={suffix:reference.digest(root/(prefix+'.'+suffix)) for suffix in ('stdin','stdout','stderr')}))
+        reference.save(root/'isolation-proof.json',dict(wrapper_sha256=value['source_sha256']['scripts/semantic_acceptance_isolation.py'],
+            profile='default',read_only_mounts=[dict(read_only=True)]))
+        reference.save(root/'cleanup.json',dict(all_observed_processes_exited=True,backing_removed=True,errors=[],
+            launcher_exit_codes=[0]+[1]*len(invocations),invocations=[dict(role='preflight'),*invocations],
+            isolation_proof_sha256=reference.digest(root/'isolation-proof.json')))
+        report['receipts_sha256']={name:reference.digest(root/name) for name in ('cleanup.json','isolation-proof.json')}
+        return value,report
+
+    def test_early_refusal_tuple_requires_every_case_and_bound_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);value,original=self.early_report(root);path=root/'report.json'
+            reference.save(path,original)
+            self.assertEqual(len(reference.verify_early_failures(value,path,reference.digest(path))),32)
+            for mutation,message in [('missing','case IDs'),('claim','unsupported'),('exit','disposition'),
+                                     ('pid','identities'),('command','command/model')]:
+                report=copy.deepcopy(original)
+                if mutation=='missing':report['cases'].pop()
+                elif mutation=='claim':report['accepted']=True
+                elif mutation=='exit':report['cases'][0]['exit_code']=0
+                elif mutation=='pid':
+                    cleanup=reference.load(root/'cleanup.json');cleanup['invocations'][1]['pid']=1
+                    reference.save(root/'bad-cleanup.json',cleanup)
+                    # Mutated receipt remains hash-bound; semantic validation must still reject it.
+                    reference.save(root/'cleanup.json',cleanup)
+                    report['receipts_sha256']['cleanup.json']=reference.digest(root/'cleanup.json')
+                else:
+                    # Reset the prior negative receipt and change the model selector in both copies.
+                    value,report=self.early_report(root)
+                    report['cases'][0]['invocation']['argv'][-1]='/actual-model'
+                    cleanup=reference.load(root/'cleanup.json')
+                    cleanup['invocations'][1]=report['cases'][0]['invocation']
+                    reference.save(root/'cleanup.json',cleanup)
+                    report['receipts_sha256']['cleanup.json']=reference.digest(root/'cleanup.json')
+                reference.save(path,report)
+                with self.subTest(mutation=mutation),self.assertRaisesRegex(ValueError,message):
+                    reference.verify_early_failures(value,path,reference.digest(path))
+
+    def test_typed_scope_cannot_claim_process_observation(self):
+        row = reference.load(reference.INVENTORY)['typed_failures'][0]
+        observed = reference.typed_failure_observation(row)
+        self.assertEqual(observed['scope'], 'function/no-model')
+        self.assertEqual(observed['exception'], 'ValueError')
+        self.assertEqual(observed['inference_calls'], 0)
+        for field in reference.DISPOSITION_FIELDS:
+            self.assertEqual(observed['disposition'][field]['state'], 'not-exercised')
+        for mutation in (dict(scope='actual-model'), dict(inference_calls=True), dict(accepted=True)):
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'unsupported typed'):
+                reference.typed_failure_observation(dict(row, **mutation))
+
+    def test_failure_input_mutation_is_refused_after_the_ledger_digest(self):
+        value = reference.load(reference.INVENTORY)
+        ledger = reference.failure_inventory(value)
+        ledger['cases'][0]['subcases'][0]['input']['variant'] = 'different input'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ledger['source_sha256']:
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((reference.PROJECT / relative).read_bytes())
+            path = root / 'ledger.json'
+            reference.save(path, ledger)
+            value['failure_ledger'] = dict(relative=path.name, sha256=reference.digest(path))
+            with patch.object(reference, 'PROJECT', root):
+                with self.assertRaisesRegex(ValueError, 'input/expected binding changed'):
+                    reference.failure_inventory(value)
+
+    def test_changed_source_or_evidence_bytes_are_not_rebound(self):
+        value = reference.load(reference.INVENTORY)
+        ledger = reference.failure_inventory(value)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ledger['source_sha256']:
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((reference.PROJECT / relative).read_bytes())
+            path = root / 'ledger.json'
+            reference.save(path, ledger)
+            value['failure_ledger'] = dict(relative=path.name, sha256=reference.digest(path))
+            (root / 'scripts/semantic_rank.py').write_text('changed')
+            with patch.object(reference, 'PROJECT', root):
+                with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+                    reference.failure_inventory(value)
+
+    def test_failure_ledger_rejects_missing_disposition_and_unsupported_claim(self):
+        value = reference.load(reference.INVENTORY)
+        original = reference.failure_inventory(value)
+        for change, message in [('field', 'disposition'), ('claim', 'unsupported')]:
+            ledger = copy.deepcopy(original)
+            if change == 'field':
+                ledger['cases'][0]['expected_disposition'].pop('cache')
+            else:
+                ledger['cases'][0]['observed'] = True
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for relative in ledger['source_sha256']:
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes((reference.PROJECT / relative).read_bytes())
+                path = root / 'ledger.json'
+                reference.save(path, ledger)
+                altered = copy.deepcopy(value)
+                altered['failure_ledger'] = dict(relative=path.name, sha256=reference.digest(path))
+                with patch.object(reference, 'PROJECT', root):
+                    with self.assertRaisesRegex(ValueError, message):
+                        reference.failure_inventory(altered)
+
+    def test_failure_ledger_rejects_missing_and_duplicate_family_ids(self):
+        value = reference.load(reference.INVENTORY)
+        ledger = reference.failure_inventory(value)
+        self.assertEqual(len(ledger['cases']), 78)
+        for rows in (ledger['cases'][:-1], ledger['cases'] + [ledger['cases'][0]]):
+            broken = dict(ledger, cases=rows)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'ledger.json'
+                reference.save(path, broken)
+                altered = copy.deepcopy(value)
+                altered['failure_ledger'] = dict(relative=path.name, sha256=reference.digest(path))
+                with patch.object(reference, 'PROJECT', Path(directory)):
+                    with self.assertRaisesRegex(ValueError, 'failure case IDs'):
+                        reference.failure_inventory(altered)
+
     def python(self, names):
         return dict(schema="cairn.semantic-test-events/1", ids=names, skipped=[],
                     tests_ran=len(names), successful=True)

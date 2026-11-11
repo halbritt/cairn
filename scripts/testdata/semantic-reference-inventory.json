@@ -1668,5 +1668,9 @@
     }
   },
   "characterization_seal_sha256": "afbbc828e964ea9d446a3d12a2b80c48e823d09547600f9688bd45fe7c6774d5",
-  "retained_native_harness_note": "Original12 tests remain accepted under unchanged source. Fresh nested attempt reference-tests-01 failed namespace preflight; six new fixture tests execute directly inside the existing wrapper, not a weaker wrapper."
+  "retained_native_harness_note": "Original12 tests remain accepted under unchanged source. Fresh nested attempt reference-tests-01 failed namespace preflight; six new fixture tests execute directly inside the existing wrapper, not a weaker wrapper.",
+  "failure_ledger": {
+    "relative": "scripts/testdata/semantic-refusal-ledger.json",
+    "sha256": "870a5d891bcbe5e8e78a60f6c83496d9e0223fbe0a67ff817ab4c99034e97715"
+  }
 }
