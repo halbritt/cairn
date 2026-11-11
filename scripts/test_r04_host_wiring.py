@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -12,6 +13,7 @@ import uuid
 
 from test_f04_activation import ROOT, SESSION, encoded, write
 from test_r02_compatibility_install import InstalledTools
+import test_f04_issued as issued
 import test_r04_hook_settings as hooks
 
 pin = hooks.pin
@@ -87,18 +89,22 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                         if row['role'] != 'coordination':
                             continue
                         self.assertEqual(row['implementation'], 'go')
-                        self.assertEqual(row['argv'][:2], [str(f.binary), 'coordination'])
-                        self.assertEqual(row['checked_launcher'], [str(f.launcher('coordination', row['hook']['timeout']))])
-                        self.assertIn('--receipt', row['argv'])
-                        split = row['argv'].index('--')
-                        self.assertEqual(row['argv'][split + 1:], ['hook', '--config', str(f.coord_path)])
+                        self.assertEqual(row['retained_launcher'], [str(f.launcher('coordination', row['hook']['timeout']))])
+                        self.assertEqual(row['argv'], [*row['checked_launcher'], 'hook', '--config', str(f.coord_path)])
+                        launcher = Path(row['checked_launcher'][0])
+                        raw = launcher.read_bytes()
+                        self.assertEqual(launcher.parent.name, hashlib.sha256(raw).hexdigest())
+                        self.assertEqual(launcher.stat().st_mode & 0o777, 0o500)
+                        vector = shlex.split(raw.decode().splitlines()[1])
+                        self.assertEqual(vector[:3], ['exec', str(f.binary), 'coordination'])
+                        self.assertEqual(vector[-2:], ['--', '$@'])
                         for flag, expected in (('--receipt', str(f.receipt_path)),
                                                ('--receipt-sha256', f.receipt_sha),
                                                ('--role', 'coordination'),
                                                ('--hook-timeout', str(row['hook']['timeout'])),
                                                ('--launch-root', str(f.launch_root))):
-                            self.assertEqual(row['argv'].count(flag), 1)
-                            self.assertEqual(row['argv'][row['argv'].index(flag) + 1], expected)
+                            self.assertEqual(vector.count(flag), 1)
+                            self.assertEqual(vector[vector.index(flag) + 1], expected)
 
     def test_opencode_uses_checked_source_cells_and_preserves_reverse_inputs(self):
         f = self.fixture('ordinary host')
@@ -109,11 +115,13 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         for selected_config, input_pin in [(f.memory_path, f.plan['memory_config']), (f.coord_path, f.plan['coordination_configs'][0])]:
             self.assertEqual(selected_config.read_bytes(), Path(input_pin['path']).read_bytes())
         implementations = {(r['role'], r['event']): r['implementation'] for r in record['rows']}
-        self.assertTrue(all(impl == ('go' if role == 'coordination' else 'python')
-                            for (role, _), impl in implementations.items()))
-        self.assertTrue(all('receipt-checked ordinary Go consumer unavailable' in r['reason']
-                            for r in record['rows'] if r['role'] == 'memory'
-                            and r['event'] in ('SessionStart', 'UserPromptSubmit')))
+        self.assertTrue(all(impl == ('go' if role == 'coordination' or event in ('SessionStart', 'UserPromptSubmit') else 'python')
+                            for (role, event), impl in implementations.items()))
+        for row in record['rows']:
+            if row['role'] == 'memory' and row['event'] in ('SessionStart', 'UserPromptSubmit'):
+                self.assertEqual(row['argv'], row['checked_launcher'])
+                self.assertNotEqual(row['checked_launcher'], row['retained_launcher'])
+                self.assertEqual(row['reason'], 'receipt-checked ordinary Go recall')
         self.assertTrue(all(implementations['memory', event] == 'python'
                             for event in ('PreCompact', 'SessionEnd', 'PostToolUse', 'PostToolUseFailure')))
         # Arrange the documented staged layout only in a disposable account.
@@ -128,8 +136,8 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                                  str(home), str(f.root)], env=f.env(), cwd=f.root, capture_output=True, timeout=45)
         self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout)
         self.assertEqual(json.loads(result.stdout), {'memory': True, 'coordination': True})
-        self.assertEqual(calls, [], 'No cell may select the unchecked ordinary Go consumer')
-        self.assertIn('search', [call['operation'] for call in f.api_calls()])
+        self.assertIn('index', [operation for operation, _ in calls])
+        self.assertTrue(all(authorization == 'Bearer r04-synthetic-token' for _, authorization in calls))
         states = [json.loads(path.read_bytes()) for path in Path(f.coord['state_dir']).glob('*.json')]
         self.assertEqual(len(states), 1)
         self.assertEqual(states[0]['agent']['agent_id'], '33333333-3333-4333-8333-333333333333')
@@ -144,7 +152,8 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 _, _, record = self.selected(f)
                 memory = next(r for r in record['rows'] if r['role'] == 'memory' and r['event'] == 'SessionStart')
                 coord = next(r for r in record['rows'] if r['role'] == 'coordination')
-                self.assertEqual((memory['implementation'], coord['implementation']), ('python', 'go'))
+                self.assertEqual((memory['implementation'], coord['implementation']),
+                                 ('go' if harness == 'opencode' else 'python', 'go'))
                 session = 'ses_shell' if harness == 'opencode' else SESSION
                 event = dict(hook_event_name='SessionStart', session_id=session, cwd=str(f.root), host_pid=os.getpid())
                 shutil.rmtree(f.package)
@@ -172,6 +181,82 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 self.assertTrue(all(r['implementation'] == 'python' for r in rows))
                 self.assertTrue(any(r['reason'] == ('bound callback' if route == 'bound' else 'provider-selected recall') for r in rows))
                 self.assertTrue(all(r['implementation'] == 'go' for r in record['rows'] if r['role'] == 'coordination'))
+
+    def test_go_rows_refuse_changed_selections_before_api_or_state(self):
+        for role in ('memory', 'coordination'):
+            for artifact in ('receipt', 'profile', 'image', 'closure', 'launcher'):
+                with self.subTest(role=role, artifact=artifact):
+                    f = self.fixture(role + artifact)
+                    calls = self.recall_api(f)
+                    _, _, record = self.selected(f)
+                    row = next(r for r in record['rows'] if r['role'] == role)
+                    selected = dict(receipt=f.receipt_path,
+                                    profile=f.memory_path if role == 'memory' else f.coord_path,
+                                    image=f.binary,
+                                    closure=Path(f.receipt['snapshot_root']) / 'coordination.py',
+                                    launcher=Path(row['checked_launcher' if role == 'memory' else 'retained_launcher'][0]))
+                    target = selected[artifact]
+                    mode = target.stat().st_mode & 0o777
+                    target.chmod(0o700)
+                    target.write_bytes(target.read_bytes() + b'\n')
+                    target.chmod(mode)
+                    shutil.rmtree(f.package)
+                    event = dict(hook_event_name='SessionStart', session_id='ses_refusal',
+                                 cwd=str(f.root), host_pid=os.getpid())
+                    result = subprocess.run(row['argv'], input=encoded(event), cwd=f.root,
+                                            env=f.env(), capture_output=True, timeout=20)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(result.stdout, b'')
+                    self.assertEqual(calls, [])
+                    self.assertEqual(f.api_calls(), [])
+                    self.assertFalse(Path(f.memory['state_dir']).exists())
+                    self.assertFalse(Path(f.coord['state_dir']).exists())
+
+    def test_changed_published_go_launcher_refuses_new_settings_generation(self):
+        f = self.fixture('changed Go launcher', harness='codex')
+        _, _, record = self.selected(f)
+        row = next(r for r in record['rows'] if r['role'] == 'coordination')
+        launcher = Path(row['checked_launcher'][0])
+        launcher.chmod(0o700)
+        launcher.write_bytes(launcher.read_bytes() + b'# changed\n')
+        launcher.chmod(0o500)
+        f.hook_plan['id'] = str(uuid.uuid4())
+        result = self.stage(f)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((f.hook_root / ('selection-' + f.hook_plan['id'])).exists())
+        self.assertEqual(f.api_calls(), [])
+
+    def test_go_hook_issues_working_retained_launcher_acknowledgement(self):
+        f = self.fixture('issued notice', harness='codex', bound=True)
+        _, _, record = self.selected(f)
+        row = next(r for r in record['rows'] if r['role'] == 'coordination' and r['event'] == 'UserPromptSubmit')
+        delivery = dict(delivery_id=issued.DELIVERY, lease_id=issued.LEASE, state='leased',
+                        event=dict(event_id=issued.EVENT, kind='notice', ref=issued.RESULT,
+                                   **{'from': 'agent/requester'}))
+        attempt = dict(attempt_id='', session={}, delivery=delivery,
+                       native_turn_id=issued.TURN, batch_index=1)
+        f.replies({'session-inbox-claim': [issued.ok(dict(attempt=attempt), claim_identity=True)],
+                   'event-renew': [issued.ok(delivery)],
+                   'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')],
+                   'ack': [issued.ok(dict(state='handled', delivery_id=issued.DELIVERY, attempts=1))]})
+        shutil.rmtree(f.package)
+        raw = encoded(dict(f.event, hook_event_name='UserPromptSubmit', prompt='An ordinary fixture prompt.',
+                           host_pid=os.getpid()))
+        result = subprocess.run(row['argv'], input=raw, cwd=f.root, env=f.env(), capture_output=True, timeout=20)
+        self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout)
+        paths = list((Path(f.coord['state_dir']) / 'inbox').glob('*.json'))
+        self.assertEqual(len(paths), 1, result.stdout)
+        context = json.loads(paths[0].read_bytes())
+        text = context['shell_commands']['acknowledgement']
+        self.assertEqual(shlex.split(text)[0], row['retained_launcher'][0])
+        self.assertLessEqual(len(text.encode()), 512)
+        self.assertNotIn(' -c ', text)
+        settled = subprocess.run(['/bin/sh', '-c', text], cwd=f.root, env=f.env(), capture_output=True, timeout=20)
+        self.assertEqual((settled.returncode, settled.stderr), (0, b''), settled.stdout)
+        acknowledgements = [call for call in f.api_calls() if call['operation'] == 'ack']
+        self.assertEqual(len(acknowledgements), 1)
+        for identifier in (issued.AGENT, issued.EXECUTION, issued.DELIVERY, issued.LEASE):
+            self.assertIn(identifier, acknowledgements[0]['argv'])
 
     def test_unbound_mode_refuses_a_bound_input_and_cannot_enable_binding(self):
         f = self.fixture('refusal')

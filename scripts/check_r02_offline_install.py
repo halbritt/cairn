@@ -59,7 +59,7 @@ def packaged_check():
         case.test_opencode_uses_checked_source_cells_and_preserves_reverse_inputs()
     finally:
         case.doCleanups()
-    print('R04 standalone-package OpenCode receipt-checked Source hooks: PASS', flush=True)
+    print('R04 standalone-package OpenCode receipt-checked Go/Source hooks: PASS', flush=True)
 
 
 # Runs only inside the first namespace. The stdout archive is extracted as data

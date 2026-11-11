@@ -37,6 +37,28 @@ def selected_data(pin, limit=1024 * 1024):
     return json.loads(installation.read_selected(pin, limit).decode('utf-8'))
 
 
+def checked_go_launcher(stager, image, role, vector):
+    flags = ['--receipt', '--receipt-sha256', '--role', '--entrypoint',
+             '--config', '--hook-timeout', '--launch-root', '--shell']
+    if len(vector) != 21 or vector[5::2] != flags:
+        raise ValueError('unsupported checked Go launch vector')
+    launch_root, shell = vector[-3], vector[-1]
+    raw = ('#!' + shell + '\nexec ' + shlex.join([image, role, *vector[5:]]) + ' -- "$@"\n').encode('utf-8')
+    identity = installation.sha(raw)
+    with tempfile.TemporaryDirectory(prefix='cairn-hook-launcher-') as temporary:
+        source = Path(temporary) / 'inbox'
+        source.write_bytes(raw)
+        source.chmod(0o600)
+        member = dict(name='inbox', path=str(source), sha256=identity, executable=True)
+        selected = installation.backend(stager, ['directory', '--root', launch_root],
+                                        dict(identity=identity, files=[member]))
+    launcher = str(Path(selected['path']) / 'inbox')
+    member['path'] = launcher
+    installation.backend(stager, ['inspect-directory', '--root', launch_root],
+                         dict(identity=identity, files=[member]))
+    return [launcher]
+
+
 def definitions(stager, plan):
     required = {'id', 'selection', 'harness', 'account_home', 'settings', 'replace_commands', 'coordination_index'}
     if plan.get('harness') == 'opencode':
@@ -55,8 +77,10 @@ def definitions(stager, plan):
     receipt = selected_data(install['receipt'])
     if index >= len(receipt['coordination_configs']):
         raise ValueError('selected coordination configuration is absent')
+    all_unbound = not any(selected_data(pin).get('inbox_recall_binding')
+                          for pin in [receipt['memory_config'], *receipt['coordination_configs']])
     profiles = {'memory': receipt['memory_config'], 'coordination': receipt['coordination_configs'][index]}
-    rows = []
+    rows, go_launchers = [], {}
     for role, profile in profiles.items():
         config = selected_data(profile)
         if config['harness'] != plan['harness']:
@@ -66,8 +90,8 @@ def definitions(stager, plan):
         events = MEMORY[plan['harness']] if role == 'memory' else COORDINATION[plan['harness']]
         for event, timeout in events.items():
             label = role + ':' + str(0 if role == 'memory' else index + 1) + ':' + str(timeout)
-            launcher = install['launchers'][label]
-            argv = launcher
+            retained = install['launchers'][label]
+            launcher = retained
             vector = metadata['anchors'][label]['vector']
             for flag, value in (('--role', role), ('--config', profile['path']), ('--hook-timeout', str(timeout))):
                 if vector.count(flag) != 1 or vector[vector.index(flag) + 1:][:1] != [value]:
@@ -76,27 +100,29 @@ def definitions(stager, plan):
             reason = ('bound callback' if config.get('inbox_recall_binding') else
                       'ordinary recall for this harness remains Python' if event in ('SessionStart', 'UserPromptSubmit') else
                       'capture or tool observation')
-            if role == 'coordination':
-                flags = ['--receipt', '--receipt-sha256', '--role', '--entrypoint',
-                         '--config', '--hook-timeout', '--launch-root', '--shell']
-                if len(vector) != 21 or vector[5::2] != flags:
-                    raise ValueError('unsupported checked coordination launch vector')
-                argv = [receipt['binary']['path'], 'coordination', *vector[5:],
-                        '--', 'hook', '--config', profile['path']]
+            ordinary_go = (role == 'memory' and plan['harness'] == 'opencode'
+                           and event in ('SessionStart', 'UserPromptSubmit')
+                           and config.get('recall_mode') == 'agent_tools'
+                           and all_unbound)
+            if role == 'coordination' or ordinary_go:
+                if label not in go_launchers:
+                    go_launchers[label] = checked_go_launcher(stager, receipt['binary']['path'], role, vector)
+                launcher = go_launchers[label]
                 implementation = 'go'
+            if role == 'coordination':
                 reason = 'receipt-checked Go coordination hook'
-            if not config.get('inbox_recall_binding'):
-                if (role == 'memory' and plan['harness'] == 'opencode'
-                        and event in ('SessionStart', 'UserPromptSubmit')):
-                    if config.get('recall_mode') == 'agent_tools':
-                        reason = 'receipt-checked ordinary Go consumer unavailable; checked Python recall'
-                    else:
-                        reason = 'provider-selected recall'
+            elif ordinary_go:
+                reason = 'receipt-checked ordinary Go recall'
+            elif (not config.get('inbox_recall_binding') and role == 'memory'
+                  and plan['harness'] == 'opencode' and event in ('SessionStart', 'UserPromptSubmit')
+                  and config.get('recall_mode') != 'agent_tools'):
+                reason = 'provider-selected recall'
+            argv = [*launcher, 'hook', '--config', profile['path']] if role == 'coordination' else launcher
             hook = dict(type='command', command=shlex.join(argv), timeout=timeout)
             if role == 'memory' and plan['harness'] == 'codex':
                 if event in ('SessionStart', 'UserPromptSubmit'): hook['additionalContextLimit'] = 12000
                 if event == 'Stop': hook['async'] = True
-            rows.append(dict(role=role, event=event, argv=argv, checked_launcher=launcher, hook=hook,
+            rows.append(dict(role=role, event=event, argv=argv, checked_launcher=launcher, retained_launcher=retained, hook=hook,
                              implementation=implementation, reason=reason))
     return rows, profiles
 
@@ -114,7 +140,8 @@ def render(plan, rows):
         raise ValueError('explicit previous command lists for both roles required')
     seen = set()
     selected_roles = {command: row['role'] for row in rows
-                      for command in (row['hook']['command'], shlex.join(row['checked_launcher']))}
+                      for command in (row['hook']['command'], shlex.join(row['checked_launcher']),
+                                      shlex.join(row['retained_launcher']))}
     for role, values in replacements.items():
         if type(values) is not list:
             raise ValueError('previous commands must be lists')
