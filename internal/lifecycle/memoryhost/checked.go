@@ -97,7 +97,7 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	if event.Kind != value.Object {
 		return checkedEmit(memoryhook.InvalidInput("input", "configuration and host event must be objects"), out, diagnostic)
 	}
-	if !snapshot.Bound() && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
+	if name := event.Get("hook_event_name"); !snapshot.Bound() && !value.SameText(name, "SessionStart") && !value.SameText(name, "UserPromptSubmit") && !value.SameText(name, "PreToolUse") && !value.SameText(name, "PostToolUse") && !value.SameText(name, "PostToolUseFailure") {
 		return refuse()
 	}
 	directory, err := os.Getwd()
@@ -107,6 +107,9 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	trace := newTrace(selection.ConfigPath)
 	trace.entry()
 	trace.parsed(event)
+	if name := event.Get("hook_event_name"); value.SameText(name, "PreToolUse") || value.SameText(name, "PostToolUse") || value.SameText(name, "PostToolUseFailure") {
+		trace.fields["stage"] = "activation"
+	}
 	defer func() {
 		if recover() != nil {
 			panicDiagnostic(diagnostic, "handle")

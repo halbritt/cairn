@@ -1,11 +1,13 @@
 """Bound capture through the actual checked Source and Go process boundaries."""
 import fcntl
+import copy
 import json
 from pathlib import Path
 import unittest
+import uuid
 
 from test_f02_bound_memory import BoundMemoryCase
-from test_f04_activation import SESSION, encoded, write
+from test_f04_activation import ROOT, SESSION, encoded, write
 import test_f03_capture_boundary as capture_fixture
 
 
@@ -172,6 +174,149 @@ class BoundCaptureTests(BoundMemoryCase):
             self.assertIn(b'CompatibilityPreflightError', result.stderr)
             self.assertEqual(self.calls, [])
             self.assertEqual(self.state(), {})
+
+
+class BoundProviderCaptureTests(BoundMemoryCase):
+    source_pairs = 0
+
+    @classmethod
+    def setUpClass(cls):
+        if not (ROOT / 'internal/lifecycle/memoryhook/capture_provider.go').exists():
+            raise unittest.SkipTest('accepted provider join is not present; fixtures prepared only')
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            print('BOUND_PROVIDER_PAIRS=' + str(cls.source_pairs), flush=True)
+        finally:
+            super().tearDownClass()
+
+    def setUp(self):
+        super().setUp()
+        self.selection = dict(checkpoint=None, workstream=None, memories=[])
+        self.fail_write = None
+        self.after_write = None
+        self.spec = {}
+        self.provider_sides = {}
+        script = b'''#!/usr/bin/python3
+import json,os,pathlib,sys,time
+root=pathlib.Path(__file__).parent
+body=sys.stdin.buffer.read()
+spec=json.loads((root/'provider.json').read_text())
+with (root/'provider.calls').open('a') as log:
+ log.write(json.dumps(dict(argv=sys.argv[1:],body=json.loads(body),cwd=os.getcwd(),entries=os.listdir(),pid=os.getpid(),child=os.environ.get('CAIRN_LIFECYCLE_CHILD'),claudecode=os.environ.get('CLAUDECODE')))+'\\n')
+if spec.get('delay'):time.sleep(spec['delay'])
+if spec.get('stdout') is not None:sys.stdout.write(spec['stdout'])
+else:sys.stdout.write(json.dumps(spec['result'],ensure_ascii=False,separators=(',',':')))
+sys.exit(spec.get('exit',0))
+'''
+        write(self.root / 'selector', script, 0o700)
+        self.f.memory.update(claude=str(self.root / 'selector'), model='bound-synthetic-model', capture_observations=True)
+        self.f.publish_configuration()
+        original_env = self.f.env
+        self.f.env = lambda: dict(original_env(), CLAUDECODE='synthetic-parent')
+        transcript = self.root / 'substantive-rollout.jsonl'
+        messages = [('user', 'Preserve the postgres retention decision for this project.'),
+                    ('assistant', 'Keep the accepted retention policy and update the operator guide.')]
+        write(transcript, b''.join(encoded(dict(type='response_item', payload=dict(type='message', role=role,
+              content=[dict(type='input_text' if role == 'user' else 'output_text', text=text)]))) + b'\n'
+              for role, text in messages))
+        self.event('PreCompact', transcript_path=str(transcript))
+
+    def create_reply(self, body):
+        self.write_count += 1
+        failure = 'CONFLICT' if self.write_count == self.fail_write else None
+        identity = str(uuid.uuid5(uuid.NAMESPACE_URL, body['request_id']))
+        if not failure:
+            self.writes.append(dict(record_id=identity, draft=copy.deepcopy(body['draft'])))
+            if self.after_write:
+                self.after_write()
+        return dict(record_id=identity), failure
+
+    def before_run(self, side):
+        super().before_run(side)
+        self.side = side
+        self.write_count = 0
+        self.writes = []
+        (self.root / 'provider.calls').unlink(missing_ok=True)
+        spec = dict(result=dict(structured_output=self.selection))
+        spec.update(self.spec)
+        write(self.root / 'provider.json', encoded(spec))
+
+    def after_run(self):
+        path = self.root / 'provider.calls'
+        calls = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+        for call in calls:
+            self.assertFalse(Path('/proc', str(call.pop('pid'))).exists())
+            self.assertEqual(call.pop('entries'), [])
+            directory = Path(call.pop('cwd'))
+            self.assertTrue(directory.name.startswith('cairn-selection-'))
+            self.assertFalse(directory.exists())
+            self.assertEqual(call['child'], '1')
+            self.assertIsNone(call['claudecode'])
+        self.provider_sides[self.side] = (calls, copy.deepcopy(self.writes))
+
+    def pair(self):
+        result = super().pair()
+        self.assertEqual(self.provider_sides['go'], self.provider_sides['source'])
+        self.assertEqual(len(self.provider_sides['go'][0]), 1)
+        type(self).source_pairs += 1
+        return result
+
+    def note(self, title='Retention policy'):
+        return dict(record_id=None, kind='decision', title=title, body='Use thirty days for postgres retention.')
+
+    def test_checked_null_selection_commits_digest_after_real_selector(self):
+        self.assertEqual(self.pair().stdout, b'{}\n')
+        state = self.state()[SESSION + '.json']
+        self.assertEqual(state['last_capture'], dict(outcome='nothing_selected', records=[], selector_calls=1))
+        self.assertIn('captured_digest', state)
+        self.assertEqual([row[0] for row in self.calls if row[0] != 'version'], ['index'] * 3 + ['capture-observation'])
+
+    def test_checked_ordered_note_then_checkpoint_save(self):
+        self.selection.update(checkpoint='Retain the postgres policy; next update the operator docs.',
+                              workstream='postgres retention', memories=[self.note()])
+        self.assertEqual(self.pair().returncode, 0)
+        self.assertEqual([row['draft']['kind'] for row in self.writes], ['decision', 'note'])
+        state = self.state()[SESSION + '.json']
+        self.assertEqual(state['last_capture']['outcome'], 'saved')
+        self.assertEqual(state['last_capture']['records'], [row['record_id'] for row in self.writes])
+        self.assertIn('codex_capture_marker', state)
+
+    def test_checked_invalid_late_selection_prevents_all_writes(self):
+        self.selection['memories'] = [self.note(), dict(record_id=None, kind='unsupported', title='bad', body='bad')]
+        self.assertEqual(self.pair().returncode, 1)
+        self.assertEqual(self.writes, [])
+        self.assertEqual(self.state(), {})
+
+    def test_checked_partial_write_retains_confirmed_note_without_state_commit(self):
+        self.selection['memories'] = [self.note(), self.note('Cleanup policy')]
+        self.fail_write = 2
+        self.assertEqual(self.pair().returncode, 1)
+        self.assertEqual(len(self.writes), 1)
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.calls[-1][1]['outcome'], 'write_error')
+
+    def test_checked_cas_failure_keeps_confirmed_note_and_concurrent_state(self):
+        self.selection['memories'] = [self.note()]
+        def change():
+            path = Path(self.f.memory['state_dir']) / (SESSION + '.json')
+            with path.with_suffix('.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                write(path, encoded(dict(binding=['/changed', 'owner'])))
+        self.after_write = change
+        self.assertEqual(self.pair().returncode, 1)
+        self.assertEqual(len(self.writes), 1)
+        self.assertEqual(self.state()[SESSION + '.json'], dict(binding=['/changed', 'owner']))
+        self.assertEqual(self.calls[-1][1]['outcome'], 'state_commit_error')
+
+    def test_checked_selector_invalid_json_is_a_refusal_without_commit(self):
+        self.spec['stdout'] = 'invalid json'
+        self.assertEqual(self.pair().returncode, 1)
+        self.assertEqual(self.writes, [])
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.calls[-1][1]['selector_outcome'], 'error')
 
 
 if __name__ == '__main__':

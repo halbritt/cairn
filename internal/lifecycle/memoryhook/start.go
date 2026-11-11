@@ -213,6 +213,9 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		}
 		return runCapture(ctx, config, event, directory, hookStarted, trace)
 	}
+	if ordinary && toolObservationEvent(event) {
+		return runToolObservation(ctx, config, event, directory, trace)
+	}
 	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") {
 		return boundary(fail("ordinary memory harness remains unavailable"))
 	}

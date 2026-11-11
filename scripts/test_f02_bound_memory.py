@@ -64,6 +64,7 @@ class BoundMemoryCase(unittest.TestCase):
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 operation = self.path.removeprefix('/v1/')
+                failure = None
                 owner.calls.append((operation, body, dict(self.headers)))
                 if self.headers.get('Authorization') != 'Bearer bound-memory-synthetic-token':
                     self.send_error(401)
@@ -90,12 +91,16 @@ class BoundMemoryCase(unittest.TestCase):
                 elif operation in ('recall-observation', 'capture-observation'):
                     owner.observe_locks(operation)
                     data = {}
+                elif operation == 'create' and getattr(owner, 'create_reply', None):
+                    data, failure = owner.create_reply(body)
                 else:
                     self.send_error(400)
                     return
-                self.send_response(200)
+                self.send_response(422 if failure else 200)
                 self.end_headers()
-                self.wfile.write(encoded(dict(schema='cairn.response/1', ok=True, status='OK', data=data)))
+                response = dict(schema='cairn.response/1', ok=not failure, status=failure or 'OK')
+                response.update(dict(message='synthetic refusal') if failure else dict(data=data))
+                self.wfile.write(encoded(response))
 
         self.server = Server(str(self.root / 'api.sock'), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -224,12 +229,14 @@ class BoundMemoryCase(unittest.TestCase):
         for actual, expected in zip(self.calls, calls):
             def normalized(row):
                 body = copy.deepcopy(row[1])
-                identifier = body.pop('request_id', None)
+                identifier = body.get('request_id')
+                if row[0] not in ('create', 'revise'):
+                    body.pop('request_id', None)
                 if row[0] != 'version':
                     self.assertEqual(str(uuid.UUID(identifier)), identifier)
                     self.assertNotEqual(uuid.UUID(identifier).int, 0)
                 if row[0] in ('capture-observation', 'recall-observation'):
-                    for key in ('duration_ms', 'elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms'):
+                    for key in ('duration_ms', 'elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms', 'selector_duration_ms'):
                         if key in body:
                             self.assertGreaterEqual(body.pop(key), 0)
                 self.assertEqual(row[2]['Authorization'], 'Bearer bound-memory-synthetic-token')
@@ -239,7 +246,8 @@ class BoundMemoryCase(unittest.TestCase):
                 declaration = row[2]['Cairn-Client-Diagnostics']
                 origin = json.loads(base64.urlsafe_b64decode(declaration + '=' * (-len(declaration) % 4)))['origin']
                 self.assertEqual(origin['component'], 'lifecycle-memory')
-                if row is actual or row[0] != 'capture-observation':
+                source_capture = self.f.event['hook_event_name'] in ('PreCompact', 'Stop', 'SessionEnd')
+                if row is actual or not source_capture:
                     self.assertEqual(origin, dict(component='lifecycle-memory', basis='reported',
                                                   implementation_id=self.f.receipt['binary']['sha256']))
                 else:
@@ -264,6 +272,16 @@ class BoundMemoryCase(unittest.TestCase):
 
 
 class BoundMemoryTests(BoundMemoryCase):
+    def test_bound_tools_and_unknown_events_cannot_enter_unbound_dispatch(self):
+        for name in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure', None, 7):
+            with self.subTest(event=name):
+                self.event(name)
+                result = self.go()
+                self.assertEqual((result.returncode, result.stdout), (1, b''))
+                self.assertIn(b'checked bound memory cell remains unavailable', result.stderr)
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.state(), {})
+
     def test_actual_installed_start_and_owner_prompt(self):
         print('BOUND_MEMORY_PINS=' + json.dumps(dict(receipt_sha256=self.f.receipt_sha,
               source_members=self.f.receipt['members'], go_image_sha256=sha(self.f.binary.read_bytes())), sort_keys=True), flush=True)

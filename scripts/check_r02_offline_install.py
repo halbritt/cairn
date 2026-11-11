@@ -60,6 +60,14 @@ def packaged_check():
     finally:
         case.doCleanups()
     print('R04 standalone-package OpenCode receipt-checked Go/Source hooks: PASS', flush=True)
+    case = R04HostWiringTests('test_agy_installed_go_events_match_retained_source_after_package_removal')
+    case.binary, case.stager = ROOT / 'assets/private-activation', ROOT / 'assets/stager'
+    case.setUp()
+    try:
+        case.test_agy_installed_go_events_match_retained_source_after_package_removal()
+    finally:
+        case.doCleanups()
+    print('R04 standalone-package Agy coordination Go/Source hooks: PASS', flush=True)
 
 
 # Runs only inside the first namespace. The stdout archive is extracted as data

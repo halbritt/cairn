@@ -1,9 +1,10 @@
 # Direct checked bound memory consumer
 
-The private `IMAGE memory --receipt ...` entry now joins the receipt-selected
-Codex `agent_tools` SessionStart/UserPromptSubmit body to the actual F04
-`ResolveActivation` decision. This is source construction; staged bound rows and
-the public lifecycle command remain disabled pending Foundation review and landing.
+The private `IMAGE memory --receipt ...` entry runs receipt-selected Codex
+`agent_tools` SessionStart/UserPromptSubmit recall and the 150-second capture
+cells: Codex PreCompact/Stop and Claude PreCompact/SessionEnd. Each invocation
+reaches the actual F04 `ResolveActivation` decision. This is source construction;
+staged bound rows and the public lifecycle command remain held.
 
 V is the actual process argv. L is derived from its exact shell-quoted bytes in
 the persistent content-addressed launch root. Receipt, whole retained closure,

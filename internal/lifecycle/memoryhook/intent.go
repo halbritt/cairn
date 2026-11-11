@@ -256,7 +256,8 @@ func detailedRetrievalIntent(event, state *value.Value, project string, semantic
 		}
 		candidate := part
 		if !filepath.IsAbs(candidate) {
-			candidate = filepath.Join(cwd, candidate)
+			// Preserve parent components until resolved follows preceding symlinks.
+			candidate = cwd + string(filepath.Separator) + candidate
 		}
 		full, err := resolved(candidate, cwd)
 		if err != nil {
