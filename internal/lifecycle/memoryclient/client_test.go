@@ -437,6 +437,54 @@ func TestMemoryClientSearchContract(t *testing.T) {
 
 var requestIDValue = requestID
 
+func TestSearchArgvDomainRefusalPreservesEffectsAndAccounting(t *testing.T) {
+	api, seen := fixture(t, func(w http.ResponseWriter, _ *http.Request, call requestCapture) {
+		if !probe(t, w, call) {
+			success(t, w, indexReply())
+		}
+	})
+	operations, refusals := 0, 0
+	c := client(t, api, memoryclient.Options{Scope: scope,
+		ObserveOperation: func(op string, elapsed time.Duration) {
+			if op != "search" || elapsed < 0 {
+				t.Fatalf("invalid operation observation: %s %s", op, elapsed)
+			}
+			operations++
+		},
+		ObserveRPC: func(op string, at time.Time, request, response json.RawMessage, err error) {
+			if err == nil {
+				return
+			}
+			if op != "search" || at.IsZero() || request != nil || response != nil || !errors.Is(err, memoryclient.ErrSearchArgvDomain) {
+				t.Fatalf("invalid local refusal observation: %s %s %s %v", op, request, response, err)
+			}
+			refusals++
+		},
+	})
+	if _, err := c.Search(context.Background(), `"retention 日本語 😀"`, memoryclient.SearchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	before := c.Accounting()
+	wire := seen.snapshot()
+	for _, query := range []string{"\x00", "alpha\x00beta", "\x00alpha", "alpha\x00"} {
+		// Source cannot launch even when the child would reject other options.
+		if _, err := c.Search(context.Background(), query, memoryclient.SearchOptions{Entities: []string{"../invalid"}}); !errors.Is(err, memoryclient.ErrSearchArgvDomain) {
+			t.Fatalf("query domain refusal lost: %v", err)
+		}
+	}
+	if _, err := c.Checkpoint(context.Background(), "alpha\x00beta"); !errors.Is(err, memoryclient.ErrSearchArgvDomain) {
+		t.Fatalf("checkpoint bypassed shared query refusal: %v", err)
+	}
+	after := c.Accounting()
+	if after.OperationCalls["search"] != 6 || operations != 6 || refusals != 5 || !c.RPCObservationComplete() {
+		t.Fatalf("search attempts/observations lost: %+v %d %d", after, operations, refusals)
+	}
+	after.OperationCalls["search"] = before.OperationCalls["search"]
+	if !reflect.DeepEqual(after, before) || !reflect.DeepEqual(seen.snapshot(), wire) {
+		t.Fatal("local query refusal changed receipts, credits, pulls, or API traffic")
+	}
+}
+
 func distinctEntities(n int) []string {
 	names := make([]string, n)
 	for i := range names {

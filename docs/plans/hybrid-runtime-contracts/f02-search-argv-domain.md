@@ -36,6 +36,35 @@ and interpreter limits require documented Go behavior. JSON representability,
 writer shape and actual native admission are separate claims. This unit does
 not establish all-input CPython parity or native acceptance.
 
+The repair refuses NUL in the actual query at shared `memoryclient.Search`,
+before request preparation, capability probes or index calls. It does not ban
+NUL in messages or rewrite queries: the short quoted phrase and plain unquoted
+NUL controls still proceed through their existing normalization. Valid quoted
+ASCII and Unicode still reach the API and selector. The new sentinel maps to
+Source's ValueError family at the hook classification boundary. Recall retains
+the same failed marker; capture retains exact previous state and reports after
+releasing both locks. An existing required grant still promotes the failure to
+RequiredContextRefused and remains pending, through the unchanged bound entry.
+
+The refused attempt increments the search counter, operation timer and RPC
+observation, matching Source's `Memory.call` finally block. It acquires no new
+receipt, spends no pull credit and does not alter prior receipt accounting.
+The shared-client test seeds a successful receipt and verifies those properties
+for NUL at each position and through Checkpoint, including precedence over
+child-side option validation.
+
+The eight new test methods exercise thirteen process pairs: five capture pairs
+using supplied dialogue, one Python-written Claude transcript pair, five
+independent checked recall pairs, and two bound-entry required-grant controls.
+The transcript uses the actual Python JSON encoder and Source transcript reader;
+it establishes writer-shaped JSON representability through dialogue normalization,
+not that a recorded Claude hook has emitted this content. Valid scalar NUL is
+representable by the writer and survives that real Source path. No recorded
+native corpus is introduced, so a broader native-input claim remains unproved.
+The bound-entry controls preserve required failure policy; they do not supply an
+independent Python recall oracle because the installed bound Source entry selects
+the Go engine. The independent recall pairs retain the unbound Python body.
+
 Foundation owns final review, landing, push and cleanup. This unit does not
 change provider parsing, capture title guards, receipt/activation, binding,
 transport, indexview, Source, Coordination, host configuration or staged rows.
