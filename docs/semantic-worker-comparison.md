@@ -170,9 +170,15 @@ claiming an ORT inference-call count or a performance benefit.
 The retained Python capture uses historical note aliases. The harness applies
 the committed fixture producer's UUID5/URL ID adapter, records that mapping and
 its source digest, and preserves every body, version, body hash and numeric
-score. Missing retained stream cells remain named in the report. Reusing a
-frozen scalar reference for repeated scores does not manufacture a missing
-stream transcript. Raw traces and caches stay in the external output directory.
+score. The retained capture has 34 frames. Direct comparison against the frozen
+Python rank reference found all 408 scores exact, with the same model identity.
+Under coordinator decision `d8b70f55-48fb-4c27-bfc5-f8405c56fe97/v1`, the four
+uncaptured `stream/long-tail/{cold,warm}` and `stream/64-short/{cold,warm}` cells
+use the corresponding frozen Python rank values plus the observed Rust stream
+replies. Accepted reference coverage is therefore 34 captured cells plus four
+rank-backed cells. The report still names the missing historical frames and
+keeps `full_38_reference_available=false`; no replacement Python capture was
+made. Raw traces and caches stay in the external output directory.
 The observer's mechanics tests are in `scripts/test_semantic_stream_evidence.py`;
 protocol fixtures and selected observations remain separate from full acceptance.
 

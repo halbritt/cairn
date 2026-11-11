@@ -59,11 +59,17 @@ the 25-second request deadline and 30-second idle lifetime are unchanged.
 The retained Python stream transcript supplies 34 frames for 17 workload
 queries. Its original note aliases are mapped by the committed fixture
 producer's UUID5/URL rule; source bytes, versions, body hashes and numeric scores
-are preserved and the mapping is recorded. Four historical stream-reference
-cells remain unavailable: `long-tail/cold`, `long-tail/warm`, `64-short/cold`
-and `64-short/warm`. Scalar-reference reuse is reported explicitly for the
-38-frame run. The observer does not generate replacement Python references or
-claim an ORT-call count, a cache performance benefit or full S-02 acceptance.
+are preserved and the mapping is recorded. All 34 frames and 408 scores matched
+the frozen Python rank reference exactly, with the same model identity. Under
+coordinator decision `d8b70f55-48fb-4c27-bfc5-f8405c56fe97/v1`, the four
+`long-tail/cold`, `long-tail/warm`, `64-short/cold` and `64-short/warm` cells use
+the corresponding frozen rank values plus the Rust stream observations. This
+satisfies the decision's reference prerequisite: accepted coverage is 34
+captured cells plus four rank-backed cells. The raw historical capture still
+has 34 frames and `full_38_reference_available=false`; no replacement Python
+capture was made. Combined review and landing remain pending. The observer
+does not claim an ORT-call count, a cache performance benefit or full S-02
+acceptance.
 
 The Go supervisors now accept explicit Rust worker configuration through
 `serve --semantic-rust-config`; Rust remains disabled when the flag is absent.
