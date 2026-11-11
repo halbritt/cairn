@@ -112,10 +112,10 @@ func rounded(d time.Duration) *value.Value {
 // RunStart recovers every unexpected supported-boundary panic to the declared
 // fixed diagnostic. Nothing from a panic, API body or profile enters stderr.
 func RunStart(ctx context.Context, config, event *value.Value, bound bool, directory string, environment []string, coordinators ...*value.Value) Result {
-	return runMemory(ctx, config, event, bound, directory, environment, false, coordinators...)
+	return runMemory(ctx, config, event, bound, directory, environment, false, nil, coordinators...)
 }
 
-func runMemory(ctx context.Context, config, event *value.Value, bound bool, directory string, environment []string, ordinary bool, coordinators ...*value.Value) (result Result) {
+func runMemory(ctx context.Context, config, event *value.Value, bound bool, directory string, environment []string, ordinary bool, checkedBound *binding.MemoryInvocation, coordinators ...*value.Value) (result Result) {
 	hookStarted := time.Now()
 	trace := map[string]any{"phase": "handle", "bound": bound}
 	defer func() {
@@ -204,7 +204,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		trace["outcome"] = "early_return:no_memory_marker"
 		return Result{Stdout: "{}\n"}
 	}
-	if ordinary && value.Truth(config.Get("inbox_recall_binding")) {
+	if ordinary && checkedBound == nil && value.Truth(config.Get("inbox_recall_binding")) {
 		return HostFailure("activation", fail("bound ordinary memory requires receipt-selected activation"))
 	}
 	if ordinary && captureEventName(event) {

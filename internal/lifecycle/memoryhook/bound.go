@@ -1,0 +1,34 @@
+package memoryhook
+
+import (
+	"context"
+	"strings"
+
+	"github.com/halbritt/cairn/internal/lifecycle/binding"
+	"github.com/halbritt/cairn/internal/lifecycle/value"
+)
+
+// RunBound joins a resolved activation to the existing recall/capture body. The
+// original configuration retains its binding even when Source excludes activation.
+func RunBound(ctx context.Context, invocation *binding.MemoryInvocation) Result {
+	checked, directory, environment, err := invocation.Inputs()
+	if err != nil {
+		return HostFailure("activation", err)
+	}
+	if captureEventName(checked.Event) {
+		return runMemory(ctx, checked.Config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
+	}
+	return RunStart(ctx, checked.Config, checked.Event, checked.Disposition == "checked", directory, environment, checked.Coordinators...)
+}
+
+// BoundFailure preserves the main-boundary read-only required-context guard.
+// No failed activation can create, refund or persist a native grant here.
+func BoundFailure(phase string, config, event *value.Value, err error) Result {
+	out := HostFailure(phase, err)
+	if value.SameText(config.Get("harness"), "codex") && nativeUUID(event.Get("session_id")) && (value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")) {
+		if isRequired(requiredFailure(config, event, classify(err), true, false)) {
+			return requiredOutput(event, strings.SplitN(out.Stderr, "\n", 2)[0]+"\n")
+		}
+	}
+	return out
+}
