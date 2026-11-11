@@ -1,0 +1,144 @@
+// Package inboxipc owns the checked private claimed-inbox process boundary.
+package inboxipc
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"flag"
+	"io"
+	"math"
+	"os"
+	"strconv"
+	"syscall"
+	"time"
+
+	"github.com/halbritt/cairn/internal/lifecycle/admission"
+	"github.com/halbritt/cairn/internal/lifecycle/binding"
+	"github.com/halbritt/cairn/internal/lifecycle/memoryhook"
+	"github.com/halbritt/cairn/internal/lifecycle/value"
+	"golang.org/x/sys/unix"
+)
+
+const ReplyLimit = 256 * 1024
+
+func Run(args []string, input io.Reader, output, diagnostic io.Writer) int {
+	parent := os.Getppid()
+	if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(syscall.SIGKILL), 0, 0, 0); err != nil {
+		return refuse(output, "binding", err)
+	}
+	if parent < 2 || os.Getppid() != parent {
+		return refuse(output, "binding", errors.New("lifecycle parent exited"))
+	}
+	if len(args) < 3 || args[0] != "lifecycle" || args[1] != "inbox" || (args[2] != "recall" && args[2] != "report") {
+		return refuse(output, "binding", errors.New("invalid private inbox operation"))
+	}
+	flags := flag.NewFlagSet("private inbox", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	in := admission.HookInvocation{}
+	flags.StringVar(&in.EntryPoint, "entrypoint", "", "")
+	flags.StringVar(&in.ConfigPath, "config", "", "")
+	flags.StringVar(&in.ConfigSHA256, "config-sha256", "", "")
+	flags.StringVar(&in.BindingSHA256, "binding-sha256", "", "")
+	flags.StringVar(&in.ReceiptPath, "receipt", "", "")
+	flags.StringVar(&in.ReceiptSHA256, "receipt-sha256", "", "")
+	deadline := flags.Float64("deadline", 0, "")
+	if err := flags.Parse(args[3:]); err != nil || flags.NArg() != 0 {
+		return refuse(output, "binding", errors.New("invalid private inbox arguments"))
+	}
+	var now unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &now); err != nil {
+		return refuse(output, "binding", err)
+	}
+	nowMono := float64(now.Sec) + float64(now.Nsec)/1e9
+	remaining := *deadline - nowMono
+	if remaining <= 0 || remaining > float64(math.MaxInt64)/float64(time.Second) || math.IsNaN(remaining) || math.IsInf(remaining, 0) {
+		return refuse(output, "binding", context.DeadlineExceeded)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(remaining*float64(time.Second)))
+	defer cancel()
+	raw, err := io.ReadAll(io.LimitReader(input, 1024*1024+1))
+	if err != nil || len(raw) > 1024*1024 {
+		return refuse(output, "binding", errors.New("inbox input exceeds limit or is unavailable"))
+	}
+	frame, err := value.DecodeBytesWithObjectPolicy(raw, 0, value.DuplicateReject)
+	if err != nil {
+		return refuse(output, "binding", err)
+	}
+	count := 5
+	if args[2] == "report" {
+		count = 3
+	}
+	if frame.Kind != value.Object || len(frame.Members) != count {
+		return refuse(output, "binding", errors.New("invalid inbox producer frame"))
+	}
+	started := frame.Get("started_monotonic")
+	if started == nil || (started.Kind != value.Float && started.Kind != value.Int) {
+		return refuse(output, "binding", errors.New("invalid inbox producer timing"))
+	}
+	startMono := started.Number
+	if started.Kind == value.Int {
+		startMono, err = strconv.ParseFloat(started.Integer, 64)
+	}
+	if err != nil || math.IsNaN(startMono) || math.IsInf(startMono, 0) || startMono < 0 || startMono > nowMono {
+		return refuse(output, "binding", errors.New("invalid inbox producer timing"))
+	}
+	// Reconstruct the parent's actual start on Go's monotonic time base; never
+	// restart the report/recall budget at this subprocess's launch.
+	startedAt := time.Now().Add(-time.Duration((nowMono - startMono) * float64(time.Second)))
+	in.Directory, err = os.Getwd()
+	if err != nil {
+		return refuse(output, "binding", err)
+	}
+	in.Environment = os.Environ()
+	if args[2] == "report" {
+		if frame.Get("trace_report") == nil || frame.Get("meter_report") == nil {
+			return refuse(output, "binding", errors.New("invalid inbox report frame"))
+		}
+		checked, err := binding.ResolveInboxReport(ctx, in)
+		if err != nil {
+			return refuse(output, "binding", err)
+		}
+		return reply(output, memoryhook.RunInboxReports(ctx, checked.Memory, frame.Get("trace_report"), frame.Get("meter_report"), startedAt))
+	}
+	for _, key := range []string{"event", "observation", "state"} {
+		v := frame.Get(key)
+		if v == nil || v.Kind != value.Object {
+			return refuse(output, "binding", errors.New("invalid inbox producer snapshot"))
+		}
+	}
+	control := frame.Get("control")
+	if control == nil || control.Kind != value.String {
+		return refuse(output, "binding", errors.New("invalid inbox producer control or timing"))
+	}
+	var event bytes.Buffer
+	yes, no := true, false
+	route := value.WriterRoute{EnsureASCII: &yes, Compact: &yes, TrailingLF: &no, Codec: &value.Codec{Name: "utf-8", Errors: "strict"}}
+	if err = value.WriteKernel(&event, frame.Get("event"), route, 0); err != nil {
+		return refuse(output, "binding", err)
+	}
+	in.Event = event.Bytes()
+	checked, err := binding.ResolveInbox(ctx, in)
+	if err != nil {
+		return refuse(output, "binding", err)
+	}
+	result := memoryhook.RunInbox(ctx, memoryhook.InboxInvocation{Config: checked.Config, Memory: checked.Memory, Event: checked.Event, Observation: frame.Get("observation"), State: frame.Get("state"), Control: string(control.String), Started: startedAt, Directory: in.Directory})
+	return reply(output, result.Wire())
+}
+
+func refuse(out io.Writer, stage string, err error) int {
+	return reply(out, (memoryhook.InboxResult{Stage: stage, Err: err}).Wire())
+}
+
+func reply(out io.Writer, frame *value.Value) int {
+	var encoded bytes.Buffer
+	yes, no := true, false
+	err := value.WriteKernel(&encoded, frame, value.WriterRoute{EnsureASCII: &no, Compact: &yes, TrailingLF: &yes, Codec: &value.Codec{Name: "utf-8", Errors: "strict"}}, 0)
+	if err != nil || encoded.Len() > ReplyLimit {
+		return 1
+	}
+	if n, writeErr := out.Write(encoded.Bytes()); writeErr != nil || n != encoded.Len() {
+		return 1
+	}
+	return 0
+}

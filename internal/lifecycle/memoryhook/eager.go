@@ -86,19 +86,19 @@ func checkedWhole(group []*value.Value, response *value.Value) error {
 
 // eagerCandidates consumes current receipts before emitting advisory bodies.
 // Optional read failures remain visible in bounded bookkeeping, with no refund.
-func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, selected, result *value.Value, typed []indexview.Entry, budget int, status *value.Value, measure func(string) int) (string, error) {
+func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, selected, result *value.Value, typed []indexview.Entry, budget int, status *value.Value, measure func(string) int, observers ...candidateObserver) (string, error) {
 	entries := result.Get("index")
 	anyHash := false
 	for _, entry := range entries.Items {
 		anyHash = anyHash || bodyHash.MatchString(text(entry.Get("body_sha256")))
 	}
 	if !anyHash {
-		return renderCandidates(config, selected, result, budget, status, measure, nil)
+		return renderCandidates(config, selected, result, budget, status, measure, nil, observers...)
 	}
 	inspection := value.Mapping(value.Field("pull_calls", integer(0)), value.Field("remaining_pull_calls", integer(4)), value.Field("delivered_records", integer(0)), value.Field("refusals", value.Mapping()))
 	progress := &candidateProgress{inspection: inspection}
 	render := func(p *candidateProgress, target *value.Value) (string, error) {
-		return renderCandidates(config, selected, result, budget, target, measure, p)
+		return renderCandidates(config, selected, result, budget, target, measure, p, observers...)
 	}
 	body, err := render(progress, status)
 	if err != nil || !value.SameText(status.Get("outcome"), "delegated") {
@@ -123,13 +123,17 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 		inspection.Set("pull_calls", integer(calls))
 		inspection.Set("remaining_pull_calls", integer(4-calls))
 	}
+	var lastGroup []*value.Value
 	for _, group := range groups {
+		lastGroup = group
+		candidateRoute(observers, "candidate_start", group)
 		if len(progress.bodies) > 0 {
 			future := clone(inspection)
 			for _, key := range []string{"record_limit", "unverifiable_identity", "deadline", "pull_limit", "whole_pull_budget", "whole_context_budget", "whole_pull_unavailable", "span_pull_budget", "span_context_budget", "span_unavailable"} {
 				future.Get("refusals").Set(key, integer(1))
 			}
 			if _, err := render(&candidateProgress{bodies: progress.bodies, inspection: future}, clone(status)); contextError(err) {
+				candidateRoute(observers, "protected_body_budget", group)
 				break
 			} else if err != nil {
 				return "", err
@@ -137,6 +141,7 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 		}
 		if number(inspection.Get("delivered_records"))+len(group) > 2 {
 			refusal("record_limit")
+			candidateRoute(observers, "record_limit", group)
 			oversized = nil
 			break
 		}
@@ -146,16 +151,19 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 		}
 		if !verifiable {
 			refusal("unverifiable_identity")
+			candidateRoute(observers, "unverifiable_identity", group)
 			oversized = nil
 			break
 		}
 		if ctx.Err() != nil {
 			refusal("deadline")
+			candidateRoute(observers, "deadline", group)
 			oversized = nil
 			break
 		}
 		if number(inspection.Get("pull_calls")) >= 2 {
 			refusal("pull_limit")
+			candidateRoute(observers, "pull_limit", group)
 			break
 		}
 		oversized = nil
@@ -172,6 +180,7 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 			return "", readErr
 		}
 		if readErr == nil {
+			candidateValidated(observers, "whole", pulled)
 			candidate := value.Mapping(value.Field("pull_arguments", group[0].Get("pull_arguments")), value.Field("response", pulled))
 			tentative := clone(inspection)
 			tentative.Set("delivered_records", integer(number(inspection.Get("delivered_records"))+len(group)))
@@ -189,13 +198,17 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 		switch {
 		case pullBudget(readErr):
 			refusal("whole_pull_budget")
+			candidateRoute(observers, "whole_pull_budget", group)
 		case contextError(readErr):
 			refusal("whole_context_budget")
+			candidateRoute(observers, "whole_context_budget", group)
 		default:
 			if core.Code(readErr) == "STALE_HANDLE" && value.SameText(config.Get("recall_view"), "compact/1") {
 				refusal("stale_handle")
+				candidateRoute(observers, "stale_handle", group)
 			} else {
 				refusal("whole_pull_unavailable")
+				candidateRoute(observers, "whole_pull_unavailable", group)
 			}
 			// Unconfirmed or changed bytes are never a paid whole response.
 			pulled = nil
@@ -211,13 +224,31 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 			}
 		}
 		if !excerptable {
+			candidateRoute(observers, "group_not_excerptable", group)
 			break
 		}
+		spanObserved := false
 		candidate, spanErr := recoverSpan(ctx, client, entry, pulled, inspection, spend, func(item *value.Value) (string, error) {
+			if !spanObserved {
+				if pulled != nil {
+					candidateRoute(observers, "span_from_paid_whole", group)
+				}
+				candidateValidated(observers, "span", item.Get("response"))
+				spanObserved = true
+			}
 			tentative := clone(inspection)
 			tentative.Set("delivered_records", integer(number(inspection.Get("delivered_records"))+1))
 			return render(&candidateProgress{bodies: append(append([]*value.Value{}, progress.bodies...), item), inspection: tentative}, status)
 		})
+		if pulled != nil && !spanObserved && spanErr != nil {
+			// A failure before the helper's first render cannot expose whether
+			// its paid-whole excerpt branch was reached. Preserve unknown.
+			candidateObserve(observers, func(o candidateObserver) {
+				if loss, ok := o.(interface{ ObservationLost() }); ok {
+					loss.ObservationLost()
+				}
+			})
+		}
 		if spanErr == nil {
 			tentative := clone(inspection)
 			tentative.Set("delivered_records", integer(number(inspection.Get("delivered_records"))+1))
@@ -231,6 +262,11 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 		}
 		var stopped *inspectionStopped
 		if errors.As(spanErr, &stopped) {
+			if value.Truth(inspection.Get("refusals").Get("deadline")) {
+				candidateRoute(observers, "deadline", group)
+			} else if value.Truth(inspection.Get("refusals").Get("pull_limit")) {
+				candidateRoute(observers, "pull_limit", group)
+			}
 			break
 		}
 		if unicodeFault(spanErr) {
@@ -239,8 +275,10 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 		switch {
 		case pullBudget(spanErr):
 			refusal("span_pull_budget")
+			candidateRoute(observers, "span_pull_budget", group)
 		case contextError(spanErr):
 			refusal("span_context_budget")
+			candidateRoute(observers, "span_context_budget", group)
 			if len(progress.bodies) > 0 {
 				break
 			}
@@ -248,22 +286,28 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 			continue
 		default:
 			refusal("span_unavailable")
+			candidateRoute(observers, "span_unavailable", group)
 		}
 		break
 	}
 	if len(progress.bodies) == 0 && oversized != nil {
+		candidateRoute(observers, "fit_start", []*value.Value{oversizedEntry})
 		tentative := clone(inspection)
 		tentative.Set("delivered_records", integer(1))
 		fitted, err := fitExcerpt(ctx, oversizedEntry, oversized, func(item *value.Value) (string, error) {
 			return render(&candidateProgress{bodies: []*value.Value{item}, inspection: tentative}, status)
 		})
 		if err == nil {
+			candidateRoute(observers, "fit_admitted", []*value.Value{oversizedEntry})
 			progress.bodies = append(progress.bodies, fitted)
 			inspection = tentative
 		} else if !contextError(err) {
 			return "", err
-		} else if ctx.Err() != nil {
-			refusal("deadline")
+		} else {
+			candidateRoute(observers, "fit_refused", []*value.Value{oversizedEntry})
+			if ctx.Err() != nil {
+				refusal("deadline")
+			}
 		}
 	}
 	for {
@@ -306,5 +350,6 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 		}
 		inspection.Set("delivered_records", integer(number(inspection.Get("delivered_records"))-count))
 		refusal("whole_context_budget")
+		candidateRoute(observers, "whole_context_budget", lastGroup)
 	}
 }
