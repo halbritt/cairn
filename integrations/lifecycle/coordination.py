@@ -4122,13 +4122,20 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
                     raise CoordinationError('STALE_LEASE', 'inbox recall delivery changed')
             refusal_stage = 'loader'
             try:
-                bridge = load_inbox_recall(config)
-                telemetry = ({'reports': recall_reports}
-                             if getattr(bridge, 'RECALL_OBSERVATION_VERSION', None) == 1 else {})
-                refusal_stage = 'bridge'
-                message = bridge.output(config, event, observation, state, message,
-                                        revalidate=revalidate, outer_deadline=bridge_deadline, **telemetry)
-            except (ValueError, KeyError, TypeError, OSError, CoordinationError) as exc:
+                if compatibility is not None:
+                    refusal_stage = 'bridge'
+                    message = compatibility.inbox_recall_output(
+                        config, event, observation, state, message,
+                        outer_deadline=bridge_deadline, reports=recall_reports,
+                    )
+                else:
+                    bridge = load_inbox_recall(config)
+                    telemetry = ({'reports': recall_reports}
+                                 if getattr(bridge, 'RECALL_OBSERVATION_VERSION', None) == 1 else {})
+                    refusal_stage = 'bridge'
+                    message = bridge.output(config, event, observation, state, message,
+                                            revalidate=revalidate, outer_deadline=bridge_deadline, **telemetry)
+            except (ValueError, KeyError, TypeError, OSError, CoordinationError, subprocess.SubprocessError) as exc:
                 _grant_ledger.annotate_inbox_refusal(exc, refusal_stage)
                 if state.get('inbox_intent'):
                     try:
