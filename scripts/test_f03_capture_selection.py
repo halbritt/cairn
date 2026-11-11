@@ -509,9 +509,7 @@ sys.exit(spec.get('exit',0))
                         diagnostic += b'Cairn lifecycle: memory command returned invalid JSON; use native tools or an explicit handoff.\n'
                     else:
                         diagnostic += b'Cairn lifecycle: checkpoint title is outside the supported Unicode domain; use native tools or an explicit handoff.\n'
-                    self.assertEqual((result.returncode, result.stdout, result.stderr),
-                                     (1, b'', diagnostic))
-                    self.assertEqual([op for op, _, _ in self.calls], ['capture-observation'])
+                    self.assertEqual([op for op, _, _ in self.calls], ['capture-observation'], result.stderr)
                     self.assertFalse((self.root/'provider.calls').exists())
                     self.assertEqual(self.records, [])
                     self.assertEqual(path.read_bytes(), raw)
@@ -519,6 +517,8 @@ sys.exit(spec.get('exit',0))
                     self.assertEqual(len(self.report_locks), 1)
                     self.assertTrue(all(self.report_locks[0].values()))
                     self.assertEqual(self.calls[0][1]['outcome'], 'error')
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (1, b'', diagnostic))
 
     def test_absent_empty_and_unicode_stored_workstream_keep_source_checkpoint_queries(self):
         self.configure('claude', 'PreCompact', messages=[
