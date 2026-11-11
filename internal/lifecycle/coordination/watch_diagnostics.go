@@ -204,7 +204,7 @@ func evaluateCodexTurnEndForWake(end, locator, prior, record *value.Value, nowSe
 	if err != nil {
 		return decide("unverified", "the turn end record timestamp shape is unknown"), nil
 	}
-	ended := float64(parsed.UnixNano()) / 1e9
+	ended := float64(parsed.UnixMicro()) / 1e6
 	kindClass, kind := codexErrorClass(errObj.Get("codex_error_info"))
 	turnIDVal := payload.Get("turn_id")
 	if turnIDVal == nil {
@@ -732,7 +732,7 @@ func (c *CLI) inspectAgyParentSubagent(otherPath, home, native string, agent, pr
 	} else if err != nil && !os.IsNotExist(err) {
 		return nil, true, nil
 	}
-	ended := float64(parsed.UnixNano()) / 1e9
+	ended := float64(parsed.UnixMicro()) / 1e6
 	modified := float64(st.ModTime().UnixNano()) / 1e9
 	latest := ended
 	if modified > latest {

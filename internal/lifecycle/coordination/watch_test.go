@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -430,19 +431,109 @@ func TestWatchCodexErrorWakeAlgorithmAndClaudeChannelIdentity(t *testing.T) {
 		t.Fatalf("expected chain reset to wakes=0 and wake_allowed, got %v (err=%v)", rec3, err)
 	}
 
-	// 4. claudeChannelEndpoint refuses float parent.start and missing parent.boot without error.
+	// 3b. Fractional .002Z end timestamp computes exact Python UnixMicro/1e6 float (1762899899.002).
+	endErr002 := nativeMap("timestamp", "2025-11-11T22:19:59.002Z", "payload", nativeMap("turn_id", "t4", "error", nativeMap("codex_error_info", "server_overloaded")))
+	cli.Engine = &RecoveryEngine{Host: cli.Host, Evidence: stubCodexEvidence{endErr002, loc2}}
+	st4 := nativeMap("agent", agentVal)
+	rec4, err := cli.codexErrorWake(context.Background(), cfg, st4, 1762899900, &errOut)
+	if err != nil || rec4.Get("next_eligible_epoch") == nil || rec4.Get("next_eligible_epoch").Number != 1762899899.002 {
+		t.Fatalf("expected exact next_eligible_epoch 1762899899.002 for .002Z timestamp, got %v (err=%v)", rec4.Get("next_eligible_epoch"), err)
+	}
+
+	// 4. claudeChannelEndpoint with a live bridge accepts valid int identity and rejects float start, missing boot, and mismatched start.
+	procRoot := procFixtureRoot(t)
+	cli.ProcRoot = procRoot
+	cli.Engine = nil
+	parentRef := writeProcessFixture(t, procRoot, processFixture{pid: 4100, parent: 1, start: 13203067, comm: "claude", exe: "/usr/bin/claude", argv: []string{"claude"}})
+	bridgeRef := writeProcessFixture(t, procRoot, processFixture{pid: 4101, parent: 4100, start: 13203100, comm: "cairn", exe: "/usr/bin/cairn", argv: []string{"cairn", "claude-channel"}})
 	chDir := filepath.Join(root, "channels")
 	if err := os.MkdirAll(chDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	chCfg := nativeMap("harness", "claude", "claude_channel_dir", chDir)
-	proc := nativeMap("pid", 4100, "start", 13203067, "boot", "b1")
-	writePrivateFile(t, filepath.Join(chDir, "4100.json"), []byte(`{"schema":"cairn.claude-channel/1","socket":"/tmp/ch.sock","process":{"pid":4101,"start":100,"boot":"b1"},"parent":{"pid":4100,"start":13203067.0,"boot":"b1"}}`), 0o600)
-	if ep, err := cli.claudeChannelEndpoint(chCfg, proc); err != nil || ep != nil {
-		t.Fatalf("expected nil endpoint and nil error on float parent.start, got ep=%v err=%v", ep, err)
+	proc := nativeMap("pid", parentRef.PID, "start", int64(parentRef.Start), "boot", parentRef.Boot)
+	for _, tc := range []struct {
+		name, parent string
+		want         bool
+	}{
+		{"valid_int_identity", `{"pid":4100,"start":13203067,"boot":"` + parentRef.Boot + `"}`, true},
+		{"float_start", `{"pid":4100,"start":13203067.0,"boot":"` + parentRef.Boot + `"}`, false},
+		{"missing_boot", `{"pid":4100,"start":13203067}`, false},
+		{"other_start", `{"pid":4100,"start":13203068,"boot":"` + parentRef.Boot + `"}`, false},
+	} {
+		body := `{"schema":"cairn.claude-channel/1","socket":"/tmp/ch.sock","process":{"pid":4101,"start":13203100,"boot":"` + bridgeRef.Boot + `"},"parent":` + tc.parent + `}`
+		writePrivateFile(t, filepath.Join(chDir, "4100.json"), []byte(body), 0o600)
+		ep, err := cli.claudeChannelEndpoint(chCfg, proc)
+		if err != nil || (ep != nil) != tc.want {
+			t.Fatalf("%s: want endpoint=%v, got endpoint=%v err=%v", tc.name, tc.want, ep != nil, err)
+		}
 	}
-	writePrivateFile(t, filepath.Join(chDir, "4100.json"), []byte(`{"schema":"cairn.claude-channel/1","socket":"/tmp/ch.sock","process":{"pid":4101,"start":100,"boot":"b1"},"parent":{"pid":4100,"start":13203067}}`), 0o600)
-	if ep, err := cli.claudeChannelEndpoint(chCfg, proc); err != nil || ep != nil {
-		t.Fatalf("expected nil endpoint and nil error on missing parent.boot, got ep=%v err=%v", ep, err)
+}
+
+func TestFlushJournalStderrDiagnosticsParityWithPython(t *testing.T) {
+	pyCoord, err := filepath.Abs(filepath.Join("..", "..", "..", "integrations", "lifecycle", "coordination.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name     string
+		code     string
+		exitCode int
+	}{
+		{name: "uncertain_pending", code: "API_UNAVAILABLE", exitCode: 7},
+		{name: "final_refused", code: "STALE_LEASE", exitCode: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pyDir := filepath.Join(t.TempDir(), "state")
+			goDir := filepath.Join(t.TempDir(), "state")
+			attemptID := "11111111-1111-4111-8111-111111111111"
+			fakeCairn := filepath.Join(t.TempDir(), "fake-cairn.sh")
+			script := "#!/bin/sh\nprintf '{\"schema\":\"cairn.response/1\",\"ok\":false,\"status\":\"%s\",\"message\":\"synthetic\"}\\n'\nexit %d\n"
+			writePrivateFile(t, fakeCairn, []byte(strings.Replace(strings.Replace(script, "%s", tc.code, 1), "%d", string(rune('0'+tc.exitCode)), 1)), 0o700)
+
+			writeIntent := func(dir string) {
+				intentPath := filepath.Join(dir, "intents", attemptID+".json")
+				body := `{"schema":"cairn.inbox-intent/1","attempt_id":"` + attemptID + `","delivery_id":"22222222-2222-4222-8222-222222222222","kind":"request","session":{"agent_id":"301e246e-a3b7-498b-b6a7-3d84e592097f","execution_id":"da3e0447-4f10-40f7-b64d-6b66de691ef2"},"completion":{"kind":"complete","status":"pending","code":"` + tc.code + `","request_id":"33333333-3333-4333-8333-333333333333","argv":["` + fakeCairn + `"],"input":"ok"}}`
+				writePrivateFile(t, intentPath, []byte(body), 0o600)
+			}
+			writeIntent(pyDir)
+			writeIntent(goDir)
+
+			pySnippet := `import importlib.util, sys
+spec = importlib.util.spec_from_file_location("coordination", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+cfg = {"binding": "b1", "state_dir": sys.argv[2]}
+state = {"agent": {"agent_id": "301e246e-a3b7-498b-b6a7-3d84e592097f", "execution_id": "da3e0447-4f10-40f7-b64d-6b66de691ef2"}, "inbox_journals": [sys.argv[3]]}
+m.flush_inbox_intents(cfg, state, scope="attempt")
+`
+			cmd := exec.Command("python3", "-c", pySnippet, pyCoord, pyDir, attemptID)
+			var pyStderr bytes.Buffer
+			cmd.Stderr = &pyStderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("python flush_inbox_intents failed: %v (stderr=%q)", err, pyStderr.String())
+			}
+
+			var goLines []string
+			adapter := &SessionJournalAdapter{
+				Log: func(msg string) error {
+					goLines = append(goLines, msg+"\n")
+					return nil
+				},
+			}
+			goCfg := nativeMap("binding", "b1", "state_dir", goDir)
+			goState := nativeMap(
+				"agent", nativeMap("agent_id", "301e246e-a3b7-498b-b6a7-3d84e592097f", "execution_id", "da3e0447-4f10-40f7-b64d-6b66de691ef2"),
+				"inbox_journals", stringArray(attemptID),
+			)
+			if _, err := adapter.FlushInboxIntents(context.Background(), goCfg, goState, FlushAttempt); err != nil {
+				t.Fatalf("go FlushInboxIntents failed: %v", err)
+			}
+			gotGo := strings.ReplaceAll(strings.Join(goLines, ""), goDir, "<STATE>")
+			wantPy := strings.ReplaceAll(pyStderr.String(), pyDir, "<STATE>")
+			if gotGo != wantPy || gotGo == "" {
+				t.Fatalf("flush_journal stderr mismatch:\ngo: %q\npy: %q", gotGo, wantPy)
+			}
+		})
 	}
 }

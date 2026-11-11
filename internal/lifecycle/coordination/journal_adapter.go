@@ -258,7 +258,25 @@ func (a *SessionJournalAdapter) FlushInboxIntents(ctx context.Context, config, r
 	if e != nil {
 		return false, e
 	}
-	settled, e := journal.Flush(ctx, dir, projected, string(scope), a.Options)
+	opts := a.Options
+	if opts.OnDiagnostic == nil && a.Log != nil {
+		opts.OnDiagnostic = func(attemptID string, d journal.SlotDiagnostic) error {
+			binding, err := nativeRequired(config, "binding")
+			if err != nil {
+				return err
+			}
+			switch d.Status {
+			case "pending":
+				return a.Log(fmt.Sprintf("Cairn presence %s: journaled %s for attempt %s is still uncertain (%s); it will be replayed",
+					nativeText(binding), d.Kind, attemptID, d.Code))
+			case "refused":
+				return a.Log(fmt.Sprintf("Cairn presence %s: journaled %s for attempt %s was refused (%s); its content stays in %s",
+					nativeText(binding), d.Kind, attemptID, d.Code, d.Target))
+			}
+			return nil
+		}
+	}
+	settled, e := journal.Flush(ctx, dir, projected, string(scope), opts)
 	apply := a.projection().ApplyJournals(record, projected)
 	if apply != nil {
 		return false, apply

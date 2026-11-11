@@ -109,8 +109,14 @@ func Recover(ctx context.Context, stateDir, attemptID string, options Options) (
 			if err != nil {
 				return result, err
 			}
-			result.Outcomes = append(result.Outcomes, SlotDiagnostic{Slot: name, Kind: scalarString(kind),
-				Status: status, Code: scalarString(code), Target: target})
+			diag := SlotDiagnostic{Slot: name, Kind: scalarString(kind),
+				Status: status, Code: scalarString(code), Target: target}
+			result.Outcomes = append(result.Outcomes, diag)
+			if options.OnDiagnostic != nil {
+				if err := options.OnDiagnostic(attemptID, diag); err != nil {
+					return result, err
+				}
+			}
 		}
 	}
 	completion, err := orObject(journal["completion"], "completion")
