@@ -10,6 +10,7 @@ import (
 
 	"github.com/halbritt/cairn/internal/lifecycle/activationipc"
 	"github.com/halbritt/cairn/internal/lifecycle/inboxipc"
+	"github.com/halbritt/cairn/internal/lifecycle/memoryhost"
 	"github.com/halbritt/cairn/internal/lifecycle/transcript"
 )
 
@@ -18,6 +19,9 @@ func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 func run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 	if len(args) >= 2 && args[0] == "lifecycle" && args[1] == "inbox" {
 		return inboxipc.Run(args, input, output, diagnostic)
+	}
+	if len(args) > 0 && args[0] == "memory" {
+		return memoryhost.Run(context.Background(), args[1:], input, output, diagnostic)
 	}
 	if len(args) > 0 && args[0] == "coordination" {
 		return transcript.RunCoordinationProcess(context.Background(), args[1:], input, output, diagnostic)
