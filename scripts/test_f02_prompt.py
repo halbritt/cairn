@@ -307,7 +307,7 @@ class F02PromptTests(start_fixture.F02StartTests):
         status=self.state()[start_fixture.SESSION+'.json']['last_recall']
         self.assertEqual(status['discovery'],'lexical_fallback')
 
-    def test_private_process_and_protocol_faults_never_borrow_a_required_exit(self):
+    def test_valid_activation_required_promotion_and_protocol_refusal(self):
         self.prompt()
         self.charged_grant()
         path=Path(self.f.memory['state_dir'])/(start_fixture.SESSION+'.memory-budget.json')
@@ -315,19 +315,34 @@ class F02PromptTests(start_fixture.F02StartTests):
         grant['turns'][grant['active_turn_id']]['required']=dict(count=1,selection_sha256='a'*64,pending=True)
         start_fixture.write(path,start_fixture.encoded(grant))
         before=path.read_bytes()
-        cases=((2,'',''),(1,'','{"error":{"class":"ValueError","reason":"activation","errno":null}}\n'),(0,'{"stdout":"","stderr":"","exit_code":2,"trace":{}}\n',''))
-        for i,(code,out,err) in enumerate(cases):
-            with self.subTest(code=code):
-                build=self.root/('private-fault-'+str(i)); build.mkdir()
-                script='package main\nimport("os";"io";"fmt")\nfunc main(){io.Copy(io.Discard,os.Stdin);fmt.Fprint(os.Stdout,'+json.dumps(out)+');fmt.Fprint(os.Stderr,'+json.dumps(err)+');os.Exit('+str(code)+')}\n'
-                (build/'main.go').write_text(script)
-                helper=build/'fault'
-                subprocess.run(['go','build','-o',str(helper),str(build/'main.go')],check=True)
-                self.select_image(helper)
-                result=self.f.public('memory')
-                expected=(b'Cairn lifecycle diagnostic: phase=activation error_class=ValueError\nCairn lifecycle: invalid lifecycle input or unavailable local file; use native tools or an explicit handoff.\n' if code==1 else b'Cairn lifecycle diagnostic: phase=activation error_class=UnexpectedError\n')
-                self.assertEqual((result.returncode,result.stdout,result.stderr),(1,b'',expected))
-                self.assertEqual(path.read_bytes(),before)
+        trace=self.f.root/'invocation-trace'; trace.mkdir(mode=0o700)
+        cases=((2,'','',None),
+               (1,'','{"error":{"class":"ValueError","reason":"activation","errno":null}}\n','ValueError'),
+               (1,'','{"error":{"class":"BlockingIOError","reason":"activation","errno":11}}\n','BlockingIOError'),
+               (0,'{"stdout":"","stderr":"","exit_code":2,"trace":{}}\n','',None))
+        for event in ('UserPromptSubmit','SessionStart'):
+            self.f.event['hook_event_name']=event
+            self.f.raw=start_fixture.encoded(self.f.event)
+            for i,(code,out,err,label) in enumerate(cases):
+                with self.subTest(event=event,code=code,label=label):
+                    build=self.root/('private-fault-'+event+str(i)); build.mkdir()
+                    script='package main\nimport("os";"io";"fmt")\nfunc main(){io.Copy(io.Discard,os.Stdin);fmt.Fprint(os.Stdout,'+json.dumps(out)+');fmt.Fprint(os.Stderr,'+json.dumps(err)+');os.Exit('+str(code)+')}\n'
+                    (build/'main.go').write_text(script)
+                    helper=build/'fault'
+                    subprocess.run(['go','build','-o',str(helper),str(build/'main.go')],check=True)
+                    self.select_image(helper)
+                    result=self.f.public('memory')
+                    if label:
+                        diagnostic=('Cairn lifecycle diagnostic: phase=activation error_class='+label+'\n').encode()
+                        expected=(2,b'',diagnostic+b'Cairn: current required context could not be restored.\n') if event=='UserPromptSubmit' else (0,b'{"continue":false,"stopReason":"Bound inbox recall cannot restore required context."}\n',diagnostic)
+                    else:
+                        expected=(1,b'',b'Cairn lifecycle diagnostic: phase=activation error_class=UnexpectedError\n')
+                    self.assertEqual((result.returncode,result.stdout,result.stderr),expected)
+                    self.assertEqual(path.read_bytes(),before)
+                    final=json.loads((trace/'trace.jsonl').read_text().splitlines()[-1])
+                    if label=='BlockingIOError':
+                        self.assertEqual(final['cause'],'blocking_io')
+                        self.assertEqual(final['outcome'],'required_refused')
         self.assertFalse(self.calls)
 
     def test_owner_prompt_receives_one_native_grant(self):

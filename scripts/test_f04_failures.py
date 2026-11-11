@@ -191,15 +191,12 @@ class F04FailureTests(unittest.TestCase):
                         if mode=='panic':
                             self.assertEqual((result.returncode,result.stdout,result.stderr),(1,b'',
                                 b'Cairn lifecycle diagnostic: phase=activation error_class=UnexpectedError\n'))
-                        elif harness=='codex':
-                            # The reached recall protocol never converts a private
-                            # process refusal into required output. Actual required
-                            # Go outcomes are paired against Source in F02.
-                            self.assertEqual((result.returncode,result.stdout,result.stderr),(1,b'',
-                                b'Cairn lifecycle diagnostic: phase=activation error_class=OSError\nCairn lifecycle: invalid lifecycle input or unavailable local file; use native tools or an explicit handoff.\n'))
                         elif event=='UserPromptSubmit':
                             self.assertEqual((result.returncode,result.stdout),(2,b''))
                             self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=activation error_class=OSError\nCairn: current required context could not be restored.\n')
+                        elif harness=='codex':
+                            self.assertEqual((result.returncode,result.stdout),(0,b'{"continue":false,"stopReason":"Bound inbox recall cannot restore required context."}\n'))
+                            self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=activation error_class=OSError\n')
                         else:
                             self.assertEqual((result.returncode,result.stdout),(1,b''))
                             self.assertIn(b'phase=activation error_class=OSError',result.stderr)
@@ -207,6 +204,20 @@ class F04FailureTests(unittest.TestCase):
                         state=json.loads(path.read_text())
                         self.assertNotIn('inbox_activation',state)
                         self.assertEqual(f.api_calls(),[])
+
+    def test_post_dispatch_recheck_preserves_a_proven_required_result(self):
+        for event in ('UserPromptSubmit','SessionStart'):
+            with self.subTest(event=event):
+                f=self.fixture('required-recheck-'+event,'changed-target')
+                f.raw=encoded(dict(f.event,hook_event_name=event,prompt='ordinary required restoration'))
+                path=self.seed_required(f)
+                result=f.public('memory')
+                diagnostic=b'Cairn lifecycle diagnostic: phase=activation error_class=ValueError\n'
+                expected=(2,b'',diagnostic+b'Cairn: current required context could not be restored.\n') if event=='UserPromptSubmit' else (0,b'{"continue":false,"stopReason":"Bound inbox recall cannot restore required context."}\n',diagnostic)
+                self.assertEqual((result.returncode,result.stdout,result.stderr),expected)
+                ledger=json.loads(path.read_text())
+                self.assertTrue(ledger['pending']['required']['pending'])
+                self.assertFalse(ledger['pending']['granted'])
 
     def test_claude_activation_refusal_record_success_and_failure_keep_native_veto(self):
         coord=module('f04_refusal_source',ROOT/'integrations/lifecycle/coordination.py')

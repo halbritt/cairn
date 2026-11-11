@@ -251,28 +251,11 @@ class InvocationContext:
                 '--binding-sha256', self.receipt['binding']['sha256'],
                 '--receipt', self.args.receipt, '--receipt-sha256', self.args.receipt_sha256,
                 '--deadline', str(self.deadline)]
-        def unavailable(exc):
-            label = next((name for kind,name in ((BlockingIOError,'BlockingIOError'),
-                (OSError,'OSError'),(ValueError,'ValueError'),(KeyError,'KeyError'),
-                (TypeError,'TypeError')) if isinstance(exc,kind)), 'UnexpectedError')
-            diagnostic = 'Cairn lifecycle diagnostic: phase=activation error_class=' + label + '\n'
-            if label != 'UnexpectedError':
-                diagnostic += 'Cairn lifecycle: invalid lifecycle input or unavailable local file; use native tools or an explicit handoff.\n'
-            self.enabled = False
-            return dict(stdout='',stderr=diagnostic,exit_code=1,
-                        trace=dict(phase='activation',stage='activation',outcome='error',error_class=label,bound=False))
-        try:
-            out, err, code = self.child(argv, raw, stdout_limit=1024*1024)
-        except (OSError,ValueError,KeyError,TypeError) as exc:
-            return unavailable(exc)
+        out, err, code = self.child(argv, raw, stdout_limit=1024*1024)
         if code != 0:
-            # Only a successful private result can carry a required outcome.
-            # Process/transport failures must not borrow an earlier requirement
-            # through the Python exception boundary and acquire blocking exit 2.
-            try:
-                self.activation_result(out,err,code)
-            except (OSError,ValueError,KeyError,TypeError) as exc:
-                return unavailable(exc)
+            # Valid source exceptions reach _main's read-only requirement guard.
+            # Malformed transport frames remain SubprocessError and never promote.
+            self.activation_result(out, err, code)
             raise subprocess.SubprocessError('invalid memory reply')
         try:
             frame = json.loads(out.decode('utf-8'))
@@ -301,10 +284,7 @@ class InvocationContext:
         except (ValueError, TypeError, UnicodeError):
             raise subprocess.SubprocessError('invalid memory reply') from None
         if frame['trace']['bound']:
-            try:
-                self.checked_binding()
-            except (OSError,ValueError,KeyError,TypeError) as exc:
-                return unavailable(exc)
+            self.checked_binding()
         self.enabled = True  # this invocation has consumed its sole Go dispatch
         return frame
 

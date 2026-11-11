@@ -31,15 +31,19 @@ retains the Source recovery instruction. These views remain unverified data.
 Required prompt failures produce empty stdout, the fixed diagnostic and fixed
 required-context line, and exit 2. Optional caught failures retain both fixed
 lines and exit 1. Unexpected Go faults produce the redacted exit-1 diagnostic.
-Only the successful bounded private result frame carries a required outcome;
-private process or malformed protocol failure cannot borrow an earlier required
-grant and acquire blocking exit 2. Start retains its whole stop response and
-exit 0. The parent performs no Python rendering or store fallback after dispatch. It
-retains the post-dispatch binding/configuration recheck; failure keeps its fixed
-category and cannot refund any Go charge. The F04 private-error cases retain
-their categories and assertions; the two Codex required-status expectations now
-follow this private-refusal policy. Actual required Go outcomes remain paired
-against Source with exact blocking streams.
+Valid activation, spawn, wait/timeout and post-dispatch recheck exceptions reach
+`memory._main` with their source categories. Its accepted read-only
+`codex_required_error` guard decides whether restoration was already proven:
+UserPromptSubmit then emits the exact refusal and exit 2; Codex SessionStart
+emits the exact stop JSON and exits 0. This evidence check is part of the public
+handler, without Python recall, rendering or store mutation after dispatch.
+Only transport or malformed-protocol `SubprocessError` maps to the redacted
+UnexpectedError and exit 1 without promotion. The post-dispatch binding/config
+recheck retains any committed Go charge and preserves proven required output.
+The original F04 Codex required assertions are restored. Focused cases cover
+valid ValueError and BlockingIOError frames for both events, unchanged ledgers,
+`cause=blocking_io`, and protocol faults that remain nonblocking. Actual required
+Go outcomes remain paired against Source with exact blocking streams.
 
 The actual SDK operations supply recall receipts, calls and timings. The meter
 uses the actual hook event after releasing the memory lock; injected bytes match
