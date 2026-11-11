@@ -308,10 +308,11 @@ pinned test child images. Those disposable fault images are not release builds.
 
 ### Staged OpenCode adapters
 
-The OpenCode selection wires unbound `agent_tools` start and prompt recall to
-the receipt-checked ordinary Go consumer, and coordination callbacks to the
-receipt-checked Go hook entry. Other memory callbacks retain their checked
-R-02 Python launcher. The bare `[IMAGE, memory, --config, PATH]` entry is not selected:
+The OpenCode selection wires unbound `agent_tools` start, prompt and tool
+observation commands to the receipt-checked ordinary Go consumer, and coordination
+callbacks to the receipt-checked Go hook entry. Capture, bound and provider-selected
+memory rows retain their checked R-02 Python launcher. The bare
+`[IMAGE, memory, --config, PATH]` entry is not selected:
 it lacks the runtime receipt, image, closure and configuration checks and the
 original H/V/L frame. The public `cairn lifecycle` command stays disabled. Shell
 transport uses the same literal argv through the selected row's shell-quoted
@@ -366,12 +367,20 @@ Every row records its `implementation` and `reason`. Current routing is:
 | Cell | Route |
 | --- | --- |
 | OpenCode unbound `agent_tools` SessionStart/UserPromptSubmit | Receipt-checked ordinary Go consumer; all selected profiles must be unbound. |
+| OpenCode unbound `agent_tools` PreToolUse/PostToolUse/PostToolUseFailure commands | Receipt-checked ordinary Go tool observation with the same H=13 and R-02 receipt/image/closure/profile/launcher checks. |
 | Bound callbacks or provider-selected recall | Existing receipt-selected Python caller. |
 | Codex/Claude unbound ordinary recall | Existing Python caller. |
-| PreCompact/SessionEnd capture and tool observation | Existing receipt-selected Python caller. |
+| PreCompact/SessionEnd capture and other harnesses' tool observation | Existing receipt-selected Python caller. |
 | Coordination hooks for all supported harnesses | Receipt-checked Go `/3` hook entry, with the exact retained R-02 launcher for its selection and issued commands. |
 | Agy coordination PreInvocation/Stop | Checked Go `/3` hook with the selected event flag; all profiles in the receipt unbound. |
 | Agy ordinary memory hook | Not installed; this tool adds none. |
+
+The selected OpenCode plugin emits PostToolUse for its existing read/edit/write
+after-tool callback, and PostToolUseFailure for tool error updates. It has no
+before-tool callback. The PreToolUse command is available in the eligible staged
+configuration and shell row; this does not add a native plugin callback. Bound
+and provider-selected configurations gain no PreToolUse row. The installed
+Source/Go pairs use the host's absolute workspace directory.
 
 Every selected command retains the R-02 runtime receipt checks. No native-client trust operation, activation,
 cached-client refresh, production apply or full R-04 acceptance is claimed by
