@@ -47,10 +47,25 @@ owner retains the missing/null leaves and their sorted names. Rank keeps its
 complete tag, two normalizations, matvec, score reduction and cache manifest;
 it never uses embedding's mode projection. Hard validation, model-asset closure
 and unrelated owner gaps still refuse. No scoring, tokenization, thread/FENV,
-protocol, runtime-loader or dependency change is included. Seven focused rank
-fixtures are authored but not yet executed or independently reviewed. This
-source change does not repeat the closed 20 embedding checks or all-294
-tokenizer comparison and establishes no runtime or numerical acceptance.
+protocol, runtime-loader or dependency change is included. Independent source
+review accepted candidate `2b29837b` in round 1 with no source delta
+(`2f9822d6-9a37-4cd8-bae8-857357d0ccd2@1`). One shared-wrapper component command
+passed 12 selected fixtures: the seven rank-policy checks and five existing
+checks whose assertions changed. It exited 0 in 58.550153336 seconds, with
+89 older checks filtered out and zero retries
+(`b9cef357-0ebc-41b7-9c46-540b7e6ac8e0@1`). The exact 12 names and summary
+matched the admitted selection, and all 105 source pins remained unchanged.
+There was no separate seven-only run or full closed-20, all-294 or embedding
+stream replay. The reviewer-selected five checks address the changed legacy
+assertions; no optional advisory code fix is included.
+
+These synthetic fixtures did not execute actual ORT-owned rank initialization,
+produce the 269 integer scores or establish numerical, near-tie, retrieval,
+runtime or production acceptance. The component's retained artifact evidence
+covers its selected compiler graph and surviving objects, not complete
+header/link-input closure or CPU/FENV behavior. Landing preserves the reviewed
+and tested Rust source and consumed inputs; only this status evidence is
+updated. Actual native initialization and ranking measurements remain separate.
 Earlier strict-rank initialization wording below describes the prior source and
 is superseded only for those ten unavailable observations.
 
