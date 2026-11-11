@@ -282,6 +282,40 @@ with patch.object(hook,'load_inbox_recall',return_value=None):
                 result = self.pair()
                 self.assertIn(b'Current saved unfinished work',result.stdout)
 
+    def test_filesystem_root_compact_resume_checkpoint_refresh(self):
+        for source in ('compact','resume'):
+            with self.subTest(source=source):
+                shutil.rmtree(self.f.memory['state_dir'],ignore_errors=True)
+                self.calls.clear()
+                # Path('/').name is empty in the Source writers.
+                title = 'Handoff:  / Session checkpoint'
+                self.charged_grant(workstream=title)
+                state_path = Path(self.f.memory['state_dir'])/(SESSION+'.json')
+                state = json.loads(state_path.read_text())
+                state['binding'] = ['/','']
+                write(state_path,encoded(state))
+                self.f.memory['context_lifecycle'] = 'compact/1'
+                self.f.event.update(project_path='/',source=source)
+                self.f.raw = encoded(self.f.event)
+                self.f.publish_configuration()
+                self.checkpoint = dict(id='55555555-5555-4555-8555-555555555555',title=title,
+                                       body=title+'\n\nStatus: unfinished\nContinue the root project task. 日本語')
+                result = self.pair()  # exact public streams and ordered typed state
+                context = json.loads(result.stdout)['hookSpecificOutput']['additionalContext']
+                self.assertTrue(context.startswith('Current saved unfinished work (ordinary note, verify against this task):\n'))
+                saved = self.state()
+                status = saved[SESSION+'.json']['last_recall']
+                budget = saved[SESSION+'.memory-budget.json']
+                grant = budget['turns'][budget['active_turn_id']]
+                self.assertEqual(status['outcome'],'required_checkpoint')
+                self.assertEqual(status['checkpoint_refresh'],'restored')
+                self.assertEqual(status['required_refresh_bytes'],0)
+                self.assertEqual(grant['required_refresh_bytes'],0)
+                self.assertEqual(status['checkpoint_refresh_bytes'],len(result.stdout))
+                self.assertEqual(grant['checkpoint_refresh_bytes'],len(result.stdout))
+                self.assertEqual(grant['emitted_hook_bytes'],1200)
+                self.assertEqual(grant['reserved_native_bytes'],1000)
+
     def test_malformed_and_empty_api_replies(self):
         for raw in (b'',b'{',b'[]',encoded(dict(schema='cairn.response/1',ok=True,status='OK',data=None))):
             with self.subTest(raw=raw):
