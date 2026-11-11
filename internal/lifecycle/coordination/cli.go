@@ -490,7 +490,8 @@ func choiceCLI(prog, name, v string, choices []string) error {
 
 func cliCaught(err error) bool {
 	var exit *exec.ExitError
-	return journal.Classified(err) || sourceClass(err, "OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError", "KeyError", "TypeError") || errors.As(err, &exit)
+	var sub *SubprocessError
+	return journal.Classified(err) || sourceOSError(err) || sourceClass(err, "OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError", "KeyError", "TypeError") || nativeContains([]string{"OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError", "KeyError", "TypeError"}, sourceErrorName(err)) || errors.As(err, &exit) || errors.As(err, &sub)
 }
 
 func sourceReadCaught(err error) bool {
@@ -520,7 +521,7 @@ func (c *CLI) RunCLI(ctx context.Context, args []string, in io.Reader, out, errO
 				code, err = c.InboxCommand(ctx, args[1:], in, out, errOut)
 			}
 		} else {
-			code, err = c.runRecovery(ctx, args, out)
+			code, err = c.runRecoveryWithIO(ctx, args, in, out, errOut)
 		}
 	}
 	if err == nil {
@@ -578,6 +579,10 @@ func (c *CLI) RunCLI(ctx context.Context, args []string, in io.Reader, out, errO
 }
 
 func (c *CLI) runRecovery(ctx context.Context, argv []string, out io.Writer) (int, error) {
+	return c.runRecoveryWithIO(ctx, argv, os.Stdin, out, os.Stderr)
+}
+
+func (c *CLI) runRecoveryWithIO(ctx context.Context, argv []string, in io.Reader, out, errOut io.Writer) (int, error) {
 	const prog = "coordination.py"
 	spec := map[string]int{"--config": 1, "--event": 1, "--config-dir": 1, "--once": 0, "--native-session-id": 1, "--attempt-id": 1, "--native-turn-id": 1, "--delivery-id": 1, "--queued-submission-id": 1, "--outcome": 1, "--record": 1, "--enqueue-record": 1, "--dequeue-record": 1, "--refusal-record": 1, "--start-record": 1, "--context-record": 1, "--end-record": 1, "--check-only": 0}
 	a, err := parseCLI(argv, prog, spec)
@@ -600,7 +605,13 @@ func (c *CLI) runRecovery(ctx context.Context, argv []string, out io.Writer) (in
 			return 0, err
 		}
 	}
-	if mode == "hook" || mode == "watch" {
+	if mode == "hook" {
+		if !a.has("--config") {
+			return 0, parseFail(prog, "hook requires --config")
+		}
+		return c.HookCommand(ctx, a, in, out, errOut)
+	}
+	if mode == "watch" {
 		return 0, &value.ProfileUnavailable{}
 	}
 

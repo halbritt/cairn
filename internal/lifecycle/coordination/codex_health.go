@@ -132,6 +132,10 @@ func (b CodexHealthBindings) inspect(ctx context.Context, endpoint, process, nat
 	return nativeMap("status_type", inspection.StatusType, "updated_at", updated, "queue_count", inspection.QueueCount, "queued_ids", ids, "queued_present", qp, "peer", nativeMap("pid", inspection.Peer.PID, "start", value.IntegerText(strconv.FormatUint(inspection.Peer.Start, 10)), "boot", inspection.Peer.Boot)), nil
 }
 func sourceErrorName(err error) string {
+	var ir *InboxRecallError
+	if errors.As(err, &ir) && ir != nil {
+		return ir.ErrorClass()
+	}
 	var decode *journal.UnicodeDecodeError
 	if errors.As(err, &decode) {
 		return "UnicodeDecodeError"

@@ -200,10 +200,11 @@ func NewCoordinationProfile(workDir string, envFn func(string) string, lookupEnv
 	utf8Strict := &value.Codec{Name: "utf-8", Errors: "strict"}
 	domain := "cairn-lifecycle-coordination"
 	readers := map[string]value.ReaderRoute{
-		SiteLastJSONLRecord:  {Input: "bytes-json", Domain: domain},
-		SiteDaemonStartClaim: {Input: "bytes-json", Domain: domain},
-		SiteStrictNativeLine: {Input: "text-json", Codec: utf8Strict, Domain: domain},
-		SiteFindCodexRefusal: {Input: "text-json", Codec: utf8Strict, Domain: domain},
+		SiteLastJSONLRecord:            {Input: "bytes-json", Domain: domain},
+		SiteDaemonStartClaim:           {Input: "bytes-json", Domain: domain},
+		coordination.SiteHookEventRead: {Input: "bytes-json", Domain: domain},
+		SiteStrictNativeLine:           {Input: "text-json", Codec: utf8Strict, Domain: domain},
+		SiteFindCodexRefusal:           {Input: "text-json", Codec: utf8Strict, Domain: domain},
 	}
 	for _, site := range []string{
 		coordination.SiteSessionRead,
@@ -232,6 +233,7 @@ func NewCoordinationProfile(workDir string, envFn func(string) string, lookupEnv
 		coordination.SiteInboxContextWrite: {Route: "dump", Codec: utf8Strict, EnsureASCII: &no, Compact: &no, TrailingLF: &yes, Domain: domain},
 		coordination.SiteCallRequest:       {Route: "dumps", Codec: utf8Strict, EnsureASCII: &yes, Compact: &no, TrailingLF: &no, Domain: domain},
 		coordination.SiteCLIOutput:         {Route: "dumps", Codec: utf8Strict, EnsureASCII: &yes, Compact: &no, TrailingLF: &yes, Domain: domain},
+		coordination.SiteHookCompactOutput: {Route: "dumps", Codec: utf8Strict, EnsureASCII: &no, Compact: &yes, TrailingLF: &yes, Domain: domain},
 		coordination.SiteRecoveryOutput:    {Route: "dumps", Codec: utf8Strict, EnsureASCII: &yes, Compact: &no, TrailingLF: &yes, Domain: domain},
 		SiteQueueMarker:                    {Route: "dumps", Codec: utf8Strict, EnsureASCII: &yes, Compact: &no, TrailingLF: &no, Domain: domain},
 	}
