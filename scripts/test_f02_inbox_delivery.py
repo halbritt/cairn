@@ -42,6 +42,9 @@ except (ValueError,KeyError,TypeError,OSError,coordination.CoordinationError) as
  if isinstance(exc,coordination.CoordinationError):error['code']=exc.code
  if hasattr(exc,'cairn_recall_failure'):error['cairn_recall_failure']=exc.cairn_recall_failure
  response=dict(ok=False,error=error)
+for reporter,kwargs in reports:
+ owner=getattr(reporter,'__self__',None)
+ if hasattr(owner,'data'):response['trace_report']=owner.data
 print(json.dumps(response,ensure_ascii=False,separators=(',',':')))
 '''
 
@@ -341,6 +344,11 @@ class InboxDeliveryProcesses(unittest.TestCase):
                     self.assertEqual(supplied['selection']['record']['body'],body)
                 self.assertEqual(result['meter_report']['pull_calls'],2 if span else 1)
                 self.assertEqual(len(result['trace_report']['final']['bodies']),1)
+                self.assertTrue(result['trace_report']['complete'])
+                self.assertGreater(result['trace_report']['renders'],1)
+                reasons=[row['reason'] for row in result['trace_report']['routes']]
+                self.assertIn('candidate_start',reasons)
+                self.assertIn('checked_source_returned',reasons)
                 before=self.state();self.calls.clear()
                 self.assertFalse(json.loads(self.candidate().stdout)['ok']);self.assertEqual(self.state(),before);self.assertEqual(self.calls,[])
 
@@ -426,6 +434,28 @@ class InboxDeliveryProcesses(unittest.TestCase):
         write(self.f.memory_path,encoded(dict(self.f.memory,recall_observations=False)))
         failed=subprocess.run(argv,input=encoded(report),capture_output=True,cwd=self.f.root,env=self.f.env(),timeout=18)
         self.assertFalse(json.loads(failed.stdout)['ok']);self.assertEqual(self.calls,[]);self.assertEqual(self.state(),before)
+
+    def test_real_optional_trace_routes_render_counts_and_final_match_source(self):
+        for span in (False,True):
+            with self.subTest(span=span):
+                self.configure(kind='request',trace=True)
+                body='Owner opening.\n'+'prefix '*230+'Checked source. '+'tail '*150 if span else 'Current small source.'
+                offset=1500 if span else 0;length=32 if span else len(body.encode())
+                self.optional=[dict(body=body,entry=dict(record_id=RECORD,version=1,kind='note',**{'class':'A'},summary=body.encode()[offset:offset+length].decode(),
+                    body_sha256=sha(body.encode()),summary_span=dict(offset=offset,length=length)))]
+                self.expand_refusal='BUDGET_REFUSED' if span else None
+                directory=Path(self.f.memory['state_dir']);seed={p.name:(p.read_bytes(),p.stat().st_mode&0o777) for p in directory.iterdir()}
+                source=json.loads(self.source().stdout)
+                shutil.rmtree(directory);directory.mkdir(mode=0o700)
+                for name,(raw,mode) in seed.items():write(directory/name,raw,mode)
+                self.calls.clear();self.expands=0
+                actual=json.loads(self.candidate().stdout);self.assertTrue(actual['ok'],actual)
+                def stable(trace):
+                    trace=dict(trace);trace.pop('elapsed_ms',None)
+                    for key in ('rpc','routes','stages'):
+                        trace[key]=[{k:v for k,v in row.items() if k not in ('at_ms','elapsed_ms')} for row in trace[key]]
+                    return trace
+                self.assertEqual(stable(actual['trace_report']),stable(source['trace_report']))
 
     def test_memory_lock_contention_is_bounded_and_does_not_lookup(self):
         before=self.state();started=time.monotonic()

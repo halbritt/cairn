@@ -42,9 +42,14 @@ the original deadline. Failed, expired or unavailable reports remain unknown
 and cannot change output, refusal or grants. Traces contain selected bounded
 metadata, never query/source bodies, credentials or callable objects.
 
-The pending Coordination handshake owns actual post-lock scheduling and native
-settlement. Existing eager helpers currently expose their final delivered view
-without tentative route/render events; the inbox trace marks that observation
-gap explicitly. Foundation owns the small shared-helper seam allocation and
-the final joined disposition. Public lifecycle dispatch remains disabled, and
-existing runtime, provider and failed-work holds remain in force.
+The optional candidate observer records actual routes, checked returns and
+tentative/final renders through the same eager helpers. Its callbacks receive
+snapshots and cannot alter live policy or accounting; callback loss sets the
+existing `complete=false` flag. It does not invent missing observations. Whole
+and span process fixtures compare the materialized trace against Source, apart
+from elapsed timestamps.
+
+The pending Coordination join owns actual post-lock scheduling and native
+settlement. Foundation owns that joined disposition and final integration.
+Public lifecycle dispatch remains disabled, and existing runtime, provider and
+failed-work holds remain in force.

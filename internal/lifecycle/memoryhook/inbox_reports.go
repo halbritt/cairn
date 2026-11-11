@@ -126,7 +126,7 @@ func inboxTraceShape(trace *value.Value) bool {
 	}
 	// A trace is selected fixed metadata. Reject text-bearing or executable
 	// fields instead of turning a malformed report into a raw workspace dump.
-	allowed := strings.Fields("schema complete dropped identity event_id delivery_id attempt_id agent_id execution_id rpc routes stages renders operation phase at_ms elapsed_ms outcome requested_span offset length end total_bytes sha256 source_sha256 search_status discovery_state coverage indexed eligible credits_remaining bytes_remaining receipt_id reason sources extent record_id version body_sha256 bytes span task_source final previews bodies required budget_bytes serialized_bytes remaining_bytes packing status returned_context_bytes final_unobserved candidate_routes_unobserved rpc_observation_lost failure_meta recall_phase recall_operation recall_attempts recall_max_attempts deadline_remaining_ms")
+	allowed := strings.Fields("schema complete dropped identity event_id delivery_id attempt_id agent_id execution_id rpc routes stages renders operation phase at_ms elapsed_ms outcome requested_span offset length end total_bytes sha256 source_sha256 search_status discovery_state coverage indexed eligible credits_remaining bytes_remaining receipt_id reason sources extent record_id version body_sha256 bytes span task_source final previews bodies required budget_bytes serialized_bytes remaining_bytes packing ceiling_bytes base_bytes preview_bytes returned_entries stop status returned_context_bytes final_unobserved failure_meta recall_phase recall_operation recall_attempts recall_max_attempts deadline_remaining_ms")
 	var walk func(*value.Value, int) bool
 	walk = func(v *value.Value, depth int) bool {
 		if v == nil || depth > 10 {

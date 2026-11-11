@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -94,10 +93,17 @@ func (t *inboxTelemetry) rpc(operation string, started time.Time, payload, respo
 				row.Set("search_status", value.Text(status))
 			}
 			discovery := r.Get("discovery")
+			if discovery == nil {
+				discovery = value.Mapping()
+			}
 			if state := text(discovery.Get("state")); contains([]string{"ready", "not_needed", "unavailable", "invalid_result"}, state) {
 				row.Set("discovery_state", value.Text(state))
 			}
-			if coverage := discovery.Get("coverage"); coverage != nil && coverage.Kind == value.Object {
+			coverage := discovery.Get("coverage")
+			if coverage == nil && discovery.Kind == value.Object {
+				coverage = value.Mapping()
+			}
+			if coverage != nil && coverage.Kind == value.Object {
 				selected := value.Mapping()
 				for _, key := range []string{"indexed", "eligible"} {
 					if v := coverage.Get(key); v != nil && v.Kind == value.Int && number(v) >= 0 {
@@ -158,34 +164,53 @@ func (t *inboxTelemetry) task(source *value.Value) {
 	}
 }
 
-func (t *inboxTelemetry) rendered(body string, selected, status *value.Value, budget, wire int) {
-	defer func() {
-		if recover() != nil && t.data != nil {
-			t.data.Set("complete", value.Boolean(false))
-			t.data.Set("final_unobserved", value.Boolean(true))
-		}
-	}()
-	if t.data == nil || !value.SameText(status.Get("outcome"), "delegated") {
-		return
-	}
-	start := strings.Index(body, `{"selected":`)
-	if start < 0 {
+func (t *inboxTelemetry) ObservationLost() {
+	if t.data != nil {
 		t.data.Set("complete", value.Boolean(false))
+	}
+}
+func (t *inboxTelemetry) Route(reason string, group []*value.Value) {
+	if t.data == nil {
 		return
 	}
-	view, err := value.DecodeText([]byte(body[start:]), "utf-8", 0)
-	if err != nil {
-		t.data.Set("complete", value.Boolean(false))
+	if reason == "delegation_context_budget" {
+		t.data = t.data.Without("final")
+	}
+	sources := array()
+	for _, record := range group[:min(16, len(group))] {
+		sources.Items = append(sources.Items, t.source(record, "candidate", nil))
+	}
+	if len(group) > 16 {
+		t.ObservationLost()
+	}
+	t.bounded("routes", value.Mapping(value.Field("at_ms", ms(time.Since(t.started))), value.Field("reason", value.Text(reason)), value.Field("sources", sources)), 32)
+}
+func (t *inboxTelemetry) Validated(extent string, response *value.Value) {
+	if t.data == nil {
 		return
 	}
-	final := value.Mapping(value.Field("previews", array()), value.Field("bodies", array()), value.Field("required", array()), value.Field("budget_bytes", integer(budget)), value.Field("serialized_bytes", integer(wire)), value.Field("remaining_bytes", clone(status.Get("native_allowance_bytes"))), value.Field("packing", value.Text("agent_tools")))
-	for _, entry := range view.Get("index").Items {
+	selections := append([]*value.Value{response.Get("selection")}, inboxItems(response.Get("competing"))...)
+	sources := array()
+	for _, item := range selections[:min(16, len(selections))] {
+		sources.Items = append(sources.Items, t.source(item.Get("record"), extent, response.Get("span")))
+	}
+	if len(selections) > 16 {
+		t.ObservationLost()
+	}
+	t.bounded("routes", value.Mapping(value.Field("at_ms", ms(time.Since(t.started))), value.Field("reason", value.Text("checked_source_returned")), value.Field("sources", sources)), 32)
+}
+func (t *inboxTelemetry) Rendered(entries, bodies []*value.Value, selected *value.Value, budget int, measured candidateMeasuredText, remaining int, packing *value.Value) {
+	if t.data == nil {
+		return
+	}
+	final := value.Mapping(value.Field("previews", array()), value.Field("bodies", array()), value.Field("required", array()), value.Field("budget_bytes", integer(budget)), value.Field("serialized_bytes", integer(measured.WireBytes)), value.Field("remaining_bytes", integer(remaining)), value.Field("packing", clone(packing)))
+	for _, entry := range entries {
 		t.renderSource(final, "previews", entry, "preview", entry.Get("summary_span"))
 	}
-	for _, item := range selected.Items {
+	for _, item := range inboxItems(selected) {
 		t.renderSource(final, "required", item.Get("record"), "whole", nil)
 	}
-	for _, body := range inboxItems(view.Get("candidate_bodies")) {
+	for _, body := range bodies {
 		response := body.Get("response")
 		selections := append([]*value.Value{response.Get("selection")}, inboxItems(response.Get("competing"))...)
 		extent := "whole"
@@ -199,12 +224,8 @@ func (t *inboxTelemetry) rendered(body string, selected, status *value.Value, bu
 			t.renderSource(final, "bodies", response.Get("selection").Get("record"), "opening", opening.Get("span"))
 		}
 	}
-	t.data.Set("renders", integer(1))
+	t.data.Set("renders", integer(number(t.data.Get("renders"))+1))
 	t.data.Set("final", final)
-	// The existing eager helper exposes its final delivered view, not every
-	// tentative internal render/route. Do not manufacture those observations.
-	t.data.Set("complete", value.Boolean(false))
-	t.data.Set("candidate_routes_unobserved", value.Boolean(true))
 }
 func (t *inboxTelemetry) renderSource(final *value.Value, key string, record *value.Value, extent string, span *value.Value) {
 	items := final.Get(key)
@@ -257,7 +278,6 @@ func (t *inboxTelemetry) finishTrace(out *InboxResult, client *memoryclient.Clie
 		}
 		if !client.RPCObservationComplete() {
 			t.data.Set("complete", value.Boolean(false))
-			t.data.Set("rpc_observation_lost", value.Boolean(true))
 		}
 		if out.FailureMeta != nil {
 			t.data.Set("failure_meta", clone(out.FailureMeta))

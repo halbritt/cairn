@@ -416,7 +416,11 @@ func (d *inboxDelivery) deliver(directory string) error {
 			}
 			d.observed.phase("expansion")
 			limited, cancel := context.WithDeadline(d.ctx, optionalDeadline)
-			body, e = eagerCandidates(limited, d.memory, in.Memory, selected, foundValue, found.Index, budget, status, cost)
+			var observers []candidateObserver
+			if d.observed.data != nil {
+				observers = []candidateObserver{d.observed}
+			}
+			body, e = eagerCandidates(limited, d.memory, in.Memory, selected, foundValue, found.Index, budget, status, cost, observers...)
 			cancel()
 			if e != nil {
 				return inboxClassify(e)
@@ -509,7 +513,6 @@ func (d *inboxDelivery) deliver(directory string) error {
 		return err
 	}
 	d.out.Message = output
-	d.observed.rendered(body, selected, status, budget, cost(body))
 	return nil
 }
 
