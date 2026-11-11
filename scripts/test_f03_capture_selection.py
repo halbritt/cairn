@@ -326,6 +326,65 @@ sys.exit(spec.get('exit',0))
         self.assertFalse(any(c[0] in ('create', 'revise') for c in self.calls))
         self.assertEqual(self.state(), {})
 
+    def test_selected_nul_titles_refuse_before_any_planned_write(self):
+        self.configure('claude', 'PreCompact', messages=[
+            dict(role='user', text='Keep the postgres retention policy for this project.'),
+            dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
+        nul_note = dict(record_id=None, kind='lesson', title='a\x00b', body='Preserve the retention decision.')
+        cases = (
+            ('workstream', dict(checkpoint='x', workstream='a\x00b', memories=[])),
+            ('durable', dict(checkpoint=None, workstream=None, memories=[nul_note])),
+            ('late-durable', dict(checkpoint=None, workstream=None, memories=[self.note(), nul_note])),
+        )
+        raw = b'{"sentinel":"preserve"}'
+        for label, selection in cases:
+            with self.subTest(selection=label):
+                self.selection = selection
+                for side in ('source', 'go'):
+                    result, path = self.run_seeded_title(side, raw)
+                    provider = [json.loads(line) for line in (self.root/'provider.calls').read_text().splitlines()]
+                    operations = [op for op, _, _ in self.calls]
+                    print('F03_SELECTED_NUL '+json.dumps(dict(case=label, side=side,
+                        returncode=result.returncode, stdout_hex=result.stdout.hex(), stderr=result.stderr.decode(),
+                        operations=operations, provider_calls=len(provider), records=self.records,
+                        state_unchanged=path.read_bytes()==raw), sort_keys=True))
+                    self.assertEqual((result.returncode, result.stdout), (1, b''))
+                    family = b'ValueError' if side == 'source' else b'HookError'
+                    message = (b'invalid lifecycle input or unavailable local file' if side == 'source' else
+                               b'memory selection returned an invalid workstream topic' if label == 'workstream' else
+                               b'memory selection returned an invalid topic title')
+                    self.assertEqual(result.stderr,
+                                     b'Cairn lifecycle diagnostic: phase=handle error_class='+family+b'\n'
+                                     b'Cairn lifecycle: '+message+b'; use native tools or an explicit handoff.\n')
+                    self.assertFalse(any(op in ('create', 'revise') for op in operations))
+                    self.assertEqual(len(provider), 1)
+                    self.assertFalse(Path('/proc', str(provider[0]['pid'])).exists())
+                    self.assertEqual(self.records, [])
+                    self.assertEqual(path.read_bytes(), raw)
+                    self.assertEqual(len(self.report_locks), 1)
+                    self.assertTrue(all(self.report_locks[0].values()))
+                    reports = [body for op, body, _ in self.calls if op == 'capture-observation']
+                    self.assertEqual(len(reports), 1)
+                    self.assertEqual(reports[0]['outcome'], 'error')
+                    self.assertEqual(reports[0]['selector_outcome'], 'completed')
+
+    def test_valid_selected_title_control_still_writes(self):
+        self.selection = dict(checkpoint='Preserve the next retention step.', workstream='retention 日本語 😀',
+                              memories=[self.note(title='Retention 日本語 😀')])
+        self.assertEqual(self.pair().returncode, 0)
+        self.assertEqual([op for op, _, _ in self.calls].count('create'), 2)
+        self.assertEqual(len(self.records), 2)
+        self.assertEqual(len(self.provider_calls), 1)
+
+    def test_existing_record_edit_keeps_ignoring_unused_nul_title(self):
+        old = self.record('project: postgres retention policy\nUse fourteen days.')
+        self.selection['memories'] = [self.note(title='a\x00b', body=old['body']+'\nUse thirty days.',
+                                              record_id=old['record_id'])]
+        self.assertEqual(self.pair().returncode, 0)
+        self.assertEqual([op for op, _, _ in self.calls].count('revise'), 1)
+        self.assertEqual(self.records[0]['record_id'], old['record_id'])
+        self.assertEqual(len(self.provider_calls), 1)
+
     def test_invalid_selector_json(self):
         self.provider['stdout_hex'] = b'not json'.hex()
         self.assertNotEqual(self.pair().returncode, 0)

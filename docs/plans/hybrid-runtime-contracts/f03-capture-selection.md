@@ -48,6 +48,13 @@ the exact stored bytes and the existing post-lock error observation. Source
 raises `ValueError`; Go reports its fixed `HookError` NUL diagnostic. These
 malformed inputs do not claim equal diagnostics.
 
+Provider-selected new durable titles and workstream topics must also be
+NUL-free. Their shared title validator refuses before any planned writes
+are committed, including a valid early note followed by a NUL title. Source
+fails its title lookup's argv construction; Go returns its fixed invalid-topic
+refusal. An existing-record edit still ignores its unused title string as
+Source does; that field does not receive a new restriction.
+
 At this JSON-string conversion, non-scalars and NUL are the content-level
 argv exclusions. Other scalar controls, quotes, backslashes, Unicode
 noncharacters, scalar-range boundaries, separators, U+FFFD and astral text
@@ -84,10 +91,11 @@ are best effort and never change capture success or retry eligibility. SDK
 diagnostics report the actual Go image hash; the Source CLI reports the Python
 body hash. Those implementation IDs intentionally differ.
 
-The selection fixture has 29 test methods: 25 execute 43 complete Source/Go
-pairs. Four other methods cover three malformed pulled-version refusals,
+The selection fixture has 32 test methods: 27 execute 45 complete Source/Go
+pairs. Five other methods cover three malformed pulled-version refusals,
 four raw stored lone-surrogates, eight stored/explicit NUL cases, and the
-long-title resource difference, with separate Source observations. The pairs
+long-title resource difference, plus three selected-title NUL plans (including
+a late invalid note), with separate Source observations. The pairs
 cover null selection, new durable/checkpoint writes, revision, no-op,
 candidate discovery and budget refusal, prewrite invalidation, provider
 protocol/UTF-8/output-limit failures, timeout, bounded metadata, partial writes

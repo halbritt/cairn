@@ -363,7 +363,7 @@ func captureStrip(text string) string {
 func captureValidBody(body string) bool { return captureStrip(body) != "" && len(body) <= 6000 }
 
 func captureValidTitle(title string) bool {
-	return captureStrip(title) != "" && len(title) <= 90 && !strings.ContainsAny(title, "\n\r\"")
+	return captureStrip(title) != "" && len(title) <= 90 && !strings.ContainsAny(title, "\n\r\"\x00")
 }
 
 func captureClip(text string) string {
