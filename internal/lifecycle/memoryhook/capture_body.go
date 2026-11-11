@@ -146,7 +146,11 @@ func runCapture(ctx context.Context, config, event *value.Value, directory strin
 	var output *value.Value
 	defer func() {
 		if observed.Get("outcome") == nil {
-			observed.Set("outcome", value.Text("error"))
+			outcome := "error"
+			if captureTimedOut(err) {
+				outcome = "timeout"
+			}
+			observed.Set("outcome", value.Text(outcome))
 		}
 		captureReport(ctx, config, event, started, observed)
 	}()
@@ -222,7 +226,7 @@ func runCapture(ctx context.Context, config, event *value.Value, directory strin
 				trace["stage"] = "capture"
 				prior := state.Get("capture_snapshot_marker")
 				state = state.Without("capture_snapshot_marker")
-				output, err = captureNoProvider(config, event, state, observed, directory)
+				output, err = captureBody(ctx, config, event, state, observed, directory)
 				if err != nil {
 					return err
 				}
@@ -367,7 +371,7 @@ func captureOffset(v *value.Value) int64 {
 	return n.Int64()
 }
 
-func captureNoProvider(config, event, state, observed *value.Value, directory string) (*value.Value, error) {
+func captureBody(ctx context.Context, config, event, state, observed *value.Value, directory string) (*value.Value, error) {
 	codex := value.SameText(config.Get("harness"), "codex") && event.Get("messages") == nil
 	var messages *value.Value
 	var offsets []int64
@@ -453,5 +457,10 @@ func captureNoProvider(config, event, state, observed *value.Value, directory st
 		captureStatus(state, "courtesy")
 		return value.Mapping(), nil
 	}
-	return nil, fail("provider-selected substantive capture remains unavailable")
+	if config.Get("claude") == nil {
+		// Configurations without a selected provider stay outside this finite
+		// capture cell, including the retained unported-boundary fixture.
+		return nil, fail("provider-selected substantive capture remains unavailable")
+	}
+	return captureSelection(ctx, config, event, state, observed, directory, messages, digest)
 }

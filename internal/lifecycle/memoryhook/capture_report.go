@@ -3,6 +3,7 @@ package memoryhook
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -45,6 +46,36 @@ func captureReport(ctx context.Context, config, event *value.Value, started time
 		outcome = "error"
 	}
 	body := core.CaptureObservationRequest{RequestID: uuid.NewString(), Repo: text(config.Get("repo")), Harness: text(config.Get("harness")), HookEvent: text(event.Get("hook_event_name")), Method: "cairn-lifecycle/capture-meter/2", SessionSHA256: hashText(text(event.Get("session_id"))), SnapshotSHA256: text(observed.Get("snapshot_sha256")), Outcome: outcome, AdmissionCandidate: text(observed.Get("admission_candidate")), DurationMS: &elapsed}
+	if selectorOutcome := text(observed.Get("selector_outcome")); selectorOutcome != "" {
+		body.SelectorOutcome = selectorOutcome
+		selector := observed.Get("selector")
+		if v := selector.Get("requested_model"); captureModelName(v) {
+			body.RequestedModel = text(v)
+		}
+		if v := selector.Get("reported_model"); captureModelName(v) {
+			body.ReportedModel = text(v)
+		}
+		for _, key := range []string{"elapsed_ms", "reported_duration_ms"} {
+			if n, ok := captureMetric(selector.Get(key), 3600000); ok {
+				rounded := int64(math.RoundToEven(n))
+				body.SelectorDurationMS = &rounded
+				break
+			}
+		}
+		for _, metric := range []struct {
+			key string
+			dst **int64
+		}{{"input_tokens", &body.InputTokens}, {"output_tokens", &body.OutputTokens}, {"cache_creation_input_tokens", &body.CacheCreationInputTokens}, {"cache_read_input_tokens", &body.CacheReadInputTokens}} {
+			v := selector.Get("usage").Get(metric.key)
+			if n, ok := captureMetric(v, 1<<40); ok && v.Kind == value.Int {
+				count := int64(n)
+				*metric.dst = &count
+			}
+		}
+		if n, ok := captureMetric(selector.Get("reported_cost_usd"), 1000); ok && n < 1000 {
+			body.CostUSD = &n
+		}
+	}
 	limited, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
 	var response json.RawMessage
