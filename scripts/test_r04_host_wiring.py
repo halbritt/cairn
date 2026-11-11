@@ -117,6 +117,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         write(f.settings, original)
         f.hook_plan.update(settings=pin(f.settings), replace_commands=dict(memory=[], coordination=['old coordination']))
         selected, directory, record = self.selected(f)
+        self.assertEqual(record['layout'], {'hook-settings.json': 'hooks.json'})
         self.assertEqual(f.settings.read_bytes(), original)
         self.assertEqual((directory / 'previous-settings.json').read_bytes(), original)
         settings = json.loads(Path(selected['settings']['path']).read_bytes())
@@ -227,7 +228,12 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                     f.hook_plan['replace_commands']['coordination'] = ['old coordination']
                 before = f.settings.read_bytes()
                 result = self.stage(f)
-                self.assertNotEqual(result.returncode, 0)
+                expected = {'bound': 'Agy coordination requires unbound profiles; bound recall is unsupported',
+                            'memory-replacement': 'Agy has no ordinary memory hook to replace',
+                            'duplicate': 'ambiguous previous Agy hook definitions',
+                            'event-shape': 'Agy event hooks must be a list of objects'}[fault]
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (1, b'', ('hook staging failed: '+expected+'\n').encode()))
                 self.assertEqual(f.settings.read_bytes(), before)
                 self.assertFalse((f.hook_root/('selection-'+f.hook_plan['id'])).exists())
                 self.assertEqual(f.api_calls(), [])

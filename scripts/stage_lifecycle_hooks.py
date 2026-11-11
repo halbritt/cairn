@@ -244,7 +244,7 @@ def stage(stager, root, plan):
         settings = render(plan, rows)
         original = installation.read_selected(plan['settings'], 1024 * 1024)
         payloads = {'hook-settings.json': installation.encoded(settings), 'previous-settings.json': original}
-        layout = {'hook-settings.json': 'settings.json'}
+        layout = {'hook-settings.json': 'hooks.json' if plan['harness'] in ('codex', 'agy') else 'settings.json'}
     record = dict(schema='cairn.lifecycle-hook-settings/1', harness=plan['harness'], account_home=plan['account_home'],
                   lifecycle_selection=plan['selection'], source_settings=plan['settings'], role_configurations=profiles,
                   rows=rows, layout=layout, plugin_sources=plan.get('plugins', {}),

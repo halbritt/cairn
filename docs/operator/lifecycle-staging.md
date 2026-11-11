@@ -284,6 +284,10 @@ tool does not identify stale lifecycle hooks by basename or remove them for you.
 The stager publishes `hook-settings.json`, `hook-selection.json` and the exact
 original bytes as `previous-settings.json` in a new immutable generation. Its
 output contains the generation pin and the current/previous settings pins.
+The declared layout targets the selected account configuration directory:
+`hooks.json` for Codex and Agy, and `settings.json` for Claude. The Agy layout
+names its account-wide hooks file; it does not select a workspace
+`.agents/hooks.json` file.
 Read the generation back with `inspect-generation` and the independent pin
 before selecting its files. The input settings file and earlier generations
 remain unchanged. Interrupted publication uses the generation publisher's
