@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render immutable Codex/Claude hook settings; never apply or trust live hooks."""
+"""Stage selected shell/OpenCode hook settings; never apply or trust live hooks."""
 import argparse
 import copy
 import importlib.util
@@ -20,12 +20,15 @@ MEMORY = {
     'codex': {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'Stop': 150},
     'claude': {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150,
                'PostToolUse': 13, 'PostToolUseFailure': 13},
+    'opencode': {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150,
+                 'PostToolUse': 13, 'PostToolUseFailure': 13},
 }
 COORDINATION = {
     harness: {event: 2 if event in ('SessionEnd', 'Interrupt', 'PostToolUse') else 15 for event in events}
     for harness, events in {
         'codex': ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'Interrupt', 'PostToolUse'),
         'claude': ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse'),
+        'opencode': ('TurnStart', 'TurnEnd', 'SessionEnd', 'PostToolUse', 'ToolStart', 'ToolEnd'),
     }.items()
 }
 
@@ -36,6 +39,8 @@ def selected_data(pin, limit=1024 * 1024):
 
 def definitions(stager, plan):
     required = {'id', 'selection', 'harness', 'account_home', 'settings', 'replace_commands', 'coordination_index'}
+    if plan.get('harness') == 'opencode':
+        required |= {'coordination_settings', 'plugins'}
     if set(plan) != required or plan['harness'] not in MEMORY or not installation.canonical(plan['account_home']):
         raise ValueError('explicit supported harness, account home and hook plan required')
     index = plan['coordination_index']
@@ -66,11 +71,26 @@ def definitions(stager, plan):
             for flag, value in (('--role', role), ('--config', profile['path']), ('--hook-timeout', str(timeout))):
                 if vector.count(flag) != 1 or vector[vector.index(flag) + 1:][:1] != [value]:
                     raise ValueError('launcher does not match the selected hook row')
+            implementation = 'python'
+            reason = ('bound callback' if config.get('inbox_recall_binding') else
+                      'ordinary recall for this harness remains Python' if event in ('SessionStart', 'UserPromptSubmit') else
+                      'capture or tool observation')
+            if role == 'coordination':
+                reason = 'coordination hook process entry unavailable in Go'
+            if not config.get('inbox_recall_binding'):
+                if (role == 'memory' and plan['harness'] == 'opencode'
+                        and event in ('SessionStart', 'UserPromptSubmit')):
+                    if config.get('recall_mode') == 'agent_tools':
+                        argv = [receipt['binary']['path'], 'memory', '--config', profile['path']]
+                        implementation, reason = 'go', 'unbound ordinary agent_tools recall'
+                    else:
+                        reason = 'provider-selected recall'
             hook = dict(type='command', command=shlex.join(argv), timeout=timeout)
             if role == 'memory' and plan['harness'] == 'codex':
                 if event in ('SessionStart', 'UserPromptSubmit'): hook['additionalContextLimit'] = 12000
                 if event == 'Stop': hook['async'] = True
-            rows.append(dict(role=role, event=event, argv=argv, hook=hook))
+            rows.append(dict(role=role, event=event, argv=argv, hook=hook,
+                             implementation=implementation, reason=reason))
     return rows, profiles
 
 
@@ -120,17 +140,50 @@ def render(plan, rows):
     return settings
 
 
+def opencode_payloads(plan, rows):
+    """Render the two actual plugin configurations, retaining their old bytes.
+
+    Plugins stay in their installed plugins/ directory. The flat immutable
+    generation records that layout; installing it remains a separate action.
+    """
+    pins = plan['plugins']
+    if type(pins) is not dict or set(pins) != {'memory', 'coordination'}:
+        raise ValueError('explicit memory and coordination plugin source pins required')
+    if plan['replace_commands'] != {'memory': [], 'coordination': []}:
+        raise ValueError('OpenCode stages plugin configurations, not shell command replacement lists')
+    payloads, layout = {}, {}
+    for role, name, key in (('memory', 'lifecycle', 'settings'), ('coordination', 'coordination', 'coordination_settings')):
+        original = installation.read_selected(plan[key], 1024 * 1024)
+        config = json.loads(original.decode('utf-8'))
+        if type(config) is not dict:
+            raise ValueError('plugin configuration must be an object')
+        config['commands'] = {row['event']: row['argv'] for row in rows if row['role'] == role}
+        configuration = 'cairn-' + name + '.json'
+        plugin = 'cairn-' + name + '.ts'
+        payloads[configuration] = installation.encoded(config)
+        payloads['previous-' + configuration] = original
+        payloads[plugin] = installation.read_selected(pins[role], 1024 * 1024)
+        layout[configuration] = configuration
+        layout[plugin] = 'plugins/' + plugin
+    return payloads, layout
+
+
 def stage(stager, root, plan):
     if not installation.canonical(stager) or not installation.canonical(str(root)):
         raise ValueError('canonical tool and staging root required')
     rows, profiles = definitions(stager, plan)
-    settings = render(plan, rows)
-    original = installation.read_selected(plan['settings'], 1024 * 1024)
+    if plan['harness'] == 'opencode':
+        payloads, layout = opencode_payloads(plan, rows)
+    else:
+        settings = render(plan, rows)
+        original = installation.read_selected(plan['settings'], 1024 * 1024)
+        payloads = {'hook-settings.json': installation.encoded(settings), 'previous-settings.json': original}
+        layout = {'hook-settings.json': 'settings.json'}
     record = dict(schema='cairn.lifecycle-hook-settings/1', harness=plan['harness'], account_home=plan['account_home'],
                   lifecycle_selection=plan['selection'], source_settings=plan['settings'], role_configurations=profiles,
-                  rows=rows, native_trust='not-performed', refresh='not-performed', activation='not-performed')
-    payloads = {'hook-settings.json': installation.encoded(settings), 'previous-settings.json': original,
-                'hook-selection.json': installation.encoded(record)}
+                  rows=rows, layout=layout, plugin_sources=plan.get('plugins', {}),
+                  native_trust='not-performed', refresh='not-performed', activation='not-performed')
+    payloads['hook-selection.json'] = installation.encoded(record)
     with installation.directory(str(root), private=True):
         pass
     with tempfile.TemporaryDirectory(prefix='.render-', dir=root) as temporary:
@@ -142,6 +195,9 @@ def stage(stager, root, plan):
         selection = installation.backend(stager, ['generation', '--root', str(root)], dict(id=plan['id'], files=files))
     verified = installation.backend(stager, ['inspect-generation', '--path', selection['path'], '--sha256', selection['sha256']])
     published = {entry['name']: {key: entry[key] for key in ('path', 'sha256')} for entry in verified['files']}
+    if plan['harness'] == 'opencode':
+        return dict(selection=selection, files=published, layout=layout,
+                    native_trust='not-performed', refresh='not-performed', activation='not-performed')
     return dict(selection=selection, settings=published['hook-settings.json'], previous_settings=published['previous-settings.json'],
                 native_trust='not-performed', refresh='not-performed', activation='not-performed')
 

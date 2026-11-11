@@ -93,8 +93,14 @@ const plugin: Plugin = async ({ directory, client }) => {
 
   function invoke(id: string, event: string, model = "", turn_id = "", admission?: Admission,
                   extra: Record<string, string> = {}, timeout = 15000): Promise<any> {
+    const argv = config.commands === undefined
+      ? [config.python, config.script, "hook", "--config", config.config]
+      : config.commands[event]
+    if (!Array.isArray(argv) || argv.length === 0 || argv.some(value => typeof value !== "string" || !value || value.includes("\0"))) {
+      return Promise.reject(new Error("Invalid selected coordination command"))
+    }
     return new Promise((resolve, reject) => {
-      const child = execFile(config.python, [config.script, "hook", "--config", config.config],
+      const child = execFile(argv[0], argv.slice(1),
         { encoding: "utf8", timeout, maxBuffer: 32768 }, (error, stdout) => {
           if (error) return reject(new Error("Cairn session presence unavailable"))
           try { resolve(JSON.parse(stdout)) } catch { reject(new Error("Invalid Cairn presence response")) }

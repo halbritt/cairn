@@ -32,8 +32,17 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
   }
   async function invoke(id: string, event: object): Promise<any> {
     if (await disabled()) return {}
+    // Staged installations select an exact argv for each host callback. Do
+    // not fall back to Python when a selected command is malformed.
+    const name = (event as { hook_event_name?: string }).hook_event_name
+    const argv = config.commands === undefined
+      ? [config.python, config.script, "--config", config.engine_config]
+      : config.commands[name ?? ""]
+    if (!Array.isArray(argv) || argv.length === 0 || argv.some(value => typeof value !== "string" || !value || value.includes("\0"))) {
+      throw new Error("Invalid selected lifecycle command")
+    }
     return new Promise((resolve, reject) => {
-      const child = execFile(config.python, [config.script, "--config", config.engine_config],
+      const child = execFile(argv[0], argv.slice(1),
         { encoding: "utf8", timeout: 150000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
           if (error) return reject(new Error(stderr?.trim() || error.message || "Cairn lifecycle command failed"))
           try { resolve(JSON.parse(stdout)) } catch { reject(new Error("Invalid lifecycle response")) }

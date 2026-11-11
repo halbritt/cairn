@@ -232,7 +232,7 @@ The plan has exactly these fields:
 | --- | --- |
 | `id` | A canonical nonzero UUID for this settings generation. |
 | `selection` | Independent `{path, sha256}` pin for the compatibility installation's generation manifest. |
-| `harness` | `codex` or `claude`; both selected role configurations must have this harness. |
+| `harness` | `codex`, `claude` or `opencode`; both selected role configurations must have this harness. |
 | `account_home` | Explicit canonical account-home path; an explicit `config_home` in either selected configuration must match it. |
 | `settings` | Independent `{path, sha256}` input pin for the complete settings object to render. Use an empty object for a new profile. |
 | `coordination_index` | Zero-based index into the installation's ordered coordination configurations. |
@@ -281,3 +281,74 @@ package check above also executes every rendered Codex and Claude row without
 a checkout. `test_r02_installed_contracts.py` applies the existing F-04 ledger,
 failure and deadline oracles to actual installer output, including separately
 pinned test child images. Those disposable fault images are not release builds.
+
+### Staged OpenCode ordinary recall
+
+The OpenCode selection wires only unbound `agent_tools` memory SessionStart
+and UserPromptSubmit to `[IMAGE, memory, --config, PATH]`. `IMAGE` and `PATH`
+come from the inspected immutable R-02 generation. It does not enable the
+public `cairn lifecycle` command. Shell transport uses the same literal argv
+through the selected row's shell-quoted `hook.command`; shell is not a harness.
+
+For an ordinary installation, add `"profile_mode": "unbound"` to the R-02
+compatibility plan and set `"enabled": false`. Every supplied memory and
+coordination profile must already have no truthy `inbox_recall_binding`.
+The assembler copies their exact bytes, including opaque fields and whitespace;
+it never removes a binding. The default mode remains `bound`, with the existing
+versioned binding-path requirement. Disabling a bound generation does not turn
+it into an unbound staging input. The retained Python caller for an explicitly
+unbound generation checks the disabled manifest and every selected profile
+hash before running Source, without calling activation.
+
+An OpenCode hook plan uses the fields above with these differences:
+
+| Field | OpenCode selection |
+| --- | --- |
+| `settings` | Independent pin for the existing `cairn-lifecycle.json` object, or a separately staged empty object. |
+| `coordination_settings` | Independent pin for the existing `cairn-coordination.json` object, or a separately staged empty object. |
+| `plugins` | Exactly `memory` and `coordination`, each an independent `{path, sha256}` pin for the selected `lifecycle.ts` and `coordination.ts` adapter source. Use controlled files in the selected installer package. |
+| `replace_commands` | Exactly `{"memory": [], "coordination": []}`; plugin configurations do not contain shell hook groups. |
+
+For example, the additions to an otherwise complete hook plan are:
+
+```json
+{
+  "harness": "opencode",
+  "coordination_settings": {"path": "/selected/coordination.json", "sha256": "SELECTED_SHA256"},
+  "plugins": {
+    "memory": {"path": "/selected/lifecycle.ts", "sha256": "SELECTED_SHA256"},
+    "coordination": {"path": "/selected/coordination.ts", "sha256": "SELECTED_SHA256"}
+  },
+  "replace_commands": {"memory": [], "coordination": []}
+}
+```
+
+The immutable output contains both plugin sources and configurations, their
+exact prior configuration bytes, and `hook-selection.json`. The result's
+`files` pins and `layout` map identify `cairn-lifecycle.json`,
+`cairn-coordination.json`, `plugins/cairn-lifecycle.ts` and
+`plugins/cairn-coordination.ts` relative to the selected account. The generation
+is flat; `layout` describes a later authorized installation. It does not copy
+files into that account. Configuration fields unrelated to `commands` remain.
+The plugins use each callback's explicit `commands` argv; a missing or malformed
+selected command refuses instead of falling back. Existing installations without
+`commands` keep the original Python/script configuration behavior.
+
+Every row records its `implementation` and `reason`. Current routing is:
+
+| Cell | Route |
+| --- | --- |
+| OpenCode unbound `agent_tools` SessionStart/UserPromptSubmit | Private Go ordinary-memory entry. |
+| Bound callbacks or provider-selected recall | Existing receipt-selected Python caller. |
+| Codex/Claude unbound ordinary recall | Existing Python caller. |
+| PreCompact/SessionEnd capture and tool observation | Existing receipt-selected Python caller. |
+| Coordination hooks for all supported harnesses | Existing Python caller; the private Go hook handler and its `/3` launch-vector construction are not yet on main. |
+| Agy ordinary memory hook | Not installed; this tool adds none. |
+
+The direct ordinary Go entry reads the staged config; it does not authenticate
+a compatibility receipt or qualify a bound callback. The immutable paths and
+pins are inspected during staging. No runtime trust, activation, cached-client
+refresh, production apply or full R-04 acceptance is claimed by this output.
+`test_r04_host_wiring.py` runs the staged OpenCode plugins and shell argv in
+disposable homes against the real Go image and retained Source, including
+reverse bytes, excluded cells and changed-input refusal.

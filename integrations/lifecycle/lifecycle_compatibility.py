@@ -216,6 +216,13 @@ class InvocationContext:
         expected = rows.get(name)
         if expected is not None and float(self.args.hook_timeout) != expected:
             raise CompatibilityPreflightError()
+        if not config.get('inbox_recall_binding'):
+            # An explicitly unbound R-02 generation retains the same checked
+            # Source fallback for capture/provider/tool cells. It cannot use
+            # a disabled binding to downgrade an opted-in profile.
+            self.unbound_profiles()
+            self.enabled = False
+            return config
         self.enabled = self.activation(raw)
         if not self.enabled:
             result = dict(config)
@@ -223,6 +230,23 @@ class InvocationContext:
             return result
         self.checked_binding()
         return config
+
+    def unbound_profiles(self):
+        raw = self.controlled_data(self.receipt['binding']['path'], private=True)
+        manifest = json.loads(raw)
+        if (not isinstance(manifest, dict)
+                or hashlib.sha256(raw).hexdigest() != self.receipt['binding']['sha256']
+                or manifest.get('schema') != 'cairn.inbox-recall-binding/3'
+                or manifest.get('enabled') is not False
+                or any(manifest.get(key) != self.receipt[key]
+                       for key in ('binary', 'memory_config', 'coordination_configs'))):
+            raise CompatibilityPreflightError()
+        for pin in [self.receipt['memory_config'], *self.receipt['coordination_configs']]:
+            raw = self.current_raw if pin['path'] == self.args.config else self.controlled_data(pin['path'])
+            config = json.loads(raw)
+            if (hashlib.sha256(raw).hexdigest() != pin['sha256'] or not isinstance(config, dict)
+                    or config.get('inbox_recall_binding')):
+                raise CompatibilityPreflightError()
 
     def activation(self, raw):
         argv = [self.receipt['binary']['path'], 'lifecycle', 'binding', 'activation',

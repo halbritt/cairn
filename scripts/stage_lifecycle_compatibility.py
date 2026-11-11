@@ -158,6 +158,9 @@ class Assembler:
             raise ValueError('installation requires a preselected nonzero UUID')
         if type(plan['enabled']) is not bool:
             raise ValueError('enabled must be explicitly selected as a Boolean')
+        self.profile_mode = plan.get('profile_mode', 'bound')
+        if self.profile_mode not in ('bound', 'unbound') or self.profile_mode == 'unbound' and plan['enabled']:
+            raise ValueError('unbound profiles require an explicitly disabled binding')
         if type(plan['source_revision']) is not str or any(0xd800 <= ord(c) <= 0xdfff for c in plan['source_revision']):
             raise ValueError('source revision must be Unicode provenance text')
         self.generation = root / 'generations' / ('selection-' + identity)
@@ -207,8 +210,13 @@ class Assembler:
             # Configuration keeps the source interpreter's duplicate-last and
             # opaque-value semantics. Only plans/receipts require unique keys.
             config = json.loads(raw.decode('utf-8'))
-            if not isinstance(config, dict) or config.get('inbox_recall_binding') != str(self.generation / 'binding.json'):
-                raise ValueError('profile must already name its new versioned binding path')
+            if not isinstance(config, dict):
+                raise ValueError('profile must be an object')
+            if self.profile_mode == 'bound':
+                if config.get('inbox_recall_binding') != str(self.generation / 'binding.json'):
+                    raise ValueError('profile must already name its new versioned binding path')
+            elif config.get('inbox_recall_binding'):
+                raise ValueError('unbound profiles must already be unbound; no binding is removed')
             self.payloads[name] = raw
         return self.descriptor('memory.json'), [self.descriptor('coordination-' + str(i) + '.json') for i in range(len(inputs) - 1)]
 
@@ -282,7 +290,8 @@ class Assembler:
 
 def stage(stager, root, plan):
     required = {'id', 'enabled', 'sources', 'source_revision', 'binary', 'memory_config', 'coordination_configs', 'aliases', 'python', 'shell'}
-    if set(plan) != required or not canonical(str(root)) or not canonical(plan['python']) or not canonical(plan['shell']):
+    if (set(plan) not in (required, required | {'profile_mode'}) or not canonical(str(root))
+            or not canonical(plan['python']) or not canonical(plan['shell'])):
         raise ValueError('incomplete installation plan or noncanonical launch anchor')
     with directory(str(root), private=True) as locked:
         fcntl.flock(locked, fcntl.LOCK_EX | fcntl.LOCK_NB)
