@@ -40,11 +40,17 @@ The retained corpus has 19 rank requests/269 scores/3,138 pair relationships,
 rows. The 22 overlapping first-passage references give a union of 821 reference
 pairs. Both complete vector groups are checked independently before that union
 is summarized. Stream selection remains 34 captured Python frames/408 scores
-plus four owner-approved rank-backed frames/130 scores. The reporter verifies
+plus four rank-backed frames/130 scores selected by coordinator decision
+`d8b70f55-48fb-4c27-bfc5-f8405c56fe97/v1`. The reporter verifies
 the captured stream/rank reference equivalence and never calls those four
 frames historical captures.
 
-Rule C uses a score shift at most 500 and vector cosine gap at most `1e-6`.
+Owner rule C requires per-vector cosine gap at most `1e-6`, score shift at
+most 500, rank order preserved outside near-ties, and the retrieval-quality
+fixture passing. This reporter does not evaluate the retrieval-quality clause.
+The retained rank comparison records 17 labelled cases; all 15 relevant-note
+rank intervals are unchanged. These are observations without an established
+PASS contract.
 Identical scores, shifts within one and bit-exact vectors are diagnostics.
 Source metadata, UTF-8 spans, projections and token counts remain exact. Rank
 changes retain their reference/candidate margins; without a frozen near-tie
