@@ -275,6 +275,17 @@ class ClaudeBoundRecallTests(ClaudeBoundCase):
                 self.assertEqual([stable(row) for row in rows[3:]],[stable(row) for row in rows[:3]])
 
 
+    def test_known_required_start_activation_refusal_trace(self):
+        directory=self.f.memory_path.parent/'invocation-trace';directory.mkdir(mode=0o700)
+        trace=directory/'trace.jsonl'
+        self.required();self.assertEqual(self.pair().returncode,0);trace.unlink()
+        self.event('SessionStart',source='resume',prompt='')
+        self.overwrite(self.f.coord_path,self.f.coord_path.read_bytes()+b' ')
+        self.assertEqual(self.pair().returncode,1)
+        rows=[json.loads(line) for line in trace.read_text().splitlines()]
+        def stable(row):return {k:v for k,v in row.items() if k not in ('inv','at','duration_ms','pid','ppid')}
+        self.assertEqual([stable(row) for row in rows[:3]],[stable(row) for row in rows[3:]])
+
 
 class ClaudeOptionalRecallTests(ClaudeBoundCase):
     """Control only UUID entropy; the actual checked Go command stays intact.

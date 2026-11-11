@@ -45,6 +45,9 @@ func BoundFailure(phase string, config, event *value.Value, err error) Result {
 		if isRequired(converted) {
 			refused := requiredMemoryOutput(config, event, required("current required Claude context could not be restored"), diagnostic)
 			out.Trace["outcome"] = "required_refused"
+			if boundClaude(config) && value.SameText(event.Get("hook_event_name"), "SessionStart") {
+				out.Trace["outcome"] = "error"
+			}
 			refused.Trace = out.Trace
 			return refused
 		}

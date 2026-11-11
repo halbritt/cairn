@@ -217,9 +217,6 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		return runCapture(ctx, config, event, directory, hookStarted, trace)
 	}
 	if ordinary && toolObservationEvent(event) {
-		if value.SameText(config.Get("harness"), "claude") {
-			return boundary(fail("ordinary Claude tool observation remains unavailable"))
-		}
 		return runToolObservation(ctx, config, event, directory, trace)
 	}
 	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") && !value.SameText(config.Get("harness"), "claude") {
