@@ -410,9 +410,13 @@ func (w transitionWorker) pids(t *testing.T, operation string) []int {
 	if err != nil {
 		t.Fatal(err)
 	}
+	lines := strings.TrimSpace(string(b))
+	if lines == "" {
+		return nil // The child may have created its log before the first append.
+	}
 	seen := map[int]bool{}
 	var out []int
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+	for _, line := range strings.Split(lines, "\n") {
 		var call struct {
 			PID       int
 			Operation string
@@ -512,4 +516,14 @@ func transitionVector(first float64) string {
 	}
 	parts[0] = strconv.FormatFloat(first, 'g', -1, 64)
 	return "[" + strings.Join(parts, ",") + "]"
+}
+
+func TestSemanticTransitionWorkerLogWaitsForFirstAppend(t *testing.T) {
+	w := transitionFixture(t, "empty-log-startup")
+	if err := os.WriteFile(filepath.Join(w.dir, "calls.jsonl"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.pids(t, ""); len(got) != 0 {
+		t.Fatalf("empty startup log reported worker PIDs: %v", got)
+	}
 }

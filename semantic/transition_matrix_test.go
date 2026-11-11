@@ -285,10 +285,12 @@ func transitionLeaseBacklog(t *testing.T) {
 	if r.Jobs[0].Attempts != 3 {
 		t.Fatal("late work erased retry backlog")
 	}
+	// Isolate retry_at from the independent live-lease refusal.
+	d.exec(t, `UPDATE cairn.semantic_job SET lease_id=NULL,lease_until=NULL`)
 	if worked, err := i.Step(context.Background()); err != nil || worked {
 		t.Fatal("backoff was ignored")
 	}
-	d.exec(t, `UPDATE cairn.semantic_job SET retry_at=clock_timestamp(),lease_until=clock_timestamp()-interval '1 second'`)
+	d.exec(t, `UPDATE cairn.semantic_job SET retry_at=clock_timestamp()`)
 	transitionDrain(t, i)
 	transitionRequireCoverage(t, d, w.hash, 1, 1)
 }
@@ -379,6 +381,7 @@ func transitionCompeting(t *testing.T) {
 	writers[0].joined = true
 	writers[0].restartable = false
 	old.reaped(t)
+	writers[2].restartable = false // Only the other active writer may refuse here.
 	if transitionFence(writers) == nil {
 		t.Fatal("other collection's writer omitted")
 	}
@@ -386,6 +389,7 @@ func transitionCompeting(t *testing.T) {
 	writers[1].joined = true
 	writers[1].restartable = false
 	alternate.reaped(t)
+	writers[2].restartable = true // Now isolate the inactive restartable definition.
 	if transitionFence(writers) == nil {
 		t.Fatal("inactive restartable unit omitted")
 	}
