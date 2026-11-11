@@ -45,6 +45,46 @@ retry-policy holds remain.
 
 ## Inspect the implementation
 
+The Go supervisors now accept explicit Rust worker configuration through
+`serve --semantic-rust-config`; Rust remains disabled when the flag is absent.
+Rank, stream and embed use fixed arguments for the six absolute asset/library/
+source selections and a sanitized offline environment with
+`ORT_DISABLE_TELEMETRY=1`. Legacy executable-only APIs retain their signatures.
+The same Go owners enforce framing, identity, cancellation, busy refusal and
+child cleanup, with the existing 25-second rank/query, 90-second document and
+30-second stream-idle limits. The
+[operator configuration and Go comparison driver](../semantic-worker-comparison.md#rust-workers-through-go)
+describe this source slice; installation and running services are unchanged.
+
+For request `981f254e-5b9d-497d-8231-075b320534ee@1`, the author built both
+native binaries with locked, offline Cargo in the optimized release profile
+and exercised them through the real Go supervisors in the unchanged isolation
+wrapper. Both one-shot and stream completed all 19 frozen ranking cases:
+269 of 269 integer scores were identical to the reference, with all 3138
+pairwise ordering relations unchanged in each mode. Maximum observed request
+times were 5.514390 seconds for one-shot and 3.847115 seconds for stream.
+Separate real-worker checks passed cold/warm rank equality, a restore request
+after the actual 30-second idle expiry, embedding identity, normalized
+384-component vectors, UTF-8 passage coverage and distinct query/document
+processes. The ordinary semantic and CLI race suites plus `make check` also
+passed in the wrapper.
+
+A separate Go-driven sample in each mode matched the four mapped, sealed
+memory-file images to the selected ORT/math library hashes and inspected the
+actual sanitized child environments. The samples had no observed `connect`
+calls or changes to the disposable home/cache files; a loopback control
+produced a captured `connect` call. This is bounded sample evidence, not complete
+runtime or input-closure qualification.
+
+An earlier unoptimized development build hit the unchanged 25-second deadline
+on its first real stream request after one-shot had completed. That failed run
+is retained separately; the release-profile pass does not erase it. No timeout
+was extended and no protocol fixture replaced a model failure. The new
+`TestRustReal*` cases skip when their explicit asset/config selectors are absent.
+These selected Go-path results do not complete S-01, S-02, S-03, vector parity,
+near-tie/retrieval evaluation, T1/CPU-FENV, runtime qualification or production
+acceptance. Earlier rows below retain their component evidence boundaries.
+
 The rank initialization follow-through applies the same ten-field rule-C policy
 to `ConstructionReport::rank_identity`, which the shipped
 `LoadedBackend::initialize` admission already calls. The shared observation

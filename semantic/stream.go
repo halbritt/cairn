@@ -57,11 +57,15 @@ func StreamCommandWithIdleTimeout(owner context.Context, path string, idle time.
 	if err := validateCommand(path); err != nil {
 		return nil, nil, err
 	}
+	return streamCommand(owner, workerLaunch{path: path, env: workerEnvironment()}, idle)
+}
+
+func streamCommand(owner context.Context, launch workerLaunch, idle time.Duration) (core.SemanticRanker, func(), error) {
 	lifetime, cancel := context.WithCancel(owner)
 	jobs := make(chan streamJob)
 	done := make(chan struct{})
 	busy := make(chan struct{}, 1)
-	go serveStream(lifetime, path, idle, jobs, done)
+	go serveStream(lifetime, launch, idle, jobs, done)
 	closeWorker := func() { cancel(); <-done }
 	rank := func(ctx context.Context, request core.SemanticRankRequest) (core.SemanticRankResult, error) {
 		select {
@@ -88,7 +92,7 @@ func StreamCommandWithIdleTimeout(owner context.Context, path string, idle time.
 	return rank, closeWorker, nil
 }
 
-func serveStream(ctx context.Context, path string, idle time.Duration, jobs <-chan streamJob, done chan<- struct{}) {
+func serveStream(ctx context.Context, launch workerLaunch, idle time.Duration, jobs <-chan streamJob, done chan<- struct{}) {
 	defer close(done)
 	var worker *streamWorkerProcess
 	// Opaque worker state is never part of core results or receipts.
@@ -123,7 +127,7 @@ func serveStream(ctx context.Context, path string, idle time.Duration, jobs <-ch
 				}
 				if worker == nil {
 					var err error
-					worker, err = startStream(path)
+					worker, err = startStream(launch)
 					if err != nil {
 						return core.SemanticRankResult{}, err
 					}
@@ -164,14 +168,14 @@ func serveStream(ctx context.Context, path string, idle time.Duration, jobs <-ch
 	}
 }
 
-func startStream(path string) (*streamWorkerProcess, error) {
+func startStream(launch workerLaunch) (*streamWorkerProcess, error) {
 	var input io.WriteCloser
 	var output io.ReadCloser
 	command, err := startRetryingBusy(context.Background(), func() (*exec.Cmd, error) {
-		command := exec.Command(path)
+		command := exec.Command(launch.path, launch.args...)
 		// Older workers ignore this capability. New workers omit cache responses
 		// when launched by an older host, which does not advertise it.
-		command.Env = append(workerEnvironment(), "CAIRN_SEMANTIC_STREAM_CACHE=1")
+		command.Env = append(append([]string(nil), launch.env...), "CAIRN_SEMANTIC_STREAM_CACHE=1")
 		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		command.WaitDelay = time.Second
 		command.Stderr = io.Discard

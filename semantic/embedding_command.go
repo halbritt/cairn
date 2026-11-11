@@ -26,7 +26,7 @@ type embeddingLane struct {
 type CommandEmbedder struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
-	path       string
+	launch     workerLaunch
 	query      embeddingLane
 	document   embeddingLane
 	identityMu sync.Mutex
@@ -45,8 +45,12 @@ func EmbeddingCommand(owner context.Context, path string) (*CommandEmbedder, err
 	if err := validateCommand(path); err != nil {
 		return nil, err
 	}
+	return embeddingCommand(owner, workerLaunch{path: path, env: workerEnvironment()}), nil
+}
+
+func embeddingCommand(owner context.Context, launch workerLaunch) *CommandEmbedder {
 	ctx, cancel := context.WithCancel(owner)
-	return &CommandEmbedder{ctx: ctx, cancel: cancel, path: path}, nil
+	return &CommandEmbedder{ctx: ctx, cancel: cancel, launch: launch}
 }
 func (e *CommandEmbedder) Close() {
 	e.cancel()
@@ -101,7 +105,7 @@ func (e *CommandEmbedder) call(ctx context.Context, lane *embeddingLane, operati
 		return embeddingReply{}, err
 	}
 	if lane.worker == nil {
-		w, err := startStream(e.path)
+		w, err := startStream(e.launch)
 		if err != nil {
 			return embeddingReply{}, err
 		}

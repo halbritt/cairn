@@ -153,7 +153,10 @@ cairn serve --embedding-command "$HOME/.local/share/cairn/semantic/worker-embedd
 
 Use the installation's existing database and identity configuration. The
 installer does not change a running service. Choose one of `--embedding-command`,
-`--semantic-command` or `--semantic-stream-command`; they cannot be combined.
+`--semantic-command`, `--semantic-stream-command` or the explicit
+[`--semantic-rust-config` selection](semantic-worker-comparison.md#rust-workers-through-go);
+they cannot be combined. Rust mode `embed` uses the same asynchronous index owner
+and separate query/document processes. No worker is selected by default.
 `--semantic-idle-timeout` applies only to the request-scoring stream worker.
 
 The existing search interface remains:

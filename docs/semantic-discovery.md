@@ -160,6 +160,10 @@ records localized-edit timing and the remaining cold cost. The earlier
 [whole-note cache comparison](verification/semantic-vector-cache-2026-09-09.md)
 remains as historical evidence.
 Existing custom one-shot workers continue to use `--semantic-command`.
+Prepared Rust workers have a separate, explicit
+[`--semantic-rust-config` selection](semantic-worker-comparison.md#rust-workers-through-go).
+It cannot be combined with a legacy command mode and does not change the default
+worker selection or install a runtime.
 
 Use the printed path if `CAIRN_HOME` is customized. A systemd installation must
 include that argument in its `ExecStart`; restart the API after changing the

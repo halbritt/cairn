@@ -34,6 +34,7 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	semanticCommand := f.String("semantic-command", "", "optional absolute local CPU scoring executable")
 	semanticStreamCommand := f.String("semantic-stream-command", "", "optional absolute reusable local CPU scoring executable")
 	embeddingCommand := f.String("embedding-command", "", "optional absolute local embedding executable for persistent passage retrieval")
+	rustConfigPath := f.String("semantic-rust-config", "", "optional absolute Rust worker configuration file; disabled when absent")
 	semanticIdle := f.Duration("semantic-idle-timeout", 30*time.Second, "positive idle lifetime for the reusable semantic worker")
 	if err = f.Parse(args); err != nil {
 		return invalid(err.Error())
@@ -42,13 +43,21 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 		return invalid("unexpected serve arguments")
 	}
 	semanticModes := 0
-	for _, path := range []string{*semanticCommand, *semanticStreamCommand, *embeddingCommand} {
+	for _, path := range []string{*semanticCommand, *semanticStreamCommand, *embeddingCommand, *rustConfigPath} {
 		if path != "" {
 			semanticModes++
 		}
 	}
 	if semanticModes > 1 {
 		return invalid("choose one semantic command mode")
+	}
+	var rustConfig *semantic.RustWorkerConfig
+	if *rustConfigPath != "" {
+		selected, err := semantic.ReadRustWorkerConfig(*rustConfigPath)
+		if err != nil {
+			return invalid(err.Error())
+		}
+		rustConfig = &selected
 	}
 	idleConfigured := false
 	machineConfigured := false
@@ -60,8 +69,8 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 			idleConfigured = true
 		}
 	})
-	if idleConfigured && *semanticStreamCommand == "" {
-		return invalid("semantic-idle-timeout requires --semantic-stream-command")
+	if idleConfigured && *semanticStreamCommand == "" && (rustConfig == nil || rustConfig.Mode != semantic.RustStream) {
+		return invalid("semantic-idle-timeout requires --semantic-stream-command or a Rust stream configuration")
 	}
 	if *semanticIdle <= 0 {
 		return invalid("semantic idle timeout must be positive")
@@ -100,6 +109,12 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 			return err
 		}
 	}
+	if rustConfig != nil && rustConfig.Mode == semantic.RustRank {
+		ranker, err = semantic.RustCommand(*rustConfig)
+		if err != nil {
+			return err
+		}
+	}
 	if *semanticStreamCommand != "" {
 		var closeWorker func()
 		ranker, closeWorker, err = semantic.StreamCommandWithIdleTimeout(ctx, *semanticStreamCommand, *semanticIdle)
@@ -108,11 +123,27 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 		}
 		defer closeWorker()
 	}
+	if rustConfig != nil && rustConfig.Mode == semantic.RustStream {
+		var closeWorker func()
+		ranker, closeWorker, err = semantic.RustStreamCommand(ctx, *rustConfig, *semanticIdle)
+		if err != nil {
+			return err
+		}
+		defer closeWorker()
+	}
 	var handler *localapi.Server
-	if *embeddingCommand != "" {
-		retrieve, closeIndex, startErr := semantic.StartIndex(ctx, dsn, *embeddingCommand, func(err error) {
+	if *embeddingCommand != "" || rustConfig != nil && rustConfig.Mode == semantic.RustEmbed {
+		onError := func(err error) {
 			slog.Warn("semantic indexing unavailable; lexical retrieval remains available", "error", err)
-		})
+		}
+		var retrieve core.SemanticRetriever
+		var closeIndex func()
+		var startErr error
+		if rustConfig != nil {
+			retrieve, closeIndex, startErr = semantic.StartRustIndex(ctx, dsn, *rustConfig, onError)
+		} else {
+			retrieve, closeIndex, startErr = semantic.StartIndex(ctx, dsn, *embeddingCommand, onError)
+		}
 		if startErr != nil {
 			return startErr
 		}

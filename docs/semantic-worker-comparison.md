@@ -58,6 +58,96 @@ uses `query-ascii` and `document-ascii`. They do not compare the two roles throu
 Go or execute the full input inventory. Direct-worker comparisons and later
 Go-path acceptance remain distinct.
 
+## Rust workers through Go
+
+`cairn serve --semantic-rust-config /absolute/path/worker.json` selects an
+operator-prepared Rust worker. With no flag, Rust is disabled. The flag is
+mutually exclusive with `--semantic-command`, `--semantic-stream-command` and
+`--embedding-command`; ambient environment variables do not select Rust.
+The installer and running services are unchanged.
+
+The JSON file contains one object, at most 32768 bytes, with no unknown fields.
+This example is a path template, not a supplied runtime installation:
+
+```json
+{
+  "mode": "stream",
+  "executable": "/prepared/bin/cairn-semantic-rank",
+  "model_dir": "/prepared/model",
+  "ort_runtime": "/prepared/runtime/libonnxruntime.so.1.29.0",
+  "openblas": "/prepared/runtime/libscipy_openblas64_-32a4b2a6.so",
+  "gfortran": "/prepared/runtime/libgfortran-040039e1-0352e75f.so.5.0.0",
+  "quadmath": "/prepared/runtime/libquadmath-96973f99-934c22de.so.0.0.0",
+  "source_root": "/prepared/source"
+}
+```
+
+All seven selections must be absolute existing paths. `model_dir` and
+`source_root` must be directories; the libraries must be regular files and
+`executable` must be an executable regular file. The Rust worker still validates
+asset contents and native library selection. Go does not infer missing paths,
+download assets or treat path validation as runtime qualification. Invalid
+configuration returns an error before the API opens its identity file or store.
+
+Mode `rank` launches `cairn-semantic-rank` for each request. Mode `stream` adds
+`--stream` and owns a reusable rank process; its default idle lifetime is 30
+seconds, adjustable with `--semantic-idle-timeout`. Mode `embed` selects
+`cairn-semantic-embed` with separate query and document processes and the existing
+asynchronous index owner. Rank/query requests retain their 25-second deadline;
+document exchanges retain 90 seconds. Earlier caller cancellation still wins.
+Cold model initialization is inside those deadlines. Qualify the chosen native
+binary and build profile through Go; valid paths alone do not establish that a
+cold request completes in time.
+
+Go supplies the six explicit `--model-dir`, `--ort-runtime`, `--openblas`,
+`--gfortran`, `--quadmath` and `--source-root` arguments without a shell. Children
+receive the existing fixed offline environment plus `ORT_DISABLE_TELEMETRY=1`.
+The three `LD_LIBRARY_PATH`, `LD_PRELOAD` and `LD_AUDIT` variables and the
+database DSN are absent. Streaming rank retains the existing cache opt-in,
+bounded frames, idle restore, busy refusal and child cleanup. This environment
+policy does not place production workers in an OS sandbox.
+
+The library entry points are `semantic.RustCommand`,
+`semantic.RustStreamCommand`, `semantic.RustEmbeddingCommand` and
+`semantic.StartRustIndex`. Their legacy executable-only counterparts retain
+their signatures. Rust paths and mode are operator configuration, never request
+fields or an arbitrary argument/environment list.
+
+The standalone
+[`go-supervisor-driver`](../semantic/testdata/go-supervisor-driver/main.go) builds
+with `go build -buildvcs=false -o /tmp/go-supervisor-driver
+./semantic/testdata/go-supervisor-driver`. It reads bounded NDJSON from stdin
+and uses these production supervisors without opening a database. Rank/stream
+inputs are `{"id":"case-id","request":{...}}`; outputs are
+`{"id":"case-id","result":{...}}`, suitable for comparison against the frozen
+19-case ranking reference. Embed inputs select `operation` (`identity`, `query`
+or `document`) and `text`. A worker failure exits nonzero without substituting
+scores or vectors. Case timings go to stderr.
+
+Run builds and comparisons inside the unchanged campaign isolation wrapper.
+For a prepared read-only input directory whose `stream.json` selects paths
+under `/opt/runtime-inputs` (and `source_root: "/work"`), the Go-driven repeat is:
+
+```sh
+python3 -I -B scripts/test_hybrid_runtime_operations.py \
+  --ro-bind "${RUST_RUNTIME_INPUTS:?}:/opt/runtime-inputs" -- sh -c '
+    mkdir -p /tmp/bin && ln -sf /usr/bin/gcc /tmp/bin/cc &&
+    export PATH=/tmp/bin:$PATH CC=gcc TMPDIR=/tmp &&
+    go build -buildvcs=false -o /tmp/go-supervisor-driver ./semantic/testdata/go-supervisor-driver &&
+    /tmp/go-supervisor-driver --config /opt/runtime-inputs/stream.json \
+      < /opt/runtime-inputs/rank-requests.jsonl'
+```
+
+The directory must contain the already prepared executable, model, libraries,
+configuration and frozen requests. Do not expose a production home to the
+wrapper. Select `rank.json` to repeat through the one-shot supervisor.
+The opt-in `TestRustReal*` tests use `CAIRN_RUST_RANK_TEST_CONFIG`,
+`CAIRN_RUST_RANK_TEST_REQUESTS` and `CAIRN_RUST_EMBED_TEST_CONFIG` inside the
+wrapper. Ordinary test runs skip them when the config selectors are absent;
+protocol fixtures do not count as real Rust/model evidence. These Go checks
+and measurements do not by themselves complete S-01, S-02, S-03, numerical
+qualification or production acceptance.
+
 ## Fixed workers and evidence gates
 
 The CLI requires `--output` to name a new directory outside this checkout.

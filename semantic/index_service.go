@@ -14,8 +14,22 @@ import (
 // The returned close cancels workers, joins indexing and active calls, then closes
 // the index pool. No detached goroutine or child outlives that close.
 func StartIndex(owner context.Context, dsn, path string, onError func(error)) (core.SemanticRetriever, func(), error) {
+	return startIndex(owner, dsn, func(ctx context.Context) (*CommandEmbedder, error) {
+		return EmbeddingCommand(ctx, path)
+	}, onError)
+}
+
+// StartRustIndex uses the same asynchronous index owner with an explicitly
+// selected Rust embed worker. It does not change schema or readiness policy.
+func StartRustIndex(owner context.Context, dsn string, config RustWorkerConfig, onError func(error)) (core.SemanticRetriever, func(), error) {
+	return startIndex(owner, dsn, func(ctx context.Context) (*CommandEmbedder, error) {
+		return RustEmbeddingCommand(ctx, config)
+	}, onError)
+}
+
+func startIndex(owner context.Context, dsn string, create func(context.Context) (*CommandEmbedder, error), onError func(error)) (core.SemanticRetriever, func(), error) {
 	ctx, cancel := context.WithCancel(owner)
-	model, err := EmbeddingCommand(ctx, path)
+	model, err := create(ctx)
 	if err != nil {
 		cancel()
 		return nil, nil, err
