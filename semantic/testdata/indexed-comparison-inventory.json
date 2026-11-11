@@ -1,0 +1,86 @@
+{
+  "schema": "cairn.indexed-comparison-inventory/1",
+  "workload_sha256": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+  "workload_queries": [
+    "storage-topic",
+    "storage-location",
+    "storage-env-exact",
+    "storage-env-words",
+    "evidence-retry",
+    "revision",
+    "tampering",
+    "citation-count",
+    "agent-launch",
+    "lost-reply",
+    "replacement",
+    "original-conflict",
+    "failure-lessons",
+    "remove-note",
+    "broaden-scope",
+    "absent-gpu",
+    "absent-price"
+  ],
+  "boundary_queries": [
+    "query-ascii",
+    "query-cjk",
+    "query-emoji",
+    "query-combining",
+    "query-special-tokens",
+    "query-exact-512",
+    "query-over-512",
+    "query-4096-bytes",
+    "query-token-empty"
+  ],
+  "additional_cases": [
+    "equal-distance-record-id-ties",
+    "partial-coverage",
+    "unavailable-coverage"
+  ],
+  "required_model_tests_per_backend": [
+    "TestRealMaximumDocumentEmbeddingCompletes",
+    "TestRealProjectedLongQuery",
+    "TestRealPersistentPassageDiscovery"
+  ],
+  "required_store_tests_per_backend": [
+    "TestPersistentIndexSurvivesRestartAndInvalidatesEditedSource",
+    "TestIndexEditDuringEmbeddingCannotPublishStalePassages",
+    "TestPersistentIndexCarriesProjectionWithoutReplacingQuery"
+  ],
+  "retained_ranking_tests": [
+    "TestIndexedDiscoveryHistoricalRRFAndInterleavedReceiptsReplaySeparately",
+    "TestIndexedDiscoverySupportsCombinedHintsAndPartialCoverage"
+  ],
+  "query_input_sha256": {
+    "storage-topic": "43b7b318ccd0555114b5eef7522a2992cd09dccfddda35d15712679a4df261dc",
+    "storage-location": "c96179355c27c02c44a3862cfbf6857e58d8e42cdb19e3b1322d690fb5298451",
+    "storage-env-exact": "80653f72c25c05a5e36e7f18041d9f933be6e08b3c9f935a511d54eb776199b6",
+    "storage-env-words": "46ca44ed435ae37daa5ea266e82df5ff4e702aa6869a3e7fb19a2930da4943cc",
+    "evidence-retry": "203c210eb68b4c6d9f1b25a8b9aeffdee368bd8473ca2dda420029ddda461cda",
+    "revision": "3239c2bb490c6779ad8943be4911f5a50aac6b654328ec623acf05a8cb3096c6",
+    "tampering": "f80aa8e9c8f17b32b0ab1babf962b4b8ebf2274baaaaea81a1d4af1ba3248c98",
+    "citation-count": "d2cc272c3ef27bcd82ca5d30efd3af7d22d01e212eaea45fa586aec85439aa66",
+    "agent-launch": "c331ba21968a50606ff0ffff6e692716356615714aaa73911c17ac6e2d52c03b",
+    "lost-reply": "ed8e6d43bea4d68afd5e4a0f7c42feba77246e4b708c487cb9f9d3fac93bca47",
+    "replacement": "eb7a16ddde6c1aff02ff122f596772a976dd97c91a365bc7f963c230f21c72d9",
+    "original-conflict": "6194817b2d2ceb00dbfc8f80d624162c4e242636d6bed8890c62c99dad0f25f3",
+    "failure-lessons": "4e741e5c82a038d5935692a067ab4478d04e5e6244921cbfed16b2a58866ecf8",
+    "remove-note": "67ac3baa08bb5c2defad3ddf9ecae70bd4cc4d5422262f437650ebdc8cc643fc",
+    "broaden-scope": "aa5903b37b43b62e5702e282bed0335b6c0560e561d880cfbd8ae5c88d2ba25b",
+    "absent-gpu": "136c96947eba7e2ea3f36a858c8d9fa361c46a02eadf6e547400ae95b18c8087",
+    "absent-price": "ebf1fdb9ae0fe7bd7858e2ab4db85a323c1968afff966476766c43b7ead4b9a2",
+    "query-ascii": "664226d7d9b90c1f35c57161314ea8c2ab478f5218b1adf70059da15849adf25",
+    "query-cjk": "1a69826c7d5bfbcbff28947296a4fd20fb93bea0ad94d7198c0e60fa58e0b27c",
+    "query-emoji": "107e90c16ad3d86ebf18d53c5bee96e500098c233b184d36467a185df9f88abe",
+    "query-combining": "f364c61f10bc5e4e87b2af5c4231225f7e4d7cbe46fc3a9a82f54b7246f40bbb",
+    "query-special-tokens": "c6b9f3a7bed11ef78e7fbdd1b0bf0847182776db4dce085c13fc28ae11a3fa23",
+    "query-exact-512": "81051e5d4ee88fa2e03d140cd9410632d4223b950ea58fbdc718d7544e68bbc5",
+    "query-over-512": "9681257b1bd970c10e8c3778a15e43432216b5ea5fd3b5fce41895e569ab25eb",
+    "query-4096-bytes": "5619f23fd5fc0ecb171f654450bf78ab125a63b44168c9213233c0f98a404107",
+    "query-token-empty": "7606f32cec3224bb95c70716b4d4aeb44c67c4e0a60eeef80f3308973e4b8da9"
+  },
+  "input_guard_controls": [
+    "changed-query-bytes",
+    "changed-source-body",
+    "changed-case-order"
+  ]
+}
