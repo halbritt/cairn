@@ -154,9 +154,10 @@ is retained separately; the release-profile pass does not erase it. No timeout
 was extended and no protocol fixture replaced a model failure. The new
 `TestRustReal*` cases skip when their explicit asset/config selectors are absent.
 These measurements establish their selected comparison and process boundaries.
-Full S-01 acceptance, broader near-tie/retrieval evaluation, T1/CPU-FENV,
-full numerical and runtime qualification, and production acceptance remain
-open. Earlier rows below retain their component evidence boundaries.
+Full S-01 and S-03 acceptance, broader near-tie/retrieval evaluation,
+T1/CPU-FENV, full numerical and runtime qualification, and production
+acceptance remain open. Earlier rows below retain their component evidence
+boundaries.
 
 The rank initialization follow-through applies the same ten-field rule-C policy
 to `ConstructionReport::rank_identity`, which the shipped
