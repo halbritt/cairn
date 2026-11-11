@@ -21,6 +21,9 @@ func run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 	if len(args) >= 2 && args[0] == "lifecycle" && args[1] == "inbox" {
 		return inboxipc.Run(args, input, output, diagnostic)
 	}
+	if len(args) > 0 && args[0] == "memory-capture" {
+		return memoryhost.RunCheckedCapture(context.Background(), args[1:], input, output, diagnostic)
+	}
 	if len(args) > 0 && args[0] == "memory" {
 		if len(args) > 1 && (args[1] == "--receipt" || strings.HasPrefix(args[1], "--receipt=")) {
 			return memoryhost.RunChecked(context.Background(), args[1:], input, output, diagnostic)
