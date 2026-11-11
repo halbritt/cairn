@@ -450,6 +450,43 @@ sys.exit(spec.get('exit',0))
         self.assertEqual(self.state(), {})
         self.assertNotIn('selector_outcome', self.calls[-1][1])
 
+    def test_stored_non_string_workstream_refuses_before_discovery_and_preserves_state(self):
+        self.configure('claude', 'PreCompact', messages=[
+            dict(role='user', text='Keep the postgres retention policy for this project.'),
+            dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
+        for stored in (5, True, None, ['retention'], {'title': 'retention'}):
+            with self.subTest(workstream=stored):
+                directory = Path(self.f.memory['state_dir'])
+                shutil.rmtree(directory, ignore_errors=True)
+                directory.mkdir(mode=0o700)
+                seed = dict(workstream=stored, sentinel=['preserve'])
+                write(directory/(self.session_key()+'.json'), encoded(seed))
+                self.assertNotEqual(self.pair().returncode, 0)
+                self.assertEqual(self.provider_calls, [])
+                self.assertFalse(any(op in ('index', 'expand', 'create', 'revise') for op, _, _ in self.calls))
+                reports = [body for op, body, _ in self.calls if op == 'capture-observation']
+                self.assertEqual(len(reports), 1)
+                self.assertEqual(reports[0]['error_class'], 'TypeError')
+                self.assertEqual(reports[0]['outcome'], 'error')
+                self.assertEqual(self.state(), {self.session_key()+'.json': seed})
+
+    def test_absent_and_empty_stored_workstream_keep_source_checkpoint_queries(self):
+        self.configure('claude', 'PreCompact', messages=[
+            dict(role='user', text='Keep the postgres retention policy for this project.'),
+            dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
+        for present in (False, True):
+            with self.subTest(present=present):
+                directory = Path(self.f.memory['state_dir'])
+                shutil.rmtree(directory, ignore_errors=True)
+                directory.mkdir(mode=0o700)
+                seed = dict(workstream='') if present else {}
+                write(directory/(self.session_key()+'.json'), encoded(seed))
+                self.assertEqual(self.pair().returncode, 0)
+                title = '' if present else 'Handoff: project / Claude session '+self.f.event['session_id']
+                queries = [body['query'] for op, body, _ in self.calls if op == 'index']
+                self.assertEqual(queries[0], '"'+title+'"')
+                self.assertEqual(len(self.provider_calls), 1)
+
     def test_invalid_lifecycle_model_prevents_provider_spawn(self):
         for key in ('preview_model', 'recall_model'):
             with self.subTest(key=key):
