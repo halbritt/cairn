@@ -182,7 +182,7 @@ class BoundProviderCaptureTests(BoundMemoryCase):
     @classmethod
     def setUpClass(cls):
         if not (ROOT / 'internal/lifecycle/memoryhook/capture_provider.go').exists():
-            raise unittest.SkipTest('accepted provider join is not present; fixtures prepared only')
+            raise unittest.SkipTest('selected provider construction input is not present; fixtures prepared only')
         super().setUpClass()
 
     @classmethod
@@ -317,6 +317,52 @@ sys.exit(spec.get('exit',0))
         self.assertEqual(self.writes, [])
         self.assertEqual(self.state(), {})
         self.assertEqual(self.calls[-1][1]['selector_outcome'], 'error')
+
+    def deadline_process(self, source):
+        import subprocess
+        import threading
+        import time
+        command = [str(self.f.launcher('memory', 150) if source else self.go_launcher())]
+        started = time.monotonic()
+        child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, cwd=self.f.root, env=self.f.env())
+        timer = threading.Timer(130, child.stdin.close)
+        try:
+            child.stdin.write(self.f.raw)
+            child.stdin.flush()
+            timer.start()
+            child.wait(timeout=165)
+            elapsed = time.monotonic() - started
+            self.assertGreaterEqual(elapsed, 148)
+            self.assertLess(elapsed, 162)
+            return subprocess.CompletedProcess(command, child.returncode, child.stdout.read(), child.stderr.read())
+        finally:
+            timer.cancel()
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=3)
+            for stream in (child.stdin, child.stdout, child.stderr):
+                stream.close()
+
+    def source(self, *, timeout=None):
+        if getattr(self, 'deadline_fixture', False):
+            return self.deadline_process(True)
+        return super().source(timeout=timeout)
+
+    def go(self, *, timeout=None, prefix=()):
+        if getattr(self, 'deadline_fixture', False):
+            return self.deadline_process(False)
+        return super().go(timeout=timeout, prefix=prefix)
+
+    def test_checked_original_150s_deadline_includes_stdin_retrieval_and_selector(self):
+        self.deadline_fixture = True
+        self.spec['delay'] = 35
+        self.selection['memories'] = [self.note()]
+        result = self.pair()
+        self.assertEqual((result.returncode, result.stdout), (1, b''))
+        self.assertEqual(self.writes, [])
+        self.assertEqual(self.state(), {})
+        self.assertFalse(any(row[0] in ('create', 'revise') for row in self.calls))
 
 
 if __name__ == '__main__':

@@ -47,6 +47,16 @@ Actual owner-only invocation traces are compared on success, activation failure
 and late required refusal. Only validated process IDs, invocation IDs and timing
 fields differ; activation stage/error labels and required outcomes retain Source.
 
+Configured bound capture calls the existing provider/selection implementation
+through runCapture. Actual checked 150-second Source/Go pairs cover null
+selection, ordered note/checkpoint saves, prewrite refusal, partial confirmed
+writes, CAS conflict, selector failure, cleanup and post-lock reporting. The
+deadline pair holds stdin for 130 seconds before entering retrieval and a
+35-second local selector: the original entry deadline must stop the complete
+invocation near 150 seconds without a write or committed capture state.
+Only the external selector and authenticated Unix service are synthetic.
+Producer qualification and final composition review remain separate gates.
+
 Native turn UUID syntax, including the Source's accepted zero UUID, is metadata.
 Extra event agent/execution/lease/expiry fields do not authorize an inbox claim.
 Actual ownership, execution freshness, lease and delivery policy remain with
