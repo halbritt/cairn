@@ -201,6 +201,11 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	if err != nil {
 		return 0, err
 	}
+	if c.Compatibility != nil {
+		if err = c.Compatibility.BindLookup(c.profile(), root, nil, nil); err != nil {
+			return 0, err
+		}
+	}
 	// Read directory entries rather than treating an arbitrary configured root
 	// as a glob pattern. pathlib.glob treats that root literally too.
 	candidates := []string{}
@@ -267,10 +272,17 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 		return 0, nativeRefusal("INVALID_HOST", "invalid compact inbox binding")
 	}
 	configPath := sourceJoin(sourceJoin(root, "bindings"), nativeText(binding)+".json")
+	if c.Compatibility != nil {
+		configPath = purePosixPath(c.Compatibility.ConfigPath)
+		b := nativeText(binding)
+		if err = c.Compatibility.BindLookup(c.profile(), root, &b, &configPath); err != nil {
+			return 0, err
+		}
+	}
 	if err = c.ownerOnly(configPath, "compact inbox binding must be owner-only"); err != nil {
 		return 0, err
 	}
-	config, err := LoadConfig(c.Host, configPath)
+	config, err := c.loadConfig(configPath)
 	if err != nil {
 		return 0, err
 	}
@@ -577,10 +589,15 @@ func (c *CLI) advanceCompact(ctx context.Context, config *value.Value, path stri
 		}
 		return 0, c.output(out, nativeMap("schema", "cairn.compact-inbox-batch/1", "ok", true, "next", nil, "remainder", remainder), false)
 	}
-	if c.NextContext == nil {
+	var text *value.Value
+	obs := nativeMap("event", "PostToolUse", "phase", "active", "native_turn_id", attempt.Get("native_turn_id"))
+	if c.NextContext != nil {
+		text, err = c.NextContext(ctx, config, state, path, obs)
+	} else if c.Compatibility != nil {
+		text, err = c.RenderActiveAttemptContext(ctx, config, state, path, obs)
+	} else {
 		return 0, &value.ProfileUnavailable{}
 	}
-	text, err := c.NextContext(ctx, config, state, path, nativeMap("event", "PostToolUse", "phase", "active", "native_turn_id", attempt.Get("native_turn_id")))
 	if err != nil {
 		return 0, err
 	}

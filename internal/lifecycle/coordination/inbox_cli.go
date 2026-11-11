@@ -166,6 +166,11 @@ func (c *CLI) InboxCommand(ctx context.Context, argv []string, in io.Reader, out
 		}
 	}
 	path := purePosixPath(a.get("--context"))
+	if c.Compatibility != nil {
+		if err = c.Compatibility.BindContextPath(c.profile(), path); err != nil {
+			return 0, err
+		}
+	}
 	if err = c.ownerOnly(path, "native inbox context must be owner-only"); err != nil {
 		return 0, err
 	}
@@ -175,6 +180,11 @@ func (c *CLI) InboxCommand(ctx context.Context, argv []string, in io.Reader, out
 	}
 	if native == nil || native.Kind != value.Object || !value.SameText(native.Get("schema"), "cairn.session-inbox/1") {
 		return 0, nativeRefusal("INVALID_HOST", "not a native inbox context")
+	}
+	if c.Compatibility != nil {
+		if err = c.Compatibility.BindContext(native); err != nil {
+			return 0, err
+		}
 	}
 	commands, err := nativeDefaultObj(native.Get("commands"), "commands")
 	if err != nil {
@@ -350,10 +360,19 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 		}
 		commands.Set("respond", respond)
 	}
-	if len(c.Command) == 0 {
-		return "", nil, &value.ProfileUnavailable{}
+	tail := []string{"inbox", "--context", target}
+	var journaled []string
+	if c.Compatibility != nil {
+		journaled, err = c.Compatibility.IssuedArgv(tail)
+		if err != nil {
+			return "", nil, err
+		}
+	} else {
+		if len(c.Command) == 0 {
+			return "", nil, &value.ProfileUnavailable{}
+		}
+		journaled = append(append([]string{}, c.Command...), tail...)
 	}
-	journaled := append(append([]string{}, c.Command...), "inbox", "--context", target)
 	eventID, err := nativeRequired(event, "event_id")
 	if err != nil {
 		return "", nil, err
@@ -370,6 +389,11 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 	native := nativeMap("schema", "cairn.session-inbox/1", "agent_id", session.Get("agent_id"), "execution_id", session.Get("execution_id"), "attempt_id", attemptID, "event_id", eventID, "kind", kind, "sender", sender, "source", ref, "delivery_id", deliveryID, "lease_id", leaseID, "read", read, "read_input", ref, "completion", stringArray(append(append([]string{}, journaled...), "complete")...), "acknowledgement", stringArray(append(append([]string{}, journaled...), "ack")...), "state_dir", stateDir, "commands", commands, "request_ids", requestIDs)
 	if value.SameText(kind, "request") {
 		native.Set("response", stringArray(append(journaled, "respond")...))
+	}
+	if c.Compatibility != nil {
+		if err = c.Compatibility.ContextCommands(native); err != nil {
+			return "", nil, err
+		}
 	}
 	return target, native, nil
 }
@@ -397,7 +421,7 @@ func (c *CLI) DrainCommand(ctx context.Context, argv []string, out io.Writer) (i
 	if seconds.Cmp(big.NewInt(60)) < 0 || seconds.Cmp(big.NewInt(3600)) > 0 {
 		return 0, nativeRefusal("INVALID_REQUEST", "--lease-seconds must be 60-3600")
 	}
-	config, err := LoadConfig(c.Host, a.get("--config"))
+	config, err := c.loadConfig(a.get("--config"))
 	if err != nil {
 		return 0, err
 	}

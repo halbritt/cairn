@@ -165,15 +165,32 @@ func LoadConfig(host *Host, path string) (*value.Value, error) {
 	return ValidateConfig(v)
 }
 
+func (c *CLI) loadConfig(path string) (*value.Value, error) {
+	if c.Compatibility != nil {
+		path = purePosixPath(path)
+		if strings.ContainsRune(path, 0) {
+			return nil, &value.Error{Class: "ValueError", Message: "embedded null byte"}
+		}
+		v, err := c.Compatibility.Config(c.profile(), path)
+		if err != nil {
+			return nil, err
+		}
+		return ValidateConfig(v)
+	}
+	return LoadConfig(c.Host, path)
+}
+
 // CLI is a callable frontend. Command is the invocation prefix that this host
-// actually installs (used in generated contexts). NextContext is the native
-// frontend's inbox_context owner; the CLI does not duplicate hook admission or
-// render a substitute context after notice advancement. All JSON sites require
-// the selected profile, independently of the session reader/writer sites.
+// actually installs (used in generated contexts when Compatibility is nil).
+// NextContext overrides active-attempt context rendering after notice advancement;
+// when NextContext is nil and Compatibility is set, RenderActiveAttemptContext
+// renders the advanced notice context directly. All JSON sites require the
+// selected profile, independently of the session reader/writer sites.
 type CLI struct {
 	Host           *Host
 	Engine         *RecoveryEngine
 	Profile        *value.SourceReaderProfile
+	Compatibility  *CompatibilityContext
 	Journal        journal.Options
 	Command        []string
 	Now            func() time.Time
@@ -489,20 +506,30 @@ func (c *CLI) RunCLI(ctx context.Context, args []string, in io.Reader, out, errO
 	inbox := len(args) > 0 && args[0] == "inbox"
 	var code int
 	var err error
-	if inbox {
-		switch {
-		case len(args) > 1 && args[1] == "drain":
-			code, err = c.DrainCommand(ctx, args[2:], out)
-		case len(args) > 1 && args[1] == "compact":
-			code, err = c.CompactCommand(ctx, args[2:], out, errOut)
-		default:
-			code, err = c.InboxCommand(ctx, args[1:], in, out, errOut)
+	if c.Compatibility != nil {
+		err = c.Compatibility.VerifyTail(args)
+	}
+	if err == nil {
+		if inbox {
+			switch {
+			case len(args) > 1 && args[1] == "drain":
+				code, err = c.DrainCommand(ctx, args[2:], out)
+			case len(args) > 1 && args[1] == "compact":
+				code, err = c.CompactCommand(ctx, args[2:], out, errOut)
+			default:
+				code, err = c.InboxCommand(ctx, args[1:], in, out, errOut)
+			}
+		} else {
+			code, err = c.runRecovery(ctx, args, out)
 		}
-	} else {
-		code, err = c.runRecovery(ctx, args, out)
 	}
 	if err == nil {
 		return code, nil
+	}
+	var preflight *CompatibilityPreflightError
+	if errors.As(err, &preflight) {
+		_, e := io.WriteString(errOut, "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n")
+		return 1, e
 	}
 	var help *cliHelp
 	if errors.As(err, &help) {

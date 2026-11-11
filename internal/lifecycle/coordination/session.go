@@ -41,31 +41,39 @@ type NativeCallOptions struct {
 	Timeout time.Duration
 }
 type Host struct {
-	Profile      *value.SourceReaderProfile
-	Services     *ServiceBindings
-	ReadConfig   func(string) (*value.Value, error)
-	ReadContext  func(string) (*value.Value, error)
-	WriteContext func(string, *value.Value) error
-	Call         func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error)
-	Persist      func(string, *value.Value) error
-	Journal      JournalBoundary
-	SessionRef   func(*value.Value) (*value.Value, error)
-	NewID        func() string
-	Log          func(string) error
-	Locate       func(*value.Value, string) (string, error)
-	Lock         func(string) (io.Closer, error)
-	Exists       func(string) (bool, error)
-	Load         func(string) (*value.Value, error)
-	Recover      func(context.Context, *NativeSession) (*value.Value, error)
-	Release      func(context.Context, *NativeSession, string, bool) (bool, error)
-	Renew        func(context.Context, *NativeSession, *value.Value) (*value.Value, error)
-	EndTurn      func(context.Context, *NativeSession, bool) (bool, error)
+	Profile       *value.SourceReaderProfile
+	Services      *ServiceBindings
+	Compatibility *CompatibilityContext
+	ReadConfig    func(string) (*value.Value, error)
+	ReadContext   func(string) (*value.Value, error)
+	WriteContext  func(string, *value.Value) error
+	Call          func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error)
+	Persist       func(string, *value.Value) error
+	Journal       JournalBoundary
+	SessionRef    func(*value.Value) (*value.Value, error)
+	NewID         func() string
+	Log           func(string) error
+	Locate        func(*value.Value, string) (string, error)
+	Lock          func(string) (io.Closer, error)
+	Exists        func(string) (bool, error)
+	Load          func(string) (*value.Value, error)
+	Recover       func(context.Context, *NativeSession) (*value.Value, error)
+	Release       func(context.Context, *NativeSession, string, bool) (bool, error)
+	Renew         func(context.Context, *NativeSession, *value.Value) (*value.Value, error)
+	EndTurn       func(context.Context, *NativeSession, bool) (bool, error)
 }
 type NativeSession struct {
 	Config *value.Value
 	Path   string
 	Record *value.Value
 	Host   *Host
+}
+
+func (s *NativeSession) compatibility() *CompatibilityContext {
+	if s != nil && s.Host != nil {
+		return s.Host.Compatibility
+	}
+	return nil
 }
 
 func (s *NativeSession) Attempt() *value.Value { return s.Record.Get("inbox_attempt") }

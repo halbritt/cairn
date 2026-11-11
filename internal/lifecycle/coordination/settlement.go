@@ -215,6 +215,15 @@ func (s *NativeSession) UnacknowledgedTurnEndReminder(ctx context.Context, obser
 	default:
 		return "", nil
 	}
+	if compat := s.compatibility(); compat != nil {
+		if hasSurrogate {
+			return "", &value.Error{Class: "UnicodeEncodeError", Message: "surrogates not allowed"}
+		}
+		var err error
+		if reminder, err = compat.Control(reminder); err != nil {
+			return "", err
+		}
+	}
 	prior := s.Record.Get("inbox_ack_reminder_revision")
 	if nativeEqual(s.Record.Get("inbox_ack_reminded"), attemptID) {
 		if (prior == nil || prior.Kind != value.Object || !nativeEqual(prior.Get("attempt_id"), attemptID)) && fallback == "" {

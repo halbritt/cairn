@@ -1,0 +1,823 @@
+package coordination
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/halbritt/cairn/internal/lifecycle/journal"
+	"github.com/halbritt/cairn/internal/lifecycle/value"
+)
+
+type compatFixture struct {
+	root        string
+	stateDir    string
+	configPath  string
+	bindingPath string
+	receiptPath string
+	launchRoot  string
+	launcher    string
+	launcherRaw []byte
+	config      *value.Value
+	compat      *CompatibilityContext
+	profile     *value.SourceReaderProfile
+}
+
+func writePrivateFile(t *testing.T, path string, data []byte, perm os.FileMode) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, perm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, perm); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func encodeFixtureJSON(t *testing.T, v *value.Value) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	yes, no := true, false
+	err := value.WriteKernel(&buf, v, value.WriterRoute{
+		Route:       "dumps",
+		Codec:       &value.Codec{Name: "utf-8", Errors: "strict"},
+		EnsureASCII: &yes,
+		Compact:     &no,
+		TrailingLF:  &yes,
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func newCompatFixture(t *testing.T) *compatFixture {
+	t.Helper()
+	p := stage2ServicesProfile()
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	coordRoot := filepath.Join(root, "coord")
+	stateDir := filepath.Join(coordRoot, "state", "fixture")
+	if err := os.MkdirAll(filepath.Join(stateDir, "inbox"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	binDir := filepath.Join(root, "bin")
+	cairnBin := filepath.Join(binDir, "cairn")
+	writePrivateFile(t, cairnBin, []byte("#!/bin/sh\nexit 0\n"), 0o700)
+	sockPath := filepath.Join(root, "sock", "api.sock")
+	writePrivateFile(t, sockPath, []byte("sock"), 0o600)
+	tokPath := filepath.Join(root, "tok", "token")
+	writePrivateFile(t, tokPath, []byte("secret-token"), 0o600)
+
+	bindingPath := filepath.Join(root, "recall", "binding.json")
+	memCfg := nativeMap(
+		"cairn", cairnBin,
+		"socket", sockPath,
+		"token_file", tokPath,
+		"state_dir", filepath.Join(root, "mem-state"),
+		"harness", "codex",
+		"repo", filepath.Join(root, "repo"),
+		"binding", "mem-fixture",
+		"recall_mode", "agent_tools",
+		"context_bytes", value.IntegerText("2000"),
+		"inbox_recall_binding", bindingPath,
+	)
+	memCfgPath := filepath.Join(root, "mem", "config.json")
+	memSHA := writePrivateFile(t, memCfgPath, encodeFixtureJSON(t, memCfg), 0o600)
+
+	coordCfg := nativeMap(
+		"cairn", cairnBin,
+		"socket", sockPath,
+		"token_file", tokPath,
+		"state_dir", stateDir,
+		"harness", "codex",
+		"repo", filepath.Join(root, "repo"),
+		"binding", "fixture",
+		"native_delivery", true,
+		"compact_inbox_version", value.IntegerText("1"),
+		"notice_batch_version", value.IntegerText("1"),
+		"remind_unacknowledged_turn_end", true,
+		"inbox_recall_binding", bindingPath,
+	)
+	configPath := filepath.Join(coordRoot, "generations", "selection-fixture", "coordination-0.json")
+	coordSHA := writePrivateFile(t, configPath, encodeFixtureJSON(t, coordCfg), 0o600)
+
+	binDesc := nativeMap("path", cairnBin, "sha256", strings.Repeat("a", 64))
+	memDesc := nativeMap("path", memCfgPath, "sha256", memSHA)
+	coordDesc := &value.Value{Kind: value.Array, Items: []*value.Value{nativeMap("path", configPath, "sha256", coordSHA)}}
+	manifest := nativeMap(
+		"schema", "cairn.inbox-recall-binding/3",
+		"enabled", true,
+		"binary", binDesc,
+		"memory_config", memDesc,
+		"coordination_configs", coordDesc,
+	)
+	bindingSHA := writePrivateFile(t, bindingPath, encodeFixtureJSON(t, manifest), 0o600)
+	receipt := nativeMap(
+		"binding", nativeMap("path", bindingPath, "sha256", bindingSHA),
+		"binary", binDesc,
+		"memory_config", memDesc,
+		"coordination_configs", coordDesc,
+	)
+	receiptPath := filepath.Join(root, "receipt", "receipt.json")
+	receiptSHA := writePrivateFile(t, receiptPath, encodeFixtureJSON(t, receipt), 0o600)
+
+	vector := []string{"/usr/bin/python3", "-I", "-S", "-c", "pass", "/entry.py", configPath, receiptPath, receiptSHA}
+	launcherRaw, err := LauncherBytes(vector, DefaultCompatibilityShell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launchRoot := filepath.Join(root, "l")
+	launcher := LauncherPath(launchRoot, launcherRaw)
+	writePrivateFile(t, launcher, launcherRaw, 0o500)
+
+	compat := &CompatibilityContext{
+		Role:           "coordination",
+		Entrypoint:     "/entry.py",
+		ConfigPath:     configPath,
+		HookTimeout:    15,
+		LaunchRoot:     launchRoot,
+		Shell:          DefaultCompatibilityShell,
+		Tail:           []string{},
+		ReceiptPath:    receiptPath,
+		ReceiptSHA256:  receiptSHA,
+		Deadline:       200,
+		Now:            func() float64 { return 100 },
+		Vector:         vector,
+		Launcher:       launcher,
+		LauncherRaw:    launcherRaw,
+		ActivationFunc: func([]byte) (bool, error) { return true, nil },
+		Profile:        p,
+		RandomBytes:    func(n int) ([]byte, error) { return bytes.Repeat([]byte{0xab}, n), nil },
+	}
+	return &compatFixture{
+		root: coordRoot, stateDir: stateDir, configPath: configPath,
+		bindingPath: bindingPath, receiptPath: receiptPath,
+		launchRoot: launchRoot, launcher: launcher, launcherRaw: launcherRaw,
+		config: coordCfg, compat: compat, profile: p,
+	}
+}
+
+func TestCompatibilityLauncherAndIssuedArgv(t *testing.T) {
+	f := newCompatFixture(t)
+	argv, err := f.compat.IssuedArgv([]string{"inbox", "compact", "read", "abcdef0123456789"})
+	if err != nil || len(argv) != 5 || argv[0] != f.launcher || argv[3] != "read" {
+		t.Fatal(argv, err)
+	}
+	padLen := 512 - len(shlexQuote(f.launcher)) - 1
+	exact512, err := f.compat.IssuedArgv([]string{strings.Repeat("x", padLen)})
+	if err != nil || len(exact512) != 2 {
+		t.Fatal(exact512, err)
+	}
+	_, err = f.compat.IssuedArgv([]string{strings.Repeat("x", padLen+1)})
+	stage2ErrorClass(t, err, "ValueError")
+
+	if err := os.Chmod(f.launcher, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.compat.IssuedArgv([]string{"inbox"})
+	var pe *CompatibilityPreflightError
+	if !errors.As(err, &pe) {
+		t.Fatalf("expected CompatibilityPreflightError on 0700 launcher, got %v", err)
+	}
+	if err := os.Chmod(f.launcher, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(f.launcher, []byte("#!/bin/sh\nexec /tampered\n"), 0o500)
+	_ = os.Chmod(f.launcher, 0o500)
+	_, err = f.compat.IssuedArgv([]string{"inbox"})
+	if !errors.As(err, &pe) {
+		t.Fatalf("expected CompatibilityPreflightError on tampered launcher, got %v", err)
+	}
+}
+
+func TestCompatibilityHandoffAndInboxCommandPreflight(t *testing.T) {
+	f := newCompatFixture(t)
+	state := stage2State()
+	nativePop(state, "inbox_attempt", "inbox_intent")
+	statePath := filepath.Join(f.stateDir, "own.json")
+	stage2WriteValue(t, f.profile, statePath, state)
+
+	delivery := nativeMap(
+		"delivery_id", stage2Delivery,
+		"lease_id", stage2Attempt,
+		"event", nativeMap(
+			"event_id", stage2Delivery,
+			"kind", "request",
+			"from", "agent/other",
+			"ref", nativeMap("record_id", stage2Turn, "version", 1),
+			"correlation_id", "corr-1",
+		),
+	)
+	host := NewFileHost(FileHostOptions{
+		Profile:       f.profile,
+		Compatibility: f.compat,
+		Call: func(_ context.Context, _ *value.Value, op string, _ *value.Value, _ NativeCallOptions) (*value.Value, error) {
+			if op == "event-next" {
+				return nativeMap("delivery", delivery), nil
+			}
+			return nativeMap("ok", true), nil
+		},
+	})
+	c := &CLI{
+		Host:          host,
+		Profile:       f.profile,
+		Compatibility: f.compat,
+		Root:          f.root,
+		Engine:        &RecoveryEngine{Hooks: RecoveryHooks{Alive: func(*value.Value) (bool, error) { return true, nil }}},
+	}
+	code, result, stderr := stage2CLIResult(t, c, "inbox", "drain", "--config", f.configPath, "--agent-id", stage2Agent, "--execution-id", stage2Execution)
+	if code != 0 || stderr != "" {
+		t.Fatal(code, result, stderr)
+	}
+	ctxPath := nativeText(result.Get("context"))
+	native, err := c.read(ctxPath, SiteInboxContextRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nativeText(native.Get("completion").Items[0]) != f.launcher || nativeText(native.Get("acknowledgement").Items[0]) != f.launcher || nativeText(native.Get("response").Items[0]) != f.launcher {
+		t.Fatal("expected launcher argv in handoff context", native)
+	}
+	sc := native.Get("shell_commands")
+	if sc == nil || sc.Kind != value.Object || !strings.HasPrefix(nativeText(sc.Get("completion")), f.launcher+" inbox --context ") {
+		t.Fatal("missing or invalid shell_commands", sc)
+	}
+	for _, m := range sc.Members {
+		if len(nativeText(m.Value)) > 512 {
+			t.Fatal("shell_command exceeds 512 bytes", m)
+		}
+	}
+
+	c.Journal.Runner = journal.RunnerFunc(func(_ context.Context, _ []string, _ string) (journal.Result, error) {
+		return journal.Result{Stdout: `{"schema":"cairn.response/1","ok":true,"data":{"state":"handled","attempts":1}}` + "\n"}, nil
+	})
+	code, ackRes, stderr := stage2CLIResult(t, c, "inbox", "--context", ctxPath, "ack")
+	if code != 0 || !exactTrue(ackRes.Get("ok")) || stderr != "" {
+		t.Fatal(code, ackRes, stderr)
+	}
+
+	// Unselected context path outside <state_dir>/inbox fails preflight with exit 1, empty stdout, and exact stderr diagnostic.
+	unselectedPath := filepath.Join(f.root, "outside.json")
+	writePrivateFile(t, unselectedPath, encodeFixtureJSON(t, native), 0o600)
+	var outBuf, errBuf bytes.Buffer
+	code, err = c.RunCLI(context.Background(), []string{"inbox", "--context", unselectedPath, "ack"}, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || outBuf.Len() != 0 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatal(code, outBuf.String(), errBuf.String(), err)
+	}
+
+	// Tampered executable in context fails BindContext preflight before running any command.
+	tampered := nativeClone(native)
+	tampered.Get("commands").Get("ack").Items[0] = value.Text("/tampered/cairn")
+	writePrivateFile(t, ctxPath, encodeFixtureJSON(t, tampered), 0o600)
+	// Recovery mode under Compatibility fails VerifyTail preflight with exit 1, empty stdout, and exact stderr diagnostic.
+	outBuf.Reset()
+	errBuf.Reset()
+	code, err = c.RunCLI(context.Background(), []string{"inspect-held-refusal", "--config", f.configPath}, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || outBuf.Len() != 0 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatal(code, outBuf.String(), errBuf.String(), err)
+	}
+
+	// Execute emitted shell text via /bin/sh -c and a real 0500 launcher whose vector echoes its tail argv (after "--") as JSON.
+	echoVec := []string{"/usr/bin/python3", "-I", "-S", "-c", "import json, sys; print(json.dumps(sys.argv[2:]))"}
+	echoRaw, err := LauncherBytes(echoVec, DefaultCompatibilityShell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	echoLauncher := LauncherPath(f.launchRoot, echoRaw)
+	writePrivateFile(t, echoLauncher, echoRaw, 0o500)
+	f.compat.Vector = echoVec
+	f.compat.Launcher = echoLauncher
+	f.compat.LauncherRaw = echoRaw
+
+	specialDir := filepath.Join(t.TempDir(), "選択 ' \"$()\" `tick`")
+	if err := os.MkdirAll(specialDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	specialCtx := filepath.Join(specialDir, "ctx.json")
+	_, specialNative, err := c.InboxHandoff(f.config, nativeMap("agent_id", stage2Agent, "execution_id", stage2Execution), delivery, stage2Attempt,
+		nativeMap("completion", stage2Attempt, "response", stage2Turn))
+	if err != nil {
+		t.Fatal(err)
+	}
+	specialTail := []string{"inbox", "--context", specialCtx, "complete"}
+	specialArgv, err := f.compat.IssuedArgv(specialTail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	specialNative.Set("completion", &value.Value{Kind: value.Array, Items: []*value.Value{value.Text(specialArgv[0]), value.Text(specialArgv[1]), value.Text(specialArgv[2]), value.Text(specialArgv[3]), value.Text(specialArgv[4])}})
+	if err := f.compat.ContextCommands(specialNative); err != nil {
+		t.Fatal(err)
+	}
+	settleCmd, err := c.CompactCommandText("settle", "abababababababab", "failed", "--code", "source_unavailable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainArgv, err := f.compat.IssuedArgv([]string{"inbox", "drain", "--config", f.configPath, "--agent-id", stage2Agent, "--execution-id", stage2Execution})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainCmd, _ := shlexJoinStrings(drainArgv)
+	// Non-ASCII argument giving an exactly 512-byte command: '選' is 3 UTF-8 bytes; shlexQuote adds 2 single quotes.
+	prefixLen := len(shlexQuote(echoLauncher)) + 1
+	remBytes := 512 - prefixLen - 2
+	nonASCIITail := "選" + strings.Repeat("a", remBytes-3)
+	nonASCIIArgv, err := f.compat.IssuedArgv([]string{nonASCIITail})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonASCIICmd, _ := shlexJoinStrings(nonASCIIArgv)
+	if len(nonASCIICmd) != 512 {
+		t.Fatalf("expected 512-byte command, got len=%d", len(nonASCIICmd))
+	}
+	for _, tc := range []struct {
+		cmd  string
+		want []string
+	}{
+		{settleCmd, []string{"inbox", "compact", "settle", "abababababababab", "failed", "--code", "source_unavailable"}},
+		{nativeText(specialNative.Get("shell_commands").Get("completion")), specialTail},
+		{drainCmd, []string{"inbox", "drain", "--config", f.configPath, "--agent-id", stage2Agent, "--execution-id", stage2Execution}},
+		{nonASCIICmd, []string{nonASCIITail}},
+	} {
+		shRes, err := (journal.CommandRunner{}).Run(context.Background(), []string{"/bin/sh", "-c", tc.cmd}, "")
+		if err != nil || shRes.ExitCode != 0 {
+			t.Fatalf("/bin/sh execution failed for %q: err=%v exit=%d stderr=%s", tc.cmd, err, shRes.ExitCode, shRes.Stderr)
+		}
+		gotVal, err := value.DecodeBytes([]byte(shRes.Stdout), 0)
+		if err != nil || gotVal.Kind != value.Array || len(gotVal.Items) != len(tc.want) {
+			t.Fatalf("/bin/sh argv decode mismatch: stdout=%q want=%v err=%v", shRes.Stdout, tc.want, err)
+		}
+		for i, w := range tc.want {
+			if nativeText(gotVal.Items[i]) != w {
+				t.Fatalf("/bin/sh argv[%d] = %q, want %q", i, nativeText(gotVal.Items[i]), w)
+			}
+		}
+	}
+}
+
+func TestCompatibilityCompactAndAdvance(t *testing.T) {
+	f := newCompatFixture(t)
+	state := stage2State()
+	delivery := state.Get("inbox_attempt").Get("delivery")
+	delivery.Get("event").Set("from", value.Text("agent/sender"))
+	delivery.Get("event").Set("ref", nativeMap("record_id", stage2Turn, "version", 1))
+	statePath := filepath.Join(f.stateDir, "own.json")
+
+	sourceBody := "short notice body"
+	next := nativeClone(state.Get("inbox_attempt"))
+	next.Set("attempt_id", value.Text(stage2Execution))
+	next.Set("batch_root", value.Text(stage2Attempt))
+	next.Set("batch_index", value.IntegerText("2"))
+	next.Set("batch_limit", value.IntegerText("3"))
+
+	host := NewFileHost(FileHostOptions{
+		Profile:       f.profile,
+		Compatibility: f.compat,
+		Call: func(_ context.Context, _ *value.Value, op string, req *value.Value, _ NativeCallOptions) (*value.Value, error) {
+			switch op {
+			case "event-renew":
+				d := nativeClone(delivery)
+				d.Set("state", value.Text("leased"))
+				return d, nil
+			case "history":
+				sum := sha256.Sum256([]byte(sourceBody))
+				return nativeMap("record_id", stage2Turn, "historical", true, "versions", &value.Value{Kind: value.Array, Items: []*value.Value{nativeMap("version", 1, "payload_available", true, "body", sourceBody, "body_bytes", len(sourceBody), "body_sha256", hex.EncodeToString(sum[:]))}}), nil
+			case "session-inbox-advance":
+				n := nativeClone(next)
+				n.Set("attempt_id", req.Get("request_id"))
+				return nativeMap("attempt", n, "remainder", "none"), nil
+			case "session-inbox-reconcile":
+				return nil, nativeRefusal("DELIVERY_ACTIVE", "active")
+			}
+			t.Fatal("unexpected op", op)
+			return nil, nil
+		},
+	})
+	c := &CLI{
+		Host:           host,
+		Profile:        f.profile,
+		Compatibility:  f.compat,
+		Root:           f.root,
+		Now:            func() time.Time { return time.Unix(100, 0) },
+		Env:            func(string) string { return "" },
+		CallerDescends: func(*value.Value) (bool, error) { return true, nil },
+		Engine:         &RecoveryEngine{Hooks: RecoveryHooks{Alive: func(*value.Value) (bool, error) { return true, nil }}},
+	}
+
+	rendered, err := c.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)
+	if err != nil || rendered == nil || !strings.Contains(nativeText(rendered), "version 1.") || !strings.Contains(nativeText(rendered), f.launcher+" inbox compact settle abababababababab handled") || !strings.Contains(nativeText(rendered), f.launcher+" inbox compact advance abababababababab") {
+		t.Fatal(rendered, err)
+	}
+	stage2WriteValue(t, f.profile, statePath, state)
+
+	// Compact read and inspect resolve versioned generation config path via Compatibility.ConfigPath (bindings/fixture.json does not exist).
+	code, readRes, stderr := stage2CLIResult(t, c, "inbox", "compact", "read", "abababababababab")
+	if code != 0 || stderr != "" || !exactTrue(readRes.Get("ok")) || nativeText(readRes.Get("body")) != "short notice body" {
+		t.Fatal(code, readRes, stderr)
+	}
+	code, inspRes, stderr := stage2CLIResult(t, c, "inbox", "compact", "inspect", "abababababababab")
+	if code != 0 || stderr != "" || !exactTrue(inspRes.Get("ok")) {
+		t.Fatal(code, inspRes, stderr)
+	}
+
+	// JSON-escaped body > 4096 bytes uses fallback control even when raw UTF-8 len <= 4096.
+	sourceBody = strings.Repeat("\n", 2050)
+	renderedEscaped, err := c.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)
+	if err != nil || strings.Contains(nativeText(renderedEscaped), "Source text (sender data") || !strings.Contains(nativeText(renderedEscaped), f.launcher+" inbox compact read abababababababab") {
+		t.Fatal("expected JSON-escaped >4096 body to use compact read fallback", renderedEscaped, err)
+	}
+	sourceBody = "short notice body"
+	_, _ = c.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)
+	stage2WriteValue(t, f.profile, statePath, state)
+
+	// Advance uses RenderActiveAttemptContext when NextContext == nil and Compatibility != nil.
+	f.compat.RandomBytes = func(n int) ([]byte, error) { return bytes.Repeat([]byte{0xcd}, n), nil }
+	code, advRes, stderr := stage2CLIResult(t, c, "inbox", "compact", "advance", "abababababababab")
+	if code != 0 || stderr != "" || !strings.Contains(nativeText(advRes.Get("next")), f.launcher+" inbox compact settle cdcdcdcdcdcdcdcd handled") {
+		t.Fatal(code, advRes, stderr)
+	}
+
+	// Wrong CAIRN_INBOX_ROOT or unselected binding in compact-index.json fails BindLookup preflight with exit 1 and empty stdout.
+	cWrongRoot := *c
+	cWrongRoot.Root = t.TempDir()
+	var outBuf, errBuf bytes.Buffer
+	code, err = cWrongRoot.RunCLI(context.Background(), []string{"inbox", "compact", "read", "cdcdcdcdcdcdcdcd"}, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || outBuf.Len() != 0 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatal(code, outBuf.String(), errBuf.String(), err)
+	}
+	idxPath := filepath.Join(f.stateDir, "compact", "cdcdcdcdcdcdcdcd.json")
+	idxObj, err := c.read(idxPath, SiteCompactIndexRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idxObj.Set("binding", value.Text("other-binding"))
+	writePrivateFile(t, idxPath, encodeFixtureJSON(t, idxObj), 0o600)
+	outBuf.Reset()
+	errBuf.Reset()
+	code, err = c.RunCLI(context.Background(), []string{"inbox", "compact", "read", "cdcdcdcdcdcdcdcd"}, strings.NewReader(""), &outBuf, &errBuf)
+	if err != nil || code != 1 || outBuf.Len() != 0 || errBuf.String() != "Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n" {
+		t.Fatal(code, outBuf.String(), errBuf.String(), err)
+	}
+
+	// Legacy /2 CLI (Compatibility == nil) renders cairn-inbox commands.
+	cLegacy := *c
+	cLegacy.Compatibility = nil
+	cLegacy.Command = []string{"/usr/bin/python3", "/coord.py"}
+	legRendered, err := cLegacy.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)
+	if err != nil || !strings.Contains(nativeText(legRendered), "cairn-inbox settle ") {
+		t.Fatal(legRendered, err)
+	}
+
+	// OpenCode cancel fence: when harness == opencode and session-inbox-control returns an unconfirmed cancel, RenderActiveAttemptContext returns "".
+	ocCfg := nativeClone(f.config)
+	ocCfg.Set("harness", value.Text("opencode"))
+	ocHost := NewFileHost(FileHostOptions{
+		Profile:       f.profile,
+		Compatibility: f.compat,
+		Call: func(_ context.Context, _ *value.Value, op string, _ *value.Value, _ NativeCallOptions) (*value.Value, error) {
+			if op == "session-inbox-control" {
+				cancelled := nativeClone(state.Get("inbox_attempt"))
+				cancelled.Set("cancel", nativeMap("requested_at", 1))
+				return nativeMap("attempt", cancelled), nil
+			}
+			t.Fatalf("unexpected op under opencode cancel fence: %s", op)
+			return nil, nil
+		},
+	})
+	cOC := *c
+	cOC.Host = ocHost
+	ocRendered, err := cOC.RenderActiveAttemptContext(context.Background(), ocCfg, nativeClone(state), statePath)
+	if err != nil || nativeText(ocRendered) != "" {
+		t.Fatalf("expected empty context under opencode cancel fence, got %v err=%v", ocRendered, err)
+	}
+
+	// allocateCompactHandle raises EISDIR if an expired candidate *.json entry in compact/ is a directory.
+	probeDir := filepath.Join(f.stateDir, "compact", "probe-dir.json")
+	if err := os.MkdirAll(probeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cExpired := *c
+	cExpired.Now = func() time.Time { return time.Unix(10000, 0) }
+	_, _, err = cExpired.CompactInboxHandle(f.config, state, statePath, filepath.Join(f.stateDir, "inbox", "nonexistent.json"), nativeMap("attempt_id", "x", "delivery_id", "y", "source", value.Mapping()))
+	if !errors.Is(err, syscall.EISDIR) {
+		t.Fatalf("expected EISDIR on directory candidate in compact/, got %v", err)
+	}
+	_ = os.Remove(probeDir)
+}
+
+func TestCompatibilityReminderCueAndDeadline(t *testing.T) {
+	f := newCompatFixture(t)
+	state := stage2State()
+	statePath := filepath.Join(f.stateDir, "own.json")
+	delivery := state.Get("inbox_attempt").Get("delivery")
+	delivery.Get("event").Set("kind", value.Text("request"))
+	delivery.Get("event").Set("from", value.Text("agent/sender"))
+	delivery.Get("event").Set("ref", nativeMap("record_id", stage2Turn, "version", 1))
+
+	host := NewFileHost(FileHostOptions{
+		Profile:       f.profile,
+		Compatibility: f.compat,
+		Call: func(_ context.Context, _ *value.Value, op string, _ *value.Value, _ NativeCallOptions) (*value.Value, error) {
+			if op == "event-renew" {
+				d := nativeClone(delivery)
+				d.Set("state", value.Text("leased"))
+				return d, nil
+			}
+			if op == "session-inbox-reconcile" {
+				return nil, nativeRefusal("DELIVERY_ACTIVE", "active")
+			}
+			return nativeMap("ok", true), nil
+		},
+	})
+	c := &CLI{Host: host, Profile: f.profile, Compatibility: f.compat, Root: f.root}
+	rendered, err := c.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)
+	if err != nil || !strings.Contains(nativeText(rendered), "Request finish/reply command: "+f.launcher+" inbox --context ") {
+		t.Fatal(rendered, err)
+	}
+
+	ns := &NativeSession{Config: f.config, Path: statePath, Record: state, Host: host}
+	rem, err := ns.UnacknowledgedTurnEndReminder(context.Background(), nativeMap("native_turn_id", stage2Turn))
+	if err != nil || !strings.Contains(rem, f.launcher+" inbox --context ") || !strings.HasSuffix(rem, "finish-reply. Ending the turn again without completion will record this delivery as processing_failed.") || len(rem) > 2048 {
+		t.Fatal(rem, err)
+	}
+
+	// Over-budget reminder (> 2048 bytes) fails Compatibility.Control with ValueError before recording inbox_ack_reminded.
+	nativePop(state, "inbox_ack_reminded", "inbox_ack_reminder_revision")
+	ctxPath := filepath.Join(f.stateDir, "inbox", stage2Attempt+".json")
+	ctxObj, err := c.read(ctxPath, SiteInboxContextRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctxObj.Set("compact_source_unavailable", value.Boolean(true))
+	ctxObj.Set("compact_fallback_control", value.Text(strings.Repeat("x", 2049)))
+	writePrivateFile(t, ctxPath, encodeFixtureJSON(t, ctxObj), 0o600)
+	_, err = ns.UnacknowledgedTurnEndReminder(context.Background(), nativeMap("native_turn_id", stage2Turn))
+	stage2ErrorClass(t, err, "ValueError")
+	if state.Get("inbox_ack_reminded") != nil {
+		t.Fatal("over-budget reminder must not persist inbox_ack_reminded")
+	}
+
+	// InboxCueText under /3 vs /2.
+	pending := nativeMap("requests", 1, "notices", 2, "responses", 0, "truncated", false)
+	agent := state.Get("agent")
+	cue3, err := c.InboxCueText(pending, f.config, agent, f.configPath)
+	if err != nil || !strings.Contains(cue3, "`"+f.launcher+" inbox drain --config "+f.configPath) || len(cue3) > 2048 {
+		t.Fatal(cue3, err)
+	}
+	c2 := *c
+	c2.Compatibility = nil
+	c2.Command = []string{"/usr/bin/python3", "/coord.py"}
+	cue2, err := c2.InboxCueText(pending, f.config, agent, f.configPath)
+	if err != nil || !strings.Contains(cue2, "cairn inbox next --token-file") {
+		t.Fatal(cue2, err)
+	}
+
+	// Hook deadline capping in sourceCallWithCompatibility vs inbox subcommand.
+	f.compat.Now = func() float64 { return 205 }
+	callFn := sourceCallWithCompatibility(f.profile, journal.RunnerFunc(func(_ context.Context, _ []string, _ string) (journal.Result, error) {
+		t.Fatal("runner must not execute when hook deadline is expired")
+		return journal.Result{}, nil
+	}), f.compat)
+	_, err = callFn(context.Background(), f.config, "event-renew", value.Mapping(), NativeCallOptions{})
+	if !errors.Is(err, syscall.ETIMEDOUT) {
+		t.Fatalf("expected ETIMEDOUT on expired hook deadline, got %v", err)
+	}
+	f.compat.Tail = []string{"inbox", "drain"}
+	if remDur, err := f.compat.Remaining(4 * time.Second); err != nil || remDur != 4*time.Second {
+		t.Fatal("inbox subcommand must not be capped by hook deadline", remDur, err)
+	}
+	if got := f.compat.CapDeadline(250); got != 250 {
+		t.Fatalf("inbox subcommand CapDeadline = %v, want 250", got)
+	}
+	f.compat.Tail = []string{"hook"}
+	if got := f.compat.CapDeadline(250); got != 200 {
+		t.Fatalf("hook CapDeadline = %v, want 200", got)
+	}
+
+	// EffectiveConfig validates hook_event_name type, hook timeout table, and activation result.
+	loadedCfg, err := f.compat.Config(f.profile, f.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.compat.EffectiveConfig(f.profile, loadedCfg, nativeMap("hook_event_name", &value.Value{Kind: value.Array}), []byte("{}"))
+	stage2ErrorClass(t, err, "TypeError")
+	effCfg, err := f.compat.EffectiveConfig(f.profile, loadedCfg, nativeMap("hook_event_name", "UserPromptSubmit"), []byte("{}"))
+	if err != nil || effCfg != loadedCfg {
+		t.Fatal(effCfg, err)
+	}
+}
+
+func TestCompatibilityDifferentialPythonParity(t *testing.T) {
+	f := newCompatFixture(t)
+	state := stage2State()
+	statePath := filepath.Join(f.stateDir, "own.json")
+	delivery := state.Get("inbox_attempt").Get("delivery")
+	delivery.Get("event").Set("kind", value.Text("request"))
+	delivery.Get("event").Set("from", value.Text("agent/sender"))
+	delivery.Get("event").Set("ref", nativeMap("record_id", stage2Turn, "version", 1))
+
+	sourceBody := "short notice body"
+	sourceUnavailable := false
+	host := NewFileHost(FileHostOptions{
+		Profile:       f.profile,
+		Compatibility: f.compat,
+		Call: func(_ context.Context, _ *value.Value, op string, _ *value.Value, _ NativeCallOptions) (*value.Value, error) {
+			switch op {
+			case "event-renew":
+				d := nativeClone(delivery)
+				d.Set("state", value.Text("leased"))
+				return d, nil
+			case "history":
+				if sourceUnavailable {
+					return nil, nativeRefusal("SOURCE_UNAVAILABLE", "missing")
+				}
+				sum := sha256.Sum256([]byte(sourceBody))
+				return nativeMap("record_id", stage2Turn, "historical", true, "versions", &value.Value{Kind: value.Array, Items: []*value.Value{nativeMap("version", 1, "payload_available", true, "body", sourceBody, "body_bytes", len(sourceBody), "body_sha256", hex.EncodeToString(sum[:]))}}), nil
+			case "session-inbox-reconcile":
+				return nil, nativeRefusal("DELIVERY_ACTIVE", "active")
+			}
+			return nativeMap("ok", true), nil
+		},
+	})
+	c := &CLI{
+		Host:          host,
+		Profile:       f.profile,
+		Compatibility: f.compat,
+		Root:          f.root,
+		Now:           func() time.Time { return time.Unix(100, 0) },
+	}
+	c.Host.NewID = func() string { return "00000000-0000-4000-8000-000000000099" }
+
+	initialState := nativeClone(state)
+	goPromptVal, err := c.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctxPath := filepath.Join(f.stateDir, "inbox", stage2Attempt+".json")
+	goReqCtxBytes, err := os.ReadFile(ctxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goReqStateBytes, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goCtxObj, err := c.read(ctxPath, SiteInboxContextRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goShellCmds := encodeFixtureJSON(t, goCtxObj.Get("shell_commands"))
+	ns := &NativeSession{Config: f.config, Path: statePath, Record: state, Host: host}
+	goReminder, err := ns.UnacknowledgedTurnEndReminder(context.Background(), nativeMap("native_turn_id", stage2Turn))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := nativeMap("requests", 1, "notices", 2, "responses", 0, "truncated", true)
+	goCue, err := c.InboxCueText(pending, f.config, state.Get("agent"), f.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compact notice variants: inline, >4096 fallback, and unavailable source + reminder reuse.
+	delivery.Get("event").Set("kind", value.Text("notice"))
+	_ = os.Remove(ctxPath)
+	_ = os.RemoveAll(filepath.Join(f.stateDir, "compact"))
+	goCompactInline, err := c.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handlePath := filepath.Join(f.stateDir, "compact", "abababababababab.json")
+	goCompactCtxBytes, err := os.ReadFile(ctxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goCompactHandleBytes, err := os.ReadFile(handlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceBody = strings.Repeat("\n", 2050)
+	goCompactLarge, err := c.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceUnavailable = true
+	goCompactUnavail, err := c.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativePop(state, "inbox_ack_reminded", "inbox_ack_reminder_revision")
+	goUnavailRem, err := ns.UnacknowledgedTurnEndReminder(context.Background(), nativeMap("native_turn_id", stage2Turn))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(ctxPath)
+	_ = os.RemoveAll(filepath.Join(f.stateDir, "compact"))
+	stage2WriteValue(t, f.profile, statePath, initialState)
+
+	pyScript := `import hashlib, json, os, sys, types
+from pathlib import Path
+sys.path.insert(0, "../../../integrations/lifecycle")
+import coordination, inbox_binding, lifecycle_compatibility
+cfg_path, rec_path, rec_sha, l_root, l_path, state_path, turn_id, ctx_path = sys.argv[1:9]
+vec = ["/usr/bin/python3", "-I", "-S", "-c", "pass", "/entry.py", cfg_path, rec_path, rec_sha]
+args = types.SimpleNamespace(
+    role="coordination", entrypoint="coordination.py", config=cfg_path,
+    hook_timeout="15", launch_root=l_root, shell="/bin/sh", tail=[],
+    receipt=rec_path, receipt_sha256=rec_sha,
+)
+rec = json.loads(Path(rec_path).read_bytes())
+opened = lambda p, limit=65536: (Path(p).read_bytes(), hashlib.sha256(Path(p).read_bytes()).hexdigest())
+ctx = lifecycle_compatibility.InvocationContext(args, rec, {}, -1, 200.0, vec, opened)
+ctx.bundle = types.SimpleNamespace(load=lambda name: inbox_binding if name == "inbox_binding" else None)
+coordination._BUNDLE.compatibility_context = ctx
+os.urandom = lambda n: b"\xab" * n
+coordination.time.time = lambda: 100.0
+cfg = coordination.load_config(Path(cfg_path))
+state = json.loads(Path(state_path).read_bytes())
+state.pop("inbox_ack_reminded", None)
+state.pop("inbox_ack_reminder_revision", None)
+coordination.write_state(Path(state_path), state)
+source_body = "short notice body"
+source_unavail = False
+def fake_call(c, op, req, session=None, timeout=4):
+    if op == "event-renew":
+        return dict(state["inbox_attempt"]["delivery"], state="leased")
+    if op == "history":
+        if source_unavail:
+            raise coordination.CoordinationError("SOURCE_UNAVAILABLE", "missing")
+        b = source_body.encode("utf-8")
+        return {"record_id": turn_id, "historical": True, "versions": [{"version": 1, "payload_available": True, "body": source_body, "body_bytes": len(b), "body_sha256": hashlib.sha256(b).hexdigest()}]}
+    if op == "session-inbox-reconcile":
+        raise coordination.CoordinationError("DELIVERY_ACTIVE", "active")
+    return {"ok": True}
+coordination.call = fake_call
+coordination.uuid.uuid4 = lambda: "00000000-0000-4000-8000-000000000099"
+obs = {"event": "UserPromptSubmit", "phase": "active", "native_turn_id": turn_id}
+prompt = coordination.inbox_context(cfg, state, Path(state_path), obs)
+req_ctx_raw = Path(ctx_path).read_bytes().decode("utf-8")
+req_state_raw = Path(state_path).read_bytes().decode("utf-8")
+shell_cmds = json.loads(req_ctx_raw)["shell_commands"]
+rem = coordination.unacknowledged_turn_end_reminder(cfg, state, Path(state_path), {"native_turn_id": turn_id})
+cue = coordination.inbox_cue_text({"requests": 1, "notices": 2, "responses": 0, "truncated": True}, cfg, state["agent"])
+state["inbox_attempt"]["delivery"]["event"]["kind"] = "notice"
+Path(ctx_path).unlink(missing_ok=True)
+c_inline = coordination.inbox_context(cfg, state, Path(state_path), obs)
+c_ctx_raw = Path(ctx_path).read_bytes().decode("utf-8")
+c_handle_raw = (Path(cfg["state_dir"]) / "compact" / "abababababababab.json").read_bytes().decode("utf-8")
+source_body = "\n" * 2050
+c_large = coordination.inbox_context(cfg, state, Path(state_path), obs)
+source_unavail = True
+c_unavail = coordination.inbox_context(cfg, state, Path(state_path), obs)
+state.pop("inbox_ack_reminded", None)
+state.pop("inbox_ack_reminder_revision", None)
+u_rem = coordination.unacknowledged_turn_end_reminder(cfg, state, Path(state_path), {"native_turn_id": turn_id})
+print(json.dumps({"prompt": prompt, "req_ctx_raw": req_ctx_raw, "req_state_raw": req_state_raw, "shell_commands": shell_cmds, "reminder": rem, "cue": cue, "c_inline": c_inline, "c_ctx_raw": c_ctx_raw, "c_handle_raw": c_handle_raw, "c_large": c_large, "c_unavail": c_unavail, "u_rem": u_rem}))
+`
+	res, err := (journal.CommandRunner{}).Run(context.Background(), []string{
+		"/usr/bin/python3", "-I", "-B", "-c", pyScript,
+		f.configPath, f.receiptPath, f.compat.ReceiptSHA256, f.launchRoot, f.launcher, statePath, stage2Turn, ctxPath,
+	}, "")
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("python parity script failed: err=%v exit=%d stderr=%s", err, res.ExitCode, res.Stderr)
+	}
+	pyOut, err := value.DecodeBytes([]byte(res.Stdout), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encodeFixtureJSON(t, pyOut.Get("shell_commands")), goShellCmds) {
+		t.Fatalf("shell_commands mismatch:\nGo: %s\nPy: %s", goShellCmds, encodeFixtureJSON(t, pyOut.Get("shell_commands")))
+	}
+	for _, tc := range []struct{ key, goVal string }{
+		{"prompt", nativeText(goPromptVal)},
+		{"req_ctx_raw", string(goReqCtxBytes)},
+		{"req_state_raw", string(goReqStateBytes)},
+		{"reminder", goReminder},
+		{"cue", goCue},
+		{"c_inline", nativeText(goCompactInline)},
+		{"c_ctx_raw", string(goCompactCtxBytes)},
+		{"c_handle_raw", string(goCompactHandleBytes)},
+		{"c_large", nativeText(goCompactLarge)},
+		{"c_unavail", nativeText(goCompactUnavail)},
+		{"u_rem", goUnavailRem},
+	} {
+		if nativeText(pyOut.Get(tc.key)) != tc.goVal {
+			t.Fatalf("%s mismatch:\nGo: %q\nPy: %q", tc.key, tc.goVal, nativeText(pyOut.Get(tc.key)))
+		}
+	}
+}

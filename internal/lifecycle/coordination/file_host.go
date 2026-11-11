@@ -32,6 +32,7 @@ const (
 type FileHostOptions struct {
 	Services       *ServiceBindings
 	Profile        *value.SourceReaderProfile
+	Compatibility  *CompatibilityContext
 	Journal        *SessionJournalAdapter
 	JournalOptions journal.Options
 	Runner         journal.Runner
@@ -80,10 +81,10 @@ func NewFileHost(options FileHostOptions) *Host {
 	if adapter.PathText == nil {
 		adapter.PathText = func(v *value.Value) (string, error) { return sourcePathText(options.Profile, v) }
 	}
-	h := &Host{Journal: adapter, Log: log, Profile: options.Profile, Services: options.Services}
+	h := &Host{Journal: adapter, Log: log, Profile: options.Profile, Services: options.Services, Compatibility: options.Compatibility}
 	h.Call = options.Call
 	if h.Call == nil {
-		h.Call = sourceCall(options.Profile, options.Runner)
+		h.Call = sourceCallWithCompatibility(options.Profile, options.Runner, options.Compatibility)
 	}
 	h.Locate = func(config *value.Value, nativeID string) (string, error) {
 		binding, err := nativeRequired(config, "binding")
@@ -216,10 +217,24 @@ func sourceStateWriter(options FileHostOptions, site string) func(string, *value
 }
 
 func sourceCall(profile *value.SourceReaderProfile, runner journal.Runner) func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error) {
+	return sourceCallWithCompatibility(profile, runner, nil)
+}
+
+func sourceCallWithCompatibility(profile *value.SourceReaderProfile, runner journal.Runner, compat *CompatibilityContext) func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error) {
 	if runner == nil {
 		runner = journal.CommandRunner{}
 	}
 	return func(ctx context.Context, config *value.Value, operation string, request *value.Value, options NativeCallOptions) (*value.Value, error) {
+		timeout := options.Timeout
+		if timeout == 0 {
+			timeout = 4 * time.Second
+		}
+		if compat != nil {
+			var err error
+			if timeout, err = compat.Remaining(timeout); err != nil {
+				return nil, err
+			}
+		}
 		args := []string{}
 		for _, key := range []string{"cairn", "socket", "token_file"} {
 			if !value.Truth(config.Get(key)) {
@@ -249,10 +264,6 @@ func sourceCall(profile *value.SourceReaderProfile, runner journal.Runner) func(
 		var input bytes.Buffer
 		if err := profile.Write(SiteCallRequest, &input, request); err != nil {
 			return nil, err
-		}
-		timeout := options.Timeout
-		if timeout == 0 {
-			timeout = 4 * time.Second
 		}
 		callCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
