@@ -4,7 +4,6 @@ import fcntl
 import json
 import os
 from pathlib import Path
-import re
 import select
 import signal
 import subprocess
@@ -12,7 +11,6 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
 
 from test_f04_activation import ROOT, SESSION, TURN, Fixture, encoded, oracle, scalar_tree, write, overwrite_fixture
 

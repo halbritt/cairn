@@ -158,17 +158,25 @@ def run(args):
                 directory_sync = (args.operation == 'fsync' and is_directory
                                   and path is not None and Path(path) == directory)
                 matched = event.data.nr == selected_call and (temporary or directory_sync)
-                if matched:
-                    count += 1
-                injected = matched and count == args.nth
+                next_count = count + int(matched)
+                injected = matched and next_count == args.nth
                 response.contents.id = event.id
                 response.contents.value = 0
                 response.contents.error = -errno.EIO if injected else 0
                 response.contents.flags = 0 if injected else 1  # SECCOMP_USER_NOTIF_FLAG_CONTINUE
                 code = lib.seccomp_notify_respond(listener, response)
-                if code == -errno.ENOENT:
+                if code in (-errno.ENOENT, -errno.ECANCELED):
+                    if matched:
+                        trace.write(json.dumps(dict(pid=event.pid, fd=fd, path=path,
+                            regular=regular, directory=is_directory, operation=args.operation,
+                            publication_call=None, attempted_publication_call=next_count,
+                            withdrawn=True, injected=False, errno=None)) + '\n')
+                        trace.flush()
                     continue
                 checked(code, 'respond to publication notification')
+                # A signal can withdraw a request before the kernel accepts
+                # our response. Only an accepted response consumes an ordinal.
+                count = next_count
                 if matched or (path and 'eventfd' in path):
                     trace.write(json.dumps(dict(pid=event.pid, fd=fd, path=path, regular=regular, directory=is_directory, operation=args.operation,
                                                 publication_call=count if matched else None,
