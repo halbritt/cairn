@@ -7,13 +7,15 @@ Runtime and focused-fixture bytes were measured at
 documentation. Those discovery observations remain historical. The later
 [shared/2 acceptance](../plans/hybrid-runtime-contracts/README.md) closes X-01
 for specification setup. This page and the legacy runner below do not establish
-installed-client acceptance or close R-01.
+installed-client acceptance or close R-01. The
+[November 10 characterization](hybrid-runtime-r01-characterization-2026-11-10.md)
+records a later frozen selection, failed measurements and current inspection gaps.
 
-The current [bundle inventory](../../integrations/lifecycle/lifecycle_bundle.py#L16)
-has 17 members. Its source-derived descriptor, after the normal installed-loader
+At discovery, the [bundle inventory](../../integrations/lifecycle/lifecycle_bundle.py#L16)
+had 17 members. Its source-derived descriptor, after the normal installed-loader
 marker is applied, is SHA-256
 `53649855290f423dbb82992873a7c2f0bc7be6f91d78a807f9036009421398f1`.
-The memory engine's own source SHA-256 is
+At discovery, the memory engine's own source SHA-256 was
 `6c9cafcde3600671ed11e4f49f220c086e33ebf998051969931a9e232059f597`.
 Bundle identity and memory caller-origin identity remain separate; see
 [lifecycle bundles](../lifecycle-bundles.md).
