@@ -44,13 +44,19 @@ file/search lists instead have a reached TypeError matching Source, with exact
 state preservation. No all-input Python interpreter reconstruction is claimed.
 
 Relative file hints preserve parent components until the existing resolver
-follows symlinks. This matches Source Path(cwd)/path followed by resolve(),
+follows symlinks. For an absolute cwd, this matches Source Path(cwd)/path followed by resolve(),
 including link/../file paths that leave the project. Lexical cleaning before
 resolution would infer a different file or create state instead of skipping.
 Actual Source/Go pairs cover all six tools, checked entries, internal controls,
 search-term and recency order, and no-hint skips. A separate checked-recall
 process regression reaches the same narrow fix in retrieval intent, comparing
 the actual search query, entities, API order, streams and state.
+
+Empty and relative cwd values remain outside this path-equivalence claim.
+An empty cwd can drop a hint and skip state creation where Source saves it;
+a relative cwd can still undergo lexical cleaning in the existing OSProbe path
+composition. Real hook inputs use an absolute cwd. These stricter or existing
+boundary behaviors remain explicit, without an all-input equivalence claim.
 
 Three limits remain explicit: Go 1.25 uses Unicode 15.0 word classes while the
 Python 3.14 Source uses Unicode 16.0, so newly added letters can change error
