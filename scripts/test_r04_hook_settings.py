@@ -180,6 +180,7 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
                 for key in ('native_trust', 'refresh', 'activation'):
                     self.assertEqual((selected[key], metadata[key]), ('not-performed', 'not-performed'))
                 self.assertEqual(metadata['lifecycle_selection'], f.selected)
+                self.assertEqual(metadata['layout'], {'hook-settings.json': 'hooks.json' if harness == 'codex' else 'settings.json'})
                 self.assertEqual(f.api_calls(), [])
                 self.assertFalse(Path(f.memory['state_dir']).exists())
 

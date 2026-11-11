@@ -106,6 +106,138 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                             self.assertEqual(vector.count(flag), 1)
                             self.assertEqual(vector[vector.index(flag) + 1], expected)
 
+    def test_agy_stages_only_existing_coordination_events(self):
+        f = self.fixture('agy hook settings', harness='agy')
+        foreign = dict(type='command', command='another hook', timeout=6, custom='keep')
+        data = dict(opaque=['日本語', 900719925474099312345], **{'cairn-coordination': {
+            'PreInvocation': [foreign, dict(type='command', command='old coordination', timeout=1)],
+            'Stop': [dict(type='command', command='old coordination', timeout=1)],
+            'OtherEvent': [foreign]}})
+        original = (json.dumps(data, indent=2) + '\n').encode()
+        write(f.settings, original)
+        f.hook_plan.update(settings=pin(f.settings), replace_commands=dict(memory=[], coordination=['old coordination']))
+        selected, directory, record = self.selected(f)
+        self.assertEqual(record['layout'], {'hook-settings.json': 'hooks.json'})
+        self.assertEqual(f.settings.read_bytes(), original)
+        self.assertEqual((directory / 'previous-settings.json').read_bytes(), original)
+        settings = json.loads(Path(selected['settings']['path']).read_bytes())
+        self.assertEqual(settings['opaque'], data['opaque'])
+        self.assertEqual(settings['cairn-coordination']['OtherEvent'], [foreign])
+        self.assertEqual(settings['cairn-coordination']['PreInvocation'][0], foreign)
+        self.assertEqual([(r['role'], r['event']) for r in record['rows']],
+                         [('coordination', 'PreInvocation'), ('coordination', 'Stop')])
+        self.assertEqual(record['unsupported_operations'], ['ordinary memory hook'])
+        for row in record['rows']:
+            self.assertEqual(row['implementation'], 'go')
+            self.assertEqual(row['hook']['timeout'], 15)
+            self.assertEqual(row['argv'], [*row['checked_launcher'], 'hook', '--config', str(f.coord_path), '--event', row['event']])
+            self.assertEqual(settings['cairn-coordination'][row['event']][-1], row['hook'])
+        repeated = self.stage(f)
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+        self.assertEqual(json.loads(repeated.stdout)['selection'], selected['selection'])
+        f.hook_plan.update(id=str(uuid.uuid4()), settings=selected['settings'])
+        again, _, _ = self.selected(f)
+        self.assertEqual(json.loads(Path(again['settings']['path']).read_bytes()), settings)
+        self.assertEqual(f.api_calls(), [])
+
+    def test_agy_installed_go_events_match_retained_source_after_package_removal(self):
+        f = self.fixture('agy real processes', harness='agy')
+        _, _, record = self.selected(f)
+        shutil.rmtree(f.package)
+        environment = dict(f.env(), ANTIGRAVITY_CLI_CONFIG_DIR=str(f.account))
+        observations = []
+        for side in ('source', 'go'):
+            shutil.rmtree(f.coord['state_dir'], ignore_errors=True)
+            for suffix in ('.calls', '.jsonl'):
+                f.api.with_suffix(suffix).unlink(missing_ok=True)
+            outputs = []
+            for row, fully_idle in ((record['rows'][0], False), (record['rows'][1], False), (record['rows'][1], True)):
+                # The selected event flag supplies the native Agy event name.
+                raw = encoded(dict(conversationId=SESSION, workspacePaths=[str(f.root)], modelName='fixture-model',
+                                   fullyIdle=fully_idle, host_pid=os.getpid(), prompt_id='agy-turn'))
+                argv = row['argv'] if side == 'go' else [*row['retained_launcher'], 'hook',
+                                                        '--config', str(f.coord_path), '--event', row['event']]
+                result = subprocess.run(['/bin/sh', '-c', shlex.join(argv)], input=raw, cwd=f.root,
+                                        env=environment, capture_output=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                outputs.append((result.returncode, result.stdout, result.stderr))
+                reported = [json.loads(call['input'])['metadata']['state'] for call in f.api_calls()
+                            if call['operation'] in ('agent-register', 'agent-context')]
+                self.assertEqual(reported[-1], 'idle' if row['event'] == 'Stop' and fully_idle else 'busy')
+            key = hashlib.sha256((f.coord['binding']+'\0'+SESSION).encode()).hexdigest()
+            state = json.loads((Path(f.coord['state_dir'])/(key+'.json')).read_bytes())
+            self.assertEqual(state['agent']['agent_id'], issued.AGENT)
+            operations = [call['operation'] for call in f.api_calls()]
+            self.assertEqual(operations.count('agent-register'), 1)
+            requests = [(call['operation'], {key: value for key, value in json.loads(call['input']).items() if key != 'request_id'})
+                        for call in f.api_calls() if call['operation'] in ('agent-register', 'agent-context')]
+            observations.append((outputs, operations, requests, state['agent']))
+        self.assertEqual(observations[0], observations[1])
+        self.assertFalse(Path(f.memory['state_dir']).exists())
+
+    def test_agy_invalid_native_events_keep_source_refusal_before_effects(self):
+        f = self.fixture('agy invalid native events', harness='agy')
+        _, _, record = self.selected(f)
+        row = record['rows'][0]
+        shutil.rmtree(f.package)
+        invalid = [dict(session_id=SESSION, cwd=str(f.root)),
+                   dict(conversationId=SESSION, workspacePaths=['relative']),
+                   dict(conversationId=SESSION, workspacePaths=[str(f.root)], modelName=5)]
+        for event in invalid:
+            with self.subTest(event=event):
+                results = []
+                for argv in (row['argv'], [*row['retained_launcher'], 'hook', '--config', str(f.coord_path), '--event', 'PreInvocation']):
+                    result = subprocess.run(argv, input=encoded(event), cwd=f.root,
+                                            env=f.env(), capture_output=True, timeout=20)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, b'')
+                    results.append((result.returncode, result.stdout, result.stderr))
+                self.assertEqual(results[0], results[1])
+                self.assertEqual(f.api_calls(), [])
+                self.assertFalse(Path(f.coord['state_dir']).exists())
+
+    def test_agy_corrupt_profile_refuses_before_effects_in_both_selected_paths(self):
+        f = self.fixture('agy bad selected profile', harness='agy')
+        _, _, record = self.selected(f)
+        row = record['rows'][0]
+        f.coord_path.chmod(0o600)
+        f.coord_path.write_bytes(f.coord_path.read_bytes()+b'\n')
+        f.coord_path.chmod(0o400)
+        shutil.rmtree(f.package)
+        results = []
+        for argv in (row['argv'], [*row['retained_launcher'], 'hook', '--config', str(f.coord_path), '--event', 'PreInvocation']):
+            result = subprocess.run(argv, input=encoded(dict(session_id=SESSION, cwd=str(f.root))),
+                                    cwd=f.root, env=f.env(), capture_output=True, timeout=20)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, b'')
+            results.append((result.returncode, result.stdout, result.stderr))
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(f.api_calls(), [])
+        self.assertFalse(Path(f.coord['state_dir']).exists())
+
+    def test_agy_bound_memory_replacement_and_ambiguous_hooks_refuse(self):
+        for fault in ('bound', 'memory-replacement', 'duplicate', 'event-shape'):
+            with self.subTest(fault=fault):
+                f = self.fixture('agy refusal '+fault, harness='agy', bound=fault == 'bound')
+                if fault == 'memory-replacement':
+                    f.hook_plan['replace_commands']['memory'] = ['old memory']
+                if fault in ('duplicate', 'event-shape'):
+                    entries = [dict(command='old coordination'), dict(command='old coordination')] if fault == 'duplicate' else 'invalid'
+                    write(f.settings, encoded({'cairn-coordination': {'PreInvocation': entries}}))
+                    f.hook_plan['settings'] = pin(f.settings)
+                    f.hook_plan['replace_commands']['coordination'] = ['old coordination']
+                before = f.settings.read_bytes()
+                result = self.stage(f)
+                expected = {'bound': 'Agy coordination requires unbound profiles; bound recall is unsupported',
+                            'memory-replacement': 'Agy has no ordinary memory hook to replace',
+                            'duplicate': 'ambiguous previous Agy hook definitions',
+                            'event-shape': 'Agy event hooks must be a list of objects'}[fault]
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (1, b'', ('hook staging failed: '+expected+'\n').encode()))
+                self.assertEqual(f.settings.read_bytes(), before)
+                self.assertFalse((f.hook_root/('selection-'+f.hook_plan['id'])).exists())
+                self.assertEqual(f.api_calls(), [])
+
     def test_opencode_uses_checked_source_cells_and_preserves_reverse_inputs(self):
         f = self.fixture('ordinary host')
         calls = self.recall_api(f)
@@ -275,11 +407,11 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 self.assertFalse((f.install_root / 'generations' / ('selection-' + plan['id'])).exists())
 
     def test_unsupported_harness_and_changed_plugin_or_selection_are_refused(self):
-        for kind in ('agy', 'plugin', 'selection'):
+        for kind in ('hermes', 'plugin', 'selection'):
             with self.subTest(kind=kind):
                 f = self.fixture(kind)
                 plan = copy.deepcopy(f.hook_plan)
-                if kind == 'agy': plan['harness'] = 'agy'
+                if kind == 'hermes': plan['harness'] = 'hermes'
                 elif kind == 'plugin': plan['plugins']['memory']['sha256'] = '0' * 64
                 else: plan['selection']['sha256'] = '0' * 64
                 result = self.stage(f, plan)

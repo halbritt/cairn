@@ -1,0 +1,1672 @@
+{
+  "schema": "cairn.semantic-reference-inventory/1",
+  "contract": "semantic/4 + owner 98d46758/v1 Rule C",
+  "expected_counts": {
+    "rank_requests": 19,
+    "rank_scores": 269,
+    "stream_replies": 38,
+    "idle_restore_cases": 1,
+    "positive_queries": 9,
+    "positive_documents": 6,
+    "prepared_tests": 23
+  },
+  "rank_ids": [
+    "storage-topic",
+    "storage-location",
+    "storage-env-exact",
+    "storage-env-words",
+    "evidence-retry",
+    "revision",
+    "tampering",
+    "citation-count",
+    "agent-launch",
+    "lost-reply",
+    "replacement",
+    "original-conflict",
+    "failure-lessons",
+    "remove-note",
+    "broaden-scope",
+    "absent-gpu",
+    "absent-price",
+    "long-tail",
+    "64-short"
+  ],
+  "query_ids": [
+    "query-ascii",
+    "query-cjk",
+    "query-emoji",
+    "query-combining",
+    "query-special-tokens",
+    "query-exact-512",
+    "query-over-512",
+    "query-4096-bytes",
+    "query-token-empty"
+  ],
+  "document_ids": [
+    "document-ascii",
+    "document-cjk",
+    "document-mixed-unicode",
+    "document-trailing-decision",
+    "document-maximum-latin",
+    "document-maximum-cjk"
+  ],
+  "python_prepared": [
+    "test_embedding_worker.PassageContractTest.test_long_query_embeds_one_original_unicode_prefix",
+    "test_embedding_worker.PassageContractTest.test_actual_tokenizer_long_and_short_queries",
+    "test_embedding_worker.PassageContractTest.test_imported_scorer_change_invalidates_worker_identity",
+    "test_embedding_worker.PassageContractTest.test_utf8_spans_address_original_bytes_and_cover_tail",
+    "test_embedding_worker.PassageContractTest.test_maximum_token_density_stays_bounded_without_truncating",
+    "test_semantic_stream.SemanticStreamTest.test_reuses_scorer_but_passes_current_request_each_time",
+    "test_semantic_stream.SemanticStreamTest.test_bad_framing_or_hash_refuses_before_loading_model",
+    "test_semantic_stream.SemanticStreamTest.test_eof_without_request_does_not_initialize",
+    "test_semantic_stream.SemanticStreamTest.test_second_invalid_request_does_not_score_or_emit_result",
+    "test_semantic_cache.SemanticCacheTest.test_repeated_notes_only_embed_the_new_query",
+    "test_semantic_cache.SemanticCacheTest.test_changed_body_reembeds_but_metadata_does_not",
+    "test_semantic_cache.SemanticCacheTest.test_appending_to_long_note_reuses_unchanged_passages",
+    "test_semantic_cache.SemanticCacheTest.test_removed_sources_are_not_retained_for_later_requests",
+    "test_semantic_cache.SemanticCacheTest.test_mixed_hits_misses_duplicates_and_long_notes_preserve_scores",
+    "test_semantic_cache.SemanticCacheTest.test_cache_hits_do_not_bypass_chunk_budget",
+    "test_semantic_cache.SemanticCacheTest.test_duplicate_passages_share_inference_without_retaining_text_or_views",
+    "test_semantic_cache.SemanticCacheTest.test_unique_chunk_retention_is_bounded_and_replaced_after_success",
+    "test_semantic_cache.SemanticCacheTest.test_invalid_embedding_does_not_publish_a_partial_cache",
+    "test_semantic_cache_resume.SemanticResumeTest.test_fresh_scorer_restores_exact_passages_through_stream",
+    "test_semantic_cache_resume.SemanticResumeTest.test_changed_removed_and_mismatched_model_recompute_only_current_inputs",
+    "test_semantic_cache_resume.SemanticResumeTest.test_bad_snapshot_refuses_without_scoring_or_output",
+    "test_semantic_cache_resume.SemanticResumeTest.test_full_capacity_round_trip_preserves_vector_ownership",
+    "test_semantic_cache_resume.SemanticResumeTest.test_old_host_shape_and_late_restore_refusal"
+  ],
+  "python_mechanics": [
+    "test_check_semantic_reference.NativeReferenceMechanicsTest.test_native_rank_direct_path_and_distinct_identities",
+    "test_check_semantic_reference.NativeReferenceMechanicsTest.test_native_stream_repeats_and_fresh_restore",
+    "test_check_semantic_reference.NativeReferenceMechanicsTest.test_native_embedding_projection_and_original_span",
+    "test_check_semantic_reference.NativeReferenceMechanicsTest.test_native_refusal_tuple",
+    "test_check_semantic_reference.NativeReferenceMechanicsTest.test_native_missing_id_refuses_without_output",
+    "test_check_semantic_reference.NativeReferenceMechanicsTest.test_native_fixture_rejects_extra_arguments"
+  ],
+  "go_process": [
+    "TestColdWorkerCanFinishBeforeNativeClientDeadline",
+    "TestCommandCancellationReapsWorkerAndBusyRequestsDoNotQueue",
+    "TestCommandEnforcesOutputLimit",
+    "TestCommandExcludesServerCredentialsAndRejectsInvalidResponses",
+    "TestCommandQueryProjectionValidatedAndLegacyAbsentPreserved",
+    "TestCommandReapsWorkerGroupAfterWait",
+    "TestEmbeddingDocumentHonorsEarlierCallerDeadline",
+    "TestEmbeddingModelIdentityCannotChangeAcrossRestart",
+    "TestEmbeddingQueriesDoNotWaitForIndexingAndCloseReapsWorkers",
+    "TestStreamCacheCancellationAndOwnerClose",
+    "TestStreamCacheFailureAndOmissionDiscardState",
+    "TestStreamCancellationBusyAndOwnerShutdown",
+    "TestStreamCancellationUnblocksRequestWrite",
+    "TestStreamDeadlineTerminatesDescendants",
+    "TestStreamFailuresDiscardChildAndNextRequestStartsFresh",
+    "TestStreamRejectsNonpositiveIdleTimeout",
+    "TestStreamReleasesIdleChild",
+    "TestStreamRestoresSnapshotAfterActualIdleExit",
+    "TestStreamReusesWorkerAndClosesIt",
+    "TestWorkerStartReportsPersistentBusyExecutable",
+    "TestWorkerStartRetriesWhileExecutableIsBusy"
+  ],
+  "actual_tokenizer": "test_embedding_worker.PassageContractTest.test_actual_tokenizer_long_and_short_queries",
+  "selectors_absent": [
+    "CAIRN_EMBEDDING_WORKER",
+    "CAIRN_SEMANTIC_WORKER",
+    "CAIRN_SEMANTIC_STREAM_WORKER",
+    "CAIRN_SEMANTIC_ACCEPTANCE_REQUIRED",
+    "CAIRN_TEST_DATABASE_URL",
+    "CAIRN_DATABASE_URL"
+  ],
+  "source_sha256": {
+    "scripts/semantic_rank.py": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
+    "scripts/embedding_worker.py": "f8b134f92523eb53ab21f7d4878283f5a6dc401ecb605c7e8d7e2df2aa673ae8",
+    "scripts/semantic_fixture_cases.py": "3b3f3f6e3472c83e01f1f6992bb0441307d79b3c820900e3bf7d7ee251651038",
+    "scripts/compare_semantic_workers.py": "3482ccacfebffda580d3e621694164d6c96ebcef94007f8f0ee3cd9405b893cc",
+    "scripts/semantic_acceptance_isolation.py": "c9c5159e27f4aa59316be80c0955a6b6266a2e2a441fde27f6470d28f930bc5c",
+    "scripts/test_embedding_worker.py": "4f59d3a03eeb35b322ad37eafdcafb860c5819338730778dc43b8e5178efb257",
+    "scripts/test_semantic_stream.py": "7aad74c0b29b3daa5df52ac18778b855869f4f8a3eb111d936b7a60dee524f87",
+    "scripts/test_semantic_cache.py": "7ad59f4fa492b5528f08b644c5372eb06b4f01da51b0fbe36ffea6b0ff4a849e",
+    "scripts/test_semantic_cache_resume.py": "fd2a8ecc097dd6afd786ecb8b5bf847fcb1257c990e92f8e3a3e76ffad62d161",
+    "scripts/test_compare_semantic_workers.py": "1a922448489b465ae929e8632ff86efa7a25f9181f95839f41a06c4b8824edf9",
+    "semantic/command.go": "e2126b3226eb022f3c1ec4b4e07905f5f7f81762d1cbaff631404e49c6609fab",
+    "semantic/stream.go": "e167f5b77b62ab64532337d366e00204a8fb1a523407946ad6c05d019eddadb0",
+    "semantic/worker_acceptance_test.go": "5695d92b1c258179f6c5efea0c49a5b816762952cff279fb2b27857e2d38a5b9",
+    "semantic/testdata/executable-harness/protocol-worker.c": "a064610932516a0201795d84fa7cfe5b9f3afd1b0dbad600bfb299ccc24032cb",
+    "semantic/testdata/executable-harness/reference-inventory.json": "569ebf8ba2aa636ba3df06f31945dcc94b9bed43abbcfbfb77bef2993e8c1fd1",
+    "core/testdata/retrieval-quality.json": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+    "semantic/embedding_command.go": "40109e99a7415647a9d7887349c0058b2f87d62ccf0a786cf7a3335da7366097",
+    "scripts/capture_semantic_fixtures.py": "c336906e488a6540905dac8d7ebf04519a2432bb54926b174122200ac529e3ca"
+  },
+  "assets_sha256": {
+    "model_optimized.onnx": "51f1bd0addd6e859e42c2c8021a5e5461385bb676a649f4b269aa445449f2431",
+    "config.json": "13582bcf2effc85b7bf3d3f5532e686bc1c9ce86bb009d10f0ec33cbe92299dd",
+    "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+    "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+    "tokenizer_config.json": "0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53"
+  },
+  "fixture_sha256": {
+    "rank": "ebeecaa4a508ec4cd735ae6f6844f3c96dd30f4d48ef85e7caadbc4cdc9420ba",
+    "embedding": "feb24e50fd6b37b7405afd8f972ec6bf57c086820db22d8ee96381c4f26e44a2"
+  },
+  "retained": {
+    "python-characterization": {
+      "relative": "semantic-S-B1/characterization-1276-20261106/captures.json",
+      "sha256": "3d99ac7c12ada4d9c04fd9de9886387fb2e45f2acc9edbbb6c253b10bfdcca4f"
+    },
+    "python-stream34": {
+      "relative": "semantic-S-B1/characterization-1276-20261106/raw/retrieval-quality-stream.stdout",
+      "sha256": "60100b209f91ceabf7a24a65e88fd1e549c054652c4c4561f03aabf1e19767a7"
+    },
+    "stream-decision": {
+      "relative": "semantic-S-B1/s02-final-rebase-1337-20261111/reference-decision.json",
+      "sha256": "929e19669cbca4821762ba9ce2de4c476f5e5636cc1dcb0139fc4c5796b2602c"
+    },
+    "stream38-idle": {
+      "relative": "semantic-S-B1/s02-stream-evidence-1337-20261110/attempt-06/evidence/report.json",
+      "sha256": "93c7cc20ab664067bacac2bc65e78816b0d67d9ecd5c61160710e30831ef7808"
+    },
+    "vector-closure": {
+      "relative": "semantic-S-B2/vector-gap-closure-20261110/vector-gap-closure-report.json",
+      "sha256": "4f995094f3a28631bce65a6ac503d5d9f471d08ef92c481d4dc9f585e1b40808"
+    },
+    "vector-manifest": {
+      "relative": "semantic-S-B2/vector-gap-closure-20261110/vector-closure-artifact-manifest.json",
+      "sha256": "35f08a3ceb32b488018b12da85ee23b3973982ce32f8d14d7fa5aa4a675124a6"
+    },
+    "go-comparison-manifest": {
+      "relative": "semantic-S-B2/go-supervisors-comparison-20261110/comparison-artifact-manifest.json",
+      "sha256": "5db1b2e934115034d28fc6ecdcb606990cf32d7a8b83157fab65b147bc531974"
+    },
+    "package-comparison-manifest": {
+      "relative": "semantic-S-B1/packaged-numerics-1337-20261111/selected-evidence-manifest.json",
+      "sha256": "1f6886e927075170a95434c15f2d3594ea236c1105e765ffa1ed54ae85bf3838"
+    },
+    "package-comparison": {
+      "relative": "semantic-S-B1/packaged-numerics-1337-20261111/analysis-07/report/comparison.json",
+      "sha256": "ef9f9af8338fd6da36de53964ef408f8b05450d2ca2673237d521ce1bb9563e3"
+    },
+    "package-review": {
+      "relative": "semantic-S-B1/packaged-numerics-1337-20261111/review-response-source.json",
+      "sha256": "d29a795f737d7ef617bc95b9e300ec6a20272c8b55acede445c18871cd808066"
+    },
+    "runtime-binding": {
+      "relative": "semantic-S-B2/vector-gap-closure-20261110/owned-reference-runtime-binding.json",
+      "sha256": "1099db1f2702341a14b0ca468eea0c53bc01f4fcb350cc24691a7706542c3212"
+    }
+  },
+  "criteria": [
+    {
+      "id": "rank/storage-topic",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/storage-location",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/storage-env-exact",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/storage-env-words",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/evidence-retry",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/revision",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/tampering",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/citation-count",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/agent-launch",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/lost-reply",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/replacement",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/original-conflict",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/failure-lessons",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/remove-note",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/broaden-scope",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/absent-gpu",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/absent-price",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/long-tail",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "rank/64-short",
+      "state": "reused",
+      "evidence": [
+        "python-characterization",
+        "package-comparison"
+      ]
+    },
+    {
+      "id": "stream/storage-topic/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/storage-topic/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/storage-location/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/storage-location/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/storage-env-exact/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/storage-env-exact/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/storage-env-words/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/storage-env-words/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/evidence-retry/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/evidence-retry/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/revision/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/revision/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/tampering/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/tampering/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/citation-count/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/citation-count/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/agent-launch/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/agent-launch/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/lost-reply/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/lost-reply/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/replacement/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/replacement/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/original-conflict/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/original-conflict/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/failure-lessons/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/failure-lessons/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/remove-note/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/remove-note/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/broaden-scope/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/broaden-scope/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/absent-gpu/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/absent-gpu/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/absent-price/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/absent-price/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/long-tail/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/long-tail/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/64-short/cold",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/64-short/warm",
+      "state": "reused",
+      "evidence": [
+        "python-stream34",
+        "stream-decision",
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "stream/idle-restore",
+      "state": "reused",
+      "evidence": [
+        "stream38-idle"
+      ]
+    },
+    {
+      "id": "embed/query-ascii",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/query-cjk",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/query-emoji",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/query-combining",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/query-special-tokens",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/query-exact-512",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/query-over-512",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/query-4096-bytes",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/query-token-empty",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/document-ascii",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/document-cjk",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/document-mixed-unicode",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/document-trailing-decision",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/document-maximum-latin",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "embed/document-maximum-cjk",
+      "state": "reused",
+      "evidence": [
+        "vector-closure",
+        "go-comparison-manifest"
+      ]
+    },
+    {
+      "id": "arithmetic/raw-294",
+      "state": "held",
+      "evidence": []
+    },
+    {
+      "id": "tests/prepared-23",
+      "state": "missing",
+      "evidence": []
+    },
+    {
+      "id": "oracle/punctuation-numerical",
+      "state": "held",
+      "evidence": []
+    },
+    {
+      "id": "failures/s01b",
+      "state": "missing",
+      "evidence": []
+    },
+    {
+      "id": "retrieval-quality/rule-c-fourth-clause",
+      "state": "decision-required",
+      "evidence": []
+    },
+    {
+      "id": "runtime/raw-cls-and-fenv",
+      "state": "unproved",
+      "evidence": []
+    }
+  ],
+  "stream_reference": {
+    "actual_python_frames": 34,
+    "actual_python_scores": 408,
+    "rank_backed_selected_frames": 4,
+    "rank_backed_selected_scores": 130,
+    "selected_frames": 38,
+    "selected_scores": 538,
+    "authority": "d8b70f55/v1; exact full record in stream-decision",
+    "actual_phase_counts": {
+      "initial_cold": 1,
+      "warm_same_child": 37
+    },
+    "no_recapture": true
+  },
+  "forbidden_automatic_inputs": [
+    "document-maximum-punctuation"
+  ],
+  "python_sha256": "8deffe5dd9ebcf98a062917a4e73bb8fbb7d5846f83dec01fb7506fd5d41c54e",
+  "historical_refusals": [
+    {
+      "id": "rank-query-long-ascii",
+      "expected_exit": 1,
+      "input_sha256": "995b26e52ecb97e086695ef9fc8df2c20f816e66944fdb9bec06302448b3bce7",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "a9b09938bb3e926f897696b6a742b7e74549c739cf93e7eb97e1a03f05608681",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-query-long-unicode",
+      "expected_exit": 1,
+      "input_sha256": "baf07b5a58fbb648533d94896398a6fe80a4bc8f60424883f157befcc9be5441",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "a9b09938bb3e926f897696b6a742b7e74549c739cf93e7eb97e1a03f05608681",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-query-long-cjk",
+      "expected_exit": 1,
+      "input_sha256": "8039c0fbd2602d10a196a503a69201a57ee1f568acf1cd72c51a0f89edd08da7",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "a9b09938bb3e926f897696b6a742b7e74549c739cf93e7eb97e1a03f05608681",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-query-long-emoji",
+      "expected_exit": 1,
+      "input_sha256": "be71334fa8425816bb90b97cb15c168f26c5d4d9ff1a6c395b65c9f518f1edac",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "a9b09938bb3e926f897696b6a742b7e74549c739cf93e7eb97e1a03f05608681",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-query-long-combining",
+      "expected_exit": 1,
+      "input_sha256": "f0ccd5dded29b0ce3fd7bf99905936089fd852a869bbef380bc3e525535480f1",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "a9b09938bb3e926f897696b6a742b7e74549c739cf93e7eb97e1a03f05608681",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-query-max-query-bytes",
+      "expected_exit": 1,
+      "input_sha256": "1e1046d5151484a6fbbb07b1b8721f1462ac1270616bdf805a1b05fdbe5fba5d",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "a9b09938bb3e926f897696b6a742b7e74549c739cf93e7eb97e1a03f05608681",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "embed-query-byte-overflow",
+      "expected_exit": 1,
+      "input_sha256": "5de1539b4b550d7c9f2a90a98a0c0ce362d4d5777176de0ccbc3e72ba5f091a3",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "8b3edfd4b588e44fccc5e169fb2671d2826724d0bbc3c69dc185c884efcbfb66",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-query-query-byte-overflow",
+      "expected_exit": 1,
+      "input_sha256": "42ea753971aa22ca903837aab935a88778751ea252b65a7c31243ba5a34573b0",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "5d9458c1758f874aa5e5c20cb63f590051f2d7596a69098e5f7daac7af2ee57a",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "embed-query-whitespace",
+      "expected_exit": 1,
+      "input_sha256": "332107e98c5f48291ec06c38133c6bbab1e28763ff29ff5b2f74728196f3d241",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "8b3edfd4b588e44fccc5e169fb2671d2826724d0bbc3c69dc185c884efcbfb66",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-query-query-whitespace",
+      "expected_exit": 1,
+      "input_sha256": "6e2b85adad39656b0c262d6eb698716953577f867cbc06f48a9554b66664847b",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "5d9458c1758f874aa5e5c20cb63f590051f2d7596a69098e5f7daac7af2ee57a",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "embed-document-byte-overflow",
+      "expected_exit": 1,
+      "input_sha256": "3cd641f0b0cc9200b762cda1c1fac04b1355b07df2742c03a26c904bb8d02546",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "f530ad84d8acf8981c3bfe8e305f4b43b572cd3d6d4051f766ed0246f85fc584",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "embed-document-whitespace",
+      "expected_exit": 1,
+      "input_sha256": "84ef31bbd72602d4e365c6a395ce3c914f6abcd1335c7f28f9fc48e5dd25c120",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "f530ad84d8acf8981c3bfe8e305f4b43b572cd3d6d4051f766ed0246f85fc584",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "embed-document-token-empty",
+      "expected_exit": 1,
+      "input_sha256": "bb4c855dc06a85c08711401dc4b9b97be3d4058f021f4efc3a5f06f0771449c2",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "5cb8f6cb5cdddabbf4aa41cdb4f2d1ccffb83cabd17970a2c0a6f604dfd414b0",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-document-dense-max-ascii",
+      "expected_exit": 1,
+      "input_sha256": "82d8110d87af0522951e302e8134c25817c9dda1991b9e5013f58e0b8eca4a2b",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e73fbf2047f43cb4f97ffd4ebcd97eef50c29aed6d4537254323df515ed1afad",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-document-document-whitespace",
+      "expected_exit": 1,
+      "input_sha256": "fee219a53aa8f3dac0545b8a0589b868af081de14daf8f1729fbee0e854017c7",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "9ee277187d8999c45924679d911e7f2dfbae24d8d3356c837f99ef97134bd16d",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-document-document-token-empty",
+      "expected_exit": 1,
+      "input_sha256": "19106f0123fd4dd3e2f7c994ef0d945c3ff3980cb5fa006e825ee25cd7c7d50a",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "9ee277187d8999c45924679d911e7f2dfbae24d8d3356c837f99ef97134bd16d",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-129-occurrences",
+      "expected_exit": 1,
+      "input_sha256": "e8c9dc517da252323e56150c028d2bd99ae4379e368ba2dc151899eb6938140b",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e73fbf2047f43cb4f97ffd4ebcd97eef50c29aed6d4537254323df515ed1afad",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "rank-request-wide-129",
+      "expected_exit": 1,
+      "input_sha256": "b124ced641d3bec5d4cc881b1a56f657f8d016f76483eeece159a7e318c07ef2",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e73fbf2047f43cb4f97ffd4ebcd97eef50c29aed6d4537254323df515ed1afad",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    },
+    {
+      "id": "cache-occurrence-boundary",
+      "expected_exit": 1,
+      "input_sha256": "01179f0e243600ee0abb3b208a20fe455e9ddba8d30af1f7e3301951b0b4cc90",
+      "stdout_sha256": "45ae0f6172dfeb03a5efde274d12c705dda3b4f33bdfe9aa065ca729f80aaf53",
+      "stderr_sha256": "52dcdec3325ccc62175f2c70b17966a1146b94454d93c4bf10af1552c03d3776",
+      "scope": "historical direct Python; isolation/runtime qualification not implied"
+    }
+  ],
+  "typed_failures": [
+    {
+      "id": "blank-query-u0009",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u0009",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u000a",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u000a",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u000b",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u000b",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u000c",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u000c",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u000d",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u000d",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u001c",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u001c",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u001d",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u001d",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u001e",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u001e",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u001f",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u001f",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u0020",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u0020",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u0085",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u0085",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u00a0",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u00a0",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u1680",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u1680",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2000",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2000",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2001",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2001",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2002",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2002",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2003",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2003",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2004",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2004",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2005",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2005",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2006",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2006",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2007",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2007",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2008",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2008",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2009",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2009",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u200a",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u200a",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2028",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2028",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u2029",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u2029",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u202f",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u202f",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u205f",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u205f",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-query-u3000",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "blank-document-u3000",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "query-empty",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "document-empty",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "query-byte-overflow",
+      "expected_exception": "ValueError",
+      "expected_message": "query exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "document-byte-overflow",
+      "expected_exception": "ValueError",
+      "expected_message": "document exceeds input bounds",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    },
+    {
+      "id": "document-token-empty",
+      "expected_exception": "ValueError",
+      "expected_message": "document has no model tokens",
+      "scope": "function/no-model",
+      "inference_calls": 0,
+      "result": null
+    }
+  ],
+  "failure_families": {
+    "F-RANK": {
+      "phase": "S01-reference",
+      "unbound_case_ids": [
+        "F-RANK/zero-notes",
+        "F-RANK/65-notes",
+        "F-RANK/empty-query",
+        "F-RANK/oversize-query",
+        "F-RANK/wrong-body-hash",
+        "F-RANK/body-byte-overflow",
+        "F-RANK/128-occurrences",
+        "F-RANK/129-occurrences",
+        "F-RANK/decoded-chunk-token-overflow",
+        "F-RANK/malformed-json",
+        "F-RANK/nonfinite-inference",
+        "F-RANK/zero-inference",
+        "F-RANK/token-empty-note",
+        "F-RANK/query-over512-within4096",
+        "F-RANK/one-shot-over8MiB",
+        "F-RANK/structural-errors",
+        "F-RANK/ignored-extra-request-key",
+        "F-RANK/ignored-extra-note-key",
+        "F-RANK/echoed-version-types"
+      ],
+      "expected_refusal_tuple": null,
+      "state": "missing-exact-case-bindings"
+    },
+    "F-STREAM": {
+      "phase": "S01-reference-and-process",
+      "unbound_case_ids": [
+        "F-STREAM/incomplete-line",
+        "F-STREAM/oversize-line",
+        "F-STREAM/wrong-response-id",
+        "F-STREAM/absent-response-id",
+        "F-STREAM/missing-result",
+        "F-STREAM/trailing-output",
+        "F-STREAM/second-frame-failure",
+        "F-STREAM/identity-change",
+        "F-STREAM/cache-omission",
+        "F-STREAM/corrupt-cache",
+        "F-STREAM/wrong-model-cache",
+        "F-STREAM/warm-cold-equality",
+        "F-STREAM/idle-exit-restore",
+        "F-STREAM/failure-close-discard",
+        "F-STREAM/missing-envelope-key",
+        "F-STREAM/extra-envelope-key",
+        "F-STREAM/wrong-id-type",
+        "F-STREAM/empty-id",
+        "F-STREAM/over64-id",
+        "F-STREAM/unadvertised-cache",
+        "F-STREAM/late-restore",
+        "F-STREAM/entry-hash-base64",
+        "F-STREAM/finite-nonzero",
+        "F-STREAM/cache-size",
+        "F-STREAM/format-size-before-model"
+      ],
+      "expected_refusal_tuple": null,
+      "state": "missing-exact-case-bindings"
+    },
+    "F-EMBED": {
+      "phase": "S01-reference-and-process",
+      "unbound_case_ids": [
+        "F-EMBED/identity-query-document",
+        "F-EMBED/wrong-fields-types",
+        "F-EMBED/unicode-id-boundaries",
+        "F-EMBED/bad-query-projection",
+        "F-EMBED/long-query-retreat-refusal",
+        "F-EMBED/65536-byte-document",
+        "F-EMBED/invalid-utf8-span",
+        "F-EMBED/too-many-passages",
+        "F-EMBED/bad-dimensions",
+        "F-EMBED/nonfinite-vectors",
+        "F-EMBED/zero-vectors",
+        "F-EMBED/identity-after-restart",
+        "F-EMBED/blank-query",
+        "F-EMBED/blank-document",
+        "F-EMBED/token-empty-document",
+        "F-EMBED/nonempty-identity-text",
+        "F-EMBED/missing-newline",
+        "F-EMBED/over512KiB-frame",
+        "F-EMBED/legacy-omitted-projection"
+      ],
+      "expected_refusal_tuple": null,
+      "state": "missing-exact-case-bindings"
+    },
+    "F-PROCESS": {
+      "phase": "S01-process-mechanics",
+      "unbound_case_ids": [
+        "F-PROCESS/blocked-input",
+        "F-PROCESS/blocked-output",
+        "F-PROCESS/output-caps",
+        "F-PROCESS/early-exit",
+        "F-PROCESS/query-document-concurrency",
+        "F-PROCESS/busy-refusal",
+        "F-PROCESS/earlier-deadline",
+        "F-PROCESS/owner-shutdown",
+        "F-PROCESS/descendants-holding-pipes",
+        "F-PROCESS/group-termination-join"
+      ],
+      "expected_refusal_tuple": null,
+      "state": "missing-exact-case-bindings"
+    },
+    "F-IDENTITY": {
+      "phase": "S01-reference-and-identity",
+      "unbound_case_ids": [
+        "F-IDENTITY/each-model-asset",
+        "F-IDENTITY/each-implementation-source",
+        "F-IDENTITY/each-vector-setting-version",
+        "F-IDENTITY/path-move-stable",
+        "F-IDENTITY/timestamp-stable"
+      ],
+      "expected_refusal_tuple": null,
+      "state": "missing-exact-case-bindings"
+    },
+    "F-PACKAGE": {
+      "phase": "S04-separate-owner",
+      "unbound_case_ids": [
+        "F-PACKAGE/offline-no-checkout-no-python",
+        "F-PACKAGE/fixed-launcher-modes",
+        "F-PACKAGE/missing-wrong-native-asset",
+        "F-PACKAGE/digest-mismatch",
+        "F-PACKAGE/installation-refusal",
+        "F-PACKAGE/reverse-configuration"
+      ],
+      "expected_refusal_tuple": null,
+      "state": "separate-phase"
+    },
+    "F-REBUILD": {
+      "phase": "S05-separate-owner",
+      "unbound_case_ids": [
+        "F-REBUILD/python-rust-python",
+        "F-REBUILD/service-restart",
+        "F-REBUILD/worker-death-deadline",
+        "F-REBUILD/edit-delete-during-embedding",
+        "F-REBUILD/expired-lease",
+        "F-REBUILD/retry-backlog",
+        "F-REBUILD/partial-complete-coverage",
+        "F-REBUILD/competing-writers",
+        "F-REBUILD/inactive-old-definitions"
+      ],
+      "expected_refusal_tuple": null,
+      "state": "separate-phase"
+    }
+  },
+  "characterization_seal_sha256": "afbbc828e964ea9d446a3d12a2b80c48e823d09547600f9688bd45fe7c6774d5",
+  "retained_native_harness_note": "Original12 tests remain accepted under unchanged source. Fresh nested attempt reference-tests-01 failed namespace preflight; six new fixture tests execute directly inside the existing wrapper, not a weaker wrapper."
+}

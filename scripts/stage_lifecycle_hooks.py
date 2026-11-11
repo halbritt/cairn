@@ -22,6 +22,7 @@ MEMORY = {
                'PostToolUse': 13, 'PostToolUseFailure': 13},
     'opencode': {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150,
                  'PostToolUse': 13, 'PostToolUseFailure': 13},
+    'agy': {},
 }
 COORDINATION = {
     harness: {event: 2 if event in ('SessionEnd', 'Interrupt', 'PostToolUse') else 15 for event in events}
@@ -29,6 +30,7 @@ COORDINATION = {
         'codex': ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'Interrupt', 'PostToolUse'),
         'claude': ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse'),
         'opencode': ('TurnStart', 'TurnEnd', 'SessionEnd', 'PostToolUse', 'ToolStart', 'ToolEnd'),
+        'agy': ('PreInvocation', 'Stop'),
     }.items()
 }
 
@@ -79,9 +81,13 @@ def definitions(stager, plan):
         raise ValueError('selected coordination configuration is absent')
     all_unbound = not any(selected_data(pin).get('inbox_recall_binding')
                           for pin in [receipt['memory_config'], *receipt['coordination_configs']])
+    if plan['harness'] == 'agy' and not all_unbound:
+        raise ValueError('Agy coordination requires unbound profiles; bound recall is unsupported')
     profiles = {'memory': receipt['memory_config'], 'coordination': receipt['coordination_configs'][index]}
     rows, go_launchers = [], {}
     for role, profile in profiles.items():
+        if role == 'memory' and not MEMORY[plan['harness']]:
+            continue
         config = selected_data(profile)
         if config['harness'] != plan['harness']:
             raise ValueError('hook harness differs from selected configuration')
@@ -118,6 +124,8 @@ def definitions(stager, plan):
                   and config.get('recall_mode') != 'agent_tools'):
                 reason = 'provider-selected recall'
             argv = [*launcher, 'hook', '--config', profile['path']] if role == 'coordination' else launcher
+            if plan['harness'] == 'agy':
+                argv += ['--event', event]
             hook = dict(type='command', command=shlex.join(argv), timeout=timeout)
             if role == 'memory' and plan['harness'] == 'codex':
                 if event in ('SessionStart', 'UserPromptSubmit'): hook['additionalContextLimit'] = 12000
@@ -127,14 +135,32 @@ def definitions(stager, plan):
     return rows, profiles
 
 
+def render_agy(settings, rows, replacements):
+    if replacements['memory']:
+        raise ValueError('Agy has no ordinary memory hook to replace')
+    hooks = settings.setdefault('cairn-coordination', {})
+    if type(hooks) is not dict:
+        raise ValueError('Agy coordination hooks must be an object')
+    for row in rows:
+        entries = hooks.setdefault(row['event'], [])
+        if type(entries) is not list or any(type(hook) is not dict for hook in entries):
+            raise ValueError('Agy event hooks must be a list of objects')
+        commands = [*replacements['coordination'], row['hook']['command']]
+        matches = [offset for offset, hook in enumerate(entries) if hook.get('command') in commands]
+        if len(matches) > 1:
+            raise ValueError('ambiguous previous Agy hook definitions')
+        if matches:
+            entries[matches[0]] = dict(row['hook'])
+        else:
+            entries.append(dict(row['hook']))
+    return settings
+
+
 def render(plan, rows):
     settings = selected_data(plan['settings'])
     if type(settings) is not dict:
         raise ValueError('hook settings must be an object')
     settings = copy.deepcopy(settings)
-    hooks = settings.setdefault('hooks', {})
-    if type(hooks) is not dict:
-        raise ValueError('hook groups must be an object')
     replacements = plan['replace_commands']
     if type(replacements) is not dict or set(replacements) != {'memory', 'coordination'}:
         raise ValueError('explicit previous command lists for both roles required')
@@ -151,6 +177,11 @@ def render(plan, rows):
             if command in selected_roles and selected_roles[command] != role:
                 raise ValueError('previous command selects another current role')
             seen.add(command)
+    if plan['harness'] == 'agy':
+        return render_agy(settings, rows, replacements)
+    hooks = settings.setdefault('hooks', {})
+    if type(hooks) is not dict:
+        raise ValueError('hook groups must be an object')
     for row in rows:
         groups = hooks.setdefault(row['event'], [])
         if type(groups) is not list:
@@ -213,10 +244,11 @@ def stage(stager, root, plan):
         settings = render(plan, rows)
         original = installation.read_selected(plan['settings'], 1024 * 1024)
         payloads = {'hook-settings.json': installation.encoded(settings), 'previous-settings.json': original}
-        layout = {'hook-settings.json': 'settings.json'}
+        layout = {'hook-settings.json': 'hooks.json' if plan['harness'] in ('codex', 'agy') else 'settings.json'}
     record = dict(schema='cairn.lifecycle-hook-settings/1', harness=plan['harness'], account_home=plan['account_home'],
                   lifecycle_selection=plan['selection'], source_settings=plan['settings'], role_configurations=profiles,
                   rows=rows, layout=layout, plugin_sources=plan.get('plugins', {}),
+                  unsupported_operations=['ordinary memory hook'] if plan['harness'] == 'agy' else [],
                   native_trust='not-performed', refresh='not-performed', activation='not-performed')
     payloads['hook-selection.json'] = installation.encoded(record)
     with installation.directory(str(root), private=True):
