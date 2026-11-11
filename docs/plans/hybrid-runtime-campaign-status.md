@@ -23,9 +23,11 @@ and in the Semantic contract; amending that contract and reviewing the amendment
 is a separate follow-up.
 
 The owner replaced C2, FIRST and source-only execution holds with an isolation
-rule: repeated tests require a namespace hiding production home and sockets,
-network and host processes. Outside that isolation, prior one-run terms remain.
-This item 5 landing still uses exactly one `make check` and no component replay.
+rule: tests run in a namespace hiding production home and sockets, network and
+host processes, and may run any number of times there. Code authors compile and
+run their tests inside the wrapper while writing and before review. Separate run
+admission, a second testing worker and testing receipts are not required.
+Independent review remains required before landing.
 Lifecycle and Semantic have separate release trains; retirement waits for both.
 The embedded CPython host, C value graph and RTERM1 observer are paused, with all
 artifacts retained. Foundation's [contract](hybrid-runtime-contracts/foundation.md)

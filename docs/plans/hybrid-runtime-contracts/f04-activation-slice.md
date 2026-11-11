@@ -121,15 +121,16 @@ python3 -I -B scripts/test_hybrid_runtime_operations.py --timeout 420 -- \
 ```
 
 Run disposable PostgreSQL integration with the namespace-local compiler alias,
-short temporary paths and explicit timezone:
+OpenSSL configuration, short temporary paths and explicit timezone:
 
 ```sh
-python3 -I -B scripts/test_hybrid_runtime_operations.py --timeout 3600 -- sh -c 'mkdir -p /tmp/bin && ln -sf /usr/bin/gcc /tmp/bin/cc && exec env PATH=/tmp/bin:$PATH CC=gcc TZ=America/Los_Angeles TMPDIR=/tmp make test-integration'
+python3 -I -B scripts/test_hybrid_runtime_operations.py --timeout 3600 -- sh -c 'mkdir -p /tmp/bin && ln -sf /usr/bin/gcc /tmp/bin/cc && printf "[req]\ndistinguished_name=dn\n[dn]\n" > /tmp/openssl.cnf && exec env PATH=/tmp/bin:$PATH CC=gcc TZ=America/Los_Angeles TMPDIR=/tmp OPENSSL_CONF=/tmp/openssl.cnf make test-integration'
 ```
 
 The short `TMPDIR` keeps test Unix socket paths within their length limit. The
-compiler alias supplies `cc` for nested builds. Both are local to the wrapper's
-temporary filesystem. With the wrapper's empty environment, five
+compiler alias supplies `cc` for nested builds, and the minimal OpenSSL
+configuration permits disposable certificate generation. These files are local
+to the wrapper's temporary filesystem. With the wrapper's empty environment, five
 Core timestamp-replay equality tests fail on unchanged main as well as this
 slice. Setting the timezone makes those five checks pass without changing Core,
 the tests or the wrapper. These environmental results do not qualify production
