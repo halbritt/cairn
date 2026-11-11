@@ -31,6 +31,12 @@ invalid types and overflow refuse before provider execution, without conversion
 to zero. Non-RFC selected values and unpaired surrogates are domain refusals.
 The provider output is not accepted as a caller-supplied capture result.
 
+A stored workstream must be a string when present. Integer, Boolean, null,
+list and object values raise `TypeError` before checkpoint discovery or the
+selector, preserve the saved state and retain the Source error report. An
+absent workstream still uses the derived session title; an empty string still
+performs the empty-title checkpoint lookup.
+
 Owner decision `98d46758-c61c-42b4-9912-76cf9dfb0dc0/v1` supplies the three
 input classes: Python-writer and recorded hook inputs require paired exact
 behavior, malformed/hostile data requires a stable safe Go refusal, and resource
@@ -51,7 +57,7 @@ are best effort and never change capture success or retry eligibility. SDK
 diagnostics report the actual Go image hash; the Source CLI reports the Python
 body hash. Those implementation IDs intentionally differ.
 
-The selection fixture has 23 test methods: 22 execute 30 complete Source/Go
+The selection fixture has 25 test methods: 24 execute 37 complete Source/Go
 pairs, and one exercises three malformed pulled-version refusals in Go. The
 pairs cover null selection, new durable/checkpoint writes, revision, no-op,
 candidate discovery and budget refusal, prewrite invalidation, provider

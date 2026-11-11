@@ -49,6 +49,9 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 	}
 	title := "Handoff: " + clip(strings.ReplaceAll(baseName(project), "\"", ""), 70) + " / Claude session " + session
 	if v := state.Get("workstream"); v != nil {
+		if v.Kind != value.String {
+			return nil, &value.Error{Class: "TypeError", Message: "checkpoint title must be a string"}
+		}
 		title = text(v)
 	}
 	previousRaw, err := client.Checkpoint(ctx, title)
