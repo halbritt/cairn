@@ -1,5 +1,6 @@
 """F04 real receipt-selected processes and source activation state, no live API."""
 import hashlib
+import http.server
 import importlib.util
 import json
 import math
@@ -11,6 +12,8 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import threading
+import socketserver
 import time
 import unittest
 
@@ -155,6 +158,33 @@ print(json.dumps({'ok':True,'status':'OK','data':data}))
 
     def env(self):
         return {k:v for k,v in os.environ.items() if not k.startswith('CAIRN_') and k not in ('CODEX_HOME','CLAUDE_CONFIG_DIR')}
+
+    def recall_api(self):
+        """Provision the external SDK boundary for newly consumed recall rows."""
+        token=self.root/'recall-token'; socket=self.root/'recall.sock'
+        write(token,b'f04-synthetic-token',0o600)
+        for config in (self.memory,self.coord): config.update(socket=str(socket),token_file=str(token))
+        self.publish_configuration()
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self,*args): pass
+            def do_POST(inner):
+                request=json.loads(inner.rfile.read(int(inner.headers['Content-Length'])))
+                if inner.headers.get('Authorization')!='Bearer f04-synthetic-token': inner.send_error(401);return
+                operation=inner.path.removeprefix('/v1/')
+                if operation=='version': data=dict(preview_capabilities=dict(schema='cairn.preview-capabilities/1',entities_omitted=True))
+                elif operation=='index':
+                    data=dict(package=dict(receipt_id='11111111-1111-4111-8111-111111111111',nonce='',seal='blake3:'+'a'*64,
+                        semantic=dict(schema='cairn.semantic/17',mode='index',status='READY',scope=request['scope'],purpose='context',
+                            destination=dict(name='hosted',allow_local=False),query='sha256:fixture-query',available_tokens=32000,selected=[],omitted={},index=[])),
+                        handles=[],expires_at='2030-01-01T00:00:00Z',credits_remaining=4,bytes_remaining=24000)
+                elif operation=='recall-observation': data={}
+                else: inner.send_error(400);return
+                inner.send_response(200);inner.end_headers();inner.wfile.write(encoded(dict(schema='cairn.response/1',ok=True,status='OK',data=data)))
+        class Server(socketserver.ThreadingMixIn,socketserver.UnixStreamServer): daemon_threads=True
+        server=Server(str(socket),Handler)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        def close(): server.shutdown();server.server_close();thread.join()
+        return close
 
     def activation_argv(self, role='memory'):
         config = self.memory_path if role == 'memory' else self.coord_path
@@ -310,6 +340,7 @@ class F04ActivationTests(unittest.TestCase):
             for enabled in (False,True):
                 with self.subTest(role=role,enabled=enabled):
                     f = self.fixture(role+str(enabled),enabled=enabled)
+                    if role=='memory' and not enabled: self.addCleanup(f.recall_api())
                     if role=='coordination':
                         f.event.update(hook_event_name='SessionStart',prompt='',host_pid=os.getpid())
                         f.raw=encoded(f.event)

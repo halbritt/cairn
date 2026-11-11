@@ -24,13 +24,14 @@ type Invocation = admission.HookInvocation
 type CheckResult struct {
 	// Config and Event are the checked snapshots for the reached memory consumer.
 	// They never enter the public read-only binding-check response.
-	Config        *value.Value `json:"-"`
-	Event         *value.Value `json:"-"`
-	Disposition   string       `json:"disposition"`
-	Verdict       string       `json:"verdict"`
-	Reason        string       `json:"reason,omitempty"`
-	ConfigSHA256  string       `json:"config_sha256,omitempty"`
-	BindingSHA256 string       `json:"binding_sha256,omitempty"`
+	Config        *value.Value   `json:"-"`
+	Event         *value.Value   `json:"-"`
+	Coordinators  []*value.Value `json:"-"`
+	Disposition   string         `json:"disposition"`
+	Verdict       string         `json:"verdict"`
+	Reason        string         `json:"reason,omitempty"`
+	ConfigSHA256  string         `json:"config_sha256,omitempty"`
+	BindingSHA256 string         `json:"binding_sha256,omitempty"`
 }
 
 func sourceString(v *value.Value) (string, error) {
@@ -319,5 +320,6 @@ func checkInvocation(ctx context.Context, in Invocation, activate func(*value.Va
 		return nil, err
 	}
 	result.Disposition = "checked"
+	result.Coordinators = coordinatorConfigs
 	return result, nil
 }

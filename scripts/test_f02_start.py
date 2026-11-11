@@ -20,7 +20,7 @@ import time
 import unittest
 import uuid
 
-from test_f04_activation import Fixture, ROOT, SESSION, encoded, oracle, scalar_tree, sha, write
+from test_f04_activation import Fixture, ROOT, SESSION, encoded, oracle, scalar_tree, sha, write, module
 
 
 class Server(socketserver.ThreadingMixIn,socketserver.UnixStreamServer):
@@ -59,6 +59,11 @@ class F02StartTests(unittest.TestCase):
         self.checkpoint = None
         self.index_raw = None
         self.index_delay = 0
+        self.optional = []
+        self.discovery = None
+        self.expand_refusal = None
+        self.expand_transform = None
+        self.confirmed_expands = 0
         self.calls = []
         owner = self
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -71,6 +76,7 @@ class F02StartTests(unittest.TestCase):
                 if operation == 'version':
                     data = dict(preview_capabilities=dict(schema='cairn.preview-capabilities/1',entities_omitted=True))
                 elif operation == 'index':
+                    owner.confirmed_expands=0
                     if owner.index_delay:
                         time.sleep(owner.index_delay)
                     if owner.index_raw is not None:
@@ -90,6 +96,11 @@ class F02StartTests(unittest.TestCase):
                                                            query='sha256:fixture-query',available_tokens=32000,
                                                            selected=owner.selected,omitted={},index=[])),
                                 handles=[],expires_at='2030-01-01T00:00:00Z',credits_remaining=4,bytes_remaining=24000)
+                    if owner.optional:
+                        data['package']['semantic']['index']=[item['entry'] for item in owner.optional]
+                        data['handles']=[dict(record_id=item['entry']['record_id'],version=item['entry']['version'],handle='optional-'+str(i)) for i,item in enumerate(owner.optional)]
+                    if owner.discovery is not None:
+                        data['package']['semantic']['discovery']=owner.discovery
                     if owner.checkpoint and body.get('query') == '"'+owner.checkpoint['title']+'"':
                         record = owner.checkpoint
                         semantic = data['package']['semantic']
@@ -99,9 +110,30 @@ class F02StartTests(unittest.TestCase):
                         data['handles'] = [dict(record_id=record['id'],version=3,handle='checkpoint-handle')]
                         semantic['selected'] = []
                 elif operation == 'expand':
-                    record = owner.checkpoint
-                    data = dict(selection=dict(record=dict(record_id=record['id'],version=3,body=record['body'])),
-                                credits_remaining=3)
+                    if owner.optional:
+                        if owner.expand_refusal and not body.get('span'):
+                            self.send_response(422)
+                            self.end_headers()
+                            self.wfile.write(encoded(dict(schema='cairn.response/1',ok=False,status=owner.expand_refusal,message='fixture expansion refusal')))
+                            return
+                        item=owner.optional[int(body['handle'].removeprefix('optional-'))]
+                        entry=item['entry']
+                        owner.confirmed_expands+=1
+                        data=dict(selection=dict(record=dict(record_id=entry['record_id'],version=entry['version'],kind='note',**{'class':entry['class']},body=item['body']),
+                                                 mandatory=False,reason='candidate',evidence=[],authority=[],conflicts=entry.get('conflicts',[])),
+                                  credits_remaining=4-owner.confirmed_expands,bytes_remaining=20000)
+                        if body.get('span'):
+                            hint=body['span']; raw=item['body'].encode(); part=raw[hint['offset']:hint['offset']+hint['length']]
+                            data['selection']['record']['body']=''
+                            data['span']=dict(offset=hint['offset'],end=hint['offset']+len(part),total_bytes=len(raw),sha256=sha(part),source_sha256=sha(raw))
+                            try: data['span']['body']=part.decode()
+                            except UnicodeDecodeError: data['span']['body_base64']=base64.b64encode(part).decode()
+                        if owner.expand_transform is not None:
+                            owner.expand_transform(body,data)
+                    else:
+                        record = owner.checkpoint
+                        data = dict(selection=dict(record=dict(record_id=record['id'],version=3,body=record['body'])),
+                                    credits_remaining=3)
                 elif operation == 'recall-observation':
                     data = {}
                 else:
@@ -119,15 +151,16 @@ class F02StartTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join()
 
-    def source(self,prefix=(),*,controlled_ids=False):
+    def source(self,prefix=(),*,controlled_ids=False,bridge=False):
         script = '''import importlib.util,sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from contextlib import nullcontext
 spec=importlib.util.spec_from_file_location('source_memory',sys.argv[1])
 hook=importlib.util.module_from_spec(spec); spec.loader.exec_module(hook)
-config=Path(sys.argv[2]); controlled=sys.argv[3]=='controlled'; sys.argv=[sys.argv[1],'--config',str(config)]
-with patch.object(hook,'load_inbox_recall',return_value=None):
+config=Path(sys.argv[2]); controlled=sys.argv[3]=='controlled'; bridge=sys.argv[4]=='bridge'; sys.argv=[sys.argv[1],'--config',str(config)]
+with (nullcontext() if bridge else patch.object(hook,'load_inbox_recall',return_value=None)):
  if not controlled:
   sys.exit(hook.main())
  # Control only the randomness boundary. The actual CLI, memory body, API,
@@ -149,9 +182,18 @@ with patch.object(hook,'load_inbox_recall',return_value=None):
         original = self.f.binding.read_bytes()
         manifest = json.loads(original)
         manifest['schema'] = 'cairn.inbox-recall-binding/2'
+        if bridge:
+            # The complete retained source bundle, not a naked entrypoint hash.
+            loader=module('prompt_source_bundle',ROOT/'integrations/lifecycle/lifecycle_bundle.py')
+            source_root=self.root/'oracle-source'
+            loader.stage_runtime(ROOT/'integrations/lifecycle',source_root)
+            descriptor=loader.bundle_descriptor(source_root)
+            for key, filename in (('bridge','inbox_recall.py'),('engine','memory.py')):
+                path=source_root/filename
+                manifest[key]=dict(path=str(path),sha256=sha(path.read_bytes()),bundle=descriptor)
         write(self.f.binding,encoded(manifest))
         try:
-            return subprocess.run([*prefix,sys.executable,'-B','-c',script,str(ROOT/'integrations/lifecycle/memory.py'),str(self.f.memory_path),'controlled' if controlled_ids else 'normal'],
+            return subprocess.run([*prefix,sys.executable,'-B','-c',script,str(ROOT/'integrations/lifecycle/memory.py'),str(self.f.memory_path),'controlled' if controlled_ids else 'normal','bridge' if bridge else 'stub'],
                                   input=self.f.raw,capture_output=True,cwd=self.f.root,env=self.f.env(),timeout=18)
         finally:
             write(self.f.binding,original)
@@ -177,10 +219,10 @@ with patch.object(hook,'load_inbox_recall',return_value=None):
                 result[path.name] = body
         return result
 
-    def pair(self,prefix=()):
+    def pair(self,prefix=(),*,controlled_ids=False):
         directory = Path(self.f.memory['state_dir'])
         seed = {p.name:(p.read_bytes(),p.stat().st_mode & 0o7777) for p in directory.iterdir()} if directory.exists() else {}
-        source = self.source(prefix)
+        source = self.source(prefix,controlled_ids=controlled_ids)
         source_state = self.state()
         source_calls = list(self.calls)
         shutil.rmtree(self.f.memory['state_dir'],ignore_errors=True)
@@ -200,10 +242,14 @@ with patch.object(hook,'load_inbox_recall',return_value=None):
         self.assertEqual([c[0] for c in self.calls],[c[0] for c in source_calls])
         for (operation,actual,headers),(_,expected,source_headers) in zip(self.calls,source_calls):
             actual,expected = dict(actual),dict(expected)
+            if operation=='recall-observation':
+                for request in (actual,expected):
+                    for key in ('elapsed_ms','search_ms','pulls_ms','selector_ms'):
+                        self.assertGreaterEqual(request.pop(key),0)
             # These are fresh process UUIDs, not persisted mutation identities.
             # Assert their shape and one initiation separately from deterministic fields.
             for request in (actual,expected):
-                ident = request.pop('request_id',None)
+                ident = request.get('request_id') if controlled_ids else request.pop('request_id',None)
                 if operation != 'version':
                     self.assertEqual(str(uuid.UUID(ident)),ident)
                     self.assertNotEqual(uuid.UUID(ident).int,0)
@@ -529,7 +575,7 @@ with patch.object(hook,'load_inbox_recall',return_value=None):
         self.f.env = lambda:{k:v for k,v in environment().items() if k!='HOME'}
         self.assertEqual(self.pair().stdout,b'{}\n')
 
-    def test_complete_rpc_request_ids_match_with_controlled_randomness(self):
+    def controlled_image(self):
         build = self.root/'uuid-build'
         build.mkdir()
         for name in ('go.mod','go.sum'):
@@ -552,6 +598,10 @@ func main() { uuid.SetRand(&sequence{}); os.Exit(activationipc.Run(os.Args[1:],o
 ''')
         helper = build/'ids'
         subprocess.run(['go','build','-buildvcs=false','-o',str(helper),'./cmd/f02-ids'],cwd=build,check=True)
+        return helper
+
+    def test_complete_rpc_request_ids_match_with_controlled_randomness(self):
+        helper=self.controlled_image()
         self.f.binary.chmod(0o700)
         write(self.f.binary,helper.read_bytes(),0o500)
         manifest = json.loads(self.f.binding.read_text())

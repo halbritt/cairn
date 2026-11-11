@@ -36,7 +36,8 @@ from the server's authenticated principal and observation channel.
 | --- | --- |
 | Bound `/3`, Codex, SessionStart, agent_tools | Go body behind checked private process |
 | `/2` and unbound memory | Retained Python |
-| Codex UserPromptSubmit, tool events, Stop/capture | Retained Python; unported here |
+| Codex UserPromptSubmit | [Prompt consumer under construction](f02-codex-prompt.md); outside this landed Start tranche |
+| Codex tool events, Stop/capture | Retained Python; unported here |
 | Claude memory and every other harness | Retained Python; unported here |
 | Coordination/journal/watcher and installer/adapter | Outside author scope |
 

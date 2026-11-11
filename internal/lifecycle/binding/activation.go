@@ -17,17 +17,17 @@ type ActivationError struct {
 	Err           error
 }
 
-// ResolveMemoryStart performs the single SessionStart activation and returns its
-// checked inputs. SessionStart never creates a native-turn activation decision.
+// ResolveMemoryStart performs the sole recall activation and returns checked
+// inputs. Start never allocates a native turn; prompts share the binding decision.
 func ResolveMemoryStart(ctx context.Context, in admission.HookInvocation) (*CheckResult, error) {
 	if in.EntryPoint != "memory" || !validDigest(in.ConfigSHA256) || !validDigest(in.BindingSHA256) {
 		return nil, errors.New("checked memory parent observation required")
 	}
 	return checkInvocation(ctx, in, func(config, manifest, event *value.Value, enabled bool) (bool, error) {
-		if !value.SameText(config.Get("harness"), "codex") || !value.SameText(config.Get("recall_mode"), "agent_tools") || !value.SameText(event.Get("hook_event_name"), "SessionStart") {
+		if !value.SameText(config.Get("harness"), "codex") || !value.SameText(config.Get("recall_mode"), "agent_tools") || (!value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")) {
 			return false, errors.New("unsupported private memory cell")
 		}
-		return enabled, nil
+		return activationDecision(ctx, in, config, manifest, event, enabled)
 	})
 }
 
@@ -41,45 +41,49 @@ func ResolveActivation(ctx context.Context, in admission.HookInvocation) (bool, 
 		return false, errors.New("checked parent digests required")
 	}
 	result, err := checkInvocation(ctx, in, func(config, manifest, event *value.Value, enabled bool) (bool, error) {
-		harness := config.Get("harness")
-		if (!value.SameText(harness, "codex") && !value.SameText(harness, "claude")) || !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") || !reservedWake(event.Get("prompt")) {
-			return enabled, nil
-		}
-		session := event.Get("session_id")
-		turn := event.Get("turn_id")
-		if value.SameText(harness, "claude") {
-			var err error
-			turn, err = claudeOwner(event.Get("prompt_id"))
-			if err != nil {
-				return false, err
-			}
-		}
-		if !canonicalUUID(session) || (value.SameText(harness, "codex") && !canonicalUUID(turn)) {
-			return enabled, nil
-		}
-		memory, err := descriptor(manifest.Get("memory_config"))
-		if err != nil {
-			return false, err
-		}
-		// Disabled staging still uses the source owner-controlled memory location
-		// to find an existing ledger; its final staged SHA is deliberately not read.
-		stateConfig := config
-		if memory.Path != in.ConfigPath {
-			raw, err := readData(memory.Path, false)
-			if err != nil {
-				return false, err
-			}
-			stateConfig, err = decodeData(raw)
-			if err != nil {
-				return false, err
-			}
-		}
-		return ledger.DecideActivation(ctx, ledger.Activation{Memory: stateConfig, Harness: string(harness.String), Session: string(session.String), Turn: string(turn.String), Enabled: enabled})
+		return activationDecision(ctx, in, config, manifest, event, enabled)
 	})
 	if err != nil {
 		return false, err
 	}
 	return result.Disposition == "checked", nil
+}
+
+func activationDecision(ctx context.Context, in admission.HookInvocation, config, manifest, event *value.Value, enabled bool) (bool, error) {
+	harness := config.Get("harness")
+	if (!value.SameText(harness, "codex") && !value.SameText(harness, "claude")) || !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") || !reservedWake(event.Get("prompt")) {
+		return enabled, nil
+	}
+	session := event.Get("session_id")
+	turn := event.Get("turn_id")
+	if value.SameText(harness, "claude") {
+		var err error
+		turn, err = claudeOwner(event.Get("prompt_id"))
+		if err != nil {
+			return false, err
+		}
+	}
+	if !canonicalUUID(session) || (value.SameText(harness, "codex") && !canonicalUUID(turn)) {
+		return enabled, nil
+	}
+	memory, err := descriptor(manifest.Get("memory_config"))
+	if err != nil {
+		return false, err
+	}
+	// Disabled staging still uses the source owner-controlled memory location
+	// to find an existing ledger; its final staged SHA is deliberately not read.
+	stateConfig := config
+	if memory.Path != in.ConfigPath {
+		raw, err := readData(memory.Path, false)
+		if err != nil {
+			return false, err
+		}
+		stateConfig, err = decodeData(raw)
+		if err != nil {
+			return false, err
+		}
+	}
+	return ledger.DecideActivation(ctx, ledger.Activation{Memory: stateConfig, Harness: string(harness.String), Session: string(session.String), Turn: string(turn.String), Enabled: enabled})
 }
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
@@ -138,3 +142,7 @@ func reservedWake(prompt *value.Value) bool {
 	}
 	return false
 }
+
+// TasklessNotification recognizes only the complete producer-shaped notice.
+// Recognition neither authenticates its identities nor authorizes its request.
+func TasklessNotification(prompt *value.Value) bool { return reservedWake(prompt) }

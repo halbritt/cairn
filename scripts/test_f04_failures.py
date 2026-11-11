@@ -191,12 +191,15 @@ class F04FailureTests(unittest.TestCase):
                         if mode=='panic':
                             self.assertEqual((result.returncode,result.stdout,result.stderr),(1,b'',
                                 b'Cairn lifecycle diagnostic: phase=activation error_class=UnexpectedError\n'))
+                        elif harness=='codex':
+                            # The reached recall protocol never converts a private
+                            # process refusal into required output. Actual required
+                            # Go outcomes are paired against Source in F02.
+                            self.assertEqual((result.returncode,result.stdout,result.stderr),(1,b'',
+                                b'Cairn lifecycle diagnostic: phase=activation error_class=OSError\nCairn lifecycle: invalid lifecycle input or unavailable local file; use native tools or an explicit handoff.\n'))
                         elif event=='UserPromptSubmit':
                             self.assertEqual((result.returncode,result.stdout),(2,b''))
                             self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=activation error_class=OSError\nCairn: current required context could not be restored.\n')
-                        elif harness=='codex':
-                            self.assertEqual((result.returncode,result.stdout),(0,b'{"continue":false,"stopReason":"Bound inbox recall cannot restore required context."}\n'))
-                            self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=activation error_class=OSError\n')
                         else:
                             self.assertEqual((result.returncode,result.stdout),(1,b''))
                             self.assertIn(b'phase=activation error_class=OSError',result.stderr)
