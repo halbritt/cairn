@@ -16,12 +16,18 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("bundle_tests", HERE / "lifecycle_bundle.py")
 bundle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bundle)
+compatibility_spec = importlib.util.spec_from_file_location(
+    "compatibility_bundle_tests", HERE / "lifecycle_compatibility.py")
+compatibility = importlib.util.module_from_spec(compatibility_spec)
+compatibility_spec.loader.exec_module(compatibility)
 
 
 class LifecycleBundleTests(unittest.TestCase):
     def test_every_lifecycle_source_is_in_the_installed_snapshot(self):
         runtime = {path.name for path in HERE.glob('*.py') if not path.name.startswith('test_')}
-        self.assertEqual(set(bundle.MODULE_FILES), runtime)
+        # The independently pinned /3 bootstrap must not change legacy /2 members.
+        self.assertEqual(set(bundle.MODULE_FILES), runtime - {'lifecycle_compatibility.py'})
+        self.assertEqual(set(compatibility.MEMBERS), runtime)
 
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
