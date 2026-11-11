@@ -1,9 +1,8 @@
 # F02 bound Codex SessionStart recall consumer
 
 This tranche implements the `/3` bound Codex `SessionStart` memory cell with
-`recall_mode=agent_tools`. It is an author candidate pending independent review and
-Foundation integration. It establishes no installed or
-production acceptance. The public `cairn lifecycle` command stays disabled.
+`recall_mode=agent_tools`. It establishes no installed or production acceptance.
+The public `cairn lifecycle` command stays disabled.
 
 The receipt-selected Python memory parent invokes the checked executable once
 with `lifecycle memory recall`. The existing held binary descriptor, captured
@@ -113,15 +112,24 @@ Focused builds and process probes run in the shared namespace wrapper, with
 `make check`, `make test` and `make test-integration` gates on the host; the
 wrapper restriction still applies to other probes. Production changes still
 require a grant.
-`make check` passes. Disposable `make test-integration` passed all 31 Go packages.
-Its Python stage needed the permitted minimal OpenSSL configuration; resumption
-then reached the known linked-worktree `git clone /work` failure. The later
-independent Python checks pass separately. The source-opening Git-history probe
-and systemd user-manager probes remain unavailable in that namespace, as do
-unsupplied native/semantic worker probes. This is partial integration evidence,
-with Foundation owning the final exact-candidate/trunk and Git environment
-disposition. Focused results do not establish full F02,
-installed qualification, production acceptance or measured usefulness.
+The repaired author commit `69d557c1` passes the four affected Go packages, all
+28 F02 process tests and host `make check`, with a clean checkout before and
+after each check. Foundation's combined `7bbf15cc` also passes all 28 F02 and
+nine staged R04 hook tests. The staged fixture supplies the authenticated Unix
+API reached by the new cell; every original emitted hook row, success assertion,
+producer-input removal and state assertion remains. Before the root-path repair,
+the exact merge passed all 48 F04 and 24 installed R02 contract tests.
+
+Disposable integration passed all 31 Go packages and the Python fixtures before
+protocol skew during author construction. The earlier namespace run stopped at
+the linked-worktree Git clone. On `7bbf15cc`, host `make test-integration` selected
+and passed the remaining 12 fixtures, including protocol skew's 26 combinations,
+source-opening history, native cancellation and the three systemd process probes.
+The worker-pool probe used its generic worker fixture; a native OpenCode binary
+and optional semantic workers were not supplied. Foundation validates the final
+merged tree with `make check` before landing. These results cover this selected
+cell and its compatibility; they do not establish full F02, installed
+qualification, production acceptance or measured usefulness.
 
 During construction the corpus caught Unicode escaping, persisted field order,
 pending-requirement persistence, API failure classification and the strict
