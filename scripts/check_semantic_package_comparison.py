@@ -178,26 +178,19 @@ def compare_embedding(requests, actual, reference, rank_root, expected_identity)
 
 
 def stream_wire(capture, stream_helper):
-    matches = []
-    rejected = []
-    # Go thread files can contain partial parent I/O. Only the complete Rust
-    # pipe has 38 cache-bearing replies; malformed candidate pipes still fail.
-    for path in capture.glob("stream-trace.*"):
-        try:
-            wire = stream_helper.trace_frames(path.read_text())
-        except ValueError as exc:
-            rejected.append(dict(path=path.name, reason=str(exc)))
-            continue
-        if len(wire["write"]) == 38 and all("cache" in row and "id" in row for row in wire["write"]):
-            matches.append(wire)
-    if len(matches) != 1:
-        raise ValueError("expected one actual continuous 38-frame worker pipe")
+    workers = load(capture / "actual-workers.json")["workers"]
+    pids = [row["pid"] for row in workers if "--stream" in row["argv"]]
+    if len(pids) != 1:
+        raise ValueError("expected one observed stream worker PID")
+    # Select the observed Rust process, never a partial Go parent/thread file.
+    wire = stream_helper.trace_frames((capture / ("stream-trace." + str(pids[0]))).read_text())
+    if len(wire["write"]) != 38 or not all("cache" in row and "id" in row for row in wire["write"]):
+        raise ValueError("expected one complete 38-frame worker pipe")
     actual = frames(capture / "stream.stdout")
     inputs = frames(capture / "stream-inputs.jsonl")
-    if len(matches[0]["read"]) != 38 or [x["result"] for x in matches[0]["write"]] != [x["result"] for x in actual] or [x["request"] for x in matches[0]["read"]] != [x["request"] for x in inputs] or any(a["id"] != b["id"] for a, b in zip(matches[0]["read"], matches[0]["write"], strict=True)):
+    if len(wire["read"]) != 38 or [x["result"] for x in wire["write"]] != [x["result"] for x in actual] or [x["request"] for x in wire["read"]] != [x["request"] for x in inputs] or any(a["id"] != b["id"] for a, b in zip(wire["read"], wire["write"], strict=True)):
         raise ValueError("worker pipe does not bind actual Go inputs and results")
-    matches[0]["unselected_trace_fragments"] = rejected
-    return matches[0]
+    return wire
 
 
 def compare_raw(capture, reference, rank_root, wire, expected_rank, expected_embed):

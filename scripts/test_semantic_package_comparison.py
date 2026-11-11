@@ -91,7 +91,7 @@ class PackageComparisonTest(unittest.TestCase):
         import json
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "actual-workers.json").write_text(json.dumps(dict(workers=[dict(pid=7, cmdline=["rank", "--stream"])])))
+            (root / "actual-workers.json").write_text(json.dumps(dict(workers=[dict(pid=7, argv=["rank", "--stream"])])))
             (root / "stream-trace.7").write_text("worker")
             (root / "stream-trace.8").write_text("incomplete Go thread fragment")
             expected = dict(write=[dict(id=str(i), cache={}, result={}) for i in range(38)],
@@ -99,10 +99,18 @@ class PackageComparisonTest(unittest.TestCase):
             (root / "stream.stdout").write_text(('{}\n'.format(json.dumps(dict(result={})))) * 38)
             (root / "stream-inputs.jsonl").write_text(('{}\n'.format(json.dumps(dict(request={})))) * 38)
             def parse(text):
-                if text != "worker":
-                    raise ValueError("unrelated incomplete parent stream")
+                self.assertEqual(text, "worker")
                 return expected
             self.assertEqual(C.stream_wire(root, SimpleNamespace(trace_frames=parse)), expected)
+
+    def test_missing_or_ambiguous_observed_stream_worker_refuses(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for workers in ([], [dict(pid=i, argv=["rank", "--stream"]) for i in (1, 2)]):
+                (root / "actual-workers.json").write_text(json.dumps(dict(workers=workers)))
+                with self.subTest(workers=workers), self.assertRaisesRegex(ValueError, "one observed"):
+                    C.stream_wire(root, SimpleNamespace())
 
 
 if __name__ == "__main__":

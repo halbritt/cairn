@@ -21,10 +21,12 @@ native mappings; the existing package fixture's `process_snapshot` observer
 understands the sealed memfds.
 
 Required capture files are `rank.stdout`, `stream.stdout`, `embed.stdout`,
-`rank-inputs.jsonl`, `stream-inputs.jsonl`, `embed-inputs.jsonl`, and the
+`rank-inputs.jsonl`, `stream-inputs.jsonl`, `embed-inputs.jsonl`,
+`actual-workers.json` from that observer, and the
 `stream-trace.*` files from `strace -ff -xx -s 8388608 --trace-fds=0,1`.
 The embed file contains 37 standard requests followed by 19 rank-query requests.
-The reporter selects the single complete cache-bearing worker pipe and binds
+The reporter selects the observed stream worker's complete cache-bearing pipe
+and binds
 its requests, replies and IDs to the Go inputs and outputs. Partial Go thread
 traces cannot stand in for that pipe.
 
