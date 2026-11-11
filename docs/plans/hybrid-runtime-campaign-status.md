@@ -59,17 +59,23 @@ the 25-second request deadline and 30-second idle lifetime are unchanged.
 The retained Python stream transcript supplies 34 frames for 17 workload
 queries. Its original note aliases are mapped by the committed fixture
 producer's UUID5/URL rule; source bytes, versions, body hashes and numeric scores
-are preserved and the mapping is recorded. All 34 frames and 408 scores matched
-the frozen Python rank reference exactly, with the same model identity. Under
-coordinator decision `d8b70f55-48fb-4c27-bfc5-f8405c56fe97/v1`, the four
+are preserved and the mapping is recorded. The lead's
+`python-stream34-vs-rank.json` check (SHA-256
+`c7ad6284f1b4357cab90aad1a7f59cf86d3814ac737f169f22e5518f435ccef6`)
+compared all 34 historical Python stream frames with the frozen Python rank
+reference: 408/408 scores exact, maximum absolute delta 0, identical model
+identity. The check binds the original stream input SHA-256
+`cd62bf92204d9a5457fd69b77bfb387fcecb0d1d1a59791b98f806e1c708182b`
+and output SHA-256
+`60100b209f91ceabf7a24a65e88fd1e549c054652c4c4561f03aabf1e19767a7`.
+Under coordinator decision `d8b70f55-48fb-4c27-bfc5-f8405c56fe97/v1`, the four
 `long-tail/cold`, `long-tail/warm`, `64-short/cold` and `64-short/warm` cells use
 the corresponding frozen rank values plus the Rust stream observations. This
 satisfies the decision's reference prerequisite: accepted coverage is 34
 captured cells plus four rank-backed cells. The raw historical capture still
 has 34 frames and `full_38_reference_available=false`; no replacement Python
-capture was made. Combined review and landing remain pending. The observer
-does not claim an ORT-call count, a cache performance benefit or full S-02
-acceptance.
+capture was made. The observer does not claim an ORT-call count, a cache
+performance benefit or full S-02 acceptance.
 
 The Go supervisors now accept explicit Rust worker configuration through
 `serve --semantic-rust-config`; Rust remains disabled when the flag is absent.

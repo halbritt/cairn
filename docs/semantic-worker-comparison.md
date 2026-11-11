@@ -170,8 +170,14 @@ claiming an ORT inference-call count or a performance benefit.
 The retained Python capture uses historical note aliases. The harness applies
 the committed fixture producer's UUID5/URL ID adapter, records that mapping and
 its source digest, and preserves every body, version, body hash and numeric
-score. The retained capture has 34 frames. Direct comparison against the frozen
-Python rank reference found all 408 scores exact, with the same model identity.
+score. The lead's `python-stream34-vs-rank.json` check (SHA-256
+`c7ad6284f1b4357cab90aad1a7f59cf86d3814ac737f169f22e5518f435ccef6`)
+compared all 34 historical Python stream frames with the frozen Python rank
+reference: 408/408 scores exact, maximum absolute delta 0, identical model
+identity. The check binds the original stream input SHA-256
+`cd62bf92204d9a5457fd69b77bfb387fcecb0d1d1a59791b98f806e1c708182b`
+and output SHA-256
+`60100b209f91ceabf7a24a65e88fd1e549c054652c4c4561f03aabf1e19767a7`.
 Under coordinator decision `d8b70f55-48fb-4c27-bfc5-f8405c56fe97/v1`, the four
 uncaptured `stream/long-tail/{cold,warm}` and `stream/64-short/{cold,warm}` cells
 use the corresponding frozen Python rank values plus the observed Rust stream
