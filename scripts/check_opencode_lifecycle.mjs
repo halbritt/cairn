@@ -107,6 +107,18 @@ try {
     await errHooks["experimental.chat.messages.transform"]({}, { messages: [owner("err", "ses_err")] })
     await errHooks.dispose()
     assert(warnings.some(w => w.includes("specific error diagnostic")), "warn must preserve stderr diagnostics")
+    const beforeMalformed = (await readFile(log, "utf8")).trim().split("\n").length
+    for (const commands of [{}, { SessionStart: [] }, { SessionStart: [process.execPath, "bad\0argument"] }]) {
+      // Valid legacy fields must never rescue a broken explicit selection.
+      await writeFile(join(root, "cairn-lifecycle.json"), JSON.stringify({
+        python: process.execPath, script: join(root, "engine.mjs"), engine_config: "unused", commands,
+      }))
+      const selected = await plugin({ client, directory: root, worktree: root })
+      await selected["experimental.chat.messages.transform"]({}, { messages: [owner("bad", "ses_selected_bad")] })
+      await selected.dispose()
+    }
+    assert.equal((await readFile(log, "utf8")).trim().split("\n").length, beforeMalformed,
+      "Malformed or incomplete selected commands must refuse without a legacy fallback")
   } finally {
     console.warn = origWarn
   }

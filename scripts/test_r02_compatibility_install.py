@@ -119,6 +119,10 @@ class R02CompatibilityInstallationTests(InstalledTools, unittest.TestCase):
                 for enabled in (False, True):
                     with self.subTest(harness=harness, role=role, enabled=enabled):
                         f = self.fixture(harness + role + str(enabled), harness=harness, enabled=enabled)
+                        if harness == 'codex' and role == 'memory' and not enabled:
+                            # Disabled activation continues through the reached
+                            # Go recall body and its actual SDK transport.
+                            self.addCleanup(f.recall_api())
                         if role == 'coordination':
                             f.event.update(hook_event_name='SessionStart', prompt='', host_pid=os.getpid())
                             f.raw = encoded(f.event)
@@ -178,6 +182,7 @@ class R02CompatibilityInstallationTests(InstalledTools, unittest.TestCase):
 
     def test_new_disabled_selection_does_not_change_cached_enabled_argv_or_unrelated_bytes(self):
         f = self.fixture('disabled', enabled=True)
+        self.addCleanup(f.recall_api())
         old_launcher = f.launcher('memory')
         old_selection = dict(f.selected)
         unrelated = f.root / 'unrelated.json'
@@ -186,7 +191,14 @@ class R02CompatibilityInstallationTests(InstalledTools, unittest.TestCase):
         token.write_bytes(b'synthetic token; never a staging member\n')
         token.chmod(0o000)
         f.memory['opaque'] = {'custom': [1, 'two', False]}
-        f.publish_configuration(enabled=False)
+        # Staging cannot read even the selected token. Runtime recall gets the
+        # real synthetic SDK token only after that publication has completed.
+        selected_token = Path(f.memory['token_file'])
+        selected_token.chmod(0o000)
+        try:
+            f.publish_configuration(enabled=False)
+        finally:
+            selected_token.chmod(0o600)
         for launcher, session, expected in ((old_launcher, SESSION, True),
                                            (f.launcher('memory'), '99999999-9999-4999-8999-999999999999', False)):
             result = subprocess.run([str(launcher)], input=encoded(dict(f.event, session_id=session)),

@@ -95,7 +95,7 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
                 pass
 
             def do_POST(self):
-                json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 operation = self.path.removeprefix('/v1/')
                 authorization = self.headers.get('Authorization')
                 calls.append((operation, authorization))
@@ -108,7 +108,7 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
                     data = dict(package=dict(receipt_id='11111111-1111-4111-8111-111111111111', nonce='',
                                              seal='blake3:' + 'a' * 64,
                                              semantic=dict(schema='cairn.semantic/17', mode='index', status='READY',
-                                                           scope=dict(repo='fixture', task_id='codex/' + SESSION, run_id=SESSION),
+                                                           scope=request['scope'],
                                                            purpose='context', destination=dict(name='hosted', allow_local=False),
                                                            query='sha256:fixture-query', available_tokens=32000,
                                                            selected=[], omitted={}, index=[])),

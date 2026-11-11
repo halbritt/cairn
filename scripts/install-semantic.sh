@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Optional CPU dependency/model preparation. Does not change running services.
 set -euo pipefail
+if [[ "${1:-}" == --stage-rust ]]; then
+    shift
+    exec /usr/bin/python3 -I -B "$(dirname "$0")/semantic_package.py" stage "$@"
+fi
 semantic_root="${CAIRN_HOME:-$HOME/.local/share/cairn}/semantic"
 case "$semantic_root" in /*) ;; *) printf '%s\n' 'CAIRN_HOME must be absolute' >&2; exit 2;; esac
 source_root="$(cd "$(dirname "$0")/.." && pwd)"
