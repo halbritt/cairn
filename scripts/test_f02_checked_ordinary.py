@@ -68,11 +68,22 @@ class CheckedOrdinaryTests(unittest.TestCase):
     def close(self):self.server.shutdown();self.server.server_close();self.thread.join()
     def go_vector(self):
         vector=[str(self.f.binary),'memory','--receipt',str(self.f.receipt_path),'--receipt-sha256',self.f.receipt_sha,'--role','memory','--entrypoint','memory-hook.py','--config',str(self.f.memory_path),'--hook-timeout','13','--launch-root',str(self.f.launch_root),'--shell','/bin/sh']
+        return self.selected_vector(vector)
+    def selected_vector(self,vector):
         for key,value in getattr(self,'selection_overrides',{}).items():vector[vector.index('--'+key)+1]=value
+        if getattr(self,'single_dash',False):vector[vector.index('--receipt-sha256')]='-receipt-sha256'
+        if getattr(self,'joined_flags',False):
+            joined=[];index=0
+            while index<len(vector):
+                if vector[index] in ('--receipt','--receipt-sha256','--role','--entrypoint','--config','--hook-timeout','--launch-root','--shell'):
+                    joined.append(vector[index]+'='+vector[index+1]);index+=2
+                else:joined.append(vector[index]);index+=1
+            vector=joined
         return vector
     def go_launcher(self):
-        vector=self.go_vector();raw=('#!/bin/sh\nexec '+shlex.join(vector)+' -- "$@"\n').encode()
-        directory=self.f.launch_root/sha(raw);directory.mkdir(mode=0o700,exist_ok=True)
+        vector=self.go_vector();overrides=getattr(self,'selection_overrides',{})
+        raw=os.fsencode('#!'+overrides.get('shell','/bin/sh')+'\nexec '+shlex.join(vector)+' -- "$@"\n')
+        directory=Path(overrides.get('launch-root',self.f.launch_root))/sha(raw);directory.mkdir(mode=0o700,exist_ok=True)
         launcher=directory/'inbox'
         if launcher.exists():self.assertEqual(launcher.read_bytes(),raw)
         else:write(launcher,raw,0o500)
@@ -80,10 +91,15 @@ class CheckedOrdinaryTests(unittest.TestCase):
     def go(self):
         return subprocess.run([str(self.go_launcher())],input=self.f.raw,cwd=self.f.root,env=self.f.env(),capture_output=True,timeout=18)
     def source(self):
-        if not getattr(self,'source_repin',False) and not getattr(self,'selection_overrides',{}):return self.f.public('memory')
-        vector=compat.launch_vector(sys.executable,self.f.receipt_path,self.f.receipt_sha,'memory','memory-hook.py',self.f.memory_path,13,self.f.launch_root)
-        for key,value in getattr(self,'selection_overrides',{}).items():vector[vector.index('--'+key)+1]=value
-        raw=compat.launcher_bytes(vector);directory=self.f.launch_root/sha(raw);directory.mkdir(mode=0o700,exist_ok=True)
+        if not any((getattr(self,'source_repin',False),getattr(self,'selection_overrides',{}),getattr(self,'single_dash',False),getattr(self,'joined_flags',False))):return self.f.public('memory')
+        vector=self.selected_vector(compat.launch_vector(sys.executable,self.f.receipt_path,self.f.receipt_sha,'memory','memory-hook.py',self.f.memory_path,13,self.f.launch_root))
+        overrides=getattr(self,'selection_overrides',{});shell=overrides.get('shell','/bin/sh')
+        if getattr(self,'invalid_utf8_fixture',False):
+            # Deliberately misissued filesystem bytes reach the actual verifier;
+            # its own strict UTF-8 encode must refuse, not this fixture helper.
+            raw=os.fsencode('#!'+shell+'\nexec '+shlex.join(vector)+' -- "$@"\n')
+        else:raw=compat.launcher_bytes(vector,shell)
+        directory=Path(overrides.get('launch-root',self.f.launch_root))/sha(raw);directory.mkdir(mode=0o700,exist_ok=True)
         launcher=directory/'inbox'
         if not launcher.exists():write(launcher,raw,0o500)
         return subprocess.run([str(launcher)],input=self.f.raw,cwd=self.f.root,env=self.f.env(),capture_output=True,timeout=18)
@@ -114,7 +130,10 @@ class CheckedOrdinaryTests(unittest.TestCase):
             for _,_,headers in rows:
                 token=headers['Cairn-Client-Diagnostics'];diagnostic=json.loads(base64.urlsafe_b64decode(token+'='*(-len(token)%4)))
                 self.assertEqual(diagnostic['origin']['component'],'lifecycle-memory')
-                if rows is calls:self.assertEqual(diagnostic['origin'],dict(component='lifecycle-memory',basis='reported'))
+                if rows is calls:
+                    origin=dict(component='lifecycle-memory',basis='reported')
+                    if getattr(self,'source_implementation_id',None) is not None:origin['implementation_id']=self.source_implementation_id
+                    self.assertEqual(diagnostic['origin'],origin)
                 else:self.assertEqual(diagnostic['origin'],dict(component='lifecycle-memory',basis='reported',implementation_id=expected_image))
         return go
     def test_real_installed_unbound_start_and_prompt_reach_same_body(self):
@@ -153,6 +172,68 @@ class CheckedOrdinaryTests(unittest.TestCase):
             self.f.receipt[key]=manifest[key]
         self.overwrite(self.f.binding,encoded(manifest));self.f.receipt['binding']['sha256']=sha(self.f.binding.read_bytes())
         self.overwrite(self.f.receipt_path,encoded(self.f.receipt));self.f.receipt_sha=sha(self.f.receipt_path.read_bytes());self.source_repin=True
+
+    def add_alias(self,alias,legacy_del_identity=False):
+        snapshot=Path(self.f.receipt['snapshot_root'])
+        sources={name:(snapshot/name).read_bytes() for name in self.f.receipt['members']}
+        sources[alias]=sources['memory.py']
+        hashes={name:sha(raw) for name,raw in sources.items()}
+        identity=json.dumps(hashes,sort_keys=True,separators=(',',':'),ensure_ascii=True).encode()
+        if legacy_del_identity:identity=identity.replace(b'\\u007f',b'\x7f')
+        selected=snapshot.parent/sha(identity);selected.mkdir(mode=0o700)
+        for name,raw in sources.items():write(selected/name,raw,0o400)
+        self.f.receipt['snapshot_root']=str(selected)
+        self.f.receipt['aliases'][alias]='memory.py'
+        self.f.receipt['members']={name:dict(sha256=hashes[name],bytes=len(raw)) for name,raw in sources.items()}
+        self.overwrite(self.f.receipt_path,encoded(self.f.receipt));self.f.receipt_sha=sha(self.f.receipt_path.read_bytes());self.source_repin=True
+
+    def test_hexadecimal_timeout_refuses_like_actual_python(self):
+        self.selection_overrides={'hook-timeout':'0xdp0'}
+        result=self.pair();self.assertEqual(result.returncode,1);self.assertEqual(self.calls,[]);self.assertEqual(self.state(),{})
+
+    def test_single_dash_selection_refuses_like_actual_python(self):
+        self.single_dash=True
+        result=self.pair();self.assertEqual(result.returncode,1);self.assertEqual(self.calls,[]);self.assertEqual(self.state(),{})
+
+    def test_separate_dash_entrypoint_refuses_even_with_valid_alias(self):
+        self.add_alias('-x');self.selection_overrides={'entrypoint':'-x'}
+        result=self.pair();self.assertEqual(result.returncode,1);self.assertEqual(self.calls,[]);self.assertEqual(self.state(),{})
+
+    def test_joined_issued_flags_and_decimal_timeout_forms_remain_callable(self):
+        self.add_alias('-x');self.joined_flags=True
+        for timeout in ('13','13.','13.0','013','1.3e1','130e-1'):
+            with self.subTest(timeout=timeout):
+                shutil.rmtree(self.f.memory['state_dir'],ignore_errors=True);self.calls.clear()
+                self.selection_overrides={'entrypoint':'-x','hook-timeout':timeout}
+                result=self.pair();self.assertEqual(result.returncode,0);self.assertTrue(self.calls)
+
+    def test_invalid_utf8_path_vectors_refuse_like_actual_python(self):
+        self.invalid_utf8_fixture=True
+        for key in ('receipt','launch-root','shell'):
+            with self.subTest(selection=key):
+                path=self.root/(key+os.fsdecode(b'\xff'))
+                if key=='receipt':write(path,self.f.receipt_path.read_bytes(),0o400)
+                elif key=='launch-root':path.mkdir(mode=0o700)
+                else:shutil.copyfile('/bin/sh',path);path.chmod(0o500)
+                self.selection_overrides={key:str(path)};self.calls.clear()
+                source=self.source()
+                self.assertEqual((source.returncode,source.stdout),(1,b''))
+                self.assertIn(b'UnicodeEncodeError',source.stderr)
+                self.assertEqual(self.calls,[]);self.assertEqual(self.state(),{})
+                result=self.go()
+                print('CHECKED_UTF8_REFUSAL='+json.dumps(dict(selection=key,source_exit=source.returncode,source_error='UnicodeEncodeError',source_stderr_sha256=sha(source.stderr),go_exit=result.returncode,go_stdout_bytes=len(result.stdout),go_stderr=result.stderr.decode('ascii'))),flush=True)
+                self.assertEqual((result.returncode,result.stdout),(1,b''))
+                self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n')
+                self.assertEqual(self.calls,[]);self.assertEqual(self.state(),{})
+
+    def test_del_alias_noncanonical_identity_refuses_like_actual_python(self):
+        self.add_alias('del\x7f-hook.py',legacy_del_identity=True)
+        result=self.pair();self.assertEqual(result.returncode,1);self.assertEqual(self.calls,[]);self.assertEqual(self.state(),{})
+
+    def test_del_alias_canonical_identity_remains_callable(self):
+        self.add_alias('del\x7f-hook.py');self.selection_overrides={'entrypoint':'del\x7f-hook.py'}
+        self.source_implementation_id=self.f.receipt['members']['del\x7f-hook.py']['sha256']
+        result=self.pair();self.assertEqual(result.returncode,0);self.assertTrue(self.calls)
     def test_changed_selection_flags_match_actual_python_verifier(self):
         for overrides in ({'receipt-sha256':'0'*64},{'config':str(self.f.coord_path)},
                           {'entrypoint':'missing.py'},{'role':'coordination'},

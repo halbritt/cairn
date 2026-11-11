@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/halbritt/cairn/internal/lifecycle/binding"
 	"github.com/halbritt/cairn/internal/lifecycle/memoryhook"
@@ -36,12 +37,6 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 		_, _ = io.WriteString(diagnostic, prefix+" diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n")
 		return 1
 	}
-	selection, launchRoot, shell, err := checkedArguments(args)
-	if err != nil {
-		return refuse()
-	}
-	ctx, cancel := context.WithDeadline(parent, entered.Add(13*time.Second))
-	defer cancel()
 	vector := append([]string(nil), os.Args...)
 	for i, a := range vector {
 		if a == "--" {
@@ -52,6 +47,17 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	if len(vector) < 2 || vector[1] != "memory" {
 		return refuse()
 	}
+	for _, word := range vector {
+		if !utf8.ValidString(word) {
+			return refuse()
+		}
+	}
+	selection, launchRoot, shell, err := checkedArguments(args)
+	if err != nil {
+		return refuse()
+	}
+	ctx, cancel := context.WithDeadline(parent, entered.Add(13*time.Second))
+	defer cancel()
 	raw, err := checkedLauncherBytes(vector, shell)
 	if err != nil {
 		return refuse()
@@ -132,6 +138,23 @@ func checkedArguments(args []string) (binding.OrdinarySelection, string, string,
 	for _, key := range []string{"receipt", "receipt-sha256", "role", "entrypoint", "config", "hook-timeout", "launch-root", "shell"} {
 		vals[key] = flags.String(key, "", "")
 	}
+	// flag accepts single dashes and dash-prefixed separate values that the
+	// checked Python entry refuses. Validate the selected grammar first.
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--" {
+			break
+		}
+		name, _, joined := strings.Cut(args[i], "=")
+		if !strings.HasPrefix(name, "--") || vals[strings.TrimPrefix(name, "--")] == nil {
+			return fail()
+		}
+		if !joined {
+			i++
+			if i == len(args) || strings.HasPrefix(args[i], "-") {
+				return fail()
+			}
+		}
+	}
 	if flags.Parse(args) != nil {
 		return fail()
 	}
@@ -139,6 +162,9 @@ func checkedArguments(args []string) (binding.OrdinarySelection, string, string,
 		if *v == "" {
 			return fail()
 		}
+	}
+	if !checkedTimeout.MatchString(*vals["hook-timeout"]) {
+		return fail()
 	}
 	h, err := strconv.ParseFloat(*vals["hook-timeout"], 64)
 	if err != nil || h != 13 || *vals["role"] != "memory" || !filepath.IsAbs(*vals["launch-root"]) || filepath.Clean(*vals["launch-root"]) != *vals["launch-root"] {
@@ -151,7 +177,10 @@ func checkedArguments(args []string) (binding.OrdinarySelection, string, string,
 	return binding.OrdinarySelection{ReceiptPath: *vals["receipt"], ReceiptSHA256: *vals["receipt-sha256"], Role: *vals["role"], Entrypoint: *vals["entrypoint"], ConfigPath: *vals["config"]}, *vals["launch-root"], *vals["shell"], nil
 }
 
-var checkedShellWord = regexp.MustCompile(`^[a-zA-Z0-9_@%+=:,./-]+$`)
+var (
+	checkedTimeout   = regexp.MustCompile(`^[0-9]+(\.[0-9]*)?([eE][+-]?[0-9]+)?$`)
+	checkedShellWord = regexp.MustCompile(`^[a-zA-Z0-9_@%+=:,./-]+$`)
+)
 
 func checkedLauncherBytes(vector []string, shell string) ([]byte, error) {
 	if !filepath.IsAbs(shell) || filepath.Clean(shell) != shell || strings.ContainsRune(shell, 0) {

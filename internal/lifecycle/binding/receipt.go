@@ -261,7 +261,7 @@ func asciiCodeMap(codeMap map[string]string) ([]byte, error) {
 	}
 	var ascii bytes.Buffer
 	for _, c := range strings.TrimSuffix(encoded.String(), "\n") {
-		if c <= 0x7f {
+		if c < 0x7f {
 			ascii.WriteByte(byte(c))
 		} else if c <= 0xffff {
 			fmt.Fprintf(&ascii, "\\u%04x", c)
