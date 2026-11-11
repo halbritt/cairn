@@ -32,12 +32,16 @@ func writeCodexConfig(out io.Writer, args []string, executable string) error {
 		// escapes such as \x7f that TOML 1.0 does not accept.
 		quoted[i] = strings.ReplaceAll(string(encoded), "\x7f", `\u007f`)
 	}
+	messagingTools := ""
+	if o.config.Messaging {
+		messagingTools = `, "cairn_agents", "cairn_send", "cairn_inbox", "cairn_ack", "cairn_complete", "cairn_renew", "cairn_event_status"`
+	}
 	_, err = fmt.Fprintf(out, `[mcp_servers.cairn]
 command = %s
 args = [%s]
-enabled_tools = ["cairn_search", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_prepare_note", "cairn_edit", "cairn_history", "cairn_assessments", "cairn_assess", "cairn_client_info"]
+enabled_tools = ["cairn_search", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_prepare_note", "cairn_edit", "cairn_history", "cairn_assessments", "cairn_assess", "cairn_client_info"%s]
 required = %t
 startup_timeout_sec = 15
-`, quoted[0], strings.Join(quoted[1:], ", "), *required)
+`, quoted[0], strings.Join(quoted[1:], ", "), messagingTools, *required)
 	return err
 }
