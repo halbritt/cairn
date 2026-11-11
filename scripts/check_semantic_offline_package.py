@@ -77,11 +77,17 @@ raise SystemExit(result.returncode)
 '''
 
 BUILD_NATIVE = r'''
-import os,pathlib,subprocess,sys,tarfile
+import hashlib,json,os,pathlib,subprocess,sys,tarfile
 root=pathlib.Path('/work');out=pathlib.Path('/tmp/native-tools');out.mkdir(mode=0o700)
 os.environ.update(CGO_ENABLED='0',GOMAXPROCS='2',GOFLAGS='-p=2',GOTELEMETRY='off')
+sources={str(path.relative_to(root)):hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(root.rglob('*.go')) if path.is_file()}
+sources.update({name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in ('go.mod','go.sum')})
+receipt={'schema':'cairn.semantic-native-tools/1','go_inputs':sources,'go_version':subprocess.check_output(['go','version'],text=True),'cgo_enabled':'0','tools':{}}
 for name,target in (('native-fixture','./scripts/testdata/semantic-package-native'),('go-driver','./scripts/testdata/semantic-package-driver')):
- subprocess.run(['go','build','-buildvcs=false','-o',str(out/name),target],cwd=root,check=True)
+ command=['go','build','-buildvcs=false','-o',str(out/name),target]
+ subprocess.run(command,cwd=root,check=True)
+ receipt['tools'][name]={'argv':command,'sha256':hashlib.sha256((out/name).read_bytes()).hexdigest(),'go_build_info':subprocess.check_output(['go','version','-m',str(out/name)],text=True),'elf':subprocess.check_output(['/usr/bin/readelf','-h','-l','-d',str(out/name)],text=True)}
+(out/'build-binding.json').write_text(json.dumps(receipt,sort_keys=True)+'\n')
 with tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz') as archive:
  for path in sorted(out.iterdir()):archive.add(path,arcname=path.name)
 '''
@@ -187,7 +193,8 @@ def runtime_files(fixtures, tools, request):
                 for route in ('direct', 'go') for mode in ('rank', 'stream', 'embed')}
     selection = {'launchers': selected['launchers'], 'request': request.get('request', request),
                  'expected': expected, 'host_pid_namespace': os.readlink('/proc/self/ns/pid'),
-                 'host_net_namespace': os.readlink('/proc/self/ns/net')}
+                 'host_net_namespace': os.readlink('/proc/self/ns/net'),
+                 'bwrap_sha256': file_sha('/usr/bin/bwrap')}
     return bindings, selection, Path(selected['payload'])
 
 
@@ -274,6 +281,9 @@ def native_case(name, bindings, selection, payload, directory, *, mode='rank', r
         raise RuntimeError(name + ': connect or telemetry-store mutation observed')
     elif not negative and (not observed or not native['exact_retained_reply']):
         raise RuntimeError(name + ': missing actual worker mappings or exact retained comparison')
+    for worker in observed.values():
+        if any(mapping['path'] in SHADOW_ALIASES for mapping in worker['system_mappings']):
+            raise RuntimeError(name + ': shadow system math image was mapped')
     return {'name': name, 'worker_count': len(observed), 'exact_retained_reply': native['exact_retained_reply'],
             'connect_attempts': len(effects['connects']), 'store_mutations': len(effects['store_mutations']),
             'runtime_files': len(native['boundary']['files'])}
@@ -294,7 +304,8 @@ def check_native(fixtures, tools, request, directory):
     wrong = directory / 'wrong-selected-bytes'
     wrong.write_bytes(b'wrong selected bytes; retained package is unchanged\n')
     for name, member, missing in (('missing-library', 'native/ort', True), ('wrong-library', 'native/openblas', False),
-                                  ('missing-asset', 'model/config.json', True), ('wrong-asset', 'model/tokenizer.json', False)):
+                                  ('missing-asset', 'model/config.json', True), ('wrong-asset', 'model/tokenizer.json', False),
+                                  ('digest-mismatch', 'bin/cairn-semantic-rank', False)):
         changed = dict(bindings)
         if missing:
             del changed[str(payload / member)]

@@ -5,8 +5,9 @@ an owned disposable directory. It does not select a service command, edit
 configuration, restart a service or modify the existing Python environment.
 Invoking the installer without this option retains the Python installer.
 
-Run package builds and fixtures inside the campaign's unchanged
-`scripts/test_hybrid_runtime_operations.py` wrapper. The namespace must expose
+Run package builds and focused tests inside the campaign's unchanged
+`scripts/test_hybrid_runtime_operations.py` wrapper. Native acceptance uses the
+dedicated minimal root described below. Each namespace must expose
 only selected read-only inputs and tools, with private HOME/cache, no external
 network, no production sockets and no host process view. The ordinary Go
 `make check`, `make test` and `make test-integration` gates are separate.
@@ -119,12 +120,30 @@ boundary.
 
 `scripts/check_semantic_offline_package.py` is a host orchestration entrypoint,
 following `scripts/check_r02_offline_install.py`. It enters the unchanged wrapper
-twice, sequentially. The first namespace builds or verifies retained inputs and
-exports a standalone archive. The host extracts it as data with
-`tarfile`'s `filter='data'`. The second namespace exposes that package at `/work`,
-with no development checkout. All builds, generated executables, model activity
-and project assertions remain inside the wrapper. The host only orchestrates
-and transports data.
+to build the native fixture and Go supervisor driver. For a new package, further
+sequential wrapper entries prepare the package and baseline observations. The
+host extracts their archives as data with `tarfile`'s `filter='data'`. It then
+starts one direct `bwrap` entry per acceptance case, outside those preparation
+namespaces. The shared wrapper is unchanged; no nested namespace is attempted.
+Model execution stays confined. The host transports data and observes the
+confined process tree.
+
+For an exact retained Rust package and its six captured route outputs:
+
+```sh
+python3 -I -B scripts/check_semantic_offline_package.py \
+  --artifact-dir /absolute/new-artifact-directory \
+  --retained-fixtures /absolute/retained/fixtures \
+  --rank-request /absolute/retained/standalone/inputs/rank-request.json
+```
+
+The retained fixture directory contains `stage-result.json`, its unchanged
+`stage` tree and `direct-{rank,stream,embed}.stdout` and
+`go-{rank,stream,embed}.stdout`. Absolute launcher and payload paths remain
+exactly those in the retained stage result. Workers, launchers and model/native
+payloads are not rebuilt or re-rendered. The two test tools are built from the
+current source inside the wrapper; `tools/build-binding.json` retains their
+Go input hashes, compiler version, commands, binary hashes and ELF/build info.
 
 With an existing offline directory source and the selected inputs above:
 
@@ -149,12 +168,12 @@ hashes. Source, binary and log bindings are checked inside the wrapper before
 use. A different source refuses reuse. No replacement credentials or downloads
 are part of this workflow.
 
-The first namespace prepares a test-only Go driver using the production
+Preparation builds a test-only Go driver using the production
 `Command`, `StreamCommandWithIdleTimeout` and `EmbeddingCommand` supervisors,
-plus a public `NativeFactory` observation probe. Neither helper becomes part
-of the installed worker. The second entry runs
-`scripts/test_semantic_package_real.py` against those prebuilt inputs, without
-building them again.
+plus a native fixture entry. New-package preparation also builds a public
+`NativeFactory` observation probe and runs `scripts/test_semantic_package_real.py`
+to retain its baseline observations. These helpers stay outside the installed
+worker. Retained-fixture acceptance reuses the existing observations directly.
 
 The probe's running-image digest belongs to the probe. The fixture derives each
 worker's input manifest by replacing only that digest, then requires the
@@ -163,33 +182,52 @@ direct and Go routes. It retains all other observed fields and named unknowns.
 This explicit derivation is not represented as an observation made inside the
 worker. Rank and stream share the rank binary identity; embedding has its own.
 
-The standalone fixture verifies its complete input-file inventory and refuses
-a development checkout at `/work`. It probes the canonical host checkout path;
-the wrapper's independent self-checks mask all production homes, including the
-author worktree. Python and bootstrap tools
-remain mounted by the existing wrapper. Literal no-Python qualification is an
-explicit gap. The fixture creates no nested namespace, changes no wrapper
-restriction and provides no unconfined model fallback.
+The native runtime binds individual package members at their retained absolute
+paths, the exact retained host ABI objects and loader aliases, and the two native
+test tools. Its shell launchers require `/bin/sh` and the individual native
+`env`, `find` and `sha256sum` files at their fixed `/usr/bin` paths. No whole
+`/usr`, `/usr/bin`, home, checkout or toolchain directory is mounted. `/tmp` and
+the initially empty `/nonexistent` HOME/cache are separate private writable
+tmpfs mounts; the remaining root is read-only. `--unshare-all` supplies private
+process and network namespaces with a fresh `/proc`, no external interface or
+route, no production processes and no production sockets.
+
+Before starting any command, the native entry lists and hashes every ordinary
+runtime file against the explicit selected file inventory. It rejects Python
+and libpython names, development checkout markers, unexpected bytes, symlinks
+and special files outside the private `/dev` and `/proc` mounts. It also probes
+known Python/checkout/home paths for `ENOENT`, checks process roots and open
+directory descriptors, and checks the namespace and socket/route tables.
+A separate control binds the real host Python executable into this root: the
+entry must refuse before starting a worker. Unit controls also cover libpython,
+checkout markers and renamed/unlisted runtime bytes. PATH is not the absence
+proof. The native entry then requires each of the six direct/Go replies to match
+the exact retained JSON, including identities, integer scores and stream cache.
+This is bounded evidence for this runtime boundary, not a repeated full corpus.
 
 Three deliberately wrong copies replace existing system BLAS/Fortran/quadmath
-objects only in the second namespace. Every successful worker must still map
-the exact four selected native images. Missing/wrong library, missing/wrong
-asset and binary-digest cases refuse all three launchers. Inherited shadow
-loader settings also refuse. A disposable Go stream service retains its selected
-launcher inode, timestamp and hash across repeated staging, idle release and a
-forced worker failure followed by respawn.
+objects only in the native runtime. Every successful worker must still map
+the exact four selected native images and must not map a shadow object.
+Missing/wrong library, missing/wrong asset and binary-digest cases refuse all
+three launchers with exit 1 and empty stdout. These cases omit or overlay files
+only in disposable runtime roots; the retained package files remain read-only
+and unchanged. The existing preparation fixtures separately cover inherited
+loader overrides and a disposable Go stream service retaining its selected
+launcher inode, timestamp and hash across staging, idle release and forced
+worker failure/respawn.
 
 For actual loaded native bytes, the fixture correlates `/proc/PID/maps` with
 the worker's sealed memfd descriptors and hashes those descriptors. It also
 checks system-library file identities before hashing their mapped files.
 `ldd`, ELF declarations and selected paths alone do not establish loaded bytes.
-Syscall traces cover descendants, including failed `connect` calls and telemetry
-store mutation. Positive controls demonstrate both detections, then remove only
-their own generated store before the workers start. Each worker run checks an
-initially empty fixed HOME/cache and records whether the mapped OS-home ORT store
-is absent or inaccessible under the wrapper's mask. It checks that state again
-afterward; inaccessible is not represented as inspected absence. Store names in protocol output are not counted as
-filesystem writes. Raw outputs,
+An outer observer scopes mapping samples to this entry's child tree. Syscall
+traces cover the entire entry and its descendants, including failed `connect`
+calls and telemetry store mutation. A separate disposable control root must
+produce both detections; it shares no HOME/cache with subsequent worker roots.
+Each successful native worker run checks its initially empty HOME/cache again
+through the complete file inventory. Production home paths are absent, rather
+than being represented as inspected contents of masked homes. Store names in
+protocol output are not counted as filesystem writes. Raw outputs,
 binary packages, manifests and private paths stay outside Git.
 
 The initial manifest labels mode derivations and qualification unobserved.

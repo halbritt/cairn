@@ -38,6 +38,7 @@ type selection struct {
 	Expected  map[string]json.RawMessage `json:"expected"`
 	HostPIDNS string                     `json:"host_pid_namespace"`
 	HostNetNS string                     `json:"host_net_namespace"`
+	BwrapSHA  string                     `json:"bwrap_sha256"`
 }
 
 type boundary struct {
@@ -46,6 +47,7 @@ type boundary struct {
 	PIDs   []int             `json:"visible_pids"`
 	PIDNS  string            `json:"pid_namespace"`
 	NetNS  string            `json:"net_namespace"`
+	Images map[string]string `json:"process_image_sha256"`
 	Passed bool              `json:"passed"`
 }
 
@@ -132,6 +134,7 @@ func sameFiles(actual, expected map[string]string) error {
 }
 
 func noHostProcesses(observed *boundary, selected selection) error {
+	observed.Images = map[string]string{}
 	var err error
 	observed.PIDNS, err = os.Readlink("/proc/self/ns/pid")
 	if err != nil {
@@ -169,6 +172,26 @@ func noHostProcesses(observed *boundary, selected selection) error {
 		image, err := os.Readlink(prefix + "/exe")
 		if err != nil || forbiddenPath(image) {
 			return fmt.Errorf("unexpected process image: %d: %s: %v", pid, image, err)
+		}
+		imageSHA, err := digestFile(prefix + "/exe")
+		if err != nil {
+			return err
+		}
+		if imageSHA != selected.Files["/fixture/native-fixture"] && imageSHA != selected.BwrapSHA {
+			return fmt.Errorf("unselected process image: %d", pid)
+		}
+		observed.Images[strconv.Itoa(pid)] = imageSHA
+		cwd, err := os.Readlink(prefix + "/cwd")
+		if err != nil {
+			return err
+		}
+		local, err := os.Stat(cwd)
+		if err != nil {
+			return fmt.Errorf("foreign process working directory: %d: %w", pid, err)
+		}
+		remote, err := os.Stat(prefix + "/cwd")
+		if err != nil || !os.SameFile(local, remote) {
+			return fmt.Errorf("foreign process working directory: %d: %v", pid, err)
 		}
 		fds, err := os.ReadDir(prefix + "/fd")
 		if err != nil {
