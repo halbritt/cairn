@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INNER = r'''
 import hashlib,json,os,pathlib,subprocess,sys,tarfile,tempfile,traceback
 root=pathlib.Path(tempfile.mkdtemp(prefix='semantic-transition-',dir='/tmp'))
+real=__REAL_CASE1__
 artifacts=root/'artifacts';artifacts.mkdir(mode=0o700)
 binary=root/'semantic.test';cli=root/'cairn'
 env=dict(os.environ,CC='/usr/bin/gcc',GOMAXPROCS='2',GOFLAGS='-p=2',GOTELEMETRY='off',ORT_DISABLE_TELEMETRY='1',TMPDIR='/tmp')
@@ -48,15 +49,26 @@ try:
  started=True
  (root/'owned-cluster').write_text('semantic-transition-fixture/1\n')
  selected=dict(env,CAIRN_TRANSITION_DISPOSABLE_ROOT=str(root),CAIRN_TEST_DATABASE_URL='host='+str(root/'socket')+' dbname=postgres sslmode=disable',CAIRN_TRANSITION_CLI=str(cli),CAIRN_TRANSITION_REPORT_DIR=str(artifacts))
- run(['go','tool','test2json','-t','-p','semantic',str(binary),'-test.v','-test.run=^TestSemanticTransition','-test.timeout=120s'],'tests.jsonl',timeout=150,selected_env=selected)
+ if real:
+  import importlib.util
+  spec=importlib.util.spec_from_file_location('real_transition','/work/scripts/semantic_transition_real.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  retained,python,rust=module.prepare(artifacts)
+  selected['CAIRN_TRANSITION_REAL_SELECTION']=str(artifacts/'real-selection.json')
+  command=['go','tool','test2json','-t','-p','semantic',str(binary),'-test.v','-test.run=^TestSemanticRealTransitionCase1$','-test.timeout=900s']
+  commands.append(dict(argv=command,log='tests.jsonl'))
+  module.run_observed(command,selected,artifacts,retained,python,rust)
+ else:
+  run(['go','tool','test2json','-t','-p','semantic',str(binary),'-test.v','-test.run=^TestSemanticTransition','-test.timeout=120s'],'tests.jsonl',timeout=150,selected_env=selected)
  if input_inventory()!=source_inputs:raise RuntimeError('source changed during build/fixture execution')
  events=[json.loads(line) for line in (artifacts/'tests.jsonl').read_text().splitlines()]
  passed=[e['Test'] for e in events if e['Action']=='pass' and 'Test' in e]
  failed=[e.get('Test','package') for e in events if e['Action']=='fail']
  skipped=[e.get('Test','package') for e in events if e['Action']=='skip']
  matrix=[name for name in passed if name.startswith('TestSemanticTransitionDeterministicMatrix/') and name.count('/')==1]
- if len(matrix)!=10 or failed or skipped:raise RuntimeError('incomplete deterministic transition matrix')
+ if failed or skipped or (not real and len(matrix)!=10) or (real and 'TestSemanticRealTransitionCase1' not in passed):raise RuntimeError('incomplete selected transition case/matrix')
  report=dict(schema='cairn.semantic-transition-fixture/1',kind='deterministic-protocol-workers-real-go-and-postgresql',matrix_cases=matrix,passed=passed,failed=failed,skipped=skipped,real_worker_acceptance='BLOCKED: accepted S04R Python closure and S04/R01 supported-class/identity qualification required',binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),api_sha256=hashlib.sha256(cli.read_bytes()).hexdigest())
+ if real:
+  report.update(kind='local-real-worker-transition-case1',matrix_cases=['full_forward_reverse_rebuild'],real_worker_acceptance='local case1 evidence only; full S05/R01/fleet acceptance remains open')
  (artifacts/'report.json').write_text(json.dumps(report,indent=2)+'\n');code=0
 except BaseException:
  (artifacts/'failure.txt').write_text(traceback.format_exc())
@@ -75,14 +87,29 @@ sys.exit(code)
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact-dir', required=True, type=Path)
+    parser.add_argument('--real-case1', action='store_true', help='explicit local retained Python/Rust/Python case 1')
+    parser.add_argument('--python-selection', type=Path, help='qualified-selection directory containing stage and candidate.json')
+    parser.add_argument('--rust-fixtures', type=Path, help='retained Rust fixtures containing stage and stage-result.json')
     args = parser.parse_args()
+    if args.real_case1 and (args.python_selection is None or args.rust_fixtures is None):
+        parser.error('--real-case1 requires both exact retained selections')
     output = args.artifact_dir.resolve()
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     spec = importlib.util.spec_from_file_location(
         'isolation', ROOT / 'scripts/test_hybrid_runtime_operations.py')
     isolation = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(isolation)
-    sandbox = isolation.build_sandbox_spec(ROOT)
+    binds = []
+    if args.real_case1:
+        for name in ('empty-locale', 'empty-gconv'):
+            (output / name).mkdir(mode=0o700)
+        binds = [str(args.python_selection / 'stage') + ':/opt/s04r-selection',
+                 str(args.python_selection / 'candidate.json') + ':/opt/s05-python-candidate.json',
+                 str(args.rust_fixtures / 'stage') + ':/opt/s05-rust-stage',
+                 str(args.rust_fixtures / 'stage-result.json') + ':/opt/s05-rust-result.json',
+                 str(output / 'empty-locale') + ':/usr/lib/locale',
+                 str(output / 'empty-gconv') + ':/usr/lib/x86_64-linux-gnu/gconv']
+    sandbox = isolation.build_sandbox_spec(ROOT, ro_binds=binds)
     read_fd, write_fd = os.pipe()
     received = []
 
@@ -90,7 +117,7 @@ def main():
         with os.fdopen(read_fd, 'rb') as stream:
             received.append(stream.read(1048576))
 
-    argv = isolation.namespace_argv(ROOT, ['/usr/bin/python3', '-I', '-B', '-c', INNER],
+    argv = isolation.namespace_argv(ROOT, ['/usr/bin/python3', '-I', '-B', '-c', INNER.replace('__REAL_CASE1__', repr(args.real_case1))],
                                     spec=sandbox, report_fd=write_fd)
     (output / 'command.json').write_text(json.dumps({'argv': argv, 'spec': sandbox}, indent=2))
     with (output / 'artifacts.tar.gz').open('wb') as stdout, (output / 'wrapper.log').open('wb') as stderr:
@@ -105,8 +132,10 @@ def main():
         reader = threading.Thread(target=read_report, daemon=True)
         reader.start()
         try:
-            code = child.wait(timeout=600)
+            code = child.wait(timeout=1200 if args.real_case1 else 600)
         except subprocess.TimeoutExpired:
+            if child.pid <= 1:
+                raise RuntimeError('refusing process-group control for PID <= 1')
             os.killpg(child.pid, signal.SIGTERM)
             try:
                 child.wait(timeout=5)
@@ -124,7 +153,8 @@ def main():
     (output / 'result.json').write_text(json.dumps({'returncode': code, 'isolation_passed': report.get('passed')}))
     if code or not report.get('passed'):
         raise SystemExit('transition fixture failed; retained artifacts: ' + str(output))
-    print('S05 deterministic transition fixtures passed; real-worker qualification remains blocked. ' + str(output))
+    print(('S05 local real case1 passed; full transition qualification remains open. ' if args.real_case1 else
+           'S05 deterministic transition fixtures passed; real-worker qualification remains blocked. ') + str(output))
 
 
 if __name__ == '__main__':

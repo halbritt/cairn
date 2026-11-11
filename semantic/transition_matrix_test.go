@@ -52,6 +52,10 @@ func (w transitionWorker) rustConfig(t *testing.T) RustWorkerConfig {
 }
 
 func transitionRoundTrip(t *testing.T) {
+	if os.Getenv("CAIRN_TRANSITION_REAL_SELECTION") != "" {
+		transitionRealRoundTrip(t)
+		return
+	}
 	d := transitionDatabase(t)
 	python := transitionFixture(t, "python-like")
 	rust := transitionFixture(t, "rust-like")

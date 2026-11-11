@@ -6,7 +6,7 @@ The controlling requirements are the transition row and
 Release owns installed configuration writes, activation, rollback and retention.
 This document grants no production action.
 
-The executable fixtures use the actual Go indexer, supervisors, combined API
+The default executable fixtures use the actual Go indexer, supervisors, combined API
 and a private PostgreSQL cluster with pgvector. Their workers are deterministic
 Go protocol fixtures with explicitly artificial identities. They test
 scheduling, process ownership, source freshness and completion refusal. They
@@ -42,6 +42,48 @@ logs. PostgreSQL stops on success or failure; the namespace owns any remaining
 fixture children. Lease-expiry/backoff fixtures change timestamps only in this
 private database so they do not wait two minutes or five minutes. The production
 90-second document, two-second retrieval and two-minute lease limits are unchanged.
+
+## Explicit local real-worker case 1
+
+A separately authorized local dispatch can run retained Python -> BLAS-2 Rust ->
+the same retained Python across three collections, using the existing case 1,
+combined API, disposable cluster, coverage checker and writer fence:
+
+```sh
+python3 -I -B scripts/check_semantic_transition.py --real-case1 \
+  --artifact-dir /absolute/new-local-case1-artifacts \
+  --python-selection /absolute/s04r/qualified-selection \
+  --rust-fixtures /absolute/retained-rust/observed/fixtures
+```
+
+The host enters only the unchanged common wrapper. The retained Python stage is
+read-only at its qualified `/opt/s04r-selection` guest root, through real fixed
+control paths. Ambient locale/gconv data is masked as in its qualification.
+The unchanged Rust stage is copied as data into its original private absolute
+layout; member modes/hashes, fixed launcher bytes and ABI prerequisites are
+checked. Neither package nor control generation is re-derived.
+
+Case 1 records the full active-current-version source population/hash, coverage
+and failure/backoff denominator. Every direction stops and joins the previous
+combined API and worker groups and disables all test-owned restartable writer
+definitions before checking the fence. Publication audit includes model, source
+version and body hash. This controlled inventory is not a managed-host roster.
+
+Selected worker traces follow clone/fork descendants and exclude legitimate Go
+API/database traffic. Missing descendant traces refuse the proof. Positive
+controls check failed-connect and store-write detection. Actual Python mapped
+bytes/environment and Rust sealed native images are observed. Private worker
+HOME/cache must remain empty. Both Python identities must restore exactly.
+
+Whole-API outage, first API query, rebuild completion and post-rebuild query are
+separate observations. The first query can report unavailability while the
+asynchronous index initializes; this is not a forced cold query-worker restart.
+Identity probes while the API is stopped are included in observed outage.
+Product deadlines stay unchanged; the outer fixture budget accommodates real
+work. No zero-outage or fleet-capacity claim follows.
+
+The other nine real-worker cases and declared subcases remain open, including
+forced query-worker restart, failure populations and the Release handoff.
 
 ## Matrix and claim boundaries
 
@@ -177,7 +219,7 @@ operational source data and the Python closure until Release retirement gates
 permit otherwise. No zero-downtime, instant rollback or full-coverage claim
 follows from a successful restart.
 
-## Inputs required before the real-worker matrix
+## Inputs required for full real-worker acceptance
 
 Semantic and Release must supply accepted S-04R / CAIRN-355 exact-candidate and
 rollback reviews, including the immutable retained Python closure manifest,
@@ -194,12 +236,16 @@ Preserve Rule C (`98d46758/v1`), frozen inputs, exact discrete results and the
 existing numeric bounds. Do not rerun accepted indexed comparisons as a proxy
 for these missing inputs.
 
-Once these prerequisites and a separately authorized real-worker dispatch are
-available, reuse this harness's population/fence assertions on disposable
+These are acceptance prerequisites, not a ban on separately authorized isolated
+supplemental work. The 2026-11-11 local case 1 dispatch uses the retained Python
+selection accepted by Source `71aa425d/v1` and Release `09efb2c8/v1`; full
+CAIRN-355, S-04 and R-01 fleet/ABI/CPU acceptance remain open.
+
+For separately authorized dispatches, reuse this harness's population/fence assertions on disposable
 PostgreSQL for all ten cases and declared subcases, with the unchanged common
 wrapper, actual Go supervisors and process-tree egress/store observers. Record
 model failure-set comparisons and reviewed dispositions, configuration deltas,
-source snapshots, completion reports and measured phase timings. SAME1275
-reviews the exact source candidate under the current campaign assignment.
+source snapshots, completion reports and measured phase timings. The bounded
+case 1 assignment names existing reviewer agent-1371 for its exact candidate.
 Passing deterministic fixtures and a reviewed runbook alone cannot close
 CAIRN-328 or authorize any installed transition.

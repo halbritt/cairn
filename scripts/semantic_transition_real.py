@@ -1,0 +1,167 @@
+"""Inside-wrapper preparation and observation for the single S05 real case 1."""
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import subprocess
+import threading
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def prepare(artifacts):
+    package = load('transition_package', '/work/scripts/semantic_package.py')
+    closure = load('transition_closure', '/work/scripts/semantic_python_closure.py')
+    python = json.loads(Path('/opt/s05-python-candidate.json').read_bytes())
+    if python['payload']['address'] != 'c6c1bd58dccd51ae1b06c0213c94ef9f87206a80951fc198ff0674654b0c7221' or python['controls']['address'] != 'c3ca7679ff400d9d075dd870007224204839cb9c0ba09bdbff5fc2b462a24cc1':
+        raise RuntimeError('not the accepted retained Python selection')
+    for role in ('payload', 'controls'):
+        closure.verify_generation(python[role]['path'], python[role]['descriptor'])
+    stage = json.loads(Path('/opt/s05-rust-result.json').read_bytes())
+    target = Path(stage['payload']).parents[1]
+    if str(target) != '/tmp/semantic-package-fixtures/stage':
+        raise RuntimeError('retained Rust absolute selection differs')
+    target.parent.mkdir(mode=0o700)
+    shutil.copytree('/opt/s05-rust-stage', target, copy_function=shutil.copy2)
+    original = package.tree_records(Path(stage['payload']))
+    descriptor = json.loads((Path(stage['payload']) / 'payload.json').read_bytes())
+    expected = dict(descriptor['files'])
+    expected['payload.json'] = package.file_record((Path(stage['payload']) / 'payload.json').read_bytes())
+    if original != expected:
+        raise RuntimeError('retained Rust payload content/modes differ')
+    rust_manifest = json.loads(Path(stage['manifest']).read_bytes())
+    for item in rust_manifest['requirements']['host_abi_prerequisites']:
+        if package.digest(Path(item['path']).read_bytes()) != item['sha256']:
+            raise RuntimeError('retained Rust ABI prerequisite differs: ' + item['path'])
+    for home in ('/tmp/s04r-worker-home', '/nonexistent'):
+        path = Path(home)
+        path.mkdir(mode=0o700, exist_ok=True)
+        if list(path.iterdir()):
+            raise RuntimeError('worker HOME/cache not initially empty: ' + home)
+    trace_prefix = str(artifacts / 'worker-trace')
+    selected = {'trace_prefix': trace_prefix}
+    for label, launchers, rank, embed in (
+        ('python', python['controls']['launchers'], python['expected_identities']['rank'],
+         python['expected_identities']['embed']['model_sha256']),
+        ('rust', {mode: item['path'] for mode, item in stage['launchers'].items()},
+         '3dc4ce117382b3953f986aafeccac4f25660c848f9b00e43f34f4d2d4a1cf0e7',
+         '4b95900aba686cffb0d0b09f4ece54c54de954341588752a8b992333b58dafdb')):
+        hashes = {path: package.digest(Path(path).read_bytes()) for path in launchers.values()}
+        if label == 'rust' and any(hashes[item['path']] != item['sha256'] for item in stage['launchers'].values()):
+            raise RuntimeError('retained Rust launcher bytes differ')
+        selected[label] = {'rank': launchers['rank'], 'embed': launchers['embed'],
+                           'rank_identity': rank, 'embed_identity': embed, 'launcher_sha256': hashes}
+    (artifacts / 'real-selection.json').write_text(json.dumps(selected, indent=2) + '\n')
+    return selected, python, Path(stage['payload'])
+
+
+def worker_trace_scope(traces, launchers):
+    """Follow recorded clone/fork edges, including short-lived worker threads."""
+    roots, children = set(), {}
+    for pid, text in traces.items():
+        if any('execve(' + json.dumps(path) + ',' in text for path in launchers):
+            roots.add(pid)
+        edges = children.setdefault(pid, set())
+        for line in text.splitlines():
+            if re.search(r'(?:clone3?|fork|vfork)(?:\(| resumed>)', line):
+                returned = re.search(r'=\s*(\d+)\s*$', line)
+                if returned:
+                    edges.add(int(returned.group(1)))
+    selected = set(roots)
+    pending = list(roots)
+    while pending:
+        for child in children.get(pending.pop(), set()) - selected:
+            selected.add(child)
+            pending.append(child)
+    return roots, selected
+
+
+def run_observed(command, env, artifacts, selected, python, rust_payload):
+    python_observer = load('transition_python_observer', '/work/scripts/check_semantic_python_closure.py')
+    closure = load('transition_python_environment', '/work/scripts/semantic_python_closure.py')
+    rust_observer = load('transition_rust_observer', '/work/scripts/test_semantic_package_real.py')
+    python_observer.observer_controls(artifacts)
+    done, errors = threading.Event(), []
+    python_workers, rust_workers = {}, {}
+    payload = Path(python['payload']['path'])
+    entries = python['payload']['descriptor']['entries']
+    argv = ['/usr/bin/strace', '-ff', '-qq', '-s', '256', '-yy', '-e',
+            'trace=process,connect,openat,openat2,creat,mkdir,mkdirat,write,writev,pwrite64,pwritev,ftruncate,truncate,rename,renameat,renameat2,unlink,unlinkat',
+            '-o', selected['trace_prefix'], *command]
+    (artifacts / 'real-test-command.json').write_text(json.dumps(argv, indent=2) + '\n')
+
+    def sample():
+        try:
+            while not done.is_set():
+                for proc in Path('/proc').iterdir():
+                    if not proc.name.isdigit() or not rust_observer.descendant_of(int(proc.name), child.pid):
+                        continue
+                    try:
+                        for mode in ('rank', 'embed'):
+                            row = python_observer.mapped_worker(proc, payload, mode)
+                            if row is None:
+                                continue
+                            actual_env = dict(item.split('=', 1) for item in row['environment'])
+                            if actual_env != closure.worker_environment(payload, Path('/tmp/s04r-worker-home'), mode):
+                                raise RuntimeError('retained Python worker environment differs')
+                            for mapping in row['images'] + row['data_mappings']:
+                                path = Path(mapping['path'])
+                                if not path.is_relative_to(payload):
+                                    raise RuntimeError('Python mapping escaped retained payload: ' + str(path))
+                                if entries[path.relative_to(payload).as_posix()]['sha256'] != mapping['sha256']:
+                                    raise RuntimeError('Python mapped bytes differ: ' + str(path))
+                            prior = python_workers.get(row['pid'])
+                            if prior is None or len(row['images']) + len(row['data_mappings']) >= len(prior['images']) + len(prior['data_mappings']):
+                                python_workers[row['pid']] = row
+                    except (FileNotFoundError, ProcessLookupError):
+                        continue
+                for row in rust_observer.process_snapshot(rust_payload, rust_workers, ancestor=child.pid):
+                    rust_workers[row['pid']] = row
+                done.wait(0.05)
+        except BaseException as error:
+            errors.append(repr(error))
+
+    with (artifacts / 'tests.jsonl').open('wb') as output:
+        child = subprocess.Popen(argv, env=env, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+        thread = threading.Thread(target=sample)
+        thread.start()
+        try:
+            while child.poll() is None:
+                if errors:
+                    if child.pid <= 1 or os.getpgid(child.pid) != child.pid:
+                        raise RuntimeError('refusing unsafe fixture process-group control')
+                    os.killpg(child.pid, signal.SIGTERM)
+                    child.wait(timeout=10)
+                    break
+                done.wait(0.1)
+        finally:
+            done.set()
+            thread.join()
+    observations = {'python_workers': list(python_workers.values()), 'rust_workers': list(rust_workers.values()),
+                    'mapping_errors': errors, 'returncode': child.returncode}
+    (artifacts / 'real-worker-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
+    if child.returncode or errors:
+        raise RuntimeError('real transition execution/mapping failed: ' + repr(errors))
+    traces = {int(path.name.rsplit('.', 1)[1]): path.read_text() for path in artifacts.glob('worker-trace.*')}
+    launchers = [selected[label][mode] for label in ('python', 'rust') for mode in ('rank', 'embed')]
+    roots, descendants = worker_trace_scope(traces, launchers)
+    if descendants - traces.keys():
+        raise RuntimeError('worker descendant trace missing: ' + repr(sorted(descendants - traces.keys())))
+    effects = python_observer.effects('\n'.join(traces[pid] for pid in sorted(descendants)))
+    (artifacts / 'worker-effects.json').write_text(json.dumps({'root_pids': sorted(roots), 'tree_pids': sorted(descendants), **effects}, indent=2) + '\n')
+    if not roots or not python_workers or not rust_workers or effects['connects'] or effects['store_mutations']:
+        raise RuntimeError('actual worker/effect evidence missing or nonzero')
+    for home in ('/tmp/s04r-worker-home', '/nonexistent'):
+        if list(Path(home).rglob('*')):
+            raise RuntimeError('worker HOME/cache changed: ' + home)
+    for role in ('payload', 'controls'):
+        closure.verify_generation(python[role]['path'], python[role]['descriptor'])
+    return observations
