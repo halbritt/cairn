@@ -1,6 +1,7 @@
 """Real installed Source frontend and direct checked Go bound-memory processes."""
 import base64
 import copy
+import fcntl
 import http.server
 import json
 import os
@@ -9,12 +10,14 @@ import shlex
 import shutil
 import socketserver
 import subprocess
+import sys
 import tempfile
 import threading
+import time
 import unittest
 import uuid
 
-from test_f04_activation import ROOT, SESSION, TURN, encoded, scalar_tree, sha, write
+from test_f04_activation import ROOT, SESSION, TURN, compat, encoded, scalar_tree, sha, write
 from test_r04_hook_settings import HookFixture
 
 
@@ -68,6 +71,8 @@ class BoundMemoryCase(unittest.TestCase):
                 if operation == 'version':
                     data = dict(preview_capabilities=dict(schema='cairn.preview-capabilities/1', entities_omitted=True))
                 elif operation == 'index':
+                    if getattr(owner, 'index_hook', None):
+                        owner.index_hook()
                     if owner.refusal:
                         self.send_response(422)
                         self.end_headers()
@@ -117,7 +122,8 @@ class BoundMemoryCase(unittest.TestCase):
         self.report_locks.append(locks)
 
     def event(self, name, **fields):
-        self.f.event = dict(hook_event_name=name, session_id=SESSION, cwd=str(self.f.root), **fields)
+        self.f.event = dict(hook_event_name=name, session_id=SESSION, cwd=str(self.f.root))
+        self.f.event.update(fields)
         self.f.raw = encoded(self.f.event)
 
     def timeout(self):
@@ -127,7 +133,7 @@ class BoundMemoryCase(unittest.TestCase):
         return [str(self.f.binary), 'memory', '--receipt', str(self.f.receipt_path), '--receipt-sha256', self.f.receipt_sha,
                 '--role', 'memory', '--entrypoint', 'memory-hook.py', '--config', str(self.f.memory_path),
                 '--hook-timeout', str(self.timeout() if timeout is None else timeout),
-                '--launch-root', str(self.f.launch_root), '--shell', '/bin/sh']
+                '--launch-root', str(self.f.launch_root), '--shell', '/bin/sh', *getattr(self, 'extra_selection', ())]
 
     def go_launcher(self, timeout=None):
         raw = ('#!/bin/sh\nexec ' + shlex.join(self.go_vector(timeout)) + ' -- "$@"\n').encode()
@@ -141,11 +147,31 @@ class BoundMemoryCase(unittest.TestCase):
         return path
 
     def go(self, *, timeout=None, prefix=()):
-        return subprocess.run([*prefix, str(self.go_launcher(timeout))], input=self.f.raw, cwd=self.f.root,
+        return subprocess.run([*(prefix or getattr(self, 'go_prefix', ())), str(self.go_launcher(timeout))], input=self.f.raw, cwd=self.f.root,
                               env=self.f.env(), capture_output=True, timeout=165 if self.timeout() == 150 else 20)
 
     def source(self, *, timeout=None):
-        return self.f.public('memory', self.timeout() if timeout is None else timeout)
+        timeout = self.timeout() if timeout is None else timeout
+        if self.f.receipt_sha == self.f.installed['receipt']['sha256']:
+            launcher = self.f.launcher('memory', timeout)
+        else:
+            vector = compat.launch_vector(sys.executable, self.f.receipt_path, self.f.receipt_sha, 'memory',
+                                          'memory-hook.py', self.f.memory_path, timeout, self.f.launch_root)
+            raw = compat.launcher_bytes(vector)
+            directory = self.f.launch_root / sha(raw)
+            directory.mkdir(mode=0o700, exist_ok=True)
+            launcher = directory / 'inbox'
+            if not launcher.exists():
+                write(launcher, raw, 0o500)
+        return subprocess.run([*getattr(self, 'source_prefix', ()), str(launcher)],
+                              input=self.f.raw, cwd=self.f.root, env=self.f.env(), capture_output=True, timeout=165)
+
+    def before_run(self, side):
+        if getattr(self, 'prepare_run', None):
+            self.prepare_run(side)
+
+    def after_run(self):
+        pass
 
     def state(self):
         directory = Path(self.f.memory['state_dir'])
@@ -177,12 +203,16 @@ class BoundMemoryCase(unittest.TestCase):
         seed = {path.name: path.read_bytes() for path in directory.iterdir()} if directory.exists() else {}
         self.calls.clear()
         self.report_locks.clear()
+        self.before_run('source')
         source = self.source()
+        self.after_run()
         source_state, calls, locks = self.state(), list(self.calls), list(self.report_locks)
         self.reset_state(seed)
         self.calls.clear()
         self.report_locks.clear()
+        self.before_run('go')
         go = self.go()
+        self.after_run()
         self.assertEqual((go.returncode, go.stdout, go.stderr), (source.returncode, source.stdout, source.stderr))
         actual_state = self.state()
         self.assertEqual(actual_state.keys(), source_state.keys())
@@ -221,6 +251,16 @@ class BoundMemoryCase(unittest.TestCase):
         replacement = path.with_name('.changed-' + path.name)
         write(replacement, raw, mode)
         replacement.replace(path)
+
+    def repin_profiles(self):
+        manifest = json.loads(self.f.binding.read_bytes())
+        manifest['memory_config']['sha256'] = sha(self.f.memory_path.read_bytes())
+        manifest['coordination_configs'][0]['sha256'] = sha(self.f.coord_path.read_bytes())
+        self.overwrite(self.f.binding, encoded(manifest))
+        self.f.receipt.update(memory_config=manifest['memory_config'], coordination_configs=manifest['coordination_configs'])
+        self.f.receipt['binding']['sha256'] = sha(self.f.binding.read_bytes())
+        self.overwrite(self.f.receipt_path, encoded(self.f.receipt))
+        self.f.receipt_sha = sha(self.f.receipt_path.read_bytes())
 
 
 class BoundMemoryTests(BoundMemoryCase):
@@ -297,6 +337,150 @@ class BoundMemoryTests(BoundMemoryCase):
                     self.f.env = original_env
                     if marker.exists():
                         marker.unlink()
+
+    def test_repinned_incompatible_profiles_refuse_without_recall_or_state(self):
+        original = self.f.coord_path.read_bytes()
+        for changes in (dict(native_delivery=False), dict(state_dir=self.f.memory['state_dir']),
+                        dict(inbox_recall_binding=str(self.root / 'another-binding.json')),
+                        dict(repo='another-collection')):
+            with self.subTest(changes=changes):
+                config = json.loads(original)
+                config.update(changes)
+                self.overwrite(self.f.coord_path, encoded(config))
+                self.repin_profiles()
+                result = self.pair()
+                self.assertEqual((result.returncode, result.stdout), (1, b''))
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.state(), {})
+
+    def test_removing_bound_opt_in_cannot_downgrade_the_enabled_generation(self):
+        config = json.loads(self.f.memory_path.read_bytes())
+        config.pop('inbox_recall_binding')
+        self.overwrite(self.f.memory_path, encoded(config))
+        self.repin_profiles()
+        result = self.pair()
+        self.assertEqual((result.returncode, result.stdout), (1, b''))
+        self.assertIn(b'CompatibilityPreflightError', result.stderr)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.state(), {})
+
+    def test_disabled_generation_retains_source_unbound_accounting_without_reselection(self):
+        self.f.publish_configuration(enabled=False)
+        self.event('UserPromptSubmit', turn_id=TURN, prompt='Inspect this owner task.')
+        self.assertEqual(self.pair().returncode, 0)
+        grant = self.state()[SESSION + '.memory-budget.json']['turns'][TURN]
+        self.assertTrue(grant['granted'])
+        self.assertNotIn('serialized_hook_bytes', grant)
+        self.assertIn('inbox_recall_binding', json.loads(self.f.memory_path.read_bytes()))
+
+    def test_cached_true_requires_final_profile_pins_under_a_disabled_manifest(self):
+        self.event('UserPromptSubmit', turn_id=TURN, prompt=self.f.wake())
+        self.assertEqual(self.pair().returncode, 0)
+        before = self.state()
+        self.f.publish_configuration(enabled=False)
+        self.overwrite(self.f.coord_path, self.f.coord_path.read_bytes() + b' ')
+        result = self.pair()
+        self.assertEqual((result.returncode, result.stdout), (1, b''))
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.state(), before)
+
+    def test_native_session_shape_refuses_before_recall_and_grants(self):
+        for session in ('', 'not-a-session-uuid', 7, ['caller-selected']):
+            with self.subTest(session=session):
+                self.event('SessionStart', session_id=session)
+                result = self.pair()
+                self.assertEqual((result.returncode, result.stdout), (1, b''))
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.state(), {})
+
+    def test_native_turn_metadata_does_not_authenticate_an_inbox_lease(self):
+        for turn in (None, 'unproven-turn', '00000000-0000-0000-0000-000000000000'):
+            with self.subTest(turn=turn):
+                self.reset_state({})
+                self.event('UserPromptSubmit', turn_id=turn, prompt='Inspect current source.',
+                           agent_id='caller-principal', execution_id='caller-execution', lease_id='caller-lease',
+                           expires_at='2099-01-01T00:00:00Z', owner_input_attestation=dict(accepted=True))
+                self.assertEqual(self.pair().returncode, 0)
+                self.assertTrue(set(row[0] for row in self.calls) <= {'version', 'index', 'recall-observation'})
+                turns = self.state()[SESSION + '.memory-budget.json']['turns']
+                if turn == '00000000-0000-0000-0000-000000000000':
+                    self.assertTrue(turns[turn]['granted'])
+                else:
+                    self.assertEqual(turns, {})
+
+    def test_bound_recall_session_lock_and_activation_lock_keep_exact_refusals(self):
+        directory = Path(self.f.memory['state_dir'])
+        directory.mkdir(mode=0o700)
+        for wake in (False, True):
+            with self.subTest(activation=wake):
+                self.event('UserPromptSubmit', turn_id=TURN, prompt=self.f.wake() if wake else 'Inspect current source.')
+                results = []
+                with (directory / (SESSION + '.lock')).open('a') as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    for side in (self.source, self.go):
+                        results.append(side())
+                self.assertEqual([(r.returncode, r.stdout, r.stderr) for r in results],
+                                 [(results[0].returncode, results[0].stdout, results[0].stderr)] * 2)
+                self.assertEqual((results[0].returncode, results[0].stdout), (1, b''))
+                self.assertIn(b'phase=activation error_class=BlockingIOError' if wake else b'a memory hook is already running', results[0].stderr)
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.state(), {})
+
+    def test_extra_auth_deadline_vector_and_descriptor_flags_cannot_enter_body(self):
+        for key in ('deadline', 'vector', 'fd', 'agent-id', 'execution-id', 'lease', 'activation-enabled'):
+            with self.subTest(flag=key):
+                self.extra_selection = ['--' + key, '1']
+                result = self.go()
+                self.assertEqual((result.returncode, result.stdout), (1, b''))
+                self.assertIn(b'CompatibilityPreflightError', result.stderr)
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.state(), {})
+
+    def test_original_entry_deadline_covers_stdin_before_any_body_effect(self):
+        started = time.monotonic()
+        child = subprocess.Popen([str(self.go_launcher())], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, cwd=self.f.root, env=self.f.env())
+        try:
+            child.stdin.write(self.f.raw)
+            child.stdin.flush()
+            child.wait(timeout=17)
+            elapsed = time.monotonic() - started
+            self.assertGreaterEqual(elapsed, 12)
+            self.assertLess(elapsed, 17)
+            self.assertEqual((child.returncode, child.stdout.read()), (1, b''))
+            self.assertIn(b'CompatibilityPreflightError', child.stderr.read())
+            self.assertEqual(self.calls, [])
+            self.assertEqual(self.state(), {})
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=3)
+            for stream in (child.stdin, child.stdout, child.stderr):
+                stream.close()
+
+    def test_post_body_pin_refusal_keeps_committed_required_grant(self):
+        original = self.f.coord_path.read_bytes()
+        self.prepare_run = lambda side: self.overwrite(self.f.coord_path, original)
+        self.index_hook = lambda: self.overwrite(self.f.coord_path, original + b' ')
+        self.selected = [dict(record=dict(record_id='55555555-5555-4555-8555-555555555555', version=1,
+                                         body='Required current Source fixture.'), mandatory=True, reason='required',
+                              evidence=[], authority=[])]
+        self.event('UserPromptSubmit', turn_id=TURN, prompt='Restore current required context.')
+        result = self.pair()
+        self.assertEqual((result.returncode, result.stdout), (2, b''))
+        self.assertIn(b'phase=activation error_class=ValueError', result.stderr)
+        grant = self.state()[SESSION + '.memory-budget.json']['turns'][TURN]
+        self.assertTrue(grant['granted'])
+        self.assertGreater(grant['emitted_hook_bytes'], 0)
+        self.assertGreater(grant['reserved_native_bytes'], 0)
+
+    def test_post_body_check_reuses_original_parent_config_snapshot(self):
+        original = self.f.memory_path.read_bytes()
+        self.prepare_run = lambda side: self.overwrite(self.f.memory_path, original)
+        self.index_hook = lambda: self.overwrite(self.f.memory_path, original + b' ')
+        self.event('UserPromptSubmit', turn_id=TURN, prompt='Inspect current checked source.')
+        self.assertEqual(self.pair().returncode, 0)
+        self.assertTrue(self.state()[SESSION + '.memory-budget.json']['turns'][TURN]['granted'])
 
 
 if __name__ == '__main__':

@@ -26,20 +26,28 @@ func runCheckedBound(ctx context.Context, entry *binding.MemoryEntry, event *val
 	}
 	invocation, err := entry.Resolve(ctx, raw, directory, os.Environ())
 	if err != nil {
-		var preflight *binding.ActivationError
-		if errors.As(err, &preflight) {
-			return memoryhook.Result{Stderr: "Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n", ExitCode: 1}
-		}
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = syscall.ETIMEDOUT
-		}
-		var source *value.Error
-		var path *os.PathError
-		var number syscall.Errno
-		if !errors.As(err, &source) && !errors.As(err, &path) && !errors.As(err, &number) {
-			err = &value.Error{Class: "ValueError", Message: "invalid bound memory activation"}
-		}
-		return memoryhook.BoundFailure("activation", config, event, err)
+		return checkedBoundFailure(config, event, err)
 	}
-	return memoryhook.RunBound(ctx, invocation)
+	result := memoryhook.RunBound(ctx, invocation)
+	if err = invocation.Recheck(); err != nil {
+		return checkedBoundFailure(config, event, err)
+	}
+	return result
+}
+
+func checkedBoundFailure(config, event *value.Value, err error) memoryhook.Result {
+	var preflight *binding.ActivationError
+	if errors.As(err, &preflight) {
+		return memoryhook.Result{Stderr: "Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n", ExitCode: 1}
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = syscall.ETIMEDOUT
+	}
+	var source *value.Error
+	var path *os.PathError
+	var number syscall.Errno
+	if !errors.As(err, &source) && !errors.As(err, &path) && !errors.As(err, &number) {
+		err = &value.Error{Class: "ValueError", Message: "invalid bound memory activation"}
+	}
+	return memoryhook.BoundFailure("activation", config, event, err)
 }

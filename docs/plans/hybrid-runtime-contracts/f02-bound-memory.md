@@ -14,10 +14,13 @@ The entry captures D once before preflight, using the independently selected
 
 The selected configuration snapshot and raw event determine the internal
 HookInvocation. Digests come from checked bytes, not event assertions. The actual
-activation writer runs once; a read-only check verifies the effective generation
-without a second activation decision. Enabled callbacks validate every profile,
+activation writer runs once; the retained caller's final profile check reuses
+the original parent snapshot without a second admission or activation. Enabled callbacks validate every profile,
 manifest and final pin before entering the existing RunStart body. Cached true
 decisions retain the final-pin requirements even under a disabled manifest.
+The frontend rechecks enabled bindings after recall, reusing the same parent
+config bytes. A late coordinator-pin failure suppresses output and preserves
+committed grant/state charges, including proven required-context refusal.
 
 Source admission excludes capture from inbox activation before manifest access.
 That false decision does not skip capture or reinterpret the generation as an
@@ -31,6 +34,25 @@ authenticated synthetic Unix API. It compares public streams/exits, normalized
 state, ordered API payloads and actual post-lock reports. Ordinary checked Source
 already delegates recall to the existing Go body; the retained literal Source
 body remains covered separately by the existing F02 Start/prompt corpus.
+
+The expanded paired corpus covers enabled/disabled and cached activation,
+changed or incompatible profiles, preservation of the parent snapshot, late
+post-body refusal with committed required grants, canonical/malformed native
+identity, account/privacy exclusions, both locks, capture CAS and concurrent
+recall state, failed replacement and retry. Go-only negatives reject external
+deadline/vector/descriptor/authentication flags and reach the original deadline
+with stdin still open, before API or state effects.
+
+Native turn UUID syntax, including the Source's accepted zero UUID, is metadata.
+Extra event agent/execution/lease/expiry fields do not authorize an inbox claim.
+Actual ownership, execution freshness, lease and delivery policy remain with
+Coordination; this consumer neither validates a fabricated delivery nor creates
+a native session. The synthetic API profile is the authenticated store boundary.
+
+Inputs retain the owner's three classes: producer-shaped supported calls are
+paired with Source; malformed inputs must refuse safely without inventing
+authority; interpreter/resource and unsupported-cell cases are explicitly outside
+equivalence. No all-input CPython or host-native acceptance is claimed.
 
 Only independently generated request UUIDs and validated wall/elapsed timings
 are normalized. The fixtures record the independently pinned Source closure,
