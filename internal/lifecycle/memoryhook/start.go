@@ -116,6 +116,7 @@ func RunStart(ctx context.Context, config, event *value.Value, bound bool, direc
 }
 
 func runMemory(ctx context.Context, config, event *value.Value, bound bool, directory string, environment []string, ordinary bool, coordinators ...*value.Value) (result Result) {
+	hookStarted := time.Now()
 	trace := map[string]any{"phase": "handle", "bound": bound}
 	defer func() {
 		if recover() != nil {
@@ -205,6 +206,12 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	}
 	if ordinary && value.Truth(config.Get("inbox_recall_binding")) {
 		return HostFailure("activation", fail("bound ordinary memory requires receipt-selected activation"))
+	}
+	if ordinary && captureEventName(event) {
+		if !contains([]string{"codex", "claude", "opencode", "hermes"}, text(config.Get("harness"))) {
+			return boundary(fail("ordinary capture harness remains unavailable"))
+		}
+		return runCapture(ctx, config, event, directory, hookStarted, trace)
 	}
 	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") {
 		return boundary(fail("ordinary memory harness remains unavailable"))
