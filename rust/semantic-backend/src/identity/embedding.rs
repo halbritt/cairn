@@ -1,51 +1,13 @@
 //! Owned mode projection of the same report; no observation or ready constructor.
-use super::{
-    canonical, digest, missing, required_observations, ConstructionReport, MissingObservation,
-};
+use super::{canonical, digest, missing, noncanonical, ConstructionReport, MissingObservation};
 use cairn_semantic_protocol::PyString;
 use serde_json::{json, Value};
 
 impl ConstructionReport {
-    /// Rule C retains unavailable bit-identity observations by name. Invalid
-    /// observed data and the model-asset closure still refuse initialization.
-    /// The strict rank derivation is unchanged.
+    /// Applies the common rule-C observation policy before the embedding-only
+    /// projection; rank algorithm fields never come from this projection.
     pub fn embedding_manifest(&self) -> Result<Value, Vec<MissingObservation>> {
-        let unobserved = self.embedding_unobserved_observations()?;
-        canonical(&self.inputs).map_err(|_| noncanonical())?;
-        let mut manifest = mode_manifest(&self.inputs)?;
-        if !unobserved.is_empty() {
-            manifest["unobserved_observations"] = json!(unobserved);
-        }
-        Ok(manifest)
-    }
-
-    fn embedding_unobserved_observations(
-        &self,
-    ) -> Result<Vec<&'static str>, Vec<MissingObservation>> {
-        let mut unobserved: Vec<_> = RULE_C_OBSERVATIONS
-            .iter()
-            .filter_map(|(pointer, field)| {
-                let (parent, key) = pointer.rsplit_once('/').expect("observation pointer");
-                self.inputs
-                    .pointer(parent)
-                    .and_then(Value::as_object)
-                    .filter(|fields| fields.get(key).map_or(true, Value::is_null))
-                    .map(|_| *field)
-            })
-            .collect();
-        unobserved.sort_unstable();
-        let mut errors = self.missing.clone();
-        for gap in required_observations(&self.inputs) {
-            if !errors.iter().any(|existing| existing.field == gap.field) {
-                errors.push(gap);
-            }
-        }
-        errors.retain(|gap| !unobserved.contains(&gap.field));
-        if errors.is_empty() {
-            Ok(unobserved)
-        } else {
-            Err(errors)
-        }
+        mode_manifest(&self.rank_manifest()?)
     }
 
     pub fn embedding_identity(&self) -> Result<PyString, Vec<MissingObservation>> {
@@ -53,40 +15,6 @@ impl ConstructionReport {
         let bytes = canonical(&manifest).map_err(|_| noncanonical())?;
         Ok(PyString::from(digest(&bytes).as_str()))
     }
-}
-
-// These ten observation gaps no longer gate embedding initialization under
-// rule C. Missing/null leaves stay intact; no default or partial value fills them.
-const RULE_C_OBSERVATIONS: &[(&str, &str)] = &[
-    ("/compilation/rustc", "compilation.rustc"),
-    ("/compilation/target", "compilation.target"),
-    (
-        "/compilation/enabled_features",
-        "compilation.enabled_features",
-    ),
-    (
-        "/compilation/effective_flags",
-        "compilation.effective_flags",
-    ),
-    (
-        "/compilation/linked_input_attestation",
-        "compilation.linked_input_attestation",
-    ),
-    ("/session/cpu_arena", "session.cpu_arena"),
-    ("/session/remaining_defaults", "session.remaining_defaults"),
-    ("/session/effective_provider", "session.effective_provider"),
-    (
-        "/native/ort_dependency_inventory",
-        "native.ort_dependency_inventory",
-    ),
-    ("/native/cpu_kernel_class", "native.cpu_os_complete_class"),
-];
-
-fn noncanonical() -> Vec<MissingObservation> {
-    vec![missing(
-        "canonical_manifest",
-        "remove noncanonical float values",
-    )]
 }
 
 fn mode_manifest(inputs: &Value) -> Result<Value, Vec<MissingObservation>> {

@@ -171,7 +171,6 @@ fn embedding_init7_named_unobserved_initializes_but_invalid_observed_data_refuse
                 1 => *report.inputs.pointer_mut(pointer).unwrap() = Value::Null,
                 _ => *report.inputs.pointer_mut(pointer).unwrap() = invalid.clone(),
             }
-            let rank = report.rank_identity().unwrap_err();
             if kind < 2 && field != "assets.model_external_data_closure" {
                 let manifest = report.embedding_manifest().unwrap();
                 assert_eq!(manifest["unobserved_observations"], json!([field]));
@@ -180,9 +179,9 @@ fn embedding_init7_named_unobserved_initializes_but_invalid_observed_data_refuse
                     report.embedding_identity().unwrap(),
                     PyString::from(EMBED_DIGEST)
                 );
-                assert!(rank.iter().any(|gap| gap.field == field));
                 continue;
             }
+            let rank = report.rank_identity().unwrap_err();
             let embed = report.embedding_identity().unwrap_err();
             assert!(
                 embed.iter().any(|gap| gap.field == field),
@@ -582,8 +581,20 @@ fn embedding_identity4_missing_common_algorithm_structure_refuses_projection() {
     }
 }
 
-#[test]
-fn embedding_init7_all_ten_unavailable_observations_have_named_identity() {
+const UNOBSERVED_NAMES: [&str; 10] = [
+    "compilation.effective_flags",
+    "compilation.enabled_features",
+    "compilation.linked_input_attestation",
+    "compilation.rustc",
+    "compilation.target",
+    "native.cpu_os_complete_class",
+    "native.ort_dependency_inventory",
+    "session.cpu_arena",
+    "session.effective_provider",
+    "session.remaining_defaults",
+];
+
+fn ten_unobserved_fixture() -> ConstructionReport {
     let mut report = fixture();
     let groups: [(&str, &[&str]); 3] = [
         (
@@ -607,22 +618,17 @@ fn embedding_init7_all_ten_unavailable_observations_have_named_identity() {
             report.inputs[group][*key] = Value::Null;
         }
     }
-    let names = [
-        "compilation.effective_flags",
-        "compilation.enabled_features",
-        "compilation.linked_input_attestation",
-        "compilation.rustc",
-        "compilation.target",
-        "native.cpu_os_complete_class",
-        "native.ort_dependency_inventory",
-        "session.cpu_arena",
-        "session.effective_provider",
-        "session.remaining_defaults",
-    ];
-    report.missing = names
+    report.missing = UNOBSERVED_NAMES
         .iter()
         .map(|name| missing(name, "fixture unavailable observation"))
         .collect();
+    report
+}
+
+#[test]
+fn embedding_init7_all_ten_unavailable_observations_have_named_identity() {
+    let report = ten_unobserved_fixture();
+    let names = UNOBSERVED_NAMES;
     let before = canonical(report.inputs()).unwrap();
     let manifest = report.embedding_manifest().unwrap();
     assert_eq!(manifest["unobserved_observations"], json!(names));
@@ -633,5 +639,187 @@ fn embedding_init7_all_ten_unavailable_observations_have_named_identity() {
     );
     assert_eq!(canonical(report.inputs()).unwrap(), before);
     assert_eq!(report.missing.len(), 10);
-    assert_eq!(report.rank_identity().unwrap_err().len(), 10);
+}
+
+#[test]
+fn rank_rulec_fully_observed_manifest_and_identity_remain_compatible() {
+    let report = fixture();
+    assert_eq!(
+        canonical(&report.rank_manifest().unwrap()).unwrap(),
+        RANK_CANONICAL.as_bytes()
+    );
+    assert_eq!(report.rank_identity().unwrap(), PyString::from(RANK_DIGEST));
+    assert_eq!(
+        report.embedding_identity().unwrap(),
+        PyString::from(EMBED_DIGEST)
+    );
+}
+
+#[test]
+fn rank_rulec_all_ten_named_gaps_keep_full_rank_policy_and_literal_digest() {
+    let report = ten_unobserved_fixture();
+    let before = canonical(report.inputs()).unwrap();
+    let manifest = report.rank_manifest().unwrap();
+    assert_eq!(manifest["tag"], json!("cairn.rust-rank-worker/1"));
+    assert_eq!(manifest["algorithms"], report.inputs["algorithms"]);
+    assert_eq!(
+        manifest["algorithms"]["normalizations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(manifest["unobserved_observations"], json!(UNOBSERVED_NAMES));
+    assert_eq!(
+        report.rank_identity().unwrap(),
+        PyString::from("750e2c503604325fdfd1e9b16db8c2c5de877e5ac390e50958f251501eb2c03e")
+    );
+    assert_eq!(
+        report.embedding_identity().unwrap(),
+        PyString::from("51f1db03a55ae5cb16dc22c5a643aab9acf80d2eeec320fcfff39386122adbcb")
+    );
+    assert_ne!(
+        report.rank_identity().unwrap(),
+        report.embedding_identity().unwrap()
+    );
+    assert_eq!(canonical(report.inputs()).unwrap(), before);
+    assert_eq!(report.missing.len(), 10);
+}
+
+#[test]
+fn rank_rulec_each_missing_or_null_leaf_is_named_without_substitution() {
+    for (pointer, name) in [
+        ("/compilation/rustc", "compilation.rustc"),
+        ("/compilation/target", "compilation.target"),
+        (
+            "/compilation/enabled_features",
+            "compilation.enabled_features",
+        ),
+        (
+            "/compilation/effective_flags",
+            "compilation.effective_flags",
+        ),
+        (
+            "/compilation/linked_input_attestation",
+            "compilation.linked_input_attestation",
+        ),
+        ("/session/cpu_arena", "session.cpu_arena"),
+        ("/session/remaining_defaults", "session.remaining_defaults"),
+        ("/session/effective_provider", "session.effective_provider"),
+        (
+            "/native/ort_dependency_inventory",
+            "native.ort_dependency_inventory",
+        ),
+        ("/native/cpu_kernel_class", "native.cpu_os_complete_class"),
+    ] {
+        let mut absent = fixture();
+        remove(&mut absent.inputs, pointer);
+        let mut null = fixture();
+        *null.inputs.pointer_mut(pointer).unwrap() = Value::Null;
+        for report in [&absent, &null] {
+            let manifest = report.rank_manifest().unwrap();
+            assert_eq!(manifest["unobserved_observations"], json!([name]));
+            assert_eq!(manifest.pointer(pointer), report.inputs.pointer(pointer));
+            assert_ne!(report.rank_identity().unwrap(), PyString::from(RANK_DIGEST));
+        }
+        assert_ne!(
+            absent.rank_identity().unwrap(),
+            null.rank_identity().unwrap()
+        );
+    }
+}
+
+#[test]
+fn rank_rulec_observed_false_and_empty_features_stay_observed() {
+    let mut observed = fixture();
+    observed.inputs["session"]["cpu_arena"] = json!(false);
+    observed.inputs["compilation"]["enabled_features"] = json!({"fixture:target":[]});
+    let manifest = observed.rank_manifest().unwrap();
+    assert_eq!(manifest["session"]["cpu_arena"], json!(false));
+    assert_eq!(
+        manifest["compilation"]["enabled_features"],
+        json!({"fixture:target":[]})
+    );
+    assert!(manifest.get("unobserved_observations").is_none());
+    let mut unknown = fixture();
+    unknown.inputs["session"]["cpu_arena"] = Value::Null;
+    unknown.inputs["compilation"]["enabled_features"] = Value::Null;
+    assert_ne!(
+        observed.rank_identity().unwrap(),
+        unknown.rank_identity().unwrap()
+    );
+    assert_ne!(
+        observed.rank_identity().unwrap(),
+        fixture().rank_identity().unwrap()
+    );
+}
+
+#[test]
+fn rank_rulec_invalid_observations_closure_and_noncanonical_values_refuse() {
+    for (pointer, invalid, name) in [
+        (
+            "/session/cpu_arena",
+            json!("invalid observed boolean"),
+            "session.cpu_arena",
+        ),
+        (
+            "/compilation/enabled_features",
+            json!({"unit":["b","a"]}),
+            "compilation.enabled_features",
+        ),
+        (
+            "/compilation/linked_input_attestation",
+            json!({"binary_sha256":"0".repeat(64),"source_inputs":[]}),
+            "compilation.linked_input_attestation",
+        ),
+        (
+            "/assets_model_external_data_closure",
+            Value::Null,
+            "assets.model_external_data_closure",
+        ),
+        (
+            "/assets_model_external_data_closure",
+            json!({"kind":"digest-only","model_sha256":"1".repeat(64)}),
+            "assets.model_external_data_closure",
+        ),
+        (
+            "/algorithms/first_epsilon_decimal",
+            json!(1e-12),
+            "canonical_manifest",
+        ),
+    ] {
+        let mut report = fixture();
+        *report.inputs.pointer_mut(pointer).unwrap() = invalid;
+        assert!(report
+            .rank_identity()
+            .unwrap_err()
+            .iter()
+            .any(|gap| gap.field == name));
+    }
+    for parent in ["compilation", "session", "native"] {
+        let mut report = fixture();
+        report.inputs[parent] = json!(false);
+        assert!(report.rank_identity().is_err(), "{parent}");
+    }
+}
+
+#[test]
+fn rank_rulec_unrelated_and_contradictory_cached_gaps_remain_terminal() {
+    let mut report = ten_unobserved_fixture();
+    report
+        .missing
+        .push(missing("owner-pending", "retain owner evidence"));
+    assert_eq!(
+        report.rank_identity().unwrap_err(),
+        vec![missing("owner-pending", "retain owner evidence")]
+    );
+    let mut report = fixture();
+    report.missing.push(missing(
+        "session.cpu_arena",
+        "contradictory cached observation",
+    ));
+    assert_eq!(
+        report.rank_identity().unwrap_err()[0].field,
+        "session.cpu_arena"
+    );
 }

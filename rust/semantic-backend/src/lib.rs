@@ -35,8 +35,8 @@ impl LoadedBackend {
     pub fn observations(&self) -> &identity::ConstructionReport {
         &self.report
     }
-    /// Publish usable rank identity only from complete actually observed inputs.
-    /// Missing CAPI/build/CPU observations retain this loaded owner for inspection.
+    /// Publish rank identity with unavailable rule-C observations named in it.
+    /// Hard validation gaps retain this loaded owner for inspection.
     pub fn initialize(self) -> Result<NativeSession, PendingInitialization> {
         match self.report.rank_identity() {
             Ok(identity) => Ok(NativeSession {

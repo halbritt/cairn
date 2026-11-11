@@ -10,11 +10,11 @@ ordering, reply sizing, snapshot ordering and I/O/flush behavior stay in rank.
 Both advertised-cache and absent-cache profiles use those same entry points;
 existing pending codec depth profiles remain pending.
 
-The production computation path is written. The rank identity gate still
-requires the observations below. Under rule C, embedding initialization records
-ten unavailable observations by name in its canonical identity manifest instead
-of refusing for their absence. Source construction is not a completed worker,
-numerical qualification or campaign acceptance. No caller-supplied digest,
+The production computation path is written. Under rule C, rank and embedding
+initialization record ten unavailable observations by name in their canonical
+identity manifests instead of refusing for their absence. Source construction
+is not a completed worker, numerical qualification or campaign acceptance.
+No caller-supplied digest,
 identity, ready flag, synthetic model or fallback replaces actual construction.
 
 ## Actual ownership and data path
@@ -32,7 +32,7 @@ tokenizer. ORT retains its model bytes and runtime Rc. Field/drop order releases
 the session before the other component owners; existing component cleanup
 errors remain in `CleanupErrors`. Keep a clone outside the factory/session,
 drop all owners, then drain both its `ort` and `math` observers. A failed
-rank identity initialization returns `PendingInitialization` with the loaded owner
+rank identity validation returns `PendingInitialization` with the loaded owner
 and observations intact; the factory's terminal failure drops that owner and
 retains cleanup diagnostics in the supplied observers. It does not retry.
 
@@ -119,14 +119,13 @@ emits compact UTF-8 JSON and integer decimals, rejects floating JSON numbers,
 and represents the epsilon as canonical decimal string `0.000000000001`.
 Feature observations are sorted sets; algorithm sequences retain order.
 The separate tag is `cairn.rust-rank-worker/1`, never Python's model identity.
-The rank SHA-256 path refuses missing observations. Embedding hashes the retained
-inputs plus named rule-C unavailable observations. Neither digest is a
-qualification receipt or evidence that an unavailable observation was obtained.
+Rank and embedding hash their retained inputs plus named rule-C unavailable
+observations. Neither digest is a qualification receipt or evidence that an
+unavailable observation was obtained.
 
 The existing component interfaces cannot yet establish all these inputs. The
-first five rows remain rank initialization requirements; embedding records their
-ten missing fields as unobserved. Model-asset closure remains required in both
-modes.
+first five rows describe ten fields recorded as unobserved when unavailable in
+either mode. Model-asset closure remains required in both modes.
 
 | Required observation | Exact interface/owner action |
 | --- | --- |
@@ -143,19 +142,27 @@ with asserted observations. For the ten rule-C fields, only an absent/null leaf
 inside its existing object is unobserved. A malformed observed value or parent
 object still refuses. Valid empty feature/flag lists stay observed and hash
 differently from missing/null data. The current observer leaves these fields
-unresolved, so the rank factory still withholds a session, while the embedding
-factory may initialize with those named gaps. Independent actual tokenizer,
-inference, normalization and math operations are crate-private on the retained
-loaded owner; the public rank route remains identity-gated NativeSession. This separation lets
+unresolved; both factories may initialize with those named gaps. Independent
+actual tokenizer, inference, normalization and math operations are crate-private
+on the retained loaded owner; the public rank route remains identity-gated
+NativeSession. This separation lets
 the owner extend precise observation interfaces without replacing a dummy
 backend or declaring an unknown default qualified. It is not permission to
 execute the loaded owner outside the separately admitted host boundary.
 
 Further API29/build/asset observations must come from their actual owners;
-gathering them remains separate from this embedding initialization exception.
+gathering them remains separate from this initialization policy.
 This change does not alter the accepted ORT ABI/settings. Runtime qualification
 remains independently required under the selected rule-C policy; identity
 hashing itself proves no parity.
+
+`ConstructionReport::rank_manifest` preserves the complete rank inputs and tag.
+The existing `LoadedBackend::initialize` admission uses its `rank_identity`
+digest. `embedding_manifest` applies the same observation policy before its
+existing mode-only projection. The policy has one owner; embedding's projection
+does not define rank algorithms. Fully observed valid rank identities remain
+compatible. Unobserved identities name the exact absent/null leaves and do not
+stand in for actual build, session or CPU observations.
 
 ## Source graph and test selection
 
