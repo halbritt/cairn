@@ -137,7 +137,7 @@ func claudeRequiredError(config, event *value.Value, original error, persist boo
 		return refused()
 	}
 	if !value.SameText(state.Get("schema"), "cairn.inbox-recall-grants/1") || !value.SameText(state.Get("session"), text(event.Get("session_id"))) || state.Get("grants") == nil || state.Get("grants").Kind != value.Object {
-		return original
+		return refused()
 	}
 	task, taskErr := claudeTaskKey(config)
 	var grant *value.Value

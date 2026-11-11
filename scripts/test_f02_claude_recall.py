@@ -147,6 +147,20 @@ class ClaudeBoundCase(bound.BoundMemoryCase):
 
 class ClaudeBoundRecallTests(ClaudeBoundCase):
 
+    def test_policy_refusal_with_missing_grants_still_blocks_prompt(self):
+        path=Path(self.f.memory['state_dir'])/(bound.SESSION+'.inbox-recall.json')
+        malformed=bound.encoded(dict(schema='cairn.inbox-recall-grants/1',session=bound.SESSION))
+        self.refusal='OPEN_CONFLICT'
+        # The checked activation reads its valid initial state first. Corrupt
+        # only the error guard's later snapshot at the external API boundary.
+        self.index_hook=lambda:bound.write(path,malformed)
+        result=self.pair()
+        self.assertEqual((result.returncode,result.stdout),(2,b''))
+        self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=handle error_class=RequiredContextRefused\n'
+                         b'Cairn: current required context could not be restored.\n')
+        self.assertEqual(path.read_bytes(),malformed)
+        self.assertEqual([op for op,_,_ in self.calls],['version','index','recall-observation'])
+
     def test_bound_start_then_prompt_allocates_and_repeated_owner_does_not_refund(self):
         self.required()
         self.event('SessionStart', source='startup', prompt='')

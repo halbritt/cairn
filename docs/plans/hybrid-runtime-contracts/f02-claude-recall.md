@@ -83,3 +83,17 @@ Source memory.py remains pinned at SHA256
 Provider/capture, Source, Coordination, stager and public activation selection
 remain under their existing owners. All production and preserved runtime holds
 remain in effect.
+
+Review follow-up D-1 (`04c7922a-1d3f-438a-b295-29b44e9b0cec/v1`) retains an
+already-proven required refusal when the error guard encounters missing or
+non-object grants. The existing `refused()` mapping still returns the original
+error when a requirement has not been proven. An actual checked bound prompt
+pair corrupts the later ledger snapshot at the external API's OPEN_CONFLICT
+response: Source exits 2; the former Go code exited 1. The repaired pair keeps
+the exact required public diagnostics and leaves malformed ledger bytes intact.
+The shared shape/identity guard conservatively retains a proven refusal for
+other corrupt ledger identities or non-object grants too. This is permitted
+class-b over-refusal, not parity with every malformed Python state, a new grant
+policy, or a producer-shaped input restriction. No N-1/N-2 repair is included.
+The earlier full integration timeout remains incomplete; Foundation owns joined
+qualification, independent review and landing.
