@@ -482,6 +482,7 @@ sys.exit(spec.get('exit',0))
                 path = directory/(self.session_key()+'.json')
                 for side in ('source', 'go'):
                     shutil.rmtree(directory, ignore_errors=True)
+                    directory.mkdir(mode=0o700)
                     write(path, raw)
                     self.calls.clear()
                     self.report_locks.clear()
