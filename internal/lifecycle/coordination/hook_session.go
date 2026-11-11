@@ -52,14 +52,14 @@ func (c *CLI) registration(config, observation, metadata *value.Value) *value.Va
 		"native_session_id", observation.Get("native_id"),
 		"metadata", meta,
 	)
-	if launchID := os.Getenv("CAIRN_CODEX_OWNER_ORIGIN_LAUNCH_ID"); launchID != "" && value.SameText(config.Get("harness"), "codex") {
+	if launchID, _ := c.lookupEnv("CAIRN_CODEX_OWNER_ORIGIN_LAUNCH_ID"); launchID != "" && value.SameText(config.Get("harness"), "codex") {
 		req.Set("launch_id", value.Text(launchID))
 	}
 	return req
 }
 
 func (c *CLI) wakeContext(config *value.Value) (*value.Value, error) {
-	path := os.Getenv("CAIRN_WAKE_CONTEXT")
+	path, _ := c.lookupEnv("CAIRN_WAKE_CONTEXT")
 	if path == "" {
 		return nil, nil
 	}

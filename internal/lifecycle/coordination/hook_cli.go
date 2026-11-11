@@ -282,7 +282,7 @@ func (c *CLI) admissionEnvironment() map[string][]rune {
 			env[k] = admission.PathPoints(v)
 		}
 	}
-	for _, k := range []string{"CAIRN_LIFECYCLE_DISABLED", "CAIRN_COORDINATION_DISABLED", "CAIRN_MEMORY_DISABLED", "HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "HERMES_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "CAIRN_WAKE_CONTEXT"} {
+	for _, k := range []string{"CAIRN_LIFECYCLE_DISABLED", "CAIRN_COORDINATION_DISABLED", "CAIRN_MEMORY_DISABLED", "CAIRN_INBOX_RECALL_DISABLED", "CAIRN_CODEX_OWNER_ORIGIN_LAUNCH_ID", "HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "HERMES_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "CAIRN_WAKE_CONTEXT"} {
 		if c.LookupEnv != nil {
 			if v, ok := c.LookupEnv(k); ok {
 				env[k] = admission.PathPoints(v)
@@ -791,7 +791,7 @@ func (c *CLI) invokeInboxRecallBridge(ctx context.Context, ns *NativeSession, co
 		}
 		err = annotateInboxRefusal(err, refusalStage)
 		if value.Truth(state.Get("inbox_intent")) {
-			_, _ = c.engine().SettleRefusedClaudeWakeWithError(ctx, ns, nativeText(observation.Get("native_turn_id")), err, "live_hook", true, nil)
+			_, _ = c.engine().SettleRefusedClaudeWakeWithError(ctx, ns, nativeText(observation.Get("native_turn_id")), err, "hook", true, nil)
 		}
 		return "", nativePromptRefusedWithCause("bound inbox recall unavailable; no source or memory grant delivered", err)
 	}
@@ -880,7 +880,7 @@ func readCompatibilityCheckedFile(prof *value.SourceReaderProfile, desc *value.V
 	}
 	raw, err := controlledData(dPath, false, uid)
 	if err != nil {
-		return "", nil, &InboxRecallError{Class: "ValueError", Message: "inbox recall requires owner-controlled absolute paths", RefusalStage: "binding", RefusalReason: "config_owner", Cause: err}
+		return "", nil, &InboxRecallError{Class: "ValueError", Message: "inbox recall requires owner-controlled absolute paths", RefusalStage: "binding", RefusalReason: "config_owner"}
 	}
 	sum := sha256.Sum256(raw)
 	if !value.SameText(dSHAVal, hex.EncodeToString(sum[:])) {
@@ -906,7 +906,7 @@ func validateConfigurationProfiles(prof *value.SourceReaderProfile, config *valu
 			if strings.Contains(ve.Message, "configuration homes") {
 				reason = "config_homes"
 			}
-			return &InboxRecallError{Class: "ValueError", Message: ve.Message, RefusalStage: "binding", RefusalReason: reason, Cause: err}
+			return &InboxRecallError{Class: "ValueError", Message: ve.Message, RefusalStage: "binding", RefusalReason: reason}
 		}
 		return err
 	}
@@ -919,7 +919,7 @@ func annotateBindingRefusalErr(err error) error {
 	}
 	var ce *CoordinationError
 	if errors.As(err, &ce) && ce != nil && ce.RefusalStage == "binding" {
-		return &InboxRecallError{Class: "ValueError", Message: ce.Message, RefusalStage: ce.RefusalStage, RefusalReason: ce.RefusalReason, Cause: err}
+		return &InboxRecallError{Class: "ValueError", Message: ce.Message, RefusalStage: ce.RefusalStage, RefusalReason: ce.RefusalReason}
 	}
 	return err
 }

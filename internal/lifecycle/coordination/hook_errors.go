@@ -360,9 +360,13 @@ func annotateInboxRefusal(err error, stage string) error {
 
 func refusalCauseDetails(cause, wrapper error) *value.Value {
 	details := value.Mapping()
-	if cause != nil && nativeContains([]string{"HookError", "BudgetRefused", "RequiredContextRefused", "ContextRefused", "CoordinationError"}, refusalErrorClass(cause)) {
+	src := cause
+	if src == nil {
+		src = wrapper
+	}
+	if src != nil && nativeContains([]string{"HookError", "BudgetRefused", "RequiredContextRefused", "ContextRefused", "CoordinationError"}, refusalErrorClass(src)) {
 		var code, reason string
-		switch e := cause.(type) {
+		switch e := src.(type) {
 		case *InboxRecallError:
 			if e != nil {
 				code, reason = e.Code, e.Reason

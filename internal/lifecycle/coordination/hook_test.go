@@ -426,7 +426,7 @@ func TestHookInboxRecallBridgeAndRefusalSettlement(t *testing.T) {
 	}
 	cli2.Host.LoadInboxRecall = cli.Host.LoadInboxRecall
 	cli2.Host.InboxRecallOutput = func(_ context.Context, _ InboxRecallRequest) (string, error) {
-		return "", &InboxRecallError{Class: "BudgetRefused", Code: "BUDGET_EXCEEDED", Reason: "output_budget", Message: "budget exceeded", RecallPhase: "final_render"}
+		return "", &InboxRecallError{Class: "BudgetRefused", Code: "TIMEOUT", Reason: "OUTPUT_LIMIT", Message: "budget exceeded", RecallPhase: "final_render"}
 	}
 
 	out.Reset()
@@ -437,6 +437,22 @@ func TestHookInboxRecallBridgeAndRefusalSettlement(t *testing.T) {
 	}
 	if !releasedOnRefusal {
 		t.Fatalf("expected unjoined Claude channel wake with absent grant to be released on bridge refusal")
+	}
+	cfg2, err := cli2.Host.ReadConfig(cfgPath2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statePath2, err := cli2.Host.Locate(cfg2, nativeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateVal2, err := cli2.Host.Load(statePath2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diag := stateVal2.Get("wake_refusal_diagnostic")
+	if diag == nil || !value.SameText(diag.Get("origin"), "hook") || !value.SameText(diag.Get("cause_code"), "TIMEOUT") || !value.SameText(diag.Get("cause_reason"), "OUTPUT_LIMIT") {
+		t.Fatalf("expected wake_refusal_diagnostic with origin=hook, cause_code=TIMEOUT, cause_reason=OUTPUT_LIMIT, got %+v", diag)
 	}
 }
 

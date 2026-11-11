@@ -640,29 +640,15 @@ func (c *CLI) effectiveInboxConfig(ctx context.Context, config, event *value.Val
 	if !value.Truth(config.Get("inbox_recall_binding")) {
 		return config, nil
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	envMap := make(map[string][]rune)
-	for _, s := range os.Environ() {
-		if k, v, ok := strings.Cut(s, "="); ok {
-			envMap[k] = admission.PathPoints(v)
-		}
-	}
-	probe := admission.OSProbe{Directory: cwd}
+	envMap := c.admissionEnvironment()
+	probe := c.admissionProbe()
 	decision, err := admission.Decide(admission.Invocation{
 		Kind:        "inbox_recall",
 		Config:      config,
 		Event:       event,
 		Environment: envMap,
-		Home: func() ([]rune, error) {
-			if h, ok := envMap["HOME"]; ok {
-				return h, nil
-			}
-			return admission.PathPoints(os.Getenv("HOME")), nil
-		},
-		Filesystem: probe,
+		Home:        c.admissionHomeFunc(),
+		Filesystem:  probe,
 	})
 	if err != nil {
 		return nil, err
@@ -694,7 +680,7 @@ func (c *CLI) resolveManifestActivation(
 		return nil, err
 	}
 	sys, ok := st.Sys().(*syscall.Stat_t)
-	if !ok || sys.Uid != uint32(os.Getuid()) || st.Mode().Perm()&0o077 != 0 {
+	if !ok || sys.Uid != c.uid() || st.Mode().Perm()&0o077 != 0 {
 		return nil, &value.Error{Class: "ValueError", Message: "inbox recall binding must be owner-only"}
 	}
 	raw, err := os.ReadFile(path)
@@ -785,7 +771,7 @@ func (c *CLI) activationDecisionManifest(ctx context.Context, config, event, man
 		return false, err
 	}
 	sys, ok := st.Sys().(*syscall.Stat_t)
-	if !filepath.IsAbs(memPath) || !ok || sys.Uid != uint32(os.Getuid()) || st.Mode().Perm()&0o022 != 0 {
+	if !filepath.IsAbs(memPath) || !ok || sys.Uid != c.uid() || st.Mode().Perm()&0o022 != 0 {
 		return false, &value.Error{Class: "ValueError", Message: "activation ledger configuration is not owner-controlled"}
 	}
 	memRaw, err := os.ReadFile(memPath)
@@ -958,7 +944,7 @@ func (c *CLI) ReconcileRejectedWake(ctx context.Context, config, state *value.Va
 		return false, err
 	}
 	sys, ok := lst.Sys().(*syscall.Stat_t)
-	if lst.Mode()&os.ModeSymlink != 0 || !ok || sys.Uid != uint32(os.Getuid()) || lst.Mode().Perm()&0o077 != 0 {
+	if lst.Mode()&os.ModeSymlink != 0 || !ok || sys.Uid != c.uid() || lst.Mode().Perm()&0o077 != 0 {
 		return false, &value.Error{Class: "ValueError", Message: "wake refusal receipt must be owner-only"}
 	}
 	receipt, err := c.read(target, SiteSessionRead)
@@ -1099,7 +1085,7 @@ func (c *CLI) reconcileRejectedWakeLedger(
 		return false, err
 	}
 	sys, ok := st.Sys().(*syscall.Stat_t)
-	if !ok || sys.Uid != uint32(os.Getuid()) || st.Mode().Perm()&0o022 != 0 {
+	if !ok || sys.Uid != c.uid() || st.Mode().Perm()&0o022 != 0 {
 		return false, &value.Error{Class: "ValueError", Message: "inbox ledger directory is not owner-controlled"}
 	}
 	nativeVal := wakeObj.Get("native_id")

@@ -491,7 +491,7 @@ func choiceCLI(prog, name, v string, choices []string) error {
 func cliCaught(err error) bool {
 	var exit *exec.ExitError
 	var sub *SubprocessError
-	return journal.Classified(err) || sourceClass(err, "OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError", "KeyError", "TypeError") || errors.As(err, &exit) || errors.As(err, &sub)
+	return journal.Classified(err) || sourceOSError(err) || sourceClass(err, "OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError", "KeyError", "TypeError") || nativeContains([]string{"OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError", "KeyError", "TypeError"}, sourceErrorName(err)) || errors.As(err, &exit) || errors.As(err, &sub)
 }
 
 func sourceReadCaught(err error) bool {
