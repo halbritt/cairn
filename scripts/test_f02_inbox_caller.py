@@ -21,7 +21,6 @@ EXECUTION = '44444444-4444-4444-8444-444444444444'
 DELIVERY = '55555555-5555-4555-8555-555555555555'
 ATTEMPT = '66666666-6666-4666-8666-666666666666'
 RECORD = '77777777-7777-4777-8777-777777777777'
-CONSUMER_WT = Path('/home/halbritt/.cache/agent-worktrees/cairn/cairn318-inbox-1270-20261111')
 
 
 class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -31,9 +30,7 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 def consumer_build_root():
     if (ROOT / 'internal/lifecycle/inboxipc/run.go').exists():
         return ROOT
-    if (CONSUMER_WT / 'internal/lifecycle/inboxipc/run.go').exists():
-        return CONSUMER_WT
-    raise RuntimeError('Go inboxipc consumer source tree not found')
+    raise RuntimeError('Go inboxipc consumer is required in this checkout')
 
 
 class F02InboxCallerTests(unittest.TestCase):
