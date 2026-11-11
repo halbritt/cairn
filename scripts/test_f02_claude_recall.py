@@ -46,8 +46,11 @@ class ClaudeUnboundRecallTests(unittest.TestCase):
             self.calls.clear()
             result = launch()
             calls = copy.deepcopy(self.calls)
-            for operation, body, _ in calls:
-                body.pop('request_id', None)
+            for operation, body, headers in calls:
+                if operation != 'version':
+                    identity=body.pop('request_id')
+                    self.assertEqual(str(uuid.UUID(identity)),identity)
+                self.assertEqual(headers['Authorization'],'Bearer checked-ordinary-synthetic-token')
                 for key in ('elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms'):
                     if operation == 'recall-observation':
                         self.assertGreaterEqual(body.pop(key), 0)
