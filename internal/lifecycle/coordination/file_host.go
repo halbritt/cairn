@@ -30,16 +30,19 @@ const (
 // SourceReaderProfile owns both Decode and Write in the Foundation interface.
 // Its session writer route covers json.dump followed by the terminating LF.
 type FileHostOptions struct {
-	Services       *ServiceBindings
-	Profile        *value.SourceReaderProfile
-	Compatibility  *CompatibilityContext
-	Journal        *SessionJournalAdapter
-	JournalOptions journal.Options
-	Runner         journal.Runner
-	Call           func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error)
-	Now            func() time.Time
-	Log            func(string) error
-	IO             journal.IO
+	Services          *ServiceBindings
+	Profile           *value.SourceReaderProfile
+	Compatibility     *CompatibilityContext
+	Journal           *SessionJournalAdapter
+	JournalOptions    journal.Options
+	Runner            journal.Runner
+	Call              func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error)
+	Now               func() time.Time
+	Log               func(string) error
+	IO                journal.IO
+	OwnerProcess      func(*value.Value, *value.Value) (*value.Value, error)
+	LoadInboxRecall   func(context.Context, *value.Value) error
+	InboxRecallOutput func(context.Context, InboxRecallRequest) (string, error)
 }
 
 type sessionLease struct{ lease *LockLease }
@@ -81,7 +84,16 @@ func NewFileHost(options FileHostOptions) *Host {
 	if adapter.PathText == nil {
 		adapter.PathText = func(v *value.Value) (string, error) { return sourcePathText(options.Profile, v) }
 	}
-	h := &Host{Journal: adapter, Log: log, Profile: options.Profile, Services: options.Services, Compatibility: options.Compatibility}
+	h := &Host{
+		Journal:           adapter,
+		Log:               log,
+		Profile:           options.Profile,
+		Services:          options.Services,
+		Compatibility:     options.Compatibility,
+		OwnerProcess:      options.OwnerProcess,
+		LoadInboxRecall:   options.LoadInboxRecall,
+		InboxRecallOutput: options.InboxRecallOutput,
+	}
 	h.Call = options.Call
 	if h.Call == nil {
 		h.Call = sourceCallWithCompatibility(options.Profile, options.Runner, options.Compatibility)

@@ -1055,10 +1055,13 @@ func (c *CompatibilityContext) EffectiveConfig(fallbackProfile *value.SourceRead
 	if expected, ok := rows[name]; ok && c.HookTimeout != expected {
 		return nil, preflightError("hook timeout mismatch")
 	}
-	if c.ActivationFunc == nil {
-		return nil, &value.ProfileUnavailable{}
+	actFn := c.ActivationFunc
+	if actFn == nil {
+		actFn = func(in []byte) (bool, error) {
+			return c.defaultActivation(fallbackProfile, in)
+		}
 	}
-	enabled, err := c.ActivationFunc(raw)
+	enabled, err := actFn(raw)
 	if err != nil {
 		return nil, err
 	}

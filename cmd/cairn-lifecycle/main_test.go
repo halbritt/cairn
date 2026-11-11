@@ -48,14 +48,19 @@ func TestCoordinationDispatchAndCommandPrefix(t *testing.T) {
 		t.Fatalf("coordination inbox --help failed: code=%d out=%q err=%q", code, out.String(), errOut.String())
 	}
 
-	// Unported hook and watch modes fail closed with exit 1 and non-empty diagnostic (never success stubs).
-	for _, mode := range []string{"hook", "watch"} {
-		out.Reset()
-		errOut.Reset()
-		code = run([]string{"coordination", mode, "--config", "/nonexistent.json"}, strings.NewReader(""), &out, &errOut)
-		if code == 0 || out.Len() != 0 || !strings.Contains(errOut.String(), "compatibility_profile") {
-			t.Fatalf("expected %s to fail closed with compatibility_profile, got code=%d out=%q err=%q", mode, code, out.String(), errOut.String())
-		}
+	// Unported watch mode fails closed with exit 1 and non-empty diagnostic (never success stub).
+	out.Reset()
+	errOut.Reset()
+	code = run([]string{"coordination", "watch", "--config", "/nonexistent.json"}, strings.NewReader(""), &out, &errOut)
+	if code == 0 || out.Len() != 0 || !strings.Contains(errOut.String(), "compatibility_profile") {
+		t.Fatalf("expected watch to fail closed with compatibility_profile, got code=%d out=%q err=%q", code, out.String(), errOut.String())
+	}
+	// Ported hook mode fails closed when the config file does not exist.
+	out.Reset()
+	errOut.Reset()
+	code = run([]string{"coordination", "hook", "--config", "/nonexistent.json"}, strings.NewReader("{}"), &out, &errOut)
+	if code != 1 || out.Len() != 0 || errOut.String() != "Cairn coordination: FileNotFoundError; session presence unavailable\n" {
+		t.Fatalf("expected hook to fail closed on missing config, got code=%d out=%q err=%q", code, out.String(), errOut.String())
 	}
 
 	// Compatibility selection flags (`--receipt ...`) are verified before dispatch and fail closed on invalid receipts.

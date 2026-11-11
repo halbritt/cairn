@@ -57,10 +57,13 @@ type Host struct {
 	Lock          func(string) (io.Closer, error)
 	Exists        func(string) (bool, error)
 	Load          func(string) (*value.Value, error)
-	Recover       func(context.Context, *NativeSession) (*value.Value, error)
-	Release       func(context.Context, *NativeSession, string, bool) (bool, error)
-	Renew         func(context.Context, *NativeSession, *value.Value) (*value.Value, error)
-	EndTurn       func(context.Context, *NativeSession, bool) (bool, error)
+	Recover           func(context.Context, *NativeSession) (*value.Value, error)
+	Release           func(context.Context, *NativeSession, string, bool) (bool, error)
+	Renew             func(context.Context, *NativeSession, *value.Value) (*value.Value, error)
+	EndTurn           func(context.Context, *NativeSession, bool) (bool, error)
+	OwnerProcess      func(*value.Value, *value.Value) (*value.Value, error)
+	LoadInboxRecall   func(context.Context, *value.Value) error
+	InboxRecallOutput func(context.Context, InboxRecallRequest) (string, error)
 }
 type NativeSession struct {
 	Config *value.Value
@@ -171,6 +174,9 @@ func sourceClass(err error, classes ...string) bool {
 		if class == c {
 			return true
 		}
+		if c == "OSError" && nativeContains([]string{"PermissionError", "FileNotFoundError", "FileExistsError", "IsADirectoryError", "NotADirectoryError", "BlockingIOError", "TimeoutError", "ProcessLookupError"}, class) {
+			return true
+		}
 	}
 	return false
 }
@@ -223,6 +229,10 @@ func nativeMap(kv ...any) *value.Value {
 			item = value.Text(x)
 		case int:
 			item = value.IntegerText(strconv.Itoa(x))
+		case int64:
+			item = value.IntegerText(strconv.FormatInt(x, 10))
+		case float64:
+			item = &value.Value{Kind: value.Float, Number: x}
 		case bool:
 			item = value.Boolean(x)
 		case nil:

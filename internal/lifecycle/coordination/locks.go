@@ -23,8 +23,9 @@ import (
 )
 
 type CoordinationError struct {
-	Code, Message string
-	Cause         error
+	Code, Message               string
+	RefusalStage, RefusalReason string
+	Cause                       error
 }
 
 func (e *CoordinationError) Error() string { return fmt.Sprintf("%s: %s", e.Code, e.Message) }

@@ -254,15 +254,23 @@ func TestStage2CRepairParser(t *testing.T) {
 	if err := choiceCLI("fixture", "mode", "x", []string{"a", "b"}); !errors.As(err, &parse) || !strings.Contains(parse.message, "choose from a, b)") {
 		t.Fatal(err)
 	}
+	_, err = (&CLI{}).runRecovery(context.Background(), []string{"watch"}, &bytes.Buffer{})
+	var unavailable *value.ProfileUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatal("watch", err)
+	}
+	_, err = (&CLI{}).runRecovery(context.Background(), []string{"hook"}, &bytes.Buffer{})
+	if !errors.As(err, &parse) || !strings.Contains(parse.message, "hook requires --config") {
+		t.Fatal("hook", err)
+	}
+	_, err = (&CLI{}).runRecoveryWithIO(context.Background(), []string{"hook", "--config", "/x"}, strings.NewReader("{}"), &bytes.Buffer{}, &bytes.Buffer{})
+	if !errors.As(err, &unavailable) {
+		t.Fatal("hook unbound profile", err)
+	}
 	for _, mode := range []string{"hook", "watch"} {
-		_, err := (&CLI{}).runRecovery(context.Background(), []string{mode}, &bytes.Buffer{})
-		var unavailable *value.ProfileUnavailable
-		if !errors.As(err, &unavailable) {
-			t.Fatal(mode, err)
-		}
 		_, err = (&CLI{}).runRecovery(context.Background(), []string{mode, "--outcome", "bogus"}, &bytes.Buffer{})
 		if !errors.As(err, &parse) {
-			t.Fatal("invalid outcome must precede unavailable mode", mode, err)
+			t.Fatal("invalid outcome must precede mode dispatch", mode, err)
 		}
 	}
 	_, err = (&CLI{}).runRecovery(context.Background(), []string{"-1abc"}, &bytes.Buffer{})
