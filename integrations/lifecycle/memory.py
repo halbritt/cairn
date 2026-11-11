@@ -3498,6 +3498,12 @@ def _main(args):
         phase = "activation"
         _trace_note(phase=phase, stage="activation")
         try:
+            if compatibility is not None:
+                migrated = compatibility.memory_start(config, event, raw)
+                if migrated is not None:
+                    sys.stdout.write(migrated['stdout'])
+                    sys.stderr.write(migrated['stderr'])
+                    return migrated['exit_code']
             config = effective_inbox_config(config, event, raw_event=raw) if compatibility is not None else effective_inbox_config(config, event)
         except subprocess.SubprocessError:
             print('Cairn lifecycle diagnostic: phase=activation error_class=UnexpectedError', file=sys.stderr)
