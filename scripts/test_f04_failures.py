@@ -14,9 +14,12 @@ from test_f04_activation import ROOT, SESSION, TURN, Fixture, encoded, module, o
 
 CHILD = r'''package main
 import("bytes";"encoding/json";"fmt";"io";"os";"path/filepath";"strings";"syscall";"time";"github.com/halbritt/cairn/internal/lifecycle/activationipc";"golang.org/x/sys/unix")
+// The installed producer deliberately uses argv[0]=cairn. Tests select a
+// separate pinned fault image with -X instead of changing that launch ABI.
+var testMode string
 func main(){
  unix.Prctl(unix.PR_SET_PDEATHSIG,uintptr(syscall.SIGKILL),0,0,0)
- mode:=filepath.Base(os.Args[0])
+ mode:=testMode;if mode=="" {mode=filepath.Base(os.Args[0])}
  frame:=func(class string,n string){fmt.Fprintf(os.Stderr,"{\"error\":{\"class\":%q,\"reason\":\"activation\",\"errno\":%s}}\n",class,n)}
  switch mode {
  case "panic": panic("fixture child output must not escape")
@@ -57,6 +60,7 @@ func main(){
    raw,_=os.ReadFile(c["inbox_recall_binding"].(string));json.Unmarshal(raw,&mapBinding)
    target:=mapBinding["memory_config"].(map[string]interface{})["path"].(string)
    if role=="memory" {target=mapBinding["coordination_configs"].([]interface{})[0].(map[string]interface{})["path"].(string)}
+   if e:=os.Chmod(target,0600);e!=nil {panic(e)}
    file,e:=os.OpenFile(target,os.O_APPEND|os.O_WRONLY,0);if e!=nil {panic(e)};file.Write([]byte(" "));file.Close()
    os.Stdout.Write(out.Bytes());return
   }

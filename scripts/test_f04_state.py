@@ -12,8 +12,9 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
-from test_f04_activation import ROOT, SESSION, TURN, Fixture, encoded, oracle, scalar_tree, write
+from test_f04_activation import ROOT, SESSION, TURN, Fixture, encoded, oracle, scalar_tree, write, overwrite_fixture
 
 
 PYTHON_WRITER = r'''
@@ -125,7 +126,11 @@ class F04StateTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stderr)['error']['class'],'ValueError')
         self.assertEqual({p.name:p.read_bytes() for p in path.parent.iterdir() if p.is_file()},before)
 
+    @patch.dict(os.environ, GOMAXPROCS='1', GODEBUG='asyncpreemptoff=1')
     def test_real_write_sync_and_rename_failures_preserve_the_publication_boundary(self):
+        # strace counts injections per syscall and TID. Keep ordinal writes on
+        # publication rather than Go's scheduler eventfd. All errno/trace/state
+        # assertions below remain; other concurrency tests use normal scheduling.
         for operation,number,published_marker,published_state in (
                 ('write',1,False,False),('write','1+',False,False),('fsync',1,False,False),('fsync',2,True,False),
                 ('fsync',3,True,False),('fsync',4,True,True),('renameat',1,False,False),('renameat',2,True,False)):
@@ -239,7 +244,7 @@ class F04StateTests(unittest.TestCase):
             # publication or cache refresh silently changes A's selected bytes.
             self.assertNotEqual(a.launcher('memory'),b.launcher('memory'))
             self.assertEqual(a.activation().stdout,b'{"enabled":true}\n')
-            b.coord_path.write_bytes(b.coord_path.read_bytes()+b' ')
+            overwrite_fixture(b.coord_path,b.coord_path.read_bytes()+b' ')
             result=b.activation('memory')
             self.assertEqual((result.returncode,result.stdout),(1,b''),'cached true still requires all final pins')
             self.assertEqual(self.ledger(a).read_bytes(),original)
@@ -251,7 +256,7 @@ class F04StateTests(unittest.TestCase):
             original=self.ledger(a).read_bytes()
             b=self.fixture(harness+'enabled',harness=harness)
             b.memory['state_dir']=a.memory['state_dir'];b.publish_configuration()
-            b.coord_path.write_bytes(b.coord_path.read_bytes()+b' ')
+            overwrite_fixture(b.coord_path,b.coord_path.read_bytes()+b' ')
             result=b.activation('memory')
             self.assertEqual((result.returncode,result.stdout,result.stderr),(0,b'{"enabled":false}\n',b''))
             self.assertEqual(self.ledger(a).read_bytes(),original)

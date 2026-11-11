@@ -39,6 +39,16 @@ def write(path, raw, mode=0o600):
     path.chmod(mode)
 
 
+def overwrite_fixture(path, raw):
+    """Inject changed bytes into an owned fixture, retaining its selected mode."""
+    mode = path.stat().st_mode & 0o777
+    path.chmod(mode | 0o200)
+    try:
+        path.write_bytes(raw)
+    finally:
+        path.chmod(mode)
+
+
 def encoded(obj):
     return json.dumps(obj, separators=(',', ':'), ensure_ascii=True).encode()
 

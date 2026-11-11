@@ -213,3 +213,70 @@ check. That host orchestration entrypoint builds inside the existing wrapper,
 then starts a second wrapper namespace with only the package bound at `/work`.
 The second namespace contains no checkout or production home. It installs and
 invokes the selected real frontend again after removing the producer inputs.
+
+## Stage Codex and Claude hook settings
+
+The selected `scripts/stage_lifecycle_hooks.py` renders supported shell hook
+rows from a verified compatibility installation. Package it together with
+`stage_lifecycle_compatibility.py` and the built stager. It requires an explicit
+plan on stdin and an existing owned `0700` output directory:
+
+```sh
+/usr/bin/python3 -I -S -B /package/stage_lifecycle_hooks.py \
+  --stager /package/cairn-stage-lifecycle --root /private/hook-generations < hooks-plan.json
+```
+
+The plan has exactly these fields:
+
+| Field | Selection |
+| --- | --- |
+| `id` | A canonical nonzero UUID for this settings generation. |
+| `selection` | Independent `{path, sha256}` pin for the compatibility installation's generation manifest. |
+| `harness` | `codex` or `claude`; both selected role configurations must have this harness. |
+| `account_home` | Explicit canonical account-home path; an explicit `config_home` in either selected configuration must match it. |
+| `settings` | Independent `{path, sha256}` input pin for the complete settings object to render. Use an empty object for a new profile. |
+| `coordination_index` | Zero-based index into the installation's ordered coordination configurations. |
+| `replace_commands` | Exactly `memory` and `coordination`, each an array of the exact owned prior command strings to replace; use empty arrays for a fresh profile. Commands must be distinct across the two lists. |
+
+The input settings can be a separately staged snapshot; the renderer does not
+discover or open a conventional live account settings path. The selected home
+records the intended account. Absent `config_home` fields retain the original
+consumer's runtime account-admission behavior. Staging does not verify a live
+client's environment, native trust or loaded settings.
+
+Each supported row selects the installation's exact role, configuration and
+trusted timeout vector before rendering its single immutable `L` path as shell
+text. Codex memory keeps its 12,000-byte context limits on SessionStart and
+UserPromptSubmit and its asynchronous Stop row. The remaining supported rows
+and timeouts match the existing Codex, Claude and coordination installers.
+No OpenCode or Agy bound-recall support is inferred from this shell format.
+
+Within each touched event, one matching owned command is replaced in place.
+Its group matcher, group metadata and unrelated hooks remain. If none matches,
+a new group is appended. Multiple matches refuse, rather than deleting a
+possibly distinct conditional hook. The exact newly selected command is also
+recognized, so rendering already-rendered settings adds no duplicate hooks.
+Unknown events and other settings remain, including commands the operator did
+not select for replacement. Supply the complete owned command lists; this
+tool does not identify stale lifecycle hooks by basename or remove them for you.
+
+The stager publishes `hook-settings.json`, `hook-selection.json` and the exact
+original bytes as `previous-settings.json` in a new immutable generation. Its
+output contains the generation pin and the current/previous settings pins.
+Read the generation back with `inspect-generation` and the independent pin
+before selecting its files. The input settings file and earlier generations
+remain unchanged. Interrupted publication uses the generation publisher's
+same no-replace, synchronization and reconciliation rules.
+
+Both the selection metadata and CLI result state `native_trust`, `refresh` and
+`activation` as `not-performed`. This command does not invoke Codex's trust
+operation, apply settings, interrupt a native turn, refresh a cached callback,
+or switch a watcher. Those require the supported native operation and the
+separately authorized R-06/R-07 transition. Reversing a file selection alone
+does not prove that a running client returned to its previous configuration.
+
+The installed renderer tests are `test_r04_hook_settings.py`; the standalone
+package check above also executes every rendered Codex and Claude row without
+a checkout. `test_r02_installed_contracts.py` applies the existing F-04 ledger,
+failure and deadline oracles to actual installer output, including separately
+pinned test child images. Those disposable fault images are not release builds.

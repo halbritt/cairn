@@ -111,7 +111,7 @@ class GenerationInstallation(unittest.TestCase):
 
     def write_configs(self, source, final, schema, bundle=None):
         manifest = final / "binding.json"
-        common = dict(harness="codex", cairn=str(self.fake_api), socket=str(self.base / "unused.sock"),
+        common = dict(harness=getattr(self, 'harness', 'codex'), cairn=str(self.fake_api), socket=str(self.base / "unused.sock"),
                       token_file=str(self.token), repo="fixture:r02-install", inbox_recall_binding=str(manifest))
         memory = dict(common, recall_mode="agent_tools", context_bytes=8123, state_dir=str(self.state),
                       preserved_custom={"unknown": [1, "two", False]})
@@ -154,9 +154,7 @@ class GenerationInstallation(unittest.TestCase):
             results[role] = (result.returncode, result.stdout, result.stderr)
         return results
 
-    def test_install_and_reverse_retains_real_legacy_bytes_and_argv(self):
-        original = self.inspect(self.old)
-        before = self.legacy_frontends(self.launches)
+    def validate_legacy(self):
         # Invoke the actual retained /2 validator over the installed full bundle;
         # it reads config/code pins, not the selected token contents or API.
         check = ("import importlib.util,json,sys;from pathlib import Path;"
@@ -165,6 +163,11 @@ class GenerationInstallation(unittest.TestCase):
                  "b.load('inbox_binding').InboxBinding(b).validate(json.loads((r/'memory.json').read_text()));print('validated /2')")
         checked = self.call([sys.executable, "-I", "-B", "-c", check, str(self.old_dir)])
         self.assertEqual((checked.returncode, checked.stdout, checked.stderr), (0, b"validated /2\n", b""))
+
+    def test_install_and_reverse_retains_real_legacy_bytes_and_argv(self):
+        original = self.inspect(self.old)
+        before = self.legacy_frontends(self.launches)
+        self.validate_legacy()
 
         new_inputs = self.base / "new-inputs"
         new_inputs.mkdir(mode=0o700)

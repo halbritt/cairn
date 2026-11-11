@@ -40,6 +40,17 @@ def packaged_check():
         state = json.loads((Path(f.memory['state_dir']) / (SESSION + '.memory-budget.json')).read_bytes())
         assert list(state['inbox_activation'].values()) == [True]
     print('R02 standalone-package install, retained selection and fresh-process activation: PASS', flush=True)
+    # Reuse the real renderer/process oracle with the package's prebuilt tools.
+    # No build or source checkout is available in this second namespace.
+    from test_r04_hook_settings import R04HookSettingsTests
+    case = R04HookSettingsTests('test_each_emitted_hook_runs_selected_real_activation_after_producer_inputs_are_removed')
+    case.binary, case.stager = ROOT / 'assets/private-activation', ROOT / 'assets/stager'
+    case.setUp()
+    try:
+        case.test_each_emitted_hook_runs_selected_real_activation_after_producer_inputs_are_removed()
+    finally:
+        case.doCleanups()
+    print('R04 standalone-package settings and every emitted host hook: PASS', flush=True)
 
 
 # Runs only inside the first namespace. The stdout archive is extracted as data
@@ -59,7 +70,8 @@ for name in compat.MEMBERS:
  path=package/'integrations/lifecycle'/name
  shutil.copyfile(root/'integrations/lifecycle'/name,path);path.chmod(0o600)
 for name in ('check_r02_offline_install.py','stage_lifecycle_compatibility.py','test_r02_compatibility_install.py',
-             'test_f04_activation.py','test_f04_issued.py','test_lifecycle_generation_install.py'):
+             'test_f04_activation.py','test_f04_issued.py','test_lifecycle_generation_install.py',
+             'stage_lifecycle_hooks.py','test_r04_hook_settings.py','test_f04_deadlines.py'):
  path=package/'scripts'/name;shutil.copyfile(root/'scripts'/name,path);path.chmod(0o600)
 with tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz') as archive:
  for path in sorted(package.iterdir()): archive.add(path,arcname=path.name)
