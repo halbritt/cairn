@@ -30,7 +30,16 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 
 class CaptureSelectionTests(unittest.TestCase):
     setUpClass = classmethod(start_fixture.F02StartTests.setUpClass.__func__)
-    tearDownClass = classmethod(start_fixture.F02StartTests.tearDownClass.__func__)
+    source_pairs = 0
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            print('F03_CAPTURE_SELECTION '+json.dumps(dict(source_sha256=sha((ROOT/'integrations/lifecycle/memory.py').read_bytes()),
+                                                          go_sha256=sha(cls.binary.read_bytes()), source_pairs=cls.source_pairs), sort_keys=True))
+        finally:
+            start_fixture.F02StartTests.tearDownClass.__func__(cls)
+
     configure = boundary_fixture.CaptureBoundaryTests.configure
     state = boundary_fixture.CaptureBoundaryTests.state
     session_key = boundary_fixture.CaptureBoundaryTests.session_key
@@ -245,6 +254,7 @@ sys.exit(spec.get('exit',0))
                 self.assertEqual(diagnostic['origin']['component'], 'lifecycle-memory')
                 self.assertEqual(diagnostic['origin']['implementation_id'], image)
         self.provider_calls = candidate[5]
+        type(self).source_pairs += 1
         return candidate[0]
 
     def note(self, title='Retention policy', body='Use thirty days for postgres retention.', record_id=None):
