@@ -2,12 +2,14 @@
 import copy
 import importlib.util
 import json
+import mmap
 import os
 from pathlib import Path
 import select
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from unittest import mock
@@ -174,6 +176,170 @@ class ClosureTests(unittest.TestCase):
         files['pyvenv.cfg'] = ('home = ' + relocated['path'] + '/python/bin\n').encode()
         self.assertNotEqual(closure.publish_controls(other, relocated, files)['address'],
                             control['address'])
+
+    def python_fixture(self):
+        # Structural fixtures only: neither binary is a runnable interpreter.
+        (self.inputs / 'bin/python3.11').write_bytes(b'not an interpreter')
+        (self.inputs / 'bin/python3.11').chmod(0o755)
+        roots = {'python': self.inputs}
+        for role in ('site', 'workers', 'model', 'native', 'locale', 'gconv'):
+            path = self.root / role
+            path.mkdir()
+            roots[role] = path
+        for name in ('semantic_rank.py', 'embedding_worker.py'):
+            (roots['workers'] / name).write_bytes(b'nonmodel worker fixture')
+        for name in closure.MODEL_FILES:
+            (roots['model'] / name).write_bytes(b'nonmodel asset fixture')
+        (roots['native'] / 'ld-linux-x86-64.so.2').write_bytes(b'not a loader')
+        (roots['native'] / 'ld-linux-x86-64.so.2').chmod(0o755)
+        config = self.root / 'original-pyvenv.cfg'
+        config.write_text('home = /original/python/bin\nimplementation = CPython\n'
+                          'include-system-site-packages = false\n')
+        home = self.root / 'worker-home'
+        home.mkdir(mode=0o700)
+        payload = closure.publish_payload(self.stage, closure.seal_inputs(roots, self.provenance))
+        return payload, config, home
+
+    def test_fixed_venv_controls_bind_exact_payload_and_preserve_original_config(self):
+        payload, config, home = self.python_fixture()
+        controls = closure.render_python_controls(self.stage, payload, config, home)
+        root = Path(controls['path'])
+        self.assertEqual((root / 'original-pyvenv.cfg').read_bytes(), config.read_bytes())
+        expected = config.read_text().replace('/original/python/bin', payload['path'] + '/python/bin')
+        self.assertEqual((root / 'pyvenv.cfg').read_text(), expected)
+        self.assertEqual((root / 'bin/python').resolve(), Path(payload['path']) / 'python/bin/python3.11')
+        self.assertEqual((root / 'lib/python3.11/site-packages').resolve(), Path(payload['path']) / 'site')
+        self.assertFalse(Path(os.readlink(root / 'bin/python')).is_absolute())
+        before = self.snapshot(root)
+        self.assertEqual(controls, closure.render_python_controls(self.stage, payload, config, home))
+        self.assertEqual(before, self.snapshot(root))
+        binding = closure.read_json(root / 'binding.json')
+        for mode, entry in controls['launchers'].items():
+            env = binding['environment'][mode]
+            self.assertEqual(env['ORT_DISABLE_TELEMETRY'], '1')
+            self.assertFalse({'PYTHONHOME', 'PYTHONPATH', 'OPENBLAS_NUM_THREADS',
+                              'OMP_NUM_THREADS', 'MKL_NUM_THREADS'} & set(env))
+            self.assertEqual(env.get('CAIRN_SEMANTIC_STREAM_CACHE'), '1' if mode == 'stream' else None)
+            # This exits before the fixture loader/interpreter can run.
+            result = subprocess.run([entry, 'extra'], capture_output=True)
+            self.assertEqual(result.returncode, 64)
+            self.assertIn(b'accepts no arguments', result.stderr)
+        self.assertEqual(list(home.iterdir()), [])
+
+    def test_control_references_cannot_escape_selected_payload(self):
+        payload = self.publish()
+        with self.assertRaisesRegex(closure.ClosureError, 'not a selected payload member'):
+            closure.publish_controls(self.stage, payload, {'config': b'fixed'},
+                                     {'bin/python': str(self.inputs / 'bin/python')})
+        with self.assertRaisesRegex(closure.ClosureError, 'parent conflict'):
+            closure.publish_controls(self.stage, payload, {'bin': b'fixed', 'bin/worker': b'fixed'})
+
+    def test_observation_manifest_is_independently_addressed_and_refuses_tampering(self):
+        payload, config, home = self.python_fixture()
+        controls = closure.render_python_controls(self.stage, payload, config, home)
+        identities = {'rank': 'expected fixture only', 'embed': 'expected fixture only'}
+        first = closure.publish_observations(self.stage, payload, controls, identities, self.provenance)
+        selected = Path(first['path'])
+        before = self.snapshot(selected.parent)
+        self.assertEqual(first, closure.publish_observations(self.stage, payload, controls,
+                                                            identities, self.provenance))
+        self.assertEqual(before, self.snapshot(selected.parent))
+        manifest = closure.read_json(selected)
+        self.assertEqual(manifest['qualification'], 'runtime/effects/numerics unobserved')
+        self.assertNotEqual(first['address'], payload['address'])
+        self.assertNotEqual(first['address'], controls['address'])
+        selected.chmod(0o644)
+        selected.write_bytes(b'tampered evidence')
+        selected.chmod(0o444)
+        with self.assertRaisesRegex(closure.ClosureError, 'refusing repair'):
+            closure.publish_observations(self.stage, payload, controls, identities, self.provenance)
+        self.assertEqual(selected.read_bytes(), b'tampered evidence')
+
+    def test_safe_archive_export_restores_sealed_modes_only_after_integrity_checks(self):
+        spec = importlib.util.spec_from_file_location('qualification', MODULE.with_name(
+            'check_semantic_python_closure.py'))
+        qualification = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(qualification)
+        payload = self.publish()
+        archive = self.root / 'export.tar.gz'
+        with tarfile.open(archive, 'w:gz') as out:
+            out.add(payload['path'], arcname=payload['address'])
+        exported = self.root / 'exported'
+        exported.mkdir()
+        with tarfile.open(archive) as source:
+            source.extractall(exported, filter='data')
+        selected = exported/payload['address']
+        self.assertNotEqual(closure.tree(selected), payload['descriptor']['entries'])
+        qualification.restore_exported_modes(selected, payload['descriptor'])
+        self.assertEqual(closure.verify_generation(selected, payload['descriptor']), selected)
+        selected.chmod(0o755)
+        changed = selected/'python/lib/naïve.txt'
+        changed.chmod(0o644)
+        changed.write_bytes(b'corrupt exported byte')
+        with self.assertRaisesRegex(RuntimeError, 'exported file differs'):
+            qualification.restore_exported_modes(selected, payload['descriptor'])
+        self.assertEqual(selected.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(changed.read_bytes(), b'corrupt exported byte')
+
+    def test_mapping_identity_uses_kernel_file_and_device_for_readonly_source_data(self):
+        spec = importlib.util.spec_from_file_location('qualification', MODULE.with_name(
+            'check_semantic_python_closure.py'))
+        qualification = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(qualification)
+        # /work is the real readonly repository bind, including Btrfs subvolume
+        # device behavior; this maps source bytes as data without executing them.
+        with MODULE.open('rb') as stream, mmap.mmap(stream.fileno(), 0, prot=mmap.PROT_READ):
+            fields = next(line.split(maxsplit=5) for line in Path('/proc/self/maps').read_text().splitlines()
+                          if line.split(maxsplit=5)[-1] == str(MODULE))
+            row, elf = qualification.mapped_file(Path('/proc/self'), fields)
+            self.assertFalse(elf)
+            self.assertEqual(row['sha256'], closure.digest(MODULE.read_bytes()))
+            self.assertEqual(row['inode'], MODULE.stat().st_ino)
+            self.assertEqual(row['mapped_device'], fields[3])
+            wrong = list(fields)
+            wrong[4] = str(int(wrong[4])+1)
+            with self.assertRaisesRegex(RuntimeError, 'inode differs'):
+                qualification.mapped_file(Path('/proc/self'), wrong)
+            wrong = list(fields)
+            wrong[3] = 'ff:ff'
+            with self.assertRaisesRegex(RuntimeError, 'mapping device differs'):
+                qualification.mapped_file(Path('/proc/self'), wrong)
+
+    def test_observer_lifetime_distinguishes_live_zombie_and_vanished_child(self):
+        spec = importlib.util.spec_from_file_location('qualification', MODULE.with_name(
+            'check_semantic_python_closure.py'))
+        qualification = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(qualification)
+        proc = subprocess.Popen([sys.executable, '-I', '-B', '-c',
+                                 'import sys;sys.stdin.buffer.read(1)'], stdin=subprocess.PIPE)
+        path = Path('/proc')/str(proc.pid)
+        try:
+            self.assertFalse(qualification.process_terminal(path))
+            proc.stdin.close()
+            os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOWAIT)
+            self.assertTrue(qualification.process_terminal(path))
+            proc.wait(timeout=5)
+            self.assertTrue(qualification.process_terminal(path))
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+
+    def test_embedding_identity_compares_complete_sealed_object(self):
+        spec = importlib.util.spec_from_file_location('qualification', MODULE.with_name(
+            'check_semantic_python_closure.py'))
+        qualification = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(qualification)
+        identity = {'model_sha256': '1'*64, 'algorithm': 'bge-original-passages/1', 'dimensions': 384}
+        reply = {'id': 'identity-fixture', 'identity': identity}
+        candidate = {'expected_identities': {'embed': identity}}
+        qualification.compare_embedding_reply(reply, copy.deepcopy(reply), candidate, [])
+        wrong = copy.deepcopy(reply)
+        wrong['identity']['dimensions'] = 383
+        with self.assertRaisesRegex(RuntimeError, 'discrete field differs'):
+            qualification.compare_embedding_reply(reply, wrong, candidate, [])
+        with self.assertRaisesRegex(RuntimeError, 'identity differs'):
+            qualification.compare_embedding_reply(wrong, wrong, candidate, [])
 
     def test_atomic_no_replace_refuses_a_concurrent_wrong_generation(self):
         commit = closure.commit_pending

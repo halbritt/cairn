@@ -1,8 +1,8 @@
 """Seal selected Python rollback files and publish additive immutable generations.
 
 An exhaustive selected-file seal is not runtime or upstream provenance
-qualification. This module never imports or executes the selected interpreter,
-packages, workers or models. See docs/semantic-python-closure.md.
+qualification. Inventory/publication do not execute selected code. The explicit
+fixed-launch path verifies the selection before executing its worker.
 """
 import argparse
 from contextlib import contextmanager
@@ -10,9 +10,11 @@ import ctypes
 import errno
 import fcntl
 import hashlib
+import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import shlex
 import shutil
 import stat
 import sys
@@ -22,7 +24,11 @@ import tempfile
 INPUT_SCHEMA = 'cairn.semantic-python-inputs/1'
 PAYLOAD_SCHEMA = 'cairn.semantic-python-payload/1'
 CONTROL_SCHEMA = 'cairn.semantic-python-controls/1'
+MANIFEST_SCHEMA = 'cairn.semantic-python-observations/1'
 MARKER = b'cairn.semantic-python-closure-stage/1\n'
+MODE_NAMES = {'rank': 'worker', 'stream': 'worker-stream', 'embed': 'worker-embeddings'}
+MODEL_FILES = ('model_optimized.onnx', 'config.json', 'tokenizer.json',
+               'special_tokens_map.json', 'tokenizer_config.json')
 
 
 class ClosureError(Exception):
@@ -79,11 +85,12 @@ def regular(path, output=None):
             'mode': stat.S_IMODE(before.st_mode)}
 
 
-def tree(root):
+def tree(root, bindings=None):
     """Inventory every directory, regular file and safe internal symlink."""
     root = absolute(root)
     if not root.is_dir():
         raise ClosureError('selected root is not a directory: ' + str(root))
+    bindings = bindings or {}
     result = {'.': {'type': 'directory', 'mode': stat.S_IMODE(root.stat().st_mode)}}
     for base, dirs, names in os.walk(root, followlinks=False):
         dirs.sort()
@@ -93,6 +100,13 @@ def tree(root):
             mode = path.lstat().st_mode
             if stat.S_ISLNK(mode):
                 target = os.readlink(path)
+                if relative in bindings:
+                    expected = absolute(bindings[relative])
+                    if not expected.exists() or path.resolve(strict=True) != expected:
+                        raise ClosureError('selected payload reference differs: ' + relative)
+                    result[relative] = {'type': 'symlink', 'target': target,
+                                        'mode': stat.S_IMODE(mode)}
+                    continue
                 if (Path(target).is_absolute() or '\\' in target
                         or any(c in target for c in '\x00\r\n')):
                     raise ClosureError('unsafe symlink: ' + relative)
@@ -163,8 +177,19 @@ def payload_descriptor(seal):
 
 def verify_generation(path, descriptor):
     path = absolute(path)
+    if descriptor['schema'] not in (PAYLOAD_SCHEMA, CONTROL_SCHEMA, MANIFEST_SCHEMA):
+        raise ClosureError('unknown generation schema')
     address = digest(canonical(descriptor))
-    if path.name != address or tree(path) != descriptor['entries']:
+    bindings = descriptor.get('bindings', {})
+    if bindings:
+        payload = absolute(descriptor['payload_path'])
+        if payload.name != descriptor['payload_address']:
+            raise ClosureError('payload reference address differs')
+        for name, target in bindings.items():
+            member_name(name)
+            if not absolute(target).is_relative_to(payload):
+                raise ClosureError('external control reference is not selected payload')
+    if path.name != address or tree(path, bindings) != descriptor['entries']:
         raise ClosureError('immutable generation differs; refusing repair: ' + str(path))
     return path
 
@@ -202,7 +227,8 @@ def stage_root(value, input_roots=()):
     except FileExistsError:
         fd = os.open(marker, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
         info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600):
             os.close(fd)
             raise ClosureError('unsafe stage marker')
     with os.fdopen(fd, 'r+b') as lock:
@@ -254,7 +280,7 @@ def publish_generation(parent, descriptor, write_members):
         for base, _, _ in os.walk(pending, topdown=False, followlinks=False):
             Path(base).chmod(0o555)
             fsync_directory(base)
-        if tree(pending) != descriptor['entries']:
+        if tree(pending, descriptor.get('bindings')) != descriptor['entries']:
             raise ClosureError('new generation differs before publication')
         if not commit_pending(pending, target):
             verify_generation(target, descriptor)
@@ -292,18 +318,52 @@ def publish_payload(stage, seal):
     return {'address': path.name, 'path': str(path), 'descriptor': descriptor}
 
 
-def publish_controls(stage, payload, files):
+def control_entries(files, links):
+    entries = {'.': {'type': 'directory', 'mode': 0o555}}
+    if set(files) & set(links):
+        raise ClosureError('duplicate control file/reference')
+    for name in sorted([*files, *links]):
+        member_name(name)
+        for parent in reversed(PurePosixPath(name).parents):
+            if str(parent) == '.':
+                continue
+            previous = entries.setdefault(str(parent), {'type': 'directory', 'mode': 0o555})
+            if previous != {'type': 'directory', 'mode': 0o555}:
+                raise ClosureError('control member/parent conflict')
+        if name in entries:
+            raise ClosureError('control member/parent conflict')
+        if name in links:
+            entries[name] = {'type': 'symlink', 'mode': 0o777, 'target': links[name]}
+        else:
+            data = files[name]
+            entries[name] = {'type': 'file', 'mode': 0o555 if name.startswith('bin/') else 0o444,
+                             'bytes': len(data), 'sha256': digest(data)}
+    return entries
+
+
+def control_descriptor(payload, files, links):
+    # Both pending and final generations are one level below controls/. Relative
+    # links preserve the selected payload binding while remaining safe to export.
+    generation = Path(payload['path']).parent.parent / 'controls' / '_generation'
+    relative_links = {name: os.path.relpath(target, generation / PurePosixPath(name).parent)
+                      for name, target in links.items()}
+    return {'schema': CONTROL_SCHEMA, 'payload_address': payload['address'],
+            'payload_path': payload['path'], 'bindings': links,
+            'entries': control_entries(files, relative_links)}
+
+
+def publish_controls(stage, payload, files, links=None):
     """Address rendered control bytes separately; they may name the payload."""
     verify_generation(payload['path'], payload['descriptor'])
-    entries = {'.': {'type': 'directory', 'mode': 0o555}}
-    for name, data in sorted(files.items()):
-        member_name(name)
-        for parent in PurePosixPath(name).parents:
-            if str(parent) != '.':
-                entries[str(parent)] = {'type': 'directory', 'mode': 0o555}
-        entries[name] = {'type': 'file', 'mode': 0o555 if name.startswith('bin/') else 0o444,
-                         'bytes': len(data), 'sha256': digest(data)}
-    descriptor = {'schema': CONTROL_SCHEMA, 'payload_address': payload['address'], 'entries': entries}
+    links = links or {}
+    payload_root = absolute(payload['path'])
+    for target in links.values():
+        target = absolute(target)
+        if (not target.is_relative_to(payload_root) or not target.exists()
+                or target.relative_to(payload_root).as_posix() not in payload['descriptor']['entries']):
+            raise ClosureError('control reference is not a selected payload member')
+    descriptor = control_descriptor(payload, files, links)
+    entries = descriptor['entries']
 
     def write_members(pending):
         for name, item in sorted(entries.items()):
@@ -312,6 +372,8 @@ def publish_controls(stage, payload, files):
             path = pending / name
             if item['type'] == 'directory':
                 path.mkdir(mode=0o700)
+            elif item['type'] == 'symlink':
+                path.symlink_to(item['target'])
             else:
                 with path.open('xb') as stream:
                     stream.write(files[name])
@@ -327,8 +389,173 @@ def publish_controls(stage, payload, files):
 
 def read_json(path):
     path = absolute(path)
-    regular(path)
-    return json.loads(path.read_text(encoding='utf-8'))
+    content = io.BytesIO()
+    regular(path, content)
+    return json.loads(content.getvalue())
+
+
+def worker_environment(payload, home, mode):
+    env = {'PATH': '/usr/bin:/bin', 'HOME': str(home),
+           'XDG_CACHE_HOME': str(home / '.cache'), 'XDG_CONFIG_HOME': str(home / '.config'),
+           'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1', 'HF_HUB_DISABLE_TELEMETRY': '1',
+           'TOKENIZERS_PARALLELISM': 'false', 'PYTHONNOUSERSITE': '1',
+           'PYTHONDONTWRITEBYTECODE': '1', 'ORT_DISABLE_TELEMETRY': '1',
+           'LC_ALL': 'C.UTF-8', 'LOCPATH': str(payload / 'locale'),
+           'GCONV_PATH': str(payload / 'gconv')}
+    if mode == 'stream':
+        env['CAIRN_SEMANTIC_STREAM_CACHE'] = '1'
+    return env
+
+
+def launcher_bytes(mode, environment, payload, binding_sha, helper_sha):
+    # The entry verifies the helper and binding using copied stdlib with site
+    # disabled. The helper can then recompute every control byte, including this
+    # entry, without embedding its own generation address in those bytes.
+    code = ("import hashlib,pathlib,runpy,sys;"
+            "p=pathlib.Path(sys.argv[1]).resolve(strict=True).parent.parent;"
+            "b=p/'binding.json';h=p/'closure.py';"
+            "check=lambda f,s:hashlib.sha256(f.read_bytes()).hexdigest()==s;"
+            "(check(b," + repr(binding_sha) + ") and check(h," + repr(helper_sha) + "))"
+            " or sys.exit('immutable Python control binding differs');"
+            "sys.argv=[str(h),'launch','--control',str(p),'--mode',sys.argv[2]];"
+            "runpy.run_path(str(h),run_name='__main__')")
+    argv = ['/usr/bin/env', '-i', *[k + '=' + v for k, v in sorted(environment.items())],
+            str(payload / 'native/ld-linux-x86-64.so.2'), '--inhibit-cache', '--library-path',
+            str(payload / 'native')]
+    prefix = ' '.join(shlex.quote(x) for x in argv)
+    return ("#!/bin/sh\nset -eu\n"
+            "[ \"$#\" -eq 0 ] || { echo 'fixed Python launcher accepts no arguments' >&2; exit 64; }\n"
+            "[ -z \"${LD_LIBRARY_PATH-}${LD_PRELOAD-}${LD_AUDIT-}${PYTHONHOME-}${PYTHONPATH-}\" ] || "
+            "{ echo 'loader/Python override refused' >&2; exit 65; }\n"
+            "exec " + prefix + ' "${0%/*}/python" -I -S -B -c ' + shlex.quote(code)
+            + ' "$0" ' + shlex.quote(mode) + '\n').encode('utf-8')
+
+
+def control_files(binding, original_config, config, helper):
+    files = {'original-pyvenv.cfg': original_config, 'pyvenv.cfg': config, 'closure.py': helper}
+    binding_bytes = canonical(binding) + b'\n'
+    files['binding.json'] = binding_bytes
+    payload = Path(binding['payload']['path'])
+    for mode, name in MODE_NAMES.items():
+        files['bin/' + name] = launcher_bytes(mode, binding['environment'][mode], payload,
+                                             digest(binding_bytes), digest(helper))
+    return files
+
+
+def private_home(value, stage):
+    home = absolute(value)
+    if (not home.is_dir() or home.stat().st_uid != os.getuid()
+            or stat.S_IMODE(home.stat().st_mode) != 0o700
+            or home == stage or home.is_relative_to(stage) or stage.is_relative_to(home)):
+        raise ClosureError('worker HOME must be a separate existing owned 0700 directory')
+    return home
+
+
+def render_python_controls(stage, payload, venv_config, home):
+    stage = absolute(stage)
+    home = private_home(home, stage)
+    if list(home.iterdir()):
+        raise ClosureError('worker HOME must initially be empty')
+    root = verify_generation(payload['path'], payload['descriptor'])
+    required = {'python/bin/python3.11': 'file', 'site': 'directory',
+                'workers/semantic_rank.py': 'file', 'workers/embedding_worker.py': 'file',
+                'native/ld-linux-x86-64.so.2': 'file', 'locale': 'directory', 'gconv': 'directory',
+                **{'model/' + name: 'file' for name in MODEL_FILES}}
+    entries = payload['descriptor']['entries']
+    if any(entries.get(name, {}).get('type') != kind for name, kind in required.items()):
+        raise ClosureError('selected Python payload layout is incomplete')
+    if any(entries[name]['mode'] != 0o555 for name in
+           ('python/bin/python3.11', 'native/ld-linux-x86-64.so.2')):
+        raise ClosureError('selected interpreter/loader is not executable')
+    original = io.BytesIO()
+    regular(absolute(venv_config), original)
+    original = original.getvalue()
+    lines = original.decode('utf-8').splitlines(keepends=True)
+    if (sum(line.startswith('home = ') for line in lines) != 1
+            or 'include-system-site-packages = false\n' not in lines):
+        raise ClosureError('expected original isolated venv configuration')
+    config = ''.join('home = ' + str(root / 'python/bin') + '\n'
+                     if line.startswith('home = ') else line for line in lines).encode('utf-8')
+    helper = Path(__file__).read_bytes()
+    members = {name: {'bytes': len(data), 'sha256': digest(data)}
+               for name, data in [('original-pyvenv.cfg', original), ('pyvenv.cfg', config),
+                                  ('closure.py', helper)]}
+    links = {'bin/python': str(root / 'python/bin/python3.11'),
+             'lib/python3.11/site-packages': str(root / 'site')}
+    binding = {'schema': 'cairn.semantic-python-binding/1', 'payload': payload,
+               'members': members, 'links': links, 'home': str(home),
+               'environment': {mode: worker_environment(root, home, mode) for mode in MODE_NAMES}}
+    files = control_files(binding, original, config, helper)
+    result = publish_controls(stage, payload, files, links)
+    result['launchers'] = {mode: str(Path(result['path']) / 'bin' / name)
+                           for mode, name in MODE_NAMES.items()}
+    return result
+
+
+def launch(control, mode):
+    control = absolute(control)
+    binding = read_json(control / 'binding.json')
+    if binding['schema'] != 'cairn.semantic-python-binding/1':
+        raise ClosureError('control binding schema differs')
+    payload = binding['payload']
+    root = verify_generation(payload['path'], payload['descriptor'])
+    stage = control.parent.parent
+    home = private_home(binding['home'], stage)
+    expected_env = worker_environment(root, home, mode)
+    if binding['environment'][mode] != expected_env or dict(os.environ) != expected_env:
+        raise ClosureError('fixed worker environment differs')
+    members = {}
+    for name, expected in binding['members'].items():
+        member_name(name)
+        content = io.BytesIO()
+        observed = regular(control / name, content)
+        if observed != {'type': 'file', 'mode': 0o444, **expected}:
+            raise ClosureError('fixed control member differs: ' + name)
+        members[name] = content.getvalue()
+    if set(members) != {'original-pyvenv.cfg', 'pyvenv.cfg', 'closure.py'}:
+        raise ClosureError('fixed control member inventory differs')
+    files = control_files(binding, members['original-pyvenv.cfg'], members['pyvenv.cfg'],
+                          members['closure.py'])
+    descriptor = control_descriptor(payload, files, binding['links'])
+    verify_generation(control, descriptor)
+    worker = 'embedding_worker.py' if mode == 'embed' else 'semantic_rank.py'
+    argv = [str(root / 'native/ld-linux-x86-64.so.2'), '--inhibit-cache', '--library-path',
+            str(root / 'native'), str(control / 'bin/python'), '-B',
+            str(root / 'workers' / worker), '--model-dir', str(root / 'model')]
+    if mode == 'stream':
+        argv.append('--stream')
+    os.execve(argv[0], argv, expected_env)
+
+
+def publish_observations(stage, payload, controls, expected_identities, provenance,
+                         observations=None):
+    """Publish an independent evidence manifest, never a release acceptance."""
+    verify_generation(payload['path'], payload['descriptor'])
+    verify_generation(controls['path'], controls['descriptor'])
+    if (controls['payload_address'] != payload['address']
+            or controls['descriptor']['payload_path'] != payload['path']):
+        raise ClosureError('observation manifest selected generations differ')
+    manifest = {'schema': MANIFEST_SCHEMA, 'payload': payload, 'controls': controls,
+                'expected_identities': expected_identities, 'provenance': provenance,
+                'observations': observations,
+                'qualification': 'local observations only; exact-candidate and Release acceptance separate'
+                if observations is not None else 'runtime/effects/numerics unobserved'}
+    data = canonical(manifest) + b'\n'
+    descriptor = {'schema': MANIFEST_SCHEMA, 'entries': {
+        '.': {'type': 'directory', 'mode': 0o555},
+        'manifest.json': {'type': 'file', 'mode': 0o444, 'bytes': len(data), 'sha256': digest(data)}}}
+
+    def write_members(pending):
+        with (pending / 'manifest.json').open('xb') as stream:
+            stream.write(data)
+            stream.flush()
+            os.fchmod(stream.fileno(), 0o444)
+            os.fsync(stream.fileno())
+
+    with stage_root(stage) as root:
+        path = publish_generation(root / 'manifests', descriptor, write_members)
+    return {'address': path.name, 'path': str(path / 'manifest.json'),
+            'sha256': digest(data), 'descriptor': descriptor}
 
 
 def main():
@@ -342,6 +569,12 @@ def main():
     publish.add_argument('--stage', required=True)
     verify = commands.add_parser('verify')
     verify.add_argument('--publication', required=True)
+    render = commands.add_parser('render')
+    for name in ('stage', 'payload', 'venv-config', 'home'):
+        render.add_argument('--' + name, required=True)
+    start = commands.add_parser('launch')
+    start.add_argument('--control', required=True)
+    start.add_argument('--mode', choices=MODE_NAMES, required=True)
     args = parser.parse_args()
     if args.command == 'inventory':
         pairs = [item.split('=', 1) for item in args.root]
@@ -350,10 +583,16 @@ def main():
         result = seal_inputs(dict(pairs), read_json(args.provenance))
     elif args.command == 'publish':
         result = publish_payload(args.stage, read_json(args.selection))
-    else:
+    elif args.command == 'verify':
         publication = read_json(args.publication)
         verify_generation(publication['path'], publication['descriptor'])
         result = {'state': 'selected-file-integrity-verified', 'runtime_qualification': 'unobserved'}
+    elif args.command == 'render':
+        result = render_python_controls(args.stage, read_json(args.payload),
+                                        args.venv_config, args.home)
+    else:
+        launch(args.control, args.mode)
+        raise AssertionError('execve returned')
     print(canonical(result).decode('utf-8'))
 
 
