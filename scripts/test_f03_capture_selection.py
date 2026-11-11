@@ -265,6 +265,26 @@ sys.exit(spec.get('exit',0))
         self.records.append(record)
         return record
 
+    def run_seeded_title(self, side, raw):
+        directory = Path(self.f.memory['state_dir'])
+        shutil.rmtree(directory, ignore_errors=True)
+        directory.mkdir(mode=0o700)
+        path = directory/(self.session_key()+'.json')
+        write(path, raw)
+        self.calls.clear()
+        self.report_locks.clear()
+        self.records.clear()
+        self.index_count = self.write_count = 0
+        (self.root/'provider.calls').unlink(missing_ok=True)
+        write(self.root/'provider.json', encoded(dict(result=dict(structured_output=self.selection))))
+        if side == 'source':
+            result = self.source()
+        else:
+            result = subprocess.run([str(self.binary), 'memory', '--config', str(self.f.memory_path)],
+                                    input=self.f.raw, cwd=self.f.root, env=self.f.env(),
+                                    capture_output=True, timeout=45)
+        return result, path
+
     def test_null_selection_commits_digest(self):
         self.assertEqual(self.pair().returncode, 0)
         state = self.state()[self.session_key()+'.json']
@@ -449,6 +469,169 @@ sys.exit(spec.get('exit',0))
         self.assertEqual(self.provider_calls, [])
         self.assertEqual(self.state(), {})
         self.assertNotIn('selector_outcome', self.calls[-1][1])
+
+    def test_stored_non_string_workstream_refuses_before_discovery_and_preserves_state(self):
+        self.configure('claude', 'PreCompact', messages=[
+            dict(role='user', text='Keep the postgres retention policy for this project.'),
+            dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
+        for stored in (5, True, None, ['retention'], {'title': 'retention'}):
+            with self.subTest(workstream=stored):
+                directory = Path(self.f.memory['state_dir'])
+                shutil.rmtree(directory, ignore_errors=True)
+                directory.mkdir(mode=0o700)
+                seed = dict(workstream=stored, sentinel=['preserve'])
+                write(directory/(self.session_key()+'.json'), encoded(seed))
+                result = self.pair()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b'error_class=TypeError', result.stderr)
+                self.assertEqual(self.provider_calls, [])
+                self.assertFalse(any(op in ('index', 'expand', 'create', 'revise') for op, _, _ in self.calls))
+                reports = [body for op, body, _ in self.calls if op == 'capture-observation']
+                self.assertEqual(len(reports), 1)
+                self.assertEqual(reports[0]['outcome'], 'error')
+                self.assertEqual(self.state(), {self.session_key()+'.json': seed})
+
+    def test_stored_lone_surrogate_workstream_refuses_before_discovery(self):
+        self.configure('claude', 'PreCompact', messages=[
+            dict(role='user', text='Keep the postgres retention policy for this project.'),
+            dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
+        for escaped in (b'\\ud800', b'\\udc00', b'\\udc80', b'\\udcff'):
+            with self.subTest(workstream=escaped):
+                raw = b'{"workstream":"'+escaped+b'","sentinel":["preserve"]}'
+                directory = Path(self.f.memory['state_dir'])
+                path = directory/(self.session_key()+'.json')
+                for side in ('source', 'go'):
+                    shutil.rmtree(directory, ignore_errors=True)
+                    directory.mkdir(mode=0o700)
+                    write(path, raw)
+                    self.calls.clear()
+                    self.report_locks.clear()
+                    self.index_count = self.write_count = 0
+                    (self.root/'provider.calls').unlink(missing_ok=True)
+                    write(self.root/'provider.json', encoded(dict(result=dict(structured_output=self.selection))))
+                    if side == 'source':
+                        result = self.source()
+                    else:
+                        result = subprocess.run([str(self.binary), 'memory', '--config', str(self.f.memory_path)],
+                                                input=self.f.raw, cwd=self.f.root, env=self.f.env(),
+                                                capture_output=True, timeout=45)
+                    if side == 'source' and escaped in (b'\\udc80', b'\\udcff'):
+                        # These argv bytes can reach Python's child through
+                        # surrogateescape. No Source/Go equality is asserted.
+                        print('F03_SURROGATEESCAPE_SOURCE '+json.dumps(dict(
+                            escaped=escaped.decode('ascii'), returncode=result.returncode,
+                            stdout_hex=result.stdout.hex(), stderr_hex=result.stderr.hex(),
+                            operations=[op for op, _, _ in self.calls],
+                            selector_called=(self.root/'provider.calls').exists()), sort_keys=True))
+                        continue
+                    diagnostic = b'Cairn lifecycle diagnostic: phase=handle error_class=HookError\n'
+                    if side == 'source':
+                        diagnostic += b'Cairn lifecycle: memory command returned invalid JSON; use native tools or an explicit handoff.\n'
+                    else:
+                        diagnostic += b'Cairn lifecycle: checkpoint title is outside the supported Unicode domain; use native tools or an explicit handoff.\n'
+                    self.assertEqual([op for op, _, _ in self.calls], ['capture-observation'], result.stderr)
+                    self.assertFalse((self.root/'provider.calls').exists())
+                    self.assertEqual(self.records, [])
+                    self.assertEqual(path.read_bytes(), raw)
+                    self.assertEqual(sorted(p.name for p in directory.iterdir() if p.suffix != '.lock'), [path.name])
+                    self.assertEqual(len(self.report_locks), 1)
+                    self.assertTrue(all(self.report_locks[0].values()))
+                    self.assertEqual(self.calls[0][1]['outcome'], 'error')
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (1, b'', diagnostic))
+
+    def test_absent_empty_and_unicode_stored_workstream_keep_source_checkpoint_queries(self):
+        self.configure('claude', 'PreCompact', messages=[
+            dict(role='user', text='Keep the postgres retention policy for this project.'),
+            dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
+        for stored in (None, '', 'retention 日本語 😀'):
+            with self.subTest(workstream=stored):
+                directory = Path(self.f.memory['state_dir'])
+                shutil.rmtree(directory, ignore_errors=True)
+                directory.mkdir(mode=0o700)
+                seed = dict(workstream=stored) if stored is not None else {}
+                write(directory/(self.session_key()+'.json'), encoded(seed))
+                self.assertEqual(self.pair().returncode, 0)
+                title = stored if stored is not None else 'Handoff: project / Claude session '+self.f.event['session_id']
+                queries = [body['query'] for op, body, _ in self.calls if op == 'index']
+                self.assertEqual(queries[0], '"'+title+'"')
+                self.assertEqual(len(self.provider_calls), 1)
+
+    def test_nul_stored_and_explicit_titles_refuse_before_discovery(self):
+        for location in ('stored', 'explicit'):
+            for title in ('\x00', '\x00ab', 'a\x00b', 'ab\x00'):
+                with self.subTest(location=location, title=title):
+                    fields = dict(workstream=title) if location == 'explicit' else {}
+                    self.configure('claude', 'PreCompact', messages=[
+                        dict(role='user', text='Keep the postgres retention policy for this project.'),
+                        dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')], **fields)
+                    raw = encoded(dict(sentinel=['preserve'], **({'workstream': title} if location == 'stored' else {})))
+                    for side in ('source', 'go'):
+                        result, path = self.run_seeded_title(side, raw)
+                        operations = [op for op, _, _ in self.calls]
+                        print('F03_NUL_TITLE '+json.dumps(dict(location=location, title=title, side=side,
+                            returncode=result.returncode, operations=operations,
+                            selector_called=(self.root/'provider.calls').exists()), sort_keys=True))
+                        self.assertEqual(operations, ['capture-observation'])
+                        self.assertFalse((self.root/'provider.calls').exists())
+                        self.assertEqual(self.records, [])
+                        self.assertEqual(path.read_bytes(), raw)
+                        self.assertEqual(sorted(p.name for p in path.parent.iterdir() if p.suffix != '.lock'), [path.name])
+                        self.assertEqual(len(self.report_locks), 1)
+                        self.assertTrue(all(self.report_locks[0].values()))
+                        self.assertEqual(self.calls[0][1]['outcome'], 'error')
+                        family = b'ValueError' if side == 'source' else b'HookError'
+                        message = (b'invalid lifecycle input or unavailable local file' if side == 'source'
+                                   else b'checkpoint title contains NUL')
+                        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                         (1, b'', b'Cairn lifecycle diagnostic: phase=handle error_class='+family+b'\n'
+                                          b'Cairn lifecycle: '+message+b'; use native tools or an explicit handoff.\n'))
+
+    def test_remaining_scalar_title_classes_keep_exact_source_queries(self):
+        self.configure('claude', 'PreCompact', messages=[
+            dict(role='user', text='Keep the postgres retention policy for this project.'),
+            dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
+        titles = ('controls '+''.join(chr(c) for c in range(1, 32))+'\x7f\x80\x85\x9f',
+                  'quotes " slash / backslash \\ and --flag',
+                  'noncharacters \ufdd0\ufdef\ufffe\uffff\U0001fffe\U0010ffff',
+                  'scalar edges \ud7ff\ue000\U00010000\U0010fffd',
+                  'line separators \u2028\u2029 and replacement \ufffd')
+        for title in titles:
+            with self.subTest(title=ascii(title)):
+                directory = Path(self.f.memory['state_dir'])
+                shutil.rmtree(directory, ignore_errors=True)
+                directory.mkdir(mode=0o700)
+                write(directory/(self.session_key()+'.json'), encoded(dict(workstream=title)))
+                self.assertEqual(self.pair().returncode, 0)
+                queries = [body['query'] for op, body, _ in self.calls if op == 'index']
+                self.assertEqual(queries[0], '"'+title+'"')
+                self.assertEqual(len(self.provider_calls), 1)
+
+    def test_long_stored_title_documents_source_argv_resource_difference(self):
+        self.configure('claude', 'PreCompact', messages=[
+            dict(role='user', text='Keep the postgres retention policy for this project.'),
+            dict(role='assistant', text='Preserve the agreed checkpoint and retention policy.')])
+        # Linux MAX_ARG_STRLEN is 32 pages, including the terminating NUL.
+        title = 'x'*(os.sysconf('SC_PAGESIZE')*32-2)
+        raw = encoded(dict(workstream=title, sentinel=['preserve']))
+        for side in ('source', 'go'):
+            result, path = self.run_seeded_title(side, raw)
+            print('F03_ARGV_RESOURCE '+json.dumps(dict(side=side, title_bytes=len(title.encode()),
+                returncode=result.returncode, operations=[op for op, _, _ in self.calls]), sort_keys=True))
+            if side == 'source':
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(b'error_class=HookError', result.stderr)
+                self.assertEqual([op for op, _, _ in self.calls], ['capture-observation'])
+                self.assertFalse((self.root/'provider.calls').exists())
+                self.assertEqual(path.read_bytes(), raw)
+            else:
+                # The direct client reaches its version probe and then its
+                # existing request validation; it has no argv-size check.
+                self.assertEqual((result.returncode, result.stdout), (1, b''))
+                self.assertIn(b'memory command exited 2; operation not confirmed', result.stderr)
+                self.assertEqual([op for op, _, _ in self.calls], ['version', 'capture-observation'])
+                self.assertFalse((self.root/'provider.calls').exists())
+                self.assertEqual(path.read_bytes(), raw)
 
     def test_invalid_lifecycle_model_prevents_provider_spawn(self):
         for key in ('preview_model', 'recall_model'):

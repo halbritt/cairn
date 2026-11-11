@@ -49,7 +49,16 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 	}
 	title := "Handoff: " + clip(strings.ReplaceAll(baseName(project), "\"", ""), 70) + " / Claude session " + session
 	if v := state.Get("workstream"); v != nil {
+		if v.Kind != value.String {
+			return nil, &value.Error{Class: "TypeError", Message: "checkpoint title must be a string"}
+		}
+		if !validText(v) {
+			return nil, fail("checkpoint title is outside the supported Unicode domain")
+		}
 		title = text(v)
+	}
+	if strings.ContainsRune(title, 0) {
+		return nil, fail("checkpoint title contains NUL")
 	}
 	previousRaw, err := client.Checkpoint(ctx, title)
 	if err != nil {
