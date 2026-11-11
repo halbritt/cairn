@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,6 +31,7 @@ const (
 var (
 	ErrNotConfirmed     = errors.New("memory operation not confirmed")
 	ErrSearchStatus     = errors.New("memory search status refused")
+	ErrSearchArgvDomain = errors.New("memory search query contains an embedded null byte")
 	ErrNotHosted        = errors.New("memory search destination is not hosted")
 	ErrCheckpointRecord = errors.New("malformed checkpoint record")
 	errTransport        = errors.New("memory API transport failed")
@@ -110,6 +112,12 @@ func (c *Client) Search(ctx context.Context, query string, options SearchOptions
 		}
 	}()
 	c.accounting.OperationCalls["search"]++
+	// Source passes the query as one subprocess argument. Refuse its NUL
+	// exclusion before preparation or SDK effects, while counting the attempt.
+	if strings.ContainsRune(query, '\x00') {
+		c.observedRPC("search", started, nil, nil, ErrSearchArgvDomain)
+		return indexview.View{}, ErrSearchArgvDomain
+	}
 	room, timeout, requestID := searchRoom, callTimeout, ""
 	if options.Room != nil {
 		room = *options.Room

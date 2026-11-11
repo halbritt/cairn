@@ -793,6 +793,9 @@ func classify(err error) error {
 	if errors.Is(err, memoryclient.ErrNotHosted) {
 		return &hookError{class: "HookError", message: "lifecycle hooks require a hosted-destination profile", reason: "NOT_HOSTED"}
 	}
+	if errors.Is(err, memoryclient.ErrSearchArgvDomain) {
+		return &value.Error{Class: "ValueError", Message: "embedded null byte"}
+	}
 	var source *value.Error
 	var file *os.PathError
 	var errno syscall.Errno
