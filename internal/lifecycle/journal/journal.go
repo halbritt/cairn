@@ -231,8 +231,9 @@ type IO struct {
 }
 
 type Options struct {
-	Runner Runner
-	IO     IO
+	Runner       Runner
+	IO           IO
+	OnDiagnostic func(attemptID string, d SlotDiagnostic) error
 }
 
 func (o Options) io() IO {

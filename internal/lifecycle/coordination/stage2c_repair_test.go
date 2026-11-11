@@ -255,9 +255,13 @@ func TestStage2CRepairParser(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = (&CLI{}).runRecovery(context.Background(), []string{"watch"}, &bytes.Buffer{})
-	var unavailable *value.ProfileUnavailable
-	if !errors.As(err, &unavailable) {
+	if !errors.As(err, &parse) || !strings.Contains(parse.message, "watch requires --config-dir") {
 		t.Fatal("watch", err)
+	}
+	var unavailable *value.ProfileUnavailable
+	_, err = (&CLI{}).runRecovery(context.Background(), []string{"watch", "--config-dir", "/x", "--once"}, &bytes.Buffer{})
+	if !errors.As(err, &unavailable) {
+		t.Fatal("watch unbound profile", err)
 	}
 	_, err = (&CLI{}).runRecovery(context.Background(), []string{"hook"}, &bytes.Buffer{})
 	if !errors.As(err, &parse) || !strings.Contains(parse.message, "hook requires --config") {
