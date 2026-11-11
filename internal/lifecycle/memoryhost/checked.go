@@ -100,6 +100,9 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	if name := event.Get("hook_event_name"); !snapshot.Bound() && !value.SameText(name, "SessionStart") && !value.SameText(name, "UserPromptSubmit") && !value.SameText(name, "PreToolUse") && !value.SameText(name, "PostToolUse") && !value.SameText(name, "PostToolUseFailure") {
 		return refuse()
 	}
+	if !snapshot.Bound() && value.SameText(snapshot.Config().Get("harness"), "claude") && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
+		return refuse()
+	}
 	directory, err := os.Getwd()
 	if err != nil {
 		return checkedEmit(memoryhook.HostFailure("handle", err), out, diagnostic)

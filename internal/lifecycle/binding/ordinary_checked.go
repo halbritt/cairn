@@ -148,7 +148,7 @@ func VerifyOrdinary(ctx context.Context, in OrdinarySelection) (_ *OrdinarySnaps
 			memory = cfg
 		}
 	}
-	if !value.SameText(memory.Get("harness"), "opencode") || !value.SameText(memory.Get("recall_mode"), "agent_tools") {
+	if !(value.SameText(memory.Get("harness"), "opencode") || value.SameText(memory.Get("harness"), "claude")) || !value.SameText(memory.Get("recall_mode"), "agent_tools") {
 		return nil, errors.New("ordinary checked cell remains unavailable")
 	}
 	if err = ctx.Err(); err != nil {

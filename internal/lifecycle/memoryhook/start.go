@@ -214,9 +214,12 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		return runCapture(ctx, config, event, directory, hookStarted, trace)
 	}
 	if ordinary && toolObservationEvent(event) {
+		if value.SameText(config.Get("harness"), "claude") {
+			return boundary(fail("ordinary Claude tool observation remains unavailable"))
+		}
 		return runToolObservation(ctx, config, event, directory, trace)
 	}
-	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") {
+	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") && !value.SameText(config.Get("harness"), "claude") {
 		return boundary(fail("ordinary memory harness remains unavailable"))
 	}
 	if ordinary && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
@@ -386,7 +389,9 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 			pins := contextPins(config.Get("context"))
 			client, err = memoryclient.New(api, memoryclient.Options{Scope: scope, Context: &pins, CommandPrefix: []string{text(config.Get("cairn")), "agent", "--socket", text(config.Get("socket")), "--token-file", text(config.Get("token_file"))}, Diagnostics: diagnostics, ObserveOperation: func(name string, elapsed time.Duration) { operationTime[name] += elapsed }})
 			if err == nil {
-				if ordinary {
+				if ordinary && value.SameText(config.Get("harness"), "claude") {
+					body, err = claudeRecall(ctx, client, config, event, state, status, project)
+				} else if ordinary {
 					body, err = ordinaryRecall(ctx, client, config, event, state, status, project)
 				} else {
 					body, err = recall(ctx, client, config, event, state, status, project, bound)
