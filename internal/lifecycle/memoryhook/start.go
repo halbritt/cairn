@@ -523,7 +523,7 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 				title := text(v)
 				workstream = &title
 			}
-			checkpoint, err := client.RefreshCheckpoint(deadline, memoryclient.CheckpointRefreshInput{ProjectBase: filepath.Base(project), Workstream: workstream, Selected: view.Selected})
+			checkpoint, err := client.RefreshCheckpoint(deadline, memoryclient.CheckpointRefreshInput{ProjectBase: baseName(project), Workstream: workstream, Selected: view.Selected})
 			if err != nil {
 				return "", err
 			}

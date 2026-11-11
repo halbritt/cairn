@@ -41,7 +41,7 @@ from the server's authenticated principal and observation channel.
 | Claude memory and every other harness | Retained Python; unported here |
 | Coordination/journal/watcher and installer/adapter | Outside author scope |
 
-`scripts/test_f02_start.py` contains 27 process tests, with additional table
+`scripts/test_f02_start.py` contains 28 process tests, with additional table
 cases. Class A cases use producer-shaped configuration, native start events,
 source grant writers, real files/flocks and a private Unix HTTP fixture. The
 candidate enters through the actual receipt-selected public launcher. The
@@ -63,7 +63,7 @@ A separate Go test faults inside the body and asserts its fixed unexpected
 exit-1 diagnostic; it adds no production fault switch.
 
 Wall-clock timestamps and observed elapsed measurements differ between real
-processes and are checked separately. The 26 cases using the real private command retain normal randomness and check
+processes and are checked separately. The 27 cases using the real private command retain normal randomness and check
 generated RPC UUIDs for canonical non-nil shape. An additional controlled-randomness
 process case compares every complete RPC body, keeping request IDs unchanged,
 including the derived whole-pull and meter IDs. That test uses a temporary Go
@@ -78,8 +78,15 @@ memory file SHA for Python and the actual private executable SHA for Go. Neither
 identity is erased from comparison. These declarations do not authenticate the
 store principal or observation channel.
 
-The 27 process tests pass, as do the four affected Go packages and all 48 F04
-regression tests. The retained source corpus runs 494 tests across 27 modules;
+The original 27 process tests, four affected Go packages and 48 F04
+regression tests passed before B1 review. Foundation also reports the merged
+27/48 batch passing; these results do not establish review acceptance. The B1
+repair adds paired compact/resume coverage for an explicit filesystem-root
+project. Python gives `/` an empty basename, so the adapter now passes the
+existing source-compatible `baseName(project)` to checkpoint refresh. The
+regression compares exact streams/state and checks restored context, refresh
+status, separate counters and the serialized checkpoint charge. It retains the
+ordinary nonroot case. Repaired-candidate exact results are recorded separately. The retained source corpus runs 494 tests across 27 modules;
 493 execute successfully and one requires `OPENCODE_TEST_BINARY` to name a
 patched native OpenCode build. That unavailable native probe remains a coverage
 gap in an unported cell. The source corpus includes:
@@ -100,8 +107,12 @@ Release and the campaign. The source corpus is regression evidence, not a
 claim to port those cells. The initial 16 Codex turn-budget tests ran before
 construction; subsequent comparisons retain the literal Python body.
 
-All checks run in the shared namespace wrapper, with `CC=gcc`, a `cc` alias to
-gcc, `TZ=America/Los_Angeles`, `TMPDIR=/tmp` and `GOFLAGS=-buildvcs=false`.
+Focused builds and process probes run in the shared namespace wrapper, with
+`CC=gcc`, a `cc` alias to gcc, `TZ=America/Los_Angeles`, `TMPDIR=/tmp` and
+`GOFLAGS=-buildvcs=false`. Owner decision `40d0c42c/v1` now permits the standard
+`make check`, `make test` and `make test-integration` gates on the host; the
+wrapper restriction still applies to other probes. Production changes still
+require a grant.
 `make check` passes. Disposable `make test-integration` passed all 31 Go packages.
 Its Python stage needed the permitted minimal OpenSSL configuration; resumption
 then reached the known linked-worktree `git clone /work` failure. The later
