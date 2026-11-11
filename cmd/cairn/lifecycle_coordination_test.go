@@ -59,9 +59,8 @@ func TestLifecycleCoordinationPlanDispatch(t *testing.T) {
 }
 
 func TestLifecycleCoordinationClassAPythonGoDifferential(t *testing.T) {
-	if os.Getenv("HOME") != "/tmp/home" {
-		t.Fatalf("refusing to run outside campaign isolation sandbox (HOME=%q)", os.Getenv("HOME"))
-	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CAIRN_INBOX_ROOT", "")
 	scriptPath, err := filepath.Abs(filepath.Join("..", "..", "integrations", "lifecycle", "coordination.py"))
 	if err != nil {
 		t.Fatalf("resolve coordination.py: %v", err)
@@ -442,9 +441,8 @@ func mustAtoi64(t *testing.T, s string) int64 {
 }
 
 func TestLifecycleCoordinationClassBRefusals(t *testing.T) {
-	if os.Getenv("HOME") != "/tmp/home" {
-		t.Fatalf("refusing to run outside campaign isolation sandbox (HOME=%q)", os.Getenv("HOME"))
-	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CAIRN_INBOX_ROOT", "")
 	scriptPath, err := filepath.Abs(filepath.Join("..", "..", "integrations", "lifecycle", "coordination.py"))
 	if err != nil {
 		t.Fatalf("resolve coordination.py: %v", err)
@@ -483,9 +481,8 @@ func TestLifecycleCoordinationClassBRefusals(t *testing.T) {
 }
 
 func TestLifecycleCoordinationMemoryBindingValidation(t *testing.T) {
-	if os.Getenv("HOME") != "/tmp/home" {
-		t.Fatalf("refusing to run outside campaign isolation sandbox (HOME=%q)", os.Getenv("HOME"))
-	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CAIRN_INBOX_ROOT", "")
 	base := t.TempDir()
 	if err := os.Chmod(base, 0o700); err != nil {
 		t.Fatal(err)
