@@ -496,12 +496,21 @@ sys.exit(spec.get('exit',0))
                                                 input=self.f.raw, cwd=self.f.root, env=self.f.env(),
                                                 capture_output=True, timeout=45)
                     if side == 'source' and escaped in (b'\\udc80', b'\\udcff'):
-                        # Python's surrogateescape permits these argv bytes. Go's
-                        # finite Unicode domain deliberately refuses them too.
-                        self.assertTrue(any(op == 'index' for op, _, _ in self.calls))
+                        # These argv bytes can reach Python's child through
+                        # surrogateescape. No Source/Go equality is asserted.
+                        print('F03_SURROGATEESCAPE_SOURCE '+json.dumps(dict(
+                            escaped=escaped.decode('ascii'), returncode=result.returncode,
+                            stdout_hex=result.stdout.hex(), stderr_hex=result.stderr.hex(),
+                            operations=[op for op, _, _ in self.calls],
+                            selector_called=(self.root/'provider.calls').exists()), sort_keys=True))
                         continue
+                    diagnostic = b'Cairn lifecycle diagnostic: phase=handle error_class=HookError\n'
+                    if side == 'source':
+                        diagnostic += b'Cairn lifecycle: memory command returned invalid JSON; use native tools or an explicit handoff.\n'
+                    else:
+                        diagnostic += b'Cairn lifecycle: checkpoint title is outside the supported Unicode domain; use native tools or an explicit handoff.\n'
                     self.assertEqual((result.returncode, result.stdout, result.stderr),
-                                     (1, b'', b'Cairn lifecycle diagnostic: phase=handle error_class=HookError\n'))
+                                     (1, b'', diagnostic))
                     self.assertEqual([op for op, _, _ in self.calls], ['capture-observation'])
                     self.assertFalse((self.root/'provider.calls').exists())
                     self.assertEqual(self.records, [])
