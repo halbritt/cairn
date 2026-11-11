@@ -214,7 +214,7 @@ then starts a second wrapper namespace with only the package bound at `/work`.
 The second namespace contains no checkout or production home. It installs and
 invokes the selected real frontend again after removing the producer inputs.
 
-## Stage Codex and Claude hook settings
+## Stage Codex, Claude and Agy hook settings
 
 The selected `scripts/stage_lifecycle_hooks.py` renders supported shell hook
 rows from a verified compatibility installation. Package it together with
@@ -232,7 +232,7 @@ The plan has exactly these fields:
 | --- | --- |
 | `id` | A canonical nonzero UUID for this settings generation. |
 | `selection` | Independent `{path, sha256}` pin for the compatibility installation's generation manifest. |
-| `harness` | `codex`, `claude` or `opencode`; both selected role configurations must have this harness. |
+| `harness` | `codex`, `claude`, `opencode` or `agy`; configurations for emitted rows must have this harness. |
 | `account_home` | Explicit canonical account-home path; an explicit `config_home` in either selected configuration must match it. |
 | `settings` | Independent `{path, sha256}` input pin for the complete settings object to render. Use an empty object for a new profile. |
 | `coordination_index` | Zero-based index into the installation's ordered coordination configurations. |
@@ -259,6 +259,16 @@ vector for its issued inbox commands. Codex memory keeps its
 UserPromptSubmit and its asynchronous Stop row. The remaining supported rows
 and timeouts match the existing Codex, Claude and coordination installers.
 No OpenCode or Agy bound-recall support is inferred from this shell format.
+
+Agy stages only its existing coordination `PreInvocation` and `Stop` hooks,
+each with a 15-second timeout and an explicit `--event` argument. It uses the
+`cairn-coordination` object, whose event values are lists of command hooks.
+Only the selected previous command is replaced; unrelated entries, events and
+settings remain. Duplicate matching commands or malformed event lists refuse.
+All profiles in the receipt must be unbound, and the plan's previous memory
+command list must be empty. The output records `ordinary memory hook` in
+`unsupported_operations`; it does not install an Agy memory callback or add
+bound recall support.
 
 Within each touched event, one matching owned command is replaced in place.
 Its group matcher, group metadata and unrelated hooks remain. If none matches,
@@ -356,6 +366,7 @@ Every row records its `implementation` and `reason`. Current routing is:
 | Codex/Claude unbound ordinary recall | Existing Python caller. |
 | PreCompact/SessionEnd capture and tool observation | Existing receipt-selected Python caller. |
 | Coordination hooks for all supported harnesses | Receipt-checked Go `/3` hook entry, with the exact retained R-02 launcher for its selection and issued commands. |
+| Agy coordination PreInvocation/Stop | Checked Go `/3` hook with the selected event flag; all profiles in the receipt unbound. |
 | Agy ordinary memory hook | Not installed; this tool adds none. |
 
 Every selected command retains the R-02 runtime receipt checks. No native-client trust operation, activation,
