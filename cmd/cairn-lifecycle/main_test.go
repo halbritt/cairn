@@ -48,12 +48,18 @@ func TestCoordinationDispatchAndCommandPrefix(t *testing.T) {
 		t.Fatalf("coordination inbox --help failed: code=%d out=%q err=%q", code, out.String(), errOut.String())
 	}
 
-	// Unported watch mode fails closed with exit 1 and non-empty diagnostic (never success stub).
+	// Ported watch mode requires --config-dir and succeeds on an empty --config-dir with --once.
 	out.Reset()
 	errOut.Reset()
 	code = run([]string{"coordination", "watch", "--config", "/nonexistent.json"}, strings.NewReader(""), &out, &errOut)
-	if code == 0 || out.Len() != 0 || !strings.Contains(errOut.String(), "compatibility_profile") {
-		t.Fatalf("expected watch to fail closed with compatibility_profile, got code=%d out=%q err=%q", code, out.String(), errOut.String())
+	if code != 2 || out.Len() != 0 || !strings.Contains(errOut.String(), "watch requires --config-dir") {
+		t.Fatalf("expected watch without --config-dir to exit 2, got code=%d out=%q err=%q", code, out.String(), errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	code = run([]string{"coordination", "watch", "--config-dir", t.TempDir(), "--once"}, strings.NewReader(""), &out, &errOut)
+	if code != 0 || out.Len() != 0 || errOut.Len() != 0 {
+		t.Fatalf("expected watch --once on empty dir to succeed, got code=%d out=%q err=%q", code, out.String(), errOut.String())
 	}
 	// Ported hook mode fails closed when the config file does not exist.
 	out.Reset()

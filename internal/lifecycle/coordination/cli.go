@@ -612,7 +612,10 @@ func (c *CLI) runRecoveryWithIO(ctx context.Context, argv []string, in io.Reader
 		return c.HookCommand(ctx, a, in, out, errOut)
 	}
 	if mode == "watch" {
-		return 0, &value.ProfileUnavailable{}
+		if !a.has("--config-dir") {
+			return 0, parseFail(prog, "watch requires --config-dir")
+		}
+		return c.WatchCommand(ctx, a, errOut)
 	}
 
 	required := []string{"--config", "--native-session-id"}
