@@ -26,9 +26,17 @@ reported provider errors and invalid selections do not advance capture state.
 
 The supported selected-write domain remains MC1 from
 [f03-capture-commit.md](f03-capture-commit.md): valid Unicode and RFC JSON,
-string record IDs and integer versions. Non-RFC values and unpaired surrogates
-are explicit domain refusals; this is not all-input CPython reconstruction.
+string record IDs and integer versions. Pulled versions must fit Go's `int`;
+invalid types and overflow refuse before provider execution, without conversion
+to zero. Non-RFC selected values and unpaired surrogates are domain refusals.
 The provider output is not accepted as a caller-supplied capture result.
+
+Owner decision `98d46758-c61c-42b4-9912-76cf9dfb0dc0/v1` supplies the three
+input classes: Python-writer and recorded hook inputs require paired exact
+behavior, malformed/hostile data requires a stable safe Go refusal, and resource
+exhaustion/interpreter limits require documented Go behavior. The inherited
+lossless reader uses unlimited integer digits; the selector's bounded output
+and deadline do not establish all-input CPython resource parity.
 
 The existing client plans every write before the first mutation. Creates and
 revisions retain Source order and UUID identities. A confirmed earlier write
@@ -43,11 +51,17 @@ are best effort and never change capture success or retry eligibility. SDK
 diagnostics report the actual Go image hash; the Source CLI reports the Python
 body hash. Those implementation IDs intentionally differ.
 
-The first ten process pairs cover null selection, new durable/checkpoint
-writes, revision, no-op, prewrite invalidation, invalid provider JSON,
-reported/nonzero provider errors, bounded metadata and a late write failure.
-Timeout, retry, concurrent state and transcript cases are required before the
-ready handoff. Passing fixtures establish the tested frontend relation, not
-provider usefulness, server idempotency/CAS, runtime acceptance or permission
-to activate the entry. Rollback is to the retained Python hook path; no live
-configuration is changed by this unit.
+The selection fixture has 23 test methods: 22 execute 30 complete Source/Go
+pairs, and one exercises three malformed pulled-version refusals in Go. The
+pairs cover null selection, new durable/checkpoint writes, revision, no-op,
+candidate discovery and budget refusal, prewrite invalidation, provider
+protocol/UTF-8/output-limit failures, timeout, bounded metadata, partial writes
+and retry reconciliation, concurrent state conflicts and merges, Codex snapshot
+markers, and Unicode writes for Claude and Hermes. Three focused Go process
+tests cover an expired caller, a retained descendant pipe, and partial-output
+accounting at timeout. The original capture boundary fixture remains unchanged.
+
+Passing fixtures establish the tested frontend relation, not provider
+usefulness, server idempotency/CAS, runtime acceptance or permission to activate
+the entry. Rollback is to the retained Python hook path; no live configuration
+is changed by this unit. Foundation owns review and integration of this candidate.

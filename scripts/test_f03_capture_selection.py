@@ -37,6 +37,7 @@ class CaptureSelectionTests(unittest.TestCase):
     close_server = boundary_fixture.CaptureBoundaryTests.close_server
     start_scheduler = boundary_fixture.CaptureBoundaryTests.start_scheduler
     finish_scheduler = boundary_fixture.CaptureBoundaryTests.finish_scheduler
+    rollout = boundary_fixture.CaptureBoundaryTests.rollout
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -59,6 +60,7 @@ class CaptureSelectionTests(unittest.TestCase):
         self.fail_write = None
         self.index_failure = None
         self.expand_failure = None
+        self.expand_transform = None
         self.after_write = None
         self.write_count = 0
         self.index_count = 0
@@ -68,7 +70,7 @@ root=pathlib.Path(__file__).parent
 spec=json.loads((root/'provider.json').read_text())
 body=sys.stdin.buffer.read()
 with (root/'provider.calls').open('a') as log:
- log.write(json.dumps(dict(argv=sys.argv[1:],body=body.decode(),cwd=os.getcwd(),entries=os.listdir(),child=os.environ.get('CAIRN_LIFECYCLE_CHILD'),claudecode=os.environ.get('CLAUDECODE')))+'\\n')
+ log.write(json.dumps(dict(argv=sys.argv[1:],body=body.decode(),cwd=os.getcwd(),entries=os.listdir(),pid=os.getpid(),child=os.environ.get('CAIRN_LIFECYCLE_CHILD'),claudecode=os.environ.get('CLAUDECODE')))+'\\n')
 if spec.get('delay'):time.sleep(spec['delay'])
 if spec.get('stderr'):sys.stderr.buffer.write(bytes.fromhex(spec['stderr']));sys.stderr.flush()
 if spec.get('stdout_hex') is not None:sys.stdout.buffer.write(bytes.fromhex(spec['stdout_hex']))
@@ -109,7 +111,9 @@ sys.exit(spec.get('exit',0))
                 elif operation == 'expand':
                     failure = owner.expand_failure
                     record = next(r for r in owner.records if r['record_id'] == body['handle'])
-                    data = dict(selection=dict(record=record), credits_remaining=3, bytes_remaining=20000)
+                    data = dict(selection=dict(record=copy.deepcopy(record)), credits_remaining=3, bytes_remaining=20000)
+                    if owner.expand_transform:
+                        owner.expand_transform(data['selection']['record'])
                 elif operation in ('create', 'revise'):
                     owner.write_count += 1
                     if owner.write_count == owner.fail_write:
@@ -165,7 +169,7 @@ sys.exit(spec.get('exit',0))
         write(self.f.binding, encoded(manifest))
         try:
             return subprocess.run([os.sys.executable, '-B', str(root/'memory.py'), '--config', str(self.f.memory_path)],
-                                  input=self.f.raw, cwd=self.f.root, env=self.f.env(), capture_output=True, timeout=45)
+                                  input=self.f.raw, cwd=self.f.root, env=dict(self.f.env(), CLAUDECODE='fixture-parent'), capture_output=True, timeout=45)
         finally:
             write(self.f.memory_path, saved_config)
             write(self.f.binding, saved_binding)
@@ -196,10 +200,12 @@ sys.exit(spec.get('exit',0))
                 result = self.source()
             else:
                 result = subprocess.run([str(self.binary), 'memory', '--config', str(self.f.memory_path)],
-                                        input=self.f.raw, cwd=self.f.root, env=self.f.env(), capture_output=True, timeout=45)
+                                        input=self.f.raw, cwd=self.f.root, env=dict(self.f.env(), CLAUDECODE='fixture-parent'), capture_output=True, timeout=45)
             self.finish_scheduler()
             provider_calls = [json.loads(line) for line in (self.root/'provider.calls').read_text().splitlines()] if (self.root/'provider.calls').exists() else []
             for call in provider_calls:
+                # Both frontends reap their direct selector before returning.
+                self.assertFalse(Path('/proc', str(call.pop('pid'))).exists())
                 self.assertEqual(call.pop('entries'), [])
                 cwd = Path(call.pop('cwd'))
                 self.assertTrue(cwd.name.startswith('cairn-selection-'))
@@ -209,8 +215,15 @@ sys.exit(spec.get('exit',0))
                 call['body'] = json.loads(call['body'])
             observations.append((result, self.state(), copy.deepcopy(self.calls), list(self.report_locks), copy.deepcopy(self.records), provider_calls))
         source, candidate = observations
-        self.assertEqual((candidate[0].returncode, candidate[0].stdout, candidate[0].stderr),
-                         (source[0].returncode, source[0].stdout, source[0].stderr))
+        def output(raw):
+            if self.f.memory['harness'] != 'hermes' or not raw:
+                return raw
+            body = json.loads(raw)
+            last = body.get('cairn_status', {}).get('last_capture')
+            if last is not None: self.assertGreaterEqual(last.pop('at'), 0)
+            return scalar_tree(body)
+        self.assertEqual((candidate[0].returncode, output(candidate[0].stdout), candidate[0].stderr),
+                         (source[0].returncode, output(source[0].stdout), source[0].stderr))
         self.assertEqual(scalar_tree(candidate[1]), scalar_tree(source[1]))
         self.assertEqual(candidate[3:], source[3:])
         self.assertTrue(all(all(locks.values()) for locks in self.report_locks))
@@ -318,6 +331,157 @@ sys.exit(spec.get('exit',0))
         self.assertEqual(len(self.records), 1)
         self.assertEqual(self.state(), {})
         self.assertEqual(self.calls[-1][1]['outcome'], 'write_error')
+
+    def test_protocol_and_output_limits_preserve_retry_eligibility(self):
+        for label, options in (
+                ('array', dict(stdout_hex=b'[]'.hex())),
+                ('trailing-value', dict(stdout_hex=b'{} {}'.hex())),
+                ('invalid-utf8', dict(stdout_hex=b'\xff'.hex())),
+                ('stdout-limit', dict(stdout_hex=(b'x' * ((1 << 20) + 1)).hex())),
+                ('stderr-limit', dict(stderr=(b'x' * ((1 << 20) + 1)).hex()))):
+            with self.subTest(label=label):
+                self.provider = options
+                self.assertNotEqual(self.pair().returncode, 0)
+                self.assertEqual(self.state(), {})
+                self.assertEqual(self.calls[-1][1]['selector_outcome'], 'error')
+                self.assertFalse(any(c[0] in ('create', 'revise') for c in self.calls))
+
+    def test_missing_selected_executable_is_not_capture_success(self):
+        self.f.memory['claude'] = str(self.root/'absent-selector')
+        self.f.publish_configuration()
+        self.assertNotEqual(self.pair().returncode, 0)
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.provider_calls, [])
+        self.assertEqual(self.calls[-1][1]['selector_outcome'], 'error')
+
+    def test_selector_timeout_leaves_no_digest_or_running_child(self):
+        self.provider['delay'] = 60
+        self.assertNotEqual(self.pair().returncode, 0)
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.calls[-1][1]['selector_outcome'], 'timeout')
+
+    def test_confirmed_partial_write_is_reconciled_on_retry(self):
+        self.selection['memories'] = [self.note(), self.note(title='Cleanup procedure', body='Keep the postgres cleanup procedure explicit.')]
+        self.fail_write = 2
+        self.assertNotEqual(self.pair().returncode, 0)
+        first = copy.deepcopy(self.records)
+        self.assertEqual(len(first), 1)
+        self.assertEqual(self.state(), {})
+        self.fail_write = None
+        self.assertEqual(self.pair().returncode, 0)
+        self.assertEqual(len(self.records), 2)
+        self.assertEqual(self.records[0], first[0])
+        self.assertEqual([c[0] for c in self.calls].count('create'), 1)
+        self.assertEqual(self.state()[self.session_key()+'.json']['last_capture']['outcome'], 'saved')
+
+    def test_selected_write_remains_when_concurrent_capture_state_refuses_cas(self):
+        self.selection['memories'] = [self.note()]
+        def change(owner):
+            path = Path(owner.f.memory['state_dir'])/(owner.session_key()+'.json')
+            with path.with_suffix('.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                write(path, encoded(dict(capture_pending=dict(reason='concurrent'))))
+        self.after_write = change
+        result = self.pair()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b'capture state changed before commit', result.stderr)
+        self.assertEqual(len(self.records), 1)
+        self.assertEqual(self.state()[self.session_key()+'.json'], dict(capture_pending=dict(reason='concurrent')))
+        self.assertEqual(self.calls[-1][1]['outcome'], 'state_commit_error')
+
+    def test_selected_write_merges_independent_recall_and_workstream(self):
+        self.selection['memories'] = [self.note()]
+        def change(owner):
+            path = Path(owner.f.memory['state_dir'])/(owner.session_key()+'.json')
+            with path.with_suffix('.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                write(path, encoded(dict(workstream='concurrent recall workstream', seen={'record': 7})))
+        self.after_write = change
+        self.assertEqual(self.pair().returncode, 0)
+        state = self.state()[self.session_key()+'.json']
+        self.assertEqual(state['workstream'], 'concurrent recall workstream')
+        self.assertEqual(state['seen'], {'record': 7})
+        self.assertEqual(state['last_capture']['outcome'], 'saved')
+
+    def test_codex_substantive_capture_commits_original_snapshot_then_duplicate(self):
+        messages = [dict(role='user' if n % 2 == 0 else 'assistant', text='Postgres retention checkpoint '+str(n)) for n in range(6)]
+        path = self.rollout(messages)
+        self.configure('codex', 'PreCompact', transcript_path=str(path))
+        self.selection.update(checkpoint='Continue postgres retention work.', workstream='postgres retention')
+        self.assertEqual(self.pair().returncode, 0)
+        state = self.state()[SESSION+'.json']
+        self.assertEqual(state['codex_capture_marker'], dict(path=str(path), offset=path.stat().st_size))
+        self.assertEqual(state['captured_messages'], 6)
+        self.assertEqual(self.pair().returncode, 0)
+        self.assertEqual(self.state()[SESSION+'.json']['last_capture']['outcome'], 'unchanged')
+        self.assertEqual(self.provider_calls, [])
+
+    def test_exact_prior_handoff_and_durable_candidates_reach_selector(self):
+        prior = self.record('Handoff: project / Claude session '+self.session_key()+'\nPostgres retention policy in progress.', 'note')
+        handoff = self.record('Handoff: project / postgres retention\nUse the current policy.', 'note')
+        durable = self.record('project: postgres retention policy\nUse thirty days.')
+        self.assertEqual(self.pair().returncode, 0)
+        excerpt = self.provider_calls[0]['body']
+        self.assertEqual(excerpt['previous_checkpoint'], prior['body'])
+        self.assertEqual(excerpt['existing_handoffs'], [dict(topic='postgres retention', body=handoff['body'])])
+        self.assertEqual(excerpt['existing_memories'], [dict(record_id=durable['record_id'], kind='decision', body=durable['body'])])
+
+    def test_optional_candidate_budget_refusal_still_allows_null_selection(self):
+        self.record('project: postgres retention policy\nUse thirty days.')
+        self.expand_failure = 'BUDGET_REFUSED'
+        self.assertEqual(self.pair().returncode, 0)
+        self.assertEqual(self.provider_calls[0]['body']['existing_memories'], [])
+        self.assertEqual(self.state()[self.session_key()+'.json']['last_capture']['outcome'], 'nothing_selected')
+
+    def test_search_failure_never_calls_selector_or_commits_state(self):
+        self.index_failure = 'POLICY_UNENFORCEABLE'
+        self.assertNotEqual(self.pair().returncode, 0)
+        self.assertEqual(self.provider_calls, [])
+        self.assertEqual(self.state(), {})
+        self.assertNotIn('selector_outcome', self.calls[-1][1])
+
+    def test_invalid_lifecycle_model_prevents_provider_spawn(self):
+        for key in ('preview_model', 'recall_model'):
+            with self.subTest(key=key):
+                self.f.memory[key] = 'has whitespace'
+                self.f.publish_configuration()
+                self.assertNotEqual(self.pair().returncode, 0)
+                self.assertEqual(self.provider_calls, [])
+                self.assertEqual(self.state(), {})
+                self.assertNotIn('selector_outcome', self.calls[-1][1])
+                self.f.memory.pop(key)
+
+    def test_non_ascii_capture_writes_for_claude_and_hermes(self):
+        for harness in ('claude', 'hermes'):
+            with self.subTest(harness=harness):
+                self.records = []
+                self.configure(harness, 'PreCompact', messages=[dict(role='user', text='Keep the 日本語 retention decision 😀.'),
+                                                               dict(role='assistant', text='Record the agreed policy.')])
+                self.selection.update(checkpoint='Next: 更新 the retention docs.', workstream='retention 日本語',
+                                      memories=[self.note(title='日本語 retention', body='Preserve the decision 😀 and U+2028 separator\u2028exactly.')])
+                self.assertEqual(self.pair().returncode, 0)
+                self.assertEqual([r['kind'] for r in self.records], ['decision', 'note'])
+                self.assertEqual(self.state()[self.session_key()+'.json']['last_capture']['outcome'], 'saved')
+
+    def test_malformed_pulled_versions_refuse_before_provider_or_mutation(self):
+        record = self.record('project: postgres retention policy\nUse thirty days.')
+        self.selection['memories'] = [self.note(body=record['body']+'\nUpdated.', record_id=record['record_id'])]
+        # Owner class (b): hostile/malformed service data is a stable Go refusal,
+        # rather than silently converting an invalid version to zero. This is
+        # not asserted to match Python's exception order or class.
+        for version in ('3', True, 1 << 100):
+            with self.subTest(version=version):
+                self.expand_transform = lambda r: r.update(version=version)
+                self.calls.clear()
+                self.index_count = self.write_count = 0
+                write(self.root/'provider.json', encoded(dict(result=dict(structured_output=self.selection))))
+                result = subprocess.run([str(self.binary), 'memory', '--config', str(self.f.memory_path)], input=self.f.raw,
+                                        cwd=self.f.root, env=self.f.env(), capture_output=True, timeout=45)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(b'outside the supported JSON and Unicode domain', result.stderr)
+                self.assertFalse((self.root/'provider.calls').exists())
+                self.assertEqual(self.state(), {})
+                self.assertFalse(any(c[0] in ('create', 'revise') for c in self.calls))
 
 
 if __name__ == '__main__':

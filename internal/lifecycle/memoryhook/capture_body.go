@@ -146,7 +146,11 @@ func runCapture(ctx context.Context, config, event *value.Value, directory strin
 	var output *value.Value
 	defer func() {
 		if observed.Get("outcome") == nil {
-			observed.Set("outcome", value.Text("error"))
+			outcome := "error"
+			if captureTimedOut(err) {
+				outcome = "timeout"
+			}
+			observed.Set("outcome", value.Text(outcome))
 		}
 		captureReport(ctx, config, event, started, observed)
 	}()

@@ -3,6 +3,7 @@ package memoryhook
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,6 +70,26 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 	if err != nil {
 		return nil, classify(err)
 	}
+	input := memoryclient.CaptureInput{ProjectBase: baseName(project), ExplicitWorkstream: text(event.Get("workstream"))}
+	if previous != nil {
+		r, err := captureRecord(previous)
+		if err != nil {
+			return nil, err
+		}
+		input.Previous = &r
+	}
+	for _, group := range []struct {
+		records []*value.Value
+		target  *[]memoryclient.CaptureRecord
+	}{{handoffs, &input.Handoffs}, {candidates, &input.Candidates}} {
+		for _, record := range group.records {
+			r, err := captureRecord(record)
+			if err != nil {
+				return nil, err
+			}
+			*group.target = append(*group.target, r)
+		}
+	}
 	handoffInput, memoryInput := array(), array()
 	for _, record := range handoffs {
 		body := text(record.Get("body"))
@@ -89,8 +110,7 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 	if err != nil {
 		if selector.Get("outcome") != nil {
 			outcome := "error"
-			var hook *hookError
-			if errors.As(err, &hook) && hook.code == "TIMEOUT" {
+			if captureTimedOut(err) {
 				outcome = "timeout"
 			}
 			observed.Set("selector_outcome", value.Text(outcome))
@@ -113,17 +133,7 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 	if err != nil {
 		return nil, err
 	}
-	input := memoryclient.CaptureInput{Selection: selection, ProjectBase: baseName(project), ExplicitWorkstream: text(explicit)}
-	if previous != nil {
-		r := captureRecord(previous)
-		input.Previous = &r
-	}
-	for _, record := range handoffs {
-		input.Handoffs = append(input.Handoffs, captureRecord(record))
-	}
-	for _, record := range candidates {
-		input.Candidates = append(input.Candidates, captureRecord(record))
-	}
+	input.Selection = selection
 	written, err := client.CommitCaptureSelection(ctx, input)
 	if written.Workstream != nil {
 		state.Set("workstream", value.Text(*written.Workstream))
@@ -159,8 +169,33 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 	return value.Mapping(), nil
 }
 
-func captureRecord(record *value.Value) memoryclient.CaptureRecord {
-	return memoryclient.CaptureRecord{RecordID: text(record.Get("record_id")), Version: number(record.Get("version")), Kind: text(record.Get("kind")), Body: text(record.Get("body"))}
+func captureTimedOut(err error) bool {
+	var hook *hookError
+	return errors.As(err, &hook) && (hook.code == "TIMEOUT" || hook.message == "retrieval time budget exhausted")
+}
+
+func captureRecord(record *value.Value) (memoryclient.CaptureRecord, error) {
+	refused := func() (memoryclient.CaptureRecord, error) {
+		return memoryclient.CaptureRecord{}, fail(memoryclient.ErrCaptureDomain.Error())
+	}
+	for _, key := range []string{"record_id", "body", "kind"} {
+		v := record.Get(key)
+		if v == nil && key == "kind" {
+			continue
+		}
+		if !validText(v) {
+			return refused()
+		}
+	}
+	version := record.Get("version")
+	if version == nil || version.Kind != value.Int {
+		return refused()
+	}
+	n, err := strconv.Atoi(version.Integer)
+	if err != nil {
+		return refused()
+	}
+	return memoryclient.CaptureRecord{RecordID: text(record.Get("record_id")), Version: n, Kind: text(record.Get("kind")), Body: text(record.Get("body"))}, nil
 }
 
 func captureCandidates(ctx context.Context, client *memoryclient.Client, event, state, messages *value.Value, project string, handoff bool) ([]*value.Value, error) {

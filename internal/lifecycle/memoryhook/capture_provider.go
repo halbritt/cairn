@@ -158,7 +158,15 @@ func captureCommand(ctx context.Context, executable string, argv []string, input
 	}
 	var command *exec.Cmd
 	var waited chan error
+	var results chan capturePipeResult
+	livePipes := 0
 	counts := map[string]int{}
+	observePipe := func(result capturePipeResult) {
+		counts[result.name] = len(result.bytes)
+		if result.first > 0 {
+			observed.Set("first_"+result.name+"_ms", floating(float64(result.first.Microseconds())/1000))
+		}
+	}
 	defer func() {
 		if command != nil && command.Process != nil && waited != nil {
 			_ = command.Process.Kill() // Source cleans up only its direct child.
@@ -166,6 +174,10 @@ func captureCommand(ctx context.Context, executable string, argv []string, input
 		}
 		for _, f := range files {
 			_ = f.Close()
+		}
+		for livePipes > 0 {
+			observePipe(<-results)
+			livePipes--
 		}
 		observed.Set("elapsed_ms", floating(float64(time.Since(started).Microseconds())/1000))
 		observed.Set("stdout_bytes", integer(counts["stdout"]))
@@ -187,6 +199,10 @@ func captureCommand(ctx context.Context, executable string, argv []string, input
 		}
 		observed.Set("outcome", value.Text(outcome))
 		return nil, 0, &hookError{class: "HookError", message: "could not start memory command", code: "API_UNAVAILABLE", reason: "START_FAILED"}
+	}
+	if ctx.Err() != nil {
+		observed.Set("outcome", value.Text("timeout"))
+		return nil, 0, &hookError{class: "HookError", message: "command timed out; memory operation not confirmed", code: "TIMEOUT"}
 	}
 	inR, inW, err := pipe()
 	if err != nil {
@@ -210,7 +226,8 @@ func captureCommand(ctx context.Context, executable string, argv []string, input
 	_ = inR.Close()
 	_ = outW.Close()
 	_ = errW.Close()
-	results := make(chan capturePipeResult, 3)
+	results = make(chan capturePipeResult, 3)
+	livePipes = 3
 	go func() {
 		_, err := io.Copy(inW, bytes.NewReader(input))
 		_ = inW.Close()
@@ -246,7 +263,7 @@ func captureCommand(ctx context.Context, executable string, argv []string, input
 	waited = make(chan error, 1)
 	go func() { waited <- command.Wait() }()
 	var waitErr error
-	for pipes, exited := 0, false; pipes < 3 || !exited; {
+	for exited := false; livePipes > 0 || !exited; {
 		select {
 		case <-ctx.Done():
 			observed.Set("outcome", value.Text("timeout"))
@@ -254,11 +271,8 @@ func captureCommand(ctx context.Context, executable string, argv []string, input
 		case waitErr = <-waited:
 			exited, waited = true, nil
 		case result := <-results:
-			pipes++
-			counts[result.name] = len(result.bytes)
-			if result.first > 0 {
-				observed.Set("first_"+result.name+"_ms", floating(float64(result.first.Microseconds())/1000))
-			}
+			livePipes--
+			observePipe(result)
 			if len(result.bytes) > captureOutputLimit {
 				observed.Set("outcome", value.Text("communication_failed"))
 				return nil, 0, &hookError{class: "HookError", message: "memory command output exceeded limit; operation not confirmed", reason: "OUTPUT_LIMIT"}
@@ -270,6 +284,10 @@ func captureCommand(ctx context.Context, executable string, argv []string, input
 				output = result.bytes
 			}
 		}
+	}
+	if ctx.Err() != nil {
+		observed.Set("outcome", value.Text("timeout"))
+		return nil, 0, &hookError{class: "HookError", message: "command timed out; memory operation not confirmed", code: "TIMEOUT"}
 	}
 	if waitErr != nil {
 		var exit *exec.ExitError
