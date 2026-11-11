@@ -70,7 +70,20 @@ def fixture_command(driver, command):
     return [str(driver) if arg == '/fixture/go-driver' else arg for arg in command]
 
 
-def process_snapshot(payload, known):
+def descendant_of(pid, ancestor):
+    """Limit outer observations to this entry's actual child tree."""
+    while pid > 1:
+        if pid == ancestor:
+            return True
+        try:
+            status = Path('/proc', str(pid), 'status').read_text()
+        except (FileNotFoundError, ProcessLookupError):
+            return False
+        pid = int(re.search(r'^PPid:\s+(\d+)$', status, re.MULTILINE).group(1))
+    return False
+
+
+def process_snapshot(payload, known, *, ancestor=None, minimal_root=False):
     found = []
     for proc in Path('/proc').iterdir():
         if not proc.name.isdigit() or int(proc.name) in known:
@@ -79,6 +92,9 @@ def process_snapshot(payload, known):
             argv = (proc / 'cmdline').read_bytes().strip(b'\0').split(b'\0')
             if not argv or not argv[0].startswith(str(payload / 'bin/').encode()):
                 continue
+            if ancestor is not None and not descendant_of(int(proc.name), ancestor):
+                continue
+            selected_payload = proc / 'root' / str(payload).lstrip('/') if minimal_root else payload
             maps = (proc / 'maps').read_text().splitlines()
             images, native = {}, {}
             for fd in (proc / 'fd').iterdir():
@@ -114,7 +130,7 @@ def process_snapshot(payload, known):
                             'mapped system path changed before hashing: ' + path)
                     native[path] = {'path': path, 'sha256': package.digest(actual.read_bytes()),
                                     'device': info.st_dev, 'inode': info.st_ino}
-            expected = {package.digest((payload / 'native' / name).read_bytes()) for name in package.LIBRARIES}
+            expected = {package.digest((selected_payload / 'native' / name).read_bytes()) for name in package.LIBRARIES}
             if set(images) != expected:
                 continue
             require(all(r['seals'] == 15 for r in images.values()), 'native image is not sealed')
@@ -128,8 +144,11 @@ def process_snapshot(payload, known):
             checkout_visible = ((proc / 'root/work/go.mod').exists() or (proc / 'root/work/.git').exists())
             python_visible = bool(list((proc / 'root/usr/bin').glob('python*')))
             require(not checkout_visible, 'development checkout exposed in standalone fixture')
+            if minimal_root:
+                require(not python_visible, 'Python exposed in native fixture worker root')
             binary_sha = package.digest((proc / 'exe').read_bytes())
-            require(binary_sha == package.digest(Path(argv[0].decode()).read_bytes()),
+            selected_binary = proc / 'root' / argv[0].decode().lstrip('/') if minimal_root else Path(argv[0].decode())
+            require(binary_sha == package.digest(selected_binary.read_bytes()),
                     'actual running image differs from selected binary')
             found.append({'pid': int(proc.name), 'argv': [x.decode() for x in argv],
                           'binary_sha256': binary_sha,
