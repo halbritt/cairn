@@ -770,7 +770,7 @@ func (c *CLI) invokeInboxRecallBridge(ctx context.Context, ns *NativeSession, co
 		if err == nil {
 			refusalStage = "bridge"
 			if c.Host == nil || c.Host.InboxRecallOutput == nil {
-				err = &value.ProfileUnavailable{}
+				err = &InboxRecallError{Class: "ValueError", Message: "inbox recall bridge unavailable", RefusalStage: "loader", RefusalReason: "unknown"}
 			} else {
 				message, err = c.Host.InboxRecallOutput(ctx, InboxRecallRequest{
 					Config:        config,
@@ -826,7 +826,7 @@ func (c *CLI) validateManifestMemoryConfig(config *value.Value) (*value.Value, e
 	if err != nil {
 		return nil, err
 	}
-	if manifest == nil || manifest.Kind != value.Object || (!value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/2") && !value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/3")) {
+	if manifest == nil || manifest.Kind != value.Object || !value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/2") {
 		return nil, &InboxRecallError{Class: "ValueError", Message: "unsupported inbox recall binding; restage its complete lifecycle bundle", RefusalStage: "binding", RefusalReason: "schema"}
 	}
 	if manifest.Get("enabled") == nil || manifest.Get("enabled").Kind != value.Bool {

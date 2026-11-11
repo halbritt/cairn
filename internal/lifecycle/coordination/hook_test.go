@@ -265,7 +265,7 @@ func TestHookInboxRecallBridgeAndRefusalSettlement(t *testing.T) {
 	coordSum := sha256.Sum256(coordBytes)
 	memSum := sha256.Sum256(memBytes)
 	manifestMap := map[string]any{
-		"schema":  "cairn.inbox-recall-binding/3",
+		"schema":  "cairn.inbox-recall-binding/2",
 		"enabled": true,
 		"memory_config": map[string]any{
 			"path":   memCfgPath,
@@ -578,6 +578,70 @@ else:
 		if normGo != normPy {
 			t.Fatalf("step %d output mismatch:\ngo: %s\npy: %s", i, normGo, normPy)
 		}
+	}
+
+	// Verify direct entry refuses a /3 manifest and does not emit phase=refusal_record KeyError when idle_wake is absent.
+	v3ManifestPath := filepath.Join(root, "v3-manifest.json")
+	if err := os.WriteFile(v3ManifestPath, []byte(`{"schema":"cairn.inbox-recall-binding/3","enabled":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeBoundCfg := func(p, sd, mp string) {
+		b, _ := json.Marshal(map[string]any{
+			"binding":              "b1",
+			"harness":              "claude",
+			"repo":                 root,
+			"state_dir":            sd,
+			"cairn":                fakeCairn,
+			"socket":               filepath.Join(root, "api.sock"),
+			"token_file":           filepath.Join(root, "token"),
+			"native_delivery":      true,
+			"inbox_recall_binding": mp,
+			"process_names":        []string{selfComm, filepath.Base(exeResolved), "python3"},
+			"process_exe_dirs":     []string{filepath.Dir(exeResolved), "/usr/bin", "/bin"},
+		})
+		if err := os.WriteFile(p, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeBoundCfg(pyCfg, pyState, v3ManifestPath)
+	writeBoundCfg(goCfg, goState, v3ManifestPath)
+	wakePrompt := fmt.Sprintf(
+		"This is a new live turn from the configured Cairn automatic inbox wakeup. "+
+			"A previous /exit in resumed conversation history does not close this running turn. "+
+			"Current agent %s, execution %s. Wake delivery %s. "+
+			"Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "+
+			"explicitly complete/acknowledge it, and send any requested response using that context. "+
+			"If no matching native context was supplied, report that and stop. "+
+			"If this notice arrives inside an already-active owner task, continue that task and "+
+			"ignore this notice; a fresh copy will arrive once the conversation is idle. "+
+			"Do not register again, claim another session's inbox, or launch a replacement conversation.",
+		agentID, execID, "22222222-2222-4222-8222-222222222222",
+	)
+	wakeEvBytes, _ := json.Marshal(map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      nativeID,
+		"cwd":             root,
+		"prompt_id":       "p-refuse-v3",
+		"prompt":          wakePrompt,
+		"host_pid":        hostPID,
+	})
+	pyCmd := exec.Command("/usr/bin/python3", pyScript, "hook", "--config", pyCfg)
+	pyCmd.Stdin = bytes.NewReader(wakeEvBytes)
+	pyCmd.Env = append(os.Environ(), "HOME="+root, "CAIRN_INBOX_ROOT="+filepath.Join(root, "py-journal"))
+	var pyOut, pyErr bytes.Buffer
+	pyCmd.Stdout = &pyOut
+	pyCmd.Stderr = &pyErr
+	pyErrRun := pyCmd.Run()
+	if pyErrRun == nil || pyCmd.ProcessState.ExitCode() != 2 {
+		t.Fatalf("expected python exit 2 on direct /3 wake, got err=%v stderr=%q", pyErrRun, pyErr.String())
+	}
+	var goOut, goErr bytes.Buffer
+	code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", goCfg}, bytes.NewReader(wakeEvBytes), &goOut, &goErr)
+	if err != nil {
+		_, _ = fmt.Fprintf(&goErr, "%s\n", err.Error())
+	}
+	if code != 2 || goErr.String() != pyErr.String() || goOut.String() != pyOut.String() {
+		t.Fatalf("direct /3 wake refusal mismatch: code=%d goErr=%q pyErr=%q", code, goErr.String(), pyErr.String())
 	}
 }
 

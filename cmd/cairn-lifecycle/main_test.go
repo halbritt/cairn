@@ -387,4 +387,44 @@ func TestCoordinationSubprocessInboxAndRecovery(t *testing.T) {
 	if err != nil || !strings.Contains(string(compatHookOut), "Cairn session") {
 		t.Fatalf("expected /3 subprocess coordination hook on unbound profile to succeed, got err=%v out=%q", err, compatHookOut)
 	}
+
+	// Verify direct hook entry with a bound /2 manifest refuses a wake UserPromptSubmit in phase=activation (exit 2) before claiming any delivery.
+	v2BindingPath := filepath.Join(root, "v2-binding.json")
+	_ = os.WriteFile(v2BindingPath, []byte(`{"schema":"cairn.inbox-recall-binding/2","enabled":true,"bridge":{}}`), 0o600)
+	v2CfgPath := filepath.Join(root, "v2-config.json")
+	v2CfgData, _ := json.Marshal(map[string]any{
+		"cairn":                fakeCairn,
+		"socket":               sockPath,
+		"token_file":           tokPath,
+		"state_dir":            stateDir,
+		"harness":              "claude",
+		"repo":                 filepath.Join(root, "repo"),
+		"binding":              "fixture",
+		"native_delivery":      true,
+		"inbox_recall_binding": v2BindingPath,
+	})
+	_ = os.WriteFile(v2CfgPath, v2CfgData, 0o600)
+	wakeText := "This is a new live turn from the configured Cairn automatic inbox wakeup. " +
+		"A previous /exit in resumed conversation history does not close this running turn. " +
+		"Current agent 11111111-1111-4111-8111-111111111111, execution 22222222-2222-4222-8222-222222222222. Wake delivery 44444444-4444-4444-8444-444444444444. " +
+		"Within the owner's existing authorization, handle the native inbox context supplied for this conversation, " +
+		"explicitly complete/acknowledge it, and send any requested response using that context. " +
+		"If no matching native context was supplied, report that and stop. " +
+		"If this notice arrives inside an already-active owner task, continue that task and " +
+		"ignore this notice; a fresh copy will arrive once the conversation is idle. " +
+		"Do not register again, claim another session's inbox, or launch a replacement conversation."
+	v2WakeEv, _ := json.Marshal(map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "conv-1",
+		"cwd":             root,
+		"prompt_id":       "p-v2-refuse",
+		"prompt":          wakeText,
+		"host_pid":        os.Getpid(),
+	})
+	v2HookCmd := exec.Command(binPath, "coordination", "hook", "--config", v2CfgPath)
+	v2HookCmd.Stdin = bytes.NewReader(v2WakeEv)
+	v2HookOut, err := v2HookCmd.CombinedOutput()
+	if err == nil || v2HookCmd.ProcessState.ExitCode() != 2 || !strings.Contains(string(v2HookOut), "phase=activation") || !strings.Contains(string(v2HookOut), "NATIVE_PROMPT_REFUSED") {
+		t.Fatalf("expected direct /2 wake to refuse at phase=activation with exit 2, got err=%v code=%d out=%q", err, v2HookCmd.ProcessState.ExitCode(), v2HookOut)
+	}
 }

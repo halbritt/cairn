@@ -277,12 +277,21 @@ func (c *CompatibilityContext) runCompatibilityChild(fallbackProfile *value.Sour
 
 func (c *CompatibilityContext) runActivationChild(binFile *os.File, argv []string, raw []byte, stdoutLimit int, limit float64) ([]byte, []byte, int, error) {
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
-	defer signal.Stop(sigCh)
+	var watchSigs []os.Signal
+	for _, sig := range []os.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP} {
+		if !signal.Ignored(sig) {
+			watchSigs = append(watchSigs, sig)
+		}
+	}
+	if len(watchSigs) > 0 {
+		signal.Notify(sigCh, watchSigs...)
+		defer signal.Stop(sigCh)
+	}
 
 	cmd := exec.Command("/proc/self/fd/3", argv[1:]...)
 	cmd.Args = argv
 	cmd.ExtraFiles = []*os.File{binFile}
+	cmd.WaitDelay = 200 * time.Millisecond
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, nil, 0, err
@@ -691,11 +700,21 @@ func (c *CLI) resolveManifestActivation(
 	if err != nil {
 		return nil, err
 	}
-	if manifest == nil || manifest.Kind != value.Object || (!value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/2") && !value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/3")) || manifest.Get("enabled") == nil || manifest.Get("enabled").Kind != value.Bool {
+	if manifest == nil || manifest.Kind != value.Object || !value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/2") || manifest.Get("enabled") == nil || manifest.Get("enabled").Kind != value.Bool {
 		return nil, &value.Error{Class: "ValueError", Message: "unsupported inbox recall activation state"}
 	}
 	enabled := manifest.Get("enabled").Boolean
 	if event != nil && event.Kind == value.Object && value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") && inboxRecallWakeValue(event) {
+		if c.Host != nil && c.Host.LoadInboxRecall != nil {
+			if err := c.Host.LoadInboxRecall(ctx, config); err != nil {
+				return nil, err
+			}
+		} else if c.Host == nil || c.Host.InboxRecallOutput == nil {
+			if _, err := nativeRequired(manifest, "bridge"); err != nil {
+				return nil, err
+			}
+			return nil, &InboxRecallError{Class: "ValueError", Message: "inbox recall bridge unavailable", RefusalStage: "loader", RefusalReason: "unknown"}
+		}
 		enabled, err = c.activationDecisionManifest(ctx, config, event, manifest, enabled)
 		if err != nil {
 			return nil, err
@@ -963,6 +982,13 @@ func (c *CLI) ReconcileRejectedWake(ctx context.Context, config, state *value.Va
 		sub.Set("status", value.Text("submitted"))
 		matches = nativeEqual(wakeObj, sub)
 	}
+	if !value.SameText(receipt.Get("schema"), "cairn.preadmission-wake-refusal/1") ||
+		!value.SameText(receipt.Get("phase"), "activation") || !matches ||
+		wakeObj == nil || wakeObj.Kind != value.Object ||
+		(!value.SameText(wakeObj.Get("status"), "uncertain") && !value.SameText(wakeObj.Get("status"), "submitted")) ||
+		!value.SameText(wakeObj.Get("transport"), "claude-channel") {
+		return false, nil
+	}
 	agent, err := nativeRequired(state, "agent")
 	if err != nil {
 		return false, err
@@ -970,6 +996,16 @@ func (c *CLI) ReconcileRejectedWake(ctx context.Context, config, state *value.Va
 	ref, err := c.sessionRef(agent)
 	if err != nil {
 		return false, err
+	}
+	if !nativeEqual(wakeObj.Get("session"), ref) {
+		return false, nil
+	}
+	nativeIDVal, err := nativeRequired(agent, "native_session_id")
+	if err != nil {
+		return false, err
+	}
+	if !nativeEqual(wakeObj.Get("native_id"), nativeIDVal) {
+		return false, nil
 	}
 	procVal, err := nativeRequired(state, "process")
 	if err != nil {
@@ -980,21 +1016,14 @@ func (c *CLI) ReconcileRejectedWake(ctx context.Context, config, state *value.Va
 		return false, err
 	}
 	same, err := nativeSameProcess(procVal, recProc)
-	if err != nil {
+	if err != nil || !same {
 		return false, err
 	}
 	alive, err := c.processAlive(procVal)
 	if err != nil {
 		return false, err
 	}
-	if !value.SameText(receipt.Get("schema"), "cairn.preadmission-wake-refusal/1") ||
-		!value.SameText(receipt.Get("phase"), "activation") || !matches ||
-		wakeObj == nil || wakeObj.Kind != value.Object ||
-		(!value.SameText(wakeObj.Get("status"), "uncertain") && !value.SameText(wakeObj.Get("status"), "submitted")) ||
-		!value.SameText(wakeObj.Get("transport"), "claude-channel") ||
-		!nativeEqual(wakeObj.Get("session"), ref) ||
-		!nativeEqual(wakeObj.Get("native_id"), agent.Get("native_session_id")) ||
-		!same || !alive || value.Truth(state.Get("ending")) || value.Truth(state.Get("retired")) ||
+	if !alive || value.Truth(state.Get("ending")) || value.Truth(state.Get("retired")) ||
 		value.Truth(state.Get("inbox_intent")) || value.Truth(state.Get("inbox_attempt")) ||
 		value.Truth(state.Get("inbox_result_policy")) || value.Truth(state.Get("inbox_close")) ||
 		value.Truth(state.Get("active_prompt")) || !c.settledJournalIndex(config, state) {
@@ -1091,7 +1120,7 @@ func (c *CLI) reconcileRejectedWakeLedger(
 	nativeVal := wakeObj.Get("native_id")
 	nativeStr := nativeText(nativeVal)
 	lockPath := sourceJoin(memDir, nativeStr+".lock")
-	lockFile, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	lockFile, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
 		return false, err
 	}
@@ -1177,9 +1206,11 @@ func (c *CLI) finishRecordActivationRefusal(
 	if state == nil || state.Kind != value.Object {
 		return &journal.NonObjectError{Field: "state"}
 	}
-	wakeObj, err := nativeObj(state.Get("idle_wake"), "idle_wake")
-	if err != nil {
-		return err
+	wakeObj := state.Get("idle_wake")
+	if wakeObj == nil {
+		wakeObj = value.Mapping()
+	} else if wakeObj.Kind != value.Object {
+		return &journal.NonObjectError{Field: "idle_wake"}
 	}
 	agent, err := nativeRequired(state, "agent")
 	if err != nil {
@@ -1189,30 +1220,34 @@ func (c *CLI) finishRecordActivationRefusal(
 	if err != nil {
 		return err
 	}
+	if !value.SameText(wakeObj.Get("transport"), "claude-channel") ||
+		(!value.SameText(wakeObj.Get("status"), "uncertain") && !value.SameText(wakeObj.Get("status"), "submitted")) ||
+		!value.SameText(wakeObj.Get("native_id"), native) || !nativeEqual(wakeObj.Get("session"), session) {
+		return nil
+	}
 	stateProc, err := nativeRequired(state, "process")
 	if err != nil {
 		return err
 	}
 	sameState, err := nativeSameProcess(process, stateProc)
-	if err != nil {
+	if err != nil || !sameState {
 		return err
 	}
-	parentObj, err := nativeObj(wakeObj.Get("parent"), "parent")
-	if err != nil {
-		return err
+	parentObj := wakeObj.Get("parent")
+	if parentObj == nil {
+		parentObj = value.Mapping()
+	} else if parentObj.Kind != value.Object {
+		return &journal.NonObjectError{Field: "parent"}
 	}
 	sameParent, err := nativeSameProcess(process, parentObj)
-	if err != nil {
+	if err != nil || !sameParent {
 		return err
 	}
 	alive, err := c.processAlive(process)
 	if err != nil {
 		return err
 	}
-	if !value.SameText(wakeObj.Get("transport"), "claude-channel") ||
-		(!value.SameText(wakeObj.Get("status"), "uncertain") && !value.SameText(wakeObj.Get("status"), "submitted")) ||
-		!value.SameText(wakeObj.Get("native_id"), native) || !nativeEqual(wakeObj.Get("session"), session) ||
-		!sameState || !sameParent || !alive || value.Truth(state.Get("ending")) || value.Truth(state.Get("retired")) {
+	if !alive || value.Truth(state.Get("ending")) || value.Truth(state.Get("retired")) {
 		return nil
 	}
 	msgs, err := wakeMessagesValue(wakeObj)
