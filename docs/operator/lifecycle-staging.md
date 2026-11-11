@@ -413,3 +413,47 @@ Source using the actual staged commands, synthetic authenticated Unix API and
 local selector. The capture rows perform selected-record writes and state commits;
 the offline package check repeats them after producer-package removal without a
 checkout. These fixtures make no real provider call or native-client trust change.
+
+### Disposable native OpenCode check
+
+`scripts/check_r04_native_opencode.py` extends the adapter checks to an explicit,
+independently pinned OpenCode executable. Run it inside
+`scripts/test_hybrid_runtime_operations.py`, binding only that selected executable
+as a read-only asset. For example, replace the two pin placeholders with the
+selected client path and digest:
+
+```sh
+python3 scripts/test_hybrid_runtime_operations.py --timeout 420 \
+  --receipt /selected-artifacts/native-isolation.json \
+  --ro-bind /selected-assets/opencode:/opt/r04-native/opencode -- \
+  python3 -B scripts/check_r04_native_opencode.py \
+  --opencode /opt/r04-native/opencode --sha256 SELECTED_SHA256 --archive-stdout
+```
+
+The check builds the private lifecycle image and stager, assembles two real
+R-02/R-04 generations, and loads the staged plugins in disposable native clients.
+It uses a scripted loopback model endpoint and a synthetic Cairn API. No account
+credentials, live server discovery, real provider, or production settings enter
+the fixture. `--archive-stdout` emits a gzip tar archive in a JSON
+`archive_base64` field for retaining selected synthetic logs and pins outside the
+read-only checkout; it excludes native homes, databases, tokens and binaries.
+The fixture seals its configuration directories between publications. Its local
+plugins use only type imports and Node builtins, so the client's native
+unwritable-directory check skips dependency installation without a network
+exception or replacement package. Retained capture uses a local selector that
+chooses no writes; the real capture handler still runs.
+
+The selected executable's own `/doc` must expose the directory-qualified
+`instance.dispose` operation. The check records that schema rather than assuming
+the current website describes an older or custom client. Refresh applies to the
+whole directory instance, including its sibling conversations. Another loaded
+directory is the control; this is not a single-conversation refresh claim.
+
+The sequence checks an existing cached A selection after B publication, a fresh
+B client, refresh to B, and reverse publication plus refresh to retained A. It
+correlates each launcher with its exact image argv in the same kernel-observed
+process, including the runtime receipt and original launch frame. Missing and
+changed receipt pins must refuse before Cairn API or state effects. Ordinary
+native model handling is a separate effect domain. This disposable check does
+not establish a live-client trust grant, the complete watcher-unit barrier, other
+harness coverage, or full R-04/R-06 acceptance.
