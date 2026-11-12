@@ -31,14 +31,30 @@ class R04BoundWiringTests(BoundMemoryCase):
         f.hook_plan = dict(id=str(uuid.uuid4()), selection=f.selected, harness=harness,
                            account_home=str(f.account), settings=hooks.pin(f.settings),
                            coordination_index=0, replace_commands=dict(memory=[], coordination=[]))
+        if harness == 'opencode':
+            f.coord_settings = f.account / 'cairn-coordination.json'
+            previous_coordination = encoded(dict(unrelated='preserve coordination settings')) + b'\n'
+            write(f.coord_settings, previous_coordination)
+            plugins = {}
+            for role, name in (('memory', 'lifecycle'), ('coordination', 'coordination')):
+                target = f.package / (name + '.ts')
+                shutil.copyfile(ROOT / 'integrations/opencode' / target.name, target)
+                target.chmod(0o600)
+                plugins[role] = hooks.pin(target)
+            f.hook_plan.update(coordination_settings=hooks.pin(f.coord_settings), plugins=plugins)
         result = hooks.R04HookSettingsTests.stage(self, f)
         self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout)
         selected = json.loads(result.stdout)
         directory = Path(selected['selection']['path']).parent
         metadata = json.loads((directory / 'hook-selection.json').read_bytes())
         self.assertEqual(f.settings.read_bytes(), original)
-        self.assertEqual((directory / 'previous-settings.json').read_bytes(), original)
-        self.assertEqual(json.loads(Path(selected['settings']['path']).read_bytes())['unrelated'],
+        previous = 'previous-cairn-lifecycle.json' if harness == 'opencode' else 'previous-settings.json'
+        self.assertEqual((directory / previous).read_bytes(), original)
+        if harness == 'opencode':
+            self.assertEqual(f.coord_settings.read_bytes(), previous_coordination)
+            self.assertEqual((directory / 'previous-cairn-coordination.json').read_bytes(), previous_coordination)
+        settings = directory / 'cairn-lifecycle.json' if harness == 'opencode' else Path(selected['settings']['path'])
+        self.assertEqual(json.loads(settings.read_bytes())['unrelated'],
                          json.loads(original)['unrelated'])
         for key in ('activation', 'native_trust', 'refresh'):
             self.assertEqual(metadata[key], 'not-performed')
@@ -191,16 +207,20 @@ print(json.dumps(dict(structured_output=json.loads((root/'selection.json').read_
             with self.subTest(harness=harness, event=event):
                 self.reset_state({})
                 self.event(event, **fields)
+                if harness == 'opencode':
+                    self.f.event['session_id'] = 'ses_R04CaptureA1'
+                    self.f.raw = encoded(self.f.event)
                 result = self.pair()
                 expected = encoded(dict(systemMessage='Cairn selected memories saved: ' +
                                         ', '.join(row['record_id'] for row in self.writes))) + b'\n'
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (0, expected, b''))
                 self.assertEqual(self.provider_observations['go'], self.provider_observations['source'])
                 self.assertEqual([row['draft']['kind'] for row in self.writes], ['decision'])
-                state = self.state()[SESSION + '.json']
+                session = self.f.event['session_id']
+                state = self.state()[session + '.json']
                 self.assertEqual(state['last_capture']['outcome'], 'saved')
                 self.assertEqual(state['last_capture']['records'], [row['record_id'] for row in self.writes])
-                self.assertNotIn(SESSION + '.memory-budget.json', self.state())
+                self.assertNotIn(session + '.memory-budget.json', self.state())
                 self.assertEqual(self.calls[-1][0], 'capture-observation')
 
     def test_codex_bound_capture_rows_save_selected_note_after_package_removal(self):

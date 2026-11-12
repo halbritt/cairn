@@ -310,8 +310,9 @@ pinned test child images. Those disposable fault images are not release builds.
 
 The OpenCode selection wires unbound `agent_tools` start, prompt and tool
 observation commands to the receipt-checked ordinary Go consumer, and coordination
-callbacks to the receipt-checked Go hook entry. Capture, bound and provider-selected
-OpenCode memory rows retain their checked R-02 Python launcher. The bare
+callbacks to the receipt-checked Go hook entry. Unbound PreCompact and SessionEnd
+capture use the checked Go `memory-capture` entry with H=150. Bound and
+provider-selected recall rows retain their checked R-02 Python launcher. The bare
 `[IMAGE, memory, --config, PATH]` entry is not selected:
 it lacks the runtime receipt, image, closure and configuration checks and the
 original H/V/L frame. The public `cairn lifecycle` command stays disabled. Shell
@@ -372,7 +373,8 @@ Every row records its `implementation` and `reason`. Current routing is:
 | Bound Codex PreCompact/Stop and bound Claude PreCompact/SessionEnd | Receipt-checked bound Go capture with H=150, including the configured provider/selected-record writer. |
 | Other bound callbacks or provider-selected recall | Existing receipt-selected Python caller. |
 | Codex/Claude unbound ordinary recall | Existing Python caller. |
-| Unbound capture and other harnesses' tool observation | Existing receipt-selected Python caller. |
+| Unbound Codex PreCompact/Stop and Claude/OpenCode PreCompact/SessionEnd | Receipt-checked Go `memory-capture` with H=150; every selected profile must be unbound. The receipt role stays `memory`, and Codex Stop stays asynchronous. |
+| Other harnesses' tool observation | Existing receipt-selected Python caller. |
 | Coordination hooks for all supported harnesses | Receipt-checked Go `/3` hook entry, with the exact retained R-02 launcher for its selection and issued commands. |
 | Agy coordination PreInvocation/Stop | Checked Go `/3` hook with the selected event flag; all profiles in the receipt unbound. |
 | Agy ordinary memory hook | Not installed; this tool adds none. |
@@ -383,6 +385,13 @@ before-tool callback. The PreToolUse command is available in the eligible staged
 configuration and shell row; this does not add a native plugin callback. Bound
 and provider-selected configurations gain no PreToolUse row. The installed
 Source/Go pairs use the host's absolute workspace directory.
+
+`test_r04_unbound_capture_wiring.py` exercises the six unbound capture rows through
+the actual staged launchers after removing the installer package. It compares
+confirmed selected-record writes and committed capture markers with the retained
+Python caller, and checks privacy/account exclusions and changed-selection refusal.
+These installed process checks do not establish native client event dispatch or
+full watcher-unit transition acceptance.
 
 The bound Go rows retain their complete receipt selection and Python launcher
 for reverse selection. They use the actual Go argv, derived launcher and original

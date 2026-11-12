@@ -250,7 +250,8 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
             self.assertEqual(selected_config.read_bytes(), Path(input_pin['path']).read_bytes())
         implementations = {(r['role'], r['event']): r['implementation'] for r in record['rows']}
         ordinary = ('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure')
-        self.assertTrue(all(impl == ('go' if role == 'coordination' or event in ordinary else 'python')
+        capture = ('PreCompact', 'SessionEnd')
+        self.assertTrue(all(impl == ('go' if role == 'coordination' or event in ordinary + capture else 'python')
                             for (role, event), impl in implementations.items()))
         for row in record['rows']:
             if row['role'] == 'memory' and row['event'] in ordinary:
@@ -258,7 +259,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 self.assertNotEqual(row['checked_launcher'], row['retained_launcher'])
                 reason = 'recall' if row['event'] in ('SessionStart', 'UserPromptSubmit') else 'tool observation'
                 self.assertEqual(row['reason'], 'receipt-checked ordinary Go ' + reason)
-        self.assertTrue(all(implementations['memory', event] == 'python'
+        self.assertTrue(all(implementations['memory', event] == 'go'
                             for event in ('PreCompact', 'SessionEnd')))
         # Arrange the documented staged layout only in a disposable account.
         home = f.root / 'installed home with spaces'
@@ -395,7 +396,11 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                     f.hook_plan['selection'] = f.selected
                 _, _, record = self.selected(f)
                 rows = [r for r in record['rows'] if r['role'] == 'memory']
-                self.assertTrue(all(r['implementation'] == 'python' for r in rows))
+                for row in rows:
+                    capture = route == 'provider' and row['event'] in ('PreCompact', 'SessionEnd')
+                    self.assertEqual(row['implementation'], 'go' if capture else 'python')
+                    if capture:
+                        self.assertEqual(row['reason'], 'receipt-checked unbound Go capture')
                 self.assertNotIn('PreToolUse', [r['event'] for r in rows])
                 self.assertTrue(any(r['reason'] == ('bound callback' if route == 'bound' else 'provider-selected recall') for r in rows))
                 self.assertTrue(all(r['implementation'] == 'go' for r in record['rows'] if r['role'] == 'coordination'))

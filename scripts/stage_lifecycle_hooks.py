@@ -112,14 +112,17 @@ def definitions(stager, plan):
                       'ordinary recall for this harness remains Python' if event in ('SessionStart', 'UserPromptSubmit') else
                       'capture or tool observation')
             ordinary_go = event in ordinary_events
+            unbound_capture_go = (role == 'memory' and all_unbound
+                                  and event in ('PreCompact', 'Stop', 'SessionEnd'))
             bound_go = (role == 'memory' and config.get('inbox_recall_binding') and (
                 plan['harness'] == 'codex' and event in ('SessionStart', 'UserPromptSubmit')
                 and config.get('recall_mode') == 'agent_tools'
                 or plan['harness'] == 'codex' and event in ('PreCompact', 'Stop')
                 or plan['harness'] == 'claude' and event in ('PreCompact', 'SessionEnd')))
-            if role == 'coordination' or ordinary_go or bound_go:
+            if role == 'coordination' or ordinary_go or bound_go or unbound_capture_go:
                 if label not in go_launchers:
-                    go_launchers[label] = checked_go_launcher(stager, receipt['binary']['path'], role, vector)
+                    operation = 'memory-capture' if unbound_capture_go else role
+                    go_launchers[label] = checked_go_launcher(stager, receipt['binary']['path'], operation, vector)
                 launcher = go_launchers[label]
                 implementation = 'go'
             if role == 'coordination':
@@ -130,6 +133,8 @@ def definitions(stager, plan):
             elif bound_go:
                 reason = ('receipt-checked bound Go recall' if event in ('SessionStart', 'UserPromptSubmit')
                           else 'receipt-checked bound Go capture')
+            elif unbound_capture_go:
+                reason = 'receipt-checked unbound Go capture'
             elif (not config.get('inbox_recall_binding') and role == 'memory'
                   and plan['harness'] == 'opencode' and event in ('SessionStart', 'UserPromptSubmit')
                   and config.get('recall_mode') != 'agent_tools'):

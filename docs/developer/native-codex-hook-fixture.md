@@ -24,8 +24,11 @@ The positive cases also correlate Cairn's busy/idle context updates with the
 native thread ID. SessionStart is checked in the first turn's trace because the
 selected native client defers that callback until its first turn.
 
-Memory remains on the labelled Python implementation; coordination reaches the
-receipt-checked private Go image. Receipt refusals must leave Cairn API calls
+Memory recall remains on the labelled Python implementation; the current renderer
+selects checked Go `memory-capture` for unbound PreCompact and asynchronous Stop.
+The retained twelve-case native observations used Python capture and do not
+qualify that new capture route. Coordination reaches the receipt-checked private
+Go image. Receipt refusals must leave Cairn API calls
 and lifecycle state unchanged. A native turn can complete after a hook refuses,
 so model completion and child-process refusal are checked separately.
 
