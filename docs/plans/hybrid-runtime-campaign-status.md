@@ -28,8 +28,8 @@ homes, production sockets, network and host processes. The repository's shared
 isolation wrapper provides that boundary. The owner's later host-gate exception
 (`40d0c42c-00d7-43b7-9460-d2dc9656a027@1`) permits `make check`, `make test` and
 `make test-integration` on the host; other execution still needs isolation.
-Tests and cleanup use disposable databases. Authors can test while writing and
-before review; no separate command admission or test worker is required. One
+Authors can test while writing and before review; no separate command
+admission or test worker is required. One
 reviewer is required before landing. Coordinator correction
 `3b3b5c42-26c2-40c9-a2f5-83708af3d453@1` supersedes the earlier dispatch limits;
 runs already in flight keep their current operation.
@@ -45,6 +45,9 @@ sandbox and no inference. It grants no inference, runtime-kit preparation or
 production change. Command-admission conditions from earlier dispatches no
 longer apply. Other runtime acceptance, production, preserved-failure and
 retry-policy holds remain.
+
+The [implementation plan](hybrid-runtime-implementation.md) requires disposable
+PostgreSQL for tests; tests and cleanup must not use production databases.
 
 ## Lifecycle release progress
 
@@ -63,7 +66,7 @@ live activation.
 | R-03 Hermes coordination | The [Hermes bridge](../../integrations/hermes/coordination.py), landed in [`3ad909c2`](https://github.com/halbritt/cairn/commit/3ad909c247c0bf7f09dee5ba2ab703dd1ef992e8), accepts selected per-event command vectors while preserving its legacy route. [Coordination tests](../../scripts/test_hermes_coordination.py) cover the Go-delegated adapter boundary. | Release's Hermes staging/interface work and memory-operation coverage remain separate from this coordination half. |
 | R-04 hook selection | The [hook renderer](../../scripts/stage_lifecycle_hooks.py) records exact checked argv and Go/Python implementation labels for Codex, Claude, OpenCode and Agy. It selects Go coordination and the implemented memory cells while retaining the other Python cells. [Host wiring](../../scripts/test_r04_host_wiring.py) and [bound wiring](../../scripts/test_r04_bound_wiring.py) exercise those selections. | Agy has no ordinary lifecycle memory hook. Unsupported cells and Python-retained cells remain explicit; renderer coverage is not native trust or refresh evidence for every harness. |
 | R-04 native-client observations | The [OpenCode fixture](../../scripts/check_r04_native_opencode.py) observes cached selections and directory-instance refresh. The [Claude fixture and guide](../developer/native-claude-hook-fixture.md), landed in [`95913d89`](https://github.com/halbritt/cairn/commit/95913d891cf59c3e0fbad1b6eb2a92bbbb25940c), check eleven cases including cached A, fresh B, target refresh, an unchanged control, receipt refusals and reversal. Claude refresh stops and joins the process, then resumes the same conversation UUID/history with exact settings. | These fixtures use explicit client pins, a local scripted provider and synthetic Cairn API. They do not qualify a different code image, real store/authentication, every settings mode, native Codex/Agy behavior or the full R-04 matrix. Claude evidence covers process restart with continuity, not in-process reload. |
-| R-06 checked watcher prerequisite | The [private coordination entry](../../internal/lifecycle/coordination/compatibility.go) admits `watch --config-dir DIR [--once]`. The [watch command](../../internal/lifecycle/coordination/watch_cli.go) verifies the receipt, manifest, exact profile membership and selected launchers before its directory lock and at each cycle, without the hook deadline. [Compatibility tests](../../internal/lifecycle/coordination/compatibility_test.go) cover multi-profile preflight; the [Go-delegated recovery matrix](../../scripts/test_go_watch_inbox_recovery.py) covers recovery behavior. | The lock belongs to the config directory. R-06 must stop the old watcher or preserve the unit's single active directory so two watchers never serve shared state concurrently. Entry admission in source and contracts does not switch an installed service or qualify D1-D7. |
+| R-06 checked watcher prerequisite | The [private coordination entry](../../internal/lifecycle/coordination/compatibility.go) admits `watch --config-dir DIR [--once]`. The [watch command](../../internal/lifecycle/coordination/watch_cli.go) verifies the receipt, manifest, exact profile membership and selected launchers before its directory lock and at each cycle, without the hook deadline. [Compatibility tests](../../internal/lifecycle/coordination/compatibility_test.go) cover receipt-checked multi-profile preflight and per-cycle re-verification. The [Go-delegated recovery matrix](../../scripts/test_go_watch_inbox_recovery.py) drives the unchecked private `coordination watch --config-dir DIR --once` entry without a receipt, covering the shared loop's recovery behavior. | This matrix does not establish end-to-end recovery through the receipt-checked entry. The lock belongs to the config directory. R-06 must stop the old watcher or preserve the unit's single active directory so two watchers never serve shared state concurrently. Entry admission in source and contracts does not switch an installed service or qualify D1-D7. |
 
 The [Release contract](hybrid-runtime-contracts/release.md#activation-units-drain-and-coexistence)
 defines the whole-unit gate: the watcher, every config-dir binding and all
