@@ -85,7 +85,7 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
             enabled=enabled, receipt_sha256=self.f.receipt_sha, image_sha256=self.f.receipt['binary']['sha256'],
             source_members=self.f.receipt['members'], rows=self.rows,
             source_baseline='transitive pinned Go' if harness == 'codex' and mode == 'agent_tools'
-                            else 'actual retained Python body')), flush=True)
+                            else 'retained Python frontend; body entry checked by paired-body trace')), flush=True)
         return metadata
 
     def source(self):
@@ -288,6 +288,7 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         # preflight refusal as provider-body evidence.
         self.before_run = lambda side: None
         self.after_run = lambda: None
+        self.state = lambda: BoundMemoryCase.state(self)
         checked_go = self.go
         for harness in ('claude', 'codex'):
             self.stage_bound(harness, 'agent_tools', remove_package=False)
@@ -301,10 +302,11 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
             self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN, prompt=self.f.wake())
             first = BoundMemoryCase.pair(self)
             self.assertEqual(first.stdout, b'{}\n')
-            ledger = self.state()[SESSION + '.memory-budget.json']
+            ledger_name = SESSION + ('.inbox-recall.json' if harness == 'claude' else '.memory-budget.json')
+            ledger = self.state()[ledger_name]
             self.assertEqual(list(ledger['inbox_activation'].values()), [True])
             self.assertEqual(BoundMemoryCase.pair(self).stdout, b'{}\n')
-            self.assertEqual(self.state()[SESSION + '.memory-budget.json'], ledger)
+            self.assertEqual(self.state()[ledger_name], ledger)
             for kind in ('privacy', 'account'):
                 self.reset_state()
                 self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN, prompt='storage')
