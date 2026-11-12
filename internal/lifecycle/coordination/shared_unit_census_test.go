@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -34,7 +35,15 @@ func censusTestJSON(t *testing.T, path string, body any) WatchCensusPin {
 
 func newCensusFixture(t *testing.T) *censusFixture {
 	t.Helper()
-	f := &censusFixture{root: t.TempDir(), configs: map[string]map[string]any{}, memories: map[string]string{}, manifests: map[string]string{}}
+	return censusFixtureAt(t, t.TempDir())
+}
+
+func censusFixtureAt(t *testing.T, root string) *censusFixture {
+	t.Helper()
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	f := &censusFixture{root: root, configs: map[string]map[string]any{}, memories: map[string]string{}, manifests: map[string]string{}}
 	f.catalog = WatchCensusCatalog{Schema: "cairn.watch-unit-catalog/1", Scope: "disposable-fixture", Root: f.root,
 		ConfigRoot: filepath.Join(f.root, "selections"), CallbackRoot: filepath.Join(f.root, "callbacks")}
 	if err := os.MkdirAll(f.catalog.CallbackRoot, 0700); err != nil {
@@ -249,5 +258,98 @@ func TestWatchCensusSharedUsersRequireUnion(t *testing.T) {
 				t.Fatalf("union refused: %+v %v", got, err)
 			}
 		})
+	}
+}
+
+func TestWatchCensusUnknownOmittedAndUnsafeMembersRefuse(t *testing.T) {
+	cases := []struct {
+		name, want string
+		change     func(*testing.T, *censusFixture)
+	}{
+		{"extra-binding", "membership", func(t *testing.T, f *censusFixture) {
+			censusTestJSON(t, filepath.Join(f.catalog.Selections[0].Directory, "extra.json"), map[string]string{"unknown": "selected user"})
+		}},
+		{"omitted-directory", "omitted selected config directory", func(t *testing.T, f *censusFixture) { f.catalog.Selections = f.catalog.Selections[:1] }},
+		{"missing-binding-pin", "binding pin", func(t *testing.T, f *censusFixture) { f.catalog.Bindings = f.catalog.Bindings[:1] }},
+		{"changed-binding-pin", "binding pin", func(t *testing.T, f *censusFixture) { f.catalog.Bindings[0].SHA256 = strings.Repeat("0", 64) }},
+		{"changed-config-pin", "config pin", func(t *testing.T, f *censusFixture) {
+			p := filepath.Join(f.catalog.Selections[0].Directory, "one.json")
+			raw, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, append(raw, ' '), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"changed-memory-pin", "descriptor changed", func(t *testing.T, f *censusFixture) {
+			censusTestJSON(t, f.memories["a"], map[string]string{"changed": "immutable memory descriptor"})
+		}},
+		{"extra-session", "selected session", func(t *testing.T, f *censusFixture) {
+			config := f.configs[filepath.Join(f.catalog.Selections[0].Directory, "one.json")]
+			native := "unexpected-selected-session"
+			censusTestJSON(t, SessionStatePath(config["state_dir"].(string), config["binding"].(string), native), map[string]any{"schema": NativeSessionSchema, "native_session_id": native, "agent": map[string]string{"agent_id": uuid.NewString(), "execution_id": uuid.NewString()}})
+		}},
+		{"omitted-proposed-session", "session coverage", func(t *testing.T, f *censusFixture) { f.proposal.Sessions = f.proposal.Sessions[:1] }},
+		{"extra-callback-reference", "callback reference", func(t *testing.T, f *censusFixture) {
+			censusTestJSON(t, filepath.Join(f.catalog.CallbackRoot, "unexpected.json"), map[string]string{"unobserved": "callback"})
+		}},
+		{"extra-proposed-callback", "callback coverage", func(t *testing.T, f *censusFixture) {
+			f.proposal.Callbacks = []string{filepath.Join(f.catalog.CallbackRoot, "not-observed.json")}
+		}},
+		{"external-unknown", "external observation coverage", func(t *testing.T, f *censusFixture) { f.catalog.Scope = "external-unknown" }},
+		{"unsafe-directory-alias", "alias", func(t *testing.T, f *censusFixture) {
+			alias := filepath.Join(f.root, "aliased-selections")
+			if err := os.Symlink(f.catalog.ConfigRoot, alias); err != nil {
+				t.Fatal(err)
+			}
+			f.catalog.ConfigRoot = alias
+			for i := range f.catalog.Selections {
+				f.catalog.Selections[i].Directory = filepath.Join(alias, filepath.Base(f.catalog.Selections[i].Directory))
+			}
+		}},
+		{"credential-overlap", "credential selector", func(t *testing.T, f *censusFixture) {
+			f.catalog.CredentialPaths = append(f.catalog.CredentialPaths, f.memories["a"])
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			f := newCensusFixture(t)
+			test.change(t, f)
+			got, err := f.inspect(t)
+			if err == nil || got.FixtureReady || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("wanted %q refusal, got ready=%v err=%v", test.want, got.FixtureReady, err)
+			}
+		})
+	}
+}
+
+func TestWatchCensusPositiveGrantRemainsVisible(t *testing.T) {
+	f := newCensusFixture(t)
+	path := filepath.Join(f.root, "memory-a", "retained.memory-budget.json")
+	censusTestJSON(t, path, map[string]any{"inbox_activation": map[string]bool{"old-turn": true}, "opaque": "preserved"})
+	before := censusTestSnapshot(t, f.root)
+	got, err := f.inspect(t)
+	if err == nil || got.FixtureReady || !slices.Equal(got.PositiveGrants, []string{path + "#old-turn"}) {
+		t.Fatalf("positive grant hidden: %+v %v", got, err)
+	}
+	if !reflect.DeepEqual(before, censusTestSnapshot(t, f.root)) {
+		t.Fatal("inspector changed or deleted a positive grant")
+	}
+}
+
+func TestWatchCensusNoProfileOrCanceledContextRefuses(t *testing.T) {
+	var cli *CLI
+	if _, err := cli.InspectWatchUnitCensus(context.Background(), WatchCensusPin{}, WatchCensusProposal{}); err == nil {
+		t.Fatal("nil inspector accepted")
+	}
+	f := newCensusFixture(t)
+	pin := censusTestJSON(t, filepath.Join(f.root, "catalog.json"), f.catalog)
+	profile := stage2ServicesProfile()
+	cli = &CLI{Profile: profile, Host: NewFileHost(FileHostOptions{Profile: profile})}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got, err := cli.InspectWatchUnitCensus(ctx, pin, f.proposal); err == nil || got.FixtureReady {
+		t.Fatal("canceled census accepted")
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/halbritt/cairn/internal/lifecycle/binding"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
 
@@ -24,14 +25,16 @@ type WatchCensusProcess struct {
 }
 
 type watchCensusCallbackRecord struct {
-	Schema     string
-	Role       string
-	Bindings   []string
-	Config     WatchCensusPin
-	Process    WatchCensusProcess
-	Executable WatchCensusPin
-	EntryPoint WatchCensusPin
-	Join       *WatchCensusPin
+	Schema        string
+	Role          string
+	Bindings      []string
+	Config        WatchCensusPin
+	Binding       WatchCensusPin
+	Process       WatchCensusProcess
+	Executable    WatchCensusPin
+	EntryPoint    WatchCensusPin
+	Join          *WatchCensusPin
+	selectedOwner string
 }
 
 type watchCensusJoin struct {
@@ -135,6 +138,10 @@ func (r *watchCensusRead) observeProcess(record watchCensusCallbackRecord) (stri
 	if err != nil || !same {
 		return "", false, errors.New("callback join owner identity is unavailable")
 	}
+	group, err := syscall.Getpgid(join.Reaper.PID)
+	if err != nil || group <= 1 || group != join.Reaper.PGID {
+		return "", false, errors.New("callback reaper group identity changed")
+	}
 	return "joined:" + record.Join.SHA256, true, nil
 }
 
@@ -185,6 +192,22 @@ func (r *watchCensusRead) callbacks(ctx context.Context) error {
 				return err
 			}
 		}
+		resources, users, owner, err := r.callbackSelection(record)
+		if err != nil {
+			return err
+		}
+		record.selectedOwner = owner
+		for _, user := range users {
+			if !slices.Contains(record.Bindings, user) {
+				record.Bindings = append(record.Bindings, user)
+			}
+		}
+		slices.Sort(record.Bindings)
+		for _, user := range record.Bindings {
+			r.nodes[user].Resources = append(r.nodes[user].Resources, resources...)
+			slices.Sort(r.nodes[user].Resources)
+			r.nodes[user].Resources = slices.Compact(r.nodes[user].Resources)
+		}
 		// The actual interpreter is an immutable observed image, not a claim
 		// about any native MCP/channel connection or supported refresh.
 		if !censusWithin(r.catalog.Root, record.Executable.Path) {
@@ -206,11 +229,111 @@ func (r *watchCensusRead) callbacks(ctx context.Context) error {
 			if record.Role == "issued" {
 				r.nodeBlockers[binding] = append(r.nodeBlockers[binding], "retained issued reference needs owning-session disposition")
 			}
-			if record.Config.SHA256 != r.nodes[binding].Config.SHA256 {
+			if binding == record.selectedOwner && record.Config.SHA256 != r.nodes[binding].Config.SHA256 {
 				r.nodeBlockers[binding] = append(r.nodeBlockers[binding], "retained callback still selects old cached bytes; refresh is unobserved")
 			}
 		}
-		r.report.Callbacks = append(r.report.Callbacks, WatchCensusCallback{Reference: path, Role: record.Role, Bindings: slices.Clone(record.Bindings), Config: record.Config, Process: record.Process, Joined: joined})
+		r.report.Callbacks = append(r.report.Callbacks, WatchCensusCallback{Reference: path, Role: record.Role, Bindings: slices.Clone(record.Bindings), Config: record.Config, Binding: record.Binding, Process: record.Process, Joined: joined})
 	}
 	return nil
+}
+
+func (r *watchCensusRead) configOwner(config *value.Value) (string, error) {
+	owner := ""
+	for current, path := range r.configPaths {
+		if r.nodes[path] == nil {
+			continue
+		}
+		same := true
+		for _, key := range []string{"harness", "binding", "repo", "config_home", "token_file"} {
+			same = same && nativeEqual(current.Get(key), config.Get(key))
+		}
+		if same {
+			if owner != "" && owner != path {
+				return "", errors.New("retained config has ambiguous selected users")
+			}
+			owner = path
+		}
+	}
+	if owner == "" {
+		return "", errors.New("retained config has an unknown selected user")
+	}
+	return owner, nil
+}
+
+func (r *watchCensusRead) callbackSelection(record watchCensusCallbackRecord) ([]string, []string, string, error) {
+	config, err := r.jsonFile(record.Config.Path)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if _, err := ValidateConfig(config); err != nil {
+		return nil, nil, "", err
+	}
+	if !r.local.tokenPaths[nativeText(config.Get("token_file"))] {
+		return nil, nil, "", errors.New("retained credential selector coverage is unknown")
+	}
+	owner, err := r.configOwner(config)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if record.Binding.Path != nativeText(config.Get("inbox_recall_binding")) {
+		return nil, nil, "", errors.New("callback omitted its retained binding identity")
+	}
+	if _, err := r.pin(record.Binding, false); err != nil {
+		return nil, nil, "", err
+	}
+	manifest, err := r.jsonFile(record.Binding.Path)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	mode := nativeText(manifest.Get("schema"))
+	if mode != "cairn.inbox-recall-binding/2" && mode != "cairn.inbox-recall-binding/3" {
+		return nil, nil, "", errors.New("unknown retained binding schema")
+	}
+	memory, _, err := r.descriptor(manifest.Get("memory_config"))
+	if err != nil {
+		return nil, nil, "", err
+	}
+	list := manifest.Get("coordination_configs")
+	if list == nil || list.Kind != value.Array {
+		return nil, nil, "", errors.New("retained profile membership is unknown")
+	}
+	var configs []*value.Value
+	var users []string
+	for _, desc := range list.Items {
+		coord, _, err := r.descriptor(desc)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		user, err := r.configOwner(coord)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		configs = append(configs, coord)
+		users = append(users, user)
+		r.local.configs = append(r.local.configs, coord)
+		r.configPaths[coord] = user
+	}
+	if err := binding.ValidateConfigurationProfiles(binding.ConfigurationProfiles{Current: config, Memory: memory, Coordinators: configs, ManifestPath: []rune(record.Binding.Path), Resolve: r.cli.profile().Routes.Filesystem().Resolve}); err != nil {
+		return nil, nil, "", err
+	}
+	resources := []string{nativeText(config.Get("state_dir")), nativeText(memory.Get("state_dir")), filepath.Dir(record.Executable.Path)}
+	for _, path := range resources {
+		if _, err := r.directory(path); err != nil {
+			return nil, nil, "", err
+		}
+	}
+	client := nativeText(config.Get("cairn"))
+	if !censusWithin(r.catalog.Root, client) {
+		return nil, nil, "", errors.New("retained client image is outside the observation universe")
+	}
+	if _, err := r.pin(WatchCensusPin{client, r.clientPins[client]}, true); err != nil {
+		return nil, nil, "", err
+	}
+	retained := &WatchCensusMember{Mode: mode}
+	if err := r.runtime(retained, manifest); err != nil {
+		return nil, nil, "", err
+	}
+	resources = append(resources, retained.Resources...)
+	return resources, users, owner, nil
 }

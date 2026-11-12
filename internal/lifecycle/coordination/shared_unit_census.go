@@ -58,6 +58,7 @@ type WatchCensusCallback struct {
 	Role      string
 	Bindings  []string
 	Config    WatchCensusPin
+	Binding   WatchCensusPin
 	Process   WatchCensusProcess
 	Joined    bool
 }
@@ -119,10 +120,10 @@ func (c *CLI) InspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 	if err := r.members(ctx); err != nil {
 		return r.report, err
 	}
-	if err := r.sessions(ctx); err != nil {
+	if err := r.callbacks(ctx); err != nil {
 		return r.report, err
 	}
-	if err := r.callbacks(ctx); err != nil {
+	if err := r.sessions(ctx); err != nil {
 		return r.report, err
 	}
 	if err := r.closure(proposed); err != nil {
@@ -188,9 +189,11 @@ func (r *watchCensusRead) directory(path string) ([]string, error) {
 		}
 		names = append(names, entry.Name())
 	}
+	if old, seen := r.directories[path]; seen && !slices.Equal(old, names) {
+		return nil, errors.New("census directory membership changed between observations")
+	}
 	r.directories[path] = names
-	raw, _ := json.Marshal(names)
-	sum := sha256.Sum256(raw)
+	sum := sha256.Sum256([]byte(strings.Join(names, "\x00")))
 	r.report.Facts["directory:"+path] = hex.EncodeToString(sum[:])
 	return names, nil
 }
@@ -257,14 +260,17 @@ func (r *watchCensusRead) closure(p WatchCensusProposal) error {
 	for _, path := range slices.Compact(slices.Sorted(slices.Values(sessions))) {
 		r.report.Sessions = append(r.report.Sessions, r.sessionRefs[path])
 	}
+	var selectedCallbacks []WatchCensusCallback
 	for _, callback := range r.report.Callbacks {
 		for _, binding := range callback.Bindings {
 			if closed[binding] {
 				callbacks = append(callbacks, callback.Reference)
+				selectedCallbacks = append(selectedCallbacks, callback)
 				break
 			}
 		}
 	}
+	r.report.Callbacks = selectedCallbacks
 	if !censusSameStrings(slices.Sorted(maps.Keys(wanted)), r.report.RequiredBindings) {
 		r.block("proposed half unit omits shared users")
 	}
