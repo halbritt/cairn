@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import unittest
 
 import test_f02_ordinary_provider as provider
@@ -42,6 +43,14 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
                 pins[name] = dict(sha256=sha(held.read_bytes()), build_image=str(image),
                     build_info=subprocess.check_output(['go', 'version', '-m', str(image)], text=True))
             write(images / 'pins.json', encoded(pins), 0o400)
+            root = Path(__file__).resolve().parents[1]
+            write(cls.evidence / 'inputs.json', encoded(dict(
+                source=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
+                clean=not subprocess.check_output(['git', 'status', '--porcelain'], cwd=root),
+                go_version=subprocess.check_output(['go', 'version'], text=True).strip(),
+                python=dict(executable=sys.executable, version=sys.version),
+                dependencies={name: sha((root / name).read_bytes()) for name in ('go.mod', 'go.sum')}
+            )), 0o400)
 
     tearDownClass = classmethod(BoundMemoryCase.tearDownClass.__func__)
 
@@ -156,6 +165,9 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
                            ('binding.json', self.f.binding), ('receipt.json', self.f.receipt_path)):
             write(root / name, path.read_bytes(), 0o600)
         write(root / 'rows.json', encoded(self.rows), 0o600)
+        write(root / 'provider-input.json', encoded(dict(path=str(self.provider),
+            sha256=sha(self.provider.read_bytes()), responses=self.responses,
+            calls=self.provider_sides)), 0o600)
 
     def required(self, body='Required lifecycle recall policy. 日本語 🛡.'):
         super().required(body)
