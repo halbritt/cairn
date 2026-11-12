@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import unittest
@@ -99,7 +100,12 @@ class InstalledMemory(unittest.TestCase):
         if hasattr(self, 'results'):
             case.joinpath('processes.json').write_text(json.dumps(self.results, indent=2) + '\n')
         case.joinpath('api.json').write_text(json.dumps(self.calls, indent=2) + '\n')
-        shutil.copytree(self.root, case / 'fixture')
+        sockets = {str(p.relative_to(self.root)): dict(mode=stat.S_IMODE(p.stat().st_mode),
+                                                     kind='unix-socket; requests retained in api.json')
+                   for p in self.root.rglob('*') if p.is_socket()}
+        case.joinpath('socket-inventory.json').write_text(json.dumps(sockets, indent=2) + '\n')
+        shutil.copytree(self.root, case / 'fixture',
+                        ignore=lambda directory, names: [name for name in names if (Path(directory) / name).is_socket()])
 
     def install(self):
         installer.install(self.home, self.native, str(self.root / 'selector'), self.skill,
