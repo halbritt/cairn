@@ -54,7 +54,10 @@ func VerifyOrdinary(ctx context.Context, in OrdinarySelection) (_ *OrdinarySnaps
 		}
 	}()
 	memory := snapshot.Config
-	if !(value.SameText(memory.Get("harness"), "opencode") || value.SameText(memory.Get("harness"), "claude") || value.SameText(memory.Get("harness"), "hermes")) || !value.SameText(memory.Get("recall_mode"), "agent_tools") {
+	harness, mode, fallback := memory.Get("harness"), memory.Get("recall_mode"), memory.Get("semantic_fallback")
+	agentTools := (value.SameText(harness, "opencode") || value.SameText(harness, "claude") || value.SameText(harness, "hermes")) && value.SameText(mode, "agent_tools")
+	ambient := value.SameText(harness, "opencode") && (mode == nil || value.SameText(mode, "ambient")) && (fallback == nil || fallback.Kind == value.Bool && !fallback.Boolean)
+	if !agentTools && !ambient {
 		return nil, errors.New("ordinary checked cell remains unavailable")
 	}
 	if err = ctx.Err(); err != nil {
