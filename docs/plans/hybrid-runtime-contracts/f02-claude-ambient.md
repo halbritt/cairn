@@ -55,6 +55,17 @@ OpenCode other-harness negative retains all four harnesses and every assertion;
 only its fallback setup now selects `True` for Claude as well as Hermes, keeping
 the negative meaningful and leaving `False` after the final Codex iteration.
 
+The first whole-leaf run retained two fixture expectation failures. Exact lead
+disposition `765c0859/v1` admitted only their new-leaf corrections: inspect both
+actual persisted states for retained capture/reset/workstream values instead of
+Hermes-only public `cairn_status` fields (Source memory.py:3427–3428), and preserve
+the existing bound-memory activation refusal rather than expecting a preflight
+diagnostic. Coordination-profile and other negatives still require preflight.
+The same seed, events, profile mutations and pair inputs remain; the positive
+eight-cell method and all helpers/normalization are unchanged. Original RED and
+failed artifacts remain, and the exactly admitted amended corpus is pinned
+separately. No production or bound-activation behavior changed.
+
 Run the leaf from a clean committed head with a fresh receipt:
 
 ```sh

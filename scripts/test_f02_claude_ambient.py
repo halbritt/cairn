@@ -134,7 +134,30 @@ class ClaudeAmbientTests(unittest.TestCase):
 
     test_no_match_and_taskless_defer = helpers.HermesAmbientTests.test_no_match_and_taskless_defer
     test_optional_seen_and_start_reset = helpers.HermesAmbientTests.test_optional_seen_and_start_reset
-    test_retained_seen_and_binding_reset = hermes.HermesRecallTests.test_seen_retention_start_reset_and_binding_reset
+    def test_retained_seen_and_binding_reset(self):
+        self.seed(dict(binding=[None, ''], seen=dict(old=1, retained=2),
+                       opaque=['日本語', 900719925474099312345],
+                       last_capture=dict(at=123.25, outcome='retained', bytes=91)))
+        self.event('UserPromptSubmit', retained_record_ids=['retained'])
+        self.pair()
+        for row in self.last_raw_pair:
+            state = json.loads(row['files'][self.state_key()+'.json']['raw'])
+            self.assertEqual(state['seen'], dict(retained=2))
+            self.assertEqual(state['opaque'], ['日本語', 900719925474099312345])
+            self.assertEqual(state['last_capture'],
+                             dict(at=123.25, outcome='retained', bytes=91))
+        self.event('SessionStart')
+        self.pair()
+        for row in self.last_raw_pair:
+            state = json.loads(row['files'][self.state_key()+'.json']['raw'])
+            self.assertEqual(state['seen'], {})
+        self.event('UserPromptSubmit', project_path=str(self.f.root), workstream='retention')
+        self.pair()
+        for row in self.last_raw_pair:
+            state = json.loads(row['files'][self.state_key()+'.json']['raw'])
+            self.assertEqual(state['binding'], [str(self.f.root), 'retention'])
+            self.assertNotIn('opaque', state)
+            self.assertTrue(state['workstream'].endswith('retention'))
 
     def test_uuid_state_names_and_literal_scope_overrides(self):
         self.required('Required retention policy.')
@@ -173,7 +196,21 @@ class ClaudeAmbientTests(unittest.TestCase):
                 self.overwrite(path, ordinary.encoded(config))
                 self.repin()
                 try:
-                    self.refused()
+                    if path == self.f.memory_path:
+                        self.calls.clear()
+                        before = self.state()
+                        files_before = self.state_files()
+                        directory = Path(self.f.memory['state_dir'])
+                        existed = directory.exists()
+                        result = self.go()
+                        self.assertEqual((result.returncode, result.stdout), (1, b''))
+                        self.assertEqual(result.stderr, b'Cairn lifecycle diagnostic: phase=activation error_class=HookError\nCairn lifecycle: checked bound memory cell remains unavailable; use native tools or an explicit handoff.\n')
+                        self.assertEqual(self.calls, [])
+                        self.assertEqual(self.state(), before)
+                        self.assertEqual(self.state_files(), files_before)
+                        self.assertEqual(directory.exists(), existed)
+                    else:
+                        self.refused()
                 finally:
                     self.overwrite(path, old)
                     self.repin()
