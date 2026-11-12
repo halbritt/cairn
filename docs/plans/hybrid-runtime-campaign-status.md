@@ -23,11 +23,14 @@ and in the Semantic contract; amending that contract and reviewing the amendment
 is a separate follow-up.
 
 The owner replaced C2, FIRST and source-only execution holds with an isolation
-rule: tests run in the shared isolation wrapper's namespace, which hides production home and
-sockets, network and host processes. Tests may run any number of times. Authors
-compile their code and run its tests there while writing and before review.
-No admitted command, separate test worker or receipt is required. One reviewer
-is required before landing. Coordinator correction
+rule: tests may run any number of times in a namespace that hides production
+homes, production sockets, network and host processes. The repository's shared
+isolation wrapper provides that boundary. The owner's later host-gate exception
+(`40d0c42c-00d7-43b7-9460-d2dc9656a027@1`) permits `make check`, `make test` and
+`make test-integration` on the host; other execution still needs isolation.
+Tests and cleanup use disposable databases. Authors can test while writing and
+before review; no separate command admission or test worker is required. One
+reviewer is required before landing. Coordinator correction
 `3b3b5c42-26c2-40c9-a2f5-83708af3d453@1` supersedes the earlier dispatch limits;
 runs already in flight keep their current operation.
 Lifecycle and Semantic have separate release trains; retirement waits for both.
@@ -42,6 +45,36 @@ sandbox and no inference. It grants no inference, runtime-kit preparation or
 production change. Command-admission conditions from earlier dispatches no
 longer apply. Other runtime acceptance, production, preserved-failure and
 retry-policy holds remain.
+
+## Lifecycle release progress
+
+The lifecycle source snapshot below includes the receipt-checked watcher landed
+in [`025bcc4f`](https://github.com/halbritt/cairn/commit/025bcc4ff98c313a5c9a78fc3c7a61c2b9f597d9)
+on 2026-11-11. It separates implemented code and disposable-client evidence
+from qualification of an installed activation unit. The private
+[`cairn-lifecycle` image](../../cmd/cairn-lifecycle/main.go) supplies the checked
+entries; the public [`cairn lifecycle` registration](../../cmd/cairn/lifecycle.go)
+remains disabled. A checked binary or staged configuration does not authorize
+live activation.
+
+| Release slice | Landed source and evidence | Remaining boundary |
+| --- | --- | --- |
+| R-02 immutable installation | The [compatibility stager](../../scripts/stage_lifecycle_compatibility.py) and [Go image stager](../../cmd/cairn-stage-lifecycle/main.go) publish pinned images, receipts, versioned profiles and retained launchers. [Installed-process tests](../../scripts/test_r02_compatibility_install.py) and the [offline package fixture](../../scripts/check_r02_offline_install.py) cover selected invocation, refusal and reverse cases without relying on a checkout. | Staging and selected process tests do not establish a complete watcher-unit drain, activation or live-client refresh. Retained releases and issued argv remain required. |
+| R-03 Hermes coordination | The [Hermes bridge](../../integrations/hermes/coordination.py), landed in [`3ad909c2`](https://github.com/halbritt/cairn/commit/3ad909c247c0bf7f09dee5ba2ab703dd1ef992e8), accepts selected per-event command vectors while preserving its legacy route. [Coordination tests](../../scripts/test_hermes_coordination.py) cover the Go-delegated adapter boundary. | Release's Hermes staging/interface work and memory-operation coverage remain separate from this coordination half. |
+| R-04 hook selection | The [hook renderer](../../scripts/stage_lifecycle_hooks.py) records exact checked argv and Go/Python implementation labels for Codex, Claude, OpenCode and Agy. It selects Go coordination and the implemented memory cells while retaining the other Python cells. [Host wiring](../../scripts/test_r04_host_wiring.py) and [bound wiring](../../scripts/test_r04_bound_wiring.py) exercise those selections. | Agy has no ordinary lifecycle memory hook. Unsupported cells and Python-retained cells remain explicit; renderer coverage is not native trust or refresh evidence for every harness. |
+| R-04 native-client observations | The [OpenCode fixture](../../scripts/check_r04_native_opencode.py) observes cached selections and directory-instance refresh. The [Claude fixture and guide](../developer/native-claude-hook-fixture.md), landed in [`95913d89`](https://github.com/halbritt/cairn/commit/95913d891cf59c3e0fbad1b6eb2a92bbbb25940c), check eleven cases including cached A, fresh B, target refresh, an unchanged control, receipt refusals and reversal. Claude refresh stops and joins the process, then resumes the same conversation UUID/history with exact settings. | These fixtures use explicit client pins, a local scripted provider and synthetic Cairn API. They do not qualify a different code image, real store/authentication, every settings mode, native Codex/Agy behavior or the full R-04 matrix. Claude evidence covers process restart with continuity, not in-process reload. |
+| R-06 checked watcher prerequisite | The [private coordination entry](../../internal/lifecycle/coordination/compatibility.go) admits `watch --config-dir DIR [--once]`. The [watch command](../../internal/lifecycle/coordination/watch_cli.go) verifies the receipt, manifest, exact profile membership and selected launchers before its directory lock and at each cycle, without the hook deadline. [Compatibility tests](../../internal/lifecycle/coordination/compatibility_test.go) cover multi-profile preflight; the [Go-delegated recovery matrix](../../scripts/test_go_watch_inbox_recovery.py) covers recovery behavior. | The lock belongs to the config directory. R-06 must stop the old watcher or preserve the unit's single active directory so two watchers never serve shared state concurrently. Entry admission in source and contracts does not switch an installed service or qualify D1-D7. |
+
+The [Release contract](hybrid-runtime-contracts/release.md#activation-units-drain-and-coexistence)
+defines the whole-unit gate: the watcher, every config-dir binding and all
+shared runtime/state users must pass the drain, refresh, switch and reverse
+checks together. The [implementation plan](hybrid-runtime-implementation.md)
+keeps full R-06 dependent on R-03, R-04, R-05, S-05 and S-04R. R-05's selective
+slow-check migration requires before/after profiling and equivalent assertions
+and fixtures while retaining independent process, crash and install coverage.
+The selected fixtures above do not replace it. R-07 deployment, R-08 burn-in
+and retirement, and R-09 final-removal verification remain separate. Lifecycle
+and Semantic may ship separately, while retirement waits for both trains.
 
 ## Inspect the implementation
 
@@ -218,13 +251,15 @@ only for these ten unavailable embedding observations. Reviewer notes about a
 currently unreachable reserved input key and an additional empty-flags fixture
 remain nonblocking; no optional code fix is included.
 
-The table records published source and extensions through the native embedding
-entry, tested as `d41be9e7`, on 2026-11-10. The Go libraries
-are callable source. Rust has explicit rank/stream and embedding entry targets;
-model initialization and actual-worker qualification
-remain open. Publication does not activate the migration on supported hosts.
+The table is a historical component ledger through the native embedding entry,
+tested as `d41be9e7` on 2026-11-10. Each row preserves its publication boundary.
+The later lifecycle release progress above supersedes the early Go rows'
+callable-only and unavailable `hook`/`watch` descriptions. Rust has explicit
+rank/stream and embedding entry targets; the observations above describe later
+selected comparisons. Publication does not activate the migration on supported
+hosts.
 
-| Component | Source and publication | Implemented behavior | Remaining acceptance and area owner |
+| Component | Source and publication | Implemented behavior | Acceptance boundary at publication and area owner |
 | --- | --- | --- | --- |
 | Go journal execution, recovery and inspection | [journal](../../internal/lifecycle/journal/journal.go), [execute](../../internal/lifecycle/journal/execute.go), [recover](../../internal/lifecycle/journal/recover.go), [inspect](../../internal/lifecycle/journal/inspect.go), [json constants](../../internal/lifecycle/journal/json_constants.go); [`4eb9c41c`](https://github.com/halbritt/cairn/commit/4eb9c41c017086e5012420747dcbb48158ea76fa), Stage 2C [`249f1eda`](https://github.com/halbritt/cairn/commit/249f1edabb9453dc664e3e0a9e12cbcbde42a080) | Durable inbox intents, command/reply recovery, distinct reader policies, default-JSON non-finite literals with CPython `_CONSTANTS['NaN']` container-identity retry semantics, `NaN` scalar formatting (`"nan"`), and selected Class A Python/Go differential cases | Coordination: C2 child-process parity and installed runtime qualification; the caller still supplies validated context |
 | Go coordination locks and process observations | [locks](../../internal/lifecycle/coordination/locks.go), [owner lookup](../../internal/lifecycle/coordination/owner.go), [process scan](../../internal/lifecycle/coordination/process_scan.go); [`5a6364a9`](https://github.com/halbritt/cairn/commit/5a6364a9a2b2d9ed49c4c330cfafa96c44ba94f2) | Callable session/ledger/intent/watcher/cue locks, owner ancestry lookup and process-marker scans with unknown-coverage reporting | Coordination: native caller orchestration, cross-runtime locking and state-writer compatibility; full J-05/J-06 and installed behavior remain open |
@@ -678,9 +713,10 @@ coordination and journal subtrees. The Go landing base was unchanged, so retaine
 check evidence was reused with zero duplicate Go tests. Formatting, build and vet
 passed, as did the selected journal and `^TestStage2` coordination race suites.
 Those tests used fake runners and owned temporary directories; C2 child-process
-fixtures remained held. General B1/other-producer `NaN` constant identity remains
-unclaimed, and `hook` and `watch` still return `ProfileUnavailable`. Binary
-entrypoint wiring after Foundation F-01/F-04 remains open. These results do not
+fixtures remained held. General B1/other-producer `NaN` constant identity remained
+unclaimed at that stage, and `hook` and `watch` returned `ProfileUnavailable`.
+The later checked entries are described in lifecycle release progress above.
+These Stage 2C results do not
 establish child-process parity, installed hook behavior, full J-05/J-06 acceptance
 or measured usefulness.
 
