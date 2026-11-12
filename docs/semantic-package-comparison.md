@@ -1,5 +1,30 @@
 # Frozen comparison of a semantic worker package
 
+## HC-01 acceptance on 2026-11-12
+
+Under the owner-directed reset `cb71136b-cd84-4fc2-b84f-eb247b975548/v1`,
+CAIRN-329 accepts the implemented worker and tested
+`x86_64-unknown-linux-gnu` package. The reviewed comparison landed at
+`c991d141` (review `cbd58d7d/v1`, documentation condition fulfilled): all
+807 rank/stream scores were exact, all 9,414 pair relationships unchanged,
+and all 821 distinct paired vectors bit exact with maximum cosine gap
+`4.440892098500626e-16`. These stronger observed results do not restore
+bit-exactness as a new required tolerance.
+
+The existing retrieval-quality fixture also passed on a disposable PostgreSQL
+database on 2026-11-12. Its 68 lexical query/order/mode observations include
+55 with an authored relevant result and 13 without one. The
+[reference evidence](semantic-reference-acceptance.md#campaign-closure-and-limits)
+records the report digest and limits. This is the reset's selected fixture,
+not a new absolute relevance benchmark or a repeat of model inference.
+
+The retained Rust package and Python rollback qualifications are recorded in
+[package qualification](semantic-package.md#qualification-decision-on-2026-11-12)
+and [Python closure acceptance](semantic-python-closure.md#accepted-campaign-target).
+S-01's two maximum-byte observation gaps remain documented limits. Installed
+service selection, destination ABI verification, cutover and HC-02 remain
+Release work under the owner's R-07 production grant.
+
 `scripts/check_semantic_package_comparison.py` reports a retained package's
 actual Go-supervised outputs against frozen Python outputs. It launches no
 model and creates no replacement Python reference. Run the reporter and its

@@ -1,5 +1,24 @@
 # Retained Python closure
 
+## Accepted campaign target
+
+The 2026-11-12 owner-directed reset, `cb71136b-cd84-4fc2-b84f-eb247b975548/v1`,
+accepts the retained `x86_64-unknown-linux-gnu` Python closure qualification for
+S-04R / CAIRN-355. Source landed at `58269dee`; exact candidate `adf043c4` has
+Semantic review `71aa425d/v1` and Release rollback review `09efb2c8/v1`.
+The accepted six direct/production-Go routes retain 27 rank, two stream and
+27 embedding cases each. Both embedding routes compare 258 vectors bit exactly;
+the original identities, refusal classes and 90-second timeout are preserved.
+Six isolation receipts report zero process-tree connect attempts or telemetry
+store mutations, with positive controls that detect both effects.
+
+Acceptance applies to the retained immutable selection in its reviewed guest
+layout and private home. The historical locale/gconv and capture-time provenance
+gaps, host shell/environment dependencies and CPU/FENV limits remain disclosed.
+They do not require repeated unchanged runs or a new host-roster decision for
+campaign closure. Release verifies destination ABI and selection before any
+installation; production activation and HC-02 remain held for the R-07 grant.
+
 `scripts/semantic_python_closure.py` inventories and copies explicitly selected
 retained Python files. Inventory/publication do not install or resolve dependencies,
 execute the selected interpreter, import its packages, or select a live service.

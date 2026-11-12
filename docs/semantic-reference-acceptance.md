@@ -5,6 +5,42 @@ and [runner](../scripts/check_semantic_reference.py) separate retained reference
 evidence, fresh model-free tests and unresolved acceptance criteria. Raw model
 replies, native binaries, arrays and generated reports stay outside Git.
 
+## Campaign closure and limits
+
+The owner-directed CAIRN-301 reset on 2026-11-12, recorded in
+`cb71136b-cd84-4fc2-b84f-eb247b975548/v1`, accepts the S-01 reference and
+failure-characterization scope for CAIRN-322, CAIRN-323 and CAIRN-324. The
+retained audit covers 77 of 78 parents and 236 of 238 subcases; accepted S-02
+and S-03 parity evidence remains separate. This decision changes the campaign
+closure boundary, not the recorded test outcomes.
+
+Two synthetic maximum-byte subcases remain limitations:
+`F-EMBED/65536-byte-document/Latin65536` lacks the complete per-worker terminal,
+stdout and restart tuple; `F-EMBED/65536-byte-document/CJK65535` also lacks that
+tuple and the retained CJK input is 65,536 bytes rather than the named 65,535.
+These are not reported as passing observations. No maximum-size rerun,
+deadline change, new reference or retry-until-success is required for closure.
+Historical raw/FENV, punctuation and timing observations retain their original
+limits; the immutable audit can still report incomplete catalogue coverage.
+
+The same reset selects the existing retrieval-quality fixture at
+[`core/testdata/retrieval-quality.json`](../core/testdata/retrieval-quality.json)
+for HC-01. Its current executable entry is
+[`TestDocumentationRetrievalQuality`](../core/retrieval_quality_trial_test.go),
+run with an owned disposable database and `CAIRN_RETRIEVAL_REPORT`. It reports
+lexical retrieval and relevance observations; it does not introduce an absolute
+relevance threshold or establish model quality by itself. Accepted real-worker
+parity and indexed-comparison evidence remains part of HC-01. This removes the
+open-ended request for a new quality contract; it grants no production cutover.
+
+The fixture passed on 2026-11-12 with the race detector: one test, no skips,
+12 notes, 17 queries and 68 query/order/mode observations. At least one authored
+relevant note was returned in 55 of those observations; the other 13 remain
+visible in the report. Test success establishes the fixture's integrity and
+execution checks, not perfect relevance. The generated report is retained
+outside Git with SHA-256
+`01d1ab496339ca2cf43ed32721bbbe56614799616d7228b8ea9ab9e456705854`.
+
 The inventory fixes test names, counts, source hashes, five model asset hashes
 and retained artifact hashes before execution. The runner rejects missing or
 changed inputs, skipped or zero-test suites, command failures and absent Go
@@ -39,7 +75,7 @@ tooling results remain separate; the failed attempt is retained.
 | Failure evidence | The checked S-01b ledger names all 78 required IDs and expands compound cases. Its audit reports observed scopes and exact residual subcase IDs. A complete catalogue or passing test count does not close missing tuples. |
 | Raw/FENV | Historical first-normalized vectors do not establish original raw CLS, actual historical mappings or floating-point environment. Unproved evidence remains named. |
 | Maximum punctuation | The direct-supervisor 90-second observation and consumed, unqualified 180-second attempt remain historical. The protected raw/A-B/real-Go route is held; this runner never invokes it. |
-| Retrieval quality | Rule C's fourth clause remains unassessed until its PASS contract is selected. |
+| Retrieval quality | The 2026-11-12 reset selects the existing retrieval-quality fixture for HC-01; report its result and limits alongside accepted real-worker parity. |
 
 The old CAIRN-322/323/324 review findings describe predecessor candidates.
 The producer tooling and combined model-free seam were accepted and landed as
@@ -211,11 +247,13 @@ status, wire stdout prefix or complete restart tuple. The packaged CJK input is
 exit 0 with raw stdout, but lacks actual runtime/process identity and restart
 observations. Neither selected CJK input matches the exact 65,535-byte name.
 The historical dense ASCII maximum timed out. No maximum-size or
-latency experiment is added here. Closing these gaps requires a separately
-authorized route that records the missing observations. Full S-01, raw/FENV,
-punctuation, quality, runtime and production acceptance remain unchanged.
+latency experiment is added here. Closing these observation gaps would require
+a separately authorized route that records the missing observations. Under the
+2026-11-12 reset, they are documented limits rather than S-01 campaign-closure
+blockers. Raw/FENV, punctuation and runtime claims are not expanded; production
+remains held.
 
-## Retrieval-quality decision gap
+## Retrieval-quality evidence
 
 Owner `98d46758-c61c-42b4-9912-76cf9dfb0dc0/v1` selects Rule C. Its four
 clauses include vector error at most `1e-6`, score delta at most 500, unchanged
@@ -231,11 +269,12 @@ S-03 result proves discrete compiler/SQL equality and receipt replay; it does
 not declare an absolute relevance threshold. The 17 labelled worker observations
 and 15 unchanged relevant-rank intervals also remain observations.
 
-Proposal sent to the lead: adopt that existing frozen Python-relative real
-compiler preservation contract as the named fourth-clause criterion, while
-reporting relevant-label ranks separately. The owner must decide whether this
-contract satisfies the intended quality clause or provide an absolute
-relevance/no-answer criterion. This proposal is not an acceptance decision.
+The 2026-11-12 owner-directed reset resolves the open-ended fixture-selection
+question: use the existing retrieval-quality fixture, reporting relevant-label
+ranks separately. Preserve the accepted Python-relative real compiler
+comparison as model evidence. A passing lexical measurement is not a claim
+that every relevance label was retrieved or that an absolute relevance/no-answer
+threshold was met.
 
 ## Running the bounded tests
 
@@ -266,5 +305,7 @@ unchanged wrapper as well. Output paths must be new.
 Exit 0 from `tests` means only the named tests passed. Exit 3 from `plan` or
 `audit` records incomplete criteria. Exit 2 records a refusal. Held, missing,
 unproved and decision-required entries remain in `remaining`; they cannot become
-a full S-01 PASS through a skipped phase or a passing unrelated test. S-04R,
-fleet, runtime and production acceptance remain separate.
+a full catalogue PASS through a skipped phase or a passing unrelated test.
+The campaign closure decision above accepts the two named residuals as limits;
+it does not rewrite this audit's result. S-04R, runtime and production evidence
+remain separately reported.

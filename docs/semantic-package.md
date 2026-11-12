@@ -241,6 +241,32 @@ Unknown effective CPU/library classes and unreachable hosts remain gaps.
 
 ## Campaign status on 2026-11-11
 
+### Qualification decision on 2026-11-12
+
+The owner-directed reset `cb71136b-cd84-4fc2-b84f-eb247b975548/v1` selects
+`x86_64-unknown-linux-gnu` as the campaign target. The managed Linux roster is
+Proximal, Archon, Talos and peecee-wsl, recorded under the infrastructure
+repository's `hosts/`. A new host-roster decision is not a prerequisite for
+finishing the implementation.
+
+S-04 / CAIRN-327 accepts the retained target qualification: immutable packaging
+at `1945d6c4` (review `0d48fa5e/v1`) and the native-runtime fixture at
+`362feb80` (exact candidate `52294c07`, review `19a34503/v1`). Its retained
+`proof-05/native-report.json` has 23 passing cases: six direct/Go mode routes,
+15 library/asset/digest refusals, Python-absence and observer controls. Each
+positive route matches the retained reply and observes zero worker connect
+attempts and telemetry-store mutations. The existing package tests also cover
+staging, idle release and respawn without changing the selected launcher.
+Those reviewed implementation bytes remain on trunk; no duplicate model run
+is needed to declare this evidence accepted for the selected target.
+
+This qualifies the tested package and ABI inputs on the recorded x86_64 host.
+It is not an observation of installation on every roster machine. Release must
+verify destination ABI prerequisites and selected bytes before an authorized
+installation. CPU/FENV history, capacity and maximum-document timing remain
+reported limits rather than an open-ended new qualification campaign. Installed
+cutover and HC-02 still require the owner's R-07 grant.
+
 Semantic lead accepted S-02 / CAIRN-325 and S-03 / CAIRN-326 under the current
 owner-amended implementation criteria. S-03 landed through
 `f2c7253060c004c1e21d6601d49b95b607180166`; author result
