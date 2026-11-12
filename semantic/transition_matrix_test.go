@@ -320,6 +320,10 @@ func transitionLeaseBacklog(t *testing.T) {
 }
 
 func transitionPartial(t *testing.T) {
+	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "7" {
+		transitionRealPartial(t)
+		return
+	}
 	d := transitionDatabase(t)
 	w := transitionFixture(t, "partial")
 	a := d.source(t, "s05-a", "coverage source one")

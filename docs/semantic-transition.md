@@ -409,6 +409,97 @@ case changes beyond additive dispatch/error-cleanup selection are required by
 this fixture. Four other real cases, full S-05, and all numeric, runtime, fleet,
 production, retirement and owner-closure holds remain open.
 
+## Explicit local real-worker case 7
+
+```sh
+mise run host:exec --timeout 25m --weight 1 -- \
+  python3 -I -B scripts/check_semantic_transition.py --real-case7 \
+  --artifact-dir /absolute/new-local-case7-artifacts \
+  --python-selection /absolute/s04r/qualified-selection \
+  --rust-fixtures /absolute/retained-rust/observed/fixtures
+```
+
+Selected Go membership is exactly `TestSemanticRealTransitionCase7` and its
+`python` and `rust` subcases, with no failures or skips. Each must complete the
+seven ordered JSON phases `seed_partial`, `startup_unavailable`, `ready_partial`,
+`killed_query_unavailable`, `cold_query_restart`,
+`restarted_owner_warm_control` and `full_recovery`. The host checks this exact
+phase membership as well as individual Go results.
+
+The fixture uses public `StartIndex` for each accepted fixed, zero-argument
+launcher. The raw `StartRustIndex` configuration constructs arguments and a
+different launch environment, so it cannot replace the qualified fixed entry.
+A recording adapter calls the returned production retriever and returns its
+actual result/error untouched; the real core compiler receives that retriever.
+No worker reply, readiness state or query result is substituted.
+
+Three ordinary sources remain eligible across two collections, with complete
+record/version history and an independent global coverage denominator. Two
+sources belong to the query scope; the third remains in the rebuild denominator.
+One normal real Step seeds the first source, then that seed owner is joined and
+reaped. Private row locks hold the two pending jobs without altering attempts,
+leases, timestamps or source rows. A separate SHARE lock on `semantic_job`
+blocks the actual asynchronous OpenIndex seed INSERT after identity startup.
+Before its index pointer is installed, the actual compiler must report
+`unavailable` / `DEGRADED_NO_EMBEDDINGS` and retain both positive lexical sources.
+This is a controlled startup-readiness boundary, not a claim that the model
+itself failed to initialize.
+
+Releasing the startup table lock preserves the pending row locks. The ready
+compiler then reports observed query coverage `1/2`, an actual positive indexed
+hit and the two eligible scoped candidates, while global coverage remains
+`1/3` with two unchanged queued jobs. These observations do not establish a
+general per-record lexical fallback promise or a complete rebuild.
+
+Only the query/identity worker can be live while document jobs remain locked.
+Its canonical trace, direct ownership, native/environment sample and stdio pipes
+are recorded. SIGKILL targets that verified positive PID. The next actual
+compiler exchange fails, exposes unavailable/degraded lexical behavior, and
+joins/reaps the old worker; its supervisor stdout/reader FD must be closed.
+The next designated call creates a new worker and pipe under the unchanged
+two-second StartIndex retrieval budget. It receives no prewarming, widened
+budget or artificial worker delay. The fixture records either a valid real
+reply with ready coverage or an actual deadline with unavailable/degraded
+lexical behavior and joined process/reader cleanup. It records elapsed time
+and allows one second for scheduling and cleanup beyond the two-second timer;
+this is a bounded software observation, not latency qualification.
+
+Every cold-start root stays in the process inventory. Available mapped images
+and environment must match exactly. If the cold worker exits before the
+full-runtime-ready receipt is published, that observation gap is retained
+explicitly; a missing root sample still refuses the host proof. Stdio observations
+identify the actual worker stdout pipe and the supervisor's open reader FD;
+new process/pipe identity and old FD closure establish the observed reader
+lifecycle without claiming an internal pointer measurement. Filesystem/page
+caches are uncontrolled, so this is not an OS-cache-cold benchmark.
+
+The first backend is stopped, joined and fenced after that cold observation.
+A separate same-generation backend starts through its ordinary asynchronous
+identity path, whose query supervisor retains its normal 25-second limit.
+Its later warm compiler control still uses the two-second retrieval budget.
+That separate startup/control cannot rewrite the earlier cold outcome.
+Releasing the pending row locks then permits normal background work to consume
+the two retained jobs. Final joined/fenced coverage must be global `3/3`, query
+`2/2`, with no jobs/problems, exactly three current source/model publications,
+valid contiguous UTF-8 passages/ordinals and finite nonzero 384-vectors.
+
+The job audit requires three initial inserts, three ordinary lease/delete pairs,
+no later reinsertion and no attempt changes. Fixture lock SQL, acquire/release
+times and unchanged job snapshots are retained separately; the fixture performs
+no source/job scheduler DML. `real-case7-{python,rust}.json` and `real-case7.json`
+retain compiler packages, actual retrieval calls, counts/hits/errors, complete
+sources/history, queue/publication audits, worker pipes and writer fences.
+There is no embedding-cache protocol; raw stdout remains prefix-limited.
+
+Use the shared `host:exec` task around the unchanged required campaign wrapper
+for all process-spawning checks. Required gates include focused observer/PID/
+barrier checks, unchanged deterministic ten-case/32-entry/no-skip regression,
+both real subcases/all seven phases, `make check` and documentation link/code
+block validation. Production rank/query 25-second, document 90-second, stream
+idle 30-second, retrieval two-second, lease two-minute and backoff limits remain
+unchanged. Three other real cases, full S-05 and all numeric, latency, runtime,
+fleet, production, retirement and owner/ticket closure holds remain open.
+
 ## Matrix and claim boundaries
 
 Each row names one top-level case under
