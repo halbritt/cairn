@@ -33,6 +33,26 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def scripted_selector(path, python, selection_file):
+    """External fixture only; exercise the actual preview/body/capture ABI."""
+    path.write_text('#!' + str(python) + '\n' + '''import json,pathlib,sys
+root=pathlib.Path(__file__).parent
+request=json.loads(sys.stdin.read())
+schema=json.loads(sys.argv[sys.argv.index('--json-schema')+1])
+properties=schema['properties']
+if 'indices' in properties:
+ stage='preview'; assert request['previews']; result={'structured_output':{'indices':[0]}}
+elif 'index' in properties:
+ stage='recall'; assert request['candidates']; result={'structured_output':{'index':0}}
+else:
+ stage='capture'; result=json.loads(pathlib.Path(''' + repr(str(selection_file)) + ''').read_text())['result']
+with (root/'selector-inputs.jsonl').open('a') as log:
+ log.write(json.dumps(dict(stage=stage,argv=sys.argv[1:],request=request,result=result))+'\\n')
+print(json.dumps(result))
+''')
+    path.chmod(0o500)
+
+
 class HermesInstalledFixture(UnboundFixture):
     def configuration_plan(self, **kwargs):
         plan = super().configuration_plan(**kwargs)
@@ -275,6 +295,42 @@ class InstalledMemory(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertFalse(Path(self.f.memory['state_dir']).exists())
 
+    def test_positive_checked_tools_persist_hints_without_api(self):
+        self.install()
+        for event, fields in (
+                ('PostToolUse', dict(tool_name='Read', tool_input={'file_path': str(self.f.root / 'policy.txt')})),
+                ('PostToolUseFailure', dict(error='ERTOOL PRIVATE_FIXTURE'))):
+            result = self.run_event(event, **fields)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            self.assertIn('cairn_status', json.loads(result.stdout))
+            vector = shlex.split(Path(self.selected['commands'][event][0]).read_text().splitlines()[1])
+            self.assertEqual(vector[2], 'memory')
+            self.assertEqual(vector[vector.index('--hook-timeout') + 1], '13')
+        state = json.loads((Path(self.f.memory['state_dir']) / (hashlib.sha256(self.session.encode()).hexdigest() + '.json')).read_bytes())
+        self.assertIn('policy.txt', state['hints']['files'])
+        self.assertEqual(state['hints']['errors'], ['ERTOOL'])
+        self.assertNotIn('PRIVATE_FIXTURE', json.dumps(state))
+        self.assertEqual(self.calls, [])
+
+    def test_positive_ambient_provider_preview_and_body(self):
+        self.f.memory.update(recall_mode='ambient', semantic_fallback=True, recall_observations=True)
+        self.f.publish_configuration(enabled=False)
+        scripted_selector(self.root / 'selector', HERMES_PYTHON, self.root / 'provider.json')
+        self.records.extend(dict(record_id='66666666-6666-4666-8666-%012d' % i, version=1,
+            kind='decision', **{'class': 'A'}, body='installed project: retention policy\nRetain thirty days; fixture option %d.' % i)
+            for i in range(5))
+        self.install()
+        result = self.run_event('UserPromptSubmit')
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        status = json.loads(result.stdout)['cairn_status']['last_recall']
+        self.assertEqual(status['discovery'], 'verified')
+        self.assertGreater(status['preview_count'], 4)
+        rows = [json.loads(line) for line in self.root.joinpath('selector-inputs.jsonl').read_text().splitlines()]
+        self.assertEqual([row['stage'] for row in rows], ['preview', 'recall'])
+        self.assertIn('source_extent', rows[1]['request']['candidates'][0])
+        self.assertEqual(self.write_count, 0)
+        self.assert_go_attribution()
+
     def test_explicit_reverse_to_retained_python_preserves_go_state_and_dedup(self):
         installer.install(self.home, self.native, str(self.root / 'selector'), self.skill,
                           model='fixture-model', recall_mode='agent_tools')
@@ -370,13 +426,15 @@ class InstalledMemory(unittest.TestCase):
         self.assertNotEqual(fresh['session'], reverse['session'])
         self.assertEqual(self.write_count, 0)
 
-    def native_objects(self, name, refusal=False):
+    def native_objects(self, name, refusal=False, positive_tools=False):
         self.home.joinpath('r03-fixture.json').write_text(json.dumps(dict(
             schema='cairn.r03-hermes-fixture/1', root=str(self.root), project=str(self.f.root), session=self.session)))
         command = [str(HERMES_PYTHON), '-I', '-B', str(ROOT / 'scripts/check_r03_hermes_objects.py'),
                    '--hermes-root', str(HERMES_ROOT), '--home', str(self.home), '--output', str(self.root / name)]
         if refusal:
             command.append('--refusal')
+        if positive_tools:
+            command.append('--positive-tools')
         result = subprocess.run(command, cwd=self.f.root, env=dict(self.f.env(), HERMES_HOME=str(self.home),
                                 TERMINAL_CWD=str(self.f.root)), capture_output=True, timeout=180)
         self.results.append(dict(argv=command, exit=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode()))
@@ -389,6 +447,15 @@ class InstalledMemory(unittest.TestCase):
                                  kind='decision', **{'class': 'A'}, body='Retain policy for thirty days.'))
         shutil.rmtree(self.f.package)
         self.native_objects('native-cycle')
+        self.assertGreaterEqual(self.write_count, 1)
+        self.assert_go_attribution()
+
+    def test_positive_actual_native_tools_middleware_and_disposal(self):
+        self.install()
+        self.records.append(dict(record_id='66666666-6666-4666-8666-666666666666', version=1,
+                                 kind='decision', **{'class': 'A'}, body='Retain policy for thirty days.'))
+        shutil.rmtree(self.f.package)
+        self.native_objects('native-positive-cycle', positive_tools=True)
         self.assertGreaterEqual(self.write_count, 1)
         self.assert_go_attribution()
 
@@ -489,6 +556,7 @@ def main():
     parser.add_argument('--images', type=Path, help='explicit frozen image directory with pins.json; no build fallback')
     parser.add_argument('--source-revision', help='source provenance when the selected checkout is not Git-readable')
     parser.add_argument('--emit-cases', action='store_true', help='emit raw process/API/state evidence for an isolated run')
+    parser.add_argument('--positive', action='store_true', help='qualify admitted tools/provider image; baseline refusal controls remain separate')
     parser.add_argument('tests', nargs='*', help='optional unittest names within this module')
     args = parser.parse_args()
     OUTPUT, HERMES_ROOT, HERMES_PYTHON = args.output.resolve(), args.hermes_root.resolve(), args.hermes_python.absolute()
@@ -498,7 +566,13 @@ def main():
     OUTPUT.mkdir(mode=0o700)
     if not (HERMES_ROOT / 'agent/memory_provider.py').is_file() or not HERMES_PYTHON.is_file():
         raise RuntimeError('R03_HERMES_PREREQUISITE: explicit existing Hermes source/interpreter required')
-    suite = unittest.defaultTestLoader.loadTestsFromNames(args.tests or ['InstalledMemory'], sys.modules[__name__])
+    baseline_only = {'test_checked_tool_gap_is_an_explicit_refusal_without_fallback',
+                     'test_checked_provider_fallback_gap_is_refused_before_effects',
+                     'test_actual_native_provider_hooks_middleware_and_disposal'}
+    names = args.tests or ['InstalledMemory.' + name for name in
+        unittest.defaultTestLoader.getTestCaseNames(InstalledMemory)
+        if (name not in baseline_only if args.positive else not name.startswith('test_positive_'))]
+    suite = unittest.defaultTestLoader.loadTestsFromNames(names, sys.modules[__name__])
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     OUTPUT.joinpath('summary.json').write_text(json.dumps(dict(tests=result.testsRun, failures=len(result.failures),
         errors=len(result.errors), skips=len(result.skipped), passed=result.wasSuccessful()), indent=2) + '\n')

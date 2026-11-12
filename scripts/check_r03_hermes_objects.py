@@ -5,9 +5,11 @@ Only accepts the disposable marker emitted by check_r03_hermes_installed.py.
 No agent conversation, model, messaging transport or production service starts.
 """
 import argparse
+import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
+import shlex
 import sys
 import time
 
@@ -19,6 +21,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--refusal', action='store_true')
     parser.add_argument('--interrupt-capture', action='store_true')
+    parser.add_argument('--positive-tools', action='store_true')
     args = parser.parse_args()
     marker = json.loads((args.home / 'r03-fixture.json').read_bytes())
     assert marker['schema'] == 'cairn.r03-hermes-fixture/1'
@@ -126,12 +129,28 @@ def main():
             # assigned base its checked entry explicitly refuses these rows;
             # retain that gap rather than claiming all-operation acceptance.
             invoke_hook('post_tool_call', session_id=session, tool_name='read_file',
-                        args={'path': str(fixture / 'policy.txt')}, status='success')
-            invoke_hook('post_tool_call', session_id=session, tool_name='terminal', status='error', error_type='fixture')
+                        args={'path': str((Path(marker['project']) if args.positive_tools else fixture) / 'policy.txt')}, status='success')
+            invoke_hook('post_tool_call', session_id=session, tool_name='terminal', status='error',
+                        error_type='ERTOOL PRIVATE_FIXTURE' if args.positive_tools else 'fixture')
             tool_calls = calls[-2:]
             assert [c['payload']['hook_event_name'] for c in tool_calls] == ['PostToolUse', 'PostToolUseFailure']
-            assert all(c['exit'] == 1 and 'CompatibilityPreflightError' in c['stderr'] for c in tool_calls)
-            assert len(warnings) == 2
+            if args.positive_tools:
+                assert all(c['exit'] == 0 and not c['stderr'] for c in tool_calls), tool_calls
+                assert all(c['timeout'] == 13 and c['argv'] == config['commands'][c['payload']['hook_event_name']]
+                           for c in tool_calls)
+                for call in tool_calls:
+                    vector = shlex.split(Path(call['argv'][0]).read_text().splitlines()[1])
+                    assert vector[2] == 'memory' and vector[vector.index('--hook-timeout') + 1] == '13'
+                assert all('cairn_status' in json.loads(c['stdout']) for c in tool_calls)
+                state_path = Path(json.loads(Path(config['engine_config']).read_bytes())['state_dir']) / (hashlib.sha256(session.encode()).hexdigest() + '.json')
+                state = json.loads(state_path.read_bytes())
+                assert 'policy.txt' in state['hints']['files']
+                assert state['hints']['errors'] == ['ERTOOL']
+                assert 'PRIVATE_FIXTURE' not in json.dumps(state)
+                assert not warnings
+            else:
+                assert all(c['exit'] == 1 and 'CompatibilityPreflightError' in c['stderr'] for c in tool_calls)
+                assert len(warnings) == 2
         assert all('PRIVATE_FIXTURE' not in value for value in warnings)
         before = len(calls)
         marker_path = Path(marker['project']) / '.cairn-no-memory'
@@ -153,7 +172,8 @@ def main():
                       module_paths={key: value.__file__ for key, value in sys.modules.items()
                                     if getattr(value, '__file__', None)},
                       provider_module=runtime.__file__, calls=len(calls), warnings=warnings,
-                      checked_tool_rows='refused at assigned base; Foundation seam remains open',
+                      checked_tool_rows='positive checked Go; persisted file/error hints' if args.positive_tools else
+                                       'refused at assigned base; Foundation seam remains open',
                       cancellation='no public Store cancellation attestation',
                       refresh='provider disposal/recreation only; no CLI/gateway process qualification')
         (args.output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')

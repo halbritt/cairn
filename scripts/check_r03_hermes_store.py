@@ -32,7 +32,11 @@ def main():
     parser.add_argument('--hermes-root', type=Path, required=True)
     parser.add_argument('--hermes-python', type=Path, required=True)
     parser.add_argument('--recall-mode', choices=('agent_tools', 'ambient'), default='agent_tools')
+    parser.add_argument('--semantic-fallback', action='store_true', help='exercise actual ambient preview/body selector pipeline')
+    parser.add_argument('--positive-tools', action='store_true', help='qualify admitted checked tool rows')
     args = parser.parse_args()
+    if args.semantic_fallback and args.recall_mode != 'ambient':
+        parser.error('--semantic-fallback requires --recall-mode ambient')
     output = args.output.resolve()
     output.mkdir(mode=0o700)
     images = args.images.resolve()
@@ -74,6 +78,14 @@ def main():
         seed = host.agent('worker', 'remember', seed_body,
             args=('--repo', host.repo, '--kind', 'decision', '--shareable', '--request-id', str(uuid.uuid4()), '--stdin'))
         (output / 'seed.json').write_text(json.dumps(seed, indent=2) + '\n')
+        seeds = [seed]
+        if args.semantic_fallback:
+            # Five optional previews exceed the real four-credit receipt, so
+            # the actual provider must perform preview admission then body choice.
+            for index in range(1, 5):
+                seeds.append(host.agent('worker', 'remember', seed_body + '\nFixture alternative ' + str(index),
+                    args=('--repo', host.repo, '--kind', 'decision', '--shareable', '--request-id', str(uuid.uuid4()), '--stdin')))
+            (output / 'seeds.json').write_text(json.dumps(seeds, indent=2) + '\n')
         selector = output / 'selector'
         selector.write_text('#!' + str(args.hermes_python) + '\n' + '''import json,pathlib,sys
 root=pathlib.Path(__file__).parent
@@ -86,6 +98,8 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
             memories=[dict(record_id=None, kind='decision', title='R03 selected retention',
                            body='Keep thirty days of retention in the synthetic R03 fixture.')])) )
         (output / 'selection.json').write_text(json.dumps(selection) + '\n')
+        if args.semantic_fallback:
+            installed.scripted_selector(selector, args.hermes_python, output / 'selection.json')
         (output / 'selector-pin.json').write_text(json.dumps(dict(path=str(selector), sha256=digest(selector),
             version='scripted-r03-selector/1', provider='fixture; no model account'), indent=2) + '\n')
         f = installed.HermesInstalledFixture(output / 'project', images / 'lifecycle',
@@ -94,7 +108,7 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
             config.update(cairn=str(images / 'cairn'), socket=str(host.socket), token_file=str(host.token('worker')),
                           repo=host.repo)
         f.memory.update(claude=str(selector), model='r03-scripted-fixture', recall_mode=args.recall_mode,
-                        semantic_fallback=False, capture_observations=True, recall_observations=True)
+                        semantic_fallback=args.semantic_fallback, capture_observations=True, recall_observations=True)
         f.publish_configuration(enabled=False)
         home = f.account
         (home / 'config.yaml').write_text(json.dumps(dict(memory=dict(memory_enabled=True), plugins=dict(enabled=[]))))
@@ -108,6 +122,8 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
             root=str(output), project=str(f.root), session=session)))
         command = [str(args.hermes_python), '-I', '-B', str(ROOT / 'scripts/check_r03_hermes_objects.py'),
             '--hermes-root', str(args.hermes_root), '--home', str(home), '--output', str(output / 'native')]
+        if args.positive_tools:
+            command.append('--positive-tools')
         result = subprocess.run(command, cwd=f.root, env=dict(host.env, HERMES_HOME=str(home),
             TERMINAL_CWD=str(f.root)), capture_output=True, timeout=180)
         (output / 'native-process.json').write_text(json.dumps(dict(argv=command, exit=result.returncode,
@@ -116,6 +132,14 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
         assert b'PRIVATE_FIXTURE' not in result.stdout + result.stderr
         state = json.loads((Path(f.memory['state_dir']) / (hashlib.sha256(session.encode()).hexdigest() + '.json')).read_bytes())
         calls = json.loads((output / 'native/calls.json').read_bytes())
+        if args.semantic_fallback:
+            recalled = next(call for call in calls if call['payload']['hook_event_name'] == 'UserPromptSubmit')
+            recall = json.loads(recalled['stdout'])['cairn_status']['last_recall']
+            assert recall['discovery'] == 'verified' and recall['preview_count'] > 4, recall
+            selector_calls = [json.loads(line) for line in (output / 'selector-inputs.jsonl').read_text().splitlines()]
+            assert [call['stage'] for call in selector_calls] == ['preview', 'recall', 'capture']
+            assert selector_calls[1]['request']['candidates'][0]['source_extent'] == 'full_body'
+            assert seed_body in selector_calls[1]['request']['candidates'][0]['body']
         completed = next(call for call in calls if call['payload']['hook_event_name'] == 'SessionEnd')
         saved_ids = json.loads(completed['stdout'])['cairn_status']['last_capture']['records']
         assert len(saved_ids) == 1 and saved_ids[0] != seed['record_id']
@@ -133,12 +157,16 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
         (output / 'stored-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
         counts = {table: host.count(table) for table in
                   ('memory_record', 'capture_observation', 'recall_observation', 'agent_session_attempt', 'agent_delivery')}
-        assert counts['memory_record'] == 2, 'completed capture was duplicated or lost'
+        if args.semantic_fallback:
+            assert counts['memory_record'] == 6, 'five input notes plus exactly one capture required'
+        else:
+            assert counts['memory_record'] == 2, 'completed capture was duplicated or lost'
         assert counts['capture_observation'] >= 1 and counts['recall_observation'] == 1
         assert counts['agent_session_attempt'] == counts['agent_delivery'] == 0
         report = dict(schema='cairn.r03-hermes-store/1', passed=True, source=source, counts=counts, recall_mode=args.recall_mode,
             seed_record=seed['record_id'], saved_record=saved_ids[0], dialogue_stored=False,
-            provider='scripted external selector; no real model', checked_tools='baseline refusal; Foundation input pending',
+            provider='scripted external selector; no real model', semantic_fallback=args.semantic_fallback,
+            checked_tools='positive checked Go; persisted hints' if args.positive_tools else 'baseline refusal; Foundation input pending',
             lifecycle_image_sha256=f.receipt['binary']['sha256'])
         (output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(report))
