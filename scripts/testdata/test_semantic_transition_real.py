@@ -9,6 +9,14 @@ spec.loader.exec_module(real)
 
 
 class WorkerTraceTests(unittest.TestCase):
+    def test_fault_receipt_waits_for_verified_runtime_images(self):
+        python = {20: {'images': [{'path': '/selected/python'}]},
+                  21: {'images': [{'path': '/selected/numpy/core.so'},
+                                  {'path': '/selected/onnxruntime_pybind11_state.so'}]}}
+        rust = {30: {'native_images': [{}, {}, {}]},
+                31: {'native_images': [{}, {}, {}, {}]}}
+        self.assertEqual(real.ready_sample_pids(python, rust), {'python': [21], 'rust': [31]})
+
     def test_every_worker_root_requires_its_own_sample(self):
         roots = {'python': {20, 30}, 'rust': {40}}
         for samples in ({'python': {20}, 'rust': {40}},

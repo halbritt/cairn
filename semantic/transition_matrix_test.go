@@ -115,6 +115,10 @@ func transitionRoundTrip(t *testing.T) {
 }
 
 func transitionRestart(t *testing.T) {
+	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "2" {
+		transitionRealRestart(t)
+		return
+	}
 	d := transitionDatabase(t)
 	w := transitionFixture(t, "restart")
 	d.source(t, "s05-a", "restart source é")

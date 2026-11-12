@@ -18,7 +18,7 @@ import (
 )
 
 // Reused by deterministic handoff and the explicitly selected real case 1.
-func transitionAPIProcess(t *testing.T, d *transitionDB) (func(string, ...string) func(), func() bool, func(any) (json.RawMessage, error)) {
+func transitionAPIProcess(t *testing.T, d *transitionDB) (func(string, ...string) func(), func() bool, func(any) (json.RawMessage, error), func() int) {
 	cli := os.Getenv("CAIRN_TRANSITION_CLI")
 	if !filepath.IsAbs(cli) {
 		t.Fatal("wrapper-built API binary required")
@@ -68,6 +68,7 @@ func transitionAPIProcess(t *testing.T, d *transitionDB) (func(string, ...string
 		}
 		return json.Unmarshal(b, &envelope) == nil && envelope.OK
 	}
+	currentPID := 0
 	start := func(name string, args ...string) func() {
 		logPath := filepath.Join(home, name+".log")
 		if report := os.Getenv("CAIRN_TRANSITION_REPORT_DIR"); report != "" {
@@ -91,6 +92,7 @@ func transitionAPIProcess(t *testing.T, d *transitionDB) (func(string, ...string
 		if err = cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
+		currentPID = cmd.Process.Pid
 		done := make(chan error, 1)
 		go func() { done <- cmd.Wait(); close(done) }()
 		stopped := false
@@ -161,5 +163,5 @@ func transitionAPIProcess(t *testing.T, d *transitionDB) (func(string, ...string
 		}
 		return raw, nil
 	}
-	return start, probe, query
+	return start, probe, query, func() int { return currentPID }
 }

@@ -94,8 +94,62 @@ Identity probes while the API is stopped are included in observed outage.
 Product deadlines stay unchanged; the outer fixture budget accommodates real
 work. No zero-outage or fleet-capacity claim follows.
 
-The other nine real-worker cases and declared subcases remain open, including
-forced query-worker restart, failure populations and the Release handoff.
+Case 1 acceptance does not close the other real-worker cases or declared subcases,
+including forced query-worker restart, failure populations and the Release handoff.
+
+## Explicit local real-worker case 2
+
+The next bounded dispatch exercises a mid-rebuild restart separately for retained
+Python and BLAS-2 Rust, on fresh disposable databases with three collections:
+
+```sh
+python3 -I -B scripts/check_semantic_transition.py --real-case2 \
+  --artifact-dir /absolute/new-local-case2-artifacts \
+  --python-selection /absolute/s04r/qualified-selection \
+  --rust-fixtures /absolute/retained-rust/observed/fixtures
+```
+
+The exact source inventory and selection manifests are bound before execution;
+sealed generations and native prerequisites are verified before the Go builds.
+The common wrapper remains pinned and unchanged. Its existing private network,
+PID, proc and OS-home protection applies to every worker, including restarts.
+
+The first real document is observed with a live database lease. Identity opens
+the API's query lane first; the second canonical embed child is its document
+lane. The observer publishes a PID only after verifying its environment and
+actual native-runtime mappings. The harness waits for that receipt, verifies
+the child belongs to the exact owned API PID, and sends SIGSTOP to that positive
+worker PID. This interrupts cold document-lane startup under an active lease;
+it does not claim an interruption inside model inference. No aliases or product
+fault hooks are added. Harness fault/timeout signals use positive owned PIDs;
+the shipped Go supervisors retain their existing shutdown behavior.
+
+The test rechecks the same lease and absence of publication, disables every
+test-owned restartable writer definition, then stops and joins the actual API.
+Old API and worker PIDs must be reaped before restart. Full queue rows are
+retained after shutdown, including the original lease or persisted retry. Only
+private fixture `lease_until` and `retry_at` timestamps are then made due;
+lease IDs, attempts and source rows remain unchanged. The same fixed generation
+restarts. A private job audit must show reclamation of the retained row with one
+new lease, without reinsertion, and the publication audit requires exactly one
+correct current-version/body-hash/model publication per source after the fence.
+Full passage/vector/population checks and traced-root/sample-set equality remain
+mandatory. Failed or unembeddable records remain in the denominator.
+
+`real-case2-python.json`, `real-case2-rust.json` and `real-case2.json` retain the
+fault, ownership, lease/retry, source, fence and measured rebuild observations.
+They are local software evidence, not latency, managed-fleet or production
+qualification. The harness-only PID safety check can also run in isolation:
+
+```sh
+python3 -I -B scripts/test_hybrid_runtime_operations.py -- \
+  /usr/bin/env CC=/usr/bin/gcc GOMAXPROCS=2 GOFLAGS=-p=2 \
+  go test ./semantic -count=1 -run '^TestSemanticRestartOwnedPID$'
+```
+
+Case 2 does not close the other eight real-worker cases, full S-05, or any
+numeric/runtime/fleet/production/retirement gate. The known 53 baseline host
+`make test` failures remain FAILED; SDK execution is not established here.
 
 ## Matrix and claim boundaries
 

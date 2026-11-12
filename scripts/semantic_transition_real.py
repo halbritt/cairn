@@ -1,4 +1,4 @@
-"""Inside-wrapper preparation and observation for the single S05 real case 1."""
+"""Inside-wrapper preparation and observation for explicitly selected S05 cases."""
 import importlib.util
 import json
 import os
@@ -34,7 +34,7 @@ def restore_private_rust_modes(stage):
                 directory.chmod(0o555)
 
 
-def prepare(artifacts):
+def prepare(artifacts, *, sample_checkpoint=False):
     package = load('transition_package', '/work/scripts/semantic_package.py')
     closure = load('transition_closure', '/work/scripts/semantic_python_closure.py')
     python = json.loads(Path('/opt/s05-python-candidate.json').read_bytes())
@@ -66,6 +66,8 @@ def prepare(artifacts):
             raise RuntimeError('worker HOME/cache not initially empty: ' + home)
     trace_prefix = str(artifacts / 'worker-trace')
     selected = {'trace_prefix': trace_prefix}
+    if sample_checkpoint:
+        selected['sample_pids'] = str(artifacts / 'worker-sample-pids.json')
     for label, launchers, rank, embed in (
         ('python', python['controls']['launchers'], python['expected_identities']['rank'],
          python['expected_identities']['embed']['model_sha256']),
@@ -78,6 +80,14 @@ def prepare(artifacts):
         selected[label] = {'rank': launchers['rank'], 'embed': launchers['embed'],
                            'rank_identity': rank, 'embed_identity': embed, 'launcher_sha256': hashes}
     (artifacts / 'real-selection.json').write_text(json.dumps(selected, indent=2) + '\n')
+    (artifacts / 'prepared-inputs.json').write_text(json.dumps({
+        'verified_before_build_and_workers': True,
+        'python_candidate_sha256': package.digest(Path('/opt/s05-python-candidate.json').read_bytes()),
+        'rust_stage_result_sha256': package.digest(Path('/opt/s05-rust-result.json').read_bytes()),
+        'rust_manifest_sha256': package.digest(Path(stage['manifest']).read_bytes()),
+        'python_generations_verified': [python[role]['address'] for role in ('payload', 'controls')],
+        'rust_payload_records_verified': original,
+        'selection': selected}, indent=2) + '\n')
     return selected, python, Path(stage['payload'])
 
 
@@ -112,6 +122,17 @@ def require_worker_samples(roots_by_label, samples_by_label):
                                repr(sorted(roots)) + ' sampled=' + repr(sorted(samples)))
 
 
+def ready_sample_pids(python_workers, rust_workers):
+    """Faults wait for an actual verified runtime mapping, not launcher startup."""
+    python = []
+    for pid, row in python_workers.items():
+        paths = [image['path'] for image in row['images']]
+        if any('onnxruntime_pybind11_state' in path for path in paths) and any('numpy' in path for path in paths):
+            python.append(pid)
+    return {'python': sorted(python),
+            'rust': sorted(pid for pid, row in rust_workers.items() if len(row['native_images']) == 4)}
+
+
 def mapping_permission(proc, pending, exit_races, terminal):
     """Use the qualified S04R observer's bounded live/terminal race policy."""
     pid = int(proc.name)
@@ -140,6 +161,7 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
     (artifacts / 'real-test-command.json').write_text(json.dumps(argv, indent=2) + '\n')
 
     def sample():
+        published = None
         try:
             while not done.is_set():
                 for proc in Path('/proc').iterdir():
@@ -169,6 +191,14 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
                         mapping_permission(proc, pending_permissions, exit_races, python_observer.process_terminal)
                 for row in rust_observer.process_snapshot(rust_payload, rust_workers, ancestor=child.pid, standalone=False):
                     rust_workers[row['pid']] = row
+                if selected.get('sample_pids'):
+                    ready = ready_sample_pids(python_workers, rust_workers)
+                    if ready != published:
+                        path = Path(selected['sample_pids'])
+                        temporary = path.with_suffix('.tmp')
+                        temporary.write_text(json.dumps(ready) + '\n')
+                        temporary.replace(path)
+                        published = ready
                 for pid in list(pending_permissions):
                     if python_observer.process_terminal(Path('/proc') / str(pid)):
                         exit_races.add(pid)
@@ -184,9 +214,14 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
         try:
             while child.poll() is None:
                 if errors:
-                    if child.pid <= 1 or os.getpgid(child.pid) != child.pid:
-                        raise RuntimeError('refusing unsafe fixture process-group control')
-                    os.killpg(child.pid, signal.SIGTERM)
+                    if child.pid <= 1:
+                        raise RuntimeError('refusing unsafe fixture process control')
+                    if env.get('CAIRN_TRANSITION_REAL_CASE') == '2':
+                        child.terminate()
+                    else:
+                        if os.getpgid(child.pid) != child.pid:
+                            raise RuntimeError('refusing unsafe fixture process-group control')
+                        os.killpg(child.pid, signal.SIGTERM)
                     child.wait(timeout=10)
                     break
                 done.wait(0.1)

@@ -29,6 +29,7 @@ type transitionRealSelection struct {
 	Python      transitionRealWorker `json:"python"`
 	Rust        transitionRealWorker `json:"rust"`
 	TracePrefix string               `json:"trace_prefix"`
+	SamplePIDs  string               `json:"sample_pids"`
 }
 
 func TestSemanticRealTransitionCase1(t *testing.T) {
@@ -201,7 +202,7 @@ func transitionRealRoundTrip(t *testing.T) {
  CREATE FUNCTION cairn.s05_observe_tuple() RETURNS trigger LANGUAGE plpgsql AS $$
  BEGIN INSERT INTO cairn.s05_tuple_publication SELECT phase,NEW.record_id,NEW.version,NEW.body_sha256,NEW.model_sha256 FROM cairn.s05_phase; RETURN NEW; END $$;
  CREATE TRIGGER s05_observe_tuple AFTER INSERT ON cairn.semantic_document FOR EACH ROW EXECUTE FUNCTION cairn.s05_observe_tuple();`)
-	start, probe, query := transitionAPIProcess(t, d)
+	start, probe, query, _ := transitionAPIProcess(t, d)
 	stop := start("real-default-no-semantic")
 	definitions := []*transitionWriter{{name: "combined API", collection: "all three collections", model: "disabled", restartable: true, stop: stop},
 		{name: "inactive alternate collection definition", collection: "s05-b", model: selected.Python.EmbedIdentity, restartable: true, joined: true},

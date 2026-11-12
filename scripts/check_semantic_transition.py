@@ -1,12 +1,14 @@
 """Run S-05 fixtures through the unchanged common isolation wrapper.
 
-The default runs deterministic protocol workers. --real-case1 opts into the
-explicitly supplied retained Python/Rust/Python local transition. Every build,
+The default runs deterministic protocol workers. --real-case1 selects the
+retained Python/Rust/Python transition; --real-case2 selects two same-generation
+mid-rebuild restarts. Every build,
 worker, Go API, disposable PostgreSQL cluster and assertion runs inside the
 wrapper; the host transports data. Local execution does not close full S-05.
 """
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -24,6 +26,7 @@ INNER = r'''
 import hashlib,json,os,pathlib,subprocess,sys,tarfile,tempfile,traceback
 root=pathlib.Path(tempfile.mkdtemp(prefix='semantic-transition-',dir='/tmp'))
 real=__REAL_CASE1__
+real_case=__REAL_CASE__
 artifacts=root/'artifacts';artifacts.mkdir(mode=0o700)
 binary=root/'semantic.test';cli=root/'cairn'
 env=dict(os.environ,CC='/usr/bin/gcc',GOMAXPROCS='2',GOFLAGS='-p=2',GOTELEMETRY='off',ORT_DISABLE_TELEMETRY='1',TMPDIR='/tmp')
@@ -34,11 +37,16 @@ commands=[];started=False;code=1;pg=None
 def input_inventory():
  return {str(p.relative_to('/work')):hashlib.sha256(p.read_bytes()).hexdigest() for p in pathlib.Path('/work').rglob('*') if p.is_file() and p.suffix in ('.go','.sql','.mod','.sum','.py')}
 source_inputs=input_inventory()
+(artifacts/'source-inputs-prebuild.json').write_text(json.dumps(source_inputs,sort_keys=True)+'\n')
 def run(argv,name,timeout=180,selected_env=None):
  commands.append(dict(argv=argv,log=name))
  with (artifacts/name).open('wb') as log:
   return subprocess.run(argv,env=selected_env or env,stdout=log,stderr=subprocess.STDOUT,timeout=timeout,check=True)
 try:
+ if real:
+  import importlib.util
+  spec=importlib.util.spec_from_file_location('real_transition','/work/scripts/semantic_transition_real.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  retained,python,rust=module.prepare(artifacts,sample_checkpoint=real_case==2)
  run(['go','version'],'go-version.log')
  run(['go','test','-c','-race','-o',str(binary),'./semantic'],'build-semantic.log')
  run(['go','build','-buildvcs=false','-o',str(cli),'./cmd/cairn'],'build-api.log')
@@ -50,11 +58,10 @@ try:
  (root/'owned-cluster').write_text('semantic-transition-fixture/1\n')
  selected=dict(env,CAIRN_TRANSITION_DISPOSABLE_ROOT=str(root),CAIRN_TEST_DATABASE_URL='host='+str(root/'socket')+' dbname=postgres sslmode=disable',CAIRN_TRANSITION_CLI=str(cli),CAIRN_TRANSITION_REPORT_DIR=str(artifacts))
  if real:
-  import importlib.util
-  spec=importlib.util.spec_from_file_location('real_transition','/work/scripts/semantic_transition_real.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-  retained,python,rust=module.prepare(artifacts)
   selected['CAIRN_TRANSITION_REAL_SELECTION']=str(artifacts/'real-selection.json')
-  command=['go','tool','test2json','-t','-p','semantic',str(binary),'-test.v','-test.run=^TestSemanticRealTransitionCase1$','-test.timeout=900s']
+  selected['CAIRN_TRANSITION_REAL_CASE']=str(real_case)
+  test_name='TestSemanticRealTransitionCase'+str(real_case)
+  command=['go','tool','test2json','-t','-p','semantic',str(binary),'-test.v','-test.run=^'+test_name+'$','-test.timeout=900s']
   commands.append(dict(argv=command,log='tests.jsonl'))
   module.run_observed(command,selected,artifacts,retained,python,rust)
  else:
@@ -65,10 +72,11 @@ try:
  failed=[e.get('Test','package') for e in events if e['Action']=='fail']
  skipped=[e.get('Test','package') for e in events if e['Action']=='skip']
  matrix=[name for name in passed if name.startswith('TestSemanticTransitionDeterministicMatrix/') and name.count('/')==1]
- if failed or skipped or (not real and len(matrix)!=10) or (real and 'TestSemanticRealTransitionCase1' not in passed):raise RuntimeError('incomplete selected transition case/matrix')
+ expected_real=[test_name] if real_case==1 else ['TestSemanticRealTransitionCase2/python','TestSemanticRealTransitionCase2/rust','TestSemanticRealTransitionCase2']
+ if failed or skipped or (not real and (len(matrix)!=10 or len(passed)!=32)) or (real and sorted(passed)!=sorted(expected_real)):raise RuntimeError('incomplete selected transition case/matrix')
  report=dict(schema='cairn.semantic-transition-fixture/1',kind='deterministic-protocol-workers-real-go-and-postgresql',matrix_cases=matrix,passed=passed,failed=failed,skipped=skipped,real_worker_acceptance='not executed by deterministic run; full S05/R01/fleet acceptance remains open',binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),api_sha256=hashlib.sha256(cli.read_bytes()).hexdigest())
  if real:
-  report.update(kind='local-real-worker-transition-case1',matrix_cases=['full_forward_reverse_rebuild'],real_worker_acceptance='local case1 evidence only; full S05/R01/fleet acceptance remains open')
+  report.update(kind='local-real-worker-transition-case'+str(real_case),matrix_cases=['full_forward_reverse_rebuild'] if real_case==1 else ['mid_rebuild_restart/python','mid_rebuild_restart/rust'],real_worker_acceptance='local case'+str(real_case)+' evidence only; full S05/R01/fleet acceptance remains open')
  (artifacts/'report.json').write_text(json.dumps(report,indent=2)+'\n');code=0
 except BaseException:
  (artifacts/'failure.txt').write_text(traceback.format_exc())
@@ -87,20 +95,37 @@ sys.exit(code)
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact-dir', required=True, type=Path)
-    parser.add_argument('--real-case1', action='store_true', help='explicit local retained Python/Rust/Python case 1')
+    cases = parser.add_mutually_exclusive_group()
+    cases.add_argument('--real-case1', action='store_true', help='explicit local retained Python/Rust/Python case 1')
+    cases.add_argument('--real-case2', action='store_true', help='explicit local Python and Rust mid-rebuild restarts')
     parser.add_argument('--python-selection', type=Path, help='qualified-selection directory containing stage and candidate.json')
     parser.add_argument('--rust-fixtures', type=Path, help='retained Rust fixtures containing stage and stage-result.json')
     args = parser.parse_args()
-    if args.real_case1 and (args.python_selection is None or args.rust_fixtures is None):
-        parser.error('--real-case1 requires both exact retained selections')
+    real_case = 1 if args.real_case1 else 2 if args.real_case2 else 0
+    if real_case and (args.python_selection is None or args.rust_fixtures is None):
+        parser.error('real cases require both exact retained selections')
     output = args.artifact_dir.resolve()
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    wrapper = ROOT / 'scripts/test_hybrid_runtime_operations.py'
+    wrapper_sha = hashlib.sha256(wrapper.read_bytes()).hexdigest()
+    if real_case and wrapper_sha != '937cd3e2cd3f379d4b7e818e012747c5c2914304bc47f9e1b54b860858cc8578':
+        raise SystemExit('common wrapper differs from the accepted execution pin')
+    inputs = {'common_wrapper_sha256': wrapper_sha,
+              'source_files': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+                               for p in ROOT.rglob('*') if p.is_file() and p.suffix in ('.go', '.sql', '.mod', '.sum', '.py')}}
+    if real_case:
+        for name, path in (('python_candidate', args.python_selection / 'candidate.json'),
+                           ('rust_stage_result', args.rust_fixtures / 'stage-result.json')):
+            inputs[name] = {'path': str(path.resolve()), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+        if inputs['python_candidate']['sha256'] != 'ffdc4358a30547f4ddb63628b939893192f0a549e97c3ece31e55f7abe269f46':
+            raise SystemExit('retained Python candidate differs from the accepted selection')
+    (output / 'execution-inputs.json').write_text(json.dumps(inputs, sort_keys=True, indent=2) + '\n')
     spec = importlib.util.spec_from_file_location(
         'isolation', ROOT / 'scripts/test_hybrid_runtime_operations.py')
     isolation = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(isolation)
     binds = []
-    if args.real_case1:
+    if real_case:
         for name in ('empty-locale', 'empty-gconv'):
             (output / name).mkdir(mode=0o700)
         binds = [str(args.python_selection / 'stage') + ':/opt/s04r-selection',
@@ -117,7 +142,8 @@ def main():
         with os.fdopen(read_fd, 'rb') as stream:
             received.append(stream.read(1048576))
 
-    argv = isolation.namespace_argv(ROOT, ['/usr/bin/python3', '-I', '-B', '-c', INNER.replace('__REAL_CASE1__', repr(args.real_case1))],
+    inner = INNER.replace('__REAL_CASE1__', repr(bool(real_case))).replace('__REAL_CASE__', str(real_case))
+    argv = isolation.namespace_argv(ROOT, ['/usr/bin/python3', '-I', '-B', '-c', inner],
                                     spec=sandbox, report_fd=write_fd)
     (output / 'command.json').write_text(json.dumps({'argv': argv, 'spec': sandbox}, indent=2))
     with (output / 'artifacts.tar.gz').open('wb') as stdout, (output / 'wrapper.log').open('wb') as stderr:
@@ -132,15 +158,21 @@ def main():
         reader = threading.Thread(target=read_report, daemon=True)
         reader.start()
         try:
-            code = child.wait(timeout=1200 if args.real_case1 else 600)
+            code = child.wait(timeout=1200 if real_case else 600)
         except subprocess.TimeoutExpired:
             if child.pid <= 1:
                 raise RuntimeError('refusing process-group control for PID <= 1')
-            os.killpg(child.pid, signal.SIGTERM)
+            if args.real_case2:
+                child.terminate()
+            else:
+                os.killpg(child.pid, signal.SIGTERM)
             try:
                 child.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
+                if args.real_case2:
+                    child.kill()
+                else:
+                    os.killpg(child.pid, signal.SIGKILL)
                 child.wait()
             code = 124
         finally:
@@ -153,7 +185,7 @@ def main():
     (output / 'result.json').write_text(json.dumps({'returncode': code, 'isolation_passed': report.get('passed')}))
     if code or not report.get('passed'):
         raise SystemExit('transition fixture failed; retained artifacts: ' + str(output))
-    print(('S05 local real case1 passed; full transition qualification remains open. ' if args.real_case1 else
+    print(('S05 local real case'+str(real_case)+' passed; full transition qualification remains open. ' if real_case else
            'S05 deterministic transition fixtures passed; full real-worker qualification remains open. ') + str(output))
 
 

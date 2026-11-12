@@ -12,7 +12,7 @@ import (
 // an installed service. It measures only fixture restart outage on this host.
 func transitionWholeAPI(t *testing.T) {
 	d := transitionDatabase(t)
-	start, probe, _ := transitionAPIProcess(t, d)
+	start, probe, _, _ := transitionAPIProcess(t, d)
 
 	d.source(t, "s05-api", "whole API source é")
 	d.source(t, "other-collection", "database-wide alternate collection")
