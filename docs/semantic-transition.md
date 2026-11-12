@@ -436,6 +436,14 @@ No worker reply, readiness state or query result is substituted.
 Three ordinary sources remain eligible across two collections, with complete
 record/version history and an independent global coverage denominator. Two
 sources belong to the query scope; the third remains in the rebuild denominator.
+The real compiler records each index exposure in `record_use`; its existing
+trigger advances the exposed source's `use_generation`. The fixture retains
+complete OLD/NEW source rows and permits only that exact counter delta, equal
+to committed exposure rows since the original snapshot. Every other current
+record field, complete historical version row, source version and body hash
+must stay unchanged. A focused guard rejects unexplained counter increments,
+body/version/producer changes and other record metadata changes. The fixture
+does not reset or overwrite this store-owned metadata.
 One normal real Step seeds the first source, then that seed owner is joined and
 reaped. Private row locks hold the two pending jobs without altering attempts,
 leases, timestamps or source rows. A separate SHARE lock on `semantic_job`
@@ -486,7 +494,10 @@ valid contiguous UTF-8 passages/ordinals and finite nonzero 384-vectors.
 The job audit requires three initial inserts, three ordinary lease/delete pairs,
 no later reinsertion and no attempt changes. Fixture lock SQL, acquire/release
 times and unchanged job snapshots are retained separately; the fixture performs
-no source/job scheduler DML. `real-case7-{python,rust}.json` and `real-case7.json`
+no source/job scheduler DML. Six compiler deliveries produce twelve committed
+index exposures (six each for the two scoped sources, none for the other
+collection), with twelve corresponding current-record generation updates.
+All other source changes refuse the proof. `real-case7-{python,rust}.json` and `real-case7.json`
 retain compiler packages, actual retrieval calls, counts/hits/errors, complete
 sources/history, queue/publication audits, worker pipes and writer fences.
 There is no embedding-cache protocol; raw stdout remains prefix-limited.

@@ -59,6 +59,69 @@ func (r *transitionPartialRecorder) observed() []transitionPartialCall {
 	return append([]transitionPartialCall{}, r.calls...)
 }
 
+// Public compilation legitimately advances memory_record.use_generation once
+// per committed record_use (schema/005_retraction_preview.sql). All other
+// current-record fields and complete historical version rows must stay exact.
+func transitionPartialHistoryCheck(before, after []transitionEditSource, addedUses map[string]int64) error {
+	if len(before) != len(after) {
+		return fmt.Errorf("historical population changed")
+	}
+	for n, old := range before {
+		next := after[n]
+		if old.RecordID != next.RecordID || old.Version != next.Version || old.BodySHA != next.BodySHA || old.VersionRow != next.VersionRow {
+			return fmt.Errorf("source/version/body/complete version row changed: %s", old.RecordID)
+		}
+		var oldRow, newRow map[string]json.RawMessage
+		if json.Unmarshal([]byte(old.RecordRow), &oldRow) != nil || json.Unmarshal([]byte(next.RecordRow), &newRow) != nil {
+			return fmt.Errorf("invalid complete current-record snapshot")
+		}
+		var oldGeneration, newGeneration int64
+		if json.Unmarshal(oldRow["use_generation"], &oldGeneration) != nil || json.Unmarshal(newRow["use_generation"], &newGeneration) != nil || addedUses[old.RecordID] < 0 || newGeneration != oldGeneration+addedUses[old.RecordID] {
+			return fmt.Errorf("use generation differs from committed exposure delta: %s", old.RecordID)
+		}
+		newRow["use_generation"] = oldRow["use_generation"]
+		if !reflect.DeepEqual(oldRow, newRow) {
+			return fmt.Errorf("current-record field other than use generation changed: %s", old.RecordID)
+		}
+	}
+	return nil
+}
+
+func TestSemanticPartialHistoryExposureGuard(t *testing.T) {
+	before := transitionEditSource{RecordID: "one", Version: 1, BodySHA: transitionHash("original"),
+		RecordRow:  `{"record_id":"one","current_version":1,"sensitivity":"shareable","use_generation":0}`,
+		VersionRow: `{"record_id":"one","version":1,"body":"original","observed_writer":"store-owned"}`}
+	allowed := before
+	allowed.RecordRow = strings.Replace(before.RecordRow, `"use_generation":0`, `"use_generation":2`, 1)
+	for _, change := range []struct {
+		name   string
+		mutate func(*transitionEditSource)
+		valid  bool
+	}{
+		{"exact_committed_exposure_delta", func(*transitionEditSource) {}, true},
+		{"unexplained_generation", func(s *transitionEditSource) {
+			s.RecordRow = strings.Replace(s.RecordRow, `"use_generation":2`, `"use_generation":3`, 1)
+		}, false},
+		{"current_version", func(s *transitionEditSource) {
+			s.RecordRow = strings.Replace(s.RecordRow, `"current_version":1`, `"current_version":2`, 1)
+		}, false},
+		{"body_hash", func(s *transitionEditSource) { s.BodySHA = transitionHash("changed") }, false},
+		{"producer_attribution", func(s *transitionEditSource) {
+			s.VersionRow = strings.Replace(s.VersionRow, "store-owned", "caller-chosen", 1)
+		}, false},
+		{"other_record_metadata", func(s *transitionEditSource) { s.RecordRow = strings.Replace(s.RecordRow, "shareable", "local", 1) }, false},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			after := allowed
+			change.mutate(&after)
+			err := transitionPartialHistoryCheck([]transitionEditSource{before}, []transitionEditSource{after}, map[string]int64{"one": 2})
+			if (err == nil) != change.valid {
+				t.Fatalf("narrow exposure exception: valid=%v err=%v", change.valid, err)
+			}
+		})
+	}
+}
+
 var transitionPartialPhases = []string{"seed_partial", "startup_unavailable", "ready_partial", "killed_query_unavailable", "cold_query_restart", "restarted_owner_warm_control", "full_recovery"}
 
 func TestSemanticRealTransitionCase7(t *testing.T) {
@@ -152,9 +215,17 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
  BEGIN INSERT INTO cairn.s05_job_audit(phase,operation,record_id,old_row,new_row)
  SELECT phase,TG_OP,COALESCE(NEW.record_id,OLD.record_id),to_jsonb(OLD),to_jsonb(NEW) FROM cairn.s05_phase; RETURN NULL; END $$;
  CREATE TRIGGER s05_observe_job AFTER INSERT OR UPDATE OR DELETE ON cairn.semantic_job FOR EACH ROW EXECUTE FUNCTION cairn.s05_observe_job();`)
+	d.exec(t, `CREATE TABLE cairn.s05_source_audit (sequence bigserial PRIMARY KEY,phase integer,table_name text,operation text,record_id uuid,old_row jsonb,new_row jsonb);
+ CREATE FUNCTION cairn.s05_observe_source() RETURNS trigger LANGUAGE plpgsql AS $$
+ BEGIN INSERT INTO cairn.s05_source_audit(phase,table_name,operation,record_id,old_row,new_row)
+ SELECT phase,TG_TABLE_NAME,TG_OP,COALESCE(NEW.record_id,OLD.record_id),to_jsonb(OLD),to_jsonb(NEW) FROM cairn.s05_phase; RETURN NULL; END $$;
+ CREATE TRIGGER s05_observe_record AFTER INSERT OR UPDATE OR DELETE ON cairn.memory_record FOR EACH ROW EXECUTE FUNCTION cairn.s05_observe_source();
+ CREATE TRIGGER s05_observe_version AFTER INSERT OR UPDATE OR DELETE ON cairn.record_version FOR EACH ROW EXECUTE FUNCTION cairn.s05_observe_source();`)
 	t.Cleanup(func() {
 		report["job_audit"] = transitionEditAudit(t, d, `SELECT to_jsonb(a)::text FROM cairn.s05_job_audit a ORDER BY sequence`)
 		report["publication_audit"] = transitionEditAudit(t, d, `SELECT to_jsonb(a)::text FROM cairn.s05_tuple_publication a ORDER BY record_id`)
+		report["source_audit"] = transitionEditAudit(t, d, `SELECT to_jsonb(a)::text FROM cairn.s05_source_audit a ORDER BY sequence`)
+		report["committed_record_uses"] = transitionEditAudit(t, d, `SELECT to_jsonb(u)::text FROM cairn.record_use u ORDER BY used_at,receipt_id,record_id`)
 	})
 	a := d.source(t, "s05-a", "partialanchor ordinary indexed source one é")
 	b := d.source(t, "s05-a", "partialanchor ordinary waiting source two é")
@@ -165,6 +236,11 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
 		t.Fatal("wrong declared original population")
 	}
 	report["source_population_before"], report["complete_history_before"], report["jobs_before_start"] = before, history, d.restartJobs(t)
+	initialUses := map[string]int64{}
+	for _, note := range notes {
+		initialUses[note.RecordID] = int64(d.count(t, `SELECT count(*) FROM cairn.record_use WHERE record_id=$1`, note.RecordID))
+	}
+	report["initial_committed_use_counts"] = initialUses
 	w.identities(t, notes)
 	e, err := EmbeddingCommand(context.Background(), w.Embed)
 	if err != nil {
@@ -193,15 +269,24 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
 	snapshot := func(name string, complete int, details map[string]any) {
 		t.Helper()
 		population, fullHistory := d.realPopulation(t), transitionEditHistory(t, d)
-		if !reflect.DeepEqual(before, population) || !reflect.DeepEqual(history, fullHistory) {
-			t.Fatal("partial fixture changed eligible source/version/body/history")
+		addedUses := map[string]int64{}
+		for _, note := range notes {
+			addedUses[note.RecordID] = int64(d.count(t, `SELECT count(*) FROM cairn.record_use WHERE record_id=$1`, note.RecordID)) - initialUses[note.RecordID]
 		}
-		details["name"], details["status"], details["observed_at"] = name, "PASS", time.Now()
-		details["global_coverage"] = transitionRequireCoverage(t, d, w.EmbedIdentity, 3, complete)
+		details["name"], details["status"], details["observed_at"] = name, "OBSERVED", time.Now()
+		details["global_coverage"], details["committed_exposure_deltas"] = d.coverage(t, w.EmbedIdentity), addedUses
 		details["global_sources"], details["complete_history"], details["jobs"] = population, fullHistory, d.restartJobs(t)
 		details["publication_count"] = d.count(t, `SELECT count(*) FROM cairn.s05_publication`)
 		phases = append(phases, details)
 		report["phases"] = phases
+		if !reflect.DeepEqual(before, population) {
+			t.Fatal("partial fixture changed eligible source/version/body/complete version rows")
+		}
+		if err := transitionPartialHistoryCheck(history, fullHistory, addedUses); err != nil {
+			t.Fatal(err)
+		}
+		transitionRequireCoverage(t, d, w.EmbedIdentity, 3, complete)
+		details["status"] = "PASS"
 	}
 	snapshot("seed_partial", 1, map[string]any{"writers_at_seed_fence": transitionRealWriters(writers)})
 	pending := d.restartJobs(t)
@@ -544,6 +629,12 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
 	}
 	if d.count(t, `SELECT count(*) FROM cairn.s05_job_audit`) != 9 || d.count(t, `SELECT count(*) FROM cairn.s05_job_audit WHERE operation='INSERT'`) != 3 || d.count(t, `SELECT count(*) FROM cairn.s05_job_audit WHERE operation='INSERT' AND phase<>0`) != 0 || d.count(t, `SELECT count(*) FROM cairn.s05_job_audit WHERE operation='UPDATE' AND (old_row->>'attempts' IS DISTINCT FROM new_row->>'attempts' OR new_row->>'attempts'<>'0')`) != 0 {
 		t.Fatal("hidden job reinsertion/reset or discarded rebuild failure population")
+	}
+	if d.count(t, `SELECT count(*) FROM cairn.record_use`) != 12 || d.count(t, `SELECT count(*) FROM cairn.record_use WHERE record_id=$1 AND version=1 AND exposure_kind='index'`, a.RecordID) != 6 || d.count(t, `SELECT count(*) FROM cairn.record_use WHERE record_id=$1 AND version=1 AND exposure_kind='index'`, b.RecordID) != 6 || d.count(t, `SELECT count(*) FROM cairn.record_use WHERE record_id=$1`, c.RecordID) != 0 {
+		t.Fatal("compiler exposure population differs from six actual two-source index deliveries")
+	}
+	if d.count(t, `SELECT count(*) FROM cairn.s05_source_audit`) != 18 || d.count(t, `SELECT count(*) FROM cairn.s05_source_audit WHERE operation='INSERT' AND phase<>0`) != 0 || d.count(t, `SELECT count(*) FROM cairn.s05_source_audit WHERE table_name='record_version' AND operation<>'INSERT'`) != 0 || d.count(t, `SELECT count(*) FROM cairn.s05_source_audit WHERE table_name='memory_record' AND operation='UPDATE' AND ((new_row-'use_generation') IS DISTINCT FROM (old_row-'use_generation') OR (new_row->>'use_generation')::bigint<>(old_row->>'use_generation')::bigint+1)`) != 0 {
+		t.Fatal("source audit changed more than store-owned committed-use generation")
 	}
 	errorMu.Lock()
 	report["background_errors"] = append([]map[string]any{}, backendErrors...)
