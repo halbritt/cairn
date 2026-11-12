@@ -21,10 +21,10 @@ func RunBound(ctx context.Context, invocation *binding.MemoryInvocation) Result 
 		config = config.Without("inbox_recall_binding")
 	}
 	if captureEventName(checked.Event) {
-		return runMemory(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
+		return runMemory(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation, checked.Coordinators...)
 	}
 	if value.SameText(config.Get("harness"), "claude") || !value.SameText(config.Get("recall_mode"), "agent_tools") {
-		return runMemory(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
+		return runMemory(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation, checked.Coordinators...)
 	}
 	return RunStart(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, checked.Coordinators...)
 }
