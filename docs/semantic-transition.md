@@ -218,6 +218,58 @@ leaves seven other real cases, full S-05 and all numeric/runtime/fleet/productio
 controller/retirement, R1, CPython value-graph and RTERM1 holds open. It grants
 no ticket closure or installed action.
 
+## Explicit local real-worker case 4
+
+```sh
+python3 -I -B scripts/check_semantic_transition.py --real-case4 \
+  --artifact-dir /absolute/new-local-case4-artifacts \
+  --python-selection /absolute/s04r/qualified-selection \
+  --rust-fixtures /absolute/retained-rust/observed/fixtures
+```
+
+The Python and Rust subcases each create three ordinary current sources across
+three collections: one edited source and two unchanged controls. The actual Go
+indexer calls a fixture adapter around the concrete `CommandEmbedder`; identity
+and document computation use the unchanged canonical worker. For the old body,
+the adapter holds the actual returned passages before `Index.Step` receives them.
+A channel receipt therefore establishes both the source read and completed real
+old-body request. The fixture validates that result, its identity, direct worker
+PID and native-runtime receipt, then calls the real store `Revise` operation.
+Only after revision two is independently visible does it release the old result
+to the indexer. This order follows channel synchronization, not elapsed time.
+It is an edit across a held-result boundary after computation; it does not claim
+an edit inside model inference. No worker, launcher, root, identity or shipped
+fault hook is substituted, and the harness sends no process signals.
+
+The stale step must return `worked=true` with no error, publish nothing and leave
+revision two plus both controls eligible and pending. All historical/current
+source rows and old/new queue rows are retained. Three current sources become
+four historical version rows; the original version-one row and controls must
+stay unchanged. The shipped revision trigger clears the old lease and requeues
+current work; the OLD/NEW audit distinguishes that product behavior from fixture
+scheduling. No fixture scheduling timestamps, lease IDs or attempts are erased.
+
+Normal same-generation `Step` calls must complete all three current sources with
+the exact current model/version/body hash, valid UTF-8 passage spans, contiguous
+ordinals and finite nonzero 384-component vectors. Publication and queue audits
+refuse old-version, stale, duplicate or missing publications and replacement of
+durable jobs. The healthy document worker/reader is reused after the stale
+result (zero restarts), then normal owner close joins and reaps all workers.
+There is no embedding-cache protocol; raw trace evidence covers write prefixes.
+
+`real-case4-{python,rust}.json` and `real-case4.json` retain the decoded old
+passages, request/result hashes, revision and release receipts, complete source
+history, queue/publication audits, coverage/failure sets and process dispositions.
+Pre-execution bindings, exact worker-root/native/environment sample sets, zero
+worker-tree connect/store effects and positive controls remain mandatory.
+The focused observer/PID checks and default ten-case/32-entry/no-skip matrix
+remain required. Earlier real cases need regression only when shared behavior
+changes. This bounded slice leaves six other real cases, full S-05 and all
+maximum/latency, raw294, punctuation, quality4, CPU/FENV, fleet/runtime/production,
+controller/retirement, R1, CPython value-graph and RTERM1 holds open. Host `make
+test` remains FAILED exit 2 with 53 frozen baseline trial diagnostics; SDK
+spawn/ipc is NOT RUN. It grants no ticket closure or installed action.
+
 ## Matrix and claim boundaries
 
 Each row names one top-level case under

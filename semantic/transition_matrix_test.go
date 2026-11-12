@@ -187,6 +187,10 @@ func transitionDeathDeadline(t *testing.T) {
 }
 
 func transitionEdit(t *testing.T) {
+	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "4" {
+		transitionRealEdit(t)
+		return
+	}
 	d := transitionDatabase(t)
 	w := transitionFixture(t, "edit")
 	note := d.source(t, "s05-a", "old source é")

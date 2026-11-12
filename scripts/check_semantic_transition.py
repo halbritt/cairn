@@ -3,6 +3,7 @@
 The default runs deterministic protocol workers. --real-case1 selects the
 retained Python/Rust/Python transition; --real-case2 selects two same-generation
 mid-rebuild restarts; --real-case3 selects worker death and earlier caller deadlines.
+--real-case4 holds an old real embedding result across a committed source edit.
 Every build,
 worker, Go API, disposable PostgreSQL cluster and assertion runs inside the
 wrapper; the host transports data. Local execution does not close full S-05.
@@ -73,12 +74,12 @@ try:
  failed=[e.get('Test','package') for e in events if e['Action']=='fail']
  skipped=[e.get('Test','package') for e in events if e['Action']=='skip']
  matrix=[name for name in passed if name.startswith('TestSemanticTransitionDeterministicMatrix/') and name.count('/')==1]
- real_subcases={1:[],2:['python','rust'],3:['python_death','python_caller_deadline','rust_death','rust_caller_deadline']}
+ real_subcases={1:[],2:['python','rust'],3:['python_death','python_caller_deadline','rust_death','rust_caller_deadline'],4:['python','rust']}
  expected_real=[test_name]+[test_name+'/'+name for name in real_subcases[real_case]] if real else []
  if failed or skipped or (not real and (len(matrix)!=10 or len(passed)!=32)) or (real and sorted(passed)!=sorted(expected_real)):raise RuntimeError('incomplete selected transition case/matrix')
  report=dict(schema='cairn.semantic-transition-fixture/1',kind='deterministic-protocol-workers-real-go-and-postgresql',matrix_cases=matrix,passed=passed,failed=failed,skipped=skipped,real_worker_acceptance='not executed by deterministic run; full S05/R01/fleet acceptance remains open',binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),api_sha256=hashlib.sha256(cli.read_bytes()).hexdigest())
  if real:
-  report.update(kind='local-real-worker-transition-case'+str(real_case),matrix_cases={1:['full_forward_reverse_rebuild'],2:['mid_rebuild_restart/python','mid_rebuild_restart/rust'],3:real_subcases[3]}[real_case],real_worker_acceptance='local case'+str(real_case)+' evidence only; full S05/R01/fleet acceptance remains open')
+  report.update(kind='local-real-worker-transition-case'+str(real_case),matrix_cases={1:['full_forward_reverse_rebuild'],2:['mid_rebuild_restart/python','mid_rebuild_restart/rust'],3:real_subcases[3],4:['edit_during_embedding/python','edit_during_embedding/rust']}[real_case],real_worker_acceptance='local case'+str(real_case)+' evidence only; full S05/R01/fleet acceptance remains open')
  (artifacts/'report.json').write_text(json.dumps(report,indent=2)+'\n');code=0
 except BaseException:
  (artifacts/'failure.txt').write_text(traceback.format_exc())
@@ -101,10 +102,11 @@ def main():
     cases.add_argument('--real-case1', action='store_true', help='explicit local retained Python/Rust/Python case 1')
     cases.add_argument('--real-case2', action='store_true', help='explicit local Python and Rust mid-rebuild restarts')
     cases.add_argument('--real-case3', action='store_true', help='explicit local Python and Rust death/caller-deadline cases')
+    cases.add_argument('--real-case4', action='store_true', help='explicit local Python and Rust edit-during-embedding cases')
     parser.add_argument('--python-selection', type=Path, help='qualified-selection directory containing stage and candidate.json')
     parser.add_argument('--rust-fixtures', type=Path, help='retained Rust fixtures containing stage and stage-result.json')
     args = parser.parse_args()
-    real_case = 1 if args.real_case1 else 2 if args.real_case2 else 3 if args.real_case3 else 0
+    real_case = 1 if args.real_case1 else 2 if args.real_case2 else 3 if args.real_case3 else 4 if args.real_case4 else 0
     if real_case and (args.python_selection is None or args.rust_fixtures is None):
         parser.error('real cases require both exact retained selections')
     output = args.artifact_dir.resolve()
