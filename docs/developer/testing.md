@@ -59,6 +59,9 @@ must have a unique UUID of the correct version; delivered entries additionally
 expose the original intent needed to check exact UUIDv5 derivation. Private
 rejected candidates do not expose that original UUIDv4 in hook output.
 The fixture never substitutes Source handler logic or invokes a real provider.
+The retained `/3` Codex frontend delegates bound `agent_tools` recall to its
+pinned Go image; those rows are controls with that actual origin. No-binding
+Codex comparisons execute the independent Python Source body.
 See the [capability map](../reference/lifecycle-slices.md#checked-memory-callers-and-selectors)
 for the supported caller boundary.
 

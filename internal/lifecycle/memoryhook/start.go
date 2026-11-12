@@ -520,6 +520,19 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 	if budget < 1000 || budget > 65536 {
 		return "", fail("invalid context_bytes; expected an integer from 1000 to 65536")
 	}
+	if !bound {
+		selected := viewValue.Get("selected")
+		if selected == nil {
+			selected = array()
+		}
+		rendered, err := ordinaryRender(selected, array(), nil, nil)
+		if err != nil {
+			return "", err
+		}
+		if len(rendered) > budget {
+			return "", fail("retrieval exceeds lifecycle context budget; no partial instructions injected")
+		}
+	}
 	if id, err := uuid.Parse(text(event.Get("session_id"))); err != nil || id.String() != text(event.Get("session_id")) {
 		return "", fail("native-turn memory requires a canonical session UUID")
 	}

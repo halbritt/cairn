@@ -203,7 +203,13 @@ sys.exit(spec.get('exit',0))
                 for call in body['selector_calls']:
                     self.measurement(call['elapsed_ms'])
                     call['elapsed_ms'] = 0
-        return super().normalize(row, side)
+        # The retained /3 Codex bound frontend delegates agent_tools recall to
+        # its pinned Go image. Check that actual origin for this control case;
+        # unbound/no-binding rows still execute the independent Python body.
+        delegated = (side == 'source' and self.f.memory['harness'] == 'codex'
+                     and self.f.memory.get('recall_mode') == 'agent_tools'
+                     and bool(self.f.memory.get('inbox_recall_binding')))
+        return super().normalize(row, 'go' if delegated else side)
 
     def pair(self):
         result = super().pair()
@@ -563,6 +569,24 @@ sys.exit(spec.get('exit',0))
                 self.assertEqual(self.context(result)['expanded']['selection']['record']['body'],self.optional[0]['body'])
                 self.assertEqual(set(self.files()),{self.state_key()+'.json',self.state_key()+'.lock'})
                 self.assertEqual(len(self.provider_sides['go']),1)
+
+    def test_unbound_codex_required_render_budget_precedes_native_grants(self):
+        self.configure_harness('codex',recall_mode='agent_tools',context_bytes=1000)
+        self.required('Required whole source. '*400)
+        for disabled_binding in (False,True):
+            self.configure(inbox_recall_binding=str(self.f.binding) if disabled_binding else None)
+            for name in ('SessionStart','UserPromptSubmit'):
+                with self.subTest(disabled_binding=disabled_binding,event=name):
+                    self.reset_state()
+                    self.event(name,session_id='22222222-2222-4222-8222-222222222222',
+                               turn_id='33333333-3333-4333-8333-333333333333',source='startup',prompt='storage')
+                    result=self.pair()
+                    self.assertEqual((result.returncode,result.stdout),(1,b''))
+                    self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=handle error_class=HookError\nCairn lifecycle: retrieval exceeds lifecycle context budget; no partial instructions injected; use native tools or an explicit handoff.\n')
+                    self.assertEqual(set(self.files()),{self.state_key()+'.json',self.state_key()+'.lock'})
+                    self.assertNotIn('native_turn_input',self.recall_status())
+                    self.assertEqual(self.recall_status()['outcome'],'failed')
+                    self.assertEqual(self.provider_sides['go'],[])
 
 
 def load_tests(loader, tests, pattern):
