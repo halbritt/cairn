@@ -30,10 +30,14 @@ not patched.
 Run from a clean committed head with a fresh receipt:
 
 ```sh
-make test-isolated RECEIPT=/absolute/evidence/observer-lock-probes.json \
+mise run host:exec -- --timeout 10m --weight 1 -- \
+  make test-isolated RECEIPT=/absolute/evidence/observer-lock-probes.json \
   ISOLATED_ARGS='--timeout 600' \
   CMD='env CC=gcc TMPDIR=/tmp python3 -B scripts/test_f02_observer_lock_probes.py'
 ```
+
+The shared host executor preserves the agent's host environment and bounds the
+existing documented campaign runner; the application fixtures remain disposable.
 
 Keep the historical cap artifacts unchanged. After this repair, the same private
 13-second cap experiment can show genuine Source probe1/Go0 at its first lock

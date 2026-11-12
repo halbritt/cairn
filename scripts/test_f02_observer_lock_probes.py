@@ -191,7 +191,9 @@ class ObserverLockProbeTests(unittest.TestCase):
             self.assertTrue(all(item['contender_acquired'] for item in physical))
             self.assertIsNotNone(error, 'the original post-lock assertion must reject real False probes')
             self.assertEqual(error['message'], 'False is not true')
-            self.assertIn('assertTrue(all(', error['frames'][-1]['text'])
+            self.assertTrue(any(frame['file'] == code.co_filename and
+                                'assertTrue(all(' in (frame['text'] or '')
+                                for frame in error['frames']))
         else:
             self.assertIsNone(error)
 
