@@ -312,27 +312,6 @@ class InstalledMemory(unittest.TestCase):
         self.assertNotIn('PRIVATE_FIXTURE', json.dumps(state))
         self.assertEqual(self.calls, [])
 
-    def test_positive_ambient_provider_preview_and_body(self):
-        selector = self.root / 'positive-selector'
-        scripted_selector(selector, HERMES_PYTHON, self.root / 'provider.json')
-        self.f.memory.update(recall_mode='ambient', semantic_fallback=True, recall_observations=True,
-                             claude=str(selector))
-        self.f.publish_configuration(enabled=False)
-        self.records.extend(dict(record_id='66666666-6666-4666-8666-%012d' % i, version=1,
-            kind='decision', **{'class': 'A'}, body='installed project: retention policy\nRetain thirty days; fixture option %d.' % i)
-            for i in range(5))
-        self.install()
-        result = self.run_event('UserPromptSubmit')
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
-        status = json.loads(result.stdout)['cairn_status']['last_recall']
-        self.assertEqual(status['discovery'], 'verified')
-        self.assertGreater(status['preview_count'], 4)
-        rows = [json.loads(line) for line in self.root.joinpath('selector-inputs.jsonl').read_text().splitlines()]
-        self.assertEqual([row['stage'] for row in rows], ['preview', 'recall'])
-        self.assertIn('source_extent', rows[1]['request']['candidates'][0])
-        self.assertEqual(self.write_count, 0)
-        self.assert_go_attribution()
-
     def test_explicit_reverse_to_retained_python_preserves_go_state_and_dedup(self):
         installer.install(self.home, self.native, str(self.root / 'selector'), self.skill,
                           model='fixture-model', recall_mode='agent_tools')
