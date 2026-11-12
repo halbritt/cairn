@@ -64,14 +64,28 @@ The fixture asserts and records the original 22-case prefix's names, order,
 refusal kinds and hook layers against the `0378faeb` baseline. After these
 clients are joined, the remaining project hook is removed. Both project hook
 files and the global hook file must be absent before publishing account B.
-Five final account-only cases use one fresh conversation and native PID:
+Five account-only cases use one fresh conversation and native PID:
 valid B, missing receipt, restored B, corrupt receipt, restored B. The full run
-has 27 cases. Saved receipt bytes must match B's literal launcher pin before
-mutation. Corruption preserves the regular file's owner, mode and inode and
+preserves these 27 cases before the symlink controls below. Saved receipt bytes
+must match B's literal launcher pin before mutation. Corruption preserves the
+regular file's owner, mode and inode and
 its safe size; account fault bytes and stats have separate archive names.
 Both restored controls must deliver exactly one fresh context text per provider
 request. Receipt refusal suppresses that context and all Cairn API/state effects;
 it does not establish that Agy blocks its provider request or cancels the turn.
+
+Three final account-only cases add valid B, a symlink at the selected receipt
+path, and restored B in another fresh conversation with one native PID. The
+full run has 30 cases and asserts and records the previous 27-case prefix
+against `7ef43cb2`. The link points to a private, owned, regular `0400` file
+containing the exact valid B receipt bytes and pinned hash. Its target bytes,
+link `lstat` and target metadata have separate archive names. For each callback,
+the secure descriptor walk must reach the selected leaf and its `O_NOFOLLOW`
+open must return ELOOP without reading the target. The same exact preflight
+diagnostic, exit 1, empty stdout, zero API effects, unchanged state and absent
+fresh provider marker are required. A `finally` block restores a regular
+receipt; the restored positive control must deliver the full context once.
+Project and control hook files remain absent throughout these cases.
 
 The cases cover fresh and repeated A, an independent workspace control,
 publication of B during the existing conversation, the unchanged control,
@@ -107,7 +121,7 @@ provider-request indices; the archive retains raw hook I/O, provider requests
 and synthetic API code. Every `PreInvocation` output is checked. Each provider
 request must contain exactly as many copies of each complete context text as
 the checked hooks emitted, including two equal texts in the layered cases.
-Missing/corrupt receipt cases keep zero API effects,
+Missing/corrupt/symlink receipt cases keep zero API effects,
 unchanged state and empty hook stdout, and their fresh marker must not reach
 the provider. This qualifies native context application to the local provider;
 real model comprehension and inbox delivery remain outside this fixture.
@@ -122,7 +136,7 @@ truncated selected hook writes still refuse. The snapshot must contain the
 completed producer writes as well as the hook exits. Each analysis window is
 retained before later assertions; a pairing assertion also retains its prefix.
 
-Missing and corrupt receipts both emit the same public compatibility-preflight
+Missing, corrupt and symlink receipts emit the same public compatibility-preflight
 diagnostic and exit 1. The fixture pins that diagnostic, requires no stdout,
 and checks zero API calls and unchanged lifecycle state. It also reconstructs
 the selected receipt's descriptor walk. For the missing file, the final

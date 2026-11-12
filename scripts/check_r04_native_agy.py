@@ -428,6 +428,10 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                     self.assertEqual(vector[vector.index('--role') + 1], 'coordination')
                     if refusal == 'missing':
                         self.assertEqual(observed, dict(open_error='ENOENT (No such file or directory)', raw=b''))
+                    elif refusal == 'symlink':
+                        self.assertEqual(observed, dict(open_error='ELOOP (Too many levels of symbolic links)', raw=b''))
+                        self.assertNotIn(str(symlink_target), opened_paths(trace, threads))
+                        self.assertNotIn(symlink_target.name, opened_paths(trace, threads))
                     else:
                         self.assertIsNone(observed['open_error'])
                         self.assertEqual(observed['raw'], corrupt_receipt)
@@ -693,6 +697,63 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         self.assertEqual({record['native_pid'] for record in account_faults}, {faults.child.native_pid})
         self.assertEqual([record['hook_layer'] for record in account_faults], ['account'] * 5)
         faults.close()
+        receipt_prefix_names = prefix_names + [
+            'account-refusal-valid-b', 'account-missing-receipt',
+            'account-restored-after-missing', 'account-corrupt-receipt',
+            'account-restored-after-corrupt']
+        receipt_prefix_refusals = dict(prefix_refusals, **{
+            'account-missing-receipt': 'missing', 'account-corrupt-receipt': 'corrupt'})
+        receipt_prefix_layers = prefix_layers + [('account',)] * 5
+        self.assertEqual([record['case'] for record in observations], receipt_prefix_names)
+        for record, layers in zip(observations, receipt_prefix_layers):
+            self.assertEqual(record['refusal'], receipt_prefix_refusals.get(record['case']))
+            self.assertEqual(record['hook_layer'], 'layered' if len(layers) > 1 else layers[0])
+            self.assertEqual(tuple(layer['layer'] for layer in record['hook_layers']), layers)
+        preserved_receipt_prefix = dict(source_commit='7ef43cb2f509061bb942d5ae3938c29b94327fa3',
+            cases=[dict(case=record['case'], refusal=record['refusal'], hook_layer=record['hook_layer'],
+                        layers=[layer['layer'] for layer in record['hook_layers']]) for record in observations])
+        prior_ids = {client.identity for client in clients}
+        symlink_offset = len(observations)
+        symlink_client = start('account-symlink-client', work, account_hooks)
+        self.assertNotIn(symlink_client.identity, prior_ids)
+        prompt(symlink_client, 'account-symlink-valid-b', b)
+        self.assertEqual(receipt.read_bytes(), saved)
+        self.assertEqual(hashlib.sha256(saved).hexdigest(), vector[vector.index('--receipt-sha256') + 1])
+        before_stat = receipt.stat()
+        symlink_target = receipt.with_name('symlink-target.json')
+        self.assertFalse(symlink_target.exists())
+        symlink_target.write_bytes(saved)
+        symlink_target.chmod(0o400)
+        target_stat = symlink_target.stat()
+        self.assertTrue(stat.S_ISREG(target_stat.st_mode))
+        self.assertEqual(target_stat.st_uid, os.getuid())
+        self.assertEqual(stat.S_IMODE(target_stat.st_mode), 0o400)
+        self.assertEqual(digest(symlink_target), vector[vector.index('--receipt-sha256') + 1])
+        (output / 'account-symlink-target.json').write_bytes(symlink_target.read_bytes())
+        receipt.unlink()
+        try:
+            receipt.symlink_to(symlink_target)
+            link_stat = receipt.lstat()
+            self.assertTrue(stat.S_ISLNK(link_stat.st_mode))
+            self.assertEqual(link_stat.st_uid, os.getuid())
+            self.assertEqual(os.readlink(receipt), str(symlink_target))
+            (output / 'account-symlink-stats.json').write_bytes(encoded(dict(
+                receipt_path=str(receipt), before=tuple(before_stat), link=tuple(link_stat),
+                link_target=os.readlink(receipt), target_stat=tuple(target_stat), target=pin(symlink_target))))
+            prompt(symlink_client, 'account-symlink-receipt', b, refusal='symlink')
+        finally:
+            receipt.unlink(missing_ok=True)
+            receipt.write_bytes(saved)
+            receipt.chmod(0o400)
+        self.assertTrue(stat.S_ISREG(receipt.lstat().st_mode))
+        self.assertEqual(digest(receipt), vector[vector.index('--receipt-sha256') + 1])
+        prompt(symlink_client, 'account-restored-after-symlink', b)
+        symlink_cases = observations[symlink_offset:]
+        self.assertEqual(len(symlink_cases), 3)
+        self.assertEqual({record['native_session_id'] for record in symlink_cases}, {symlink_client.identity})
+        self.assertEqual({record['native_pid'] for record in symlink_cases}, {symlink_client.child.native_pid})
+        self.assertEqual([record['hook_layer'] for record in symlink_cases], ['account'] * 3)
+        symlink_client.close()
         for index, client in enumerate(clients):
             connections = loopback_connections(client.child.trace.read_text(), provider_port=provider.server.server_port)
             history = client.native_history_path
@@ -736,8 +797,9 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         return dict(schema='cairn.r04-native-agy/1', passed=True, cases=observations, clients=client_reports,
             fixture=pin(Path(__file__)), client=dict(path=str(binary), sha256=digest(binary),
                 version=version_raw.decode().strip()), version_process=version_report,
-            selection_scope='13 project-layer, 4 account-only, 5 layered/removal, then 5 account-receipt cases (27 total)',
+            selection_scope='13 project-layer, 4 account-only, 5 layered/removal, 5 account-receipt, then 3 account-symlink cases (30 total)',
             preserved_prefix=preserved_prefix,
+            preserved_receipt_prefix=preserved_receipt_prefix,
             native_home=str(home), native_profile=str(native_profile), binding_account=str(f.account),
             account_hook_home=str(account_hook_home), account_hook_file=str(account_hooks),
             context_seed='Per-prompt synthetic API display_name; marker is absent from user prompts and hook configuration.',
@@ -746,7 +808,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 native_pid=calibration.native_pid, joined_pids=calibration.pids), credential_files=credential_files,
             limits=['Agy ordinary memory is unsupported; this exercises checked Go coordination only.',
                     'Selected Agy aggregates account/project groups, including identical commands; no inter-layer order, precedence, cross-account isolation or installer claim.',
-                    'Project and account-only selected B receipt controls cover missing/corrupt files; no broader receipt-fault qualification.',
+                    'Selected B receipt controls cover project/account missing/corrupt files and an account leaf symlink to valid pinned bytes; no broader receipt-fault qualification.',
                     'PreInvocation context application reaches local provider text; no real model comprehension or inbox delivery claim.',
                     'No non-fullyIdle Stop, Stop continue-once, child/subagent, host presence/host_pid association or Herdr wake claim.',
                     'No store/auth, code-image upgrade, complete activation-unit barrier or full R04/R05/R06/ticket-closure qualification.'])
