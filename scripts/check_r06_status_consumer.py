@@ -127,6 +127,9 @@ def serialization_probe(argv, prefix, env, host, delivery_id):
         prefix.with_suffix('.stderr').write_text(stderr)
         write(prefix.with_suffix('.exit.json'), consumer.returncode)
         require(consumer.returncode == 0, f'consumer helper failed: {stderr}')
+        diagnostic = (host.source.root / 'postgres.log').read_text()
+        require(any(f"[{row['pid']}] ERROR:  could not serialize access due to concurrent update" in diagnostic
+                    for row in observed), 'real PostgreSQL serialization diagnostic not retained')
     finally:
         for process in (writer, consumer):
             if process is not None:
@@ -208,9 +211,30 @@ class Fixture:
         attempt = self.call('worker', 'session-inbox-claim', body)['attempt']
         return event, body, attempt
 
-    def retained(self, *, settle=True, close=True, resume=False):
+    def retained(self, *, settle=True, close=True, resume=False, cleanup=False):
         event, intent, attempt = self.claim()
         self.state.update(inbox_attempt=attempt, inbox_intent=intent)
+        if cleanup:
+            executable = str(Path(shutil.which('true')).resolve())
+            child = subprocess.Popen([executable])
+            require(child.pid > 1, 'owned tool PID must exceed 1')
+            try:
+                capture = dict(request_id=uid(), session=self.session, attempt_id=attempt['attempt_id'],
+                    items=[dict(item_id='fixture-tool', process_id=str(child.pid), command=executable,
+                                native_turn_id=attempt['native_turn_id'])])
+                self.call('worker', 'session-tool-capture', capture)
+                code = child.wait(timeout=5)
+                require(code == 0, 'owned fixture tool did not complete')
+                report = dict(request_id=uid(), session=self.session, attempt_id=attempt['attempt_id'],
+                    turn_stop='ended', capture_state='complete', terminal_scan='clear',
+                    tools=[dict(item_id='fixture-tool', stop_state='terminated')])
+                self.call('worker', 'session-tool-stop', report)
+                self.state['tool_calls'] = {'fixture-tool': dict(attempt_id=attempt['attempt_id'], ended=True, capture=capture)}
+                self.state['cancel_final_report'] = report
+                write(self.root / 'owned-tool.json', dict(pid=child.pid, executable=executable,
+                    sha256=sha(Path(executable).read_bytes()), exit=code, joined=True))
+            finally:
+                stop_process(child, timeout=5, label='R06 fixture tool')
         if settle:
             completion = dict(request_id=uid(), delivery_id=attempt['delivery']['delivery_id'],
                 lease_id=attempt['delivery']['lease_id'], disposition='handled', draft=dict(kind='note',
@@ -308,7 +332,7 @@ def check(evidence, cases):
             root = scratch / case
             f = Fixture(cluster, images['api'], root, case)
             try:
-                f.retained(settle=case != 'active', close=case != 'unfinished', resume=case == 'historical')
+                f.retained(settle=case != 'active', close=case != 'unfinished', resume=case == 'historical', cleanup=case == 'cleanup')
                 if case == 'missing':
                     old = f.state['inbox_attempt']['attempt_id']
                     new = uid()
@@ -346,7 +370,7 @@ def check(evidence, cases):
                     injection = dict(request_id=uid(), session=f.session, delivery_id=delivery['delivery_id'],
                                      native_turn_id='fixture-invalidate', turn_exclusive=True)
                 result = f.inspect(images['consumer'], inject=injection, serialization=case == 'serialization')
-                positive = case in ('terminal', 'historical')
+                positive = case in ('terminal', 'historical', 'cleanup')
                 require(result['Exchange']['Published'] == positive, f'{case}: wrong publication: {result}')
                 if positive:
                     require(result['Receipt'] and not result['Error'], f'{case}: terminal refused: {result}')
@@ -356,16 +380,25 @@ def check(evidence, cases):
                         remote = json.loads(read['Stdout'])['data']
                         require(remote['session'] == f.state['inbox_attempt']['session'], 'history execution changed')
                         require(not remote['delivery'].get('lease_id') and not remote['delivery'].get('lease_until'), 'status exposed lease')
+                        if case == 'cleanup':
+                            require(remote['capture_state'] == 'complete' and remote['terminal_scan'] == 'clear' and
+                                remote['turn_stop_state'] == 'ended' and remote['tools'][0]['stop_state'] == 'terminated' and
+                                remote['tools'][0].get('stop_at'), 'authoritative tool cleanup correspondence missing')
                 else:
                     require(bool(result['Error']), f'{case}: refusal lost error')
-                    require(not (f.root / 'retained').exists(), 'refusal published retained selection')
                     require(sha((f.active / 'one.json').read_bytes()) == f.pins['one.json'], 'refusal changed old selection')
                     if case == 'invalidate':
                         require(result['Receipt'] and 'invalidated' in result['Error'], 'claim did not invalidate initial receipt')
                         actor = json.loads(result['ActorOutput'])
                         require(actor['ok'] and actor['data']['attempt'], 'fixture claim never happened')
+                        prepared = f.root / 'retained'
+                        require(result['Exchange']['Preparation'] == str(prepared), 'lost prepared selection identity')
+                        require(sha((prepared / 'one.json').read_bytes()) == sha(f.next.read_bytes()), 'prepared selection incomplete')
+                        require(set(p.name for p in f.active.iterdir()) == {'one.json', '.watch.lock'}, 'old selection membership changed')
+                        require(os.path.samefile(f.active / '.watch.lock', prepared / '.watch.lock'), 'prepared selection lost shared lock inode')
                     else:
                         require(not result['Receipt'], 'unknown/held view created receipt')
+                        require(not (f.root / 'retained').exists(), 'receipt refusal prepared an exchange')
                     statuses = [json.loads(c['Stdout']) for c in result['Calls'] if c['Stdout'].startswith('{')]
                     expected = {'missing':'NOT_FOUND', 'foreign':'NOT_FOUND', 'stale':'STALE_SESSION',
                                 'unauthorized':'NOT_FOUND', 'unauthenticated':'AUTHORITY_DENIED', 'serialization':'STORE_ERROR'}
@@ -403,7 +436,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path)
     parser.add_argument('--claim-actor', type=Path)
-    cases = ('terminal', 'historical', 'active', 'unfinished', 'missing', 'foreign', 'stale', 'unauthorized', 'unauthenticated', 'unavailable', 'serialization', 'invalidate')
+    cases = ('terminal', 'historical', 'cleanup', 'active', 'unfinished', 'missing', 'foreign', 'stale', 'unauthorized', 'unauthenticated', 'unavailable', 'serialization', 'invalidate')
     parser.add_argument('--case', action='append', choices=cases)
     args = parser.parse_args()
     if args.claim_actor:

@@ -33,6 +33,8 @@ retain its exact completion, result and response correspondence in a journal,
 then inspect it through real D2/D4 reads and exchange the whole selection.
 The current reader authenticates the prior-execution lookup; the returned
 attempt's session remains historical and its lease fields remain redacted.
+The cleanup case captures and joins an owned tool process, reports its actual
+terminal state through the API, and retains those exact requests for inspection.
 Active and unfinished attempts, missing and foreign history, stale readers,
 foreign-owner and invalid-token authentication, and unavailable transport must
 refuse receipt creation and publication. Missing and foreign cases explicitly
@@ -49,6 +51,8 @@ The invalidation case first captures a valid receipt, then a separate fixture
 actor makes a real native claim before the public exchange. Snapshots before
 and after each inspection phase distinguish actor changes from inspector
 mutation. Publication must refuse, preserving the complete old selection.
+The unpublished prepared selection may remain; its identity, complete content
+and shared lock inode are retained separately from successful publication.
 The inspector transport admits only four read operations; it cannot claim,
 renew, settle, reconcile or cancel work.
 
