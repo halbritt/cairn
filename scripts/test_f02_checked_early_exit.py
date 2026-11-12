@@ -26,7 +26,6 @@ class CheckedEarlyExitTests(unittest.TestCase):
     files = ambient.OpenCodeAmbientTests.files
     same_keys = ambient.OpenCodeAmbientTests.same_keys
     measurement = ambient.OpenCodeAmbientTests.measurement
-    validate_keysets = ambient.OpenCodeAmbientTests.validate_keysets
     normalize = ambient.OpenCodeAmbientTests.normalize
     normalized_stream = ambient.OpenCodeAmbientTests.normalized_stream
     check_pull_intents = ambient.OpenCodeAmbientTests.check_pull_intents
@@ -63,7 +62,8 @@ class CheckedEarlyExitTests(unittest.TestCase):
             self.directory.mkdir(mode=0o750)
             self.directory.chmod(0o750)
             ordinary.write(self.directory/'preserved.json',
-                           ordinary.encoded(dict(opaque=['keep', 900719925474099312345, '日本語'])), 0o640)
+                           json.dumps(dict(opaque=['keep', 900719925474099312345, '日本語']),
+                                      ensure_ascii=False, separators=(',', ':')).encode(), 0o640)
             ordinary.write(self.directory/'unrelated.lock', b'retained lock bytes\x00\n', 0o400)
 
     def snapshot(self):
@@ -77,6 +77,31 @@ class CheckedEarlyExitTests(unittest.TestCase):
             self.directory.chmod(snapshot['mode'])
             for name, item in snapshot['files'].items():
                 ordinary.write(self.directory/name, item['raw'].encode(), item['mode'])
+
+    def validate_keysets(self, rows):
+        for row in rows:
+            for item in row['calls']:
+                self.assertIsInstance(item, tuple)
+                self.assertEqual(len(item), 3)
+                self.assertIsInstance(item[0], str)
+                self.assertIsInstance(item[1], dict)
+                self.assertIsInstance(item[2], dict)
+        for key in ('files', 'trace', 'locks', 'directory_mode'):
+            self.same_keys(rows[0][key], rows[1][key], (key,))
+        for name in rows[0]['files']:
+            if name.endswith('.json'):
+                self.same_keys(json.loads(rows[0]['files'][name]['raw']),
+                               json.loads(rows[1]['files'][name]['raw']), ('state', name))
+        self.same_keys([(op, body) for op, body, _ in rows[0]['calls']],
+                       [(op, body) for op, body, _ in rows[1]['calls']], ('requests',))
+
+    def healthy_output(self, row, event):
+        self.assertEqual((row['exit'], row['stderr']), (0, b''))
+        body = json.loads(row['stdout'])
+        output = body['hookSpecificOutput']
+        self.assertEqual(output['hookEventName'], event)
+        self.assertIsInstance(output['additionalContext'], str)
+        self.assertTrue(output['additionalContext'])
 
     def validate_rows(self, rows, stage):
         for row in rows:
@@ -174,7 +199,10 @@ class CheckedEarlyExitTests(unittest.TestCase):
                             self.f.env = lambda variable=variable: dict(self.base_env(), **{variable:str(self.root/'foreign-account')})
                             skipped = harness == 'claude' and variable == 'CLAUDE_CONFIG_DIR'
                             rows = self.pair(stage='activation' if skipped else 'saved', unchanged=skipped)
-                            self.assertEqual((rows[1]['exit'], rows[1]['stdout'], rows[1]['stderr']), (0, b'{}\n', b''))
+                            if skipped:
+                                self.assertEqual((rows[1]['exit'], rows[1]['stdout'], rows[1]['stderr']), (0, b'{}\n', b''))
+                            else:
+                                self.healthy_output(rows[1], event)
                             self.assertEqual([op for op, _, _ in rows[1]['calls']], [] if skipped else ['version', 'index', 'recall-observation'])
 
     def test_scalar_invalid_and_missing_identity_keep_activation(self):
@@ -214,7 +242,7 @@ class CheckedEarlyExitTests(unittest.TestCase):
                     with self.subTest(harness=harness, event=event, seed=seed):
                         self.cell(harness, event, seed=seed)
                         rows = self.pair(stage='saved')
-                        self.assertEqual((rows[1]['exit'], rows[1]['stdout'], rows[1]['stderr']), (0, b'{}\n', b''))
+                        self.healthy_output(rows[1], event)
                         self.assertEqual([op for op, _, _ in rows[1]['calls']], ['version', 'index', 'recall-observation'])
                         self.assertEqual(rows[1]['locks'], [True])
 
