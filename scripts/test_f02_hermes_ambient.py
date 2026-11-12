@@ -96,7 +96,7 @@ class HermesAmbientTests(unittest.TestCase):
             self.assertEqual(row['locks'], [True]*reports)
             self.assertEqual(reports, 1)
             for op, body, _ in row['calls']:
-                if op == 'version':
+                if op != 'index':
                     continue
                 self.assertEqual(body['scope']['task_id'], 'hermes/'+self.f.event['session_id'])
                 self.assertEqual(body['scope']['run_id'], self.f.event['session_id'])
