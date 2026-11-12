@@ -42,6 +42,56 @@ then remove `plugins/cairn`, `plugins/cairn-controls`, `skills/cairn`,
 start a fresh CLI. Restore the backup wholesale only if no later settings need
 preserving. Uninstall does not delete shared notes or native Hermes memory.
 
+## Receipt-selected memory staging
+
+The installer accepts `--lifecycle-selection` and `--stager` together for an
+explicit R-02 immutable lifecycle generation. The selection file contains the
+generation's `path` and `sha256` descriptor. Use a disposable Hermes profile
+while qualifying this route. The existing default installation above continues
+to select the retained Python engine.
+
+The shared R-02 inspector checks the selected material; the shared launcher
+producer emits the Hermes command vectors. `cairn-lifecycle.json` records those
+literal vectors and the selected configuration, receipt and binary descriptors.
+The provider passes argv directly to an owned subprocess without shell parsing.
+Recall and tool rows select H13; `PreCompact` and `SessionEnd` select the checked
+H150 `memory-capture` entry. The immutable configuration supplies model, recall
+and state settings, so the installer refuses simultaneous model/recall overrides
+and leaves an existing `cairn/engine.json` intact for reversal.
+
+Required Python remains installed for the actual Hermes `MemoryProvider`,
+registration handles, request middleware, original-dialogue translation and
+conversation controls. Missing, changed or refusing selected code follows the
+provider's existing failure warning and pending-capture behavior. A selected
+command table never falls back to the retained `script`, including an absent or
+invalid event row. Child output is kept out of the public failure diagnostic.
+Timeout and Python interruption clean up this invocation's process group before
+returning or propagating the interruption. Abrupt host death is not a clean
+shutdown guarantee, and this adds no public Store cancellation attestation.
+
+At the assigned R-03 baseline, checked Hermes Go recall admits unbound
+`SessionStart` and `UserPromptSubmit`; checked capture admits unbound
+`PreCompact` and `SessionEnd`. The checked H13 entry still refuses Hermes
+`PostToolUse` and `PostToolUseFailure`, although the provider translates and
+dispatches those existing hooks. They remain a Foundation admission gap.
+Ambient recall with provider fallback also remains outside the checked recall
+cell; lexical ambient requires omitted/literal-false `semantic_fallback`, and
+the existing `agent_tools` route has its own checked admission. These limits
+prevent claiming complete Hermes migration or selecting this route for a live
+profile. A staged generation, or disposing/recreating provider registrations,
+does not qualify a gateway restart, cached CLI refresh, whole watcher activation
+or operational rollback. Release owns those separate qualification steps.
+
+The focused command checks use intercepted process calls. The installed probe
+uses the real R-02 producer, selected Go processes, a local API fixture and an
+explicit existing Hermes interpreter/source. It fails when required native
+imports are unavailable. Run it through `mise run host:exec`, retaining its
+fresh `--output` directory, source/image pins, streams and API/state evidence.
+Its external selector is scripted; it starts no model conversation or messaging
+transport. `scripts/check_r03_hermes_installed.py --help` lists the required
+paths. A retained checked-tool refusal is evidence of the stated gap, not a
+successful supported tool operation.
+
 ## Conversation controls
 
 Use `/cairn` in the CLI or `!cairn` in Slack. Commands work before the first

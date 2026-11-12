@@ -44,6 +44,13 @@ def main():
         assert isinstance(provider, MemoryProvider), 'actual installed provider failed to load'
         runtime = sys.modules[type(provider).__module__]
         original = runtime.run_engine
+        manager = get_plugin_manager()
+
+        def registrations():
+            return [{key: tuple(values) for key, values in registry.items() if values}
+                    for registry in (manager._hooks, manager._middleware)]
+
+        baseline_registrations = registrations()
 
         def observed(command, payload, timeout):
             row = dict(argv=command, payload=payload, timeout=timeout, started=time.monotonic())
@@ -66,7 +73,6 @@ def main():
                             gateway_session_key='r03-fixture-thread', warning_callback=warnings.append)
         handles = list(provider.registrations)
         assert len(handles) == 5 and all(isinstance(h, PluginRegistration) and h.active for h in handles)
-        manager = get_plugin_manager()
         owner = dict(session_id=session, turn_id='r03-turn-1', user_message='Continue retention policy.',
                      conversation_history=messages)
         assert invoke_hook('pre_llm_call', **owner) == []
@@ -118,12 +124,12 @@ def main():
         marker_path.unlink()
         provider.shutdown()
         assert all(not handle.active for handle in handles)
-        assert all(not values for values in manager._hooks.values())
-        assert all(not values for values in manager._middleware.values())
+        assert registrations() == baseline_registrations, 'shutdown changed unrelated callbacks or retained this provider'
         replacement = load_memory_provider('cairn', register_skills=False)
         replacement.initialize(session, hermes_home=str(args.home), platform='slack', gateway_session_key='r03-fixture-thread')
         assert len(replacement.registrations) == 5
         replacement.shutdown()
+        assert registrations() == baseline_registrations
         report = dict(schema='cairn.r03-hermes-objects/1', refusal=args.refusal,
                       python=sys.version, executable=sys.executable,
                       dependencies={item.metadata['Name']: item.version for item in importlib.metadata.distributions()},
