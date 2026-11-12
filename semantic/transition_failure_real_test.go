@@ -81,8 +81,8 @@ func transitionRealDeathDeadline(t *testing.T) {
 
 func transitionRealFailureOne(t *testing.T, selected transitionRealSelection, label, fault string, w transitionRealWorker) map[string]any {
 	report := map[string]any{"implementation": label, "fault": fault, "embed_identity": w.EmbedIdentity, "rank_identity": w.RankIdentity,
-		"fault_phase":      "cold document-lane startup after verified native runtime/environment mapping under a live lease; not an inference-frame observation",
-		"lane_attribution": "L1: OpenIndex identity opens query lane first; second live embed child is inferred document lane; no query issued during Step",
+		"fault_phase":      "healthy warm document lane, after Step lease and while its source read is blocked by a private table lock; fault precedes that Step's document exchange, not an inference-frame observation",
+		"lane_attribution": "direct CommandEmbedder.document.worker process pointer after successful ordinary warmup, canonical trace and descendant ownership; case2 L1 remains unchanged",
 		"scope":            "actual Go Index.Step/CommandEmbedder, three ordinary sources, private database and test-owned writer inventory"}
 	t.Cleanup(func() {
 		report["test_failed"] = t.Failed()
@@ -115,6 +115,68 @@ func transitionRealFailureOne(t *testing.T, selected transitionRealSelection, la
 		t.Fatal(err)
 	}
 	t.Cleanup(i.Close)
+	// A short completed document makes the actual lane PID and its runtime
+	// receipt available before Step. No fixture substitutes the Go embedder.
+	warmup, err := e.Document(context.Background(), "ordinary document lane preparation é")
+	if err != nil || len(warmup) == 0 {
+		t.Fatalf("real document warmup failed: %v", err)
+	}
+	e.document.mu.Lock()
+	if e.document.worker == nil {
+		e.document.mu.Unlock()
+		t.Fatal("successful warmup lost its real document worker")
+	}
+	documentPID := e.document.worker.command.Process.Pid
+	e.document.mu.Unlock()
+	owner := os.Getpid()
+	report["healthy_document_warmup_passages"] = len(warmup)
+	var roots []int
+	transitionRestartWait(t, "case3 verified document runtime receipt", 20*time.Second, func() bool {
+		roots = nil
+		for _, pid := range transitionRealRoots(t, w, selected.TracePrefix) {
+			parent, state, err := transitionProcessStatus(pid)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parent == owner && state != "Z" && state != "X" {
+				roots = append(roots, pid)
+			}
+		}
+		if len(roots) != 2 {
+			return false
+		}
+		if roots[0] != documentPID && roots[1] != documentPID {
+			t.Fatal("document supervisor PID missing from canonical trace roots")
+		}
+		var sampled map[string][]int
+		data, err := os.ReadFile(selected.SamplePIDs)
+		if os.IsNotExist(err) {
+			return false
+		}
+		if err != nil || json.Unmarshal(data, &sampled) != nil {
+			t.Fatalf("invalid runtime sample receipt: %v", err)
+		}
+		for _, pid := range sampled[label] {
+			if pid == documentPID {
+				report["verified_runtime_sample_pids"] = sampled
+				return true
+			}
+		}
+		return false
+	})
+	// Hold only this disposable database's source read, after OpenIndex seeds
+	// the queue. Step's autocommitted lease remains independently observable.
+	barrier, err := d.pool.Begin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = barrier.Rollback(context.Background()) })
+	if _, err := barrier.Exec(context.Background(), `LOCK TABLE cairn.record_version IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
 	caller, cancel := context.WithCancel(context.Background())
 	if fault == "caller_deadline" {
 		cancel()
@@ -142,58 +204,29 @@ func transitionRealFailureOne(t *testing.T, selected transitionRealSelection, la
 		{name: "inactive alternate definition", collection: "s05-b", model: w.EmbedIdentity, restartable: true, joined: true}}
 	report["writers_before_fence"] = transitionRealWriters(definitions)
 	var leased transitionRestartJob
-	transitionRestartWait(t, "case3 live document lease", 10*time.Second, func() bool {
+	transitionRestartWait(t, "case3 live document lease and source-read barrier", 10*time.Second, func() bool {
 		for _, job := range d.restartJobs(t) {
 			if job.LeaseID != nil && job.Until != nil {
 				leased = job
-				return true
+				break
 			}
 		}
-		return false
+		return leased.RecordID != "" && d.count(t, `SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT v.version,v.body FROM cairn.memory_record%'`) == 1
 	})
 	report["observed_lease"] = leased
-	owner, documentPID := os.Getpid(), 0
-	var roots []int
-	transitionRestartWait(t, "case3 verified document runtime receipt", 20*time.Second, func() bool {
-		roots = nil
-		for _, pid := range transitionRealRoots(t, w, selected.TracePrefix) {
-			parent, state, err := transitionProcessStatus(pid)
-			if os.IsNotExist(err) {
-				continue
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if parent == owner && state != "Z" && state != "X" {
-				roots = append(roots, pid)
-			}
-		}
-		if len(roots) != 2 {
-			return false
-		}
-		documentPID = roots[1]
-		var sampled map[string][]int
-		data, err := os.ReadFile(selected.SamplePIDs)
-		if os.IsNotExist(err) {
-			return false
-		}
-		if err != nil || json.Unmarshal(data, &sampled) != nil {
-			t.Fatalf("invalid runtime sample receipt: %v", err)
-		}
-		for _, pid := range sampled[label] {
-			if pid == documentPID {
-				report["verified_runtime_sample_pids"] = sampled
-				return true
-			}
-		}
-		return false
-	})
+	report["private_source_read_barrier_observed"] = true
 	jobsAtFault := d.restartJobs(t)
 	retained := transitionFailureJob(t, jobsAtFault, leased.RecordID)
 	if !reflect.DeepEqual(retained, leased) || d.count(t, `SELECT count(*) FROM cairn.s05_publication`) != 0 || caller.Err() != nil {
 		t.Fatal("fault missed the live unpublished lease")
 	}
 	report["jobs_before_fault"], report["owner_pid"], report["document_pid"], report["initial_worker_pids"] = jobsAtFault, owner, documentPID, roots
+	tracePath := fmt.Sprintf("%s.%d", selected.TracePrefix, documentPID)
+	beforeFaultTrace, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report["trace_bytes_before_fault"] = len(beforeFaultTrace)
 	signal := syscall.SIGKILL
 	if fault == "caller_deadline" {
 		signal = syscall.SIGSTOP
@@ -208,6 +241,10 @@ func transitionRealFailureOne(t *testing.T, selected transitionRealSelection, la
 			return err == nil && (state == "T" || state == "t")
 		})
 	}
+	if err := barrier.Rollback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	report["private_source_read_barrier_released_at"] = time.Now()
 	var result stepResult
 	select {
 	case result = <-done:
@@ -235,15 +272,14 @@ func transitionRealFailureOne(t *testing.T, selected transitionRealSelection, la
 	}
 	report["document_lane_worker_discarded"] = discarded
 	report["cache_disposition"] = "CommandEmbedder has no embedding cache protocol; failed process/reader discarded, no successful passages/publication; separate query lane retained until owner Close"
-	tracePath := fmt.Sprintf("%s.%d", selected.TracePrefix, documentPID)
 	var terminal string
-	var stdout []string
+	stdout, stdoutAfterFault := []string{}, []string{}
 	transitionRestartWait(t, "case3 terminal trace", 2*time.Second, func() bool {
 		data, err := os.ReadFile(tracePath)
 		if err != nil {
 			t.Fatal(err)
 		}
-		stdout = nil
+		stdout = stdout[:0]
 		for _, line := range strings.Split(string(data), "\n") {
 			if strings.Contains(line, "write(1<") || strings.Contains(line, "writev(1<") {
 				stdout = append(stdout, line)
@@ -252,9 +288,21 @@ func transitionRealFailureOne(t *testing.T, selected transitionRealSelection, la
 				terminal = line
 			}
 		}
+		if len(data) < len(beforeFaultTrace) {
+			t.Fatal("worker trace shrank after fault")
+		}
+		stdoutAfterFault = stdoutAfterFault[:0]
+		for _, line := range strings.Split(string(data[len(beforeFaultTrace):]), "\n") {
+			if strings.Contains(line, "write(1<") || strings.Contains(line, "writev(1<") {
+				stdoutAfterFault = append(stdoutAfterFault, line)
+			}
+		}
 		return terminal != ""
 	})
-	report["process_exit_reap"] = map[string]any{"trace": tracePath, "terminal": terminal, "proc_absent_after_Step": true, "stdout_fd1_writes": stdout, "stdout_scope": "raw strace write prefixes (256 bytes); not a reconstruction of full stdout"}
+	if len(stdoutAfterFault) != 0 {
+		t.Fatal("failed operation unexpectedly emitted worker stdout")
+	}
+	report["process_exit_reap"] = map[string]any{"trace": tracePath, "terminal": terminal, "proc_absent_after_Step": true, "stdout_fd1_writes_including_warmup": stdout, "stdout_fd1_writes_after_fault": stdoutAfterFault, "stdout_scope": "raw strace write prefixes (256 bytes); not a reconstruction of full stdout"}
 	failedJobs := d.restartJobs(t)
 	report["jobs_after_failed_Step"] = failedJobs
 	coverage := transitionRequireCoverage(t, d, w.EmbedIdentity, len(before), 0)

@@ -170,16 +170,25 @@ values. The common wrapper, fixed guest roots, launcher/identity checks,
 pre-execution inventories, native mappings/environment samples, exact traced
 root/sample equality and worker-tree effect checks remain mandatory.
 
-The fault requires both a live lease and a verified native-runtime PID receipt.
+The harness first completes a short ordinary document on the actual lane and
+records its supervisor-owned process pointer and verified native-runtime PID
+receipt. A private table lock then holds `Step` at its source read after its
+autocommitted lease is observable; `pg_stat_activity` must confirm that wait.
+This removes a race where cold inference could finish before its runtime sample
+arrived. The lock changes no source rows or product code and releases immediately
+after the PID fault. Thus the fault precedes that Step's document exchange on a
+previously healthy lane, rather than claiming interruption inside inference.
+The fault requires both the live lease and verified receipt.
 The harness proves descent from its own Go test process and targets only an
 owned positive PID greater than one. Death sends `SIGKILL` with a live caller;
 the deadline branch sends `SIGSTOP` and waits for its genuine 30-second caller
 deadline, earlier than the unchanged 90-second document limit. The supervisor
 performs its normal cancellation/reaping. Ownership and unsafe PID/signal tests
-intercept all process control. Document-lane attribution retains case 2's L1:
-startup order and the absence of concurrent queries identify the second embed
-child by inference. Runtime mapping establishes cold lane startup, not an
-inference-frame observation or a maximum-document/latency experiment.
+intercept all process control. Case 3 binds the lane directly through
+`CommandEmbedder.document.worker` after the healthy warmup, plus canonical
+launcher trace and ownership checks. Case 2's L1 startup-order inference remains
+unchanged. This is not an inference-frame observation or a maximum-document or
+latency experiment.
 
 A failed operation must report `worked=true` and a non-nil error without any
 publication. The deadline branch must preserve `context.DeadlineExceeded` from
