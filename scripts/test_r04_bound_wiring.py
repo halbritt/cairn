@@ -85,9 +85,13 @@ class R04BoundWiringTests(BoundMemoryCase):
     def test_supported_bound_rows_keep_exact_installed_selection(self):
         for harness, mode, expected in (
                 ('codex', 'agent_tools', {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'Stop': 150}),
-                ('codex', 'ambient', {'PreCompact': 150, 'Stop': 150}),
-                ('claude', 'agent_tools', {'PreCompact': 150, 'SessionEnd': 150}),
-                ('claude', 'ambient', {'PreCompact': 150, 'SessionEnd': 150})):
+                ('codex', 'ambient', {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'Stop': 150}),
+                ('codex', None, {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'Stop': 150}),
+                ('claude', 'agent_tools', {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150}),
+                ('claude', 'ambient', {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150}),
+                ('claude', None, {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150}),
+                ('codex', 'invalid', {'PreCompact': 150, 'Stop': 150}),
+                ('claude', 'invalid', {'PreCompact': 150, 'SessionEnd': 150})):
             with self.subTest(harness=harness, mode=mode):
                 self.stage_rows(harness, mode, remove_package=False)
                 anchors = json.loads((Path(self.f.selected['path']).parent / 'selection.json').read_bytes())['anchors']
