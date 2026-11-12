@@ -118,8 +118,15 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
         assert state['last_capture']['outcome'] == 'unchanged' and len(state['captured_digest']) == 64
         saved = host.agent('worker', 'history', dict(record_id=saved_ids[0], version=1))
         assert 'Keep thirty days of retention' in saved['versions'][0]['body']
+        assert saved['versions'][0]['observed_writer'] == host.principal('worker')
+        (output / 'saved-history.json').write_text(json.dumps(saved, indent=2) + '\n')
         bodies = host.sql('SELECT body FROM cairn.record_version')
+        (output / 'stored-bodies.txt').write_text(bodies + '\n')
         assert 'PRIVATE_FIXTURE' not in bodies and 'Original owner prompt' not in bodies
+        observations = {table: host.sql('SELECT row_to_json(t) FROM cairn.' + table + ' t')
+                        for table in ('capture_observation', 'recall_observation')}
+        assert 'PRIVATE_FIXTURE' not in json.dumps(observations)
+        (output / 'stored-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
         counts = {table: host.count(table) for table in
                   ('memory_record', 'capture_observation', 'recall_observation', 'agent_session_attempt', 'agent_delivery')}
         assert counts['memory_record'] == 2, 'completed capture was duplicated or lost'
@@ -128,7 +135,7 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
         report = dict(schema='cairn.r03-hermes-store/1', passed=True, source=source, counts=counts,
             seed_record=seed['record_id'], saved_record=saved_ids[0], dialogue_stored=False,
             provider='scripted external selector; no real model', checked_tools='baseline refusal; Foundation input pending',
-            source_image_sha256=f.receipt['binary']['sha256'])
+            lifecycle_image_sha256=f.receipt['binary']['sha256'])
         (output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(report))
     finally:
