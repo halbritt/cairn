@@ -219,6 +219,10 @@ func transitionEdit(t *testing.T) {
 }
 
 func transitionDeleteForget(t *testing.T) {
+	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "5" {
+		transitionRealDeleteForget(t)
+		return
+	}
 	for _, operation := range []string{"delete", "forget"} {
 		t.Run(operation, func(t *testing.T) {
 			d := transitionDatabase(t)

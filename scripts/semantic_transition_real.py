@@ -216,7 +216,7 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
                 if errors:
                     if child.pid <= 1:
                         raise RuntimeError('refusing unsafe fixture process control')
-                    if env.get('CAIRN_TRANSITION_REAL_CASE') in ('2', '3', '4'):
+                    if env.get('CAIRN_TRANSITION_REAL_CASE') in ('2', '3', '4', '5'):
                         child.terminate()
                     else:
                         if os.getpgid(child.pid) != child.pid:

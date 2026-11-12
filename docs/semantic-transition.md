@@ -270,6 +270,71 @@ controller/retirement, R1, CPython value-graph and RTERM1 holds open. Host `make
 test` remains FAILED exit 2 with 53 frozen baseline trial diagnostics; SDK
 spawn/ipc is NOT RUN. It grants no ticket closure or installed action.
 
+## Explicit local real-worker case 5
+
+```sh
+python3 -I -B scripts/check_semantic_transition.py --real-case5 \
+  --artifact-dir /absolute/new-local-case5-artifacts \
+  --python-selection /absolute/s04r/qualified-selection \
+  --rust-fixtures /absolute/retained-rust/observed/fixtures
+```
+
+Four subcases cover Python/Rust crossed with ordinary Delete and audited Forget.
+Each starts with three ordinary sources across three collections: one target and
+two controls. The unchanged case-four adapter holds the actual old canonical
+worker result after computation, before the indexer receives it. The real store
+operation commits and exclusion is independently observed before channel release.
+This proves the old source read and held result beyond a lease-only observation;
+it does not claim interruption inside inference. No canonical alias, proxy
+process or shipped fault hook is added, and the harness sends no process signals.
+
+Delete uses `Delete(expectedVersion=1)` and removes the ordinary record and its
+versions. There is no tombstone or Forget deletion request. Forget uses the
+existing disposable operator Bootstrap/PreviewDeletion/Forget path, retaining a
+version-two tombstone, identity and authority/deletion audit while excluding all
+target payloads. New public `Get` returns `NOT_FOUND` for Delete and
+`PAYLOAD_UNAVAILABLE` for Forget. See [deletion](deletion.md): Forget's immediate
+logical exclusion is separate from pending purge and physical erasure. This
+fixture invokes no purge; its synthetic inventory has two pending database
+effects and three explicit residuals. It does not require forgotten payloads to
+remain publicly readable or claim erasure of old copies, WAL, backups or media.
+
+The original population and full source/lifecycle/version snapshots are retained
+in fixture artifacts and private OLD/NEW audit tables. After either operation,
+two controls remain eligible and the excluded target is accounted for separately.
+Delete leaves two retained source versions; Forget leaves four history rows,
+including the two logically excluded target versions. The stale step must return
+`worked=true` without an error, publication or target semantic/job resurrection.
+Both control queue rows stay unchanged; no fixture scheduler or attempt reset is
+used. Normal same-generation work completes both controls with exact current
+model/version/body hash, valid contiguous passages and finite nonzero vectors.
+
+Actual `Index.Search` begins after exclusion commit, first while the old result
+is held and again after control recovery. Both calls intentionally receive the
+original three-note candidate set, including the pre-operation target. The first
+returns no indexed hits; the final call must return both nonempty positive
+controls and no target. This exercises fresh semantic retrieval, rather than
+using an empty result alone as proof. It does not qualify the full API, recall
+already returned content, or constrain reads started before deletion commit.
+
+`real-case5-{python_delete,python_forget,rust_delete,rust_forget}.json` and
+`real-case5.json` retain causal receipts, actual identity/decoded results,
+source/lifecycle/deletion audit, queue/publication changes, coverage and retrieval
+results. The canonical document worker is reused for the old request and two
+control documents (zero restarts), then normal owner close joins and reaps it.
+There is no embedding-cache protocol; raw stdout evidence remains write prefixes.
+The focused `TestSemanticHeldResultCancellation` uses the existing deterministic
+protocol child to verify cancellation cannot release held passages or leak its
+supervised process. Observer/PID guards, the unchanged ten-case/32-entry/no-skip
+default matrix, exact native/environment samples and zero effects with positive
+controls remain required. Case-four barrier code and its L1/L2 limits remain.
+
+Five other real cases, full S-05 and all maximum/latency, raw294, punctuation,
+quality4, CPU/FENV, fleet/runtime/production/controller/retirement/R1,
+CPython value-graph and RTERM1 holds remain open. Host `make test` remains FAILED
+exit 2 with 53 frozen baseline trial diagnostics; SDK spawn/ipc is NOT RUN.
+There is no ticket closure, production action or case-six self-assignment.
+
 ## Matrix and claim boundaries
 
 Each row names one top-level case under
