@@ -22,7 +22,7 @@ import unittest
 import uuid
 
 from check_r04_native_opencode import digest, native_api_fixture, successful_execs, wait_for
-from r04_agy_trace import calls, exec_lines, exits, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, opened_paths, thread_pids, walked_path
+from r04_agy_trace import calls, exec_lines, exits, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, metadata_refusal, opened_paths, thread_pids, walked_path
 from test_f04_activation import encoded, overwrite_fixture
 from test_r02_compatibility_install import InstalledFixture, InstalledTools
 from test_r04_host_wiring import R04HostWiringTests, pin
@@ -105,7 +105,8 @@ class TracedProcess:
         self.closed, self.forced = False, False
         self.process = subprocess.Popen(
             ['strace', '-f', '-xx', '-s', str(string_limit), '-e',
-             'trace=execve,openat,connect,read,write,close,clone,clone3,readlink,exit,exit_group', '-o', str(self.trace), *argv],
+             'trace=execve,openat,fstat,connect,read,write,close,clone,clone3,readlink,exit,exit_group',
+             '-e', 'abbrev=!fstat', '-o', str(self.trace), *argv],
             cwd=work, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=self.stderr, start_new_session=True)
         self.native_pid = None
@@ -417,8 +418,12 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 # literal program vector, before the hook tail.
                 receipt_path = vector[vector.index('--receipt') + 1]
                 receipt_hash = vector[vector.index('--receipt-sha256') + 1]
-                observed = file_read(trace, threads, 'receipt.json')
-                self.assertEqual(walked_path(trace, threads, 'receipt.json'), receipt_path)
+                if refusal == 'mode':
+                    metadata_evidence = metadata_refusal(trace, threads, 'receipt.json', mode_fault_metadata)
+                    self.assertEqual(metadata_evidence['path'], receipt_path)
+                else:
+                    observed = file_read(trace, threads, 'receipt.json')
+                    self.assertEqual(walked_path(trace, threads, 'receipt.json'), receipt_path)
                 if refusal:
                     self.assertEqual(stderr, b'Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n')
                     self.assertEqual(len([event for _, _, event in calls(trace, {'write'}, pid=threads)
@@ -432,12 +437,17 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                         self.assertEqual(observed, dict(open_error='ELOOP (Too many levels of symbolic links)', raw=b''))
                         self.assertNotIn(str(symlink_target), opened_paths(trace, threads))
                         self.assertNotIn(symlink_target.name, opened_paths(trace, threads))
-                    else:
+                    elif refusal == 'corrupt':
                         self.assertIsNone(observed['open_error'])
                         self.assertEqual(observed['raw'], corrupt_receipt)
                         self.assertNotEqual(hashlib.sha256(observed['raw']).hexdigest(), receipt_hash)
-                    receipt_read = dict(open_error=observed['open_error'], bytes=len(observed['raw']),
-                                        sha256=hashlib.sha256(observed['raw']).hexdigest())
+                    else:
+                        self.assertEqual(refusal, 'mode')
+                    if refusal == 'mode':
+                        receipt_read = dict(open_error=None, bytes=0, metadata_refusal=metadata_evidence)
+                    else:
+                        receipt_read = dict(open_error=observed['open_error'], bytes=len(observed['raw']),
+                                            sha256=hashlib.sha256(observed['raw']).hexdigest())
                 else:
                     self.assertTrue(raw, (label, issued['pid']))
                     self.assertEqual(payload['conversationId'], client.identity)
@@ -754,6 +764,60 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         self.assertEqual({record['native_pid'] for record in symlink_cases}, {symlink_client.child.native_pid})
         self.assertEqual([record['hook_layer'] for record in symlink_cases], ['account'] * 3)
         symlink_client.close()
+        symlink_prefix_names = receipt_prefix_names + [
+            'account-symlink-valid-b', 'account-symlink-receipt', 'account-restored-after-symlink']
+        symlink_prefix_refusals = dict(receipt_prefix_refusals, **{'account-symlink-receipt': 'symlink'})
+        symlink_prefix_layers = receipt_prefix_layers + [('account',)] * 3
+        self.assertEqual([record['case'] for record in observations], symlink_prefix_names)
+        for record, layers in zip(observations, symlink_prefix_layers):
+            self.assertEqual(record['refusal'], symlink_prefix_refusals.get(record['case']))
+            self.assertEqual(record['hook_layer'], 'layered' if len(layers) > 1 else layers[0])
+            self.assertEqual(tuple(layer['layer'] for layer in record['hook_layers']), layers)
+        preserved_symlink_prefix = dict(source_commit='0d196e69664c0bcb172a82b603923fd9fcd765ee',
+            cases=[dict(case=record['case'], refusal=record['refusal'], hook_layer=record['hook_layer'],
+                        layers=[layer['layer'] for layer in record['hook_layers']]) for record in observations])
+        prior_ids = {client.identity for client in clients}
+        mode_offset = len(observations)
+        mode_client = start('account-mode-client', work, account_hooks)
+        self.assertNotIn(mode_client.identity, prior_ids)
+        prompt(mode_client, 'account-mode-valid-b', b)
+        before_stat = receipt.stat()
+        self.assertTrue(stat.S_ISREG(before_stat.st_mode))
+        self.assertEqual(stat.S_IMODE(before_stat.st_mode), 0o400)
+        self.assertEqual(before_stat.st_uid, os.getuid())
+        self.assertEqual(str(receipt), vector[vector.index('--receipt') + 1])
+
+        def mode_snapshot(phase):
+            snapshot, raw = receipt.stat(), receipt.read_bytes()
+            self.assertTrue(stat.S_ISREG(snapshot.st_mode))
+            self.assertEqual((snapshot.st_dev, snapshot.st_uid, snapshot.st_ino, snapshot.st_size),
+                             (before_stat.st_dev, before_stat.st_uid, before_stat.st_ino, before_stat.st_size))
+            self.assertEqual(raw, saved)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), vector[vector.index('--receipt-sha256') + 1])
+            metadata = dict(mode=stat.S_IMODE(snapshot.st_mode), uid=snapshot.st_uid,
+                            inode=snapshot.st_ino, size=snapshot.st_size)
+            (output / ('account-mode-' + phase + '-receipt.json')).write_bytes(raw)
+            (output / ('account-mode-' + phase + '-stat.json')).write_bytes(encoded(dict(
+                path=str(receipt), stat=tuple(snapshot), metadata=metadata, sha256=hashlib.sha256(raw).hexdigest())))
+            return metadata
+
+        mode_before = mode_snapshot('before')
+        try:
+            receipt.chmod(0o420)
+            mode_fault_metadata = mode_snapshot('fault')
+            self.assertEqual(mode_fault_metadata, dict(mode_before, mode=0o420))
+            prompt(mode_client, 'account-group-writable-receipt', b, refusal='mode')
+        finally:
+            receipt.chmod(0o400)
+        self.assertEqual(mode_snapshot('restored'), mode_before)
+        prompt(mode_client, 'account-restored-after-mode', b)
+        mode_cases = observations[mode_offset:]
+        self.assertEqual(len(mode_cases), 3)
+        self.assertEqual({record['native_session_id'] for record in mode_cases}, {mode_client.identity})
+        self.assertEqual({record['native_pid'] for record in mode_cases}, {mode_client.child.native_pid})
+        self.assertEqual([record['hook_layer'] for record in mode_cases], ['account'] * 3)
+        self.assertEqual(len(observations), 33)
+        mode_client.close()
         for index, client in enumerate(clients):
             connections = loopback_connections(client.child.trace.read_text(), provider_port=provider.server.server_port)
             history = client.native_history_path
@@ -797,9 +861,10 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         return dict(schema='cairn.r04-native-agy/1', passed=True, cases=observations, clients=client_reports,
             fixture=pin(Path(__file__)), client=dict(path=str(binary), sha256=digest(binary),
                 version=version_raw.decode().strip()), version_process=version_report,
-            selection_scope='13 project-layer, 4 account-only, 5 layered/removal, 5 account-receipt, then 3 account-symlink cases (30 total)',
+            selection_scope='13 project-layer, 4 account-only, 5 layered/removal, 5 account-receipt, 3 account-symlink, then 3 account-mode cases (33 total)',
             preserved_prefix=preserved_prefix,
             preserved_receipt_prefix=preserved_receipt_prefix,
+            preserved_symlink_prefix=preserved_symlink_prefix,
             native_home=str(home), native_profile=str(native_profile), binding_account=str(f.account),
             account_hook_home=str(account_hook_home), account_hook_file=str(account_hooks),
             context_seed='Per-prompt synthetic API display_name; marker is absent from user prompts and hook configuration.',
@@ -808,7 +873,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 native_pid=calibration.native_pid, joined_pids=calibration.pids), credential_files=credential_files,
             limits=['Agy ordinary memory is unsupported; this exercises checked Go coordination only.',
                     'Selected Agy aggregates account/project groups, including identical commands; no inter-layer order, precedence, cross-account isolation or installer claim.',
-                    'Selected B receipt controls cover project/account missing/corrupt files and an account leaf symlink to valid pinned bytes; no broader receipt-fault qualification.',
+                    'Selected B receipt controls cover project/account missing/corrupt files, an account leaf symlink and an owned regular receipt with group-write mode; no broader receipt-fault qualification.',
                     'PreInvocation context application reaches local provider text; no real model comprehension or inbox delivery claim.',
                     'No non-fullyIdle Stop, Stop continue-once, child/subagent, host presence/host_pid association or Herdr wake claim.',
                     'No store/auth, code-image upgrade, complete activation-unit barrier or full R04/R05/R06/ticket-closure qualification.'])

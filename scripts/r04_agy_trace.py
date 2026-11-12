@@ -204,6 +204,54 @@ def walked_path(trace, pid, basename):
     return '/' + '/'.join(reversed(components[:-1]))
 
 
+def metadata_refusal(trace, pid, basename, expected):
+    path = walked_path(trace, pid, basename)
+    events = list(calls(trace, {'openat', 'fstat', 'read', 'close'}, pid=pid))
+    selected = []
+    for index, (_, name, event) in enumerate(events):
+        match = re.match(r'openat\([^,]+, ("(?:[^"\\]|\\.)*"), .*\)\s+= (-?\d+)(?: .*)?$', event)
+        if name == 'openat' and match and ast.literal_eval(match[1]) == basename:
+            selected.append((index, event, int(match[2])))
+    if len(selected) != 1:
+        raise AssertionError('Expected one metadata-refused file open')
+    index, opened, fd = selected[0]
+    if fd < 0:
+        raise AssertionError('Metadata-refused file was not opened')
+    metadata_calls, closed = [], None
+    for _, name, event in events[index + 1:]:
+        if not re.match(name + r'\(' + str(fd) + r'[,)]', event):
+            continue
+        if name == 'read':
+            raise AssertionError('Metadata-refused file descriptor was read')
+        if name == 'fstat':
+            metadata_calls.append(event)
+        elif name == 'close':
+            if not re.fullmatch(r'close\(' + str(fd) + r'\)\s+= 0', event):
+                raise AssertionError('Metadata-refused descriptor close failed')
+            closed = event
+            break
+    if closed is None:
+        raise AssertionError('Metadata-refused descriptor was not closed')
+    if len(metadata_calls) != 1:
+        raise AssertionError('Expected one selected descriptor metadata record')
+    metadata = re.fullmatch(r'fstat\(' + str(fd) + r', \{([^}]+)\}\)\s+= 0', metadata_calls[0])
+    if metadata is None or '...' in metadata[1]:
+        raise AssertionError('Malformed selected descriptor metadata')
+    fields = re.findall(r'\b(st_mode|st_uid|st_ino|st_size)=([^,}]+)', metadata[1])
+    if len(fields) != 4 or {key for key, _ in fields} != {'st_mode', 'st_uid', 'st_ino', 'st_size'}:
+        raise AssertionError('Incomplete or duplicate selected descriptor metadata')
+    fields = dict(fields)
+    if not re.fullmatch(r'S_IFREG\|0[0-7]{3,4}', fields['st_mode']) or any(
+            not re.fullmatch(r'\d+', fields[key]) for key in ('st_uid', 'st_ino', 'st_size')):
+        raise AssertionError('Invalid selected descriptor metadata fields')
+    observed = dict(mode=int(fields['st_mode'].split('|')[1], 8), uid=int(fields['st_uid']),
+                    inode=int(fields['st_ino']), size=int(fields['st_size']))
+    if not observed['mode'] & 0o020 or observed != expected:
+        raise AssertionError('Selected descriptor metadata does not match group-write fault')
+    return dict(path=path, fd=fd, metadata=observed, read_calls=0,
+                open_call=opened, fstat_call=metadata_calls[0], close_call=closed)
+
+
 def dns_question(raw):
     if len(raw) < 12 or raw[2] & 0xF8 or int.from_bytes(raw[4:6], 'big') != 1:
         raise AssertionError('Invalid DNS query header')

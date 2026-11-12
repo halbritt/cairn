@@ -7,7 +7,7 @@ from unittest import mock
 
 from check_r04_native_opencode import successful_execs
 from check_r04_native_agy import TracedProcess
-from r04_agy_trace import calls, exec_lines, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, opened_paths, thread_pids, walked_path
+from r04_agy_trace import calls, exec_lines, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, metadata_refusal, opened_paths, thread_pids, walked_path
 
 
 class NativeTraceTests(unittest.TestCase):
@@ -172,6 +172,85 @@ class AgyTraceTests(unittest.TestCase):
                          dict(open_error='ENOENT (No such file or directory)', raw=b''))
         with self.assertRaisesRegex(AssertionError, 'not closed'):
             file_read(trace.split('7 close')[0], '7', 'receipt.json')
+
+    @staticmethod
+    def metadata_refusal_trace():
+        return '''7 openat(AT_FDCWD, "/", O_RDONLY|O_DIRECTORY|O_CLOEXEC) = 3
+7 openat(3, "owned", O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC) = 4
+7 close(3) = 0
+7 openat(4, "receipt.json", O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC) = 5
+7 close(4) = 0
+8 fstat(5, {st_dev=makedev(0, 1), st_ino=123, st_mode=S_IFREG|0420, st_nlink=1, st_uid=1000, st_gid=1000, st_size=3}) = 0
+8 close(5) = 0
+'''
+
+    def test_metadata_refusal_binds_open_stat_close_across_owned_threads(self):
+        expected = dict(mode=0o420, uid=1000, inode=123, size=3)
+        trace = self.metadata_refusal_trace()
+        hex_leaf = '"' + ''.join('\\x%02x' % byte for byte in b'receipt.json') + '"'
+        for changed in [trace, trace.replace('"receipt.json"', hex_leaf)]:
+            with self.subTest(trace=changed):
+                observed = metadata_refusal(changed + '8 read(5, "later", 5) = 5\n', ['7', '8'], 'receipt.json', expected)
+                self.assertEqual(observed['path'], '/owned/receipt.json')
+                self.assertEqual(observed['fd'], 5)
+                self.assertEqual(observed['metadata'], expected)
+                self.assertEqual(observed['read_calls'], 0)
+                self.assertEqual(observed['close_call'], 'close(5) = 0')
+
+    def test_metadata_refusal_rejects_wrong_mode_owner_inode_and_size(self):
+        trace = self.metadata_refusal_trace()
+        for old, new in [('S_IFREG|0420', 'S_IFREG|0400'), ('st_uid=1000', 'st_uid=1001'),
+                         ('st_ino=123', 'st_ino=124'), ('st_size=3', 'st_size=4')]:
+            with self.subTest(field=old), self.assertRaisesRegex(AssertionError, 'does not match'):
+                metadata_refusal(trace.replace(old, new), ['7', '8'], 'receipt.json',
+                                 dict(mode=0o420, uid=1000, inode=123, size=3))
+
+    def test_metadata_refusal_rejects_missing_failed_or_duplicate_metadata(self):
+        trace = self.metadata_refusal_trace()
+        metadata = next(line for line in trace.splitlines(keepends=True) if 'fstat(' in line)
+        for changed in [trace.replace(metadata, ''), trace.replace('fstat(5,', 'fstat(9,'),
+                        trace.replace(metadata, metadata + metadata),
+                        trace.replace(metadata, '8 fstat(5, 0x1234) = -1 EBADF (Bad file descriptor)\n')]:
+            with self.subTest(trace=changed), self.assertRaises(AssertionError):
+                metadata_refusal(changed, ['7', '8'], 'receipt.json',
+                                 dict(mode=0o420, uid=1000, inode=123, size=3))
+
+    def test_metadata_refusal_rejects_malformed_or_abbreviated_stat(self):
+        trace = self.metadata_refusal_trace()
+        for old, new in [('st_uid=1000, ', ''), ('st_uid=1000', 'st_uid=1000, st_uid=1000'),
+                         ('S_IFREG', 'S_IFDIR'), ('st_ino=123', 'st_ino=bad'),
+                         ('st_size=3', 'st_size=3, ...')]:
+            with self.subTest(field=new), self.assertRaises(AssertionError):
+                metadata_refusal(trace.replace(old, new), ['7', '8'], 'receipt.json',
+                                 dict(mode=0o420, uid=1000, inode=123, size=3))
+
+    def test_metadata_refusal_rejects_any_receipt_read_before_close(self):
+        trace = self.metadata_refusal_trace()
+        for read in ['read(5, "abc", 3) = 3', 'read(5, "", 4096) = 0',
+                     'read(5, 0x1234, 4096) = -1 EAGAIN (Resource temporarily unavailable)']:
+            with self.subTest(read=read), self.assertRaisesRegex(AssertionError, 'was read'):
+                metadata_refusal(trace.replace('8 close(5)', '8 ' + read + '\n8 close(5)'),
+                                 ['7', '8'], 'receipt.json', dict(mode=0o420, uid=1000, inode=123, size=3))
+
+    def test_metadata_refusal_requires_successful_open_and_close(self):
+        trace = self.metadata_refusal_trace()
+        for old, new in [(') = 5\n', ') = -1 EACCES (Permission denied)\n'),
+                         ('8 close(5) = 0\n', ''), ('8 close(5) = 0', '8 close(5) = -1 EBADF (Bad file descriptor)'),
+                         ('O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC', 'O_RDONLY|O_NONBLOCK|O_CLOEXEC')]:
+            with self.subTest(change=new), self.assertRaises(AssertionError):
+                metadata_refusal(trace.replace(old, new), ['7', '8'], 'receipt.json',
+                                 dict(mode=0o420, uid=1000, inode=123, size=3))
+        opened = next(line for line in trace.splitlines(keepends=True) if 'receipt.json' in line)
+        with self.assertRaisesRegex(AssertionError, 'Expected one walked'):
+            metadata_refusal(trace.replace(opened, opened + opened), ['7', '8'], 'receipt.json',
+                             dict(mode=0o420, uid=1000, inode=123, size=3))
+
+    def test_metadata_refusal_keeps_successful_file_reads_strict_about_eof(self):
+        trace = self.metadata_refusal_trace()
+        for changed in [trace, trace.replace('8 close(5)', '8 read(5, "abc", 3) = 3\n8 close(5)')]:
+            with self.subTest(trace=changed), self.assertRaisesRegex(AssertionError, 'did not reach EOF'):
+                file_read(changed, ['7', '8'], 'receipt.json')
+
     def test_cleanup_rejects_unsafe_pids_without_sending_signals(self):
         child = object.__new__(TracedProcess)
         for pid in (None, -1, 0, 1):

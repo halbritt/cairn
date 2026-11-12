@@ -74,9 +74,9 @@ Both restored controls must deliver exactly one fresh context text per provider
 request. Receipt refusal suppresses that context and all Cairn API/state effects;
 it does not establish that Agy blocks its provider request or cancels the turn.
 
-Three final account-only cases add valid B, a symlink at the selected receipt
+Three account-only cases add valid B, a symlink at the selected receipt
 path, and restored B in another fresh conversation with one native PID. The
-full run has 30 cases and asserts and records the previous 27-case prefix
+fixture preserves these 30 cases and asserts and records the previous 27-case prefix
 against `7ef43cb2`. The link points to a private, owned, regular `0400` file
 containing the exact valid B receipt bytes and pinned hash. Its target bytes,
 link `lstat` and target metadata have separate archive names. For each callback,
@@ -86,6 +86,25 @@ diagnostic, exit 1, empty stdout, zero API effects, unchanged state and absent
 fresh provider marker are required. A `finally` block restores a regular
 receipt; the restored positive control must deliver the full context once.
 Project and control hook files remain absent throughout these cases.
+
+Three final account-only cases append valid B, a group-writable receipt and
+restored B in one fresh native conversation and PID. The full run has 33 cases
+and asserts and records the previous 30-case prefix against `0d196e69`, keeping
+the earlier 22/27-case records too. Only the selected regular receipt's mode
+changes, from `0400` to `0420`; its literal path, bytes/hash, owner, inode and
+size stay unchanged. Before, fault and restored bytes and stats have distinct
+archive names. A `finally` block restores `0400`. Both project hook files stay
+absent, and the valid/restored callbacks must read through EOF, match the B pin
+and deliver the fresh context once.
+
+The trace captures unabbreviated `fstat` metadata for the successfully opened
+selected descriptor. A separate metadata-refusal decoder checks the secure
+walk, matching regular-file mode/owner/inode/size, the unsafe group-write bit,
+zero receipt-descriptor read calls and a successful close. This does not relax
+the successful/corrupt receipt decoder's EOF requirement. The same exact
+diagnostic, single stderr write, empty stdout, exit 1, zero Cairn API delta,
+unchanged state and absent fresh provider marker remain required. Provider
+cancellation is not claimed.
 
 The cases cover fresh and repeated A, an independent workspace control,
 publication of B during the existing conversation, the unchanged control,
@@ -121,7 +140,7 @@ provider-request indices; the archive retains raw hook I/O, provider requests
 and synthetic API code. Every `PreInvocation` output is checked. Each provider
 request must contain exactly as many copies of each complete context text as
 the checked hooks emitted, including two equal texts in the layered cases.
-Missing/corrupt/symlink receipt cases keep zero API effects,
+Missing/corrupt/symlink/group-writable receipt cases keep zero API effects,
 unchanged state and empty hook stdout, and their fresh marker must not reach
 the provider. This qualifies native context application to the local provider;
 real model comprehension and inbox delivery remain outside this fixture.
@@ -136,7 +155,7 @@ truncated selected hook writes still refuse. The snapshot must contain the
 completed producer writes as well as the hook exits. Each analysis window is
 retained before later assertions; a pairing assertion also retains its prefix.
 
-Missing, corrupt and symlink receipts emit the same public compatibility-preflight
+Missing, corrupt, symlink and group-writable receipts emit the same public compatibility-preflight
 diagnostic and exit 1. The fixture pins that diagnostic, requires no stdout,
 and checks zero API calls and unchanged lifecycle state. It also reconstructs
 the selected receipt's descriptor walk. For the missing file, the final
