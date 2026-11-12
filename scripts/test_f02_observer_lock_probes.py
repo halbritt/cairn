@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import traceback
+import types
 import unittest
 from unittest import mock
 
@@ -31,6 +32,7 @@ class ObserverLockProbeTests(unittest.TestCase):
             case.configure(recall_observations=True)
         case.trace = case.f.memory_path.parent/'invocation-trace'/'trace.jsonl'
         case.trace.parent.mkdir(mode=0o700, exist_ok=True)
+        case.measurement = types.MethodType(ambient.OpenCodeAmbientTests.measurement, case)
         return case
 
     def files(self, case):
@@ -54,7 +56,8 @@ class ObserverLockProbeTests(unittest.TestCase):
         target = None if separate else Path(case.f.memory['state_dir'])/(case.state_key()+'.lock')
 
         def probe(fd, flags):
-            path = Path(os.readlink('/proc/self/fd/'+str(fd)))
+            number = fd.fileno() if hasattr(fd, 'fileno') else fd
+            path = Path(os.readlink('/proc/self/fd/'+str(number)))
             if flags != fcntl.LOCK_EX | fcntl.LOCK_NB or path != target:
                 return real_flock(fd, flags)
             item = dict(phase=phase, flags=flags, path=str(path), contention=contention)
