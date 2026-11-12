@@ -285,10 +285,15 @@ func transitionRealLeaseOne(t *testing.T, selected transitionRealSelection, labe
 			t.Fatal("failure changed an unrelated job")
 		}
 	}
-	trace, err := os.ReadFile(tracePath)
-	if err != nil || len(trace) < len(traceBefore) || !strings.Contains(string(trace), "+++ killed by SIGKILL +++") {
-		t.Fatal("missing actual killed-worker terminal trace")
-	}
+	var trace []byte
+	transitionRestartWait(t, "case6 killed-worker terminal trace", 2*time.Second, func() bool {
+		var err error
+		trace, err = os.ReadFile(tracePath)
+		if err != nil || len(trace) < len(traceBefore) {
+			t.Fatalf("unreadable or truncated killed-worker trace: %v", err)
+		}
+		return strings.Contains(string(trace), "+++ killed by SIGKILL +++")
+	})
 	stdoutAfter := []string{}
 	for _, line := range strings.Split(string(trace[len(traceBefore):]), "\n") {
 		if strings.Contains(line, "write(1<") || strings.Contains(line, "writev(1<") {
