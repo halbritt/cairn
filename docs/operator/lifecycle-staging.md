@@ -308,11 +308,13 @@ pinned test child images. Those disposable fault images are not release builds.
 
 ### Staged OpenCode adapters
 
-The OpenCode selection wires unbound `agent_tools` start, prompt and tool
-observation commands to the receipt-checked ordinary Go consumer, and coordination
-callbacks to the receipt-checked Go hook entry. Unbound PreCompact and SessionEnd
-capture use the checked Go `memory-capture` entry with H=150. Bound and
-provider-selected recall rows retain their checked R-02 Python launcher. The bare
+The OpenCode selection wires unbound start and prompt recall to the receipt-checked
+ordinary Go consumer in `agent_tools` and provider-selected ambient mode, including
+the default mode. Its `agent_tools` tool observations also use that consumer;
+ambient tool observations retain Python. Coordination callbacks use the checked
+Go hook entry. Unbound PreCompact and SessionEnd capture use checked Go
+`memory-capture` with H=150. Every bound OpenCode memory row, including capture,
+retains its checked R-02 Python launcher. The bare
 `[IMAGE, memory, --config, PATH]` entry is not selected:
 it lacks the runtime receipt, image, closure and configuration checks and the
 original H/V/L frame. The public `cairn lifecycle` command stays disabled. Shell
@@ -371,8 +373,9 @@ Every row records its `implementation` and `reason`. Current routing is:
 | OpenCode unbound `agent_tools` PreToolUse/PostToolUse/PostToolUseFailure commands | Receipt-checked ordinary Go tool observation with the same H=13 and R-02 receipt/image/closure/profile/launcher checks. |
 | Bound Codex `agent_tools` SessionStart/UserPromptSubmit | Receipt-checked bound Go recall with H=13 and the actual shared activation decision. |
 | Bound Codex PreCompact/Stop and bound Claude PreCompact/SessionEnd | Receipt-checked bound Go capture with H=150, including the configured provider/selected-record writer. |
-| Other bound callbacks or provider-selected recall | Existing receipt-selected Python caller. |
-| Codex/Claude unbound ordinary recall | Existing Python caller. |
+| Other bound callbacks | Existing receipt-selected Python caller. |
+| Unbound Codex/Claude recall and OpenCode ambient/default recall | Receipt-checked ordinary Go `memory` with H=13, including the configured provider pipeline. All selected profiles must be unbound. |
+| Unbound Claude PostToolUse/PostToolUseFailure | Receipt-checked ordinary Go `memory` with H=13; preserves Source tool hints without starting recall or a selector. |
 | Unbound Codex PreCompact/Stop and Claude/OpenCode PreCompact/SessionEnd | Receipt-checked Go `memory-capture` with H=150; every selected profile must be unbound. The receipt role stays `memory`, and Codex Stop stays asynchronous. |
 | Other harnesses' tool observation | Existing receipt-selected Python caller. |
 | Coordination hooks for all supported harnesses | Receipt-checked Go `/3` hook entry, with the exact retained R-02 launcher for its selection and issued commands. |
@@ -392,6 +395,16 @@ confirmed selected-record writes and committed capture markers with the retained
 Python caller, and checks privacy/account exclusions and changed-selection refusal.
 These installed process checks do not establish native client event dispatch or
 full watcher-unit transition acceptance.
+
+`test_r04_ordinary_wiring.py` uses the existing provider fixture through actual
+staged H13 commands after removing the installer package. It compares the retained
+Source and checked Go API requests, required and selected bodies, state, traces,
+locks and selector cleanup. It covers Codex, Claude and OpenCode recall, the
+OpenCode default mode, and Claude tool observations in both recall modes. The
+retained Python launcher reports an unknown implementation identity; that exact
+diagnostic shape is checked separately from the selected Go image identity.
+The R-02 producer refuses mixed bound/unbound profiles before hook publication;
+unknown or unsupported producer inputs are not treated as a qualified mixed plan.
 
 The bound Go rows retain their complete receipt selection and Python launcher
 for reverse selection. They use the actual Go argv, derived launcher and original

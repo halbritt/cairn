@@ -18,7 +18,10 @@ class R04BoundWiringTests(BoundMemoryCase):
         f = self.f
         for config in (f.memory, f.coord):
             config['harness'] = harness
-        f.memory['recall_mode'] = mode
+        if mode is None:
+            f.memory.pop('recall_mode', None)
+        else:
+            f.memory['recall_mode'] = mode
         f.publish_configuration(enabled=enabled)
         f.renderer = f.package / 'stage_lifecycle_hooks.py'
         for name in ('stage_lifecycle_hooks.py', 'stage_lifecycle_compatibility.py'):

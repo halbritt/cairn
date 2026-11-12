@@ -93,11 +93,15 @@ def definitions(stager, plan):
             raise ValueError('hook harness differs from selected configuration')
         if config.get('config_home') and config['config_home'] != plan['account_home']:
             raise ValueError('hook account differs from selected configuration')
-        ordinary_events = (('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure')
-                           if role == 'memory' and plan['harness'] == 'opencode'
-                           and config.get('recall_mode') == 'agent_tools' and all_unbound else ())
+        ordinary_events = ()
+        if role == 'memory' and all_unbound:
+            ordinary_events = ('SessionStart', 'UserPromptSubmit')
+            if plan['harness'] == 'claude':
+                ordinary_events += ('PostToolUse', 'PostToolUseFailure')
+            elif plan['harness'] == 'opencode' and config.get('recall_mode') == 'agent_tools':
+                ordinary_events += ('PreToolUse', 'PostToolUse', 'PostToolUseFailure')
         events = dict(MEMORY[plan['harness']] if role == 'memory' else COORDINATION[plan['harness']])
-        if ordinary_events:
+        if 'PreToolUse' in ordinary_events:
             events['PreToolUse'] = 13
         for event, timeout in events.items():
             label = role + ':' + str(0 if role == 'memory' else index + 1) + ':' + str(timeout)

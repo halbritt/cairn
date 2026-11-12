@@ -6,10 +6,11 @@ isolation wrapper, with disposable homes, a local scripted Messages provider
 and a synthetic Cairn API. It uses no model account or production installation.
 
 The fixture stages immutable selections A and B with the real R-02 installer
-and R-04 hook renderer. Memory recall stays on the labelled Python implementation;
-the current renderer selects checked Go `memory-capture` for unbound PreCompact
-and SessionEnd. The retained eleven-case native observations used Python capture
-and do not qualify that new capture route. Coordination reaches the receipt-checked
+and R-04 hook renderer. For unbound selections the current renderer uses checked Go
+for recall and tool observation with H13, and `memory-capture` for PreCompact and
+SessionEnd with H150. Bound Claude recall and tool observation retain Python.
+The retained eleven-case native observations used Python memory and do not
+qualify these new routes. Coordination reaches the receipt-checked
 private Go image. `strace` binds each
 prompt hook's launcher to the program and literal argv it executes in the same PID,
 and checks that process's exit status. Native settings and hook-listing

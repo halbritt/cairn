@@ -366,12 +366,11 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         for harness in ('opencode', 'codex', 'claude'):
             with self.subTest(harness=harness):
                 f = self.fixture(harness, harness=harness)
-                if harness == 'opencode': self.recall_api(f)
+                self.recall_api(f)
                 _, _, record = self.selected(f)
                 memory = next(r for r in record['rows'] if r['role'] == 'memory' and r['event'] == 'SessionStart')
                 coord = next(r for r in record['rows'] if r['role'] == 'coordination')
-                self.assertEqual((memory['implementation'], coord['implementation']),
-                                 ('go' if harness == 'opencode' else 'python', 'go'))
+                self.assertEqual((memory['implementation'], coord['implementation']), ('go', 'go'))
                 session = 'ses_shell' if harness == 'opencode' else SESSION
                 event = dict(hook_event_name='SessionStart', session_id=session, cwd=str(f.root), host_pid=os.getpid())
                 shutil.rmtree(f.package)
@@ -386,7 +385,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 state = json.loads((Path(f.coord['state_dir']) / (key + '.json')).read_bytes())
                 self.assertEqual(state['agent']['agent_id'], '33333333-3333-4333-8333-333333333333')
 
-    def test_bound_and_provider_cells_never_silently_select_ordinary_go(self):
+    def test_bound_cells_keep_python_and_provider_recall_selects_checked_go(self):
         for route in ('bound', 'provider'):
             with self.subTest(route=route):
                 f = self.fixture(route, bound=route == 'bound')
@@ -398,12 +397,33 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 rows = [r for r in record['rows'] if r['role'] == 'memory']
                 for row in rows:
                     capture = route == 'provider' and row['event'] in ('PreCompact', 'SessionEnd')
-                    self.assertEqual(row['implementation'], 'go' if capture else 'python')
+                    recall = route == 'provider' and row['event'] in ('SessionStart', 'UserPromptSubmit')
+                    self.assertEqual(row['implementation'], 'go' if capture or recall else 'python')
                     if capture:
                         self.assertEqual(row['reason'], 'receipt-checked unbound Go capture')
+                    if recall:
+                        self.assertEqual(row['reason'], 'receipt-checked ordinary Go recall')
                 self.assertNotIn('PreToolUse', [r['event'] for r in rows])
-                self.assertTrue(any(r['reason'] == ('bound callback' if route == 'bound' else 'provider-selected recall') for r in rows))
+                if route == 'bound':
+                    self.assertTrue(all(r['reason'] == 'bound callback' for r in rows))
                 self.assertTrue(all(r['implementation'] == 'go' for r in record['rows'] if r['role'] == 'coordination'))
+
+    def test_mixed_profiles_refuse_before_any_hook_settings_publication(self):
+        f = self.fixture('mixed-profiles')
+        before = f.settings.read_bytes()
+        plan = f.configuration_plan(enabled=False)
+        selected = plan['coordination_configs'][0]
+        path = Path(selected['path'])
+        config = json.loads(path.read_bytes())
+        config['inbox_recall_binding'] = str(
+            f.install_root / 'generations' / ('selection-' + plan['id']) / 'binding.json')
+        write(path, encoded(config))
+        selected['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        result = f.installer_call('stage', '--root', str(f.install_root), body=plan)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b'unbound profiles must already be unbound; no binding is removed', result.stderr)
+        self.assertEqual(f.settings.read_bytes(), before)
+        self.assertEqual(list(f.hook_root.iterdir()), [])
 
     def test_go_rows_refuse_changed_selections_before_api_or_state(self):
         for role in ('memory', 'coordination'):
