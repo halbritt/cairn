@@ -472,10 +472,28 @@ lexical behavior and joined process/reader cleanup. It records elapsed time
 and allows one second for scheduling and cleanup beyond the two-second timer;
 this is a bounded software observation, not latency qualification.
 
-Every cold-start root stays in the process inventory. Available mapped images
-and environment must match exactly. If the cold worker exits before the
-full-runtime-ready receipt is published, that observation gap is retained
-explicitly; a missing root sample still refuses the host proof. Stdio observations
+Every cold-start root stays in the process inventory. Case seven takes a live
+early observation of the designated cold PID as soon as its selected executable
+is running, while the unchanged two-second call is still live. The fixture reads
+that PID's executable through an open FD, verifies its hash against the pinned
+selection, records the executable mapping and kernel `map_files` target/inode,
+and requires its actual environment to equal the selected environment. Cmdline,
+process start ticks, parent identity, raw maps and observation times are retained;
+identity and executable metadata are checked again after the reads. The host
+binds the observation to that same PID's successful zero-argument canonical
+launcher and selected executable execs in its own trace from that run.
+
+This is coordinator option 2: actual startup image/environment measurement,
+not a full-runtime-ready sample or a "killed before ready" exception. The cold
+worker may die before ONNX, NumPy or all four sealed Rust images initialize;
+those runtime facts remain explicitly unobserved. Its early observation is
+required even when a later full sample exists. All other roots still require
+their own full samples, and the union must exactly equal all traced roots.
+Missing, extra, borrowed, wrong-PID/hash/environment/map or out-of-call evidence
+refuses. Cases one through six retain their original full-sample equality gate.
+Unit tests include refusal of an undesignated missing root. Static review must
+expressly accept this observation design before any further real execution.
+Static approval alone does not qualify a candidate. Stdio observations
 identify the actual worker stdout pipe and the supervisor's open reader FD;
 new process/pipe identity and old FD closure establish the observed reader
 lifecycle without claiming an internal pointer measurement. Filesystem/page

@@ -133,8 +133,9 @@ func TestSemanticRealTransitionCase7(t *testing.T) {
 
 func transitionRealPartial(t *testing.T) {
 	var selected transitionRealSelection
+	var startup map[string]json.RawMessage
 	data, err := os.ReadFile(os.Getenv("CAIRN_TRANSITION_REAL_SELECTION"))
-	if err != nil || json.Unmarshal(data, &selected) != nil || selected.SamplePIDs == "" {
+	if err != nil || json.Unmarshal(data, &selected) != nil || json.Unmarshal(data, &startup) != nil || selected.SamplePIDs == "" {
 		t.Fatal("real partial coverage requires exact selections and runtime receipt")
 	}
 	cases := []map[string]any{}
@@ -143,7 +144,13 @@ func transitionRealPartial(t *testing.T) {
 		worker transitionRealWorker
 	}{{"python", selected.Python}, {"rust", selected.Rust}} {
 		if !t.Run(entry.label, func(t *testing.T) {
-			cases = append(cases, transitionRealPartialOne(t, selected, entry.label, entry.worker))
+			var early struct {
+				Selection transitionStartupSelection `json:"startup"`
+			}
+			if err := json.Unmarshal(startup[entry.label], &early); err != nil {
+				t.Fatal(err)
+			}
+			cases = append(cases, transitionRealPartialOne(t, selected, entry.label, entry.worker, early.Selection))
 		}) {
 			return
 		}
@@ -199,8 +206,11 @@ func transitionPartialObservePipes(pid int) (transitionPartialPipes, error) {
 	return r, nil
 }
 
-func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, label string, w transitionRealWorker) map[string]any {
-	report := map[string]any{"implementation": label, "embed_identity": w.EmbedIdentity, "rank_identity": w.RankIdentity,
+func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, label string, w transitionRealWorker, startup transitionStartupSelection) map[string]any {
+	if startup.Image == "" || startup.SHA256 == "" || len(startup.Environment) == 0 {
+		t.Fatal("missing pinned early startup observation selection")
+	}
+	report := map[string]any{"implementation": label, "embed_identity": w.EmbedIdentity, "rank_identity": w.RankIdentity, "supervisor_pid": os.Getpid(),
 		"backend_route":  "public StartIndex with unchanged canonical zero-argument launcher for each implementation; raw Rust argv/config route not substituted",
 		"scope":          "global three eligible sources in two collections; query scope contains two candidates; ready partial coverage is distinct from backend unavailable",
 		"fixture_writes": "no source/job/attempt/timestamp DML; private audit/phase metadata only; row locks hold pending work and a separate SHARE table lock holds startup seeding"}
@@ -503,6 +513,8 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
 	})
 	go func() { done <- compile(coldContext, one) }()
 	coldPipes := map[int]transitionPartialPipes{}
+	coldObservations := map[int]transitionStartupObservation{}
+	lastStartupError := "worker not yet observed"
 	outer := time.NewTimer(10 * time.Second)
 	defer outer.Stop()
 	for !joined {
@@ -521,6 +533,13 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
 						coldPipes[pid] = pipes
 					}
 				}
+				if _, seen := coldObservations[pid]; !seen {
+					if observation, err := transitionObserveStartup(pid, os.Getpid(), startup); err == nil {
+						coldObservations[pid] = observation
+					} else {
+						lastStartupError = err.Error()
+					}
+				}
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -536,6 +555,10 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
 		t.Fatalf("cold restart missing unique new owned process/reader observation: roots=%v pipes=%v calls=%d", newRoots, coldPipes, len(got.calls))
 	}
 	coldPID, call := newRoots[0], got.calls[0]
+	if _, observed := coldObservations[coldPID]; !observed {
+		report["failed_startup_observation"] = map[string]any{"pid": coldPID, "last_error": lastStartupError, "observations": coldObservations}
+		t.Fatalf("cold worker lacks its own live selected-image/environment observation: %s", lastStartupError)
+	}
 	if call.Elapsed > 3*time.Second {
 		t.Fatalf("two-second retrieval exceeded one-second scheduling/cleanup margin: %s", call.Elapsed)
 	}
@@ -554,6 +577,7 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
 		detail["cold_outcome"], detail["timeout_process_reaped_and_reader_fd_closed"] = "actual two-second deadline; compiler unavailable/degraded and lexical candidates retained", true
 	}
 	detail["new_worker_pipes"], detail["old_worker_pid"], detail["prewarming"] = coldPipes[coldPID], warmPID, "none for designated call; filesystem/page caches uncontrolled"
+	detail["startup_worker_observation"] = coldObservations[coldPID]
 	var sampled map[string][]int
 	data, err := os.ReadFile(selected.SamplePIDs)
 	if err != nil || json.Unmarshal(data, &sampled) != nil {
@@ -565,7 +589,7 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
 	}
 	detail["full_runtime_ready_sample_at_cold_return"] = fullNativeReady
 	if !fullNativeReady {
-		detail["explicit_observation_gap"] = "cold worker exited or returned before a full-runtime-ready PID receipt; all actual mapped-image/environment samples and every root remain mandatory in the host observer"
+		detail["explicit_observation_gap"] = "cold worker has its own live mapped executable/environment observation, not a full-runtime-ready sample; libraries not initialized before death remain unobserved; exact per-root accounting is mandatory"
 	}
 	snapshot("cold_query_restart", 1, detail)
 	if !reflect.DeepEqual(pending, d.restartJobs(t)) {

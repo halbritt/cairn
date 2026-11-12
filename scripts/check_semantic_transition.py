@@ -51,7 +51,7 @@ try:
  if real:
   import importlib.util
   spec=importlib.util.spec_from_file_location('real_transition','/work/scripts/semantic_transition_real.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-  retained,python,rust=module.prepare(artifacts,sample_checkpoint=real_case>=2)
+  retained,python,rust=module.prepare(artifacts,sample_checkpoint=real_case>=2,early_observation=real_case==7)
  run(['go','version'],'go-version.log')
  run(['go','test','-c','-race','-o',str(binary),'./semantic'],'build-semantic.log')
  run(['go','build','-buildvcs=false','-o',str(cli),'./cmd/cairn'],'build-api.log')

@@ -1,5 +1,7 @@
 """Inside-wrapper preparation and observation for explicitly selected S05 cases."""
 import importlib.util
+import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -34,7 +36,7 @@ def restore_private_rust_modes(stage):
                 directory.chmod(0o555)
 
 
-def prepare(artifacts, *, sample_checkpoint=False):
+def prepare(artifacts, *, sample_checkpoint=False, early_observation=False):
     package = load('transition_package', '/work/scripts/semantic_package.py')
     closure = load('transition_closure', '/work/scripts/semantic_python_closure.py')
     python = json.loads(Path('/opt/s05-python-candidate.json').read_bytes())
@@ -79,6 +81,13 @@ def prepare(artifacts, *, sample_checkpoint=False):
             raise RuntimeError('retained Rust launcher bytes differ')
         selected[label] = {'rank': launchers['rank'], 'embed': launchers['embed'],
                            'rank_identity': rank, 'embed_identity': embed, 'launcher_sha256': hashes}
+        if early_observation:
+            image = (Path(python['payload']['path']) / 'native/ld-linux-x86-64.so.2' if label == 'python'
+                     else Path(stage['payload']) / 'bin/cairn-semantic-embed')
+            environment = (closure.worker_environment(Path(python['payload']['path']), Path('/tmp/s04r-worker-home'), 'embed')
+                           if label == 'python' else rust_manifest['requirements']['launcher_environment'])
+            selected[label]['startup'] = {'image': str(image), 'sha256': package.digest(image.read_bytes()),
+                                          'environment': environment}
     (artifacts / 'real-selection.json').write_text(json.dumps(selected, indent=2) + '\n')
     (artifacts / 'prepared-inputs.json').write_text(json.dumps({
         'verified_before_build_and_workers': True,
@@ -120,6 +129,67 @@ def require_worker_samples(roots_by_label, samples_by_label):
         if roots != samples:
             raise RuntimeError(label + ' worker root/sample mismatch: traced=' +
                                repr(sorted(roots)) + ' sampled=' + repr(sorted(samples)))
+
+
+def case7_startup_samples(cases, selected, roots_by_label, full_samples, traces):
+    """Validate measured early facts, never exempt a root from observation.
+
+    The cold PID is measured while alive by the Go fixture. Its selected main
+    executable, kernel mapping and environment are known; not-yet-initialized
+    runtime libraries remain unknown. Every other PID still needs a full sample.
+    """
+    def require(condition, message):
+        if not condition:
+            raise RuntimeError('case7 startup observation: ' + message)
+
+    require(len(cases) == 2 and sorted(case['implementation'] for case in cases) == ['python', 'rust'],
+            'exact implementation reports required')
+    observations = {}
+    used = set()
+    for case in cases:
+        label = case['implementation']
+        cold = [phase for phase in case['phases'] if phase['name'] == 'cold_query_restart']
+        require(len(cold) == 1, 'one designated cold phase required')
+        phase = cold[0]
+        row = phase['startup_worker_observation']
+        pid = row['pid']
+        require(type(pid) is int and pid > 1 and pid not in used and
+                pid == phase['new_worker_pipes']['worker_pid'] and pid in roots_by_label[label],
+                'wrong, duplicated or undesignated PID')
+        used.add(pid)
+        require(row['parent_pid'] == case['supervisor_pid'] and row['parent_pid'] > 1 and
+                row['parent_pid'] != pid and int(row['process_start_ticks']) > 0,
+                'process identity differs')
+        expected = selected[label]['startup']
+        require(row['image'] == expected['image'] and row['image_sha256'] == expected['sha256'] and
+                row['environment'] == expected['environment'] and row['argv'][0] == expected['image'],
+                'selected image/hash/environment/argv differs')
+        fields = row['mapped_image'].split()
+        require(row['mapped_image'] in row['maps'].splitlines() and len(fields) == 6 and
+                'x' in fields[1] and int(fields[4]) == row['image_inode'] > 0 and
+                fields[5] == expected['image'] == row['map_files_target'],
+                'own kernel executable mapping missing or mismatched')
+        calls = phase['actual_retrieval_calls']
+        require(len(calls) == 1, 'one cold call required')
+        stamp = lambda value: datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+        require(stamp(calls[0]['started_at']) <= stamp(row['started_at']) <= stamp(row['completed_at']) <=
+                stamp(calls[0]['completed_at']), 'measurement outside the live cold call')
+        trace = traces[pid]
+        launcher = selected[label]['embed']
+        entry = 'execve(' + json.dumps(launcher) + ', [' + json.dumps(launcher) + '], '
+        require(sum(line.startswith(entry) and line.endswith(' = 0') for line in trace.splitlines()) == 1,
+                'same-PID successful zero-argument canonical entry missing')
+        image_exec = 'execve(' + json.dumps(expected['image']) + ', '
+        require(any(line.startswith(image_exec) and line.endswith(' = 0') for line in trace.splitlines()),
+                'same-PID selected executable exec missing')
+        observations[label] = {pid: {'kind': 'live startup mapped executable and environment',
+                                    'observation': row,
+                                    'trace_file': 'worker-trace.' + str(pid),
+                                    'trace_sha256': hashlib.sha256(trace.encode()).hexdigest(),
+                                    'runtime_limit': 'not a full-runtime-ready sample; uninitialized libraries unobserved'}}
+    combined = {label: set(full_samples[label]) | set(observations[label]) for label in ('python', 'rust')}
+    require_worker_samples(roots_by_label, combined)
+    return observations
 
 
 def ready_sample_pids(python_workers, rust_workers):
@@ -249,7 +319,14 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
         'roots_by_label': {label: sorted(pids) for label, pids in roots_by_label.items()},
         'sampled_pids_by_label': {label: sorted(pids) for label, pids in samples_by_label.items()},
         **effects}, indent=2) + '\n')
-    require_worker_samples(roots_by_label, samples_by_label)
+    if env.get('CAIRN_TRANSITION_REAL_CASE') == '7':
+        cases = json.loads((artifacts / 'real-case7.json').read_bytes())['cases']
+        startup = case7_startup_samples(cases, selected, roots_by_label, samples_by_label, traces)
+        (artifacts / 'early-worker-observations.json').write_text(json.dumps(startup, indent=2) + '\n')
+        observations['case7_startup_workers'] = startup
+        (artifacts / 'real-worker-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
+    else:
+        require_worker_samples(roots_by_label, samples_by_label)
     if not roots or not python_workers or not rust_workers or effects['connects'] or effects['store_mutations']:
         raise RuntimeError('actual worker/effect evidence missing or nonzero')
     for home in ('/tmp/s04r-worker-home', '/nonexistent'):

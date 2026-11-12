@@ -1,4 +1,6 @@
 import importlib.util
+import copy
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -88,6 +90,103 @@ class WorkerTraceTests(unittest.TestCase):
         self.assertEqual(selected, {20, 21, 22})
         self.assertNotIn(10, selected)
         self.assertNotIn(30, selected)
+
+
+class StartupObservationTests(unittest.TestCase):
+    def fixture(self):
+        cases, selected, roots, samples, traces = [], {}, {}, {}, {}
+        for label, pid in [('python', 20), ('rust', 40)]:
+            image, entry = '/selected/' + label, '/selected/' + label + '-embed'
+            selected[label] = {'embed': entry, 'startup': {'image': image, 'sha256': label + '-image-sha',
+                                                         'environment': {'ORT_DISABLE_TELEMETRY': '1'}}}
+            mapped = '1000-2000 r-xp 0000 00:01 123 ' + image
+            observation = {'pid': pid, 'parent_pid': 10, 'process_start_ticks': '100',
+                           'started_at': '2026-11-12T10:00:00.100Z', 'completed_at': '2026-11-12T10:00:00.200Z',
+                           'image': image, 'image_sha256': label + '-image-sha', 'image_inode': 123,
+                           'mapped_image': mapped, 'map_files_target': image, 'maps': mapped + '\n',
+                           'argv': [image, 'actual startup'], 'environment': {'ORT_DISABLE_TELEMETRY': '1'}}
+            cases.append({'implementation': label, 'supervisor_pid': 10, 'phases': [{
+                'name': 'cold_query_restart', 'startup_worker_observation': observation,
+                'new_worker_pipes': {'worker_pid': pid}, 'actual_retrieval_calls': [{
+                    'started_at': '2026-11-12T10:00:00Z', 'completed_at': '2026-11-12T10:00:02Z'}]}]})
+            roots[label], samples[label] = {pid, pid + 1}, {pid + 1}
+            traces[pid] = ('execve(' + json.dumps(entry) + ', [' + json.dumps(entry) + '], [] /* fixture */) = 0\n' +
+                           'execve(' + json.dumps(image) + ', [' + json.dumps(image) + '], [] /* fixture */) = 0\n')
+        return cases, selected, roots, samples, traces
+
+    def test_own_live_startup_facts_preserve_exact_root_accounting(self):
+        fixture = self.fixture()
+        proof = real.case7_startup_samples(*fixture)
+        self.assertEqual(set(proof['python']), {20})
+        self.assertEqual(set(proof['rust']), {40})
+        self.assertIn('uninitialized libraries unobserved', proof['python'][20]['runtime_limit'])
+        self.assertEqual(proof['python'][20]['trace_file'], 'worker-trace.20')
+        self.assertEqual(proof['python'][20]['observation']['image'], '/selected/python')
+
+    def test_undesignated_missing_root_still_refuses(self):
+        cases, selected, roots, samples, traces = self.fixture()
+        samples['python'].remove(21)
+        with self.assertRaisesRegex(RuntimeError, 'python worker root/sample mismatch'):
+            real.case7_startup_samples(cases, selected, roots, samples, traces)
+
+    def test_extra_full_sample_still_refuses(self):
+        cases, selected, roots, samples, traces = self.fixture()
+        samples['rust'].add(99)
+        with self.assertRaisesRegex(RuntimeError, 'rust worker root/sample mismatch'):
+            real.case7_startup_samples(cases, selected, roots, samples, traces)
+
+    def test_wrong_pid_parent_start_or_selection_refuses(self):
+        for field, value in [('pid', 21), ('pid', 1), ('pid', '20'), ('parent_pid', 11),
+                             ('process_start_ticks', '0'), ('image', '/other/image'),
+                             ('image_sha256', 'wrong'), ('environment', {'ORT_DISABLE_TELEMETRY': '0'}),
+                             ('argv', ['/other/image'])]:
+            with self.subTest(field=field, value=value):
+                fixture = self.fixture()
+                fixture[0][0]['phases'][0]['startup_worker_observation'][field] = value
+                with self.assertRaises(RuntimeError):
+                    real.case7_startup_samples(*fixture)
+
+    def test_own_kernel_mapping_required(self):
+        for field, value in [('image_inode', 456), ('map_files_target', '/other/image'),
+                             ('maps', ''), ('mapped_image', '1000-2000 r--p 0000 00:01 123 /selected/python')]:
+            with self.subTest(field=field):
+                fixture = self.fixture()
+                fixture[0][0]['phases'][0]['startup_worker_observation'][field] = value
+                with self.assertRaisesRegex(RuntimeError, 'kernel executable mapping'):
+                    real.case7_startup_samples(*fixture)
+
+    def test_observation_must_fit_actual_call(self):
+        for field, value in [('started_at', '2026-11-12T09:59:59Z'),
+                             ('completed_at', '2026-11-12T10:00:03Z'),
+                             ('completed_at', '2026-11-12T10:00:00.050Z')]:
+            with self.subTest(field=field):
+                fixture = self.fixture()
+                fixture[0][0]['phases'][0]['startup_worker_observation'][field] = value
+                with self.assertRaisesRegex(RuntimeError, 'outside the live cold call'):
+                    real.case7_startup_samples(*fixture)
+
+    def test_same_pid_canonical_exec_and_image_trace_required(self):
+        for trace in ['', 'execve("/selected/python-embed", ["/selected/python-embed", "alias"], []) = 0\n',
+                      'execve("/selected/python-embed", ["/selected/python-embed"], []) = 0\n',
+                      'execve("/other/worker", [], []) = 0\n']:
+            with self.subTest(trace=trace):
+                fixture = self.fixture()
+                fixture[-1][20] = trace
+                with self.assertRaisesRegex(RuntimeError, 'same-PID'):
+                    real.case7_startup_samples(*fixture)
+
+    def test_full_sample_does_not_replace_missing_early_measurement(self):
+        fixture = self.fixture()
+        fixture[3]['python'].add(20)
+        fixture[0][0]['phases'][0].pop('startup_worker_observation')
+        with self.assertRaises(KeyError):
+            real.case7_startup_samples(*fixture)
+
+    def test_duplicate_or_missing_phase_designation_refuses(self):
+        fixture = self.fixture()
+        fixture[0][0]['phases'].append(copy.deepcopy(fixture[0][0]['phases'][0]))
+        with self.assertRaisesRegex(RuntimeError, 'one designated cold phase'):
+            real.case7_startup_samples(*fixture)
 
 
 if __name__ == '__main__':
