@@ -273,12 +273,13 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--hermes-root', type=Path, required=True)
     parser.add_argument('--hermes-python', type=Path, required=True)
+    parser.add_argument('tests', nargs='*', help='optional unittest names within this module')
     args = parser.parse_args()
     OUTPUT, HERMES_ROOT, HERMES_PYTHON = args.output.resolve(), args.hermes_root.resolve(), args.hermes_python.absolute()
     OUTPUT.mkdir(mode=0o700)
     if not (HERMES_ROOT / 'agent/memory_provider.py').is_file() or not HERMES_PYTHON.is_file():
         raise RuntimeError('R03_HERMES_PREREQUISITE: explicit existing Hermes source/interpreter required')
-    suite = unittest.defaultTestLoader.loadTestsFromTestCase(InstalledMemory)
+    suite = unittest.defaultTestLoader.loadTestsFromNames(args.tests or ['InstalledMemory'], sys.modules[__name__])
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     OUTPUT.joinpath('summary.json').write_text(json.dumps(dict(tests=result.testsRun, failures=len(result.failures),
         errors=len(result.errors), skips=len(result.skipped), passed=result.wasSuccessful()), indent=2) + '\n')

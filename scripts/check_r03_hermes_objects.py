@@ -40,11 +40,15 @@ def main():
     warnings, calls = [], []
     provider = None
     try:
+        # Native delivery lazily discovers the controls plugin on first hook.
+        # Complete that real host startup before taking an unrelated-callback
+        # baseline; otherwise startup is misreported as a provider leak.
+        manager = get_plugin_manager()
+        manager.discover_and_load()
         provider = load_memory_provider('cairn', register_skills=False)
         assert isinstance(provider, MemoryProvider), 'actual installed provider failed to load'
         runtime = sys.modules[type(provider).__module__]
         original = runtime.run_engine
-        manager = get_plugin_manager()
 
         def registrations():
             return [{key: tuple(values) for key, values in registry.items() if values}
