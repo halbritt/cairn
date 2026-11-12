@@ -82,7 +82,8 @@ profile. A staged generation, or disposing/recreating provider registrations,
 does not qualify a gateway restart, cached CLI refresh, whole watcher activation
 or operational rollback. Release owns those separate qualification steps.
 
-The focused command checks use intercepted process calls. The installed probe
+The focused command checks use intercepted process calls and an owned real
+interruption fixture. The installed probe
 uses the real R-02 producer, selected Go processes, a local API fixture and an
 explicit existing Hermes interpreter/source. It fails when required native
 imports are unavailable. Run it through `mise run host:exec`, retaining its

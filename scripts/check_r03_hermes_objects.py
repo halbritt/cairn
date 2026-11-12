@@ -135,8 +135,10 @@ def main():
         replacement.shutdown()
         assert registrations() == baseline_registrations
         report = dict(schema='cairn.r03-hermes-objects/1', refusal=args.refusal,
-                      python=sys.version, executable=sys.executable,
+                      python=sys.version, executable=sys.executable, prefix=sys.prefix, base_prefix=sys.base_prefix,
                       dependencies={item.metadata['Name']: item.version for item in importlib.metadata.distributions()},
+                      module_paths={key: value.__file__ for key, value in sys.modules.items()
+                                    if getattr(value, '__file__', None)},
                       provider_module=runtime.__file__, calls=len(calls), warnings=warnings,
                       checked_tool_rows='refused at assigned base; Foundation seam remains open',
                       cancellation='no public Store cancellation attestation',

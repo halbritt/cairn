@@ -23,7 +23,8 @@ from test_r04_host_wiring import UnboundFixture
 from test_r03_hermes_installer import installer
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = HERMES_ROOT = HERMES_PYTHON = None
+OUTPUT = HERMES_ROOT = HERMES_PYTHON = PREBUILT_IMAGES = SOURCE_REVISION = None
+EMIT_CASES = False
 
 
 def sha(path):
@@ -33,7 +34,7 @@ def sha(path):
 class HermesInstalledFixture(UnboundFixture):
     def configuration_plan(self, **kwargs):
         plan = super().configuration_plan(**kwargs)
-        plan['source_revision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+        plan['source_revision'] = SOURCE_REVISION
         return plan
 
 
@@ -46,9 +47,17 @@ class InstalledMemory(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.images = OUTPUT / 'images'
-        cls.images.mkdir(mode=0o700)
+        cls.images = PREBUILT_IMAGES or OUTPUT / 'images'
+        if PREBUILT_IMAGES is None:
+            cls.images.mkdir(mode=0o700)
         cls.binary, cls.stager, cls.cli = (cls.images / name for name in ('lifecycle', 'stager', 'cairn'))
+        if PREBUILT_IMAGES is not None:
+            pins = json.loads(cls.images.joinpath('pins.json').read_bytes())
+            for path in (cls.binary, cls.stager, cls.cli):
+                if sha(path) != pins[path.name]['sha256'] or path.stat().st_mode & 0o222:
+                    raise RuntimeError('R03_IMAGE_INPUT: frozen image/pin mismatch: ' + str(path))
+            OUTPUT.joinpath('input-images.json').write_text(json.dumps(pins, indent=2) + '\n')
+            return
         for path, target in ((cls.binary, './cmd/cairn-lifecycle'),
                              (cls.stager, './cmd/cairn-stage-lifecycle'), (cls.cli, './cmd/cairn')):
             command = ['go', 'build', '-buildvcs=false', '-o', str(path), target]
@@ -60,7 +69,7 @@ class InstalledMemory(unittest.TestCase):
             path.chmod(0o500)
         pins = {p.name: dict(path=str(p), sha256=sha(p)) for p in (cls.binary, cls.stager, cls.cli)}
         pins['go_version'] = subprocess.check_output(['go', 'version'], text=True).strip()
-        pins['source_head'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+        pins['source_head'] = SOURCE_REVISION
         (cls.images / 'pins.json').write_text(json.dumps(pins, indent=2) + '\n')
 
     def setUp(self):
@@ -104,6 +113,17 @@ class InstalledMemory(unittest.TestCase):
                                                      kind='unix-socket; requests retained in api.json')
                    for p in self.root.rglob('*') if p.is_socket()}
         case.joinpath('socket-inventory.json').write_text(json.dumps(sockets, indent=2) + '\n')
+        if EMIT_CASES:
+            roots = [Path(self.f.memory['state_dir']), self.home / 'cairn'] if hasattr(self, 'home') else []
+            files = {str(p.relative_to(self.root)): dict(mode=stat.S_IMODE(p.stat().st_mode),
+                     base64=base64.b64encode(p.read_bytes()).decode())
+                     for root in roots if root.exists() for p in sorted(root.rglob('*')) if p.is_file()}
+            for path in self.root.rglob('calls.json'):
+                files[str(path.relative_to(self.root))] = dict(base64=base64.b64encode(path.read_bytes()).decode())
+            print('R03_CASE=' + json.dumps(dict(name=self._testMethodName, processes=getattr(self, 'results', []),
+                  api=self.calls, states=files, sockets=sockets, records=getattr(self, 'records', []),
+                  selection=getattr(self, 'selected', None),
+                  receipt=getattr(self.f, 'receipt', None)), ensure_ascii=True), flush=True)
         shutil.copytree(self.root, case / 'fixture',
                         ignore=lambda directory, names: [name for name in names if (Path(directory) / name).is_socket()])
 
@@ -268,14 +288,20 @@ class InstalledMemory(unittest.TestCase):
 
 
 def main():
-    global OUTPUT, HERMES_ROOT, HERMES_PYTHON
+    global OUTPUT, HERMES_ROOT, HERMES_PYTHON, PREBUILT_IMAGES, SOURCE_REVISION, EMIT_CASES
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--hermes-root', type=Path, required=True)
     parser.add_argument('--hermes-python', type=Path, required=True)
+    parser.add_argument('--images', type=Path, help='explicit frozen image directory with pins.json; no build fallback')
+    parser.add_argument('--source-revision', help='source provenance when the selected checkout is not Git-readable')
+    parser.add_argument('--emit-cases', action='store_true', help='emit raw process/API/state evidence for an isolated run')
     parser.add_argument('tests', nargs='*', help='optional unittest names within this module')
     args = parser.parse_args()
     OUTPUT, HERMES_ROOT, HERMES_PYTHON = args.output.resolve(), args.hermes_root.resolve(), args.hermes_python.absolute()
+    PREBUILT_IMAGES = args.images.resolve() if args.images else None
+    SOURCE_REVISION = args.source_revision or subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    EMIT_CASES = args.emit_cases
     OUTPUT.mkdir(mode=0o700)
     if not (HERMES_ROOT / 'agent/memory_provider.py').is_file() or not HERMES_PYTHON.is_file():
         raise RuntimeError('R03_HERMES_PREREQUISITE: explicit existing Hermes source/interpreter required')

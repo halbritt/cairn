@@ -1,5 +1,12 @@
 """Hermes selected-command boundary; native objects are checked separately."""
+import json
+import os
+from pathlib import Path
+import signal
 import subprocess
+import sys
+import tempfile
+import time
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -86,6 +93,63 @@ class SelectedMemoryCommands(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     plugin.run_engine(['/selected/inbox'], {}, timeout=1)
                 kill.assert_not_called()
+
+
+class OwnedEngineInterruption(unittest.TestCase):
+    def test_real_sigint_joins_only_this_engine_and_its_descendant(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            pidfile = root / 'owned.json'
+            engine = root / 'engine.py'
+            engine.write_text('''import json,os,pathlib,subprocess,sys,time
+p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])
+path=pathlib.Path(sys.argv[1]); pending=path.with_suffix('.pending')
+pending.write_text(json.dumps([os.getpid(),p.pid])); pending.replace(path)
+time.sleep(60)
+''')
+            driver = '''import json,sys
+sys.path.insert(0,sys.argv[1])
+import test_hermes_lifecycle as hermes
+try: hermes.plugin.run_engine(json.loads(sys.argv[2]),{},timeout=20)
+except KeyboardInterrupt: sys.exit(130)
+'''
+            unrelated = subprocess.Popen([sys.executable, '-I', '-c', 'import time; time.sleep(60)'])
+            child = subprocess.Popen([sys.executable, '-I', '-B', '-c', driver,
+                                      str(Path(__file__).resolve().parent),
+                                      json.dumps([sys.executable, '-I', '-B', str(engine), str(pidfile)])],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                for process in (child, unrelated):
+                    self.assertGreater(process.pid, 1)
+                    self.assertEqual(Path('/proc', str(process.pid), 'exe').resolve(), Path(sys.executable).resolve())
+                deadline = time.monotonic() + 5
+                while not pidfile.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue(pidfile.exists(), 'owned engine did not publish its child')
+                owned = json.loads(pidfile.read_text())
+                self.assertTrue(all(type(pid) is int and pid > 1 for pid in owned))
+                child.send_signal(signal.SIGINT)
+                stdout, stderr = child.communicate(timeout=6)
+                self.assertEqual((child.returncode, stdout, stderr), (130, b'', b''))
+                self.assertIsNone(unrelated.poll(), 'interruption reached another invocation')
+                deadline = time.monotonic() + 3
+                for pid in owned:
+                    while True:
+                        try:
+                            state = Path('/proc', str(pid), 'stat').read_text().rsplit(')', 1)[1].split()[0]
+                        except (FileNotFoundError, ProcessLookupError):
+                            break
+                        if state == 'Z':
+                            break
+                        self.assertLess(time.monotonic(), deadline, 'owned descendant remained running')
+                        time.sleep(0.02)
+            finally:
+                if child.poll() is None:
+                    child.send_signal(signal.SIGINT)
+                    child.communicate(timeout=6)
+                if unrelated.poll() is None:
+                    unrelated.kill()
+                unrelated.wait(timeout=5)
 
 
 if __name__ == '__main__':
