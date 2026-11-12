@@ -75,6 +75,14 @@ API/database traffic. Missing descendant traces refuse the proof. Positive
 controls check failed-connect and store-write detection. Actual Python mapped
 bytes/environment and Rust sealed native images are observed. Private worker
 HOME/cache must remain empty. Both Python identities must restore exactly.
+The traced root PID set for each implementation must exactly equal its sampled
+mapped-byte/environment PID set; one missed worker refuses the proof. Run the
+observer unit tests through the same common wrapper:
+
+```sh
+python3 -I -B scripts/test_hybrid_runtime_operations.py -- \
+  /usr/bin/python3 -I -B scripts/testdata/test_semantic_transition_real.py
+```
 
 Whole-API and semantic outage windows, first API query, rebuild completion and
 post-rebuild query are separate observations with retained timestamps. Forward

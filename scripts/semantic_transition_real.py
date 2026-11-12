@@ -102,6 +102,16 @@ def worker_trace_scope(traces, launchers):
     return roots, selected
 
 
+def require_worker_samples(roots_by_label, samples_by_label):
+    """Every executed worker needs its own mapped-byte/environment observation."""
+    for label in ('python', 'rust'):
+        roots = {int(pid) for pid in roots_by_label[label]}
+        samples = {int(pid) for pid in samples_by_label[label]}
+        if roots != samples:
+            raise RuntimeError(label + ' worker root/sample mismatch: traced=' +
+                               repr(sorted(roots)) + ' sampled=' + repr(sorted(samples)))
+
+
 def mapping_permission(proc, pending, exit_races, terminal):
     """Use the qualified S04R observer's bounded live/terminal race policy."""
     pid = int(proc.name)
@@ -195,8 +205,16 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
     roots, descendants = worker_trace_scope(traces, launchers)
     if descendants - traces.keys():
         raise RuntimeError('worker descendant trace missing: ' + repr(sorted(descendants - traces.keys())))
+    roots_by_label = {label: worker_trace_scope(traces, [selected[label][mode] for mode in ('rank', 'embed')])[0]
+                      for label in ('python', 'rust')}
+    samples_by_label = {'python': python_workers, 'rust': rust_workers}
     effects = python_observer.effects('\n'.join(traces[pid] for pid in sorted(descendants)))
-    (artifacts / 'worker-effects.json').write_text(json.dumps({'root_pids': sorted(roots), 'tree_pids': sorted(descendants), **effects}, indent=2) + '\n')
+    (artifacts / 'worker-effects.json').write_text(json.dumps({
+        'root_pids': sorted(roots), 'tree_pids': sorted(descendants),
+        'roots_by_label': {label: sorted(pids) for label, pids in roots_by_label.items()},
+        'sampled_pids_by_label': {label: sorted(pids) for label, pids in samples_by_label.items()},
+        **effects}, indent=2) + '\n')
+    require_worker_samples(roots_by_label, samples_by_label)
     if not roots or not python_workers or not rust_workers or effects['connects'] or effects['store_mutations']:
         raise RuntimeError('actual worker/effect evidence missing or nonzero')
     for home in ('/tmp/s04r-worker-home', '/nonexistent'):

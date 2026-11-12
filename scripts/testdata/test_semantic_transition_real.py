@@ -9,6 +9,18 @@ spec.loader.exec_module(real)
 
 
 class WorkerTraceTests(unittest.TestCase):
+    def test_every_worker_root_requires_its_own_sample(self):
+        roots = {'python': {20, 30}, 'rust': {40}}
+        for samples in ({'python': {20}, 'rust': {40}},
+                        {'python': {20, 30}, 'rust': {40, 50}}):
+            with self.subTest(samples=samples), self.assertRaisesRegex(
+                    RuntimeError, r'worker root/sample mismatch: traced=\[.*\] sampled=\[.*\]'):
+                real.require_worker_samples(roots, samples)
+
+    def test_exact_worker_samples_accept_integer_pid_sets(self):
+        real.require_worker_samples({'python': {20, 30}, 'rust': {40}},
+                                    {'python': {'20': {}, 30: {}}, 'rust': {'40': {}}})
+
     def test_live_mapping_denial_fails_and_terminal_races_remain_labelled(self):
         proc = Path('/proc/42')
         pending, exits = {}, set()
