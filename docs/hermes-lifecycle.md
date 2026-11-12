@@ -70,16 +70,19 @@ Timeout and Python interruption clean up this invocation's process group before
 returning or propagating the interruption. Abrupt host death is not a clean
 shutdown guarantee, and this adds no public Store cancellation attestation.
 
-At the assigned R-03 baseline, checked Hermes Go recall admits unbound
-`SessionStart` and `UserPromptSubmit`; checked capture admits unbound
-`PreCompact` and `SessionEnd`. The checked H13 entry still refuses Hermes
-`PostToolUse` and `PostToolUseFailure`, although the provider translates and
-dispatches those existing hooks. They remain a Foundation admission gap.
-Ambient recall with provider fallback also remains outside the checked recall
-cell; lexical ambient requires omitted/literal-false `semantic_fallback`, and
-the existing `agent_tools` route has its own checked admission. These limits
-prevent claiming complete Hermes migration or selecting this route for a live
-profile. The focused fixture checks actual HermesCLI initialization, an unchanged
+The admitted Foundation source `75e08273e37c086ed1fdce3a8c5ecb3ab5ecb4ab`
+adds unbound checked Hermes `PostToolUse` and `PostToolUseFailure` to the H13
+`memory` entry, alongside `SessionStart` and `UserPromptSubmit`. Tool results
+persist bounded file/error hints without API calls. Ambient recall with
+`semantic_fallback: true` uses the actual preview admission and body selection
+pipeline; lexical ambient and `agent_tools` remain separate supported modes.
+`PreCompact` and `SessionEnd` continue to select H150 `memory-capture`.
+The earlier image `38546557d686e77ea5c7abad3693ffe3c91eaddca451b021699481218427ca07`
+refuses the tool and provider-fallback cells. Its refusal tests and first
+qualification packet remain historical controls, separate from positive checks
+of an admitted image. Bare, pre-tool and bound Hermes entries remain unsupported.
+
+The focused fixture checks actual HermesCLI initialization, an unchanged
 cached selection, a fresh CLI loading another generation, and explicit reversal
 in a disposable memory-only profile. It invokes memory hooks directly without
 calling the conversation API. This does not qualify gateway refresh, existing
@@ -97,8 +100,14 @@ transport. `scripts/check_r03_hermes_installed.py --help` lists the required
 paths. `scripts/check_r03_hermes_store.py` adds an owned PostgreSQL/API case using
 frozen executables: real SDK retrieval and capture, stored note/observation
 effects, fixture-dialogue exclusion and observed service shutdown. Its required
-paths are explicit and its selector remains scripted. A retained checked-tool refusal is evidence of the stated gap, not a
-successful supported tool operation.
+paths are explicit and its selector remains scripted. Use the installed probe's
+`--positive` mode with the admitted frozen images; the default preserves the
+earlier image's refusal controls. The Store probe's `--recall-mode ambient
+--semantic-fallback --positive-tools` case seeds five optional notes to require
+both real preview and body selection, then checks authenticated selected capture,
+deduplication, privacy, tool state and service cleanup. A refusal control never
+counts as a successful supported operation. These disposable proofs do not
+authorize selecting the route for a live profile or qualify gateway activation.
 
 ## Conversation controls
 
