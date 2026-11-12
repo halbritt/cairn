@@ -62,9 +62,11 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         self.original_memory = copy.deepcopy(self.f.memory)
         self.case_number = 0
 
-    def stage_bound(self, harness, mode, *, enabled=True, remove_package=True, changes=None):
+    def stage_bound(self, harness, mode, *, enabled=True, remove_package=True, changes=None, remove_fields=()):
         self.f.memory = copy.deepcopy(self.original_memory)
         self.f.memory.update(changes or {})
+        for field in remove_fields:
+            self.f.memory.pop(field, None)
         metadata = bound.R04BoundWiringTests.stage_rows(
             self, harness, mode, enabled=enabled, remove_package=remove_package)
         self.trace = self.f.memory_path.parent / 'invocation-trace' / 'trace.jsonl'
@@ -87,6 +89,11 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
 
     def source(self):
         return self.invoke_provider_side('source', lambda: bound.R04BoundWiringTests.staged_process(self, 'source'))
+
+    def event(self, name, **fields):
+        if self.f.memory['harness'] == 'claude':
+            fields.setdefault('prompt_id', 'native-r04-fixture-prompt')
+        return super().event(name, **fields)
 
     def go(self):
         if self.f.memory.get('recall_mode') == 'agent_tools':
@@ -235,17 +242,25 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         self.required()
         self.optional_note('Concrete current storage guidance.')
         for harness in ('claude', 'codex'):
-            for changes, error in ((dict(claude=None), 'TypeError'),
-                                   (dict(model=1, recall_model=None), 'TypeError'),
-                                   (dict(model='bad\0model', recall_model=None), 'ValueError')):
+            for changes, error, remove_fields in (
+                    (dict(claude=None), 'TypeError', ()),
+                    (dict(model=1), 'TypeError', ('recall_model',)),
+                    (dict(model='bad\0model'), 'ValueError', ('recall_model',)),
+                    (dict(recall_model=None), None, ())):
                 with self.subTest(harness=harness, changes=changes):
                     self.reset_state()
-                    self.stage_bound(harness, 'ambient', enabled=False, remove_package=False, changes=changes)
+                    self.stage_bound(harness, 'ambient', enabled=False, remove_package=False,
+                                     changes=changes, remove_fields=remove_fields)
                     self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN, prompt='storage')
                     result = self.pair()
-                    self.assertEqual((result.returncode, result.stdout), (1, b''))
-                    self.assertIn(('error_class=' + error).encode(), result.stderr)
-                    self.assertEqual(self.provider_sides['go'], [])
+                    if error:
+                        self.assertEqual((result.returncode, result.stdout), (1, b''))
+                        self.assertIn(('error_class=' + error).encode(), result.stderr)
+                        self.assertEqual(self.provider_sides['go'], [])
+                    else:
+                        self.assertEqual(result.returncode, 0)
+                        self.assertEqual(self.context(result)['expanded']['selection']['record']['body'],
+                                         self.optional[0]['body'])
 
     def test_staged_bound_disabled_invalid_selection_retains_whole_required(self):
         self.required()
