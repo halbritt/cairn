@@ -291,6 +291,53 @@ class InstalledMemory(unittest.TestCase):
         self.assertEqual(after['last_capture']['outcome'], 'unchanged')
         self.assertTrue(any(op == 'index' for op, _, _ in self.calls))
 
+    def test_actual_cli_fresh_initialization_reloads_selection_and_reverses(self):
+        installer.install(self.home, self.native, str(self.root / 'selector'), self.skill,
+                          model='fixture-model', recall_mode='agent_tools')
+        legacy = self.home.joinpath('cairn-lifecycle.json').read_bytes()
+        engine_path = self.home / 'cairn/engine.json'
+        engine = json.loads(engine_path.read_bytes())
+        engine.update(state_dir=self.f.memory['state_dir'], semantic_fallback=False)
+        installer.shared.write_json(engine_path, engine)
+        config = json.loads(self.home.joinpath('config.yaml').read_bytes())
+        config.update(fallback_model=[], fallback_providers=[], security=dict(tirith_enabled=False))
+        config['display'] = dict(tool_progress='off', persistent_output=False)
+        installer.shared.write_json(self.home / 'config.yaml', config)
+        first = self.install()
+        first_raw = self.home.joinpath('cairn-lifecycle.json').read_bytes()
+        self.f.memory['r03_revision_canary'] = 'second selection'
+        self.f.publish_configuration(enabled=False)
+        second = self.install()
+        self.assertNotEqual(first['commands'], second['commands'])
+        replacement = self.root / 'second-active.json'
+        replacement.write_bytes(self.home.joinpath('cairn-lifecycle.json').read_bytes())
+        self.home.joinpath('cairn-lifecycle.json').write_bytes(first_raw)
+        self.home.joinpath('r03-fixture.json').write_text(json.dumps(dict(
+            schema='cairn.r03-hermes-fixture/1', root=str(self.root), project=str(self.f.root), session=self.session)))
+
+        def cli_owner(name, expected, replacement=None):
+            command = [str(HERMES_PYTHON), '-I', '-B', str(ROOT / 'scripts/check_r03_hermes_cli.py'),
+                       '--hermes-root', str(HERMES_ROOT), '--home', str(self.home), '--output', str(self.root / name),
+                       '--expected-sha256', hashlib.sha256(expected).hexdigest()]
+            if replacement:
+                command += ['--replacement-config', str(replacement)]
+            result = subprocess.run(command, cwd=self.f.root, env=dict(self.f.env(), HERMES_HOME=str(self.home),
+                TERMINAL_CWD=str(self.f.root), TIRITH_ENABLED='false'), capture_output=True, timeout=90)
+            self.results.append(dict(argv=command, exit=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode()))
+            self.assertEqual(result.returncode, 0, result.stderr.decode() + result.stdout.decode())
+            return json.loads((self.root / name / 'result.json').read_bytes())
+
+        old = cli_owner('cli-cached', first_raw, replacement)
+        fresh = cli_owner('cli-refreshed', replacement.read_bytes())
+        self.assertEqual(old['calls'][0]['argv'], first['commands']['UserPromptSubmit'])
+        self.assertEqual(fresh['calls'][0]['argv'], second['commands']['UserPromptSubmit'])
+        self.home.joinpath('cairn-lifecycle.json').write_bytes(legacy)
+        reverse = cli_owner('cli-reverse', legacy)
+        self.assertEqual(reverse['calls'][0]['argv'][1], json.loads(legacy)['script'])
+        self.assertNotEqual(old['session'], fresh['session'])
+        self.assertNotEqual(fresh['session'], reverse['session'])
+        self.assertEqual(self.write_count, 0)
+
     def native_objects(self, name, refusal=False):
         self.home.joinpath('r03-fixture.json').write_text(json.dumps(dict(
             schema='cairn.r03-hermes-fixture/1', root=str(self.root), project=str(self.f.root), session=self.session)))

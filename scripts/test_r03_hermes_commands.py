@@ -72,6 +72,13 @@ class SelectedMemoryCommands(unittest.TestCase):
                 self.assertTrue(self.provider.capture_pending)
                 self.assertNotIn('PRIVATE', str(logs.output))
 
+    def test_removed_selected_table_cannot_revive_retained_script(self):
+        self.provider.config['lifecycle_selection'] = {'path': '/selected/manifest.json', 'sha256': 'a' * 64}
+        with patch.object(plugin, 'run_engine', return_value=types.SimpleNamespace(returncode=1)) as run:
+            with self.assertLogs(plugin.logger, 'WARNING'):
+                self.assertIsNone(self.provider.invoke('SessionEnd', messages=['PRIVATE']))
+        run.assert_not_called()
+
     def test_interrupt_cleans_owned_group_and_preserves_host_interruption(self):
         process = Mock(pid=987654)
         process.communicate.side_effect = [KeyboardInterrupt(), ('', '')]
