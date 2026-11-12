@@ -126,8 +126,8 @@ class Fixture:
             require(message in result['Error'], f'{self.name}: expected {message!r}, got {result["Error"]!r}')
         return result
 
-    def callback(self, *, role='callback', delay=0):
-        manifest_path = Path(self.manifests['a'])
+    def callback(self, *, role='callback', delay=0, unit='a'):
+        manifest_path = Path(self.manifests[unit])
         manifest = json.loads(manifest_path.read_text())
         config = manifest['coordination_configs'][0]
         entry = self.universe / 'issued' / 'entry.json'
@@ -144,7 +144,7 @@ class Fixture:
         ref = process_ref(child.pid)
         require(ref['PGID'] == child.pid, 'owned callback group must be its new session')
         record = dict(Schema='cairn.fixture-callback-reference/1', Role=role,
-            Bindings=[str(Path(self.catalog['Selections'][0]['Directory']) / 'one.json')],
+            Bindings=[str(Path(self.catalog['Selections'][0 if unit == 'a' else 1]['Directory']) / Path(config['path']).name)],
             Config=dict(Path=config['path'], SHA256=config['sha256']),
             Binding=dict(Path=str(manifest_path), SHA256=sha(manifest_path)),
             Process=ref, Executable=dict(Path=str(executable), SHA256=sha(executable)), EntryPoint=entry_pin, Join=None)
@@ -242,7 +242,7 @@ def check(evidence):
     write(tools / 'pins.json', pins)
     scratch = Path(tempfile.mkdtemp(prefix='r06-census-', dir=Path.home() / '.cache'))
     write(evidence / 'scratch.json', dict(path=str(scratch)))
-    cases = ('running', 'joined', 'delayed', 'unjoined', 'empty-proposed-callbacks', 'bad-group', 'reused-start', 'cached-disabled')
+    cases = ('running', 'joined', 'delayed', 'unjoined', 'empty-proposed-callbacks', 'bad-group', 'reused-start', 'cached-disabled', 'disjoint-running')
     outcomes = []
     fixtures = []
     try:
@@ -250,11 +250,12 @@ def check(evidence):
             f = Fixture(scratch, evidence, image, name)
             fixtures.append(f)
             try:
-                if name == 'cached-disabled':
-                    manifest_path = Path(f.manifests['a'])
+                if name in ('cached-disabled', 'disjoint-running'):
+                    manifest_path = Path(f.manifests['b' if name == 'disjoint-running' else 'a'])
                     enabled = json.loads(manifest_path.read_text()); enabled['enabled'] = True
-                    f.catalog['Bindings'][0] = write(manifest_path, enabled)
-                f.callback(role='issued' if name == 'cached-disabled' else 'callback', delay=1500 if name == 'delayed' else 0)
+                    f.catalog['Bindings'][1 if name == 'disjoint-running' else 0] = write(manifest_path, enabled)
+                f.callback(role='issued' if name == 'cached-disabled' else 'callback', delay=1500 if name == 'delayed' else 0,
+                    unit='b' if name == 'disjoint-running' else 'a')
                 expected, message = False, 'callback is running'
                 if name == 'joined':
                     f.join(); expected, message = True, ''
@@ -269,6 +270,8 @@ def check(evidence):
                 elif name == 'cached-disabled':
                     require(json.loads(f.observation.read_text())['Enabled'] is True, 'callback did not cache actual enabled A')
                     f.publish_disabled(); message = 'old cached bytes'
+                elif name == 'disjoint-running':
+                    f.proposal['Callbacks'] = []; expected, message = True, ''
                 result = f.inspect(expected, message)
                 if name == 'joined':
                     require(result['Census']['Callbacks'][0]['Joined'], 'actual join absent from successful finite census')
@@ -276,6 +279,9 @@ def check(evidence):
                     require(result['Census']['PositiveGrants'] and result['Census']['Callbacks'][0]['Config'] == f.record['Config'],
                             'disabled B hid the retained grant or old callback/issued reference')
                     require(Path(f.record['Config']['Path']).exists() and Path(f.record['Executable']['Path']).exists(), 'old issued paths retired')
+                if name == 'disjoint-running':
+                    require(not result['Census']['Callbacks'] and len(result['Census']['Members']) == 2 and f.child.poll() is None,
+                            'independent live unit was folded into the selected unit or stopped')
                 outcomes.append(dict(case=name, status='PASS', fixture_ready=expected, error=result['Error']))
                 print(json.dumps(outcomes[-1]), flush=True)
             finally:

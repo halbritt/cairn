@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/halbritt/cairn/internal/lifecycle/binding"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
 
@@ -243,9 +244,12 @@ func (r *watchCensusRead) members(ctx context.Context) error {
 			return errors.New("selected binding pin is missing or changed")
 		}
 		// Reuse the accepted profile agreement, membership and descriptor checks.
-		memory, err := r.local.disabledBinding(config)
+		memory, err := r.profiles(config, manifest)
 		if err != nil {
 			return err
+		}
+		if manifest.Get("enabled").Boolean {
+			r.nodeBlockers[path] = append(r.nodeBlockers[path], "selected binding is enabled; disabled refresh is unobserved")
 		}
 		_, node.Memory, err = r.descriptor(manifest.Get("memory_config"))
 		if err != nil {
@@ -267,12 +271,13 @@ func (r *watchCensusRead) members(ctx context.Context) error {
 			}
 			node.Resources = append(node.Resources, directory)
 		}
-		if node.Account != "" {
-			if _, err := r.directory(node.Account); err != nil {
-				return err
-			}
-			node.Resources = append(node.Resources, node.Account)
+		if node.Account == "" {
+			return errors.New("selected account coverage is unknown")
 		}
+		if err := r.emptyHookLayer(node.Account, "account"); err != nil {
+			return err
+		}
+		node.Resources = append(node.Resources, node.Account)
 		client := nativeText(config.Get("cairn"))
 		if !censusWithin(r.catalog.Root, client) {
 			return errors.New("census image outside fixture universe")
@@ -287,6 +292,34 @@ func (r *watchCensusRead) members(ctx context.Context) error {
 		node.Resources = slices.Compact(node.Resources)
 	}
 	return nil
+}
+
+func (r *watchCensusRead) profiles(config, manifest *value.Value) (*value.Value, error) {
+	mode := nativeText(manifest.Get("schema"))
+	enabled := manifest.Get("enabled")
+	if (mode != "cairn.inbox-recall-binding/2" && mode != "cairn.inbox-recall-binding/3") || enabled == nil || enabled.Kind != value.Bool {
+		return nil, errors.New("unknown selected binding schema/enablement")
+	}
+	memory, _, err := r.descriptor(manifest.Get("memory_config"))
+	if err != nil {
+		return nil, err
+	}
+	list := manifest.Get("coordination_configs")
+	if list == nil || list.Kind != value.Array {
+		return nil, errors.New("unknown coordination profile coverage")
+	}
+	var coordinators []*value.Value
+	for _, desc := range list.Items {
+		coord, _, err := r.descriptor(desc)
+		if err != nil {
+			return nil, err
+		}
+		coordinators = append(coordinators, coord)
+	}
+	if err := binding.ValidateConfigurationProfiles(binding.ConfigurationProfiles{Current: config, Memory: memory, Coordinators: coordinators, ManifestPath: config.Get("inbox_recall_binding").String, Resolve: r.cli.profile().Routes.Filesystem().Resolve}); err != nil {
+		return nil, err
+	}
+	return memory, nil
 }
 
 func (r *watchCensusRead) knownConfig(pin WatchCensusPin) bool {
@@ -463,13 +496,23 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			workspace := nativeText(state.Get("agent").Get("metadata").Get("workspace"))
+			if workspace == "" {
+				return errors.New("native session workspace coverage is unknown")
+			}
+			if err := r.emptyHookLayer(workspace, "repository"); err != nil {
+				return err
+			}
 			owner := r.configPaths[config]
 			if owner == "" {
 				return errors.New("session config ownership is unknown")
 			}
 			r.nodes[owner].Sessions = append(r.nodes[owner].Sessions, path)
+			r.nodes[owner].Resources = append(r.nodes[owner].Resources, workspace)
+			slices.Sort(r.nodes[owner].Resources)
+			r.nodes[owner].Resources = slices.Compact(r.nodes[owner].Resources)
 			seen[path] = true
-			r.sessionRefs[path] = WatchCensusSession{Path: path, Binding: owner, NativeSession: nativeText(state.Get("native_session_id")), AgentID: nativeText(ref.Get("agent_id")), ExecutionID: nativeText(ref.Get("execution_id")), SHA256: r.files[path]}
+			r.sessionRefs[path] = WatchCensusSession{Path: path, Binding: owner, NativeSession: nativeText(state.Get("native_session_id")), AgentID: nativeText(ref.Get("agent_id")), ExecutionID: nativeText(ref.Get("execution_id")), SHA256: r.files[path], Workspace: workspace}
 			for _, key := range AttemptKeys {
 				if !nativeNone(state.Get(key)) {
 					r.nodeBlockers[owner] = append(r.nodeBlockers[owner], "retained native "+key+" needs its authenticated drain correspondence")
@@ -512,6 +555,17 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func (r *watchCensusRead) emptyHookLayer(path, role string) error {
+	names, err := r.directory(path)
+	if err != nil {
+		return err
+	}
+	if len(names) != 0 {
+		return fmt.Errorf("%s hook/config coverage is unknown: selected native settings/readback seam is unavailable", role)
 	}
 	return nil
 }

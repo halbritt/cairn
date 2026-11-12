@@ -30,6 +30,9 @@ separate. Retained callback configurations also contribute their pinned old
 binding, memory, runtime and associated users. Mixed runtime identities refuse.
 Directory membership and selected bytes are read back; the composite observation
 is non-atomic and has a per-fact read-to-use window.
+Enabled/granted/running users in a known disjoint unit do not become selected
+members. Their resources and references are still inspected to establish that
+they are separate. Selected enabled bindings and positive grants block readiness.
 
 The supported successful scope is **`disposable-fixture`**. `FixtureReady`
 means the explicitly declared finite inventory passed. The result always says
@@ -38,6 +41,11 @@ production readiness. `external-unknown` scope refuses. A catalog is selected
 test input, not proof that no live user exists elsewhere. Global installed
 account/session discovery, authoritative native join/refresh readback, store
 drain and closure of unknown external users remain unavailable here.
+The finite fixture explicitly names account directories and each session's
+workspace. Their actual hook/config layers must be empty. Nonempty layers,
+missing account/workspace identity or unobserved native settings refuse with a
+named missing readback seam. This cut does not invent a native settings parser
+or refresh protocol to accept them.
 
 ## Processes and retained obligations
 
@@ -81,6 +89,10 @@ opened for writing, or protected path is renamed, removed or locked. Protected
 file bytes, membership and modes are compared before and after inspection.
 Inactive private process entry points skip outside their explicit driver;
 required unit/process selectors run without skips.
+The process driver also observes a real callback in a disjoint enabled unit
+remaining alive while the selected two-binding inventory passes. Retained native
+obligation fields defer to the existing authenticated drain correspondence; the
+census does not classify an unverified historical field as active or delete it.
 
 Evidence records source/tree, dependencies, toolchain/native executable and
 helper image hashes, argv, actual output/exits, reached assertions and owned

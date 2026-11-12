@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -109,7 +110,11 @@ func censusFixtureAt(t *testing.T, root string) *censusFixture {
 			selection.Pins[name] = active.SHA256
 			f.configs[active.Path] = config
 			native := "fixture-native-" + unit + name
-			state := map[string]any{"schema": NativeSessionSchema, "native_session_id": native, "agent": map[string]any{"agent_id": uuid.NewString(), "execution_id": uuid.NewString()}, "inbox_journals": []string{}}
+			workspace := filepath.Join(f.root, "workspaces", unit+"-"+name)
+			if err := os.MkdirAll(workspace, 0700); err != nil {
+				t.Fatal(err)
+			}
+			state := map[string]any{"schema": NativeSessionSchema, "native_session_id": native, "agent": map[string]any{"agent_id": uuid.NewString(), "execution_id": uuid.NewString(), "metadata": map[string]string{"workspace": workspace}}, "inbox_journals": []string{}}
 			sessionPin := censusTestJSON(t, SessionStatePath(stateDir, config["binding"].(string), native), state)
 			f.catalog.Sessions = append(f.catalog.Sessions, sessionPin)
 			if unit == "a" {
@@ -266,6 +271,10 @@ func TestWatchCensusUnknownOmittedAndUnsafeMembersRefuse(t *testing.T) {
 		name, want string
 		change     func(*testing.T, *censusFixture)
 	}{
+		{"unknown-account-hook", "account hook/config coverage", func(t *testing.T, f *censusFixture) {
+			config := f.configs[filepath.Join(f.catalog.Selections[0].Directory, "one.json")]
+			censusTestJSON(t, filepath.Join(config["config_home"].(string), "hooks.json"), map[string]string{"unknown_callback": "uncataloged retained hook"})
+		}},
 		{"extra-binding", "membership", func(t *testing.T, f *censusFixture) {
 			censusTestJSON(t, filepath.Join(f.catalog.Selections[0].Directory, "extra.json"), map[string]string{"unknown": "selected user"})
 		}},
@@ -351,5 +360,132 @@ func TestWatchCensusNoProfileOrCanceledContextRefuses(t *testing.T) {
 	cancel()
 	if got, err := cli.InspectWatchUnitCensus(ctx, pin, f.proposal); err == nil || got.FixtureReady {
 		t.Fatal("canceled census accepted")
+	}
+}
+
+func TestWatchCensusIndependentEnabledUnitStaysSeparate(t *testing.T) {
+	f := newCensusFixture(t)
+	raw, err := os.ReadFile(f.manifests["b"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := map[string]any{}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["enabled"] = true
+	pin := censusTestJSON(t, f.manifests["b"], manifest)
+	for i := range f.catalog.Bindings {
+		if f.catalog.Bindings[i].Path == pin.Path {
+			f.catalog.Bindings[i] = pin
+		}
+	}
+	censusTestJSON(t, filepath.Join(f.root, "memory-b", "retained.memory-budget.json"), map[string]any{"inbox_activation": map[string]bool{"other-turn": true}})
+	got, err := f.inspect(t)
+	if err != nil || !got.FixtureReady || len(got.Members) != 2 || len(got.PositiveGrants) != 0 {
+		t.Fatalf("unrelated unit coupled into proposal: %+v %v", got, err)
+	}
+	f.proposal.Bindings = []WatchBindings{f.catalog.Selections[1]}
+	f.proposal.Sessions = nil
+	for _, session := range f.catalog.Sessions {
+		if filepath.Dir(session.Path) == filepath.Join(f.root, "state-b") {
+			f.proposal.Sessions = append(f.proposal.Sessions, session.Path)
+		}
+	}
+	got, err = f.inspect(t)
+	if err == nil || got.FixtureReady || len(got.PositiveGrants) != 1 || !strings.Contains(err.Error(), "binding is enabled") {
+		t.Fatalf("selected enabled/granted unit accepted: %+v %v", got, err)
+	}
+}
+
+func TestWatchCensusMixedRuntimeRefuses(t *testing.T) {
+	f := newCensusFixture(t)
+	f.share(t, "ledger")
+	image, err := os.ReadFile("/usr/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(f.root, "runtime-b", "different-image")
+	digest := writePrivateFile(t, path, image, 0500)
+	raw, err := os.ReadFile(f.manifests["b"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := map[string]any{}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["binary"] = map[string]string{"path": path, "sha256": digest}
+	pin := censusTestJSON(t, f.manifests["b"], manifest)
+	for i := range f.catalog.Bindings {
+		if f.catalog.Bindings[i].Path == pin.Path {
+			f.catalog.Bindings[i] = pin
+		}
+	}
+	f.proposal.Bindings = slices.Clone(f.catalog.Selections)
+	f.proposal.Sessions = nil
+	for _, pin := range f.catalog.Sessions {
+		f.proposal.Sessions = append(f.proposal.Sessions, pin.Path)
+	}
+	got, err := f.inspect(t)
+	if err == nil || got.FixtureReady || !strings.Contains(err.Error(), "mixed runtime selection") {
+		t.Fatalf("mixed unit accepted: %+v %v", got, err)
+	}
+}
+
+func TestWatchCensusLegacyBundlePinsAndIndependentModes(t *testing.T) {
+	f := newCensusFixture(t)
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("test source location unavailable")
+	}
+	root := filepath.Join(f.root, "legacy-runtime")
+	files := map[string]string{}
+	for _, name := range CompatibilityClosureMembers {
+		if name == "lifecycle_compatibility.py" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(filepath.Dir(source), "..", "..", "..", "integrations", "lifecycle", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = writePrivateFile(t, filepath.Join(root, name), raw, 0600)
+	}
+	raw, err := json.Marshal(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(raw)
+	bundle := map[string]any{"schema": "cairn.lifecycle-bundle/1", "files": files, "sha256": hex.EncodeToString(digest[:])}
+	raw, err = os.ReadFile(f.manifests["a"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := map[string]any{}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["schema"] = "cairn.inbox-recall-binding/2"
+	delete(manifest, "binary")
+	for role, name := range map[string]string{"engine": "memory.py", "bridge": "inbox_recall.py"} {
+		manifest[role] = map[string]any{"path": filepath.Join(root, name), "sha256": files[name], "bundle": bundle}
+	}
+	pin := censusTestJSON(t, f.manifests["a"], manifest)
+	f.catalog.Bindings[0] = pin
+	got, err := f.inspect(t)
+	if err != nil || !got.FixtureReady || len(got.Members) != 2 || got.Members[0].Mode != "cairn.inbox-recall-binding/2" {
+		t.Fatalf("pinned legacy inventory refused: %+v %v", got, err)
+	}
+	path := filepath.Join(root, "coordination.py")
+	raw, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(raw, []byte("\n# changed fixture member\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = f.inspect(t)
+	if err == nil || got.FixtureReady || !strings.Contains(err.Error(), "pin changed") {
+		t.Fatalf("changed legacy member accepted: %+v %v", got, err)
 	}
 }

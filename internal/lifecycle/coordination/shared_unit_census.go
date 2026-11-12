@@ -63,7 +63,7 @@ type WatchCensusCallback struct {
 	Joined    bool
 }
 
-type WatchCensusSession struct{ Path, Binding, NativeSession, AgentID, ExecutionID, SHA256 string }
+type WatchCensusSession struct{ Path, Binding, NativeSession, AgentID, ExecutionID, SHA256, Workspace string }
 
 type WatchUnitCensus struct {
 	Scope            string
