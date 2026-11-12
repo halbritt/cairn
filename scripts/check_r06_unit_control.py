@@ -118,7 +118,7 @@ def transport(f, api, claim=None, socket=None, move_parent=None):
 
 
 def plan_for(f, *, current=None, next_path=None, retained=None, callbacks=()):
-    return dict(schema='cairn.unit-control/1', current=current or dict(directory=str(f.active), pins=f.pins),
+    return dict(schema='cairn.unit-control/1', current=current or dict(directory=str(f.active), pins=dict(f.pins)),
                 next=[dict(name='one.json', path=str(next_path or f.next), sha256=sha((next_path or f.next).read_bytes()))],
                 retained=str(retained or f.root / 'retained'), callbacks=list(callbacks) if callbacks is not None else None)
 
@@ -206,7 +206,27 @@ def run_cases(evidence):
                     require(f.snapshot() == before, 'control mutated protected API/state across roundtrip')
                     record(case)
                 elif case == 'inputs':
-                    for kind in ('pin', 'shape', 'plan-mode', 'next-mode', 'next-schema', 'census', 'callback-pid', 'callback-start', 'callback-field', 'membership', 'path'):
+                    # C1: each case owns its plan. A count-bound mutation must
+                    # never mask the following retained-path guard.
+                    original_pins, original_next = dict(f.pins), f.next.read_bytes()
+                    reasons = []
+                    expected_errors = {
+                        'pin': 'unit control plan pin or UTF-8 mismatch',
+                        'shape': 'unit control unknown or nonliteral JSON field',
+                        'plan-mode': 'unit control plan must be owner-only mode0600',
+                        'next-mode': 'unit control next files must be immutable mode0400 data',
+                        'next-schema': 'INVALID_CONFIG: absolute cairn required',
+                        'census': 'D5 explicit bounded callback census array required; null/missing is unknown',
+                        'callback-pid': 'D5 callback PID must exceed 1',
+                        'callback-start': 'D5 callback start must be a positive uint64',
+                        'callback-field': 'D5 callback identity is unknown: unit control unknown or nonliteral JSON field',
+                        'membership-count': 'unit control plan schema or bounded membership is unknown',
+                        'path': 'unit control retained path must be a distinct canonical sibling',
+                    }
+                    for kind, expected_error in expected_errors.items():
+                        require(f.pins == original_pins, kind + ': prior case changed fixture pins')
+                        require(f.next.read_bytes() == original_next and f.next.stat().st_mode & 0o7777 == 0o400,
+                                kind + ': prior case changed next selection')
                         plan = plan_for(f)
                         pin, mode = None, 0o600
                         if kind == 'pin': pin = '0' * 64
@@ -220,14 +240,26 @@ def run_cases(evidence):
                         elif kind == 'callback-pid': plan['callbacks'] = [dict(pid=1,start=1,boot='fixture')]
                         elif kind == 'callback-start': plan['callbacks'] = [dict(pid=2,start=-1,boot='fixture')]
                         elif kind == 'callback-field': plan['callbacks'] = [dict(pid=2,start=1,boot='fixture',complete=True)]
-                        elif kind == 'membership': plan['current']['pins']['absent.json'] = '0' * 64
+                        elif kind == 'membership-count': plan['current']['pins']['absent.json'] = '0' * 64
                         elif kind == 'path': plan['retained'] = str(f.root) + '/./retained'
-                        refused = invoke(f, images['control'], 'switch', plan, kind, expected=None, pin=pin, mode=mode)
+                        plan_name = 'plan-' + kind + '.json'
+                        refused = invoke(f, images['control'], 'switch', plan, kind, expected=1,
+                                         pin=pin, mode=mode, path_tail=plan_name)
                         require(refused.get('error') and not refused['inspected'] and not refused['exchange']['Published'], kind + ': invalid input accepted')
+                        require(refused['error'] == expected_error,
+                                kind + ': wrong refusal: ' + refused['error'])
                         require(not calls.exists(), kind + ': validation reached API before refusing input')
                         require(not (f.root / 'retained').exists() and not (f.active / '.watch.lock').exists(), kind + ': input refusal created effects')
                         require(f.snapshot() == before, kind + ': input refusal changed protected state')
-                        f.next.chmod(0o600);f.next.write_bytes(f.coord.read_bytes() + b'\n');f.next.chmod(0o400)
+                        require(f.pins == original_pins and {p.name for p in f.active.iterdir()} == {'one.json'} and
+                                sha((f.active / 'one.json').read_bytes()) == original_pins['one.json'],
+                                kind + ': input case changed fixture pins or active selection')
+                        reasons.append(dict(kind=kind, expected=expected_error, actual=refused['error'],
+                                            api_reads=0, exit=1, current_pins=sorted(plan['current']['pins']),
+                                            next_count=len(plan['next']), plan=plan_name,
+                                            plan_sha256=sha((f.root / plan_name).read_bytes())))
+                        write(f.root / 'input-reasons.json', reasons)
+                        f.next.chmod(0o600);f.next.write_bytes(original_next);f.next.chmod(0o400)
                         record('input-' + kind)
                 elif case == 'publication-uncertainty':
                     plan = plan_for(f);path=f.root/'plan.json';write(path,plan)
