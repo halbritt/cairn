@@ -18,6 +18,7 @@ from semantic_acceptance_isolation import IsolationError, SemanticIsolation, WOR
 
 PROJECT = Path(__file__).resolve().parents[1]
 INVENTORY = PROJECT / "scripts/testdata/semantic-reference-inventory.json"
+ACCEPTED_BASELINE_SHA256 = 'c8ad4c34e63585fbcb674673353548eab690fdd4ea70fb41e869aefebcc5e69e'
 
 
 def require(condition, message):
@@ -103,6 +104,7 @@ def inventory(path=INVENTORY):
 
 def accepted_baseline(value):
     spec=value['failure_baseline']
+    require(spec['sha256']==ACCEPTED_BASELINE_SHA256,'accepted baseline metadata must retain its reviewed bytes')
     baseline=load(pinned(PROJECT,spec['relative'],spec['sha256']))
     require(set(baseline)=={'schema','revision','review_record','inventory_sha256','ledger_sha256',
             'ledger_sources','actors','tool_sha256','reports'} and
@@ -657,6 +659,10 @@ def tool_pins():
                          "semantic_refusal_source.py", "test_semantic_refusal_source.py",
                          "semantic_refusal_functions.py", "test_semantic_refusal_functions.py",
                          "semantic_refusal_function_evidence.py",
+                         "semantic_refusal_native_residuals.py", "semantic_refusal_source_residuals.py",
+                         "semantic_refusal_residual_fixture.py", "test_semantic_refusal_residuals.py",
+                         "testdata/semantic-refusal-residual-driver/main.go",
+                         "testdata/semantic-refusal-residual-driver/main_test.go",
                          "testdata/semantic-refusal-driver/main.go",
                          "testdata/semantic-refusal-driver/main_test.go")}
 
@@ -836,6 +842,10 @@ def main(argv=None):
     check.add_argument("--source-refusals-sha256")
     check.add_argument("--functions", type=Path)
     check.add_argument("--functions-sha256")
+    check.add_argument("--native-residuals", type=Path)
+    check.add_argument("--native-residuals-sha256")
+    check.add_argument("--source-residuals", type=Path)
+    check.add_argument("--source-residuals-sha256")
     check.add_argument("--reuse-accepted", action="store_true",
                        help="recheck exact accepted report bytes and unchanged actors without replaying captures")
     check.add_argument("--output", type=Path, required=True)
@@ -861,9 +871,23 @@ def main(argv=None):
     functions = sub.add_parser("function-refusals", help="collect remaining source-function guards with labelled external doubles")
     for option in ("python-home", "site", "runtime-binding", "assets", "output"):
         functions.add_argument("--" + option, type=Path, required=True)
+    native = sub.add_parser("native-residuals", help="collect fixed Go/store and idle process-double controls")
+    for option in ("build", "output"):
+        native.add_argument("--" + option, type=Path, required=True)
+    residual = sub.add_parser("source-residuals", help="collect five short Source controls and two labelled serializer doubles")
+    for option in ("python-home", "site", "runtime-binding", "assets", "output"):
+        residual.add_argument("--" + option, type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         value = inventory()
+        if args.command == "native-residuals":
+            from semantic_refusal_native_residuals import collect
+            collect(args,value)
+            return 0
+        if args.command == "source-residuals":
+            from semantic_refusal_source_residuals import collect
+            collect(args,value)
+            return 0
         if args.command == "function-refusals":
             from semantic_refusal_function_evidence import collect
             collect(args,value)
@@ -915,12 +939,25 @@ def main(argv=None):
                 functions=verify(value,args.evidence_root,args.functions,args.functions_sha256)
                 require(not set(functions)&set(failures or {}),'overlapping function obligations')
                 failures=dict(failures or {},**functions)
+            if args.native_residuals:
+                from semantic_refusal_native_residuals import verify
+                native=verify(value,args.native_residuals,args.native_residuals_sha256)
+                require(not set(native)&set(failures or {}),'overlapping native residual obligations')
+                failures=dict(failures or {},**native)
+            if args.source_residuals:
+                from semantic_refusal_source_residuals import verify
+                residual=verify(value,args.evidence_root,args.source_residuals,args.source_residuals_sha256)
+                require(not set(residual)&set(failures or {}),'overlapping Source residual obligations')
+                failures=dict(failures or {},**residual)
             sources = {kind: dict(path=str(path), sha256=sha) for kind, path, sha in (
                 ("early", args.refusals, args.refusals_sha256),
                 ("Go-process", args.processes, args.processes_sha256),
                 ("source-model", args.source_refusals, args.source_refusals_sha256)) if path}
             if args.functions:
                 sources['functions']=dict(path=str(args.functions),sha256=args.functions_sha256)
+            for kind,path,sha in [('native-residuals',args.native_residuals,args.native_residuals_sha256),
+                                  ('source-residuals',args.source_residuals,args.source_residuals_sha256)]:
+                if path:sources[kind]=dict(path=str(path),sha256=sha)
             report = audit(value, args.evidence_root, tests, failures, sources)
             if args.reuse_accepted:
                 report['accepted_report_reuse']=dict(revision=baseline['revision'],review_record=baseline['review_record'],

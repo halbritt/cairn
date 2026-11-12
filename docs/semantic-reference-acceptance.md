@@ -134,11 +134,86 @@ The `failure_ledger.remaining_ids`, each row's `residual_subcase_ids` and
 `missing_evidence` name incomplete proof and its prerequisite. Function-only
 tokenizer/model doubles remain separate from actual model processes. Transport
 decoding remains separate from Index span/count/vector validation. The retained
-idle proof does not invent a missing exit/kill tuple. F-IDENTITY mutation
-mechanics, unobserved compound members and store-bound semantic checks remain
-explicit until their own bound observations exist. `failures/s01b` stays partial
+idle proof does not invent a missing exit/kill tuple. Each additional function,
+process or store observation must retain its own scope and raw evidence.
+`failures/s01b` stays partial
 while any required subcase is missing; the other S-01 holds and separate S-04/S-05
 ownership are unchanged.
+
+## Residual observations and exact report reuse
+
+`audit --reuse-accepted` selects only the four report hashes in
+[the accepted baseline](../scripts/testdata/semantic-refusal-baseline.json),
+from revision `91a97fdb862e190ea196704b3c446dab06be2b2b` and review
+`97fee45b-2a15-4a79-9387-9884d8bad48d/v1`. The baseline metadata has a fixed
+digest in the reader. Its 23 actor/source hashes must still match, and each old
+reader rechecks raw inputs, outcomes, process identities, traces and cleanup.
+An arbitrary old report cannot use the accepted producer bindings. This retains
+the original 59 parents / 190 subcases without executing their captures again.
+
+Three additional report selectors attach the residual evidence:
+
+- `--functions PATH --functions-sha256 SHA` checks 24 function observations.
+  Five rank guards use actual frozen NumPy with explicit tokenizer/model
+  doubles; query retreat uses a tokenizer double and forbids inference.
+  Eighteen identity controls call the actual Source constructors on disposable
+  source/asset copies with external model/tokenizer constructor stubs. Their
+  baseline identities match retained real-worker identities. One asset, source,
+  package metadata value or consumed setting changes at a time; path moves and
+  seven separate timestamp changes preserve bytes and identities. Unsupported
+  FastEmbed actually refuses. None of these identity controls proves real model
+  initialization or inference. The child records its executed fixture and actor
+  hashes; the literal bootstrap and exact input-catalogue projection are bound
+  separately from the retained full checker/test snapshot.
+- `--native-residuals PATH --native-residuals-sha256 SHA` checks 14 actual
+  `Index.Step`/`vectorText` controls with an in-process model double and one
+  fresh private PostgreSQL cluster, using a separate database per case. Invalid
+  spans, count, dimensions, nonfinite and zero vectors publish no semantic rows
+  and retain the retry job. The positive 256-passage and 384-dimension controls
+  publish and produce actual compiler discovery coverage 1/1. A separate idle
+  process double records three calls, two child identities, actual old-child
+  absence before replacement, termination/join traces, nonempty stdout prefixes
+  and restoration of the last successful bounded cache. The native build binds
+  Go 1.25, dependency metadata, all compiled local packages and embedded schema
+  files, tests and binary bytes. A byte-identical rebuild can add complete build
+  source attestation without replaying store or idle observations.
+- `--source-residuals PATH --source-residuals-sha256 SHA` checks five short real
+  Source controls: missing rank record ID/version, plus embedding identity,
+  query and document. Each has its own actual interpreter/ORT/library binding,
+  input/output/error, exit and cleanup. Two additional serialization guards run
+  the actual `serve_stream` with a labelled Scorer double: exact 64 KiB ordinary
+  and combined-cache output boundaries succeed, and the next byte refuses with
+  no output. The artificial payloads establish those guards; they do not claim
+  that the real Scorer can produce these sizes.
+
+Collect with `function-refusals`, `native-residuals` and `source-residuals`;
+each command's `--help` lists its explicit inputs. The native collector accepts
+an isolated native build report, including the retained `go list -deps -json`,
+test/build commands, source pins and binary hash. The selected build recipe and
+all generated reports stay in the external evidence directory. None selects an
+installed worker or production database. Capture paths remain provenance when
+the checker runs from another checkout with identical actor bytes.
+
+The private-store runtime report is deliberately partial. It records actual Go
+and PostgreSQL executable hashes and selected loaded pgvector mappings. One
+runtime-observer environment parse error remains retained; PostgreSQL server
+environment blocks and the native driver's exec environment are unobserved.
+The observed Python launch environment, private cluster settings, SQL outcomes
+and clean server stop are separate evidence. The report does not claim a complete
+process inventory, a server environment attestation or zero effects.
+
+The combined residual audit verifies 77 of 78 parents and 236 of 238 subcases.
+Only `F-EMBED/65536-byte-document/Latin65536` and `/CJK65535` remain open. Retained
+packaged results have successful Go replies, but no per-embedding-worker terminal
+status, wire stdout prefix or complete restart tuple. The packaged CJK input is
+65,536 bytes (`漢` repeated plus `!`), so it also differs from the catalogue's
+65,535-byte subcase. Historical direct Python CJK also has 65,536 input bytes and
+exit 0 with raw stdout, but lacks actual runtime/process identity and restart
+observations. Neither selected CJK input matches the exact 65,535-byte name.
+The historical dense ASCII maximum timed out. No maximum-size or
+latency experiment is added here. Closing these gaps requires a separately
+authorized route that records the missing observations. Full S-01, raw/FENV,
+punctuation, quality, runtime and production acceptance remain unchanged.
 
 ## Retrieval-quality decision gap
 

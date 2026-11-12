@@ -16,11 +16,11 @@
   },
   "source_sha256": {
     "core/query_projection.go": "c78072b1f0a4b3ea214a0d6d7f2a55fb7d5324bb8f4a34159f2a234cfb9e199b",
-    "scripts/check_semantic_reference.py": "96ccc3188337270b454eecd7a9eb7720561c7dd7659d4b54390096991ff09743",
+    "scripts/check_semantic_reference.py": "575d6c4c1a858de98cc686157b374bdae9dc1dd4ef5c459212ae53dcaf52fc53",
     "scripts/embedding_worker.py": "f8b134f92523eb53ab21f7d4878283f5a6dc401ecb605c7e8d7e2df2aa673ae8",
     "scripts/semantic_rank.py": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
     "scripts/semantic_refusal_fixture.py": "d60ddb139ec81c42deea5c15f1f87461b596cb8b33d657ce468f934d25f02704",
-    "scripts/semantic_refusal_processes.py": "6f8fd64777a75a8b222f04b2987e68c7e3574b87b4878aa442d2aaaa57ab7614",
+    "scripts/semantic_refusal_processes.py": "2e0ee6ecedf4726023a405160c4565700cb49cc87115a5a3e3771e6ca940ef60",
     "scripts/semantic_refusal_source.py": "2edcdea694eb4dce9a0a17d73906bf931690ebb7f9aca1dfd35208feb9eb9896",
     "scripts/test_embedding_worker.py": "4f59d3a03eeb35b322ad37eafdcafb860c5819338730778dc43b8e5178efb257",
     "scripts/test_semantic_cache.py": "7ad59f4fa492b5528f08b644c5372eb06b4f01da51b0fbe36ffea6b0ff4a849e",
@@ -33,7 +33,11 @@
     "semantic/stream.go": "e167f5b77b62ab64532337d366e00204a8fb1a523407946ad6c05d019eddadb0",
     "semantic/stream_test.go": "e13e4ac3e718d515936fe315a47049ac8c8277fc79cdbb0e922630977f149955",
     "scripts/semantic_refusal_functions.py": "dbc55b42d7a8f04e75175150cc2a8a62b23b333c45a4bc238c6a75a53b4dd08c",
-    "scripts/semantic_refusal_function_evidence.py": "2c800106d3b4280c8b0eda0e595a85ff653c47d681aa64afe13feff872b6b414"
+    "scripts/semantic_refusal_function_evidence.py": "9bffea49ec802e60c3ac2d142a49fb89ca8e0a583e93e91146e2d313853db6af",
+    "scripts/semantic_refusal_native_residuals.py": "dda35442fbf503534b2a0723681574f752b3555a98adba06f528d44f504729b7",
+    "scripts/semantic_refusal_source_residuals.py": "a46a039669ac6a4b6db167c5ab5f98ed12a70247e1ac997ee4ddf8601f3a522d",
+    "scripts/semantic_refusal_residual_fixture.py": "b3b26276764bf3ee4f26ee60c50b26fec0b46393fe79ab94ff67792aa5b6702b",
+    "scripts/testdata/semantic-refusal-residual-driver/main.go": "ba013f6d430cebf1d3cfc49cfb4d8616e53484c4bde313c2d6eaa525039e93a2"
   },
   "cases": [
     {
@@ -988,6 +992,10 @@
         },
         {
           "file": "scripts/semantic_refusal_source.py",
+          "anchor": "def inputs("
+        },
+        {
+          "file": "scripts/semantic_refusal_source_residuals.py",
           "anchor": "def inputs("
         }
       ],
@@ -2174,6 +2182,10 @@
         {
           "file": "scripts/semantic_refusal_processes.py",
           "anchor": "PROBES ="
+        },
+        {
+          "file": "scripts/testdata/semantic-refusal-residual-driver/main.go",
+          "anchor": "func main("
         }
       ],
       "subcases": [
@@ -2990,6 +3002,10 @@
         {
           "file": "scripts/semantic_refusal_processes.py",
           "anchor": "PROBES ="
+        },
+        {
+          "file": "scripts/semantic_refusal_source_residuals.py",
+          "anchor": "def inputs("
         }
       ],
       "subcases": [
@@ -3157,6 +3173,10 @@
         {
           "file": "scripts/semantic_refusal_processes.py",
           "anchor": "PROBES ="
+        },
+        {
+          "file": "scripts/semantic_refusal_source_residuals.py",
+          "anchor": "def inputs("
         }
       ],
       "subcases": [
@@ -3758,6 +3778,10 @@
         {
           "file": "scripts/semantic_refusal_processes.py",
           "anchor": "PROBES ="
+        },
+        {
+          "file": "scripts/testdata/semantic-refusal-residual-driver/main.go",
+          "anchor": "func main("
         }
       ],
       "subcases": [
@@ -3848,6 +3872,10 @@
         {
           "file": "scripts/semantic_refusal_processes.py",
           "anchor": "PROBES ="
+        },
+        {
+          "file": "scripts/testdata/semantic-refusal-residual-driver/main.go",
+          "anchor": "func main("
         }
       ],
       "subcases": [
@@ -3929,6 +3957,10 @@
         {
           "file": "scripts/semantic_refusal_processes.py",
           "anchor": "PROBES ="
+        },
+        {
+          "file": "scripts/testdata/semantic-refusal-residual-driver/main.go",
+          "anchor": "func main("
         }
       ],
       "subcases": [
@@ -4010,6 +4042,10 @@
         {
           "file": "scripts/semantic_refusal_processes.py",
           "anchor": "PROBES ="
+        },
+        {
+          "file": "scripts/testdata/semantic-refusal-residual-driver/main.go",
+          "anchor": "func main("
         }
       ],
       "subcases": [
@@ -4091,6 +4127,10 @@
         {
           "file": "scripts/semantic_refusal_processes.py",
           "anchor": "PROBES ="
+        },
+        {
+          "file": "scripts/testdata/semantic-refusal-residual-driver/main.go",
+          "anchor": "func main("
         }
       ],
       "subcases": [

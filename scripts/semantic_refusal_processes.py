@@ -70,10 +70,10 @@ def joined_calls(text):
             yield line
 
 
-def process_observation(folder, name):
+def process_observation(folder, name, *, expected_errors=None, extra_fields=()):
     result = reference.load(folder/'driver.stdout')
-    reference.require(set(result) == {'case','calls'} and result['case'] == name, 'wrong Go process case')
-    wanted = PROBES[name][1]
+    reference.require(set(result) == {'case','calls',*extra_fields} and result['case'] == name, 'wrong Go process case')
+    wanted = PROBES[name][1] if expected_errors is None else expected_errors
     reference.require(len(result['calls']) == len(wanted), 'missing Go result/error call')
     for call, error in zip(result['calls'], wanted, strict=True):
         reference.require(set(call) == {'error','result'} and isinstance(call['error'],str), 'missing Go result/error fields')

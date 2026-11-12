@@ -9,12 +9,15 @@ import check_semantic_reference as reference
 from semantic_refusal_functions import ASSETS, PACKAGES
 
 
-DRIVER="""import sys,json
+DRIVER="""import sys,json,hashlib
 from pathlib import Path
 sys.path[:0]=[sys.argv[1],sys.argv[2]]
 import semantic_refusal_functions as fixture
 rows=fixture.rank_and_retreat()+fixture.identity_cases(Path(sys.argv[3])/'identity-inputs',Path(sys.argv[4]))
-print(json.dumps(dict(schema='cairn.semantic-function-observations/1',cases=rows,model_execution=False),allow_nan=False))
+print(json.dumps(dict(schema='cairn.semantic-function-observations/1',cases=rows,model_execution=False,
+ fixture_sha256=hashlib.sha256(Path(fixture.__file__).read_bytes()).hexdigest(),
+ actor_sources={name:hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest() for name,module in
+ [('scripts/semantic_rank.py',fixture.semantic_rank),('scripts/embedding_worker.py',fixture.embedding_worker)]}),allow_nan=False))
 """
 ROLE='S01b-function-residuals'
 MODE='rank-retreat-identity-no-model'
@@ -30,6 +33,16 @@ IDENTITY_IDS={*('F-IDENTITY/each-model-asset/'+v for v in ASSETS),
     *('F-IDENTITY/each-vector-setting-version/'+v+'-version' for v in PACKAGES),
     *('F-IDENTITY/each-vector-setting-version/'+v for v in ('prefix','window','stride','algorithm','batch-size')),
     'F-IDENTITY/path-move-stable/boundary','F-IDENTITY/timestamp-stable/boundary'}
+
+
+def producer_spec(value):
+    required=set(RANK_ERRORS)|IDENTITY_IDS
+    rows=[case for row in reference.failure_inventory(value)['cases'] for case in row['subcases'] if case['id'] in required]
+    reference.require(len(rows)==24,'function case catalogue projection changed')
+    encoded=json.dumps(sorted(rows,key=lambda r:r['id']),sort_keys=True,separators=(',',':')).encode()
+    return dict(fixture_sha256=reference.digest(reference.PROJECT/'scripts/semantic_refusal_functions.py'),
+                bootstrap_sha256=hashlib.sha256(DRIVER.encode()).hexdigest(),
+                case_inventory_sha256=hashlib.sha256(encoded).hexdigest())
 
 
 def validate_rows(value,root,rows,rank_identity,embed_identity):
@@ -110,6 +123,9 @@ def validate_rows(value,root,rows,rank_identity,embed_identity):
                     reference.require(previous['rank']!=current['rank'] and previous['embed']!=current['embed'],
                                       'consumed input did not change affected derivation')
             if change['kind'] in ('one-byte-asset','one-source-comment'):
+                reference.require(change['file']==identifier.rsplit('/',1)[1] and
+                    change['kind']==('one-byte-asset' if '/each-model-asset/' in identifier else 'one-source-comment'),
+                    'identity case mutated another required input')
                 reference.require([name for name in change['before'] if change['before'][name]!=change['after'][name]]==[change['file']],
                                   'identity control changed more than one input')
                 first=reference.pinned(root/'identity-inputs',change['retained_before'],change['before'][change['file']])
@@ -140,6 +156,7 @@ def collect(args,value):
     report=dict(schema='cairn.semantic-function-refusals/1',ledger_sha256=value['failure_ledger']['sha256'],
         sources=value['source_sha256'],tool_sha256=tools,python_sha256=value['python_sha256'],
         runtime_binding_sha256=value['retained']['runtime-binding']['sha256'],model_execution=False,
+        producer=producer_spec(value),
         files_sha256={str(p.relative_to(output)):reference.digest(p) for p in output.rglob('*')
                       if p.is_file() and not p.is_symlink()},
         parameters=dict(project=str(reference.PROJECT),python_home=str(args.python_home),site=str(args.site),assets=str(args.assets)))
@@ -151,11 +168,14 @@ def verify(value,evidence_root,path,sha):
     reference.require(sha and reference.digest(path)==sha,'pinned function report required')
     report=reference.load(path)
     reference.require(set(report)=={'schema','ledger_sha256','sources','tool_sha256','python_sha256',
-        'runtime_binding_sha256','model_execution','files_sha256','parameters'} and
+        'runtime_binding_sha256','model_execution','files_sha256','parameters','producer'} and
         report['schema']=='cairn.semantic-function-refusals/1' and report['model_execution'] is False,
         'unsupported function/model acceptance claim')
-    reference.require(report['ledger_sha256']==value['failure_ledger']['sha256'] and
-        report['sources']==value['source_sha256'] and report['tool_sha256']==reference.tool_pins() and
+    # The fixture and literal bootstrap execute in the child. The full validation-tool
+    # snapshot is retained as provenance; unrelated validator/test edits do not replay it.
+    reference.require(report['producer']==producer_spec(value) and
+        report['tool_sha256'].get('semantic_refusal_functions.py')==report['producer']['fixture_sha256'] and
+        report['sources']==value['source_sha256'] and
         report['python_sha256']==value['python_sha256'] and
         report['runtime_binding_sha256']==value['retained']['runtime-binding']['sha256'],'function source/runtime/tool binding changed')
     for rel,pin in report['files_sha256'].items():reference.pinned(path.parent,rel,pin)
@@ -163,9 +183,14 @@ def verify(value,evidence_root,path,sha):
     reference.require(required<=set(report['files_sha256']),'unsealed function disposition artifact')
     data=reference.load(path.parent/'fixture.stdout');result=reference.load(path.parent/'result.json')
     cleanup=reference.load(path.parent/'cleanup.json');proof=reference.load(path.parent/'isolation-proof.json')
-    reference.require(set(data)=={'schema','cases','model_execution'} and data['schema']=='cairn.semantic-function-observations/1' and
-        data['model_execution'] is False and result['exit_code']==0,'function producer did not complete its declared fixture')
+    reference.require(set(data)=={'schema','cases','model_execution','fixture_sha256','actor_sources'} and
+        data['schema']=='cairn.semantic-function-observations/1' and data['model_execution'] is False and
+        data['fixture_sha256']==report['producer']['fixture_sha256'] and
+        data['actor_sources']=={name:value['source_sha256'][name] for name in ('scripts/semantic_rank.py','scripts/embedding_worker.py')} and
+        type(result['exit_code']) is int and result['exit_code']==0,'function producer did not complete its declared fixture')
     invocation=result['invocation'];params=report['parameters']
+    reference.require(set(params)=={'project','python_home','site','assets'} and all(Path(v).is_absolute() for v in params.values()),
+                      'invalid function producer paths')
     expected=[str(Path(params['python_home'])/'bin/python3.11'),'-I','-S','-B','-c',DRIVER,
               str(Path(params['project'])/'scripts'),params['site'],str(path.parent),params['assets']]
     reference.require(invocation['role']==ROLE and invocation['mode']==MODE and type(invocation['pid']) is int and invocation['pid']>1 and
@@ -181,7 +206,8 @@ def verify(value,evidence_root,path,sha):
     workers=[w for w in runtime['processes'] if w['launcher_pid']==invocation['pid'] and
         w['launcher_start_ticks']==invocation['start_ticks'] and w['executable_sha256']==value['python_sha256'] and
         any('numpy/_core/_multiarray_umath' in lib['path'] for lib in w['libraries'])]
-    reference.require(len(workers)==1 and runtime['errors']==[] and runtime['model_workers']==[] and
+    reference.require(len(workers)==1 and type(workers[0]['pid']) is int and workers[0]['pid']>1 and
+        runtime['errors']==[] and runtime['model_workers']==[] and
         workers[0]['environment_matches_contract'] is True,'actual NumPy fixture binding missing or model scope crossed')
     binding=reference.load(reference.pinned(path.parent,'runtime-binding.json',report['runtime_binding_sha256']))
     libraries={(str(Path(params['site'])/row['relative']),row['sha256']) for row in binding['frozen_numeric_native_files']
