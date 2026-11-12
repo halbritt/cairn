@@ -92,8 +92,13 @@ class ObserverLockProbeTests(unittest.TestCase):
             result = invoke()
             calls = copy.deepcopy(list(case.calls))
             trace = [json.loads(line) for line in case.trace.read_bytes().splitlines()]
+            launcher = Path(result.args[0])
+            launcher_raw = launcher.read_bytes()
             rows.append(dict(side=side, event=json.loads(raw)['hook_event_name'],
                              input=raw.decode(), input_sha256=ordinary.sha(raw),
+                             command=result.args, cwd=str(case.f.root),
+                             launcher=launcher_raw.decode(), launcher_sha256=ordinary.sha(launcher_raw),
+                             launcher_mode=launcher.stat().st_mode & 0o777,
                              exit=result.returncode, stdout=result.stdout,
                              stderr=result.stderr, files=self.files(case), calls=calls,
                              trace=trace, locks=list(case.report_locks)))
