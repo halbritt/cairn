@@ -1,5 +1,7 @@
 """Actual H13 processes and physical observer probes, separate from copy effects."""
+import contextlib
 import copy
+import io
 import fcntl
 import json
 import os
@@ -241,6 +243,47 @@ class ObserverLockProbeTests(unittest.TestCase):
         for kind in ('hermes', 'ambient'):
             with self.subTest(kind=kind):
                 self.exercise(kind, contention=True, event='UserPromptSubmit')
+
+
+    def test_prelaunch_source_assertion_keeps_raw_diagnostic(self):
+        for kind, event in (('hermes', 'SessionStart'), ('ambient', 'UserPromptSubmit')):
+            with self.subTest(kind=kind, event=event):
+                case = self.fixture(kind)
+                case.source_repin = False
+                output = io.StringIO()
+                failure = None
+                try:
+                    with mock.patch.object(self, 'fixture', return_value=case), contextlib.redirect_stdout(output):
+                        self.exercise(kind, event=event)
+                except (AssertionError, IndexError) as exc:
+                    failure = exc
+                    frames = traceback.walk_tb(exc.__traceback__)
+                    original = next(frame.f_locals['error'] for frame, _ in frames
+                                    if frame.f_code is type(self).exercise.__code__)
+                    print('OBSERVER_PRELAUNCH_CONTROL='+json.dumps(dict(
+                        kind=kind, event=event, failure_type=type(exc).__name__,
+                        failure_message=str(exc), original_assertion=original)), flush=True)
+                finally:
+                    print(output.getvalue(), end='', flush=True)
+                if isinstance(failure, IndexError):
+                    raise failure.with_traceback(failure.__traceback__)
+                self.assertIsInstance(failure, AssertionError)
+                self.assertEqual(str(failure), '0 != 2')
+                records = [json.loads(line.split('=', 1)[1]) for line in output.getvalue().splitlines()
+                           if line.startswith('OBSERVER_RAW_PAIR=')]
+                self.assertEqual(len(records), 1)
+                record = records[0]
+                self.assertEqual(record['rows'], [])
+                self.assertEqual(record['event'], event)
+                self.assertEqual(record['physical'], [])
+                self.assertEqual(record['recorded'], [])
+                self.assertEqual(record['captured_types'], [])
+                self.assertEqual(record['future_before'], [0, 0])
+                self.assertEqual(record['future_after'], [0, 0])
+                self.assertEqual(record['original_assertion']['message'], 'False is not true')
+                self.assertTrue(any(Path(frame['file']).name == 'test_f02_opencode_ambient.py' and
+                                    frame['text'] == 'self.assertTrue(self.source_repin)'
+                                    for frame in record['original_assertion']['frames']))
 
 
 if __name__ == '__main__':
