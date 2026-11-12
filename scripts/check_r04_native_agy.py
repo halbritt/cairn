@@ -311,27 +311,39 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             rows = selection[2]['rows']
 
             def finished():
-                trace = client.child.trace.read_bytes()[offset:].decode()
+                captured = client.child.trace.read_bytes()
+                line_end = captured.rfind(b'\n') + 1
+                if line_end < offset:
+                    return None
+                captured = captured[:line_end]
+                all_trace = captured.decode()
+                trace = captured[offset:].decode()
                 try:
-                    executions = list(successful_execs(exec_lines(trace)))
-                except AssertionError as error:
-                    if str(error) == 'Unfinished execve evidence':
+                    executions = list(successful_execs(exec_lines(all_trace, start_offset=offset)))
+                    found = []
+                    for row in rows:
+                        issued = [entry for entry in executions if entry['path'] == row['argv'][0] and entry['argv'] == row['argv']]
+                        if not issued or not exits(trace, issued[0]['pid']):
+                            return None
+                        self.assertEqual(len(issued), 1, (label, row, issued))
+                        found.append((row, issued[0]))
+                    native_threads = thread_pids(all_trace, client.child.native_pid)
+                    produced = hook_writes(all_trace, native_threads, start_offset=offset)
+                    if len(produced) < 2:
+                        # A completed child alone does not prove that strace
+                        # has finished reporting the native producer's write.
                         return None
+                    self.assertEqual([record['payload']['hookEventName'] for record in produced], ['PreInvocation', 'Stop'])
+                except AssertionError:
+                    (output / (label + '.trace')).write_bytes(captured[offset:])
+                    (output / (label + '.prefix.trace')).write_bytes(captured)
                     raise
-                found = []
-                for row in rows:
-                    issued = [entry for entry in executions if entry['path'] == row['argv'][0] and entry['argv'] == row['argv']]
-                    if not issued or not exits(trace, issued[0]['pid']):
-                        return None
-                    self.assertEqual(len(issued), 1, (label, row, issued))
-                    found.append((row, issued[0]))
-                return trace, executions, found
+                return trace, all_trace, executions, found, native_threads, produced
 
-            trace, executions, found = wait_for(finished, 'synchronous native callback exits')
-            all_trace = client.child.trace.read_text()
-            native_threads = thread_pids(all_trace, client.child.native_pid)
-            produced = hook_writes(trace, native_threads)
-            self.assertEqual([record['payload']['hookEventName'] for record in produced], ['PreInvocation', 'Stop'])
+            (trace, all_trace, executions, found, native_threads,
+             produced) = wait_for(finished, 'synchronous native callback exits and producer writes')
+            # Retain the exact analysis window even if a later assertion fails.
+            (output / (label + '.trace')).write_text(trace)
             for record in produced:
                 self.assertEqual(record['payload']['conversationId'], client.identity)
                 self.assertEqual(record['payload']['workspacePaths'], [str(client.work)])
@@ -351,7 +363,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                            entry['path'] == vector[0] and entry['argv'] == vector[:-1] + row['argv'][1:]]
                 self.assertEqual(len(program), 1, (label, row, program))
                 self.assertEqual(exits(trace, issued['pid']), ['exited with ' + ('1' if refusal else '0')])
-                threads = thread_pids(trace, issued['pid'])
+                threads = thread_pids(all_trace, issued['pid'])
                 raw = io_bytes(trace, threads, 0, 'read')
                 stdout = io_bytes(trace, threads, 1, 'write')
                 stderr = io_bytes(trace, threads, 2, 'write')
@@ -425,7 +437,6 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 if client.identity == target.identity:
                     self.assertIn('R04 fixture fresh-a', serialized)
             self.assertEqual(provider.failures, [])
-            (output / (label + '.trace')).write_text(trace)
             observations.append(dict(case=label, native_session_id=client.identity, native_pid=client.child.native_pid,
                 result=result, selection=selection[0]['selection'], reached=reached, refusal=refusal,
                 native_hook_writes=produced,

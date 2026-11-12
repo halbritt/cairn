@@ -10,15 +10,25 @@ def decoded_strings(line):
                   lambda match: json.dumps(ast.literal_eval(match[0]).encode('latin1').decode()), line)
 
 
-def exec_lines(trace):
+def exec_lines(trace, *, start_offset=None):
+    if start_offset is not None:
+        return '\n'.join(owner + ' ' + decoded_strings(event)
+                         for owner, _, event in calls(trace, {'execve'}, complete=False, start_offset=start_offset))
     return '\n'.join(decoded_strings(line) for line in trace.splitlines()
                      if 'execve(' in line or '<... execve resumed>' in line)
 
 
-def calls(trace, names, *, pid=None, complete=True):
+def calls(trace, names, *, pid=None, complete=True, start_offset=0):
+    """Pair in the full captured prefix; select by the syscall's start byte."""
+    if not isinstance(start_offset, int) or start_offset < 0 or start_offset > len(trace.encode()):
+        raise AssertionError('Trace window outside captured prefix')
     pending = {}
     owners = None if pid is None else ({str(pid)} if isinstance(pid, (str, int)) else {str(item) for item in pid})
-    for line in trace.splitlines():
+    position = 0
+    for raw_line in trace.splitlines(keepends=True):
+        call_start = position
+        position += len(raw_line.encode())
+        line = raw_line.rstrip('\r\n')
         match = re.match(r'^(\d+)\s+', line)
         if not match or (owners is not None and match[1] not in owners):
             continue
@@ -30,7 +40,8 @@ def calls(trace, names, *, pid=None, complete=True):
                 continue
             if owner not in pending or pending[owner][0] != name:
                 raise AssertionError('Unpaired kernel syscall resume')
-            event = pending.pop(owner)[1] + suffix
+            _, head, call_start = pending.pop(owner)
+            event = head + suffix
         else:
             start = re.match(r'(\w+)\(', event)
             if not start or start[1] not in names:
@@ -39,9 +50,10 @@ def calls(trace, names, *, pid=None, complete=True):
             if event.endswith(' <unfinished ...>'):
                 if owner in pending:
                     raise AssertionError('Overlapping unfinished kernel calls')
-                pending[owner] = name, event.removesuffix(' <unfinished ...>')
+                pending[owner] = name, event.removesuffix(' <unfinished ...>'), call_start
                 continue
-        yield owner, name, event
+        if call_start >= start_offset:
+            yield owner, name, event
     if complete and pending:
         raise AssertionError('Unfinished kernel syscall evidence')
 
@@ -80,9 +92,9 @@ def thread_pids(trace, leader):
         members = expanded
 
 
-def hook_writes(trace, native_threads):
+def hook_writes(trace, native_threads, *, start_offset=0):
     records = []
-    for owner, _, event in calls(trace, {'write'}, pid=native_threads, complete=False):
+    for owner, _, event in calls(trace, {'write'}, pid=native_threads, complete=False, start_offset=start_offset):
         match = re.match(r'write\((\d+), ("(?:[^"\\]|\\.)*")(\.\.\.)?, \d+\)\s+= (\d+)$', event)
         if not match:
             continue

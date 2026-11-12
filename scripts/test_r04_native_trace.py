@@ -7,7 +7,7 @@ from unittest import mock
 
 from check_r04_native_opencode import successful_execs
 from check_r04_native_agy import TracedProcess
-from r04_agy_trace import exec_lines, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, opened_paths, thread_pids, walked_path
+from r04_agy_trace import calls, exec_lines, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, opened_paths, thread_pids, walked_path
 
 
 class NativeTraceTests(unittest.TestCase):
@@ -43,6 +43,52 @@ class NativeTraceTests(unittest.TestCase):
 
 
 class AgyTraceTests(unittest.TestCase):
+    def test_window_pairs_earlier_calls_without_qualifying_their_events(self):
+        before = '7 clone(child_stack=NULL, flags=CLONE_VM|CLONE_THREAD <unfinished ...>\n'
+        after = ('7 <... clone resumed>) = 8\n'
+                 '20 clone(child_stack=NULL, flags=CLONE_VM|CLONE_THREAD) = 21\n')
+        prefix = before + after
+        self.assertEqual(list(calls(prefix, {'clone'}, start_offset=len(before.encode()))),
+                         [('20', 'clone', 'clone(child_stack=NULL, flags=CLONE_VM|CLONE_THREAD) = 21')])
+        self.assertEqual(thread_pids(prefix, '20'), ['20', '21'])
+        with self.assertRaisesRegex(AssertionError, 'Unpaired kernel syscall resume'):
+            thread_pids(after, '20')
+
+    def test_hook_window_uses_call_start_and_preserves_truncation_refusal(self):
+        old = json.dumps(dict(conversationId='old', workspacePaths=[], hookEventName='Stop'))
+        new = json.dumps(dict(conversationId='new', workspacePaths=[], hookEventName='Stop'))
+        before = f'7 write(8, {json.dumps(old)}, {len(old)} <unfinished ...>\n'
+        after = (f'7 <... write resumed>) = {len(old)}\n'
+                 f'7 write(8, {json.dumps(new)}, {len(new)}) = {len(new)}\n')
+        prefix = before + after
+        records = hook_writes(prefix, ['7'], start_offset=len(before.encode()))
+        self.assertEqual([record['payload']['conversationId'] for record in records], ['new'])
+        self.assertEqual(len(hook_writes(prefix, ['7'])), 2)
+        truncated = f'7 write(8, {json.dumps(new)}..., 500) = 500\n'
+        with self.assertRaisesRegex(AssertionError, 'Truncated native hook write'):
+            hook_writes(prefix + truncated, ['7'], start_offset=len(prefix.encode()))
+
+    def test_windowed_exec_keeps_default_pairing_and_refuses_true_orphans(self):
+        before = '7 execve("/old", ["/old"], 0x1 <unfinished ...>\n'
+        after = ('7 <... execve resumed>) = 0\n'
+                 '9 execve("/new", ["/new"], 0x1) = 0\n')
+        prefix = before + after
+        self.assertEqual(list(successful_execs(exec_lines(prefix, start_offset=len(before.encode())))),
+                         [dict(pid='9', path='/new', argv=['/new'])])
+        self.assertEqual(len(list(successful_execs(exec_lines(prefix)))), 2)
+        for names, trace in [({'execve'}, after), ({'write'}, '7 <... write resumed>) = 3\n')]:
+            with self.subTest(names=names), self.assertRaisesRegex(AssertionError, 'Unpaired kernel syscall resume'):
+                list(calls(trace, names, complete=False, start_offset=1))
+
+    def test_window_offsets_count_bytes_and_refuse_outside_prefix(self):
+        before = '# café\n'
+        prefix = before + '7 read(0, "x", 1) = 1\n'
+        self.assertEqual(list(calls(prefix, {'read'}, start_offset=len(before.encode()))),
+                         [('7', 'read', 'read(0, "x", 1) = 1')])
+        for offset in (-1, len(prefix.encode()) + 1):
+            with self.subTest(offset=offset), self.assertRaisesRegex(AssertionError, 'Trace window outside captured prefix'):
+                list(calls(prefix, {'read'}, start_offset=offset))
+
     def test_truncated_native_hook_write_refuses_before_json_decode(self):
         prefix = '{"conversationId":"id","hookEventName":"Stop",'
         trace = f'7 write(8, {json.dumps(prefix)}..., 100) = 100\n'

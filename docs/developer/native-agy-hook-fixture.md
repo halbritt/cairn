@@ -38,6 +38,16 @@ callback frame is retained for those cases. History is read from the native
 `transcriptPath` after all clients close. The report distinguishes that native
 home from the fixture's Cairn binding account directory.
 
+The captured prefix ends on a complete trace line. Per-prompt windows can begin
+between a syscall's unfinished and resumed lines.
+The decoder therefore pairs records in one full captured prefix before
+selecting execs and native writes by their original start byte position. Thread
+ancestry also uses the full prefix. A call that began before the window is not
+credited to the current prompt. Genuine unpaired resumes still refuse, and
+truncated selected hook writes still refuse. The snapshot must contain the
+completed producer writes as well as the hook exits. Each analysis window is
+retained before later assertions; a pairing assertion also retains its prefix.
+
 Missing and corrupt receipts both emit the same public compatibility-preflight
 diagnostic and exit 1. The fixture pins that diagnostic, requires no stdout,
 and checks zero API calls and unchanged lifecycle state. It also reconstructs
