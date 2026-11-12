@@ -7,6 +7,8 @@ mid-rebuild restarts; --real-case3 selects worker death and earlier caller deadl
 --real-case5 holds one across actual ordinary deletion or audited forgetting.
 --real-case6 exercises retained real failures, lease ownership and retry backlog.
 --real-case7 distinguishes ready partial coverage, unavailability and cold queries.
+--real-case8 fences competing collection writers in both transition directions.
+--case8-controls checks that controller with labelled non-model protocol workers.
 Every build,
 worker, Go API, disposable PostgreSQL cluster and assertion runs inside the
 wrapper; the host transports data. Local execution does not close full S-05.
@@ -32,6 +34,7 @@ import hashlib,json,os,pathlib,subprocess,sys,tarfile,tempfile,traceback
 root=pathlib.Path(tempfile.mkdtemp(prefix='semantic-transition-',dir='/tmp'))
 real=__REAL_CASE1__
 real_case=__REAL_CASE__
+case8_controls=__CASE8_CONTROLS__
 artifacts=root/'artifacts';artifacts.mkdir(mode=0o700)
 binary=root/'semantic.test';cli=root/'cairn'
 env=dict(os.environ,CC='/usr/bin/gcc',GOMAXPROCS='2',GOFLAGS='-p=2',GOTELEMETRY='off',ORT_DISABLE_TELEMETRY='1',TMPDIR='/tmp')
@@ -69,6 +72,10 @@ try:
   command=['go','tool','test2json','-t','-p','semantic',str(binary),'-test.v','-test.run=^'+test_name+'$','-test.timeout=900s']
   commands.append(dict(argv=command,log='tests.jsonl'))
   module.run_observed(command,selected,artifacts,retained,python,rust)
+ elif case8_controls:
+  selected['CAIRN_TRANSITION_CASE8_CONTROLS']='1'
+  test_name='TestSemanticCompetingControlSequence'
+  run(['go','tool','test2json','-t','-p','semantic',str(binary),'-test.v','-test.run=^'+test_name+'$','-test.timeout=180s'],'tests.jsonl',timeout=210,selected_env=selected)
  else:
   run(['go','tool','test2json','-t','-p','semantic',str(binary),'-test.v','-test.run=^TestSemanticTransition','-test.timeout=120s'],'tests.jsonl',timeout=150,selected_env=selected)
  if input_inventory()!=source_inputs:raise RuntimeError('source changed during build/fixture execution')
@@ -77,12 +84,13 @@ try:
  failed=[e.get('Test','package') for e in events if e['Action']=='fail']
  skipped=[e.get('Test','package') for e in events if e['Action']=='skip']
  matrix=[name for name in passed if name.startswith('TestSemanticTransitionDeterministicMatrix/') and name.count('/')==1]
- real_subcases={1:[],2:['python','rust'],3:['python_death','python_caller_deadline','rust_death','rust_caller_deadline'],4:['python','rust'],5:['python_delete','python_forget','rust_delete','rust_forget'],6:['python','rust'],7:['python','rust']}
+ real_subcases={1:[],2:['python','rust'],3:['python_death','python_caller_deadline','rust_death','rust_caller_deadline'],4:['python','rust'],5:['python_delete','python_forget','rust_delete','rust_forget'],6:['python','rust'],7:['python','rust'],8:['python_to_rust','rust_to_python']}
  expected_real=[test_name]+[test_name+'/'+name for name in real_subcases[real_case]] if real else []
- if failed or skipped or (not real and (len(matrix)!=10 or len(passed)!=32)) or (real and sorted(passed)!=sorted(expected_real)):raise RuntimeError('incomplete selected transition case/matrix')
+ expected_controls=[test_name,test_name+'/python_to_rust',test_name+'/rust_to_python'] if case8_controls else []
+ if failed or skipped or (not real and not case8_controls and (len(matrix)!=10 or len(passed)!=32)) or (real and sorted(passed)!=sorted(expected_real)) or (case8_controls and sorted(passed)!=sorted(expected_controls)):raise RuntimeError('incomplete selected transition case/matrix')
  report=dict(schema='cairn.semantic-transition-fixture/1',kind='deterministic-protocol-workers-real-go-and-postgresql',matrix_cases=matrix,passed=passed,failed=failed,skipped=skipped,real_worker_acceptance='not executed by deterministic run; full S05/R01/fleet acceptance remains open',binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),api_sha256=hashlib.sha256(cli.read_bytes()).hexdigest())
  if real:
-  report.update(kind='local-real-worker-transition-case'+str(real_case),matrix_cases={1:['full_forward_reverse_rebuild'],2:['mid_rebuild_restart/python','mid_rebuild_restart/rust'],3:real_subcases[3],4:['edit_during_embedding/python','edit_during_embedding/rust'],5:real_subcases[5],6:['expired_lease_retry_backlog/python','expired_lease_retry_backlog/rust'],7:['partial_versus_unavailable/python','partial_versus_unavailable/rust']}[real_case],real_worker_acceptance='local case'+str(real_case)+' evidence only; full S05/R01/fleet acceptance remains open')
+  report.update(kind='local-real-worker-transition-case'+str(real_case),matrix_cases={1:['full_forward_reverse_rebuild'],2:['mid_rebuild_restart/python','mid_rebuild_restart/rust'],3:real_subcases[3],4:['edit_during_embedding/python','edit_during_embedding/rust'],5:real_subcases[5],6:['expired_lease_retry_backlog/python','expired_lease_retry_backlog/rust'],7:['partial_versus_unavailable/python','partial_versus_unavailable/rust'],8:real_subcases[8]}[real_case],real_worker_acceptance='local case'+str(real_case)+' evidence only; full S05/R01/fleet acceptance remains open')
  if real_case==7:
   required_phases=['seed_partial','startup_unavailable','ready_partial','killed_query_unavailable','cold_query_restart','restarted_owner_warm_control','full_recovery']
   proof=json.loads((artifacts/'real-case7.json').read_text())
@@ -90,6 +98,15 @@ try:
   for case in proof['cases']:
    if case.get('status')!='PASS' or case.get('test_failed') or [phase['name'] for phase in case['phases']]!=required_phases or any(phase.get('status')!='PASS' for phase in case['phases']):raise RuntimeError('incomplete case7 declared phases')
   report['required_real_phases']=required_phases
+ if real_case==8 or case8_controls:
+  required_phases=['old_owners_results_held','both_active_refused','other_collection_active_refused','inactive_restartable_refused','old_generation_joined_fence','retained_jobs_due_advanced','selected_identity_verified','selected_generation_ready','selected_generation_complete','selected_generation_joined_fence']
+  proof=json.loads((artifacts/('real-case8.json' if real else 'case8-controls.json')).read_text())
+  if proof['real_workers']!=real or proof['required_phases']!=required_phases or [case['direction'] for case in proof['cases']]!=['python_to_rust','rust_to_python']:raise RuntimeError('incomplete case8 direction/phase contract')
+  if len(proof['initial_population'])!=3 or len(proof['final_population'])!=6 or not proof['same_database']:raise RuntimeError('incomplete case8 shared database/source population')
+  for case,eligible in zip(proof['cases'],[3,6],strict=True):
+   if case['database']!=proof['same_database'] or case['eligible_sources']!=eligible or case.get('status')!='PASS' or case.get('test_failed') or [phase['name'] for phase in case['phases']]!=required_phases or any(phase.get('status')!='PASS' for phase in case['phases']):raise RuntimeError('incomplete case8 declared phases')
+  report['required_case8_phases']=required_phases
+  if case8_controls:report.update(kind='non-model-case8-controller-real-go-and-postgresql',matrix_cases=['python_to_rust','rust_to_python'],real_worker_acceptance='no real model executed; controller/SQL protocol fixture only')
  (artifacts/'report.json').write_text(json.dumps(report,indent=2)+'\n');code=0
 except BaseException:
  (artifacts/'failure.txt').write_text(traceback.format_exc())
@@ -116,17 +133,19 @@ def main():
     cases.add_argument('--real-case5', action='store_true', help='explicit local Python and Rust delete/forget-during-embedding cases')
     cases.add_argument('--real-case6', action='store_true', help='explicit local Python and Rust expired-lease/retry-backlog cases')
     cases.add_argument('--real-case7', action='store_true', help='explicit local Python and Rust partial/unavailable/cold-query cases')
+    cases.add_argument('--real-case8', action='store_true', help='explicit local competing writers and inactive definitions in both directions')
+    cases.add_argument('--case8-controls', action='store_true', help='non-model case8 controller/SQL checks with explicit protocol workers')
     parser.add_argument('--python-selection', type=Path, help='qualified-selection directory containing stage and candidate.json')
     parser.add_argument('--rust-fixtures', type=Path, help='retained Rust fixtures containing stage and stage-result.json')
     args = parser.parse_args()
-    real_case = 1 if args.real_case1 else 2 if args.real_case2 else 3 if args.real_case3 else 4 if args.real_case4 else 5 if args.real_case5 else 6 if args.real_case6 else 7 if args.real_case7 else 0
+    real_case = 1 if args.real_case1 else 2 if args.real_case2 else 3 if args.real_case3 else 4 if args.real_case4 else 5 if args.real_case5 else 6 if args.real_case6 else 7 if args.real_case7 else 8 if args.real_case8 else 0
     if real_case and (args.python_selection is None or args.rust_fixtures is None):
         parser.error('real cases require both exact retained selections')
     output = args.artifact_dir.resolve()
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     wrapper = ROOT / 'scripts/test_hybrid_runtime_operations.py'
     wrapper_sha = hashlib.sha256(wrapper.read_bytes()).hexdigest()
-    if real_case and wrapper_sha != '937cd3e2cd3f379d4b7e818e012747c5c2914304bc47f9e1b54b860858cc8578':
+    if (real_case or args.case8_controls) and wrapper_sha != '937cd3e2cd3f379d4b7e818e012747c5c2914304bc47f9e1b54b860858cc8578':
         raise SystemExit('common wrapper differs from the accepted execution pin')
     inputs = {'common_wrapper_sha256': wrapper_sha,
               'source_files': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -160,7 +179,7 @@ def main():
         with os.fdopen(read_fd, 'rb') as stream:
             received.append(stream.read(1048576))
 
-    inner = INNER.replace('__REAL_CASE1__', repr(bool(real_case))).replace('__REAL_CASE__', str(real_case))
+    inner = INNER.replace('__REAL_CASE1__', repr(bool(real_case))).replace('__REAL_CASE__', str(real_case)).replace('__CASE8_CONTROLS__', repr(args.case8_controls))
     argv = isolation.namespace_argv(ROOT, ['/usr/bin/python3', '-I', '-B', '-c', inner],
                                     spec=sandbox, report_fd=write_fd)
     (output / 'command.json').write_text(json.dumps({'argv': argv, 'spec': sandbox}, indent=2))
@@ -180,18 +199,21 @@ def main():
         except subprocess.TimeoutExpired:
             if child.pid <= 1:
                 raise RuntimeError('refusing process-group control for PID <= 1')
-            if real_case >= 2:
+            if real_case >= 2 or args.case8_controls:
                 child.terminate()
             else:
                 os.killpg(child.pid, signal.SIGTERM)
             try:
                 child.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                if real_case >= 2:
+                if real_case >= 2 or args.case8_controls:
                     child.kill()
                 else:
                     os.killpg(child.pid, signal.SIGKILL)
-                child.wait()
+                if real_case == 8 or args.case8_controls:
+                    child.wait(timeout=2)
+                else:
+                    child.wait()
             code = 124
         finally:
             reader.join(timeout=5)
@@ -203,7 +225,8 @@ def main():
     (output / 'result.json').write_text(json.dumps({'returncode': code, 'isolation_passed': report.get('passed')}))
     if code or not report.get('passed'):
         raise SystemExit('transition fixture failed; retained artifacts: ' + str(output))
-    print(('S05 local real case'+str(real_case)+' passed; full transition qualification remains open. ' if real_case else
+    print(('S05 non-model case8 controller passed; no real-worker qualification. ' if args.case8_controls else
+           'S05 local real case'+str(real_case)+' passed; full transition qualification remains open. ' if real_case else
            'S05 deterministic transition fixtures passed; full real-worker qualification remains open. ') + str(output))
 
 

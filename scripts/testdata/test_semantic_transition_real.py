@@ -298,6 +298,15 @@ class SamplerFailureCustodyTests(unittest.TestCase):
             self.assertTrue(all(timeout is not None and 0 < timeout <= 10 for timeout in child.waits))
             self.assertEqual(groups, [])
 
+    def test_case8_sampler_failure_uses_only_owned_child_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            child, error, _, groups, _ = self.invoke(Path(directory), case='8', wait_timeout=True)
+            self.assertIn('SAMPLER_PRIMARY_SENTINEL', str(error))
+            self.assertIn('TimeoutExpired', str(error))
+            self.assertEqual((child.terminated, child.killed), (1, 1))
+            self.assertEqual(groups, [])
+            self.assertTrue(all(timeout is not None and 0 < timeout <= 10 for timeout in child.waits))
+
     def test_error_arriving_as_child_exits_is_retained_and_refuses(self):
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)

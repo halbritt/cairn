@@ -281,7 +281,7 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
         # inferred host PID or an unverified process group.
         owned_child()
         write_diagnostic('sampler-before-cleanup.json', snapshot())
-        if env.get('CAIRN_TRANSITION_REAL_CASE') in ('2', '3', '4', '5', '6', '7'):
+        if env.get('CAIRN_TRANSITION_REAL_CASE') in ('2', '3', '4', '5', '6', '7', '8'):
             child.terminate()
         else:
             if os.getpgid(child.pid) != child.pid:

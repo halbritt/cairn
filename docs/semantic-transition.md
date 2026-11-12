@@ -577,6 +577,75 @@ The reviewed custody and shutdown behavior retains these limits:
 - R-6: The sampler stops after its first exception, so its error ordinal stays
   at one. Later problems are recorded as cleanup or diagnostic-write errors.
 
+## Explicit local real-worker case 8
+
+```sh
+mise run host:exec --timeout 25m --weight 1 -- \
+  python3 -I -B scripts/check_semantic_transition.py --real-case8 \
+  --artifact-dir /absolute/new-local-case8-artifacts \
+  --python-selection /absolute/s04r/qualified-selection \
+  --rust-fixtures /absolute/retained-rust/observed/fixtures
+```
+
+The selected Go root is `TestSemanticRealTransitionCase8`, with exactly
+`python_to_rust` and `rust_to_python` subcases and no failures or skips. They
+share one disposable database. Three ordinary sources span three collections
+in the forward direction. After its final joined fence, three more ordinary
+sources are created through the store, one per collection, to give the reverse
+writers new work. The reverse denominator is six; every earlier source remains
+eligible and its complete current and historical rows must stay unchanged.
+
+Each direction records ten ordered phases: `old_owners_results_held`,
+`both_active_refused`, `other_collection_active_refused`,
+`inactive_restartable_refused`, `old_generation_joined_fence`,
+`retained_jobs_due_advanced`, `selected_identity_verified`,
+`selected_generation_ready`, `selected_generation_complete` and
+`selected_generation_joined_fence`.
+
+The closed fixture registers eight concrete API start definitions before either
+direction: two old owners, an inactive alternate and a selected next owner for
+each direction. Physical configurations, CLI and canonical launcher digests,
+database identity, collection configuration, activation state and owner/child
+PIDs are retained. Unknown, omitted or changed definitions refuse. Inactive
+activation is a test-owned start method with a concrete configuration, not
+evidence of an installed service unit. Collection configuration does not scope
+the shared queue. This inventory certifies only the closed local fixture.
+
+Both actual old API owners reach document publication through `StartIndex` and
+real canonical workers. A private advisory-lock trigger holds their validated
+real results immediately before the document INSERT. The fixture observes both
+blocked database calls, distinct live leases and each owner's full worker
+samples. The barrier is after the worker reply; it does not identify an
+interruption inside inference. Disabling, stopping and joining the first owner
+must still refuse for the second collection's owner. After both are joined,
+the inactive restartable alternate must refuse separately. Only disabling every
+definition, joining API owners and calls, and verifying all their workers are
+reaped permits a new generation. Signals target created positive owner PIDs.
+
+Retained jobs remain in the denominator. After the joined fence, the fixture
+may make only future `lease_until` and `retry_at` timestamps due, recording full
+OLD/NEW rows separately from product writes. It preserves lease IDs, attempts
+and every other job field; it never clears or reinserts jobs. The selected
+generation performs the normal rebuild. Publication audits require exactly one
+selected model/version/body-hash publication per current source and no old
+owner publication after that owner's fence. Python's exact retained rank and
+embed identities are checked again on reverse selection.
+
+Final joined completion uses the consistent database-wide passage/vector and
+source checker. All current/history/producer rows remain exact within each
+direction; this writer-only fixture makes no compiler exposures and requires
+zero `record_use` rows. Every native root needs its own full image/environment
+sample; case 7's early-startup observation remains case 7 only. The sampler
+diagnostic limits above, worker stdout prefix limits and unchanged production
+deadlines apply. A sampler exception stops the case with its retained record.
+
+For a separate non-model control-flow check, `--case8-controls` runs
+`TestSemanticCompetingControlSequence` with labelled deterministic protocol
+workers through the same Go API and PostgreSQL sequence. It supplies no native
+worker qualification and does not change the default ten-case/32-entry matrix.
+Case 8 does not certify installed inventory, production activation, general
+availability, full S-05, or the remaining cases and acceptance holds.
+
 ## Matrix and claim boundaries
 
 Each row names one top-level case under
