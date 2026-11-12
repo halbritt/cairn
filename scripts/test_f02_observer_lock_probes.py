@@ -286,5 +286,113 @@ class ObserverLockProbeTests(unittest.TestCase):
                                     for frame in record['original_assertion']['frames']))
 
 
+    def test_holder_acquisition_failure_keeps_actual_probe_and_diagnostic(self):
+        for kind in ('hermes', 'ambient'):
+            with self.subTest(kind=kind):
+                real_flock = fcntl.flock
+                journal = []
+                blocker = None
+
+                def number(fd):
+                    return fd.fileno() if hasattr(fd, 'fileno') else fd
+
+                def delegate(role, fd, flags, **detail):
+                    item = dict(role=role, fd=number(fd), flags=flags, **detail)
+                    journal.append(item)
+                    try:
+                        result = real_flock(fd, flags)
+                    except OSError as exc:
+                        item.update(succeeded=False, error_type=type(exc).__name__, errno=exc.errno)
+                        raise
+                    else:
+                        item['succeeded'] = True
+                        return result
+
+                def release_blocker(reason):
+                    nonlocal blocker
+                    if blocker is not None:
+                        try:
+                            delegate('blocker-release', blocker, fcntl.LOCK_UN, reason=reason)
+                        finally:
+                            blocker.close()
+                            blocker = None
+
+                def controller(fd, flags):
+                    nonlocal blocker
+                    frame = sys._getframe(1)
+                    if (frame.f_code.co_name != 'probe' or
+                            frame.f_code.co_filename != type(self).exercise.__code__.co_filename):
+                        return real_flock(fd, flags)
+                    local = frame.f_locals
+                    path = Path(os.readlink('/proc/self/fd/'+str(number(fd))))
+                    if path != local.get('target'):
+                        return real_flock(fd, flags)
+                    observer = number(local['fd'])
+                    if flags == fcntl.LOCK_EX | fcntl.LOCK_NB and number(fd) != observer:
+                        self.assertIsNone(blocker)
+                        blocker = path.open('rb')
+                        delegate('blocker-acquire', blocker, flags, path=str(path))
+                        return delegate('test-holder-acquire', fd, flags, path=str(path))
+                    if flags == fcntl.LOCK_EX | fcntl.LOCK_NB and number(fd) == observer:
+                        try:
+                            return delegate('observer-probe', fd, flags, path=str(path))
+                        finally:
+                            release_blocker('after-observer-syscall')
+                    if flags == fcntl.LOCK_UN and number(fd) != observer:
+                        try:
+                            return delegate('test-holder-release', fd, flags, path=str(path))
+                        finally:
+                            release_blocker('holder-cleanup-without-observer')
+                    return real_flock(fd, flags)
+
+                output = io.StringIO()
+                failure = None
+                frames = []
+                try:
+                    with mock.patch('fcntl.flock', new=controller), contextlib.redirect_stdout(output):
+                        self.exercise(kind, contention=True)
+                except (AssertionError, KeyError) as exc:
+                    failure = exc
+                    frames = [dict(file=f.filename, line=f.lineno, text=f.line)
+                              for f in traceback.extract_tb(exc.__traceback__)]
+                finally:
+                    release_blocker('test-cleanup')
+                    print('OBSERVER_HOLDER_CONTROL='+json.dumps(dict(
+                        kind=kind, journal=journal, failure_type=type(failure).__name__,
+                        failure_message=str(failure), failure_frames=frames,
+                        actual_observer_calls=sum(item['role'] == 'observer-probe' for item in journal))),
+                        flush=True)
+                    print(output.getvalue(), end='', flush=True)
+                if isinstance(failure, KeyError):
+                    raise failure.with_traceback(failure.__traceback__)
+                self.assertIsInstance(failure, AssertionError)
+                self.assertEqual(str(failure), 'False is not true')
+                self.assertTrue(any(frame['file'] == type(self).exercise.__code__.co_filename and
+                                    frame['text'] == "self.assertTrue(all(item['contender_acquired'] for item in physical))"
+                                    for frame in frames))
+                records = [json.loads(line.split('=', 1)[1]) for line in output.getvalue().splitlines()
+                           if line.startswith('OBSERVER_RAW_PAIR=')]
+                self.assertEqual(len(records), 1)
+                record = records[0]
+                self.assertEqual([item['contender_acquired'] for item in record['physical']], [False, False])
+                self.assertEqual([item['result'] for item in record['physical']], [False, False])
+                self.assertEqual([item['value'] for item in record['recorded']], [False, False])
+                self.assertEqual(record['original_assertion']['message'], 'False is not true')
+                owner = 'test_f02_hermes_recall.py' if kind == 'hermes' else 'test_f02_opencode_ambient.py'
+                self.assertTrue(any(Path(frame['file']).name == owner and
+                                    'assertTrue(all(' in (frame['text'] or '') for frame in
+                                    record['original_assertion']['frames']))
+                for role, succeeded in (('blocker-acquire', True), ('test-holder-acquire', False),
+                                        ('observer-probe', False), ('blocker-release', True),
+                                        ('test-holder-release', True)):
+                    operations = [item for item in journal if item['role'] == role]
+                    self.assertEqual(len(operations), 2)
+                    self.assertEqual([item['succeeded'] for item in operations], [succeeded]*2)
+                    if not succeeded:
+                        self.assertEqual([item['error_type'] for item in operations], ['BlockingIOError']*2)
+                self.assertEqual([item['reason'] for item in journal if item['role'] == 'blocker-release'],
+                                 ['after-observer-syscall']*2)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
