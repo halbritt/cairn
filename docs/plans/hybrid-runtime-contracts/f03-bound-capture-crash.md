@@ -1,9 +1,9 @@
-# Bound capture crash corpus (proposed)
+# Bound capture crash corpus
 
-This is a preparation artifact for later criteria review. No application or test
-was run during preparation. It proposes only Codex PreCompact/Stop and Claude
-PreCompact/SessionEnd through the existing receipt-selected bound memory caller.
-The separate `memory-capture` unbound consumer is excluded from this corpus.
+The four tests in `scripts/test_f03_bound_capture_crash.py` cover Codex
+PreCompact/Stop and Claude PreCompact/SessionEnd through the existing
+receipt-selected bound memory caller. The separate `memory-capture` unbound
+consumer is excluded from this corpus.
 
 The new test inherits the unchanged BoundProviderCaptureTests/BoundMemoryCase
 installed fixture, selected receipt/profiles, checked Source launcher, Go `memory`
@@ -44,6 +44,15 @@ boundary. Selector workdir cleanup uses only the kernel-observed empty owned
 inode and `rmdir`, never a log-selected recursive path. All waits and output
 collection are bounded; cleanup errors retain the primary diagnostic.
 
+Popen-to-pidfd custody also has an explicit failure path. If constructing the
+owned process reference fails, no event bytes have been sent and no signal is
+permitted. The test closes unwritten stdin, sets it to None for bounded
+`communicate(timeout=3)`, closes both output pipes and re-raises the primary
+exception together with cleanup failures. A still-running unowned hook adds an
+explicit failure; the outer fixture owns namespace cleanup. Failures before
+kernel cwd proof can leave scratch artifacts: those are reported as remaining,
+never as cleaned.
+
 At the actual selector boundary, the capture lock is held and the shared state
 lock is already free. The test requires exactly those observations, exact
 pre-kill nonlock state bytes/modes, then hook return -SIGKILL with empty stdout
@@ -67,14 +76,26 @@ with no selector delay and one selected decision. All existing stream/state/API/
 selector checks remain; additionally one confirmed decision with the exact
 project-prefixed body, saved record identity, six-message digest and complete
 Codex marker are required. Unknown/recall seed fields survive. This is the
-ordinary retry/commit control, not a transient automatic retry. Append after
+ordinary commit control on reset state, not a transient automatic retry.
+It does not demonstrate retry on the exact crashed directory. Append after
 snapshot and repeated truncate offset cases remain a separate next piece.
 
-The proposed focused command and counts are in intended-commands.txt. A clean
-execution would select four methods, eight seed subtests, sixteen crashed hooks
-and sixteen ordinary control hooks; none has run yet. There is no fabricated RED
-for this test-only evidence gap. Producer-shaped success/fault injection is kept
-separate from malformed refusal, interpreter/resource classes, prior full-gate
-failures and campaign/native/installed acceptance. SAME1279 reviews the frozen
-corpus before any application execution. Foundation owns admission, later gates,
-integration/push/readback/cleanup, and all existing holds remain.
+Run only this leaf through the existing host task and isolated fixture. Choose
+an existing absolute output directory outside the checkout for the receipt:
+
+```sh
+mise run host:exec -- --timeout 15m --weight 1 -- make test-isolated \
+  RECEIPT=/absolute/output/focused-isolation.json ISOLATED_ARGS='--timeout 600' \
+  CMD='env CC=gcc TMPDIR=/tmp python3 -I -B -m unittest discover -s scripts -p test_f03_bound_capture_crash.py -v'
+```
+
+Qualification requires four leaf methods, eight seed subtests, zero failures,
+errors or skips, sixteen `BOUND_CAPTURE_CRASH_RAW` records and
+`BOUND_PROVIDER_PAIRS=8`. The eight unchanged ordinary helper pairs imply
+sixteen control frontend runs; they do not emit separate raw crash packets.
+Inherited fixture skips count as missing qualification, even if unittest exits
+zero. There is no fabricated RED for this test-only evidence gap.
+Producer-shaped success/fault injection is kept separate from malformed refusal,
+interpreter/resource classes, prior full-gate failures and campaign/native/
+installed acceptance. Integration and acceptance remain separate from a focused
+corpus pass; existing authority and runtime holds remain.
