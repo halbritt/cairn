@@ -619,6 +619,7 @@ class NamespaceInitTests(Base):
             (leaf.init_pidfd, select.POLLNVAL),
             (leaf.init_pidfd, select.POLLHUP),
             (leaf.init_pidfd, select.POLLIN | select.POLLERR),
+            (leaf.init_pidfd, select.POLLIN | select.POLLHUP | select.POLLERR),
             (leaf.init_pidfd + 1, select.POLLIN),
             (leaf.init_pidfd, select.POLLOUT),
         )
@@ -628,6 +629,10 @@ class NamespaceInitTests(Base):
                 poller.poll.return_value = [event]
                 with patch.object(writer.select, 'poll', return_value=poller):
                     self.assertEqual(leaf.init_exit(time.monotonic() + 1), 'exit_unknown')
+        poller = unittest.mock.Mock()
+        poller.poll.return_value = [(leaf.init_pidfd, select.POLLIN | select.POLLHUP)]
+        with patch.object(writer.select, 'poll', return_value=poller):
+            self.assertEqual(leaf.init_exit(time.monotonic() + 1), 'exited')
 
     ESCAPES = {
         'double_fork': "if os.fork() == 0:\n    if os.fork() == 0:\n        write()\n    os._exit(0)\n",

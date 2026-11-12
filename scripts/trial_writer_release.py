@@ -282,11 +282,9 @@ class WriterLeaf:
         if len(ready) != 1:
             return 'exit_unknown'
         fd, mask = ready[0]
-        if fd != self.init_pidfd or mask & (select.POLLERR | select.POLLHUP | select.POLLNVAL):
+        if fd != self.init_pidfd or mask & ~(select.POLLIN | select.POLLHUP) or not (mask & select.POLLIN):
             return 'exit_unknown'
-        if mask & select.POLLIN:
-            return 'exited' if time.monotonic() <= deadline else 'not_exited'
-        return 'exit_unknown'
+        return 'exited' if time.monotonic() <= deadline else 'not_exited'
 
     def launch_evidence(self):
         """The probe's report, read once after capture; anything else is absent evidence."""
