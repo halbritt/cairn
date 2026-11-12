@@ -74,9 +74,10 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         self.assertIs(json.loads(self.f.binding.read_bytes())['enabled'], enabled)
         self.assertTrue(self.f.memory['inbox_recall_binding'])
         for event in ('SessionStart', 'UserPromptSubmit'):
-            self.assertEqual(self.rows[event]['implementation'], 'go' if mode == 'agent_tools' else 'python')
+            selected_go = mode == 'agent_tools' and (harness == 'codex' or event == 'SessionStart')
+            self.assertEqual(self.rows[event]['implementation'], 'go' if selected_go else 'python')
             self.assertEqual(self.rows[event]['hook']['timeout'], 13)
-            if mode == 'agent_tools':
+            if selected_go:
                 self.assertNotEqual(self.rows[event]['checked_launcher'], self.rows[event]['retained_launcher'])
             else:
                 self.assertEqual(self.rows[event]['checked_launcher'], self.rows[event]['retained_launcher'])
@@ -96,7 +97,10 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         return super().event(name, **fields)
 
     def go(self):
-        if self.f.memory.get('recall_mode') == 'agent_tools':
+        selected_go = self.rows[self.f.event['hook_event_name']]['implementation'] == 'go'
+        print('R04_BOUND_COMPARISON ' + json.dumps(dict(event=self.f.event['hook_event_name'],
+            selected_go=selected_go, direct_checked_capability_probe=not selected_go)), flush=True)
+        if selected_go:
             invoke = lambda: bound.R04BoundWiringTests.staged_process(self, 'go')
         else:
             # Capability/refusal comparison only: this direct checked consumer
@@ -259,8 +263,10 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
                         self.assertEqual(self.provider_sides['go'], [])
                     else:
                         self.assertEqual(result.returncode, 0)
-                        self.assertEqual(self.context(result)['expanded']['selection']['record']['body'],
-                                         self.optional[0]['body'])
+                        self.assertEqual(self.context(result)['selected'][0]['record'], self.selected[0]['record'])
+                        self.assertNotIn('expanded', self.context(result))
+                        self.assertEqual(self.recall_status()['rejected'], dict(verification_unavailable=1))
+                        self.assertEqual(self.provider_sides['go'], [])
 
     def test_staged_bound_disabled_invalid_selection_retains_whole_required(self):
         self.required()
@@ -282,8 +288,15 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         # preflight refusal as provider-body evidence.
         self.before_run = lambda side: None
         self.after_run = lambda: None
+        checked_go = self.go
         for harness in ('claude', 'codex'):
             self.stage_bound(harness, 'agent_tools', remove_package=False)
+            # Compare the actually selected callback here. Claude prompt stays
+            # retained after its explicit Go wake-state RED; no parity claimed
+            # for that held direct Go cell. Codex retains its selected Go row.
+            self.go = (lambda: self.invoke_provider_side('selected', lambda: subprocess.run(
+                self.rows[self.f.event['hook_event_name']]['argv'], input=self.f.raw,
+                cwd=self.f.root, env=self.f.env(), capture_output=True, timeout=20))) if harness == 'claude' else checked_go
             self.reset_state()
             self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN, prompt=self.f.wake())
             first = BoundMemoryCase.pair(self)

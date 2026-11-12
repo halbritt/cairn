@@ -119,7 +119,8 @@ def definitions(stager, plan):
             unbound_capture_go = (role == 'memory' and all_unbound
                                   and event in ('PreCompact', 'Stop', 'SessionEnd'))
             bound_go = (role == 'memory' and config.get('inbox_recall_binding') and (
-                plan['harness'] in ('codex', 'claude') and event in ('SessionStart', 'UserPromptSubmit')
+                (plan['harness'] == 'codex' and event in ('SessionStart', 'UserPromptSubmit')
+                 or plan['harness'] == 'claude' and event == 'SessionStart')
                 and config.get('recall_mode') == 'agent_tools'
                 or plan['harness'] == 'codex' and event in ('PreCompact', 'Stop')
                 or plan['harness'] == 'claude' and event in ('PreCompact', 'SessionEnd')))
