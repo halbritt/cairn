@@ -7,8 +7,14 @@ home, a scripted Gemini HTTP provider and a synthetic Cairn API. It uses no
 model account, real inference or production installation. Agy has no ordinary
 lifecycle memory hook.
 
-These native observations use Agy 1.5.6, SHA-256
+These native observations use a frozen Agy 1.5.7 executable, SHA-256
+`5df525a2d6908989c57b897723caea66e00d7c4d2e24411f91ad306989574642`.
+Cases 1 to 33 were first accepted on Agy 1.5.6, SHA-256
 `7e5bbdcbf689354300500ba22d55c2ff1497e185ae18407325d480577a87db5d`.
+On 2026-11-12 the coordinator observed those unchanged 33 cases passing in two
+runs on frozen 1.5.7 at `67f6877a`. Those observations do not reproduce the
+earlier 1.5.6 runs. The full fixture below includes the three file-type cases
+on the selected 1.5.7 image.
 
 The real R-02 installer and R-04 renderer produce immutable selections A and B.
 The fixture copies their exact bytes to the target project's
@@ -35,7 +41,7 @@ refusals remain; the account-only phase adds positive selection controls.
 Five more cases place the same `cairn-coordination` group in both files:
 account A/project B, account B/project A, identical A bytes in both, project
 removal leaving account A, and account removal leaving project B. One fresh
-native conversation spans these changes. For the selected Agy 1.5.6, the
+native conversation spans these changes. For the selected Agy 1.5.7, the
 fixture requires both layers' commands to run: two `PreInvocation` callbacks
 then two `Stop` callbacks, including two executions of each identical command.
 Removal reduces the next callback to one pair without restarting the client.
@@ -87,8 +93,8 @@ fresh provider marker are required. A `finally` block restores a regular
 receipt; the restored positive control must deliver the full context once.
 Project and control hook files remain absent throughout these cases.
 
-Three final account-only cases append valid B, a group-writable receipt and
-restored B in one fresh native conversation and PID. The full run has 33 cases
+Three account-only cases append valid B, a group-writable receipt and
+restored B in one fresh native conversation and PID. This prefix has 33 cases
 and asserts and records the previous 30-case prefix against `0d196e69`, keeping
 the earlier 22/27-case records too. Only the selected regular receipt's mode
 changes, from `0400` to `0420`; its literal path, bytes/hash, owner, inode and
@@ -106,10 +112,31 @@ diagnostic, single stderr write, empty stdout, exit 1, zero Cairn API delta,
 unchanged state and absent fresh provider marker remain required. Provider
 cancellation is not claimed.
 
+Three final account-only cases append valid B, a directory at the selected
+receipt path, and restored B in another fresh native conversation and PID.
+The full run has 36 cases and asserts and records the previous 33-case prefix
+against `67f6877a`, retaining the earlier 22/27/30-case records. The directory
+is empty, real-UID-owned and mode `0400`, so file type is the only invalid
+metadata condition. Its inode and size are recorded independently of the
+regular receipt. The exact original receipt is retained at a separate private
+path during the fault and restored in a `finally` block; before and restored
+bytes, hash, device, owner, inode, size and mode must agree.
+
+Both callbacks must securely open the selected leaf, observe a complete
+`S_IFDIR|0400` fstat with the directory's actual UID, inode and size, perform
+zero selected-descriptor reads and close it successfully. They must not open
+the preserved original receipt. The same exact diagnostic, single stderr
+write, empty stdout, exit 1, zero API/state effects and absent fresh provider
+marker are required. Valid and restored controls still read the literal B pin
+through EOF and deliver the complete fresh context once. Case-specific
+metadata decoders keep regular/group-write and directory/type conditions
+separate; both reject additional absolute receipt opens. This qualifies only
+the selected directory fault, not every nonregular file or syscall.
+
 The cases cover fresh and repeated A, an independent workspace control,
 publication of B during the existing conversation, the unchanged control,
 fresh B, stop/join followed by native `--conversation` resume, receipt
-refusals bracketed by valid B, and reversal to A. In Agy 1.5.6's marker controls,
+refusals bracketed by valid B, and reversal to A. In Agy 1.5.7's marker controls,
 the next callback reread the changed project file without restarting the
 process. The fixture requires that behavior from the selected client, with
 the same conversation ID, and checks earlier prompts in subsequent provider
@@ -140,7 +167,7 @@ provider-request indices; the archive retains raw hook I/O, provider requests
 and synthetic API code. Every `PreInvocation` output is checked. Each provider
 request must contain exactly as many copies of each complete context text as
 the checked hooks emitted, including two equal texts in the layered cases.
-Missing/corrupt/symlink/group-writable receipt cases keep zero API effects,
+Missing/corrupt/symlink/group-writable/directory receipt cases keep zero API effects,
 unchanged state and empty hook stdout, and their fresh marker must not reach
 the provider. This qualifies native context application to the local provider;
 real model comprehension and inbox delivery remain outside this fixture.
@@ -155,7 +182,7 @@ truncated selected hook writes still refuse. The snapshot must contain the
 completed producer writes as well as the hook exits. Each analysis window is
 retained before later assertions; a pairing assertion also retains its prefix.
 
-Missing, corrupt, symlink and group-writable receipts emit the same public compatibility-preflight
+Missing, corrupt, symlink, group-writable and directory receipts emit the same public compatibility-preflight
 diagnostic and exit 1. The fixture pins that diagnostic, requires no stdout,
 and checks zero API calls and unchanged lifecycle state. It also reconstructs
 the selected receipt's descriptor walk. For the missing file, the final
@@ -187,8 +214,10 @@ are retained as unanswered probes. This is a `connect(2)` check, not a claim
 about every address-bearing send. The wrapper's loopback-only network
 namespace supplies the egress guarantee.
 
-Select the native Agy executable and its expected SHA-256, and keep evidence
-outside Git:
+Freeze the native Agy executable in the evidence directory before the run,
+verify its expected SHA-256 above, and set `CAIRN_R04_AGY` to that retained
+copy. Never bind the mutable installed path directly. Keep that executable
+alongside the evidence for independent review and reproduction, outside Git:
 
 ```sh
 mise run host:exec -- --timeout 20m --weight 1 -- \

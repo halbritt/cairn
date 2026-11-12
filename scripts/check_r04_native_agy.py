@@ -22,7 +22,7 @@ import unittest
 import uuid
 
 from check_r04_native_opencode import digest, native_api_fixture, successful_execs, wait_for
-from r04_agy_trace import calls, exec_lines, exits, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, metadata_refusal, opened_paths, thread_pids, walked_path
+from r04_agy_trace import calls, directory_refusal, exec_lines, exits, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, metadata_refusal, opened_paths, thread_pids, walked_path
 from test_f04_activation import encoded, overwrite_fixture
 from test_r02_compatibility_install import InstalledFixture, InstalledTools
 from test_r04_host_wiring import R04HostWiringTests, pin
@@ -418,9 +418,14 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 # literal program vector, before the hook tail.
                 receipt_path = vector[vector.index('--receipt') + 1]
                 receipt_hash = vector[vector.index('--receipt-sha256') + 1]
-                if refusal == 'mode':
-                    metadata_evidence = metadata_refusal(trace, threads, 'receipt.json', mode_fault_metadata)
+                if refusal in ('mode', 'filetype'):
+                    decoder, expected_metadata = ((metadata_refusal, mode_fault_metadata) if refusal == 'mode'
+                                                  else (directory_refusal, filetype_fault_metadata))
+                    metadata_evidence = decoder(trace, threads, 'receipt.json', expected_metadata)
                     self.assertEqual(metadata_evidence['path'], receipt_path)
+                    if refusal == 'filetype':
+                        self.assertNotIn(str(filetype_original), opened_paths(trace, threads))
+                        self.assertNotIn(filetype_original.name, opened_paths(trace, threads))
                 else:
                     observed = file_read(trace, threads, 'receipt.json')
                     self.assertEqual(walked_path(trace, threads, 'receipt.json'), receipt_path)
@@ -442,8 +447,8 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                         self.assertEqual(observed['raw'], corrupt_receipt)
                         self.assertNotEqual(hashlib.sha256(observed['raw']).hexdigest(), receipt_hash)
                     else:
-                        self.assertEqual(refusal, 'mode')
-                    if refusal == 'mode':
+                        self.assertIn(refusal, ('mode', 'filetype'))
+                    if refusal in ('mode', 'filetype'):
                         receipt_read = dict(open_error=None, bytes=0, metadata_refusal=metadata_evidence)
                     else:
                         receipt_read = dict(open_error=observed['open_error'], bytes=len(observed['raw']),
@@ -818,6 +823,79 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         self.assertEqual([record['hook_layer'] for record in mode_cases], ['account'] * 3)
         self.assertEqual(len(observations), 33)
         mode_client.close()
+        mode_prefix_names = symlink_prefix_names + [
+            'account-mode-valid-b', 'account-group-writable-receipt', 'account-restored-after-mode']
+        mode_prefix_refusals = dict(symlink_prefix_refusals, **{'account-group-writable-receipt': 'mode'})
+        mode_prefix_layers = symlink_prefix_layers + [('account',)] * 3
+        self.assertEqual([record['case'] for record in observations], mode_prefix_names)
+        for record, layers in zip(observations, mode_prefix_layers):
+            self.assertEqual(record['refusal'], mode_prefix_refusals.get(record['case']))
+            self.assertEqual(record['hook_layer'], 'layered' if len(layers) > 1 else layers[0])
+            self.assertEqual(tuple(layer['layer'] for layer in record['hook_layers']), layers)
+        preserved_mode_prefix = dict(source_commit='67f6877aaa85daa15627faf2d4ee75e708c9cc1b',
+            cases=[dict(case=record['case'], refusal=record['refusal'], hook_layer=record['hook_layer'],
+                        layers=[layer['layer'] for layer in record['hook_layers']]) for record in observations])
+        prior_ids = {client.identity for client in clients}
+        filetype_offset = len(observations)
+        prior_native_pids = {client.child.native_pid for client in clients}
+        filetype_client = start('account-filetype-client', work, account_hooks)
+        self.assertNotIn(filetype_client.identity, prior_ids)
+        self.assertNotIn(filetype_client.child.native_pid, prior_native_pids)
+        prompt(filetype_client, 'account-filetype-valid-b', b)
+        filetype_before_stat = receipt.stat()
+        filetype_original = receipt.with_name('filetype-original-receipt.json')
+        self.assertFalse(filetype_original.exists())
+
+        def filetype_snapshot(phase):
+            snapshot, raw = receipt.stat(), receipt.read_bytes()
+            self.assertTrue(stat.S_ISREG(snapshot.st_mode))
+            self.assertEqual(stat.S_IMODE(snapshot.st_mode), 0o400)
+            self.assertEqual(snapshot.st_uid, os.getuid())
+            self.assertEqual((snapshot.st_dev, snapshot.st_uid, snapshot.st_ino, snapshot.st_size),
+                             (filetype_before_stat.st_dev, filetype_before_stat.st_uid,
+                              filetype_before_stat.st_ino, filetype_before_stat.st_size))
+            self.assertEqual(raw, saved)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), vector[vector.index('--receipt-sha256') + 1])
+            metadata = dict(mode=stat.S_IMODE(snapshot.st_mode), uid=snapshot.st_uid,
+                            inode=snapshot.st_ino, size=snapshot.st_size)
+            (output / ('account-filetype-' + phase + '-receipt.json')).write_bytes(raw)
+            (output / ('account-filetype-' + phase + '-stat.json')).write_bytes(encoded(dict(
+                path=str(receipt), stat=tuple(snapshot), metadata=metadata, sha256=hashlib.sha256(raw).hexdigest())))
+            return metadata
+
+        filetype_before = filetype_snapshot('before')
+        os.replace(receipt, filetype_original)
+        try:
+            receipt.mkdir(mode=0o400)
+            directory_stat = receipt.lstat()
+            self.assertTrue(stat.S_ISDIR(directory_stat.st_mode))
+            self.assertEqual(stat.S_IMODE(directory_stat.st_mode), 0o400)
+            self.assertEqual(directory_stat.st_uid, os.getuid())
+            self.assertNotEqual(directory_stat.st_ino, filetype_before_stat.st_ino)
+            self.assertEqual(str(receipt), vector[vector.index('--receipt') + 1])
+            self.assertEqual(filetype_original.read_bytes(), saved)
+            (output / 'account-filetype-preserved-receipt.json').write_bytes(filetype_original.read_bytes())
+            filetype_fault_metadata = dict(mode=stat.S_IMODE(directory_stat.st_mode), uid=directory_stat.st_uid,
+                                           inode=directory_stat.st_ino, size=directory_stat.st_size)
+            (output / 'account-filetype-fault-stat.json').write_bytes(encoded(dict(
+                path=str(receipt), stat=tuple(directory_stat), metadata=filetype_fault_metadata,
+                preserved_original=pin(filetype_original))))
+            prompt(filetype_client, 'account-directory-receipt', b, refusal='filetype')
+            self.assertEqual(filetype_original.read_bytes(), saved)
+        finally:
+            if receipt.exists():
+                receipt.rmdir()
+            os.replace(filetype_original, receipt)
+        self.assertEqual(filetype_snapshot('restored'), filetype_before)
+        self.assertFalse(filetype_original.exists())
+        prompt(filetype_client, 'account-restored-after-filetype', b)
+        filetype_cases = observations[filetype_offset:]
+        self.assertEqual(len(filetype_cases), 3)
+        self.assertEqual({record['native_session_id'] for record in filetype_cases}, {filetype_client.identity})
+        self.assertEqual({record['native_pid'] for record in filetype_cases}, {filetype_client.child.native_pid})
+        self.assertEqual([record['hook_layer'] for record in filetype_cases], ['account'] * 3)
+        self.assertEqual(len(observations), 36)
+        filetype_client.close()
         for index, client in enumerate(clients):
             connections = loopback_connections(client.child.trace.read_text(), provider_port=provider.server.server_port)
             history = client.native_history_path
@@ -861,10 +939,11 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         return dict(schema='cairn.r04-native-agy/1', passed=True, cases=observations, clients=client_reports,
             fixture=pin(Path(__file__)), client=dict(path=str(binary), sha256=digest(binary),
                 version=version_raw.decode().strip()), version_process=version_report,
-            selection_scope='13 project-layer, 4 account-only, 5 layered/removal, 5 account-receipt, 3 account-symlink, then 3 account-mode cases (33 total)',
+            selection_scope='13 project-layer, 4 account-only, 5 layered/removal, 5 account-receipt, 3 account-symlink, 3 account-mode, then 3 account-filetype cases (36 total)',
             preserved_prefix=preserved_prefix,
             preserved_receipt_prefix=preserved_receipt_prefix,
             preserved_symlink_prefix=preserved_symlink_prefix,
+            preserved_mode_prefix=preserved_mode_prefix,
             native_home=str(home), native_profile=str(native_profile), binding_account=str(f.account),
             account_hook_home=str(account_hook_home), account_hook_file=str(account_hooks),
             context_seed='Per-prompt synthetic API display_name; marker is absent from user prompts and hook configuration.',
@@ -873,7 +952,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 native_pid=calibration.native_pid, joined_pids=calibration.pids), credential_files=credential_files,
             limits=['Agy ordinary memory is unsupported; this exercises checked Go coordination only.',
                     'Selected Agy aggregates account/project groups, including identical commands; no inter-layer order, precedence, cross-account isolation or installer claim.',
-                    'Selected B receipt controls cover project/account missing/corrupt files, an account leaf symlink and an owned regular receipt with group-write mode; no broader receipt-fault qualification.',
+                    'Selected B receipt controls cover project/account missing/corrupt files, an account leaf symlink, an owned regular receipt with group-write mode and an owned mode0400 directory; no broader receipt-fault qualification.',
                     'PreInvocation context application reaches local provider text; no real model comprehension or inbox delivery claim.',
                     'No non-fullyIdle Stop, Stop continue-once, child/subagent, host presence/host_pid association or Herdr wake claim.',
                     'No store/auth, code-image upgrade, complete activation-unit barrier or full R04/R05/R06/ticket-closure qualification.'])

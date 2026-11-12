@@ -204,13 +204,13 @@ def walked_path(trace, pid, basename):
     return '/' + '/'.join(reversed(components[:-1]))
 
 
-def metadata_refusal(trace, pid, basename, expected):
+def _metadata_refusal(trace, pid, basename, expected, file_type):
     path = walked_path(trace, pid, basename)
     events = list(calls(trace, {'openat', 'fstat', 'read', 'close'}, pid=pid))
     selected = []
     for index, (_, name, event) in enumerate(events):
         match = re.match(r'openat\([^,]+, ("(?:[^"\\]|\\.)*"), .*\)\s+= (-?\d+)(?: .*)?$', event)
-        if name == 'openat' and match and ast.literal_eval(match[1]) == basename:
+        if name == 'openat' and match and ast.literal_eval(match[1]).rsplit('/', 1)[-1] == basename:
             selected.append((index, event, int(match[2])))
     if len(selected) != 1:
         raise AssertionError('Expected one metadata-refused file open')
@@ -241,15 +241,29 @@ def metadata_refusal(trace, pid, basename, expected):
     if len(fields) != 4 or {key for key, _ in fields} != {'st_mode', 'st_uid', 'st_ino', 'st_size'}:
         raise AssertionError('Incomplete or duplicate selected descriptor metadata')
     fields = dict(fields)
-    if not re.fullmatch(r'S_IFREG\|0[0-7]{3,4}', fields['st_mode']) or any(
+    if not re.fullmatch(file_type + r'\|0[0-7]{3,4}', fields['st_mode']) or any(
             not re.fullmatch(r'\d+', fields[key]) for key in ('st_uid', 'st_ino', 'st_size')):
         raise AssertionError('Invalid selected descriptor metadata fields')
     observed = dict(mode=int(fields['st_mode'].split('|')[1], 8), uid=int(fields['st_uid']),
                     inode=int(fields['st_ino']), size=int(fields['st_size']))
-    if not observed['mode'] & 0o020 or observed != expected:
-        raise AssertionError('Selected descriptor metadata does not match group-write fault')
+    if observed != expected:
+        raise AssertionError('Selected descriptor metadata does not match expected fault')
     return dict(path=path, fd=fd, metadata=observed, read_calls=0,
                 open_call=opened, fstat_call=metadata_calls[0], close_call=closed)
+
+
+def metadata_refusal(trace, pid, basename, expected):
+    observed = _metadata_refusal(trace, pid, basename, expected, 'S_IFREG')
+    if not observed['metadata']['mode'] & 0o020:
+        raise AssertionError('Selected descriptor metadata does not match group-write fault')
+    return observed
+
+
+def directory_refusal(trace, pid, basename, expected):
+    observed = _metadata_refusal(trace, pid, basename, expected, 'S_IFDIR')
+    if observed['metadata']['mode'] != 0o400:
+        raise AssertionError('Selected directory does not isolate the file-type fault')
+    return observed
 
 
 def dns_question(raw):

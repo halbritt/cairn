@@ -7,7 +7,7 @@ from unittest import mock
 
 from check_r04_native_opencode import successful_execs
 from check_r04_native_agy import TracedProcess
-from r04_agy_trace import calls, exec_lines, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, metadata_refusal, opened_paths, thread_pids, walked_path
+from r04_agy_trace import calls, directory_refusal, exec_lines, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, metadata_refusal, opened_paths, thread_pids, walked_path
 
 
 class NativeTraceTests(unittest.TestCase):
@@ -250,6 +250,45 @@ class AgyTraceTests(unittest.TestCase):
         for changed in [trace, trace.replace('8 close(5)', '8 read(5, "abc", 3) = 3\n8 close(5)')]:
             with self.subTest(trace=changed), self.assertRaisesRegex(AssertionError, 'did not reach EOF'):
                 file_read(changed, ['7', '8'], 'receipt.json')
+
+    def test_directory_refusal_binds_safe_mode_and_real_directory_metadata(self):
+        trace = self.metadata_refusal_trace().replace('S_IFREG|0420', 'S_IFDIR|0400').replace('st_size=3', 'st_size=4096')
+        expected = dict(mode=0o400, uid=1000, inode=123, size=4096)
+        observed = directory_refusal(trace, ['7', '8'], 'receipt.json', expected)
+        self.assertEqual(observed['path'], '/owned/receipt.json')
+        self.assertEqual(observed['metadata'], expected)
+        self.assertEqual(observed['read_calls'], 0)
+        self.assertEqual(observed['close_call'], 'close(5) = 0')
+        with self.assertRaises(AssertionError):
+            metadata_refusal(trace, ['7', '8'], 'receipt.json', expected)
+
+    def test_directory_refusal_rejects_regular_or_other_metadata_faults(self):
+        trace = self.metadata_refusal_trace().replace('S_IFREG|0420', 'S_IFDIR|0400').replace('st_size=3', 'st_size=4096')
+        expected = dict(mode=0o400, uid=1000, inode=123, size=4096)
+        for old, new in [('S_IFDIR', 'S_IFREG'), ('S_IFDIR', 'S_IFIFO'), ('0400', '0420'),
+                         ('st_uid=1000', 'st_uid=1001'), ('st_ino=123', 'st_ino=124'), ('st_size=4096', 'st_size=0')]:
+            with self.subTest(field=new), self.assertRaises(AssertionError):
+                directory_refusal(trace.replace(old, new), ['7', '8'], 'receipt.json', expected)
+        with self.assertRaisesRegex(AssertionError, 'isolate the file-type fault'):
+            directory_refusal(trace.replace('0400', '0420'), ['7', '8'], 'receipt.json', dict(expected, mode=0o420))
+        with self.assertRaisesRegex(AssertionError, 'group-write fault'):
+            metadata_refusal(trace.replace('S_IFDIR', 'S_IFREG'), ['7', '8'], 'receipt.json', expected)
+
+    def test_directory_refusal_rejects_all_selected_descriptor_reads(self):
+        trace = self.metadata_refusal_trace().replace('S_IFREG|0420', 'S_IFDIR|0400').replace('st_size=3', 'st_size=4096')
+        for read in ['read(5, "abc", 3) = 3', 'read(5, "", 4096) = 0',
+                     'read(5, 0x1234, 4096) = -1 EISDIR (Is a directory)']:
+            with self.subTest(read=read), self.assertRaisesRegex(AssertionError, 'was read'):
+                directory_refusal(trace.replace('8 close(5)', '8 ' + read + '\n8 close(5)'),
+                                  ['7', '8'], 'receipt.json', dict(mode=0o400, uid=1000, inode=123, size=4096))
+
+    def test_metadata_refusals_reject_extra_absolute_receipt_opens(self):
+        regular = self.metadata_refusal_trace()
+        directory = regular.replace('S_IFREG|0420', 'S_IFDIR|0400')
+        extra = '7 openat(AT_FDCWD, "/owned/receipt.json", O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC) = 9\n'
+        for decoder, trace, mode in [(metadata_refusal, regular, 0o420), (directory_refusal, directory, 0o400)]:
+            with self.subTest(decoder=decoder.__name__), self.assertRaisesRegex(AssertionError, 'Expected one metadata-refused'):
+                decoder(trace + extra, ['7', '8'], 'receipt.json', dict(mode=mode, uid=1000, inode=123, size=3))
 
     def test_cleanup_rejects_unsafe_pids_without_sending_signals(self):
         child = object.__new__(TracedProcess)
