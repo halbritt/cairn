@@ -84,6 +84,25 @@ python3 -I -B scripts/test_hybrid_runtime_operations.py -- \
   /usr/bin/python3 -I -B scripts/testdata/test_semantic_transition_real.py
 ```
 
+Sampler exceptions are retained immediately in numbered `sampler-error-*.json`
+records, with the complete traceback, sampling context, child identity and
+command/source-inventory binding. A separate `sampler-before-cleanup.json`
+snapshot precedes process control. `real-worker-observations.json` retains
+partial samples and keeps sampler, cleanup and diagnostic-write failures
+separate. The original traceback is also written to stderr. A failed diagnostic
+write is reported and fails the run; a wait timeout cannot replace the original
+sampler error. Partial observations have `proof_complete: false` and cannot
+stand in for the root/sample, identity, timing or effects gates.
+
+Failure cleanup retains the ten-second terminate wait, followed by bounded
+owned-child kill/reap if necessary. The sampler join is bounded to five seconds;
+failure to join remains a failure with partial evidence. Unsafe PID/group IDs
+refuse process control. These are fixture cleanup bounds, not changes to worker
+or retrieval deadlines. Cancellation keeps its original exception type after
+diagnostic cleanup. Successful repetitions alone do not diagnose a previously
+lost sampler exception; its cause remains unknown until actual failure evidence
+supports a repair.
+
 Whole-API and semantic outage windows, first API query, rebuild completion and
 post-rebuild query are separate observations with retained timestamps. Forward
 and reverse windows start from the last observed healthy old service; initial
