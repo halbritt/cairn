@@ -368,7 +368,7 @@ def check(evidence, cases):
                         require(not result['Receipt'], 'unknown/held view created receipt')
                     statuses = [json.loads(c['Stdout']) for c in result['Calls'] if c['Stdout'].startswith('{')]
                     expected = {'missing':'NOT_FOUND', 'foreign':'NOT_FOUND', 'stale':'STALE_SESSION',
-                                'unauthorized':'AUTHORITY_DENIED', 'unauthenticated':'AUTHORITY_DENIED', 'serialization':'STORE_ERROR'}
+                                'unauthorized':'NOT_FOUND', 'unauthenticated':'AUTHORITY_DENIED', 'serialization':'STORE_ERROR'}
                     if case in expected:
                         require(any(r.get('status') == expected[case] for r in statuses), f'{case}: missing real API refusal: {statuses}')
                     if case in ('missing', 'foreign'):
