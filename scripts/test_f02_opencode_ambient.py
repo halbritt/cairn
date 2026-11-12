@@ -414,7 +414,7 @@ class OpenCodeAmbientTests(unittest.TestCase):
         self.index_delay = 4
         self.optional_note('Current lifecycle recall implementation. Delayed source.')
         template = self.optional.pop()
-        for index in range(4):
+        for index in range(6):
             item = copy.deepcopy(template)
             item['entry']['record_id'] = str(uuid.UUID(int=index+20, version=4))
             self.optional.append(item)
@@ -423,7 +423,7 @@ class OpenCodeAmbientTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertGreaterEqual(elapsed, 20)
         self.assertLess(elapsed, 27)
-        self.assertEqual(self.state()[self.state_key()+'.json']['last_recall']['rejected'], {'unavailable':4})
+        self.assertEqual(self.state()[self.state_key()+'.json']['last_recall']['rejected'], {'unavailable':6})
         self.assertEqual(sum(op == 'expand' for op, _, _ in self.calls), 4)
 
 

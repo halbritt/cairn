@@ -33,6 +33,18 @@ or request timing fields and incomplete request tuples fail validation. New-cell
 refusals preserve exact state bytes/modes, and an actual checked agent_tools tool
 control retains its existing consumer. No ordinary recall body was changed.
 
+The cumulative-cap case now offers six candidates, the existing candidate limit,
+and requires four issued expands with six unavailable outcomes. The fifth and
+sixth candidates must fail locally after the eleven-second cap. The existing
+20–27-second paired limit and every stream/state/API/trace/report/lock assertion
+remain. A private scratch experiment changing only Go's cap from eleven to
+thirteen seconds reached the real handlers and issued a fifth Go expand while
+Source issued four; the strengthened case rejected it. Production is unchanged.
+The unchanged four-entry control also rejected that same mutant because the
+longer Go run omitted the post-lock observation. Thus the original whole test
+already caught this mutant; the six-entry fixture adds a direct request-count
+discriminator rather than relying on that later report difference.
+
 The baseline RED retains actual Source success versus Go preflight refusal for
 explicit/default ambient Start/prompt. These are constructed producer-shaped
 fixtures, not native-writer admission, all-input CPython parity or measured
