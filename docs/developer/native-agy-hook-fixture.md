@@ -38,6 +38,19 @@ callback frame is retained for those cases. History is read from the native
 `transcriptPath` after all clients close. The report distinguishes that native
 home from the fixture's Cairn binding account directory.
 
+Each prompt seeds a fresh synthetic marker in the API's agent display name,
+without placing it in user prompts or hook configuration. The fixture decodes
+the checked Go `PreInvocation` stdout as `injectSteps[0].ephemeralMessage`,
+checks the marker and full agent/execution identity, and requires that complete
+message in the native Gemini request's `contents[].parts[].text`, ignoring
+surrounding whitespace. The marker must be absent from earlier requests.
+Per-case evidence records the marker, hook-output/message hashes and matching
+provider-request indices; the archive retains raw hook I/O, provider requests
+and synthetic API code. Missing/corrupt receipt cases keep zero API effects,
+unchanged state and empty hook stdout, and their fresh marker must not reach
+the provider. This qualifies native context application to the local provider;
+real model comprehension and inbox delivery remain outside this fixture.
+
 The captured prefix ends on a complete trace line. Per-prompt windows can begin
 between a syscall's unfinished and resumed lines.
 The decoder therefore pairs records in one full captured prefix before
@@ -103,7 +116,7 @@ databases and executable files are not separate archive members. The wrapper's
 receipt records the command, checkout and isolation checks independently.
 
 The account hook layer and layered duplicates remain unobserved, as do
-PreInvocation context injection as a separate contract, non-fully-idle Stop,
+non-fully-idle Stop,
 Stop continuation, and child/subagent conversations. Namespace-local process
 evidence does not qualify the host presence watcher, host PID association or
 Herdr wake. This is not a code-image upgrade, real store/authentication test,

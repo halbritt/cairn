@@ -30,6 +30,24 @@ from test_r04_host_wiring import R04HostWiringTests, pin
 MODEL = 'Gemini 3.8 Flash (Low)'
 
 
+def native_context_api_fixture(path):
+    native_api_fixture(path)
+    source = path.read_text()
+    save_reply = " if request:db['replies'][request]=data\n"
+    if source.count(save_reply) != 1:
+        raise AssertionError('Synthetic API reply seam changed')
+    seed_context = (" if op in ('agent-register','agent-context') and request not in db['replies']:\n"
+                    "  data['display_name']=p.with_suffix('.context-marker').read_text()\n")
+    path.chmod(0o700)
+    path.write_text(source.replace(save_reply, seed_context + save_reply))
+    path.chmod(0o500)
+
+
+def provider_texts(request):
+    return [part['text'] for content in request['body']['contents']
+            for part in content['parts'] if 'text' in part]
+
+
 class GeminiFixture:
     def __init__(self):
         self.requests, self.failures = [], []
@@ -245,7 +263,8 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         self.root = output / 'owned'
         self.root.mkdir(mode=0o700)
         f = self.fixture('installation', harness='agy')
-        native_api_fixture(f.api)
+        native_context_api_fixture(f.api)
+        (output / 'cairn-api-fixture.py').write_bytes(f.api.read_bytes())
         home = f.root / 'native home'
         native_profile = home / '.gemini' / 'antigravity-cli'
         native_profile.mkdir(parents=True, mode=0o700)
@@ -306,6 +325,9 @@ class NativeFixture(InstalledTools, unittest.TestCase):
 
         def prompt(client, label, selection, *, refusal=None):
             before = state(), len(f.api_calls()), len(provider.requests)
+            marker = 'R04-CONTEXT-' + str(uuid.uuid4())
+            self.assertTrue(all(marker not in text for request in provider.requests for text in provider_texts(request)))
+            f.api.with_suffix('.context-marker').write_text(marker)
             offset = client.child.trace.stat().st_size
             result = client.prompt('R04 fixture ' + label)
             rows = selection[2]['rows']
@@ -414,9 +436,12 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             self.assertIn(str(client.work / '.agents' / 'hooks.json'),
                           opened_paths(all_trace, native_threads))
             self.assertEqual(digest(client.work / '.agents' / 'hooks.json'), selection[0]['settings']['sha256'])
+            current_requests = provider.requests[before[2]:]
+            context_application = dict(marker=marker, provider_request_indices=[])
             if refusal:
                 self.assertEqual(state(), before[0])
                 self.assertEqual(len(f.api_calls()), before[1])
+                self.assertTrue(all(marker not in text for request in current_requests for text in provider_texts(request)))
                 contexts = []
             else:
                 self.assertEqual(result['status'], 'SUCCESS', result)
@@ -432,6 +457,19 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 self.assertIn('busy', [call['metadata']['state'] for call in presence])
                 self.assertEqual(contexts[-1]['metadata']['state'], 'idle')
                 self.assertGreater(len(provider.requests), before[2])
+                preinvocation = next(record for record in reached if record['event'] == 'PreInvocation')
+                injected = json.loads(preinvocation['stdout'])
+                self.assertEqual(set(injected), {'injectSteps'})
+                self.assertEqual(len(injected['injectSteps']), 1)
+                self.assertEqual(set(injected['injectSteps'][0]), {'ephemeralMessage'})
+                message = injected['injectSteps'][0]['ephemeralMessage']
+                self.assertIn('Cairn session ' + marker + ' has inbox ' + owner['inbox'], message)
+                self.assertIn('Use agent UUID ' + owner['agent_id'] + ' and execution UUID ' + owner['execution_id'], message)
+                for request in current_requests:
+                    self.assertIn(message.strip(), [text.strip() for text in provider_texts(request)])
+                context_application.update(message_sha256=hashlib.sha256(message.encode()).hexdigest(),
+                    hook_stdout_sha256=hashlib.sha256(preinvocation['stdout'].encode()).hexdigest(),
+                    provider_request_indices=list(range(before[2], len(provider.requests))))
                 serialized = json.dumps(provider.requests[-1])
                 self.assertIn('R04 fixture ' + label, serialized)
                 if client.identity == target.identity:
@@ -439,6 +477,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             self.assertEqual(provider.failures, [])
             observations.append(dict(case=label, native_session_id=client.identity, native_pid=client.child.native_pid,
                 result=result, selection=selection[0]['selection'], reached=reached, refusal=refusal,
+                context_application=context_application,
                 native_hook_writes=produced,
                 api_delta=len(f.api_calls())-before[1], provider_delta=len(provider.requests)-before[2],
                 cairn_context_states=[call['metadata']['state'] for call in contexts],
@@ -549,12 +588,13 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 version=version_raw.decode().strip()), version_process=version_report,
             selection_scope='project .agents/hooks.json; same account, independent workspace control',
             native_home=str(home), native_profile=str(native_profile), binding_account=str(f.account),
+            context_seed='Per-prompt synthetic API display_name; marker is absent from user prompts and hook configuration.',
             trace_parser=pin(Path(__file__).with_name('r04_agy_trace.py')), nscd_path_exists=False,
             transitions=transitions, forced_cleanup_negative=dict(failed_as_required=True,
                 native_pid=calibration.native_pid, joined_pids=calibration.pids), credential_files=credential_files,
             limits=['Agy ordinary memory is unsupported; this exercises checked Go coordination only.',
                     'Project-layer callback re-read and same-conversation restart, not account-layer or layered duplicates.',
-                    'PreInvocation context injection is not qualified separately from registration and busy/idle transitions.',
+                    'PreInvocation context application reaches local provider text; no real model comprehension or inbox delivery claim.',
                     'No non-fullyIdle Stop, Stop continue-once, child/subagent, host presence/host_pid association or Herdr wake claim.',
                     'No store/auth, code-image upgrade, complete activation-unit barrier or full R04/R05/R06/ticket-closure qualification.'])
 
