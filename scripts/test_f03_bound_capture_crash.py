@@ -157,6 +157,35 @@ def subreaper():
 
 
 class BoundCaptureCrashTests(bound.BoundProviderCaptureTests):
+    _in_isolated_sandbox = Path('/opt/toolchains/isolation_runner.py').is_file()
+
+    @classmethod
+    def setUpClass(cls):
+        if cls._in_isolated_sandbox:
+            super().setUpClass()
+            return
+        import test_hybrid_runtime_operations as isolation
+        cls._isolated_rc, cls._isolated_report = isolation.run_isolated(
+            fixture.ROOT,
+            ['env', 'CC=gcc', 'TMPDIR=/tmp', '/usr/bin/python3', '-I', '-B',
+             '-m', 'unittest', 'discover', '-s', 'scripts',
+             '-p', 'test_f03_bound_capture_crash.py', '-v'],
+            timeout=600,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._in_isolated_sandbox:
+            super().tearDownClass()
+
+    def setUp(self):
+        if self._in_isolated_sandbox:
+            super().setUp()
+
+    def tearDown(self):
+        if self._in_isolated_sandbox:
+            super().tearDown()
+
     def snapshot(self):
         directory = Path(self.f.memory['state_dir'])
         return {path.name: dict(mode=path.stat().st_mode & 0o777, raw=path.read_bytes().hex())
@@ -322,6 +351,10 @@ class BoundCaptureCrashTests(bound.BoundProviderCaptureTests):
         return (process.returncode, stdout, stderr), self.snapshot(), self.normalized_calls(observed['calls'], side), observed['provider']['body']
 
     def exercise_cell(self, harness, event):
+        if not self._in_isolated_sandbox:
+            self.assertTrue(self._isolated_report.get('passed'), self._isolated_report)
+            self.assertEqual(self._isolated_rc, 0)
+            return
         for config in (self.f.memory, self.f.coord):
             config['harness'] = harness
         self.f.publish_configuration()
