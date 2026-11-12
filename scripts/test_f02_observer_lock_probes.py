@@ -179,7 +179,7 @@ class ObserverLockProbeTests(unittest.TestCase):
             status = body.get('cairn_status', {}).get('last_recall')
             if status is not None:
                 for key in ('at', 'elapsed_seconds', 'duration_ms'):
-                    case.measurement(status[key]) if hasattr(case, 'measurement') else ambient.OpenCodeAmbientTests.measurement(case, status[key])
+                    case.measurement(status[key])
                     status[key] = 0
             row['stdout'] = json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()+b'\n'
             normalized.append(ambient.OpenCodeAmbientTests.normalize(case, row, row['side']))

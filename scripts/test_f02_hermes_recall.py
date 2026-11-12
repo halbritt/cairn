@@ -128,7 +128,7 @@ class HermesRecallTests(unittest.TestCase):
                 self.assertEqual(self.calls, [])
                 self.assertEqual(self.state_files(), files_before)
             stdout, arguments = self.output(result.stdout)
-            calls = copy.deepcopy(self.calls)
+            calls = copy.deepcopy(list(self.calls))
             self.check_pull_intents(calls, arguments)
             for op, body, headers in calls:
                 if op != 'version':
@@ -268,7 +268,7 @@ class HermesRecallTests(unittest.TestCase):
         self.configure(recall_observations=False)
         self.event('UserPromptSubmit', session_id='malformed\ud800label')
         source = self.source()
-        source_calls = copy.deepcopy(self.calls)
+        source_calls = copy.deepcopy(list(self.calls))
         self.assertEqual((source.returncode, source.stdout), (1, b''))
         self.assertEqual(source_calls, [])
         self.assertFalse(Path(self.f.memory['state_dir']).exists())

@@ -178,7 +178,7 @@ class OpenCodeAmbientTests(unittest.TestCase):
                 self.assertEqual(len(trace), 3, 'Source preflight is not handler parity')
                 self.assertEqual(trace[-1]['phase'], 'handle')
             rows.append(dict(exit=result.returncode, stdout=result.stdout, stderr=result.stderr,
-                             files=self.files(), calls=copy.deepcopy(self.calls), trace=trace, locks=list(self.report_locks)))
+                             files=self.files(), calls=copy.deepcopy(list(self.calls)), trace=trace, locks=list(self.report_locks)))
         print('AMBIENT_RAW_PAIR='+json.dumps(dict(event=self.f.event['hook_event_name'],
               mode=self.f.memory.get('recall_mode', '<absent>'),
               **{side:dict(exit=row['exit'], stdout=row['stdout'].decode(), stderr=row['stderr'].decode(),
