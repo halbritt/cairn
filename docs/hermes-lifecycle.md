@@ -78,9 +78,12 @@ Ambient recall with provider fallback also remains outside the checked recall
 cell; lexical ambient requires omitted/literal-false `semantic_fallback`, and
 the existing `agent_tools` route has its own checked admission. These limits
 prevent claiming complete Hermes migration or selecting this route for a live
-profile. A staged generation, or disposing/recreating provider registrations,
-does not qualify a gateway restart, cached CLI refresh, whole watcher activation
-or operational rollback. Release owns those separate qualification steps.
+profile. The focused fixture checks actual HermesCLI initialization, an unchanged
+cached selection, a fresh CLI loading another generation, and explicit reversal
+in a disposable memory-only profile. It invokes memory hooks directly without
+calling the conversation API. This does not qualify gateway refresh, existing
+live sessions, whole watcher activation or operational rollback. Release owns
+those separate qualification steps.
 
 The focused command checks use intercepted process calls and an owned real
 interruption fixture. The installed probe
@@ -90,7 +93,10 @@ imports are unavailable. Run it through `mise run host:exec`, retaining its
 fresh `--output` directory, source/image pins, streams and API/state evidence.
 Its external selector is scripted; it starts no model conversation or messaging
 transport. `scripts/check_r03_hermes_installed.py --help` lists the required
-paths. A retained checked-tool refusal is evidence of the stated gap, not a
+paths. `scripts/check_r03_hermes_store.py` adds an owned PostgreSQL/API case using
+frozen executables: real SDK retrieval and capture, stored note/observation
+effects, fixture-dialogue exclusion and observed service shutdown. Its required
+paths are explicit and its selector remains scripted. A retained checked-tool refusal is evidence of the stated gap, not a
 successful supported tool operation.
 
 ## Conversation controls

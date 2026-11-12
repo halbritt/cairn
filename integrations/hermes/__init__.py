@@ -162,9 +162,11 @@ class CairnProvider(MemoryProvider):
         return session_id in self.session_ids and get_hermes_home().resolve() == self.home.resolve()
 
     def engine_command(self, event):
-        if 'commands' not in self.config:
+        if type(self.config) is not dict:
+            raise ValueError('invalid memory command configuration')
+        if 'commands' not in self.config and 'lifecycle_selection' not in self.config:
             return [sys.executable, self.config['script'], '--config', self.config['engine_config']], ENGINE_TIMEOUT
-        commands = self.config['commands']
+        commands = self.config.get('commands')
         argv = commands.get(event) if type(commands) is dict else None
         if (event not in SELECTED_TIMEOUTS or type(argv) is not list or not argv
                 or any(type(value) is not str or not value or '\0' in value for value in argv)):

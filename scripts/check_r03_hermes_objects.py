@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--home', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--refusal', action='store_true')
+    parser.add_argument('--interrupt-capture', action='store_true')
     args = parser.parse_args()
     marker = json.loads((args.home / 'r03-fixture.json').read_bytes())
     assert marker['schema'] == 'cairn.r03-hermes-fixture/1'
@@ -79,6 +80,18 @@ def main():
         assert len(handles) == 5 and all(isinstance(h, PluginRegistration) and h.active for h in handles)
         owner = dict(session_id=session, turn_id='r03-turn-1', user_message='Continue retention policy.',
                      conversation_history=messages)
+        if args.interrupt_capture:
+            invoke_hook('pre_llm_call', **owner)
+            try:
+                invoke_hook('post_llm_call', session_id=session, conversation_history=messages)
+            except KeyboardInterrupt:
+                assert provider.capture_pending and provider.last_dialogue
+                report = dict(interrupted=True, pending_before_shutdown=True,
+                              boundary='selector result not returned; no public Store cancellation attestation')
+                (args.output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
+                print(json.dumps(report))
+                raise SystemExit(130)
+            raise AssertionError('capture returned before the controlled interruption')
         assert invoke_hook('pre_llm_call', **owner) == []
         assert invoke_hook('pre_llm_call', **owner) == []
         assert len(calls) == 1, 'same owner turn was recalled more than once'

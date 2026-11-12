@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Initialize an actual disposable HermesCLI owner without a model request."""
+"""Initialize an actual disposable HermesCLI without invoking its conversation API."""
 import argparse
 import hashlib
 import json

@@ -13,9 +13,11 @@ import json
 from pathlib import Path
 import shlex
 import shutil
+import signal
 import stat
 import subprocess
 import sys
+import time
 import unittest
 
 import test_f03_capture_selection as capture
@@ -303,6 +305,8 @@ class InstalledMemory(unittest.TestCase):
         config.update(fallback_model=[], fallback_providers=[], security=dict(tirith_enabled=False))
         config['display'] = dict(tool_progress='off', persistent_output=False)
         installer.shared.write_json(self.home / 'config.yaml', config)
+        legacy_manifest = self.home.joinpath('cairn/installed.json').read_bytes()
+        legacy_settings = self.home.joinpath('config.yaml').read_bytes()
         first = self.install()
         first_raw = self.home.joinpath('cairn-lifecycle.json').read_bytes()
         self.f.memory['r03_revision_canary'] = 'second selection'
@@ -332,6 +336,8 @@ class InstalledMemory(unittest.TestCase):
         self.assertEqual(old['calls'][0]['argv'], first['commands']['UserPromptSubmit'])
         self.assertEqual(fresh['calls'][0]['argv'], second['commands']['UserPromptSubmit'])
         self.home.joinpath('cairn-lifecycle.json').write_bytes(legacy)
+        self.home.joinpath('cairn/installed.json').write_bytes(legacy_manifest)
+        self.home.joinpath('config.yaml').write_bytes(legacy_settings)
         reverse = cli_owner('cli-reverse', legacy)
         self.assertEqual(reverse['calls'][0]['argv'][1], json.loads(legacy)['script'])
         self.assertNotEqual(old['session'], fresh['session'])
@@ -383,6 +389,69 @@ class InstalledMemory(unittest.TestCase):
                     image.chmod(0o600)
                     image.write_bytes(raw)
                     image.chmod(mode)
+
+    def test_actual_go_capture_interruption_joins_owned_selector_tree(self):
+        selector = self.root / 'blocking-selector'
+        selector.write_text('#!' + str(HERMES_PYTHON) + '\n' + '''import json,os,pathlib,subprocess,sys,time
+sys.stdin.read()
+child=subprocess.Popen([sys.executable,'-I','-c','import time; time.sleep(60)'])
+path=pathlib.Path(__file__).parent/'blocking-owned.json';pending=path.with_suffix('.pending')
+pending.write_text(json.dumps(dict(engine=os.getppid(),selector=os.getpid(),child=child.pid,group=os.getpgrp())))
+pending.replace(path)
+time.sleep(60)
+''')
+        selector.chmod(0o500)
+        self.f.memory['claude'] = str(selector)
+        self.f.publish_configuration(enabled=False)
+        self.install()
+        self.home.joinpath('r03-fixture.json').write_text(json.dumps(dict(
+            schema='cairn.r03-hermes-fixture/1', root=str(self.root), project=str(self.f.root), session=self.session)))
+        command = [str(HERMES_PYTHON), '-I', '-B', str(ROOT / 'scripts/check_r03_hermes_objects.py'),
+                   '--hermes-root', str(HERMES_ROOT), '--home', str(self.home),
+                   '--output', str(self.root / 'native-interrupted'), '--interrupt-capture']
+        unrelated = subprocess.Popen([str(HERMES_PYTHON), '-I', '-c', 'import time; time.sleep(60)'])
+        owner = subprocess.Popen(command, cwd=self.f.root, env=dict(self.f.env(), HERMES_HOME=str(self.home),
+            TERMINAL_CWD=str(self.f.root)), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.assertGreater(owner.pid, 1)
+            self.assertGreater(unrelated.pid, 1)
+            path = self.root / 'blocking-owned.json'
+            deadline = time.monotonic() + 8
+            while not path.exists() and owner.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(path.exists(), 'actual Go selector did not reach controlled boundary')
+            owned = json.loads(path.read_bytes())
+            self.assertTrue(all(type(pid) is int and pid > 1 for pid in owned.values()))
+            self.assertEqual(owned['group'], owned['engine'])
+            self.assertEqual(Path('/proc', str(owned['engine']), 'exe').resolve(), self.f.binary.resolve())
+            for pid in (owner.pid, unrelated.pid, owned['selector'], owned['child']):
+                self.assertEqual(Path('/proc', str(pid), 'exe').resolve(), HERMES_PYTHON.resolve())
+            owner.send_signal(signal.SIGINT)
+            stdout, stderr = owner.communicate(timeout=8)
+            self.results.append(dict(argv=command, exit=owner.returncode, stdout=stdout.decode(),
+                stderr=stderr.decode(), owned=owned, unrelated_pid=unrelated.pid))
+            self.assertEqual(owner.returncode, 130, stderr.decode())
+            self.assertIsNone(unrelated.poll(), 'another invocation was interrupted')
+            deadline = time.monotonic() + 3
+            for pid in (owned['engine'], owned['selector'], owned['child']):
+                while True:
+                    try:
+                        state = Path('/proc', str(pid), 'stat').read_text().rsplit(')', 1)[1].split()[0]
+                    except (FileNotFoundError, ProcessLookupError):
+                        break
+                    if state == 'Z':
+                        break
+                    self.assertLess(time.monotonic(), deadline, 'owned selector process remained running')
+                    time.sleep(0.02)
+            self.assertEqual(self.write_count, 0)
+            self.assertNotIn('PRIVATE_FIXTURE', stdout.decode() + stderr.decode())
+        finally:
+            if owner.poll() is None:
+                owner.send_signal(signal.SIGINT)
+                owner.communicate(timeout=8)
+            if unrelated.poll() is None:
+                unrelated.kill()
+            unrelated.wait(timeout=5)
 
 
 def main():
