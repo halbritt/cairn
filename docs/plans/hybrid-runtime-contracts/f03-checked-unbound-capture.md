@@ -59,6 +59,27 @@ member, config, selector-output and subprocess limits remain those of the reused
 components. Legacy lossless integer decoding and Source argv/interpreter limits
 do not acquire an all-input parity claim through this entry.
 
+The bounded N-1/N-2 review follow-up carries five unchanged
+`CaptureBoundaryTests` methods in `CheckedUnboundBoundaryCoverageTests`:
+invocation trace identity/phase/stage/outcome/context, final commit wait and
+timeout, preparation failure, invalid dialogue/missing transcript, and ASCII
+blank-line handling. Each test is the original function object with its original
+name and assertions; malformed inputs retain the owner's class-(b) distinction.
+The bound-only missing-manifest test is not an unbound policy test.
+
+The trace fixture observes the actual receipt-config-relative trace file through
+a hard link at the unchanged reference method's project-relative path. File
+identity is asserted before either real process runs; no trace records are
+copied, synthesized or normalized beyond the reference method's allowed fields.
+Boundary pairing compares Source/Go lock observations exactly and requires the
+hook-owned capture lock to be released. The final-wait case deliberately leaves
+the shared lock held by a separate legacy writer during its timeout report; its
+observed locked state remains part of the comparison.
+
+This test-only follow-up preserves the prior 64-method qualification and original
+H150 proof. It runs only the five newly carried methods; final combined-tree
+gates, independent review and integration remain with Foundation.
+
 This is a source construction candidate for the existing Foundation review and
 integration path. It establishes neither full CAIRN-319 acceptance nor installed
 cutover, provider usefulness, native session policy or permission for production

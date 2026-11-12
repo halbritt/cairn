@@ -335,6 +335,107 @@ class CheckedUnboundCaptureTests(UnboundSelection, CheckedCapturePair):
         self.assertEqual(self.state(), {})
 
 
+class CheckedUnboundBoundaryCoverageTests(UnboundSelection, CheckedCapturePair):
+    def setUp(self):
+        super().setUp()
+        self.configure('opencode', 'PreCompact', messages=[])
+
+    session_key = capture_fixture.CaptureBoundaryTests.session_key
+    configure = capture_fixture.CaptureBoundaryTests.configure
+    rollout = capture_fixture.CaptureBoundaryTests.rollout
+    courtesy_messages = capture_fixture.CaptureBoundaryTests.courtesy_messages
+    outcome = capture_fixture.CaptureBoundaryTests.outcome
+    scheduled = bound_capture.BoundCaptureTests.scheduled
+    after_run = capture_fixture.CaptureBoundaryTests.finish_scheduler
+
+    def before_run(self, side):
+        super().before_run(side)
+        observed_directory = self.f.root / 'invocation-trace'
+        if observed_directory.exists():
+            # The unchanged reference method observes its project-relative path.
+            # Both real hooks still open the receipt config's actual trace path.
+            actual_directory = self.f.memory_path.parent / 'invocation-trace'
+            actual_directory.mkdir(mode=0o700, exist_ok=True)
+            observed = observed_directory / 'trace.jsonl'
+            if not observed.exists():
+                write(observed, b'', 0o600)
+            actual = actual_directory / 'trace.jsonl'
+            if not actual.exists():
+                os.link(observed, actual)
+            self.assertTrue(os.path.samefile(actual, observed))
+        capture_fixture.CaptureBoundaryTests.start_scheduler(self, side)
+
+    def pair(self):
+        directory = Path(self.f.memory['state_dir'])
+        seed = {path.name: path.read_bytes() for path in directory.iterdir()} if directory.exists() else {}
+        self.calls.clear()
+        self.report_locks.clear()
+        self.before_run('source')
+        source = self.source()
+        self.after_run()
+        source_state, calls, locks = self.state(), list(self.calls), list(self.report_locks)
+        self.reset_state(seed)
+        self.calls.clear()
+        self.report_locks.clear()
+        self.before_run('go')
+        go = self.go()
+        self.after_run()
+        self.assertEqual((go.returncode, go.stdout, go.stderr), (source.returncode, source.stdout, source.stderr))
+        actual_state = self.state()
+        self.assertEqual(actual_state.keys(), source_state.keys())
+        for name in source_state:
+            self.assertEqual(scalar_tree(actual_state[name]), scalar_tree(source_state[name]), name)
+        self.assertEqual([row[0] for row in self.calls], [row[0] for row in calls])
+        self.assertEqual(self.report_locks, locks)
+        # A legacy writer deliberately holds the shared lock in the timeout
+        # case. Reference parity still compares every observed lock exactly;
+        # the capture lock owned by each hook must always be released.
+        self.assertTrue(all(row['.capture.lock'] for row in self.report_locks))
+        print('CHECKED_CAPTURE_LOCKS=' + json.dumps(dict(test=self.id(), source=locks,
+              go=self.report_locks), sort_keys=True), flush=True)
+        for actual, expected in zip(self.calls, calls):
+            def normalized(row):
+                body = copy.deepcopy(row[1])
+                identifier = body.get('request_id')
+                if row[0] not in ('create', 'revise'):
+                    body.pop('request_id', None)
+                if row[0] != 'version':
+                    self.assertEqual(str(uuid.UUID(identifier)), identifier)
+                    self.assertNotEqual(uuid.UUID(identifier).int, 0)
+                if row[0] in ('capture-observation', 'recall-observation'):
+                    for key in ('duration_ms', 'elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms', 'selector_duration_ms'):
+                        if key in body:
+                            self.assertGreaterEqual(body.pop(key), 0)
+                self.assertEqual(row[2]['Authorization'], 'Bearer bound-memory-synthetic-token')
+                return body
+            self.assertEqual(normalized(actual), normalized(expected))
+            for row in (actual, expected):
+                declaration = row[2]['Cairn-Client-Diagnostics']
+                origin = json.loads(base64.urlsafe_b64decode(declaration + '=' * (-len(declaration) % 4)))['origin']
+                self.assertEqual(origin['component'], 'lifecycle-memory')
+                source_capture = self.f.event['hook_event_name'] in ('PreCompact', 'Stop', 'SessionEnd')
+                if row is actual or not source_capture:
+                    self.assertEqual(origin, dict(component='lifecycle-memory', basis='reported',
+                                                  implementation_id=self.f.receipt['binary']['sha256']))
+                else:
+                    expected_origin = dict(component='lifecycle-memory', basis='reported')
+                    if self.f.receipt_sha != self.f.installed['receipt']['sha256']:
+                        entrypoint = 'memory-hook.py'
+                    else:
+                        words = shlex.split(self.f.launcher('memory', self.timeout()).read_text())
+                        entrypoint = words[words.index('--entrypoint') + 1]
+                    if entrypoint.endswith('.py'):
+                        expected_origin['implementation_id'] = self.f.receipt['members'][entrypoint]['sha256']
+                    self.assertEqual(origin, expected_origin)
+        return go
+
+    test_capture_trace_preserves_phase_stage_outcome_and_zero_context = capture_fixture.CaptureBoundaryTests.test_capture_trace_preserves_phase_stage_outcome_and_zero_context
+    test_final_commit_waits_for_short_legacy_writer_and_times_out_without_marker = capture_fixture.CaptureBoundaryTests.test_final_commit_waits_for_short_legacy_writer_and_times_out_without_marker
+    test_preparation_failure_does_not_report_or_create_state = capture_fixture.CaptureBoundaryTests.test_preparation_failure_does_not_report_or_create_state
+    test_invalid_dialogue_and_missing_transcript_do_not_advance_status = capture_fixture.CaptureBoundaryTests.test_invalid_dialogue_and_missing_transcript_do_not_advance_status
+    test_only_ascii_blank_transcript_lines_are_skipped = capture_fixture.CaptureBoundaryTests.test_only_ascii_blank_transcript_lines_are_skipped
+
+
 class CheckedUnboundProviderCaptureTests(UnboundSelection, bound_capture.BoundProviderCaptureTests, CheckedCapturePair):
     pass
 
