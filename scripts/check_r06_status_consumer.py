@@ -47,8 +47,7 @@ def run(argv, prefix, *, env=None, body=None, timeout=120):
     return result
 
 
-def build(evidence):
-    tools = evidence / 'tools'
+def build(evidence, tools):
     tools.mkdir(mode=0o700)
     images = {'api': tools / 'cairn', 'consumer': tools / 'consumer-tests'}
     run(['go', 'build', '-buildvcs=false', '-o', images['api'], './cmd/cairn'], tools / 'build-api')
@@ -210,9 +209,11 @@ class Fixture:
 
 
 def check(evidence, cases):
-    images = build(evidence)
     scratch = Path(tempfile.mkdtemp(prefix='r06-', dir=Path.home() / '.cache'))
     write(evidence / 'scratch.json', dict(path=str(scratch)))
+    # The consumer verifies every binary ancestor. Keep its frozen executable
+    # under this private fixture root even when the evidence parent is shared.
+    images = build(evidence, scratch / 'tools')
     cluster = OwnedCluster.start(scratch / 'pg')
     outcomes = []
     try:
@@ -234,11 +235,6 @@ def check(evidence, cases):
                 if case == 'invalidate':
                     # Publish a new pending obligation as a fixture actor. A
                     # real claim after capture must invalidate the receipt.
-                    event, claim, attempt = f.claim()
-                    f.call('worker', 'event-complete', dict(request_id=uid(), delivery_id=attempt['delivery']['delivery_id'],
-                        lease_id=attempt['delivery']['lease_id'], disposition='ignored'), session=f.session)
-                    f.call('worker', 'session-inbox-reconcile', dict(request_id=uid(), session=f.session,
-                        attempt_id=attempt['attempt_id'], reason='delivery_completed'))
                     # A fresh unclaimed event is safe to inspect, then held.
                     source = f.call('sender', 'create', dict(request_id=uid(), draft=dict(kind='note', body='invalidation',
                         scope=dict(repo=f.repo, task_id='*', run_id='*'), claim_type='self', sensitivity='shareable')))
