@@ -17,6 +17,7 @@ import unittest
 import uuid
 
 import test_f02_bound_memory as bound
+import test_f02_checked_ordinary as ordinary
 import test_f03_checked_unbound_capture as checked
 from test_f04_activation import ROOT, encoded, sha, write
 
@@ -126,7 +127,11 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
     def pair(self, route, *, class_b=False, unchanged=False):
         seed = self.snapshot()
         rows = []
-        for side, call in (('source', self.source), ('go', lambda: self.launch(route))):
+        # Capture rows select H150; installed PostToolUse/Failure rows select
+        # H13. PreToolUse has no fixed Source row and uses the bare H13 entry.
+        source_timeout = 150 if self.f.event['hook_event_name'] in CAPTURE else 13
+        for side, call in (('source', lambda: self.source(timeout=source_timeout)),
+                           ('go', lambda: self.launch(route))):
             self.restore(seed)
             self.assertEqual(self.snapshot(), seed, side+' independent seed')
             if getattr(self, 'prepare_side', None):
@@ -277,6 +282,10 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
             with self.subTest(route=route, event=name):
                 self.restore(None)
                 case.configure('hermes', name, messages=messages)
+                # Configuration issuance creates a new generation, including
+                # its separate trace observer location.
+                self.trace_path = case.f.memory_path.parent/'invocation-trace'/'trace.jsonl'
+                self.trace_path.parent.mkdir(mode=0o700, exist_ok=True)
                 case.f.event['session_id'] = label
                 case.f.raw = encoded(case.f.event)
                 write(self.root/'provider.json', encoded(dict(result=dict(structured_output=case.selection))))
@@ -416,18 +425,24 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (1, b'', PREFLIGHT))
                 self.assertIsNone(self.snapshot())
                 self.assertEqual(self.calls, [])
-        for config in (self.f.memory, self.f.coord):
-            with self.subTest(bound_config='memory' if config is self.f.memory else 'coordination'):
+        for path in (self.f.memory_path, self.f.coord_path):
+            with self.subTest(bound_config=path.name):
+                original = path.read_bytes()
+                config = json.loads(original)
                 config['inbox_recall_binding'] = str(self.f.binding)
-                self.f.publish_configuration(enabled=False)
+                ordinary.CheckedOrdinaryTests.overwrite(self, path, encoded(config))
+                ordinary.CheckedOrdinaryTests.repin(self)
+                self.assertEqual(json.loads(path.read_bytes())['inbox_recall_binding'], str(self.f.binding))
                 for name, call in (('SessionStart', self.recall), ('PreCompact', self.go)):
                     self.set_event(name, 'legal bound label')
                     result = call()
                     self.assertEqual((result.returncode, result.stdout, result.stderr), (1, b'', PREFLIGHT))
                     self.assertIsNone(self.snapshot())
                     self.assertEqual(self.calls, [])
-                config['inbox_recall_binding'] = None
-                self.f.publish_configuration(enabled=False)
+                ordinary.CheckedOrdinaryTests.overwrite(self, path, original)
+                ordinary.CheckedOrdinaryTests.repin(self)
+
+    overwrite = ordinary.CheckedOrdinaryTests.overwrite
 
     def recall(self):
         vector = bound.BoundMemoryCase.go_vector(self, timeout=13)
