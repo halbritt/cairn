@@ -78,6 +78,8 @@ func selectorProvider(ctx context.Context, config, excerpt, observed *value.Valu
 	if value.Truth(model) {
 		if model.Kind != value.String {
 			argumentErr = &value.Error{Class: "TypeError", Message: "selector model must be a string"}
+		} else if strings.ContainsRune(text(model), 0) {
+			argumentErr = &value.Error{Class: "ValueError", Message: "embedded null byte"}
 		} else {
 			argv = append(argv, "--model", text(model))
 		}

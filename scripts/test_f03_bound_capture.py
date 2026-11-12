@@ -290,6 +290,17 @@ sys.exit(spec.get('exit',0))
         self.assertEqual(self.state(), {})
         self.assertFalse((self.root / 'provider.calls').exists())
 
+    def test_nul_model_preserves_source_value_error_without_commit(self):
+        self.expected_provider_calls = 0
+        self.f.memory['model'] = 'bad\0model'
+        self.f.publish_configuration()
+        result = self.pair()
+        self.assertEqual((result.returncode, result.stdout), (1, b''))
+        self.assertIn(b'error_class=ValueError', result.stderr)
+        self.assertEqual(self.writes, [])
+        self.assertEqual(self.state(), {})
+        self.assertFalse((self.root / 'provider.calls').exists())
+
     def test_checked_null_selection_commits_digest_after_real_selector(self):
         self.assertEqual(self.pair().stdout, b'{}\n')
         state = self.state()[SESSION + '.json']

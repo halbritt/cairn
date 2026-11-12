@@ -331,7 +331,8 @@ sys.exit(spec.get('exit',0))
     def test_missing_invalid_provider_and_model_preserve_source_failures(self):
         self.required(); self.optional_note('Concrete retained guidance.')
         cases = (({'claude':None}, 'TypeError'), ({'model':1, 'recall_model':'fixture-recall'}, None),
-                 ({'model':1}, 'TypeError'), ({'recall_model':None}, None))
+                 ({'model':1}, 'TypeError'), ({'model':'bad\0model'}, 'ValueError'),
+                 ({'recall_model':None}, None))
         for changes, error in cases:
             with self.subTest(changes=changes):
                 self.reset_state()
