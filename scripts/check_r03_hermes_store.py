@@ -75,7 +75,7 @@ def main():
 root=pathlib.Path(__file__).parent
 with (root/'selector-inputs.jsonl').open('a') as log:
  log.write(json.dumps(dict(argv=sys.argv[1:],stdin=sys.stdin.read()))+'\\n')
-print(json.dumps(json.loads((root/'selection.json').read_text())))
+print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
 ''')
         selector.chmod(0o500)
         selection = dict(result=dict(structured_output=dict(checkpoint=None, workstream=None,
