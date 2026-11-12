@@ -42,8 +42,10 @@ thirteen seconds reached the real handlers and issued a fifth Go expand while
 Source issued four; the strengthened case rejected it. Production is unchanged.
 The unchanged four-entry control also rejected that same mutant because the
 longer Go run omitted the post-lock observation. Thus the original whole test
-already caught this mutant; the six-entry fixture adds a direct request-count
-discriminator rather than relying on that later report difference.
+already caught this mutant; the six-entry fixture adds a second, direct request-count difference
+(Source four versus mutant five expands); in both measured mutant runs the
+existing locks keyset check still failed first because the mutant omitted the
+observation. This experiment covers only the tested thirteen-second value.
 
 The baseline RED retains actual Source success versus Go preflight refusal for
 explicit/default ambient Start/prompt. These are constructed producer-shaped
