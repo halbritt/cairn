@@ -38,8 +38,17 @@ CURRENT = Path('/proc/self/cgroup').read_text().strip()[3:]
 
 def delegation():
     try:
-        from trial_external_supervision import fixture_service_delegation
-        return fixture_service_delegation()
+        membership = Path('/proc/self/cgroup').read_text().strip()
+        if not membership.startswith('0::'):
+            return None
+        current = Path('/sys/fs/cgroup' + membership[3:])
+        root = current.parent
+        if current.name != 'controller' or not root.name.startswith('cairn-fixture-') or not root.name.endswith('.service'):
+            return None
+        if not {'cpu', 'memory', 'pids'} <= set((root / 'cgroup.controllers').read_text().split()):
+            return None
+        (root / 'cgroup.subtree_control').write_text('+cpu +memory +pids')
+        return str(root)
     except Exception:
         return None
 
