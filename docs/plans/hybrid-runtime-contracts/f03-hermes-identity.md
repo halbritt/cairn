@@ -23,7 +23,9 @@ and changes neither the value model nor Source, shared admission, H/V/L/D,
 binding selection or deadlines.
 
 `scripts/test_f03_hermes_identity.py` runs actual installed Source/main and actual
-Go processes. Local APIs and the existing selector fixture are the only external
+Go processes. Capture selects Source H150; bare tools select Source H13 (the
+installed PostToolUse/Failure rows require H13). Local APIs and the existing
+selector fixture are the only external
 engines. Each side starts from an independently reconstructed state snapshot.
 Malformed high and low surrogates cover absent directories and preexisting
 bytes/modes, including the replacement-hash collision path. Fresh state must
@@ -35,7 +37,7 @@ identity, privacy/disable precedence, other harness account variables, and
 selection/deadline/bound-profile refusals have separate controls.
 
 The new corpus compares decoded per-side keysets before normalizing any timing
-values. Generated capture status requires the complete status keyset and `at`;
+values, including request tuple bodies. Generated capture status requires the complete status keyset and `at`;
 report duration, trace timestamps/invocation IDs and exit duration are required.
 Measured hint times must fall within each process interval. Only independently
 validated timing/UUID/image-attribution fields vary; semantic stdout ordering,

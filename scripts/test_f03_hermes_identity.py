@@ -182,7 +182,7 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
             for key, item in obj.items():
                 result.update(self.keysets(item, path+(key,)))
             return result
-        if isinstance(obj, list):
+        if isinstance(obj, (list, tuple)):
             result = {}
             for n, item in enumerate(obj):
                 result.update(self.keysets(item, path+(n,)))
@@ -246,6 +246,7 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
             requests.append((operation, body))
         row['requests'] = requests
         self.assertEqual([t['kind'] for t in row['trace']], ['entry', 'parsed', 'exit'])
+        self.assertEqual(len({t['inv'] for t in row['trace']}), 1)
         for item in row['trace']:
             measurement(item, 'at')
             self.assertRegex(item.pop('inv'), '^[0-9a-f]{32}$')
@@ -422,6 +423,8 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
                 self.restore(None)
                 self.set_event(name, 'legal identity')
                 result = self.recall()
+                print('HERMES_RECALL_REFUSAL='+json.dumps(dict(event=name, bound=None,
+                      exit=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode())), flush=True)
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (1, b'', PREFLIGHT))
                 self.assertIsNone(self.snapshot())
                 self.assertEqual(self.calls, [])
@@ -436,6 +439,8 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
                 for name, call in (('SessionStart', self.recall), ('PreCompact', self.go)):
                     self.set_event(name, 'legal bound label')
                     result = call()
+                    print('HERMES_RECALL_REFUSAL='+json.dumps(dict(event=name, bound=path.name,
+                          exit=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode())), flush=True)
                     self.assertEqual((result.returncode, result.stdout, result.stderr), (1, b'', PREFLIGHT))
                     self.assertIsNone(self.snapshot())
                     self.assertEqual(self.calls, [])
