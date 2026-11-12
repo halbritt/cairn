@@ -27,6 +27,9 @@ func runToolObservation(ctx context.Context, config, event *value.Value, directo
 	if !contains([]string{"opencode", "agy", "codex", "claude", "hermes"}, text(config.Get("harness"))) {
 		return boundary(fail("ordinary tool observation harness remains unavailable"))
 	}
+	if value.SameText(config.Get("harness"), "hermes") && !validText(event.Get("session_id")) {
+		return boundary(fail("invalid Hermes session identity"))
+	}
 	if !value.SameText(event.Get("hook_event_name"), "PostToolUseFailure") && !value.SameText(config.Get("harness"), "hermes") && !value.Truth(event.Get("project_path")) && !value.Truth(event.Get("workstream")) {
 		files, searches, err := observationHints(event, directory)
 		if err != nil {

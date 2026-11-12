@@ -123,6 +123,9 @@ func captureStatus(state *value.Value, outcome string) {
 func runCapture(ctx context.Context, config, event *value.Value, directory string, started time.Time, trace map[string]any) (result Result) {
 	observed := value.Mapping()
 	boundary := func(err error) Result { return failure(event, err) }
+	if value.SameText(config.Get("harness"), "hermes") && !validText(event.Get("session_id")) {
+		return boundary(fail("invalid Hermes session identity"))
+	}
 	for _, key := range []string{"repo", "cairn", "socket", "token_file", "state_dir"} {
 		if config.Get(key) == nil {
 			return boundary(&value.Error{Class: "KeyError", Message: key})

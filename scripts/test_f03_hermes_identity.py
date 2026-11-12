@@ -6,10 +6,10 @@ The handlers, Source closure, selection verifier and admission remain real.
 import base64
 import copy
 import fcntl
-import hashlib
 import json
 import math
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import time
@@ -129,6 +129,8 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
         for side, call in (('source', self.source), ('go', lambda: self.launch(route))):
             self.restore(seed)
             self.assertEqual(self.snapshot(), seed, side+' independent seed')
+            if getattr(self, 'prepare_side', None):
+                self.prepare_side()
             rows.append(self.observation(call))
         type(self).pairs += 1
         print('HERMES_IDENTITY_PAIR='+json.dumps(dict(test=self.id(), route=route,
@@ -155,9 +157,19 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
                 self.assertEqual(row['requests'], [])
                 self.assertEqual(row['locks'], [])
         # Check the complete key structure before removing ANY timing values.
-        self.assertEqual(self.keysets(left), self.keysets(right))
+        self.assertEqual(self.keysets(self.decoded(left)), self.keysets(self.decoded(right)))
         self.assertEqual(self.normalized(left, 'source'), self.normalized(right, 'go'))
         return rows
+
+    def decoded(self, row):
+        row = copy.deepcopy(row)
+        if row['stdout']:
+            row['stdout'] = json.loads(row['stdout'])
+        if row['files'] is not None:
+            for name, item in row['files']['files'].items():
+                if name.endswith('.json'):
+                    item['bytes'] = json.loads(base64.b64decode(item['bytes']))
+        return row
 
     def keysets(self, obj, path=()):
         if isinstance(obj, dict):
@@ -199,21 +211,29 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
             self.assertEqual(row['stdout'], json.dumps(body, ensure_ascii=False, separators=(',', ':'))+'\n')
             if 'cairn_status' in body:
                 status(body['cairn_status'])
-            row['stdout'] = body
+            row['stdout'] = json.dumps(body, ensure_ascii=False, separators=(',', ':'))+'\n'
         if row['files'] is not None:
             for name, item in row['files']['files'].items():
                 if name.endswith('.json'):
-                    item['bytes'] = status(json.loads(base64.b64decode(item['bytes'])))
+                    item['bytes'] = json.dumps(status(json.loads(base64.b64decode(item['bytes']))),
+                                               ensure_ascii=False, separators=(',', ':'))
         requests = []
         for operation, body, headers in row['requests']:
-            identifier = body.pop('request_id')
-            self.assertEqual(str(uuid.UUID(identifier)), identifier)
-            self.assertNotEqual(uuid.UUID(identifier).int, 0)
-            self.assertEqual(operation, 'capture-observation')
-            measurement(body, 'duration_ms')
-            self.assertEqual(body['session_sha256'], sha(self.f.event['session_id'].encode()))
-            self.assertEqual((body['harness'], body['hook_event']), ('hermes', self.f.event['hook_event_name']))
-            self.assertEqual(headers['Authorization'], 'Bearer bound-memory-synthetic-token')
+            self.assertIn(operation, ('version', 'index', 'capture-observation'))
+            if operation != 'version':
+                identifier = body.pop('request_id')
+                self.assertEqual(str(uuid.UUID(identifier)), identifier)
+                self.assertNotEqual(uuid.UUID(identifier).int, 0)
+            if operation == 'capture-observation':
+                measurement(body, 'duration_ms')
+                if 'selector_duration_ms' in body:
+                    measurement(body, 'selector_duration_ms')
+                self.assertEqual(body['session_sha256'], sha(self.f.event['session_id'].encode()))
+                self.assertEqual((body['harness'], body['hook_event']), ('hermes', self.f.event['hook_event_name']))
+            if operation == 'index':
+                self.assertEqual(body['scope']['task_id'], 'hermes/'+self.f.event['session_id'])
+                self.assertEqual(body['scope']['run_id'], self.f.event['session_id'])
+            self.assertEqual(headers['Authorization'], 'Bearer '+getattr(self, 'api_token', 'bound-memory-synthetic-token'))
             declaration = headers['Cairn-Client-Diagnostics']
             origin = json.loads(base64.urlsafe_b64decode(declaration+'='*(-len(declaration)%4)))['origin']
             image = self.f.receipt['binary']['sha256'] if side == 'go' else self.f.receipt['members']['memory.py']['sha256']
@@ -231,6 +251,55 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
                 measurement(item, 'duration_ms')
         self.assertTrue(all(all(lock.values()) for lock in row['locks']))
         return row
+
+    def test_capture_keeps_raw_label_api_scope_with_existing_local_engine(self):
+        # Reuse the committed external engine fixture unchanged. Its handlers and
+        # SDK calls still execute in the actual Source and Go processes.
+        case = checked.CheckedUnboundSelectionTests('test_null_selection_commits_digest')
+        case.binary, case.stager, case.cli = self.binary, self.stager, self.cli
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        self.root, self.f = case.root, case.f
+        self.directory = Path(case.f.memory['state_dir'])
+        self.trace_path = case.f.memory_path.parent/'invocation-trace'/'trace.jsonl'
+        self.trace_path.parent.mkdir(mode=0o700, exist_ok=True)
+        self.calls, self.report_locks = case.calls, case.report_locks
+        self.api_token = 'f03-synthetic-token'
+        def prepare():
+            case.index_count = case.write_count = 0
+            case.records = []
+        self.prepare_side = prepare
+        label = 'non-UUID / 日本語 \U0001f600 DEL\x7f'
+        messages = [dict(role='user' if i % 2 == 0 else 'assistant',
+                         text='Preserve the agreed retention decision and its operator guide.')
+                    for i in range(6)]
+        for route, name in CELLS[:4]:
+            with self.subTest(route=route, event=name):
+                self.restore(None)
+                case.configure('hermes', name, messages=messages)
+                case.f.event['session_id'] = label
+                case.f.raw = encoded(case.f.event)
+                write(self.root/'provider.json', encoded(dict(result=dict(structured_output=case.selection))))
+                provider_log = self.root/'provider.calls'
+                provider_log.unlink(missing_ok=True)
+                rows = self.pair(route)
+                self.assertEqual((rows[1]['exit'], rows[1]['stderr']), (0, ''))
+                self.assertIn('index', [op for op, _, _ in rows[1]['requests']])
+                self.assertIn(sha(label.encode())+'.json', rows[1]['files']['files'])
+                provider = [json.loads(line) for line in provider_log.read_text().splitlines()]
+                print('HERMES_IDENTITY_LOCAL_ENGINE='+json.dumps(provider, ensure_ascii=True), flush=True)
+                self.assertEqual(len(provider), 2)
+                for call in provider:
+                    pid = call.pop('pid')
+                    self.assertGreater(pid, 1)
+                    self.assertFalse(Path('/proc', str(pid)).exists())
+                    cwd = Path(call.pop('cwd'))
+                    self.assertTrue(cwd.name.startswith('cairn-selection-'))
+                    self.assertFalse(cwd.exists())
+                    self.assertEqual(call['entries'], [])
+                    self.assertEqual(call['child'], '1')
+                    self.assertIsNone(call['claudecode'])
+                self.assertEqual(provider[0], provider[1])
 
     def test_lone_surrogates_refuse_without_effects(self):
         for route, name in CELLS:
@@ -279,19 +348,24 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
         marker = self.f.root/'.cairn-no-memory'
         for route, name in CELLS:
             for guard in ('privacy', 'CAIRN_LIFECYCLE_DISABLED', 'CAIRN_LIFECYCLE_CHILD'):
-                with self.subTest(route=route, event=name, guard=guard):
-                    self.restore(None)
-                    self.set_event(name, 'bad\ud800label')
-                    if guard == 'privacy':
-                        marker.touch()
-                    else:
-                        self.f.env = lambda guard=guard: dict(original(), **{guard:'1'})
-                    try:
-                        rows = self.pair(route, unchanged=True)
-                        self.assertEqual((rows[1]['exit'], rows[1]['stdout'], rows[1]['stderr']), (0, '{}\n', ''))
-                    finally:
-                        marker.unlink(missing_ok=True)
-                        self.f.env = original
+                for label in ('bad\ud800label', 'bad\nlabel'):
+                    with self.subTest(route=route, event=name, guard=guard, label=repr(label)):
+                        self.restore(None)
+                        self.set_event(name, label)
+                        if guard == 'privacy':
+                            marker.touch()
+                        else:
+                            self.f.env = lambda guard=guard: dict(original(), **{guard:'1'})
+                        try:
+                            rows = self.pair(route, unchanged=True)
+                            if guard == 'privacy' and '\n' in label:
+                                self.assertEqual((rows[1]['exit'], rows[1]['stdout']), (1, ''))
+                                self.assertIn('error_class=HookError', rows[1]['stderr'])
+                            else:
+                                self.assertEqual((rows[1]['exit'], rows[1]['stdout'], rows[1]['stderr']), (0, '{}\n', ''))
+                        finally:
+                            marker.unlink(missing_ok=True)
+                            self.f.env = original
 
     def test_foreign_account_variables_do_not_change_hermes_policy(self):
         original = self.f.env
@@ -334,21 +408,36 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
                     path.chmod(mode)
 
     def test_checked_recall_still_refuses_capture_tools_and_bound_hermes(self):
-        for _, name in CELLS:
+        for name in (*CAPTURE, 'PreToolUse', 'PostToolUse', 'PostToolUseFailure'):
             with self.subTest(event=name):
                 self.restore(None)
                 self.set_event(name, 'legal identity')
-                vector = bound.BoundMemoryCase.go_vector(self, timeout=13)
-                raw = ('#!/bin/sh\nexec '+__import__('shlex').join(vector)+' -- "$@"\n').encode()
-                launcher = self.f.launch_root/sha(raw)/'inbox'
-                launcher.parent.mkdir(mode=0o700, exist_ok=True)
-                if not launcher.exists():
-                    write(launcher, raw, 0o500)
-                result = subprocess.run([str(launcher)], input=self.f.raw, cwd=self.f.root,
-                                        env=self.f.env(), capture_output=True, timeout=20)
+                result = self.recall()
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (1, b'', PREFLIGHT))
                 self.assertIsNone(self.snapshot())
                 self.assertEqual(self.calls, [])
+        for config in (self.f.memory, self.f.coord):
+            with self.subTest(bound_config='memory' if config is self.f.memory else 'coordination'):
+                config['inbox_recall_binding'] = str(self.f.binding)
+                self.f.publish_configuration(enabled=False)
+                for name, call in (('SessionStart', self.recall), ('PreCompact', self.go)):
+                    self.set_event(name, 'legal bound label')
+                    result = call()
+                    self.assertEqual((result.returncode, result.stdout, result.stderr), (1, b'', PREFLIGHT))
+                    self.assertIsNone(self.snapshot())
+                    self.assertEqual(self.calls, [])
+                config['inbox_recall_binding'] = None
+                self.f.publish_configuration(enabled=False)
+
+    def recall(self):
+        vector = bound.BoundMemoryCase.go_vector(self, timeout=13)
+        raw = ('#!/bin/sh\nexec '+shlex.join(vector)+' -- "$@"\n').encode()
+        launcher = self.f.launch_root/sha(raw)/'inbox'
+        launcher.parent.mkdir(mode=0o700, exist_ok=True)
+        if not launcher.exists():
+            write(launcher, raw, 0o500)
+        return subprocess.run([str(launcher)], input=self.f.raw, cwd=self.f.root,
+                              env=self.f.env(), capture_output=True, timeout=20)
 
 
 if __name__ == '__main__':
