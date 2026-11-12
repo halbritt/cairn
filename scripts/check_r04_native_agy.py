@@ -76,8 +76,9 @@ class GeminiFixture:
 
 
 class TracedProcess:
-    def __init__(self, argv, root, env, output, work, *, string_limit=8192):
+    def __init__(self, argv, root, env, output, work, *, string_limit=8192, allow_completed=False):
         self.argv, self.binary = argv, Path(argv[0]).resolve()
+        self.allow_completed = allow_completed
         self.before_hash = digest(self.binary)
         self.trace = output / (root.name + '.trace')
         self.stderr_path = output / (root.name + '.stderr')
@@ -100,6 +101,19 @@ class TracedProcess:
             raise
 
     def identify(self):
+        # Short commands can finish before /proc is inspected. Only opt-in
+        # callers may use completed exec/exit evidence; no live PID is inferred.
+        if self.allow_completed and self.process.poll() is not None:
+            trace = self.trace.read_text()
+            native = [record for record in successful_execs(exec_lines(trace))
+                      if record['path'] == str(self.binary) and record['argv'] == self.argv]
+            if len(native) != 1:
+                return False
+            pid = int(native[0]['pid'])
+            if pid <= 1 or exits(trace, pid) != ['exited with 0']:
+                return False
+            self.native_pid, self.native_exe = pid, str(self.binary)
+            return True
         for entry in Path('/proc').iterdir():
             if not entry.name.isdigit():
                 continue
@@ -491,6 +505,25 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 native_exe=client.child.native_exe, before_sha256=client.child.before_hash,
                 after_sha256=client.child.after_hash, joined_pids=client.child.pids, connections=connections,
                 native_history_path=str(history), native_session_id=client.identity))
+        version_before = len(f.api_calls()), len(provider.requests)
+        version = TracedProcess([str(binary), '--version'], self.root / 'version-client', env, output, work,
+                                string_limit=string_limit, allow_completed=True)
+        self.addCleanup(version.close)
+        try:
+            version_raw, _ = version.process.communicate(timeout=10)
+        finally:
+            version.close(timeout=0)
+        version_trace = version.trace.read_text()
+        version_threads = thread_pids(version_trace, version.native_pid)
+        self.assertEqual(io_bytes(version_trace, version_threads, 1, 'write'), version_raw)
+        self.assertEqual(io_bytes(version_trace, version_threads, 2, 'write'), b'')
+        self.assertTrue(version_raw.strip())
+        self.assertEqual((len(f.api_calls()), len(provider.requests)), version_before)
+        (output / 'version.stdout').write_bytes(version_raw)
+        version_report = dict(argv=version.argv, native_pid=version.native_pid, native_exe=version.native_exe,
+            before_sha256=version.before_hash, after_sha256=version.after_hash, joined_pids=version.pids,
+            connections=loopback_connections(version_trace, provider_port=provider.server.server_port),
+            stdout_sha256=hashlib.sha256(version_raw).hexdigest(), trace=pin(version.trace))
         calibration = TracedProcess([sys.executable, '-I', '-S', '-c', 'import time; time.sleep(60)'],
             self.root / 'forced-cleanup', env, output, work)
         with self.assertRaisesRegex(AssertionError, 'required forced shutdown'):
@@ -502,7 +535,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         self.assertEqual(credential_files, [])
         return dict(schema='cairn.r04-native-agy/1', passed=True, cases=observations, clients=client_reports,
             fixture=pin(Path(__file__)), client=dict(path=str(binary), sha256=digest(binary),
-                version=subprocess.check_output([binary, '--version'], env=env, text=True, timeout=10).strip()),
+                version=version_raw.decode().strip()), version_process=version_report,
             selection_scope='project .agents/hooks.json; same account, independent workspace control',
             native_home=str(home), native_profile=str(native_profile), binding_account=str(f.account),
             trace_parser=pin(Path(__file__).with_name('r04_agy_trace.py')), nscd_path_exists=False,

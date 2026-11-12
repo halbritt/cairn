@@ -1,6 +1,8 @@
 """Kernel evidence must bind a completed exec to its own process and argv."""
 import unittest
 import struct
+import json
+from pathlib import Path
 from unittest import mock
 
 from check_r04_native_opencode import successful_execs
@@ -41,6 +43,44 @@ class NativeTraceTests(unittest.TestCase):
 
 
 class AgyTraceTests(unittest.TestCase):
+    def test_truncated_native_hook_write_refuses_before_json_decode(self):
+        prefix = '{"conversationId":"id","hookEventName":"Stop",'
+        trace = f'7 write(8, {json.dumps(prefix)}..., 100) = 100\n'
+        with self.assertRaisesRegex(AssertionError, 'Truncated native hook write'):
+            hook_writes(trace, ['7'])
+        self.assertEqual(hook_writes(trace, ['8']), [])
+        self.assertEqual(hook_writes('7 write(8, "{\\"other\\":0"..., 100) = 100\n', ['7']), [])
+
+    def test_completed_version_identifies_only_its_successful_native_exec(self):
+        child = object.__new__(TracedProcess)
+        child.argv, child.binary = ['/owned/agy', '--version'], Path('/owned/agy')
+        child.allow_completed, child.native_pid = True, None
+        child.process, child.trace = mock.Mock(), mock.Mock()
+        child.process.poll.return_value = 0
+        child.trace.read_text.return_value = ('9 execve("/owned/agy", ["/owned/agy", "--version"], 0x1) = 0\n'
+                                             '9 +++ exited with 0 +++\n')
+        with mock.patch('check_r04_native_agy.Path.iterdir', return_value=iter(())):
+            self.assertTrue(child.identify())
+        self.assertEqual((child.native_pid, child.native_exe), (9, '/owned/agy'))
+
+    def test_completed_identity_requires_opt_in_exact_argv_and_exit(self):
+        original = ('9 execve("/owned/agy", ["/owned/agy", "--version"], 0x1) = 0\n'
+                    '9 +++ exited with 0 +++\n')
+        traces = [original.replace('--version', '--other'), original.replace('/owned/agy', '/other'),
+                  original.split('9 +++')[0], original.replace('= 0\n', '= -1 ENOENT (No such file or directory)\n'),
+                  original.replace('9 ', '1 ')]
+        for allow_completed, trace in [(True, trace) for trace in traces] + [(False, original)]:
+            child = object.__new__(TracedProcess)
+            child.argv, child.binary = ['/owned/agy', '--version'], Path('/owned/agy')
+            child.allow_completed, child.native_pid = allow_completed, None
+            child.process, child.trace = mock.Mock(), mock.Mock()
+            child.process.poll.return_value = 0
+            child.trace.read_text.return_value = trace
+            with self.subTest(trace=trace, opt_in=allow_completed), \
+                 mock.patch('check_r04_native_agy.Path.iterdir', return_value=iter(())):
+                self.assertFalse(child.identify())
+            self.assertIsNone(child.native_pid)
+
     def test_hex_exec_and_producer_input_are_independently_decoded(self):
         trace = r'''7 execve("\x2f\x78", ["\x2f\x78"], 0x1) = 0
 7 write(8, "\x7b\x22\x63\x6f\x6e\x76\x65\x72\x73\x61\x74\x69\x6f\x6e\x49\x64\x22\x3a\x22\x69\x64\x22\x2c\x22\x77\x6f\x72\x6b\x73\x70\x61\x63\x65\x50\x61\x74\x68\x73\x22\x3a\x5b\x5d\x2c\x22\x68\x6f\x6f\x6b\x45\x76\x65\x6e\x74\x4e\x61\x6d\x65\x22\x3a\x22\x53\x74\x6f\x70\x22\x7d", 66) = 66

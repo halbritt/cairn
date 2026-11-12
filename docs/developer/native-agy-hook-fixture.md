@@ -54,6 +54,12 @@ it does not signal a process group or only the tracer. A separate hung Python
 child exercises this shared cleanup path and must raise the forced-shutdown
 failure. That calibration is separate from normal Agy runs, which must exit
 cleanly. Native executable hashes are checked before and after execution.
+The separate `--version` invocation is also traced and joined, with its stdout,
+connections and executable hashes retained. An already-finished version command
+is identified by its successful literal exec and exit records; live cleanup
+still requires `/proc/PID/exe`. Credential checks run after this invocation.
+The decoder rejects truncated native hook prefixes before JSON decoding, and
+the exact pair of complete callback events remains required.
 
 The connection check permits only the fixture provider's loopback port and
 loopback DNS port 53. It records the exact unavailable

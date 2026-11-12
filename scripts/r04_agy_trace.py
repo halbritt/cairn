@@ -83,19 +83,22 @@ def thread_pids(trace, leader):
 def hook_writes(trace, native_threads):
     records = []
     for owner, _, event in calls(trace, {'write'}, pid=native_threads, complete=False):
-        match = re.match(r'write\((\d+), ("(?:[^"\\]|\\.)*"), \d+\)\s+= (\d+)$', event)
+        match = re.match(r'write\((\d+), ("(?:[^"\\]|\\.)*")(\.\.\.)?, \d+\)\s+= (\d+)$', event)
         if not match:
             continue
-        raw = ast.literal_eval(match[2]).encode('latin1')[:int(match[3])]
+        raw = ast.literal_eval(match[2]).encode('latin1')
         if not raw.startswith(b'{'):
             continue
+        if match[3] or int(match[4]) > len(raw):
+            if b'"conversationId"' in raw:
+                raise AssertionError('Truncated native hook write')
+            continue  # A truncated unrelated JSON record is not a hook frame.
+        raw = raw[:int(match[4])]
         try:
             payload = json.loads(raw)
         except (UnicodeDecodeError, json.JSONDecodeError):
             continue  # Other descriptors carry arbitrary files and wire chunks.
         if isinstance(payload, dict) and {'conversationId', 'workspacePaths', 'hookEventName'} <= payload.keys():
-            if int(match[3]) > len(ast.literal_eval(match[2]).encode('latin1')):
-                raise AssertionError('Truncated native hook write')
             records.append(dict(pid=owner, fd=int(match[1]), payload=payload))
     return records
 
