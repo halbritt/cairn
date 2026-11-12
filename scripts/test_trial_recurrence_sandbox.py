@@ -99,7 +99,7 @@ func TestIsolationEvidence(t *testing.T) {
 class SandboxIntegrity(unittest.TestCase):
     def setUp(self):
         self.controller = load_controller()
-        self.temp = tempfile.TemporaryDirectory(prefix='recurrence-audit-', dir='/tmp/opencode')
+        self.temp = tempfile.TemporaryDirectory(prefix='recurrence-audit-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / 'trial'
         self.root.mkdir()
