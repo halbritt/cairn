@@ -15,6 +15,20 @@ hook files bind that project layer to the staged settings hash. The fixture
 does not rewrite the staged commands. Native `--settings` selects the separate
 session settings for the local provider; it does not select hook definitions.
 
+After all 13 project-layer cases, those clients are joined and both workspace
+hook files are removed. Four account-only cases use the same staged bytes at
+the disposable `HOME/.gemini/config/hooks.json`: fresh A, B publication during
+the conversation, stop/join and exact-conversation resume on B, then reversal
+to A. The R-04 `account_home` and declared hook layout name this native global
+customization directory. It is distinct from `ANTIGRAVITY_CLI_CONFIG_DIR`, the
+Cairn binding account and the native brain/profile directory. The
+[official hook reference](https://antigravity.google/docs/hooks/) documents
+this global location. Native opens, literal argv, provider context and
+identity are checked for this layer too;
+the earlier account prompt must survive later requests and resume. Each case
+records its hook layer and file pin. The original project-layer receipt
+refusals remain; the account-only phase adds positive selection controls.
+
 The cases cover fresh and repeated A, an independent workspace control,
 publication of B during the existing conversation, the unchanged control,
 fresh B, stop/join followed by native `--conversation` resume, receipt
@@ -97,8 +111,9 @@ Select the native Agy executable and its expected SHA-256, and keep evidence
 outside Git:
 
 ```sh
-python3 scripts/test_hybrid_runtime_operations.py \
-  --timeout 600 \
+mise run host:exec -- --timeout 20m --weight 1 -- \
+  python3 scripts/test_hybrid_runtime_operations.py \
+  --timeout 900 \
   --receipt "$CAIRN_R04_EVIDENCE/isolation.json" \
   --ro-bind "$CAIRN_R04_AGY:/opt/r04-native/agy" \
   -- python3 -B scripts/check_r04_native_agy.py \
@@ -115,7 +130,8 @@ resume transition and cleanup result. Raw traces contain I/O bytes; homes,
 databases and executable files are not separate archive members. The wrapper's
 receipt records the command, checkout and isolation checks independently.
 
-The account hook layer and layered duplicates remain unobserved, as do
+Layered account/project precedence, duplicates and cross-account isolation
+remain unobserved, as do
 non-fully-idle Stop,
 Stop continuation, and child/subagent conversations. Namespace-local process
 evidence does not qualify the host presence watcher, host PID association or

@@ -23,7 +23,7 @@ import uuid
 from check_r04_native_opencode import digest, native_api_fixture, successful_execs, wait_for
 from r04_agy_trace import calls, exec_lines, exits, file_read, hook_writes, io_bytes, joined_pids, loopback_connections, opened_paths, thread_pids, walked_path
 from test_f04_activation import encoded, overwrite_fixture
-from test_r02_compatibility_install import InstalledTools
+from test_r02_compatibility_install import InstalledFixture, InstalledTools
 from test_r04_host_wiring import R04HostWiringTests, pin
 
 
@@ -268,16 +268,23 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         home = f.root / 'native home'
         native_profile = home / '.gemini' / 'antigravity-cli'
         native_profile.mkdir(parents=True, mode=0o700)
+        account_hook_home = home / '.gemini' / 'config'
+        account_hook_home.mkdir(mode=0o700)
+        account_hooks = account_hook_home / 'hooks.json'
         for parent in (home, home / '.gemini'):
             parent.chmod(0o700)
         f.coord.update(process_names=[binary.name], process_exe_dirs=[])
-        f.publish_configuration(enabled=False)
+        # Native Agy separates global hook discovery from its session settings.
+        for configuration in (f.memory, f.coord):
+            configuration['config_home'] = str(account_hook_home)
+        InstalledFixture.publish_configuration(f, enabled=False)
         f.settings = f.root / 'original-hooks.json'
         original = encoded({'fixture-unrelated': {'enabled': False}})
         f.settings.write_bytes(original)
         f.settings.chmod(0o600)
-        f.hook_plan.update(account_home=str(f.account), selection=f.selected, settings=pin(f.settings))
+        f.hook_plan.update(account_home=str(account_hook_home), selection=f.selected, settings=pin(f.settings))
         a = self.selected(f)
+        self.assertEqual(Path(a[2]['account_home']) / a[2]['layout']['hook-settings.json'], account_hooks)
         (output / 'a-receipt.json').write_bytes(f.receipt_path.read_bytes())
         string_limit = max(2048, len(f.receipt_path.read_bytes()) + 1)
         provider = GeminiFixture()
@@ -295,15 +302,15 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             directory.mkdir(mode=0o700)
             (directory / '.agents').mkdir(mode=0o700)
             subprocess.run(['git', 'init', '--quiet', str(directory)], check=True, capture_output=True, timeout=5)
-        observations, clients, transitions = [], [], []
+        project_hooks, control_hooks = (directory / '.agents' / 'hooks.json' for directory in (work, control_work))
+        observations, clients, transitions, first_prompts = [], [], [], {}
         self.addCleanup(lambda: (output / 'provider-requests.json').write_bytes(encoded(provider.requests)))
         self.addCleanup(lambda: (output / 'cairn-api-calls.json').write_bytes(encoded(f.api_calls())))
         self.addCleanup(lambda: (output / 'observations.json').write_bytes(encoded(observations)))
         self.addCleanup(lambda: (output / 'transitions.json').write_bytes(encoded(transitions)))
 
-        def publish(selection, directory, label):
+        def publish(selection, target, label):
             raw = Path(selection[0]['settings']['path']).read_bytes()
-            target = directory / '.agents' / 'hooks.json'
             staged = target.with_suffix('.staged')
             staged.write_bytes(raw)
             staged.chmod(0o600)
@@ -312,9 +319,10 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             (output / (label + '-hooks.json')).write_bytes(raw)
             (output / (label + '-selection.json')).write_bytes(encoded(selection[2]))
 
-        def start(label, directory, *, resume=None):
+        def start(label, directory, hook_file, *, resume=None):
             client = AgySession(binary, self.root / label, env, settings, output, directory,
                                 resume=resume, string_limit=string_limit)
+            client.hook_file = hook_file
             clients.append(client)
             self.addCleanup(client.close)
             return client
@@ -329,7 +337,9 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             self.assertTrue(all(marker not in text for request in provider.requests for text in provider_texts(request)))
             f.api.with_suffix('.context-marker').write_text(marker)
             offset = client.child.trace.stat().st_size
-            result = client.prompt('R04 fixture ' + label)
+            prompt_text = 'R04 fixture ' + label
+            first_prompts.setdefault(client.identity, prompt_text)
+            result = client.prompt(prompt_text)
             rows = selection[2]['rows']
 
             def finished():
@@ -433,9 +443,11 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             launch_root = str(f.root / 'release' / 'launch') + '/'
             self.assertEqual([entry for entry in executions if entry['path'].startswith(launch_root)
                               and entry['path'] not in selected_launchers], [])
-            self.assertIn(str(client.work / '.agents' / 'hooks.json'),
-                          opened_paths(all_trace, native_threads))
-            self.assertEqual(digest(client.work / '.agents' / 'hooks.json'), selection[0]['settings']['sha256'])
+            self.assertIn(str(client.hook_file), opened_paths(all_trace, native_threads))
+            self.assertEqual(digest(client.hook_file), selection[0]['settings']['sha256'])
+            if client.hook_file == account_hooks:
+                self.assertFalse(project_hooks.exists())
+                self.assertFalse(control_hooks.exists())
             current_requests = provider.requests[before[2]:]
             context_application = dict(marker=marker, provider_request_indices=[])
             if refusal:
@@ -472,12 +484,15 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                     provider_request_indices=list(range(before[2], len(provider.requests))))
                 serialized = json.dumps(provider.requests[-1])
                 self.assertIn('R04 fixture ' + label, serialized)
+                self.assertIn(first_prompts[client.identity], serialized)
                 if client.identity == target.identity:
                     self.assertIn('R04 fixture fresh-a', serialized)
             self.assertEqual(provider.failures, [])
             observations.append(dict(case=label, native_session_id=client.identity, native_pid=client.child.native_pid,
                 result=result, selection=selection[0]['selection'], reached=reached, refusal=refusal,
                 context_application=context_application,
+                hook_layer='account' if client.hook_file == account_hooks else 'project',
+                hook_file=pin(client.hook_file),
                 native_hook_writes=produced,
                 api_delta=len(f.api_calls())-before[1], provider_delta=len(provider.requests)-before[2],
                 cairn_context_states=[call['metadata']['state'] for call in contexts],
@@ -485,28 +500,28 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             print(json.dumps(dict(progress=label, api_delta=len(f.api_calls())-before[1],
                                   provider_delta=len(provider.requests)-before[2])), flush=True)
 
-        publish(a, work, 'a')
-        publish(a, control_work, 'control-a')
-        target = start('target-client', work)
-        control = start('control-client', control_work)
+        publish(a, project_hooks, 'a')
+        publish(a, control_hooks, 'control-a')
+        target = start('target-client', work, project_hooks)
+        control = start('control-client', control_work, control_hooks)
         self.assertNotEqual(target.identity, control.identity)
         prompt(target, 'fresh-a', a)
         prompt(target, 'existing-a', a)
         prompt(control, 'control-a', a)
-        f.publish_configuration(enabled=False)
+        InstalledFixture.publish_configuration(f, enabled=False)
         f.hook_plan.update(id=str(uuid.uuid4()), selection=f.selected, settings=pin(f.settings))
         b = self.selected(f)
         (output / 'b-receipt.json').write_bytes(f.receipt_path.read_bytes())
         self.assertLessEqual(len(f.receipt_path.read_bytes()) + 1, string_limit)
         self.assertNotEqual(a[0]['selection'], b[0]['selection'])
-        publish(b, work, 'b')
+        publish(b, project_hooks, 'b')
         prompt(target, 'existing-after-b-publication', b)
         prompt(control, 'control-still-a', a)
-        fresh = start('fresh-client', work)
+        fresh = start('fresh-client', work, project_hooks)
         prompt(fresh, 'fresh-b', b)
         previous = target
         previous.close()
-        target = start('resumed-client', work, resume=previous.identity)
+        target = start('resumed-client', work, project_hooks, resume=previous.identity)
         self.assertEqual(target.identity, previous.identity)
         self.assertNotEqual(target.child.native_pid, previous.child.native_pid)
         transitions.append(dict(operation='stop/join, then --conversation', native_session_id=target.identity,
@@ -537,19 +552,41 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         finally:
             overwrite_fixture(receipt, saved)
         prompt(target, 'restored-b', b)
-        publish(a, work, 'reversed-a')
+        publish(a, project_hooks, 'reversed-a')
         prompt(target, 'reversed-a', a)
         prompt(control, 'control-after-reverse', a)
         self.assertEqual((a[1] / 'previous-settings.json').read_bytes(), original)
         client_reports = []
         for client in clients:
             client.close()
+        project_hooks.unlink()
+        control_hooks.unlink()
+        self.assertFalse(account_hooks.exists())
+        prior_ids = {client.identity for client in clients}
+        publish(a, account_hooks, 'account-a')
+        account = start('account-client', work, account_hooks)
+        self.assertNotIn(account.identity, prior_ids)
+        prompt(account, 'account-fresh-a', a)
+        publish(b, account_hooks, 'account-b')
+        prompt(account, 'account-existing-after-b-publication', b)
+        previous = account
+        previous.close()
+        account = start('account-resumed-client', work, account_hooks, resume=previous.identity)
+        self.assertEqual(account.identity, previous.identity)
+        self.assertNotEqual(account.child.native_pid, previous.child.native_pid)
+        transitions.append(dict(operation='account stop/join, then --conversation', native_session_id=account.identity,
+            previous_pid=previous.child.native_pid, native_pid=account.child.native_pid))
+        prompt(account, 'account-resumed-b', b)
+        publish(a, account_hooks, 'account-reversed-a')
+        prompt(account, 'account-reversed-a', a)
+        account.close()
         for index, client in enumerate(clients):
             connections = loopback_connections(client.child.trace.read_text(), provider_port=provider.server.server_port)
             history = client.native_history_path
             self.assertTrue(history.is_file())
             if client.identity == target.identity:
                 self.assertIn('R04 fixture fresh-a', history.read_text())
+            self.assertIn(first_prompts[client.identity], history.read_text())
             (output / ('history-' + str(index) + '.jsonl')).write_bytes(history.read_bytes())
             client_reports.append(dict(argv=client.child.argv, native_pid=client.child.native_pid,
                 native_exe=client.child.native_exe, before_sha256=client.child.before_hash,
@@ -586,14 +623,15 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         return dict(schema='cairn.r04-native-agy/1', passed=True, cases=observations, clients=client_reports,
             fixture=pin(Path(__file__)), client=dict(path=str(binary), sha256=digest(binary),
                 version=version_raw.decode().strip()), version_process=version_report,
-            selection_scope='project .agents/hooks.json; same account, independent workspace control',
+            selection_scope='13 project-layer cases with independent workspace control, then 4 account-only cases',
             native_home=str(home), native_profile=str(native_profile), binding_account=str(f.account),
+            account_hook_home=str(account_hook_home), account_hook_file=str(account_hooks),
             context_seed='Per-prompt synthetic API display_name; marker is absent from user prompts and hook configuration.',
             trace_parser=pin(Path(__file__).with_name('r04_agy_trace.py')), nscd_path_exists=False,
             transitions=transitions, forced_cleanup_negative=dict(failed_as_required=True,
                 native_pid=calibration.native_pid, joined_pids=calibration.pids), credential_files=credential_files,
             limits=['Agy ordinary memory is unsupported; this exercises checked Go coordination only.',
-                    'Project-layer callback re-read and same-conversation restart, not account-layer or layered duplicates.',
+                    'Project and account-only callback re-read/resume/reversal; no layered precedence, duplicates or cross-account isolation claim.',
                     'PreInvocation context application reaches local provider text; no real model comprehension or inbox delivery claim.',
                     'No non-fullyIdle Stop, Stop continue-once, child/subagent, host presence/host_pid association or Herdr wake claim.',
                     'No store/auth, code-image upgrade, complete activation-unit barrier or full R04/R05/R06/ticket-closure qualification.'])
