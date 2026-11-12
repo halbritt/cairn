@@ -76,7 +76,7 @@ mise run host:exec -- --timeout 10m --weight 1 -- \
   --evidence "$HOME/.cache/r06-census-run"
 mise run check
 mise run host:exec -- python3 -B scripts/verify_docs.py \
-  --tier 1 --tier 2 --tier 3 --tier 4
+  --tier 1,2,3,4 --json
 ```
 
 Unit cases use real files: two-binding/disjoint units, shared ledger/runtime
