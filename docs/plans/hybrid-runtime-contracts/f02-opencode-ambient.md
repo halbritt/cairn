@@ -23,6 +23,16 @@ are checked before validated UUID/timing/process normalization; no missing
 timing field is removed into equality. Source/Go SDK image claims are checked
 separately. Existing fixtures, Source and reference oracles are unchanged.
 
+The expanded corpus has sixteen methods and forty-four process pairs. It covers
+explicit/default mode and false/missing fallback, required and whole competing
+instructions, fitting refusal, optional whole/span/unavailable reads, seen and
+opaque state, query/entities, privacy/environment/identity admission, byte meters,
+the original thirteen-second stdin deadline and the eleven-second cumulative
+ambient cap. Three mutations of actual captured rows prove that missing state
+or request timing fields and incomplete request tuples fail validation. New-cell
+refusals preserve exact state bytes/modes, and an actual checked agent_tools tool
+control retains its existing consumer. No ordinary recall body was changed.
+
 The baseline RED retains actual Source success versus Go preflight refusal for
 explicit/default ambient Start/prompt. These are constructed producer-shaped
 fixtures, not native-writer admission, all-input CPython parity or measured
