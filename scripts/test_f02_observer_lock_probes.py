@@ -153,7 +153,7 @@ class ObserverLockProbeTests(unittest.TestCase):
             after = len(physical), len(recorded)
         type(self).pairs += 1
         print('OBSERVER_RAW_PAIR='+json.dumps(dict(kind=kind, contention=contention, separate=separate,
-              event=rows[0]['event'], recall_mode=case.f.memory.get('recall_mode', '<absent>'),
+              event=case.f.event['hook_event_name'], recall_mode=case.f.memory.get('recall_mode', '<absent>'),
               semantic_fallback=case.f.memory.get('semantic_fallback', '<absent>'),
               receipt_sha256=case.f.receipt_sha, image_sha256=case.f.receipt['binary']['sha256'],
               source_members=case.f.receipt['members'], physical=physical, recorded=recorded,

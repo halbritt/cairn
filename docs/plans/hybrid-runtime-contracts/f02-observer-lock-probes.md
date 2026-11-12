@@ -48,6 +48,25 @@ and fail its original owning collector's post-lock assertion. The separate empty
 snapshot checks plain-list type and independence only: it cannot replay a report
 callback, and its zero physical count follows from the disabled target filter.
 
+A sixth method adds two pre-launch diagnostic controls: Hermes `SessionStart`
+and ambient `UserPromptSubmit`. Each private fixture sets `source_repin=False`,
+so the existing Source wrapper raises `False is not true` before a handler is
+launched. The summary event comes from the selected fixture input, allowing the
+raw record to retain that assertion and its owning Source-wrapper frame even
+when `rows=[]`. The existing two-row assertion still fails (`0 != 2`); the
+control expects that failure and checks the emitted diagnostic. Captured raw
+control records are re-emitted in the test log. No dummy rows or probe results
+are added.
+
+The six-method leaf emits eleven raw exercise records: the unchanged nine
+actual Source/Go pairs above (eighteen frontends), plus two zero-row diagnostic
+attempts. These two attempts have no frontend, report or physical/recorded probe;
+they establish diagnostic preservation only, not H13 handler execution or
+Class A/B parity. The original sixteen reports/probes/results and eight
+True/eight False outcomes remain the process matrix's counts. The trace
+comparison binds the input event only; retaining an input and its digest does
+not independently bind the entire input to a trace.
+
 Ambient measurement uses explicit `recall_mode=ambient` and
 `semantic_fallback=False`. Hermes measurement enables tracing and uses the
 ambient Source launcher wrapper; this differs from the uninstrumented Hermes
