@@ -70,8 +70,12 @@ class ObserverLockProbeTests(unittest.TestCase):
             try:
                 if contention:
                     holder = path.open('rb')
-                    real_flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    item['contender_acquired'] = True
+                    try:
+                        real_flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        item['contender_acquired'] = False
+                    else:
+                        item['contender_acquired'] = True
                 try:
                     result = real_flock(fd, flags)
                 except BlockingIOError:

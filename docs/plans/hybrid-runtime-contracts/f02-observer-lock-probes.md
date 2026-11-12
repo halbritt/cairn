@@ -58,7 +58,7 @@ control expects that failure and checks the emitted diagnostic. Captured raw
 control records are re-emitted in the test log. No dummy rows or probe results
 are added.
 
-The six-method leaf emits eleven raw exercise records: the unchanged nine
+The original six methods emit eleven raw exercise records: the unchanged nine
 actual Source/Go pairs above (eighteen frontends), plus two zero-row diagnostic
 attempts. These two attempts have no frontend, report or physical/recorded probe;
 they establish diagnostic preservation only, not H13 handler execution or
@@ -66,6 +66,38 @@ Class A/B parity. The original sixteen reports/probes/results and eight
 True/eight False outcomes remain the process matrix's counts. The trace
 comparison binds the input event only; retaining an input and its digest does
 not independently bind the entire input to a trace.
+
+A seventh method exercises genuine failure of the test holder's acquisition for
+both kinds at `SessionStart`. A separate private FD occupies the exact target
+only during the parent observer callback. The delegating controller journals
+actual blocker, test-holder and observer syscalls separately, retaining the lock
+until the observer syscall completes and releasing only owned FDs. No frontend's
+normal state work runs under that blocker.
+
+The clean test-only baseline, with this new control and the unchanged old probe,
+fails with `KeyError('result')`: the holder syscall raises before the observer
+syscall runs. Its raw physical-list items are wrapper entries, not actual probes;
+the independent journal records zero observer syscalls. The original callback's
+False then came from the holder error. That incomplete baseline remains retained.
+
+The parent-only probe now catches only `BlockingIOError` from holder acquisition,
+records `contender_acquired=False`, and still delegates the original observer
+syscall. Its genuine False result remains recorded, and other errors propagate.
+The existing owning collector's post-lock assertion still rejects False; the
+leaf then fails cleanly at its existing test-holder-acquired assertion. The new
+method expects that control failure and checks its exact frame, actual syscall
+journal and original raw records. It does not turn a failed control into positive
+parity evidence or fabricate a skipped probe result.
+
+The whole seven-method leaf emits thirteen exercise records: eleven actual
+Source/Go pairs (twenty-two frontends), plus the two unchanged zero-row prelaunch
+attempts. The original nine process pairs retain sixteen reports/probes/results,
+eight True and eight False. The two holder-failure pairs add four reports and
+four genuine False observer probes/results, giving twenty reports = twenty
+actual observer probes = twenty recorded results, eight True and twelve False.
+Blocker and test-holder operations are separate control syscalls, not observer
+probes. The malformed pair still has zero reports/probes and refusal exits; the
+two empty prelaunch attempts remain no-process/type-diagnostic evidence only.
 
 Ambient measurement uses explicit `recall_mode=ambient` and
 `semantic_fallback=False`. Hermes measurement enables tracing and uses the
