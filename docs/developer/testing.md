@@ -135,6 +135,11 @@ For staged hooks in a disposable native Claude client, use the
 selections, receipt refusals and same-conversation resume through the existing
 hybrid-runtime isolation wrapper.
 
+For staged hooks and native trust in a disposable Codex app-server, use the
+[native Codex hook fixture](native-codex-hook-fixture.md). It checks cached
+selections, receipt refusals and archive/unarchive/resume with the same thread
+UUID and history, while control threads keep their original selections.
+
 ### Shared Go lifecycle primitives
 
 The Go CLI's state-file wrapper and Claude channel bridge use the shared
