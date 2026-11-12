@@ -404,9 +404,26 @@ class MigrationEvidenceTests(Base):
 
 
 class ExecutableBindingTests(Base):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._elf_dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls._elf_dir.cleanup)
+        elf_root = Path(cls._elf_dir.name)
+        echo_src = elf_root / 'echo.c'
+        false_src = elf_root / 'false.c'
+        cls.echo_elf = elf_root / 'echo-elf'
+        cls.false_elf = elf_root / 'false-elf'
+        echo_src.write_text('#include <stdio.h>\nint main(int argc, char **argv) { if (argc > 1) puts(argv[1]); return 0; }\n')
+        false_src.write_text('int main(void) { return 1; }\n')
+        subprocess.run(['/usr/bin/gcc', '-O2', str(echo_src), '-o', str(cls.echo_elf)], check=True, timeout=15)
+        subprocess.run(['/usr/bin/gcc', '-O2', str(false_src), '-o', str(cls.false_elf)], check=True, timeout=15)
+        cls.echo_elf.chmod(0o700)
+        cls.false_elf.chmod(0o700)
+
     def test_path_replacement_cannot_change_launched_bytes(self):
         binary = self.root / 'bwrap'
-        shutil.copyfile('/usr/bin/echo', binary)
+        shutil.copyfile(self.echo_elf, binary)
         binary.chmod(0o700)
         with patch.dict(os.environ, PATH=str(self.root)):
             runtime = writer.runtime_identity()
@@ -416,7 +433,7 @@ class ExecutableBindingTests(Base):
             self.addCleanup(leaf.close)
             command = leaf.wrap(['bwrap', 'original'])
             replacement = self.root / 'replacement'
-            shutil.copyfile('/usr/bin/false', replacement)
+            shutil.copyfile(self.false_elf, replacement)
             replacement.chmod(0o700)
             replacement.replace(binary)
             done = subprocess.run(command, pass_fds=leaf.pass_fds, capture_output=True, timeout=5)
@@ -424,7 +441,7 @@ class ExecutableBindingTests(Base):
 
     def test_in_place_write_and_sealed_descriptor_write_cannot_change_launch(self):
         binary = self.root / 'bwrap'
-        shutil.copyfile('/usr/bin/echo', binary)
+        shutil.copyfile(self.echo_elf, binary)
         binary.chmod(0o700)
         with patch.dict(os.environ, PATH=str(self.root)):
             runtime = writer.runtime_identity()
@@ -432,7 +449,7 @@ class ExecutableBindingTests(Base):
                             execution='sealed_memfd', source_scope={'fixture': 'echo'})
             leaf = writer.WriterLeaf(str(self.root), {}, group_factory=FakeGroup, reviewed=reviewed)
             self.addCleanup(leaf.close)
-            binary.write_bytes(Path('/usr/bin/false').read_bytes())
+            binary.write_bytes(self.false_elf.read_bytes())
             with self.assertRaises(PermissionError):
                 os.pwrite(leaf.executable_fd, b'changed', 0)
             with self.assertRaises(PermissionError):
@@ -443,16 +460,16 @@ class ExecutableBindingTests(Base):
 
     def test_changed_bytes_before_sealing_refuse(self):
         binary = self.root / 'bwrap'
-        shutil.copyfile('/usr/bin/echo', binary)
+        shutil.copyfile(self.echo_elf, binary)
         binary.chmod(0o700)
         digest = writer.file_sha256(binary)
-        binary.write_bytes(Path('/usr/bin/false').read_bytes())
+        binary.write_bytes(self.false_elf.read_bytes())
         with self.assertRaisesRegex(writer.WriterUnavailable, 'writer_executable_mismatch'):
             writer.sealed_executable(binary, digest)
 
     def test_privileged_or_script_sources_refuse(self):
         binary = self.root / 'bwrap'
-        shutil.copyfile('/usr/bin/echo', binary)
+        shutil.copyfile(self.echo_elf, binary)
         binary.chmod(0o4700)
         with self.assertRaisesRegex(writer.WriterUnavailable, 'writer_executable_policy'):
             writer.sealed_executable(binary, writer.file_sha256(binary))
@@ -468,7 +485,7 @@ class ExecutableBindingTests(Base):
         before = set(os.listdir('/proc/self/fd'))
         with patch.object(writer.fcntl, 'fcntl', side_effect=OSError('seal unavailable')):
             with self.assertRaisesRegex(OSError, 'seal unavailable'):
-                writer.sealed_executable('/usr/bin/echo', writer.file_sha256('/usr/bin/echo'))
+                writer.sealed_executable(self.echo_elf, writer.file_sha256(self.echo_elf))
         self.assertEqual(set(os.listdir('/proc/self/fd')), before)
 
 
