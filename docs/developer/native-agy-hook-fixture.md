@@ -7,6 +7,9 @@ home, a scripted Gemini HTTP provider and a synthetic Cairn API. It uses no
 model account, real inference or production installation. Agy has no ordinary
 lifecycle memory hook.
 
+These native observations use Agy 1.5.6, SHA-256
+`7e5bbdcbf689354300500ba22d55c2ff1497e185ae18407325d480577a87db5d`.
+
 The real R-02 installer and R-04 renderer produce immutable selections A and B.
 The fixture copies their exact bytes to the target project's
 `.agents/hooks.json`; it preserves another workspace's A selection under the
@@ -39,6 +42,16 @@ Removal reduces the next callback to one pair without restarting the client.
 This tests aggregation and command multiplicity; it does not assert an order
 between the layers or a general customization precedence rule.
 
+For installation, this means that the same Cairn hook in both layers runs and
+delivers context twice. The installer must select one active layer for a given
+Cairn hook and detect a conflicting copy in the other before writing. See
+[native presence installation](../agent-sessions.md#native-presence-adapters)
+and the [R-06 install requirements](../plans/hybrid-runtime-contracts/release.md#required-install-and-transition-behavior).
+The current installer does not implement cross-layer conflict detection: for
+Agy hook configuration, it reads and writes only the given `--settings` file.
+This native dispatch evidence does not qualify that future protection or the
+full cutover and rollback procedure.
+
 Each active hook file is pinned to the unmodified staged bytes and must have
 been opened by the native process. The trace must contain exactly the selected
 literal argv multiset, with launcher-to-Go execution, receipt reads and callback
@@ -46,6 +59,19 @@ bytes checked for every PID. Identical commands have a count of two; their PIDs
 are not assigned to a particular source file. The complete native-produced and
 Go-read callback multisets must agree. The original 17 cases keep their single
 callback pair and receipt refusal assertions.
+
+The fixture asserts and records the original 22-case prefix's names, order,
+refusal kinds and hook layers against the `0378faeb` baseline. After these
+clients are joined, the remaining project hook is removed. Both project hook
+files and the global hook file must be absent before publishing account B.
+Five final account-only cases use one fresh conversation and native PID:
+valid B, missing receipt, restored B, corrupt receipt, restored B. The full run
+has 27 cases. Saved receipt bytes must match B's literal launcher pin before
+mutation. Corruption preserves the regular file's owner, mode and inode and
+its safe size; account fault bytes and stats have separate archive names.
+Both restored controls must deliver exactly one fresh context text per provider
+request. Receipt refusal suppresses that context and all Cairn API/state effects;
+it does not establish that Agy blocks its provider request or cancels the turn.
 
 The cases cover fresh and repeated A, an independent workspace control,
 publication of B during the existing conversation, the unchanged control,

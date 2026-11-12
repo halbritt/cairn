@@ -598,6 +598,19 @@ because a corresponding legacy test exists.
    An enabled binding, unsettled callback/attempt, conflicting installer,
    incompatible state or changed selected code must prevent unsafe replacement.
    Do not treat changing an `enabled` flag alone as proof of drain.
+   For the Agy 1.5.6 client pinned by the native fixture, account
+   `$HOME/.gemini/config/hooks.json` and project `<workspace>/.agents/hooks.json`
+   entries are cumulative: the same `cairn-coordination` group in both layers
+   executes twice and delivers context twice, including identical
+   commands. An installer must select one active layer for each Cairn hook and
+   detect a conflicting copy in the other layer before writing; it must not
+   leave both copies active. The current installer does not implement this
+   check: for Agy hook configuration, it reads and writes only the given
+   `--settings` file and does not inspect the other layer. R-06 must qualify the
+   completed check and the resulting selection across cutover and rollback. The
+   [native Agy fixture](../../developer/native-agy-hook-fixture.md) observes the
+   duplicate dispatch and removal behavior; it does not qualify installer
+   conflict detection or a complete transition.
 4. Preserve unrelated configuration, account and collection bindings,
    credential selectors, custom state paths and state bytes. Do not provision
    credentials or inspect their contents. Test preservation with synthetic

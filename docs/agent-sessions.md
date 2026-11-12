@@ -148,6 +148,21 @@ For Claude, `--settings` names its `settings.json`; for Agy, its `hooks.json`.
 For OpenCode and Hermes it names the configuration directory. New native
 processes load the installed hooks. Hermes CLI/gateway require restart.
 
+The disposable [native Agy fixture](developer/native-agy-hook-fixture.md) pins
+Agy 1.5.6 and its executable hash. Account hooks at
+`$HOME/.gemini/config/hooks.json` and project hooks at
+`<workspace>/.agents/hooks.json` are cumulative: the same `cairn-coordination`
+group in both runs `PreInvocation` twice, then `Stop` twice, and delivers the
+context text to the local provider twice. Identical commands are not
+deduplicated. For a given Cairn hook, the installer must select one active layer
+and detect a conflicting copy in the other layer before writing configuration.
+Installer conflict detection and the full transition remain
+[R-06 qualification requirements](plans/hybrid-runtime-contracts/release.md#required-install-and-transition-behavior).
+The current installer does not implement this check: for Agy hook configuration,
+it reads and writes only the given `--settings` file and does not inspect the
+other layer. The Herdr account-home mapping below still needs separate
+qualification before live installation.
+
 With `--idle-wakeup`, installation also covers the selected account home with
 Herdr's own native integration: it checks `herdr integration status` and runs
 the installed `herdr integration install <target>` when that integration is

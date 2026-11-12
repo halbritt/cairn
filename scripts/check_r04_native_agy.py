@@ -628,6 +628,71 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         self.assertFalse(account_hooks.exists())
         prompt(layered, 'layers-account-removed-project-b', b, layers=[(project_hooks, b)])
         layered.close()
+        prefix_names = [
+            'fresh-a', 'existing-a', 'control-a', 'existing-after-b-publication',
+            'control-still-a', 'fresh-b', 'resumed-b', 'missing-receipt',
+            'restored-after-missing', 'corrupt-receipt', 'restored-b', 'reversed-a',
+            'control-after-reverse', 'account-fresh-a',
+            'account-existing-after-b-publication', 'account-resumed-b',
+            'account-reversed-a', 'layers-account-a-project-b',
+            'layers-account-b-project-a', 'layers-identical-a',
+            'layers-project-removed-account-a', 'layers-account-removed-project-b']
+        prefix_layers = ([('project',)] * 13 + [('account',)] * 4 +
+                         [('project', 'account')] * 3 + [('account',), ('project',)])
+        prefix_refusals = {'missing-receipt': 'missing', 'corrupt-receipt': 'corrupt'}
+        self.assertEqual([record['case'] for record in observations], prefix_names)
+        for record, layers in zip(observations, prefix_layers):
+            self.assertEqual(record['refusal'], prefix_refusals.get(record['case']))
+            self.assertEqual(record['hook_layer'], 'layered' if len(layers) > 1 else layers[0])
+            self.assertEqual(tuple(layer['layer'] for layer in record['hook_layers']), layers)
+        preserved_prefix = dict(source_commit='0378faebac2bf45f588e9301f36e81c981eb51ff',
+            cases=[dict(case=record['case'], refusal=record['refusal'], hook_layer=record['hook_layer'],
+                        layers=[layer['layer'] for layer in record['hook_layers']]) for record in observations])
+        for client in clients:
+            client.close()
+        project_hooks.unlink()
+        for hook_file in (project_hooks, control_hooks, account_hooks):
+            self.assertFalse(hook_file.exists())
+        prior_ids = {client.identity for client in clients}
+        publish(b, account_hooks, 'account-refusal-b')
+        receipt, saved = f.receipt_path, f.receipt_path.read_bytes()
+        vector = shlex.split(Path(b[2]['rows'][0]['argv'][0]).read_text().split('\n', 1)[1])[1:]
+        self.assertEqual(str(receipt), vector[vector.index('--receipt') + 1])
+        self.assertEqual(hashlib.sha256(saved).hexdigest(), vector[vector.index('--receipt-sha256') + 1])
+        account_fault_offset = len(observations)
+        faults = start('account-refusal-client', work, account_hooks)
+        self.assertNotIn(faults.identity, prior_ids)
+        prompt(faults, 'account-refusal-valid-b', b)
+        receipt.unlink()
+        try:
+            prompt(faults, 'account-missing-receipt', b, refusal='missing')
+        finally:
+            receipt.write_bytes(saved)
+            receipt.chmod(0o400)
+        prompt(faults, 'account-restored-after-missing', b)
+        before_stat = receipt.stat()
+        corrupt_receipt = saved + b'\n'
+        overwrite_fixture(receipt, corrupt_receipt)
+        after_stat = receipt.stat()
+        self.assertTrue(stat.S_ISREG(after_stat.st_mode))
+        self.assertEqual((before_stat.st_uid, before_stat.st_mode, before_stat.st_ino),
+                         (after_stat.st_uid, after_stat.st_mode, after_stat.st_ino))
+        self.assertEqual(after_stat.st_uid, os.getuid())
+        self.assertEqual(after_stat.st_mode & 0o022, 0)
+        self.assertLessEqual(after_stat.st_size, 1048576)
+        (output / 'account-corrupt-receipt.json').write_bytes(corrupt_receipt)
+        (output / 'account-receipt-stats.json').write_bytes(encoded(dict(before=tuple(before_stat), after=tuple(after_stat))))
+        try:
+            prompt(faults, 'account-corrupt-receipt', b, refusal='corrupt')
+        finally:
+            overwrite_fixture(receipt, saved)
+        prompt(faults, 'account-restored-after-corrupt', b)
+        account_faults = observations[account_fault_offset:]
+        self.assertEqual(len(account_faults), 5)
+        self.assertEqual({record['native_session_id'] for record in account_faults}, {faults.identity})
+        self.assertEqual({record['native_pid'] for record in account_faults}, {faults.child.native_pid})
+        self.assertEqual([record['hook_layer'] for record in account_faults], ['account'] * 5)
+        faults.close()
         for index, client in enumerate(clients):
             connections = loopback_connections(client.child.trace.read_text(), provider_port=provider.server.server_port)
             history = client.native_history_path
@@ -671,7 +736,8 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         return dict(schema='cairn.r04-native-agy/1', passed=True, cases=observations, clients=client_reports,
             fixture=pin(Path(__file__)), client=dict(path=str(binary), sha256=digest(binary),
                 version=version_raw.decode().strip()), version_process=version_report,
-            selection_scope='13 project-layer cases, 4 account-only cases, then 5 layered/identical/removal cases',
+            selection_scope='13 project-layer, 4 account-only, 5 layered/removal, then 5 account-receipt cases (27 total)',
+            preserved_prefix=preserved_prefix,
             native_home=str(home), native_profile=str(native_profile), binding_account=str(f.account),
             account_hook_home=str(account_hook_home), account_hook_file=str(account_hooks),
             context_seed='Per-prompt synthetic API display_name; marker is absent from user prompts and hook configuration.',
@@ -679,7 +745,8 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             transitions=transitions, forced_cleanup_negative=dict(failed_as_required=True,
                 native_pid=calibration.native_pid, joined_pids=calibration.pids), credential_files=credential_files,
             limits=['Agy ordinary memory is unsupported; this exercises checked Go coordination only.',
-                    'Selected Agy aggregates account/project groups, including identical commands; no cross-account isolation or installer claim.',
+                    'Selected Agy aggregates account/project groups, including identical commands; no inter-layer order, precedence, cross-account isolation or installer claim.',
+                    'Project and account-only selected B receipt controls cover missing/corrupt files; no broader receipt-fault qualification.',
                     'PreInvocation context application reaches local provider text; no real model comprehension or inbox delivery claim.',
                     'No non-fullyIdle Stop, Stop continue-once, child/subagent, host presence/host_pid association or Herdr wake claim.',
                     'No store/auth, code-image upgrade, complete activation-unit barrier or full R04/R05/R06/ticket-closure qualification.'])
