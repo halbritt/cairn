@@ -155,7 +155,9 @@ func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, ev
 		body, err = ambientRecall(deadline, client, event, state, status, result, selected, view.Index, intent, budget, deferred, notification, project, choose)
 	}
 
-	status.Set("elapsed_seconds", rounded(time.Since(started)))
+	if err == nil {
+		status.Set("elapsed_seconds", rounded(time.Since(started)))
+	}
 	return body, err
 }
 

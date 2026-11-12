@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/halbritt/cairn/core"
@@ -310,7 +311,7 @@ func (p *providerRecall) admit(sources []providerSource) ([]providerPreview, err
 		}
 		p.status.Set("discovery", value.Text("verification_unavailable"))
 		reason := "preview_unavailable"
-		if captureTimedOut(err) {
+		if strings.Contains(err.Error(), "timed out") {
 			reason = "preview_timeout"
 		}
 		p.reject(reason, len(previews))
@@ -381,6 +382,9 @@ func providerExtent(pulled *value.Value) *value.Value {
 	return value.Text("full_body")
 }
 func (p *providerRecall) fitting(entry *value.Value) (*value.Value, error) {
+	if p.ctx.Err() != nil {
+		return nil, &hookError{class: "HookError", message: "retrieval time budget exhausted", code: "TIMEOUT"}
+	}
 	raw, err := encoded(entry, false)
 	if err != nil {
 		return nil, err
@@ -417,6 +421,9 @@ func (p *providerRecall) fitting(entry *value.Value) (*value.Value, error) {
 	if pulled != nil {
 		span, err = excerptWhole(entry, pulled, hint)
 	} else {
+		if p.ctx.Err() != nil {
+			return nil, &hookError{class: "HookError", message: "retrieval time budget exhausted", code: "TIMEOUT"}
+		}
 		span, err = spanCall(p.ctx, p.client, entry, hint)
 		if err == nil {
 			err = checkedSpan(entry, span, hint)
@@ -582,7 +589,7 @@ func (p *providerRecall) choose() (*value.Value, *value.Value, error) {
 		}
 		p.status.Set("discovery", value.Text("verification_unavailable"))
 		reason := "verification_unavailable"
-		if captureTimedOut(err) {
+		if strings.Contains(err.Error(), "timed out") {
 			reason = "verification_timeout"
 		}
 		p.reject(reason, len(candidates))

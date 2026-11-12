@@ -8,20 +8,25 @@ import (
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
 
-// RunBound joins a resolved activation to the existing recall/capture body. The
-// original configuration retains its binding even when Source excludes activation.
+// RunBound joins a resolved activation to the existing recall/capture body.
+// The checked snapshot retains its binding; the effective body configuration
+// follows Source's removal when the resolved activation is disabled/excluded.
 func RunBound(ctx context.Context, invocation *binding.MemoryInvocation) Result {
 	checked, directory, environment, err := invocation.Inputs()
 	if err != nil {
 		return HostFailure("activation", err)
 	}
+	config := checked.Config
+	if checked.Disposition != "checked" {
+		config = config.Without("inbox_recall_binding")
+	}
 	if captureEventName(checked.Event) {
-		return runMemory(ctx, checked.Config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
+		return runMemory(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
 	}
-	if value.SameText(checked.Config.Get("harness"), "claude") {
-		return runMemory(ctx, checked.Config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
+	if value.SameText(config.Get("harness"), "claude") {
+		return runMemory(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
 	}
-	return RunStart(ctx, checked.Config, checked.Event, checked.Disposition == "checked", directory, environment, checked.Coordinators...)
+	return RunStart(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, checked.Coordinators...)
 }
 
 // BoundFailure preserves the main-boundary read-only required-context guard.

@@ -361,11 +361,11 @@ class OpenCodeAmbientTests(unittest.TestCase):
         self.assertEqual(self.calls, []); self.assertEqual(self.state_files(), before)
 
     def test_provider_other_harness_modes_tools_capture_and_bound_refuse(self):
-        for fallback in (True, 'provider-selected', 1):
+        for fallback in ('provider-selected', 1):
             self.configure(semantic_fallback=fallback); self.refused()
         self.selection()
-        for harness in ('claude', 'hermes', 'agy', 'codex'):
-            self.configure(harness=harness, semantic_fallback=(harness in ('claude', 'hermes'))); self.refused()
+        for harness in ('agy', 'codex'):
+            self.configure(harness=harness, semantic_fallback=False); self.refused()
         self.configure(harness='opencode')
         for mode in ('unsupported', None, False):
             self.configure(recall_mode=mode); self.refused()

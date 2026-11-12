@@ -45,10 +45,6 @@ func selectorProvider(ctx context.Context, config, excerpt, observed *value.Valu
 	if config.Get("claude") == nil {
 		return nil, &value.Error{Class: "KeyError", Message: "claude"}
 	}
-	executable, err := pathValue(config.Get("claude"))
-	if err != nil {
-		return nil, err
-	}
 	for _, key := range []string{"preview_model", "recall_model"} {
 		if v := config.Get(key); v != nil && !captureModelName(v) {
 			return nil, fail("invalid lifecycle " + key + ": expected a nonempty model name without whitespace or controls")
@@ -78,11 +74,13 @@ func selectorProvider(ctx context.Context, config, excerpt, observed *value.Valu
 		}
 	}
 
+	executable, argumentErr := pathValue(config.Get("claude"))
 	if value.Truth(model) {
 		if model.Kind != value.String {
-			return nil, &value.Error{Class: "TypeError", Message: "selector model must be a string"}
+			argumentErr = &value.Error{Class: "TypeError", Message: "selector model must be a string"}
+		} else {
+			argv = append(argv, "--model", text(model))
 		}
-		argv = append(argv, "--model", text(model))
 	} else {
 		model = nil
 	}
@@ -95,6 +93,18 @@ func selectorProvider(ctx context.Context, config, excerpt, observed *value.Valu
 	input, err := encoded(excerpt, false)
 	if err != nil {
 		return nil, err
+	}
+	if argumentErr != nil {
+		// Source constructs the command before Popen checks its argument types.
+		// Its finally block observes this incomplete, unstarted call even though
+		// TypeError escapes the ordinary optional-provider failure handler.
+		started := time.Now()
+		observed.Set("outcome", value.Text("incomplete"))
+		observed.Set("elapsed_ms", floating(float64(time.Since(started).Microseconds())/1000))
+		observed.Set("returncode", nil)
+		observed.Set("stdout_bytes", integer(0))
+		observed.Set("stderr_bytes", integer(0))
+		return nil, argumentErr
 	}
 	env := make([]string, 0, len(os.Environ())+1)
 	for _, entry := range os.Environ() {

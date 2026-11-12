@@ -214,7 +214,7 @@ class HermesAmbientTests(unittest.TestCase):
                 self.assertEqual(list(self.state()), [hashlib.sha256(label.encode()).hexdigest()+'.json'])
 
     def test_provider_malformed_and_unsupported_inputs_refuse_before_effects(self):
-        for fallback in (True, 'provider-selected', None, 0, 1, '', [], {}):
+        for fallback in ('provider-selected', None, 0, 1, '', [], {}):
             with self.subTest(fallback=fallback):
                 self.configure(semantic_fallback=fallback)
                 self.refused()
@@ -224,7 +224,7 @@ class HermesAmbientTests(unittest.TestCase):
                 self.configure(recall_mode=mode)
                 self.refused()
         self.selection()
-        for name in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PreCompact', 'SessionEnd', 'Stop', 'Unknown'):
+        for name in ('PreToolUse', 'PreCompact', 'SessionEnd', 'Stop', 'Unknown'):
             with self.subTest(event=name):
                 self.event(name)
                 self.refused()

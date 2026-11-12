@@ -41,6 +41,27 @@ timer and subprocess clocks stay real; separate parent-timer cases cover the
 full trusted hook budgets. This avoids requiring process startup within the
 last 400 milliseconds of a two-second deadline on a loaded host.
 
+### Checked memory process fixtures
+
+For the checked ordinary memory provider path, run the installed Source/Go
+process comparison with synthetic Unix API and selector processes:
+
+```sh
+mise run test:unit -- test_f02_ordinary_provider -v
+mise run test:unit -- test_f02_opencode_ambient test_f02_claude_ambient test_f02_hermes_ambient -v
+```
+
+The provider fixture compares stdout, stderr, exit, state, API requests, caller
+attribution and selector argv/input. It validates private cwd, child environment
+and direct-child exit. It normalizes measured durations and their pipe-readiness
+insertion order while retaining their observed membership. Every internal pull
+must have a unique UUID of the correct version; delivered entries additionally
+expose the original intent needed to check exact UUIDv5 derivation. Private
+rejected candidates do not expose that original UUIDv4 in hook output.
+The fixture never substitutes Source handler logic or invokes a real provider.
+See the [capability map](../reference/lifecycle-slices.md#checked-memory-callers-and-selectors)
+for the supported caller boundary.
+
 ## Run database integration tests
 
 ```sh

@@ -173,7 +173,7 @@ class ClaudeAmbientTests(unittest.TestCase):
         self.assertEqual(self.pair().returncode, 0)
 
     def test_provider_malformed_and_unsupported_inputs_refuse_before_effects(self):
-        for fallback in (True, 'provider-selected', None, 0, 1, '', [], {}):
+        for fallback in ('provider-selected', None, 0, 1, '', [], {}):
             with self.subTest(fallback=fallback):
                 self.configure(semantic_fallback=fallback)
                 self.refused()
@@ -197,18 +197,16 @@ class ClaudeAmbientTests(unittest.TestCase):
                 self.repin()
                 try:
                     if path == self.f.memory_path:
-                        self.calls.clear()
-                        before = self.state()
-                        files_before = self.state_files()
-                        directory = Path(self.f.memory['state_dir'])
-                        existed = directory.exists()
-                        result = self.go()
-                        self.assertEqual((result.returncode, result.stdout), (1, b''))
-                        self.assertEqual(result.stderr, b'Cairn lifecycle diagnostic: phase=activation error_class=HookError\nCairn lifecycle: checked bound memory cell remains unavailable; use native tools or an explicit handoff.\n')
-                        self.assertEqual(self.calls, [])
-                        self.assertEqual(self.state(), before)
-                        self.assertEqual(self.state_files(), files_before)
-                        self.assertEqual(directory.exists(), existed)
+                        # This manifest is disabled. Preserve the installed
+                        # Source fallback rather than treating a binding path
+                        # as proof of an enabled native delivery profile.
+                        result = ambient.OpenCodeAmbientTests.pair(self)
+                        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b'{}\n', b''))
+                        self.assertEqual([op for op, _, _ in self.calls], ['version','index','recall-observation'])
+                        status = self.state()[self.state_key()+'.json']['last_recall']
+                        self.assertEqual(status['discovery'],'lexical')
+                        self.assertNotIn('optional_deferred',status)
+                        self.assertFalse(any('inbox-recall' in name for name in self.files()))
                     else:
                         self.refused()
                 finally:
