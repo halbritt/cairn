@@ -143,6 +143,10 @@ func transitionRestart(t *testing.T) {
 }
 
 func transitionDeathDeadline(t *testing.T) {
+	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "3" {
+		transitionRealDeathDeadline(t)
+		return
+	}
 	for _, fault := range []string{"die", "caller-deadline"} {
 		t.Run(fault, func(t *testing.T) {
 			d := transitionDatabase(t)

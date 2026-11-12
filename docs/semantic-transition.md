@@ -148,8 +148,66 @@ python3 -I -B scripts/test_hybrid_runtime_operations.py -- \
 ```
 
 Case 2 does not close the other eight real-worker cases, full S-05, or any
-numeric/runtime/fleet/production/retirement gate. The known 53 baseline host
-`make test` failures remain FAILED; SDK execution is not established here.
+numeric/runtime/fleet/production/retirement gate. Host `make test` remains FAILED
+with 53 baseline trial diagnostics; SDK is NOT RUN.
+
+## Explicit local real-worker case 3
+
+The bounded death/deadline dispatch reuses the same exact retained selections:
+
+```sh
+python3 -I -B scripts/check_semantic_transition.py --real-case3 \
+  --artifact-dir /absolute/new-local-case3-artifacts \
+  --python-selection /absolute/s04r/qualified-selection \
+  --rust-fixtures /absolute/retained-rust/observed/fixtures
+```
+
+Four subcases cover Python death, Python earlier caller deadline, Rust death and
+Rust earlier caller deadline. Each uses actual `CommandEmbedder` and
+`OpenIndex`/`Step`, three ordinary sources across three collections and a fresh
+private database. Direct `Step` calls retain the actual `worked` and error
+values. The common wrapper, fixed guest roots, launcher/identity checks,
+pre-execution inventories, native mappings/environment samples, exact traced
+root/sample equality and worker-tree effect checks remain mandatory.
+
+The fault requires both a live lease and a verified native-runtime PID receipt.
+The harness proves descent from its own Go test process and targets only an
+owned positive PID greater than one. Death sends `SIGKILL` with a live caller;
+the deadline branch sends `SIGSTOP` and waits for its genuine 30-second caller
+deadline, earlier than the unchanged 90-second document limit. The supervisor
+performs its normal cancellation/reaping. Ownership and unsafe PID/signal tests
+intercept all process control. Document-lane attribution retains case 2's L1:
+startup order and the absence of concurrent queries identify the second embed
+child by inference. Runtime mapping establishes cold lane startup, not an
+inference-frame observation or a maximum-document/latency experiment.
+
+A failed operation must report `worked=true` and a non-nil error without any
+publication. The deadline branch must preserve `context.DeadlineExceeded` from
+its expired caller; death must persist one attempt and future backoff with a
+live caller. An expired caller may retain its original lease because retry uses
+that same expired context. Full queue rows and an OLD/NEW job audit preserve
+that distinction. Source rows, full completion/failure denominator, worker exit
+trace and reap, observed stdout write prefixes, and the discarded document
+worker/reader are retained. `CommandEmbedder` exposes no embedding cache
+protocol; this does not qualify the separate streaming rank cache.
+
+After the active call joins, the owner closes both lanes and the index, disables
+its test-owned restartable definitions and proves its local fence. Only the
+failed row's private `lease_until`/`retry_at` timestamps are made due. Lease IDs,
+attempts, other jobs and source rows stay intact. One restart with the same
+exact generation must complete all three sources with current model, version,
+body hash, valid passages and finite nonzero vectors. Audit checks refuse
+reinsertion, erased attempts, stale or duplicate publications. Unresolved rows
+remain in every coverage report.
+
+`real-case3-{python,rust}-{death,caller_deadline}.json` and `real-case3.json`
+retain the four results. Focused ownership tests run through the wrapper with
+`go test ./semantic -count=1 -run '^TestSemantic(Restart|Failure)OwnedPID$'`;
+the observer tests are `scripts/testdata/test_semantic_transition_real.py`.
+The deterministic ten-case/32-entry/no-skip regression is unchanged. Case 3
+leaves seven other real cases, full S-05 and all numeric/runtime/fleet/production,
+controller/retirement, R1, CPython value-graph and RTERM1 holds open. It grants
+no ticket closure or installed action.
 
 ## Matrix and claim boundaries
 

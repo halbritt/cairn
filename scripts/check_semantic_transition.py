@@ -2,7 +2,8 @@
 
 The default runs deterministic protocol workers. --real-case1 selects the
 retained Python/Rust/Python transition; --real-case2 selects two same-generation
-mid-rebuild restarts. Every build,
+mid-rebuild restarts; --real-case3 selects worker death and earlier caller deadlines.
+Every build,
 worker, Go API, disposable PostgreSQL cluster and assertion runs inside the
 wrapper; the host transports data. Local execution does not close full S-05.
 """
@@ -46,7 +47,7 @@ try:
  if real:
   import importlib.util
   spec=importlib.util.spec_from_file_location('real_transition','/work/scripts/semantic_transition_real.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-  retained,python,rust=module.prepare(artifacts,sample_checkpoint=real_case==2)
+  retained,python,rust=module.prepare(artifacts,sample_checkpoint=real_case>=2)
  run(['go','version'],'go-version.log')
  run(['go','test','-c','-race','-o',str(binary),'./semantic'],'build-semantic.log')
  run(['go','build','-buildvcs=false','-o',str(cli),'./cmd/cairn'],'build-api.log')
@@ -72,11 +73,12 @@ try:
  failed=[e.get('Test','package') for e in events if e['Action']=='fail']
  skipped=[e.get('Test','package') for e in events if e['Action']=='skip']
  matrix=[name for name in passed if name.startswith('TestSemanticTransitionDeterministicMatrix/') and name.count('/')==1]
- expected_real=[test_name] if real_case==1 else ['TestSemanticRealTransitionCase2/python','TestSemanticRealTransitionCase2/rust','TestSemanticRealTransitionCase2']
+ real_subcases={1:[],2:['python','rust'],3:['python_death','python_caller_deadline','rust_death','rust_caller_deadline']}
+ expected_real=[test_name]+[test_name+'/'+name for name in real_subcases[real_case]] if real else []
  if failed or skipped or (not real and (len(matrix)!=10 or len(passed)!=32)) or (real and sorted(passed)!=sorted(expected_real)):raise RuntimeError('incomplete selected transition case/matrix')
  report=dict(schema='cairn.semantic-transition-fixture/1',kind='deterministic-protocol-workers-real-go-and-postgresql',matrix_cases=matrix,passed=passed,failed=failed,skipped=skipped,real_worker_acceptance='not executed by deterministic run; full S05/R01/fleet acceptance remains open',binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),api_sha256=hashlib.sha256(cli.read_bytes()).hexdigest())
  if real:
-  report.update(kind='local-real-worker-transition-case'+str(real_case),matrix_cases=['full_forward_reverse_rebuild'] if real_case==1 else ['mid_rebuild_restart/python','mid_rebuild_restart/rust'],real_worker_acceptance='local case'+str(real_case)+' evidence only; full S05/R01/fleet acceptance remains open')
+  report.update(kind='local-real-worker-transition-case'+str(real_case),matrix_cases={1:['full_forward_reverse_rebuild'],2:['mid_rebuild_restart/python','mid_rebuild_restart/rust'],3:real_subcases[3]}[real_case],real_worker_acceptance='local case'+str(real_case)+' evidence only; full S05/R01/fleet acceptance remains open')
  (artifacts/'report.json').write_text(json.dumps(report,indent=2)+'\n');code=0
 except BaseException:
  (artifacts/'failure.txt').write_text(traceback.format_exc())
@@ -98,10 +100,11 @@ def main():
     cases = parser.add_mutually_exclusive_group()
     cases.add_argument('--real-case1', action='store_true', help='explicit local retained Python/Rust/Python case 1')
     cases.add_argument('--real-case2', action='store_true', help='explicit local Python and Rust mid-rebuild restarts')
+    cases.add_argument('--real-case3', action='store_true', help='explicit local Python and Rust death/caller-deadline cases')
     parser.add_argument('--python-selection', type=Path, help='qualified-selection directory containing stage and candidate.json')
     parser.add_argument('--rust-fixtures', type=Path, help='retained Rust fixtures containing stage and stage-result.json')
     args = parser.parse_args()
-    real_case = 1 if args.real_case1 else 2 if args.real_case2 else 0
+    real_case = 1 if args.real_case1 else 2 if args.real_case2 else 3 if args.real_case3 else 0
     if real_case and (args.python_selection is None or args.rust_fixtures is None):
         parser.error('real cases require both exact retained selections')
     output = args.artifact_dir.resolve()
@@ -162,14 +165,14 @@ def main():
         except subprocess.TimeoutExpired:
             if child.pid <= 1:
                 raise RuntimeError('refusing process-group control for PID <= 1')
-            if args.real_case2:
+            if real_case >= 2:
                 child.terminate()
             else:
                 os.killpg(child.pid, signal.SIGTERM)
             try:
                 child.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                if args.real_case2:
+                if real_case >= 2:
                     child.kill()
                 else:
                     os.killpg(child.pid, signal.SIGKILL)

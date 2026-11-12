@@ -27,13 +27,20 @@ func TestSemanticRealTransitionCase2(t *testing.T) {
 // All fault signals target a verified descendant PID, never a process group.
 // The injected signal function lets safety tests intercept every side effect.
 func transitionPauseWorker(pid, owner int, parent func(int) (int, error), signal func(int, syscall.Signal) error) error {
+	return transitionSignalOwnedWorker(pid, owner, syscall.SIGSTOP, parent, signal)
+}
+
+func transitionSignalOwnedWorker(pid, owner int, fault syscall.Signal, parent func(int) (int, error), signal func(int, syscall.Signal) error) error {
+	if fault != syscall.SIGSTOP && fault != syscall.SIGKILL {
+		return fmt.Errorf("unsupported worker fault signal: %v", fault)
+	}
 	if pid <= 1 || owner <= 1 || pid == owner {
 		return fmt.Errorf("unsafe worker/owner PID: %d/%d", pid, owner)
 	}
 	seen := map[int]bool{}
 	for current := pid; current != owner; {
 		if current <= 1 || seen[current] {
-			return fmt.Errorf("worker %d is not owned by API %d", pid, owner)
+			return fmt.Errorf("worker %d is not owned by fixture %d", pid, owner)
 		}
 		seen[current] = true
 		next, err := parent(current)
@@ -42,7 +49,7 @@ func transitionPauseWorker(pid, owner int, parent func(int) (int, error), signal
 		}
 		current = next
 	}
-	return signal(pid, syscall.SIGSTOP)
+	return signal(pid, fault)
 }
 
 func TestSemanticRestartOwnedPID(t *testing.T) {
