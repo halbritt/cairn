@@ -19,6 +19,9 @@ from .controls import conversation_key, read_control, change_control, dialogue_d
 logger = logging.getLogger(__name__)
 CONTEXT_BYTES = 12000
 ENGINE_TIMEOUT = 150
+SELECTED_TIMEOUTS = {'SessionStart': 13, 'UserPromptSubmit': 13,
+                     'PostToolUse': 13, 'PostToolUseFailure': 13,
+                     'PreCompact': 150, 'SessionEnd': 150}
 
 
 def run_engine(command, payload, timeout=ENGINE_TIMEOUT):
@@ -26,9 +29,13 @@ def run_engine(command, payload, timeout=ENGINE_TIMEOUT):
     # a timed-out hook cannot leave selection running after the turn returns.
     with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, text=True, encoding='utf-8', start_new_session=True) as process:
+        if type(process.pid) is not int or process.pid <= 1:
+            raise RuntimeError('invalid owned engine process identity')
         try:
             stdout, stderr = process.communicate(json.dumps(payload), timeout=timeout)
-        except subprocess.TimeoutExpired:
+        except BaseException:
+            # Preserve the host's interruption while joining this invocation's
+            # engine/selector group. No other provider's child is addressed.
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
@@ -154,6 +161,16 @@ class CairnProvider(MemoryProvider):
     def matches(self, session_id):
         return session_id in self.session_ids and get_hermes_home().resolve() == self.home.resolve()
 
+    def engine_command(self, event):
+        if 'commands' not in self.config:
+            return [sys.executable, self.config['script'], '--config', self.config['engine_config']], ENGINE_TIMEOUT
+        commands = self.config['commands']
+        argv = commands.get(event) if type(commands) is dict else None
+        if (event not in SELECTED_TIMEOUTS or type(argv) is not list or not argv
+                or any(type(value) is not str or not value or '\0' in value for value in argv)):
+            raise ValueError('invalid selected memory command')
+        return list(argv), SELECTED_TIMEOUTS[event]
+
     def invoke(self, event, **fields):
         if not self.active():
             return None
@@ -163,8 +180,8 @@ class CairnProvider(MemoryProvider):
             payload.update(fields)
             if self.binding:
                 payload.update(self.binding)
-            process = run_engine([sys.executable, self.config['script'], '--config', self.config['engine_config']],
-                                 payload, timeout=ENGINE_TIMEOUT)
+            command, timeout = self.engine_command(event)
+            process = run_engine(command, payload, timeout=timeout)
             if process.returncode:
                 raise RuntimeError('memory operation failed; selected save or retrieval not confirmed')
             result = json.loads(process.stdout)
