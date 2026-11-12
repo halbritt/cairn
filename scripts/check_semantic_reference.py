@@ -47,7 +47,7 @@ def load(path):
 
 
 def save(path, value):
-    Path(path).write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
+    Path(path).write_text(json.dumps(value, indent=2, allow_nan=False, sort_keys=True) + "\n")
 
 
 def pinned(root, relative, expected):

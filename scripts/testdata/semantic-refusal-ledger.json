@@ -16,7 +16,7 @@
   },
   "source_sha256": {
     "core/query_projection.go": "c78072b1f0a4b3ea214a0d6d7f2a55fb7d5324bb8f4a34159f2a234cfb9e199b",
-    "scripts/check_semantic_reference.py": "575d6c4c1a858de98cc686157b374bdae9dc1dd4ef5c459212ae53dcaf52fc53",
+    "scripts/check_semantic_reference.py": "a8a9c563a77a038a7cd5c634e519dbbfc462584667c65a93a3179973e76e0df7",
     "scripts/embedding_worker.py": "f8b134f92523eb53ab21f7d4878283f5a6dc401ecb605c7e8d7e2df2aa673ae8",
     "scripts/semantic_rank.py": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
     "scripts/semantic_refusal_fixture.py": "d60ddb139ec81c42deea5c15f1f87461b596cb8b33d657ce468f934d25f02704",

@@ -1,4 +1,5 @@
 """Source-function controls; no actual model initialization or inference."""
+import importlib.metadata
 import unittest
 import tempfile
 from pathlib import Path
@@ -34,6 +35,12 @@ class ResidualFunctionTest(unittest.TestCase):
                 self.assertEqual(row['model_double_calls'],1)
 
     def test_source_derivation_changes_and_stable_boundaries_keep_model_stub_scope(self):
+        missing=[]
+        for package in functions.PACKAGES:
+            try:importlib.metadata.version(package)
+            except importlib.metadata.PackageNotFoundError:missing.append(package)
+        if missing:
+            self.skipTest('identity derivation requires pinned-site package metadata; missing '+', '.join(missing))
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);assets=root/'assets';assets.mkdir()
             for name in functions.ASSETS:
