@@ -264,6 +264,27 @@ class HermesRecallTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertFalse(Path(self.f.memory['state_dir']).exists())
 
+    def test_malformed_surrogate_identity_is_a_stable_class_b_refusal(self):
+        self.configure(recall_observations=False)
+        self.event('UserPromptSubmit', session_id='malformed\ud800label')
+        source = self.source()
+        source_calls = copy.deepcopy(self.calls)
+        self.assertEqual((source.returncode, source.stdout), (1, b''))
+        self.assertEqual(source_calls, [])
+        self.assertFalse(Path(self.f.memory['state_dir']).exists())
+        self.calls.clear()
+        go = self.go()
+        print('HERMES_CLASS_B_IDENTITY='+json.dumps(dict(source_exit=source.returncode,
+              source_stdout=source.stdout.decode(), source_stderr=source.stderr.decode(),
+              source_operations=[op for op, _, _ in source_calls], go_exit=go.returncode,
+              go_stdout=go.stdout.decode(), go_stderr=go.stderr.decode(),
+              go_operations=[op for op, _, _ in self.calls], go_state=self.state())), flush=True)
+        self.assertEqual((go.returncode, go.stdout), (1, b''))
+        self.assertEqual(go.stderr, b'Cairn lifecycle diagnostic: phase=handle error_class=HookError\n'
+                         b'Cairn lifecycle: invalid Hermes session identity; use native tools or an explicit handoff.\n')
+        self.assertEqual(self.calls, [])
+        self.assertFalse(Path(self.f.memory['state_dir']).exists())
+
     def test_project_privacy_and_disabled_environment_precede_api_and_state(self):
         marker = self.f.root/'.cairn-no-memory'
         marker.touch()

@@ -33,6 +33,12 @@ and the frozen fixture/oracle files remain unchanged. Class A requires exact
 observed parity; malformed class B may safely over-refuse with a stable diagnostic;
 class C interpreter/resource limits do not carry a CPython parity claim.
 
+A malformed lone-surrogate Hermes identity is refused before conversion,
+hashing, API access or state creation. The retained process probe observed
+Source's ValueError and the former Go false success after replacement-character
+conversion. Go now returns a stable HookError. This is a class-B refusal control;
+its exception family does not claim equality with Python.
+
 Run either corpus directly from the repository root, where Python adds the
 script directory for its sibling imports:
 

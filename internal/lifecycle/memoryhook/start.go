@@ -225,6 +225,9 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	if ordinary && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
 		return boundary(fail("ordinary memory capture and observation cells remain unavailable"))
 	}
+	if ordinary && value.SameText(config.Get("harness"), "hermes") && !validText(event.Get("session_id")) {
+		return boundary(fail("invalid Hermes session identity"))
+	}
 	if prompt := event.Get("prompt"); prompt != nil && !validText(prompt) {
 		return boundary(fail("invalid memory hook input"))
 	}
