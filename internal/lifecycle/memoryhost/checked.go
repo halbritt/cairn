@@ -116,7 +116,7 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	trace := newTrace(selection.ConfigPath)
 	trace.entry()
 	trace.parsed(event)
-	if name := event.Get("hook_event_name"); hermes || opencodeAmbient || value.SameText(name, "PreToolUse") || value.SameText(name, "PostToolUse") || value.SameText(name, "PostToolUseFailure") {
+	if name := event.Get("hook_event_name"); !snapshot.Bound() || value.SameText(name, "PreToolUse") || value.SameText(name, "PostToolUse") || value.SameText(name, "PostToolUseFailure") {
 		trace.fields["stage"] = "activation"
 	}
 	defer func() {
