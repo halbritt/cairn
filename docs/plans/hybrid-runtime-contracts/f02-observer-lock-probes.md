@@ -32,7 +32,7 @@ The physical-probe event matrix covers both `SessionStart` and
 Each raw frontend row retains its actual input and input digest; the input event
 is checked against the parsed and exit trace events. For each event, Hermes and
 OpenCode ambient each run one positive pair and one real-contention pair. The
-five-method leaf therefore runs nine pairs and eighteen frontends:
+five process methods therefore run nine pairs and eighteen frontends:
 
 | Event and case | Pairs | Reports / physical probes | Results |
 | --- | --- | --- | --- |
