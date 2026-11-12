@@ -2,7 +2,9 @@
 
 Run Cairn's validation locally. Database tests use disposable PostgreSQL clusters;
 never set a test DSN to an operational database. The [Makefile](../../Makefile)
-and test scripts define the checks that run for this checkout.
+and test scripts define the checks that run for this checkout, and [mise.toml](../../mise.toml)
+exposes them through the shared `host:exec` runner (`mise tasks ls`, `mise run check`,
+`mise run test:unit -- <target>`, `mise run test:integration -- [fixture_stem ...]`).
 
 ## Choose the required checks
 

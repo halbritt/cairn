@@ -1,0 +1,64 @@
+# Host-native task entry points wrapping Cairn's existing Makefile and unittest/Go runners.
+# Tasks-only configuration: preserves real HOME, tools, load_tests hooks, and disposable DB fixtures.
+
+[tasks.test]
+description = "Run Cairn's default non-DB unit and SDK checks (make test), or forward focused args to test:unit"
+run = '''sh -eu -c '
+if [ "$#" -gt 0 ]; then
+  exec mise run test:unit -- "$@"
+fi
+exec mise run host:exec -- make test
+' sh'''
+
+[tasks."test:unit"]
+description = "Run focused Go (./pkg -run ...) or Python unittest (test_name / scripts/test_name.py, preserving load_tests), or all unit checks when given no args"
+run = '''sh -eu -c '
+if [ "$#" -eq 0 ]; then
+  exec mise run host:exec -- make test
+fi
+mode="py"
+for arg in "$@"; do
+  case "$arg" in
+    ./*|github.com/*|-run|-run=*|-race|-count=*|core|core/*|cmd|cmd/*|runner|runner/*|localapi|localapi/*|artifacts|artifacts/*|mcpapi|mcpapi/*|semantic|semantic/*|integrations|integrations/*|internal|internal/*)
+      mode="go"
+      break
+      ;;
+  esac
+done
+if [ "$mode" = "go" ]; then
+  exec mise run host:exec -- go test "$@"
+fi
+exec mise run host:exec -- python3 -B -c "
+import sys, unittest
+sys.path.insert(0, \"scripts\")
+args = [sys.argv[0]]
+for a in sys.argv[1:]:
+    if a.startswith(\"scripts/\") and a.endswith(\".py\"):
+        a = a[len(\"scripts/\"):-3].replace(\"/\", \".\")
+    elif a.endswith(\".py\") and \"/\" not in a:
+        a = a[:-3]
+    args.append(a)
+unittest.main(module=None, argv=args)
+" "$@"
+' sh'''
+
+[tasks."test:sdk"]
+description = "Run Node permissioned SDK spawn and IPC checks (make test-sdk-spawn test-sdk-ipc)"
+run = "mise run host:exec -- make test-sdk-spawn test-sdk-ipc"
+
+[tasks."test:integration"]
+description = "Run disposable PostgreSQL integration & launch-hold checks (make test-integration); optional fixture stems filter CAIRN_TEST_ONLY"
+run = '''sh -eu -c '
+if [ "$#" -gt 0 ]; then
+  exec mise run host:exec -- --timeout 15m --weight 2 -- env "CAIRN_TEST_ONLY=$*" make test-integration
+fi
+exec mise run host:exec -- --timeout 30m --weight 2 -- make test-integration
+' sh'''
+
+[tasks."test:lifecycle"]
+description = "Run backup, restore, and local lifecycle recovery checks (make test-lifecycle)"
+run = "mise run host:exec -- --timeout 20m --weight 2 -- make test-lifecycle"
+
+[tasks.check]
+description = "Run go vet, API contract check, gofmt check, and pinned design-source verification (make check)"
+run = "mise run host:exec -- make check"
