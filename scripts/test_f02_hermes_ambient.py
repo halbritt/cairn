@@ -149,6 +149,46 @@ class HermesAmbientTests(unittest.TestCase):
                     self.assertEqual(self.state()[self.state_key()+'.json']['last_recall']['optional_deferred'], reason)
                     self.assertEqual(bool(self.context(result)), required)
 
+    def test_checked_actual_post_tool_cells_do_not_reach_api_or_provider(self):
+        selector = self.root/'never-call-selector'
+        ordinary.write(selector, b'#!/bin/sh\nexit 99\n', 0o700)
+        self.configure(semantic_fallback=True, claude=str(selector))
+        for name, fields in (
+                ('PostToolUse', dict(tool_name='Read', tool_input=dict(file_path='current.go'))),
+                ('PostToolUseFailure', dict(error='LeaseExpiredError'))):
+            with self.subTest(event=name):
+                shutil.rmtree(self.f.memory['state_dir'], ignore_errors=True)
+                self.event(name, **fields)
+                result = ambient.OpenCodeAmbientTests.pair(self)
+                self.assertEqual((result.returncode, result.stderr), (0, b''))
+                self.assertEqual(json.loads(result.stdout), dict(cairn_status={}))
+                self.assertEqual(self.calls, [])
+                state = self.state()[self.state_key()+'.json']
+                if name == 'PostToolUse':
+                    self.assertIn('current.go', state['hints']['files'])
+                else:
+                    self.assertEqual(state['hints']['errors'], ['LeaseExpiredError'])
+
+    def test_checked_post_tool_identity_and_selection_fail_without_effects(self):
+        self.configure(semantic_fallback=True)
+        self.event('PostToolUse', tool_name='Read', tool_input=dict(file_path='current.go'), session_id='')
+        result = ambient.OpenCodeAmbientTests.pair(self)
+        self.assertEqual((result.returncode, result.stdout), (1, b''))
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.files(), {})
+        self.event('PostToolUseFailure', error='LeaseExpiredError')
+        old = self.f.receipt_path.read_bytes()
+        self.overwrite(self.f.receipt_path, old+b' ')
+        try:
+            for launch in (self.source, self.go):
+                result = launch()
+                self.assertEqual((result.returncode, result.stdout), (1, b''))
+                self.assertEqual(result.stderr, b'Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n')
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.files(), {})
+        finally:
+            self.overwrite(self.f.receipt_path, old)
+
     def test_optional_seen_and_start_reset(self):
         self.optional_note('Current retention policy implementation. 日本語 😀\n')
         self.event('UserPromptSubmit')

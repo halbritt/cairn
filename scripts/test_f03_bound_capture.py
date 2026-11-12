@@ -260,12 +260,24 @@ sys.exit(spec.get('exit',0))
     def pair(self):
         result = super().pair()
         self.assertEqual(self.provider_sides['go'], self.provider_sides['source'])
-        self.assertEqual(len(self.provider_sides['go'][0]), 1)
+        self.assertEqual(len(self.provider_sides['go'][0]), getattr(self, 'expected_provider_calls', 1))
         type(self).source_pairs += 1
         return result
 
     def note(self, title='Retention policy'):
         return dict(record_id=None, kind='decision', title=title, body='Use thirty days for postgres retention.')
+
+    def test_missing_provider_preserves_source_error_without_commit(self):
+        self.expected_provider_calls = 0
+        self.f.memory.pop('claude')
+        self.f.publish_configuration()
+        result = self.pair()
+        self.assertEqual((result.returncode, result.stdout), (1, b''))
+        self.assertIn(b'error_class=KeyError', result.stderr)
+        self.assertEqual(self.writes, [])
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.calls[-1][1]['outcome'], 'error')
+        self.assertFalse((self.root / 'provider.calls').exists())
 
     def test_checked_null_selection_commits_digest_after_real_selector(self):
         self.assertEqual(self.pair().stdout, b'{}\n')

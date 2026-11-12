@@ -147,6 +147,27 @@ class ClaudeBoundCase(bound.BoundMemoryCase):
 
 class ClaudeBoundRecallTests(ClaudeBoundCase):
 
+    def test_bound_ambient_preserves_source_profile_refusal(self):
+        self.required()
+        self.f.memory['semantic_fallback'] = True
+        for mode in (None, 'ambient'):
+            if mode is None:
+                self.f.memory.pop('recall_mode', None)
+            else:
+                self.f.memory['recall_mode'] = mode
+            self.overwrite(self.f.memory_path, bound.encoded(self.f.memory))
+            self.repin_profiles()
+            for name in ('SessionStart', 'UserPromptSubmit'):
+                with self.subTest(mode=mode, event=name):
+                    self.reset_state({})
+                    self.event(name, prompt_id='native-fixture-prompt',
+                               prompt='Inspect current retention policy.')
+                    result = self.pair()
+                    self.assertEqual((result.returncode, result.stdout), (1, b''))
+                    self.assertIn(b'phase=activation error_class=ValueError', result.stderr)
+                    self.assertEqual(self.calls, [])
+                    self.assertEqual(self.state(), {})
+
     def test_policy_refusal_with_missing_grants_still_blocks_prompt(self):
         path=Path(self.f.memory['state_dir'])/(bound.SESSION+'.inbox-recall.json')
         malformed=bound.encoded(dict(schema='cairn.inbox-recall-grants/1',session=bound.SESSION))

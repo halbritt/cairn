@@ -106,7 +106,7 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	if name := event.Get("hook_event_name"); !snapshot.Bound() && !value.SameText(name, "SessionStart") && !value.SameText(name, "UserPromptSubmit") && !value.SameText(name, "PreToolUse") && !value.SameText(name, "PostToolUse") && !value.SameText(name, "PostToolUseFailure") {
 		return refuse()
 	}
-	if !snapshot.Bound() && (value.SameText(snapshot.Config().Get("harness"), "claude") || hermes || opencodeAmbient) && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
+	if !snapshot.Bound() && (value.SameText(snapshot.Config().Get("harness"), "claude") || hermes || opencodeAmbient) && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") && !(hermes && (value.SameText(event.Get("hook_event_name"), "PostToolUse") || value.SameText(event.Get("hook_event_name"), "PostToolUseFailure"))) {
 		return refuse()
 	}
 	directory, err := os.Getwd()

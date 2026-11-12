@@ -246,3 +246,13 @@ func classifyCallError(err error) error {
 	}
 	return &responseError{reason: ErrNotConfirmed, cause: err}
 }
+
+// LimitReceiptCredits carries the selected search receipt's reported allowance
+// into serial body inspection. Aliases and replay cannot restore spent credit.
+func (c *Client) LimitReceiptCredits(receipt string, remaining int) {
+	remaining = min(4, max(0, remaining))
+	if previous, known := c.accounting.ReceiptCredits[receipt]; known {
+		remaining = min(previous, remaining)
+	}
+	c.accounting.ReceiptCredits[receipt] = remaining
+}

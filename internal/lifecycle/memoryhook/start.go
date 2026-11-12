@@ -286,6 +286,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	var client *memoryclient.Client
 	var api *localapi.Client
 	operationTime := map[string]time.Duration{"search": 0, "pull": 0}
+	selectors := &recallSelectorMeter{calls: []core.RecallSelectorCall{}}
 	var injected int
 	var observedErr error
 	var recallElapsed time.Duration
@@ -295,7 +296,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 			defer api.Close()
 		}
 		if client != nil && reportReady {
-			report(ctx, api, client, config, event, started, recallElapsed, operationTime, injected, observedErr)
+			report(ctx, api, client, config, event, started, recallElapsed, operationTime, selectors, injected, observedErr)
 		}
 	}()
 	trace["stage"] = "lock_attempt"
@@ -397,9 +398,9 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 			client, err = memoryclient.New(api, memoryclient.Options{Scope: scope, Context: &pins, CommandPrefix: []string{text(config.Get("cairn")), "agent", "--socket", text(config.Get("socket")), "--token-file", text(config.Get("token_file"))}, Diagnostics: diagnostics, ObserveOperation: func(name string, elapsed time.Duration) { operationTime[name] += elapsed }})
 			if err == nil {
 				if ordinary && value.SameText(config.Get("harness"), "claude") {
-					body, err = claudeRecall(ctx, client, config, event, state, status, project)
+					body, err = claudeRecall(ctx, client, config, event, state, status, project, selectors)
 				} else if ordinary {
-					body, err = ordinaryRecall(ctx, client, config, event, state, status, project)
+					body, err = ordinaryRecall(ctx, client, config, event, state, status, project, selectors)
 				} else {
 					body, err = recall(ctx, client, config, event, state, status, project, bound)
 				}
@@ -891,7 +892,7 @@ func failure(event *value.Value, err error) Result {
 	}
 	return Result{Stderr: diagnostic + "Cairn lifecycle: " + message + "; use native tools or an explicit handoff.\n", ExitCode: 1}
 }
-func report(ctx context.Context, api *localapi.Client, client *memoryclient.Client, config, event *value.Value, started time.Time, recallElapsed time.Duration, operationTime map[string]time.Duration, injected int, err error) {
+func report(ctx context.Context, api *localapi.Client, client *memoryclient.Client, config, event *value.Value, started time.Time, recallElapsed time.Duration, operationTime map[string]time.Duration, selectors *recallSelectorMeter, injected int, err error) {
 	if !contains([]string{"claude", "codex", "opencode", "hermes"}, text(config.Get("harness"))) {
 		return
 	}
@@ -909,6 +910,9 @@ func report(ctx context.Context, api *localapi.Client, client *memoryclient.Clie
 	accounting := client.Accounting()
 	elapsed, search, pulls, selector, bytes := recallElapsed.Milliseconds(), operationTime["search"].Milliseconds(), operationTime["pull"].Milliseconds(), int64(0), int64(injected)
 	searchCalls, pullCalls := accounting.OperationCalls["search"], accounting.OperationCalls["pull"]
+	for _, call := range selectors.calls {
+		selector += *call.ElapsedMS
+	}
 	status, errorClass := "completed", ""
 	if err != nil {
 		status = "error"
@@ -918,7 +922,7 @@ func report(ctx context.Context, api *localapi.Client, client *memoryclient.Clie
 			status = "timeout"
 		}
 	}
-	body := core.RecallObservationRequest{RequestID: uuid.NewString(), Repo: text(config.Get("repo")), ReceiptIDs: accounting.SearchReceipts, Harness: text(config.Get("harness")), HookEvent: text(event.Get("hook_event_name")), Method: "cairn-lifecycle/recall-meter/1", Status: status, ErrorClass: errorClass, ElapsedMS: &elapsed, SearchMS: &search, PullsMS: &pulls, SelectorMS: &selector, SearchCalls: &searchCalls, PullCalls: &pullCalls, SelectorCalls: []core.RecallSelectorCall{}, InjectedBytes: &bytes}
+	body := core.RecallObservationRequest{RequestID: uuid.NewString(), Repo: text(config.Get("repo")), ReceiptIDs: accounting.SearchReceipts, Harness: text(config.Get("harness")), HookEvent: text(event.Get("hook_event_name")), Method: "cairn-lifecycle/recall-meter/1", Status: status, ErrorClass: errorClass, ElapsedMS: &elapsed, SearchMS: &search, PullsMS: &pulls, SelectorMS: &selector, SearchCalls: &searchCalls, PullCalls: &pullCalls, SelectorCalls: selectors.calls, InjectedBytes: &bytes}
 	limited, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
 	var response json.RawMessage

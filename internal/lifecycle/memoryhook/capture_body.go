@@ -460,10 +460,5 @@ func captureBody(ctx context.Context, config, event, state, observed *value.Valu
 		captureStatus(state, "courtesy")
 		return value.Mapping(), nil
 	}
-	if config.Get("claude") == nil {
-		// Configurations without a selected provider stay outside this finite
-		// capture cell, including the retained unported-boundary fixture.
-		return nil, fail("provider-selected substantive capture remains unavailable")
-	}
 	return captureSelection(ctx, config, event, state, observed, directory, messages, digest)
 }

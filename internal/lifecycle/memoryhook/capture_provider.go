@@ -32,7 +32,16 @@ func captureModelName(v *value.Value) bool {
 	return true
 }
 
+type selectorSpec struct {
+	schema, prompt, stage string
+	timeout               time.Duration
+}
+
 func captureProvider(ctx context.Context, config, excerpt, observed *value.Value) (*value.Value, error) {
+	return selectorProvider(ctx, config, excerpt, observed, selectorSpec{captureSchemaJSON, capturePrompt, "capture", 35 * time.Second})
+}
+
+func selectorProvider(ctx context.Context, config, excerpt, observed *value.Value, spec selectorSpec) (*value.Value, error) {
 	if config.Get("claude") == nil {
 		return nil, &value.Error{Class: "KeyError", Message: "claude"}
 	}
@@ -45,7 +54,7 @@ func captureProvider(ctx context.Context, config, excerpt, observed *value.Value
 			return nil, fail("invalid lifecycle " + key + ": expected a nonempty model name without whitespace or controls")
 		}
 	}
-	schema, err := value.DecodeText([]byte(captureSchemaJSON), "utf-8", 0)
+	schema, err := value.DecodeText([]byte(spec.schema), "utf-8", 0)
 	if err != nil {
 		return nil, err
 	}
@@ -53,8 +62,22 @@ func captureProvider(ctx context.Context, config, excerpt, observed *value.Value
 	if err != nil {
 		return nil, err
 	}
-	argv := []string{"--print", "--output-format", "json", "--disable-slash-commands", "--no-session-persistence", "--setting-sources", "", "--settings", `{"disableAllHooks":true}`, "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--tools", "", "--max-turns", "2", "--json-schema", string(schemaJSON), "--system-prompt", capturePrompt}
+	argv := []string{"--print", "--output-format", "json", "--disable-slash-commands", "--no-session-persistence", "--setting-sources", "", "--settings", `{"disableAllHooks":true}`, "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--tools", "", "--max-turns", "2", "--json-schema", string(schemaJSON), "--system-prompt", spec.prompt}
 	model := config.Get("model")
+	keys := []string{"model"}
+	if spec.stage == "preview" {
+		keys = []string{"preview_model", "recall_model", "model"}
+	}
+	if spec.stage == "recall" {
+		keys = []string{"recall_model", "model"}
+	}
+	for _, key := range keys {
+		if candidate := config.Get(key); value.Truth(candidate) {
+			model = candidate
+			break
+		}
+	}
+
 	if value.Truth(model) {
 		if model.Kind != value.String {
 			return nil, &value.Error{Class: "TypeError", Message: "selector model must be a string"}
@@ -80,7 +103,7 @@ func captureProvider(ctx context.Context, config, excerpt, observed *value.Value
 		}
 	}
 	env = append(env, "CAIRN_LIFECYCLE_CHILD=1")
-	limited, cancel := context.WithTimeout(ctx, 35*time.Second)
+	limited, cancel := context.WithTimeout(ctx, spec.timeout)
 	defer cancel()
 	raw, status, err := captureCommand(limited, executable, argv, input, env, work, observed)
 	if err != nil {
@@ -180,8 +203,6 @@ func captureCommand(ctx context.Context, executable string, argv []string, input
 			livePipes--
 		}
 		observed.Set("elapsed_ms", floating(float64(time.Since(started).Microseconds())/1000))
-		observed.Set("stdout_bytes", integer(counts["stdout"]))
-		observed.Set("stderr_bytes", integer(counts["stderr"]))
 		var code *value.Value
 		if command != nil && command.ProcessState != nil {
 			n := command.ProcessState.ExitCode()
@@ -191,6 +212,8 @@ func captureCommand(ctx context.Context, executable string, argv []string, input
 			code = integer(n)
 		}
 		observed.Set("returncode", code)
+		observed.Set("stdout_bytes", integer(counts["stdout"]))
+		observed.Set("stderr_bytes", integer(counts["stderr"]))
 	}()
 	startFailure := func() ([]byte, int, error) {
 		outcome := "spawn_failed"

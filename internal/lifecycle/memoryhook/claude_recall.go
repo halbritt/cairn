@@ -15,11 +15,11 @@ import (
 
 // claudeRecall is the reached Claude Start/prompt consumer. Unbound calls retain
 // ordinary Source recall; a binding must be resolved by the checked entry.
-func claudeRecall(ctx context.Context, client *memoryclient.Client, config, event, state, status *value.Value, project string) (string, error) {
+func claudeRecall(ctx context.Context, client *memoryclient.Client, config, event, state, status *value.Value, project string, meter *recallSelectorMeter) (string, error) {
 	if owner := event.Get("prompt_id"); owner != nil && owner.Kind == value.String && !validText(owner) {
 		return "", &value.Error{Class: "UnicodeEncodeError", Message: "invalid Claude prompt owner text"}
 	}
-	return ordinaryRecall(ctx, client, config, event, state, status, project)
+	return ordinaryRecall(ctx, client, config, event, state, status, project, meter)
 }
 
 func requiredMemoryOutput(config, event *value.Value, err error, diagnostic string) Result {
