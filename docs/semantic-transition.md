@@ -548,6 +548,35 @@ idle 30-second, retrieval two-second, lease two-minute and backoff limits remain
 unchanged. Three other real cases, full S-05 and all numeric, latency, runtime,
 fleet, production, retirement and owner/ticket closure holds remain open.
 
+### Sampler diagnostic limits
+
+Case 7 remains landed at `d26cbd6c`: coordinator 2 of 3 real runs passed,
+sampler cause unknown. The diagnostic-custody component preserves failure
+evidence; the original sampler exception remains unresolved. Three diagnostic
+runs at `159ba96d` passed without reproducing that exception. Those passes do
+not establish general sampler reliability.
+
+The reviewed custody and shutdown behavior retains these limits:
+
+- R-1: The five-second join bound can fail a sampler whose final pass is slow
+  or blocked, including a stalled `/proc` read. The run then retains partial
+  evidence and fails. All three diagnostic runs joined successfully.
+- R-2: After a terminate-wait timeout, the kill targets only the owned direct
+  `strace` child. Its tracees may detach and continue until the isolated
+  wrapper's PID namespace is torn down. The timeout remains a cleanup error.
+- R-3: Focused fault tests do not cover a successful process-group signal,
+  failure of the kill/reap wait, a stderr write failure, `SystemExit`, or a
+  failed write of `sampler-before-cleanup.json`. These cleanup branches remain
+  untested; the existing negative process-group tests do not cover the positive
+  branch.
+- R-4: Refusal of an unsafe child PID happens before the before-cleanup
+  snapshot. That snapshot is absent on this path; the numbered sampler-error
+  record and final observations retain the primary failure.
+- R-5: Cross-thread snapshot copies rely on the installed GIL-enabled
+  `/usr/bin/python3`. They are not qualified for a free-threaded Python build.
+- R-6: The sampler stops after its first exception, so its error ordinal stays
+  at one. Later problems are recorded as cleanup or diagnostic-write errors.
+
 ## Matrix and claim boundaries
 
 Each row names one top-level case under
