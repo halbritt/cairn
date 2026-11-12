@@ -33,8 +33,8 @@
     "semantic/stream.go": "e167f5b77b62ab64532337d366e00204a8fb1a523407946ad6c05d019eddadb0",
     "semantic/stream_test.go": "e13e4ac3e718d515936fe315a47049ac8c8277fc79cdbb0e922630977f149955",
     "scripts/semantic_refusal_functions.py": "dbc55b42d7a8f04e75175150cc2a8a62b23b333c45a4bc238c6a75a53b4dd08c",
-    "scripts/semantic_refusal_function_evidence.py": "9bffea49ec802e60c3ac2d142a49fb89ca8e0a583e93e91146e2d313853db6af",
-    "scripts/semantic_refusal_native_residuals.py": "dda35442fbf503534b2a0723681574f752b3555a98adba06f528d44f504729b7",
+    "scripts/semantic_refusal_function_evidence.py": "0da0e2ebbceeef8a337e7f7b7b4208ac8267aac74d04989403564c7bf75357b7",
+    "scripts/semantic_refusal_native_residuals.py": "cb51116aa6ece9abd6ee9be540c8f5ead53ccf65349018598f806b270b865d84",
     "scripts/semantic_refusal_source_residuals.py": "a46a039669ac6a4b6db167c5ab5f98ed12a70247e1ac997ee4ddf8601f3a522d",
     "scripts/semantic_refusal_residual_fixture.py": "b3b26276764bf3ee4f26ee60c50b26fec0b46393fe79ab94ff67792aa5b6702b",
     "scripts/testdata/semantic-refusal-residual-driver/main.go": "ba013f6d430cebf1d3cfc49cfb4d8616e53484c4bde313c2d6eaa525039e93a2"

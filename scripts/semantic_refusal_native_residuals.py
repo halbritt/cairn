@@ -208,6 +208,8 @@ def store_rows(data):
 def idle_row(root):
     data=reference.load(root/'driver.stdout');extra={'old_child_absent_before_replacement','old_child_pid','old_child_start_ticks'}
     observed=process_observation(root,'residual-idle',expected_errors=['','',''],extra_fields=extra)
+    reference.require([row['result'] for row in data['calls']]==[
+        dict(model_sha256='a'*64,algorithm='s01b-idle-double/1',scores=[])]*3,'idle Go result changed')
     events=[json.loads(line) for line in (root/'events.jsonl').read_text().splitlines()]
     starts=[r for r in events if r['event']=='start'];requests=[r for r in events if r['event']=='request']
     reference.require(len(starts)==2 and len(requests)==3 and data['old_child_absent_before_replacement'] is True and

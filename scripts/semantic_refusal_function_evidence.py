@@ -6,7 +6,7 @@ import shutil
 import struct
 
 import check_semantic_reference as reference
-from semantic_refusal_functions import ASSETS, PACKAGES
+from semantic_refusal_functions import ASSETS, PACKAGES, semantic_rank
 
 
 DRIVER="""import sys,json,hashlib
@@ -45,7 +45,7 @@ def producer_spec(value):
                 case_inventory_sha256=hashlib.sha256(encoded).hexdigest())
 
 
-def validate_rows(value,root,rows,rank_identity,embed_identity):
+def validate_rows(value,root,rows,rank_identity,embed_identity,package_versions=None):
     ids=[r['id'] for r in rows]
     reference.require(len(ids)==len(set(ids)) and set(ids)==set(RANK_ERRORS)|IDENTITY_IDS,
                       'missing/duplicate function residual IDs')
@@ -89,13 +89,35 @@ def validate_rows(value,root,rows,rank_identity,embed_identity):
             reference.require(set(row)=={'id','scope','input','before','after','steps','model_initialized','real_model_inference'} and
                 row['scope']=='function/source-derivation/external-model-tokenizer-stubs','unsupported derivation fixture scope/claim')
             before=row['before'];after=row['after'];change=row['input']['mutation']
+            kind=('one-byte-asset' if '/each-model-asset/' in identifier else
+                'one-source-comment' if '/each-implementation-source/' in identifier else
+                ('package-version-metadata-double' if identifier.endswith('-version') else 'consumed-rank-setting-double')
+                if '/each-vector-setting-version/' in identifier else
+                'byte-identical-path-moves' if '/path-move-stable/' in identifier else 'one-mtime-at-a-time')
+            reference.require(change['kind']==kind,'identity case changed its mutation kind')
+            reference.require(set(row['input'])=={'baseline_files','baseline_package_versions','mutation'} and
+                all(set(item)=={'identities','exception','external_constructor_stub_calls'} for item in (before,after)) and
+                len(before['external_constructor_stub_calls'])==2,'derivation input/constructor scope changed')
             reference.require(before['exception'] is None and before['identities']==dict(rank=rank_identity,embed=embed_identity),
                               'hash-only baseline differs from retained real-worker identity')
             reference.require(row['input']['baseline_files']==dict(assets=value['assets_sha256'],
                 code={n:value['source_sha256']['scripts/'+n] for n in ('semantic_rank.py','embedding_worker.py')}),
                 'derivation source/asset baseline changed')
-            reference.require(set(row['input']['baseline_package_versions'])==set(PACKAGES) and
+            reference.require(row['input']['baseline_package_versions']==package_versions and
+                set(package_versions)==set(PACKAGES) and
                 row['input']['baseline_package_versions']['fastembed']=='0.8.0','package metadata baseline changed')
+            if change['kind']=='package-version-metadata-double':
+                name=identifier.rsplit('/',1)[1].removesuffix('-version')
+                reference.require(name in PACKAGES and change==dict(kind='package-version-metadata-double',package=name,
+                    before=package_versions[name],after='0.0.0-s01b-control'),'identity version control changed another package/value')
+            elif change['kind']=='consumed-rank-setting-double':
+                settings={'prefix':('PREFIX',semantic_rank.PREFIX+'control '),'window':('WINDOW',semantic_rank.WINDOW+1),
+                    'stride':('STRIDE',semantic_rank.STRIDE+1),'algorithm':('ALGORITHM',semantic_rank.ALGORITHM+'/control'),
+                    'batch-size':('BATCH_SIZE',semantic_rank.BATCH_SIZE+1)}
+                label=identifier.rsplit('/',1)[1];reference.require(label in settings,'unknown identity setting control')
+                symbol,changed=settings[label]
+                reference.require(change==dict(kind='consumed-rank-setting-double',symbol=symbol,
+                    before=getattr(semantic_rank,symbol),after=changed),'identity setting control changed another symbol/value')
             if identifier.endswith('/fastembed-version'):
                 reference.require(change==dict(kind='package-version-metadata-double',package='fastembed',
                     before='0.8.0',after='0.0.0-s01b-control') and after['identities'] is None and
@@ -110,11 +132,14 @@ def validate_rows(value,root,rows,rank_identity,embed_identity):
                         all(s['result']['identities']==previous and s['result']['exception'] is None for s in row['steps']),
                         'path/timestamp changed identity')
                     if '/timestamp-stable/' in identifier:
-                        reference.require(len(row['steps'])==7 and len({s['file'] for s in row['steps']})==7 and
-                            all(s['before_sha256']==s['after_sha256'] and s['before_mtime_ns']!=s['after_mtime_ns']
+                        files={str(Path(group)/name):pin for group,pins in row['input']['baseline_files'].items() for name,pin in pins.items()}
+                        reference.require(change==dict(kind='one-mtime-at-a-time') and len(row['steps'])==7 and
+                            {s['file'] for s in row['steps']}==set(files) and
+                            all(s['before_sha256']==s['after_sha256']==files[s['file']] and s['after_mtime_ns']-s['before_mtime_ns']==123456789
                                 for s in row['steps']),'timestamp control did not mutate each copied input separately')
                     else:
-                        reference.require({s['input'] for s in row['steps']}=={'source-path','model-path'} and
+                        reference.require(change['kind']=='byte-identical-path-moves' and len(row['steps'])==2 and
+                            {s['input'] for s in row['steps']}=={'source-path','model-path'} and
                             change['moved_files']==row['input']['baseline_files'],'path move changed bytes')
                 elif '/each-implementation-source/' in identifier:
                     reference.require(previous['rank']==current['rank'] and previous['embed']!=current['embed'],
@@ -126,6 +151,9 @@ def validate_rows(value,root,rows,rank_identity,embed_identity):
                 reference.require(change['file']==identifier.rsplit('/',1)[1] and
                     change['kind']==('one-byte-asset' if '/each-model-asset/' in identifier else 'one-source-comment'),
                     'identity case mutated another required input')
+                group='assets' if change['kind']=='one-byte-asset' else 'code'
+                reference.require(change['before']==row['input']['baseline_files'][group] and set(change['after'])==set(change['before']) and
+                    (change['kind']!='one-byte-asset' or change['offset']==0),'identity mutation baseline/offset changed')
                 reference.require([name for name in change['before'] if change['before'][name]!=change['after'][name]]==[change['file']],
                                   'identity control changed more than one input')
                 first=reference.pinned(root/'identity-inputs',change['retained_before'],change['before'][change['file']])
@@ -219,4 +247,4 @@ def verify(value,evidence_root,path,sha):
     base=Path(value['retained']['python-characterization']['relative']).parent
     embed=reference.load(Path(evidence_root)/base/'raw/embed-identity.stdout')['identity']
     # The exact historical file is also verified through the characterization seal by audit().
-    return validate_rows(value,path.parent,data['cases'],rank_identity,embed)
+    return validate_rows(value,path.parent,data['cases'],rank_identity,embed,binding['core_packages'])
