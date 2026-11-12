@@ -1,6 +1,7 @@
-"""Disposable native Agy project hooks, checked coordination and conversation resume."""
+"""Disposable native Agy hook layers, checked coordination and conversation resume."""
 import argparse
 import base64
+from collections import Counter
 import hashlib
 import http.server
 import io
@@ -331,7 +332,19 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             base = Path(f.coord['state_dir'])
             return {str(path.relative_to(base)): path.read_bytes() for path in base.rglob('*') if path.is_file()}
 
-        def prompt(client, label, selection, *, refusal=None):
+        def prompt(client, label, selection, *, refusal=None, layers=None):
+            active_layers = [(client.hook_file, selection)] if layers is None else layers
+            self.assertTrue(active_layers)
+            self.assertEqual(len({path for path, _ in active_layers}), len(active_layers))
+            self.assertEqual(active_layers[0][1], selection)
+            if refusal:
+                self.assertEqual(len(active_layers), 1)
+            rows = [row for _, selected in active_layers for row in selected[2]['rows']]
+            command_counts = Counter(tuple(row['argv']) for row in rows)
+            unique_rows = {tuple(row['argv']): row for row in rows}
+            for row in rows:
+                self.assertEqual(row, unique_rows[tuple(row['argv'])])
+            expected_events = [event for event in ('PreInvocation', 'Stop') for _ in active_layers]
             before = state(), len(f.api_calls()), len(provider.requests)
             marker = 'R04-CONTEXT-' + str(uuid.uuid4())
             self.assertTrue(all(marker not in text for request in provider.requests for text in provider_texts(request)))
@@ -340,7 +353,6 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             prompt_text = 'R04 fixture ' + label
             first_prompts.setdefault(client.identity, prompt_text)
             result = client.prompt(prompt_text)
-            rows = selection[2]['rows']
 
             def finished():
                 captured = client.child.trace.read_bytes()
@@ -353,19 +365,19 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 try:
                     executions = list(successful_execs(exec_lines(all_trace, start_offset=offset)))
                     found = []
-                    for row in rows:
+                    for key, row in unique_rows.items():
                         issued = [entry for entry in executions if entry['path'] == row['argv'][0] and entry['argv'] == row['argv']]
-                        if not issued or not exits(trace, issued[0]['pid']):
+                        if len(issued) < command_counts[key] or any(not exits(trace, entry['pid']) for entry in issued):
                             return None
-                        self.assertEqual(len(issued), 1, (label, row, issued))
-                        found.append((row, issued[0]))
+                        self.assertEqual(len(issued), command_counts[key], (label, row, issued))
+                        found.extend((row, entry) for entry in issued)
                     native_threads = thread_pids(all_trace, client.child.native_pid)
                     produced = hook_writes(all_trace, native_threads, start_offset=offset)
-                    if len(produced) < 2:
+                    if len(produced) < len(expected_events):
                         # A completed child alone does not prove that strace
                         # has finished reporting the native producer's write.
                         return None
-                    self.assertEqual([record['payload']['hookEventName'] for record in produced], ['PreInvocation', 'Stop'])
+                    self.assertEqual([record['payload']['hookEventName'] for record in produced], expected_events)
                 except AssertionError:
                     (output / (label + '.trace')).write_bytes(captured[offset:])
                     (output / (label + '.prefix.trace')).write_bytes(captured)
@@ -439,13 +451,16 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                     argv=row['argv'], launcher=pin(Path(row['argv'][0])), program=pin(Path(vector[0])),
                     raw_stdin_sha256=hashlib.sha256(raw).hexdigest(), payload=payload,
                     stdout=stdout.decode(), stderr=stderr.decode(), receipt_read=receipt_read, exec=program[0]))
-            selected_launchers = {row['argv'][0] for row in rows}
             launch_root = str(f.root / 'release' / 'launch') + '/'
-            self.assertEqual([entry for entry in executions if entry['path'].startswith(launch_root)
-                              and entry['path'] not in selected_launchers], [])
-            self.assertIn(str(client.hook_file), opened_paths(all_trace, native_threads))
-            self.assertEqual(digest(client.hook_file), selection[0]['settings']['sha256'])
-            if client.hook_file == account_hooks:
+            self.assertEqual(Counter(tuple(entry['argv']) for entry in executions if entry['path'].startswith(launch_root)),
+                             command_counts)
+            if not refusal:
+                self.assertEqual(Counter(encoded(record['payload']) for record in reached),
+                                 Counter(encoded(record['payload']) for record in produced))
+            for hook_file, selected in active_layers:
+                self.assertIn(str(hook_file), opened_paths(all_trace, native_threads))
+                self.assertEqual(digest(hook_file), selected[0]['settings']['sha256'])
+            if len(active_layers) == 1 and active_layers[0][0] == account_hooks:
                 self.assertFalse(project_hooks.exists())
                 self.assertFalse(control_hooks.exists())
             current_requests = provider.requests[before[2]:]
@@ -469,18 +484,27 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 self.assertIn('busy', [call['metadata']['state'] for call in presence])
                 self.assertEqual(contexts[-1]['metadata']['state'], 'idle')
                 self.assertGreater(len(provider.requests), before[2])
-                preinvocation = next(record for record in reached if record['event'] == 'PreInvocation')
-                injected = json.loads(preinvocation['stdout'])
-                self.assertEqual(set(injected), {'injectSteps'})
-                self.assertEqual(len(injected['injectSteps']), 1)
-                self.assertEqual(set(injected['injectSteps'][0]), {'ephemeralMessage'})
-                message = injected['injectSteps'][0]['ephemeralMessage']
-                self.assertIn('Cairn session ' + marker + ' has inbox ' + owner['inbox'], message)
-                self.assertIn('Use agent UUID ' + owner['agent_id'] + ' and execution UUID ' + owner['execution_id'], message)
+                preinvocations = [record for record in reached if record['event'] == 'PreInvocation']
+                self.assertEqual(len(preinvocations), len(active_layers))
+                messages = []
+                for preinvocation in preinvocations:
+                    injected = json.loads(preinvocation['stdout'])
+                    self.assertEqual(set(injected), {'injectSteps'})
+                    self.assertEqual(len(injected['injectSteps']), 1)
+                    self.assertEqual(set(injected['injectSteps'][0]), {'ephemeralMessage'})
+                    message = injected['injectSteps'][0]['ephemeralMessage']
+                    self.assertIn('Cairn session ' + marker + ' has inbox ' + owner['inbox'], message)
+                    self.assertIn('Use agent UUID ' + owner['agent_id'] + ' and execution UUID ' + owner['execution_id'], message)
+                    messages.append(message)
                 for request in current_requests:
-                    self.assertIn(message.strip(), [text.strip() for text in provider_texts(request)])
-                context_application.update(message_sha256=hashlib.sha256(message.encode()).hexdigest(),
-                    hook_stdout_sha256=hashlib.sha256(preinvocation['stdout'].encode()).hexdigest(),
+                    provider_counts = Counter(text.strip() for text in provider_texts(request))
+                    for message, count in Counter(message.strip() for message in messages).items():
+                        self.assertEqual(provider_counts[message], count)
+                context_application.update(message_sha256=hashlib.sha256(messages[0].encode()).hexdigest(),
+                    hook_stdout_sha256=hashlib.sha256(preinvocations[0]['stdout'].encode()).hexdigest(),
+                    messages=[dict(message_sha256=hashlib.sha256(message.encode()).hexdigest(),
+                                   hook_stdout_sha256=hashlib.sha256(record['stdout'].encode()).hexdigest())
+                              for record, message in zip(preinvocations, messages)],
                     provider_request_indices=list(range(before[2], len(provider.requests))))
                 serialized = json.dumps(provider.requests[-1])
                 self.assertIn('R04 fixture ' + label, serialized)
@@ -491,8 +515,11 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             observations.append(dict(case=label, native_session_id=client.identity, native_pid=client.child.native_pid,
                 result=result, selection=selection[0]['selection'], reached=reached, refusal=refusal,
                 context_application=context_application,
-                hook_layer='account' if client.hook_file == account_hooks else 'project',
-                hook_file=pin(client.hook_file),
+                hook_layer='layered' if len(active_layers) > 1 else ('account' if active_layers[0][0] == account_hooks else 'project'),
+                hook_file=pin(active_layers[0][0]),
+                hook_layers=[dict(layer='account' if path == account_hooks else 'project', hook_file=pin(path),
+                                  selection=selected[0]['selection']) for path, selected in active_layers],
+                expected_commands=[dict(argv=list(argv), count=count) for argv, count in command_counts.items()],
                 native_hook_writes=produced,
                 api_delta=len(f.api_calls())-before[1], provider_delta=len(provider.requests)-before[2],
                 cairn_context_states=[call['metadata']['state'] for call in contexts],
@@ -514,6 +541,9 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         (output / 'b-receipt.json').write_bytes(f.receipt_path.read_bytes())
         self.assertLessEqual(len(f.receipt_path.read_bytes()) + 1, string_limit)
         self.assertNotEqual(a[0]['selection'], b[0]['selection'])
+        for selected in (a, b):
+            groups = json.loads(Path(selected[0]['settings']['path']).read_bytes())
+            self.assertEqual(set(groups['cairn-coordination']), {'PreInvocation', 'Stop'})
         publish(b, project_hooks, 'b')
         prompt(target, 'existing-after-b-publication', b)
         prompt(control, 'control-still-a', a)
@@ -580,6 +610,24 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         publish(a, account_hooks, 'account-reversed-a')
         prompt(account, 'account-reversed-a', a)
         account.close()
+        prior_ids = {client.identity for client in clients}
+        publish(b, project_hooks, 'layers-project-b')
+        layered = start('layered-client', work, project_hooks)
+        self.assertNotIn(layered.identity, prior_ids)
+        prompt(layered, 'layers-account-a-project-b', b, layers=[(project_hooks, b), (account_hooks, a)])
+        publish(a, project_hooks, 'layers-project-a')
+        publish(b, account_hooks, 'layers-account-b')
+        prompt(layered, 'layers-account-b-project-a', a, layers=[(project_hooks, a), (account_hooks, b)])
+        publish(a, account_hooks, 'layers-identical-a')
+        self.assertEqual(project_hooks.read_bytes(), account_hooks.read_bytes())
+        prompt(layered, 'layers-identical-a', a, layers=[(project_hooks, a), (account_hooks, a)])
+        project_hooks.unlink()
+        prompt(layered, 'layers-project-removed-account-a', a, layers=[(account_hooks, a)])
+        publish(b, project_hooks, 'layers-project-restored-b')
+        account_hooks.unlink()
+        self.assertFalse(account_hooks.exists())
+        prompt(layered, 'layers-account-removed-project-b', b, layers=[(project_hooks, b)])
+        layered.close()
         for index, client in enumerate(clients):
             connections = loopback_connections(client.child.trace.read_text(), provider_port=provider.server.server_port)
             history = client.native_history_path
@@ -623,7 +671,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         return dict(schema='cairn.r04-native-agy/1', passed=True, cases=observations, clients=client_reports,
             fixture=pin(Path(__file__)), client=dict(path=str(binary), sha256=digest(binary),
                 version=version_raw.decode().strip()), version_process=version_report,
-            selection_scope='13 project-layer cases with independent workspace control, then 4 account-only cases',
+            selection_scope='13 project-layer cases, 4 account-only cases, then 5 layered/identical/removal cases',
             native_home=str(home), native_profile=str(native_profile), binding_account=str(f.account),
             account_hook_home=str(account_hook_home), account_hook_file=str(account_hooks),
             context_seed='Per-prompt synthetic API display_name; marker is absent from user prompts and hook configuration.',
@@ -631,7 +679,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             transitions=transitions, forced_cleanup_negative=dict(failed_as_required=True,
                 native_pid=calibration.native_pid, joined_pids=calibration.pids), credential_files=credential_files,
             limits=['Agy ordinary memory is unsupported; this exercises checked Go coordination only.',
-                    'Project and account-only callback re-read/resume/reversal; no layered precedence, duplicates or cross-account isolation claim.',
+                    'Selected Agy aggregates account/project groups, including identical commands; no cross-account isolation or installer claim.',
                     'PreInvocation context application reaches local provider text; no real model comprehension or inbox delivery claim.',
                     'No non-fullyIdle Stop, Stop continue-once, child/subagent, host presence/host_pid association or Herdr wake claim.',
                     'No store/auth, code-image upgrade, complete activation-unit barrier or full R04/R05/R06/ticket-closure qualification.'])

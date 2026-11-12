@@ -29,6 +29,24 @@ the earlier account prompt must survive later requests and resume. Each case
 records its hook layer and file pin. The original project-layer receipt
 refusals remain; the account-only phase adds positive selection controls.
 
+Five more cases place the same `cairn-coordination` group in both files:
+account A/project B, account B/project A, identical A bytes in both, project
+removal leaving account A, and account removal leaving project B. One fresh
+native conversation spans these changes. For the selected Agy 1.5.6, the
+fixture requires both layers' commands to run: two `PreInvocation` callbacks
+then two `Stop` callbacks, including two executions of each identical command.
+Removal reduces the next callback to one pair without restarting the client.
+This tests aggregation and command multiplicity; it does not assert an order
+between the layers or a general customization precedence rule.
+
+Each active hook file is pinned to the unmodified staged bytes and must have
+been opened by the native process. The trace must contain exactly the selected
+literal argv multiset, with launcher-to-Go execution, receipt reads and callback
+bytes checked for every PID. Identical commands have a count of two; their PIDs
+are not assigned to a particular source file. The complete native-produced and
+Go-read callback multisets must agree. The original 17 cases keep their single
+callback pair and receipt refusal assertions.
+
 The cases cover fresh and repeated A, an independent workspace control,
 publication of B during the existing conversation, the unchanged control,
 fresh B, stop/join followed by native `--conversation` resume, receipt
@@ -60,7 +78,10 @@ message in the native Gemini request's `contents[].parts[].text`, ignoring
 surrounding whitespace. The marker must be absent from earlier requests.
 Per-case evidence records the marker, hook-output/message hashes and matching
 provider-request indices; the archive retains raw hook I/O, provider requests
-and synthetic API code. Missing/corrupt receipt cases keep zero API effects,
+and synthetic API code. Every `PreInvocation` output is checked. Each provider
+request must contain exactly as many copies of each complete context text as
+the checked hooks emitted, including two equal texts in the layered cases.
+Missing/corrupt receipt cases keep zero API effects,
 unchanged state and empty hook stdout, and their fresh marker must not reach
 the provider. This qualifies native context application to the local provider;
 real model comprehension and inbox delivery remain outside this fixture.
@@ -95,8 +116,8 @@ The separate `--version` invocation is also traced and joined, with its stdout,
 connections and executable hashes retained. An already-finished version command
 is identified by its successful literal exec and exit records; live cleanup
 still requires `/proc/PID/exe`. Credential checks run after this invocation.
-The decoder rejects truncated native hook prefixes before JSON decoding, and
-the exact pair of complete callback events remains required.
+The decoder rejects truncated native hook prefixes before JSON decoding. One
+complete callback pair per active layer remains required.
 
 The connection check permits only the fixture provider's loopback port and
 loopback DNS port 53. It records the exact unavailable
@@ -130,8 +151,7 @@ resume transition and cleanup result. Raw traces contain I/O bytes; homes,
 databases and executable files are not separate archive members. The wrapper's
 receipt records the command, checkout and isolation checks independently.
 
-Layered account/project precedence, duplicates and cross-account isolation
-remain unobserved, as do
+Cross-account isolation remains unobserved, as do
 non-fully-idle Stop,
 Stop continuation, and child/subagent conversations. Namespace-local process
 evidence does not qualify the host presence watcher, host PID association or
