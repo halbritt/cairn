@@ -183,6 +183,22 @@ class InstalledMemory(unittest.TestCase):
             self.assertEqual(vector[vector.index('--receipt-sha256') + 1], self.f.receipt_sha)
         self.assertEqual(self.calls, [])
 
+    def test_installer_cli_uses_selected_runtime_without_global_claude(self):
+        native = self.root / 'native-input.json'
+        native.write_text(json.dumps(self.native))
+        selection = self.root / 'selected-input.json'
+        selection.write_text(json.dumps(self.f.selected))
+        command = [sys.executable, '-B', str(ROOT / 'scripts/install-hermes-integration.py'),
+                   '--hermes-home', str(self.home), '--native-config', str(native), '--skill', str(self.skill),
+                   '--lifecycle-selection', str(selection), '--stager', str(self.stager)]
+        result = subprocess.run(command, cwd=self.f.root, env=self.f.env(), capture_output=True, timeout=120)
+        self.results.append(dict(argv=command, exit=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode()))
+        self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout)
+        self.selected = json.loads(self.home.joinpath('cairn-lifecycle.json').read_bytes())
+        observed = self.run_event('UserPromptSubmit')
+        self.assertEqual((observed.returncode, observed.stderr), (0, b''), observed.stdout)
+        self.assertTrue(any(op == 'index' for op, _, _ in self.calls))
+
     def test_effectful_recall_capture_and_dedup_after_installer_inputs_removed(self):
         self.install()
         shutil.rmtree(self.f.package)

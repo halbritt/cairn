@@ -154,17 +154,23 @@ def main():
                         help='JSON path/sha256 descriptor for an existing immutable R-02 selection')
     parser.add_argument('--stager', help='approved immutable cairn-stage-lifecycle executable')
     args = parser.parse_args()
-    if not args.claude:
+    if (args.lifecycle_selection is None) != (args.stager is None):
+        parser.error('--lifecycle-selection and --stager must be supplied together')
+    if not args.claude and args.lifecycle_selection is None:
         parser.error('installed Claude is required for selected capture')
     model = args.model
     if model is None and args.lifecycle_selection is None:
         settings = home / '.claude/settings.json'
         model = json.loads(settings.read_text()).get('model') if settings.exists() else None
     install(args.hermes_home.resolve(), json.loads(args.native_config.read_text()),
-            str(Path(args.claude).absolute()), args.skill, model, args.preview_model, args.recall_model, args.recall_mode,
+            str(Path(args.claude).absolute()) if args.claude else None,
+            args.skill, model, args.preview_model, args.recall_model, args.recall_mode,
             lifecycle_selection=json.loads(args.lifecycle_selection.read_bytes()) if args.lifecycle_selection else None,
             stager=args.stager)
-    print(f'Installed Cairn in {args.hermes_home}; start a fresh CLI and restart its gateway.')
+    if args.lifecycle_selection:
+        print(f'Installed selected Hermes memory in {args.hermes_home}; validate it and start a fresh CLI.')
+    else:
+        print(f'Installed Cairn in {args.hermes_home}; start a fresh CLI and restart its gateway.')
 
 
 if __name__ == '__main__':

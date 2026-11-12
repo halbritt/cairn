@@ -57,7 +57,8 @@ The provider passes argv directly to an owned subprocess without shell parsing.
 Recall and tool rows select H13; `PreCompact` and `SessionEnd` select the checked
 H150 `memory-capture` entry. The immutable configuration supplies model, recall
 and state settings, so the installer refuses simultaneous model/recall overrides
-and leaves an existing `cairn/engine.json` intact for reversal.
+and leaves an existing `cairn/engine.json` intact for reversal. Selected mode uses
+that configuration's selector and does not require a global Claude executable.
 
 Required Python remains installed for the actual Hermes `MemoryProvider`,
 registration handles, request middleware, original-dialogue translation and
