@@ -219,7 +219,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	if ordinary && toolObservationEvent(event) {
 		return runToolObservation(ctx, config, event, directory, trace)
 	}
-	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") && !value.SameText(config.Get("harness"), "claude") {
+	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") && !value.SameText(config.Get("harness"), "claude") && !value.SameText(config.Get("harness"), "hermes") {
 		return boundary(fail("ordinary memory harness remains unavailable"))
 	}
 	if ordinary && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
@@ -265,6 +265,10 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		}
 	}
 	session := text(event.Get("session_id"))
+	stateKey := session
+	if value.SameText(config.Get("harness"), "hermes") {
+		stateKey = hashText(session)
+	}
 	stateDir, err := pathValue(config.Get("state_dir"))
 	if err != nil {
 		return boundary(err)
@@ -275,7 +279,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	if err = os.MkdirAll(stateDir, 0700); err != nil {
 		return boundary(err)
 	}
-	path := filepath.Join(stateDir, session+".json")
+	path := filepath.Join(stateDir, stateKey+".json")
 	var client *memoryclient.Client
 	var api *localapi.Client
 	operationTime := map[string]time.Duration{"search": 0, "pull": 0}
@@ -293,7 +297,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	}()
 	trace["stage"] = "lock_attempt"
 	locked := false
-	err = statefile.LegacyLock(ctx, filepath.Join(stateDir, session+".lock"), 0, func() error {
+	err = statefile.LegacyLock(ctx, filepath.Join(stateDir, stateKey+".lock"), 0, func() error {
 		locked = true
 		trace["stage"] = "locked"
 		state := value.Mapping()
@@ -433,15 +437,24 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		injected = len(body)
 		trace["stage"] = "saved"
 		trace["context_bytes"] = injected
-		if body == "" {
-			result = Result{Stdout: "{}\n"}
-		} else {
-			output, err := encoded(hookOutputFor(event, body), false)
-			if err != nil {
-				return err
-			}
-			result = Result{Stdout: string(output) + "\n"}
+		output := value.Mapping()
+		if body != "" {
+			output = hookOutputFor(event, body)
 		}
+		if value.SameText(config.Get("harness"), "hermes") {
+			status := value.Mapping()
+			for _, key := range []string{"last_recall", "last_capture", "workstream"} {
+				if v := state.Get(key); v != nil {
+					status.Set(key, v)
+				}
+			}
+			output.Set("cairn_status", status)
+		}
+		rawOutput, err := encoded(output, false)
+		if err != nil {
+			return err
+		}
+		result = Result{Stdout: string(rawOutput) + "\n"}
 		return nil
 	})
 	if !locked && errors.Is(err, syscall.EAGAIN) {

@@ -13,6 +13,15 @@ import (
 // RunOrdinary runs admitted unbound memory cells. Bound callbacks must use their
 // checked activation path; an ordinary entry never downgrades that binding.
 func RunOrdinary(ctx context.Context, config, event *value.Value, directory string, environment []string) Result {
+	if value.SameText(config.Get("harness"), "hermes") && (value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")) {
+		return HostFailure("handle", fail("ordinary memory harness remains unavailable"))
+	}
+	return runMemory(ctx, config, event, false, directory, environment, true, nil)
+}
+
+// RunCheckedOrdinary receives the snapshot after the host verifies H/V/L/D and
+// its unbound receipt selection. Hermes recall is available only through that host.
+func RunCheckedOrdinary(ctx context.Context, config, event *value.Value, directory string, environment []string) Result {
 	return runMemory(ctx, config, event, false, directory, environment, true, nil)
 }
 

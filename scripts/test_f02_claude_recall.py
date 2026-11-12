@@ -475,3 +475,7 @@ with patch.object(hook.Memory,"search",search),patch.object(hook.uuid,"uuid4",ne
         self.assertEqual(context['candidate_inspection']['delivered_records'],2)
         self.assertEqual(context['candidate_inspection']['pull_calls'],1)
         self.assertEqual(context['index'],[])
+
+
+if __name__ == '__main__':
+    unittest.main()
