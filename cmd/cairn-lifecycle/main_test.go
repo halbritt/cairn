@@ -17,6 +17,18 @@ import (
 	"github.com/halbritt/cairn/internal/lifecycle/transcript"
 )
 
+func TestPrivateUnitControlDispatch(t *testing.T) {
+	var out, diagnostic bytes.Buffer
+	code := run([]string{"unit-control", "force"}, strings.NewReader(""), &out, &diagnostic)
+	var result coordination.UnitControlResult
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if code != 2 || result.Schema != "cairn.unit-control-result/1" || result.Exchange.Published || diagnostic.Len() != 0 {
+		t.Fatalf("private control route lost structured refusal: code=%d out=%s err=%s", code, out.String(), diagnostic.String())
+	}
+}
+
 func TestPrivateActivationRoutePreserved(t *testing.T) {
 	var out, errOut bytes.Buffer
 	code := run([]string{"lifecycle", "binding", "activation", "--bad-flag"}, strings.NewReader(""), &out, &errOut)

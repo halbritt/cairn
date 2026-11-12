@@ -18,6 +18,9 @@ import (
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 
 func run(args []string, input io.Reader, output, diagnostic io.Writer) int {
+	if len(args) > 0 && args[0] == "unit-control" {
+		return transcript.RunCoordinationUnitControl(context.Background(), args[1:], output, diagnostic)
+	}
 	if len(args) >= 2 && args[0] == "lifecycle" && args[1] == "inbox" {
 		return inboxipc.Run(args, input, output, diagnostic)
 	}
