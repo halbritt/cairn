@@ -244,10 +244,12 @@ Unknown effective CPU/library classes and unreachable hosts remain gaps.
 ### Qualification decision on 2026-11-12
 
 The owner-directed reset `cb71136b-cd84-4fc2-b84f-eb247b975548/v1` selects
-`x86_64-unknown-linux-gnu` as the campaign target. The managed Linux roster is
-Proximal, Archon, Talos and peecee-wsl, recorded under the infrastructure
-repository's `hosts/`. A new host-roster decision is not a prerequisite for
-finishing the implementation.
+`x86_64-unknown-linux-gnu` as the campaign target. The owner's subsequent
+confirmation `9d51dbc8-7b1b-45b5-ae57-e9c34ddecedc/v1` fixes the managed
+S-04/S-04R/R-07 rollout scope to Proximal (API, PostgreSQL and Rust semantic
+workers), Archon and Talos. A new host-roster decision is not a prerequisite
+for finishing the implementation. Live service or hook cutover still requires
+Release's reviewed R-06 candidate and the owner's R-07 grant.
 
 S-04 / CAIRN-327 accepts the retained target qualification: immutable packaging
 at `1945d6c4` (review `0d48fa5e/v1`) and the native-runtime fixture at
