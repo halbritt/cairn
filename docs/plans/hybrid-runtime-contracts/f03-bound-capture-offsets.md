@@ -1,126 +1,119 @@
 # Bound Codex transcript offsets
 
-This proposed corpus carries exactly two existing `CaptureBoundaryTests`
-function objects into the receipt-selected bound memory fixture:
+The two methods in [test_f03_bound_capture_offsets.py](../../../scripts/test_f03_bound_capture_offsets.py)
+carry the original transcript-offset oracles through the receipt-selected bound
+memory caller. They use the installed checked Source launcher and Go
+`IMAGE memory` entry at H150 with the same selected bound profiles and event
+bytes. The original methods also have separate checked unbound coverage.
+This leaf covers the existing Codex PreCompact and Stop cells.
 
-- `test_short_stop_and_repeated_append_truncate_keep_exact_offsets`, from
-  `scripts/test_f03_capture_boundary.py:172-189` at `62d4f863`;
-- `test_append_after_snapshot_remains_for_later_stop`, from the same file,
-  lines 291-304 at that pin.
+## Original corpus
 
-Those methods already have checked **unbound** coverage. The proposed new leaf
-is `scripts/test_f03_bound_capture_offsets.py`. It selects the actual bound
-Source launcher and Go `IMAGE memory` caller at H150, preserving the binding
-in both selected profiles. It does not substitute `memory-capture`, an unbound
-configuration, a direct ordinary body, or a replacement Source implementation.
-No other harness or new supported caller cell is added.
+The test methods are unchanged function aliases from
+[test_f03_capture_boundary.py](../../../scripts/test_f03_capture_boundary.py):
 
-## Original inputs and byte offsets
+- `test_short_stop_and_repeated_append_truncate_keep_exact_offsets`, lines
+  172–189: six complete pair sites and ten explicit assertion expressions;
+- `test_append_after_snapshot_remains_for_later_stop`, lines 291–304: two
+  complete pair sites and five explicit assertion expressions.
 
-Both original method bodies remain aliases, including all their assertions.
-Their `configure`, `rollout`, `courtesy_messages`, `outcome`, `scheduled` and
-`state` helpers are the original function objects too. In particular, the rollout
-writer retains `json.dumps`'s original default spaces and one LF per record;
-the compact JSONL writer in `BoundCaptureTests` is not substituted. Alternating
-user `thanks` and assistant `no problem` messages retain their original order,
-roles, `response_item`/message shape and input/output text-part types. The same
-actual transcript path is reused through each sequence.
+The original `configure`, `rollout`, `courtesy_messages`, `outcome`, `scheduled`
+and `state` helpers are aliases too. The rollout writer retains the default
+`json.dumps` spaces and one LF per record. Alternating user `thanks` and
+assistant `no problem` messages keep their roles, order, `response_item` message
+shape and input/output text-part types. Two, four, six and eight rows from this
+writer occupy 268, 536, 804 and 1,072 bytes. The same actual transcript path is
+reused throughout each method.
 
-The first method has six pairs. Two-row Stop is too short and creates no
-`codex_capture_marker`. Two-row PreCompact commits its exact end offset.
-Four-row Stop has only two new messages and preserves that offset. Eight-row
-Stop reaches the six-new-message threshold and advances to that snapshot's
-exact byte length. After truncation to two rows, Stop remains too short;
-PreCompact recovers the shorter exact offset. Equal repeated text is counted
-by absolute transcript positions rather than text identity.
+The six-pair sequence starts with a two-row Stop that has too little dialogue
+and no capture marker. PreCompact commits the two-row offset. Four-row Stop
+has only two new messages and preserves that offset. Eight-row Stop reaches
+the six-new-message threshold and advances to its exact snapshot length.
+After truncation to two rows, Stop remains too short; PreCompact recovers the
+shorter exact offset. Repeated text is counted by absolute message positions.
 
-The second method has two pairs. Its six-row original byte snapshot is saved
-before invoking either frontend. At the final state-lock open, the unchanged
-inotify/strace scheduler rewrites the same transcript with eight rows. The
-committed offset must still equal the original six-row byte length and remain
-less than the actual file size. Before Go, the original `before_candidate`
-callback restores the exact saved six-row bytes; the same scheduled append is
-then applied independently. A later Stop sees only two appended messages and
-keeps the original snapshot offset. The test does not advance to the later
-file size merely because those bytes exist at commit time.
+The two-pair snapshot sequence saves the original six-row bytes, then schedules
+a rewrite with eight rows around the final shared-lock open. The committed
+marker must remain at the original 804-byte snapshot while the file grows to
+1,072 bytes. Before Go runs, the original callback restores those exact six-row
+bytes, and the same schedule runs independently. A later Stop sees only two
+new messages and preserves the original offset. The rewrite preserves the
+six-row prefix; this is not an `O_APPEND` system-call test.
 
-These are existing synthetic producer-shaped Codex inputs: fixed UUID-shaped
-session, actual fixture cwd, Stop/PreCompact and a transcript path. They are
-not recorded native input or evidence that every transcript shape is supported.
+## Bound fixture and comparison
 
-## Bound fixture adaptation requiring admission
+The class inherits the unchanged `BoundCaptureTests` and `BoundMemoryCase`
+fixture. It uses real R02 installation, the complete retained Source closure,
+independently selected receipt and profiles, actual checked launchers and an
+authenticated synthetic Unix API. The selected profiles retain their bound
+`/3` configuration. Source activation exclusion may remove the binding from
+an internal private config copy; it does not rewrite that selected generation.
 
-The new class inherits `BoundCaptureTests`, whose unchanged `BoundMemoryCase`
-uses the real R02 installed fixture, complete selected Source closure and
-profiles, checked Source launcher, and Go `memory --receipt ...` vector with
-H150. Both configurations retain the bound `/3` selection. The original
-`configure` republishes the selected Codex generation. The parent capture
-setup enables its existing synthetic authenticated capture-observation API;
-it does not configure or execute a selector. These courtesy/short cases return
-before checkpoint lookup or provider selection. `BoundProviderCaptureTests`
-was inspected but is not needed for these unchanged inputs.
+The Go launcher retains `memory`, receipt and digest, role, entrypoint, config,
+H150, persistent content-addressed launch root and shell selection. Source uses
+the installed memory/H150 launcher. Each consumes the original event bytes at
+the fixture cwd. The separate `memory-capture` route is outside this leaf.
+Codex Stop's asynchronous native delivery is a separate installed behavior.
 
-There is one explicit new launch adapter. On the Go `before_run`, invoke the
-original `before_candidate` callback, if present, after the parent's state
-reset and before the inherited scheduler starts. Map the exact original
-`candidate_prefix` to the bound runner's existing `go_prefix` on every Go
-invocation, including the cleared tuple before the later Stop. The original
-Source prefix and both original strace vectors keep their 200 ms flock delay.
-The unchanged bound `before_run`/`after_run` call the original inotify start
-and finish functions. No helper or scheduler implementation is copied or
-modified, and no additional process-control or observation mechanism is added.
+The leaf's only local launch adapter runs on Go `before_run`. After the parent
+resets state, it invokes the original `before_candidate` callback and maps the
+original `candidate_prefix` to the bound runner's `go_prefix`. It copies the
+empty tuple too, clearing the schedule before the later Stop. The parent then
+arms the original inotify scheduler. Source prefixes, the 200 ms flock delay,
+scheduler join and error propagation remain unchanged.
 
-The parent pair checker remains `BoundMemoryCase.pair`, not a modified copy of
-the unbound pair method. It compares complete exit/stdout/stderr, persisted
-state and ordered API bodies; validates independent UUIDs and measured timing
-before its existing normalization; and checks synthetic authentication,
-reported implementation origin and post-lock report observations. Bound Source
-capture retains its expected reported origin without an implementation ID;
-Go retains the actual selected binary SHA. No origin field is erased. The
-original `scalar_tree` and `CaptureBoundaryTests.state` timing rules remain
-unchanged. The latter removes only the original validated `last_capture.at`;
-the bound fixture's broader state timing normalizer is not substituted.
+The parent pair checker compares full exit codes, stdout, stderr, persisted
+state keys and values, ordered API operations and complete normalized bodies.
+It validates independent UUIDs and measured timing before its existing
+normalization, and checks authentication, reported origins and post-lock report
+locks. The original `state` alias removes only validated `last_capture.at`;
+path, marker, offset and capture content remain compared. The existing
+`scalar_tree` is unchanged. Bound Source capture reports its origin without an
+implementation ID; Go reports the selected binary digest. Each expected origin
+is asserted separately rather than erased.
 
-The existing bound pair resets its full fixture memory-state directory between
-frontends, whereas the old unbound pair preserves lock files during reset.
-Both start from the same original state bytes. The transcript is outside that
-directory and is not reset by the parent; the original callback handles its
-six-row snapshot. No cross-frontend lock-inode identity claim is made. No
-marker/path/offset/request-body or refusal normalization is introduced.
+The bound pair resets its complete fixture memory-state directory between
+frontends. Both start with the same original state bytes; the transcript lies
+outside that directory and is restored by the original callback. No
+cross-frontend lock-inode identity is claimed. `load_tests` selects exactly the
+two leaf methods, leaving inherited capture/provider/deadline tests out of this
+run. No source, production implementation, old helper, oracle, normalizer,
+process-control mechanism or observer is changed by the leaf.
 
-`load_tests` selects only the two named new leaf entries. The inherited old
-capture/provider/deadline cases are not rerun by this leaf. No new pair/raw
-packet counter is added; eight pairs and sixteen frontend invocations are
-static expected counts from the original method bodies, not observations.
+## Snapshot and qualification limits
 
-## Source and caller mapping
+The original scheduler fires on the second `IN_OPEN` for the shared session
+lock, from any process. The API fixture can also open that lock while checking
+post-lock reports. Source's initial and final shared-lock opens back the
+intended append window in its code. For Go, exact append-before-commit timing
+is inferred from the inherited trigger and paired outcomes, rather than
+separately observed. Offset equality alone cannot distinguish an append just
+before commit from one just after commit. Temporary strace logs are not
+automatically retained. The corpus adds no window instrumentation.
 
-At the pinned Source, `memory.py:936-987` reads one bounded transcript snapshot
-and its absolute message-end offsets. `capture` at 3048-3087 takes the snapshot
-marker before courtesy or duplicate return. `codex_new_messages` at 3144-3157
-uses exact resolved path and byte positions, treating a shorter file as new.
-`capture_event` at 3223-3305 preserves the initial/final shared-state lock split,
-Stop threshold, capture-owned-field CAS and successful-replace marker update.
-The capture report follows lock release. Source capture exclusion from inbox
-activation does not remove the selected binding or turn this into unbound
-installation evidence.
+The base bound fixture has no selector stub and retains the normal caller
+environment within the approved execution fixture. The exact short/courtesy
+inputs return before selection by Source structure and the corresponding Go
+comparisons. This is not a provider-isolation guarantee or a newly measured
+zero-call count. Keep these inputs unchanged; this setup must not be reused for
+substantive dialogue or real provider/model execution.
 
-The Go path is `cmd/cairn-lifecycle/main.go`'s checked `memory` branch,
-`memoryhost.RunChecked`, `binding.VerifyMemoryEntry` and its resolved bound
-invocation, `memoryhost.runCheckedBound`, `memoryhook.RunBound`, then the
-existing `runMemory`/`runCapture` body. `capture_dialogue.go` keeps absolute
-offsets for its bounded read; `capture_body.go` owns the corresponding short
-Stop, snapshot marker, final capture CAS and save. The new leaf changes none
-of those implementations or their helper/oracle files.
+Both methods are straight-line and contain six plus two `pair()` sites. A
+successful two-method run with no skips supports **eight complete pairs and
+sixteen hook frontends as inferred counts**. The leaf adds no separately logged
+pair counter or raw process packets. Those counts exclude build, installer,
+wrapper, strace and SDK subprocesses. A skip leaves qualification incomplete.
 
-## Proposed execution and limits
+The frozen leaf retains its historical preparation-only module docstring.
+Actual execution evidence comes from the test outcome, exact tested head and
+receipt. A guide-only child commit can reuse a focused result only after proving
+that the leaf and all original source/helper/oracle/code bytes and modes are
+unchanged; keep the tested and final heads distinct.
 
-Preparation is static only: no project import, application, build, hook, test,
-provider or model has run for this piece. SAME1279 frozen criteria review and
-then separate exact Foundation execution admission are required before using
-the proposed command. There is no fabricated RED for this evidence-only gap.
-After admission, from an appropriate clean committed candidate, use the
-existing host executor and approved fixture with a fresh absolute receipt:
+## Run the leaf
+
+From a clean committed candidate, use the existing shared executor and approved
+private fixture with a fresh absolute receipt path:
 
 ```sh
 mise run host:exec -- --timeout 15m --weight 1 -- make test-isolated \
@@ -129,18 +122,21 @@ mise run host:exec -- --timeout 15m --weight 1 -- make test-isolated \
   CMD='env CC=gcc TMPDIR=/tmp python3 -I -B -m unittest discover -s scripts -p test_f03_bound_capture_offsets.py -v'
 ```
 
-Expected membership is two leaf methods, eight complete pairs and sixteen
-frontends, all H150. Qualification must inspect actual unittest membership,
-outcomes, outer/inner exits, receipt head/clean status and fixture selftest;
-a skip is missing evidence. No pass, measured duration or observed count is
-claimed by this proposal. Existing bound/unbound baselines and crash artifacts
-remain evidence at their actual tested heads, with their dirty/failed receipts
-and limits retained. None establishes the new offset corpus's result.
+Require both named methods, zero failures/errors/skips, actual outer and inner
+exit zero, a clean exact-head receipt and a passing fixture selftest. Retain the
+actual command, terminal result and independent unittest/outer durations.
+Project check, docs tiers 1 and 3, and manual source/command/scope review qualify
+the final guide candidate separately.
 
-The newly landed crash leaf/guide are existing unowned files and remain pinned
-unchanged. Other harnesses, new callers, substantive selection, retry/CAS or
-shutdown expansion, observer refinement and runtime construction stay outside
-this piece. All campaign holds, the CAIRN-318/319 owner closure bar, 53 frozen
-historical diagnostics and the interrupted full run remain open. Independent
-review, later qualification/integration, installed/native behavior, full-gate
+The Source snapshot and offset behavior is in
+[memory.py](../../../integrations/lifecycle/memory.py):936–987, 3048–3087,
+3144–3157 and 3223–3305. The corresponding Go code is in
+[capture_dialogue.go](../../../internal/lifecycle/memoryhook/capture_dialogue.go)
+and [capture_body.go](../../../internal/lifecycle/memoryhook/capture_body.go),
+reached through the checked bound memory host. These implementations remain
+unchanged by this corpus.
+
+A focused pass covers these constructed producer-shaped inputs and caller
+comparisons. Other harnesses, substantive selection, retry/CAS/shutdown
+expansion, native asynchronous delivery, installed qualification, full-gate
 acceptance and measured usefulness remain separate claims.
