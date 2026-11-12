@@ -183,7 +183,7 @@ class ClaudeAmbientTests(unittest.TestCase):
                 self.configure(recall_mode=mode)
                 self.refused()
         self.selection()
-        for name in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PreCompact', 'SessionEnd', 'Stop', 'Unknown'):
+        for name in ('PreToolUse', 'PreCompact', 'SessionEnd', 'Stop', 'Unknown'):
             with self.subTest(event=name):
                 self.event(name)
                 self.refused()

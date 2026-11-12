@@ -219,7 +219,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	if ordinary && toolObservationEvent(event) {
 		return runToolObservation(ctx, config, event, directory, trace)
 	}
-	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") && !value.SameText(config.Get("harness"), "claude") && !value.SameText(config.Get("harness"), "hermes") {
+	if ordinary && !value.SameText(config.Get("harness"), "opencode") && !value.SameText(config.Get("harness"), "agy") && !value.SameText(config.Get("harness"), "claude") && !value.SameText(config.Get("harness"), "hermes") && !value.SameText(config.Get("harness"), "codex") {
 		return boundary(fail("ordinary memory harness remains unavailable"))
 	}
 	if ordinary && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
@@ -399,7 +399,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 			if err == nil {
 				if ordinary && value.SameText(config.Get("harness"), "claude") {
 					body, err = claudeRecall(ctx, client, config, event, state, status, project, selectors)
-				} else if ordinary {
+				} else if ordinary && !(value.SameText(config.Get("harness"), "codex") && value.SameText(config.Get("recall_mode"), "agent_tools")) {
 					body, err = ordinaryRecall(ctx, client, config, event, state, status, project, selectors)
 				} else {
 					body, err = recall(ctx, client, config, event, state, status, project, bound)

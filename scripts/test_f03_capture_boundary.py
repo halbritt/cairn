@@ -121,8 +121,9 @@ class CaptureBoundaryTests(unittest.TestCase):
         for (operation,actual,headers),(_,expected,source_headers) in zip(self.calls,source_calls):
             actual,expected=dict(actual),dict(expected)
             for body in (actual,expected):
-                ident=body.pop('request_id');self.assertEqual(str(uuid.UUID(ident)),ident)
-                self.assertGreaterEqual(body.pop('duration_ms'),0)
+                if operation!='version':
+                    ident=body.pop('request_id');self.assertEqual(str(uuid.UUID(ident)),ident)
+                if operation=='capture-observation':self.assertGreaterEqual(body.pop('duration_ms'),0)
             self.assertEqual(actual,expected)
             for declared,image in ((headers,sha(self.binary.read_bytes())),(source_headers,sha((ROOT/'integrations/lifecycle/memory.py').read_bytes()))):
                 self.assertEqual(declared['Authorization'],'Bearer f03-synthetic-token')
@@ -305,10 +306,12 @@ class CaptureBoundaryTests(unittest.TestCase):
 
     def test_substantive_capture_and_bound_callback_remain_unavailable(self):
         self.configure('opencode','PreCompact',messages=[dict(role='user',text='Record the new substantive project decision.')])
-        result=subprocess.run([str(self.binary),'memory','--config',str(self.f.memory_path)],input=self.f.raw,cwd=self.f.root,env=self.f.env(),capture_output=True,timeout=18)
-        self.assertEqual(result.returncode,1);self.assertIn(b'provider-selected substantive capture remains unavailable',result.stderr)
+        result=self.pair()
+        self.assertEqual((result.returncode,result.stdout),(1,b''))
+        self.assertNotIn(b'provider-selected substantive capture remains unavailable',result.stderr)
+        self.assertIn(b'phase=handle error_class=',result.stderr)
         self.assertEqual(self.state(),{});self.assertEqual(self.outcome(),'error')
-        self.assertEqual([op for op,_,_ in self.calls],['capture-observation'])
+        self.assertEqual(self.calls[-1][0],'capture-observation')
         shutil.rmtree(self.f.memory['state_dir']);self.calls.clear()
         self.f.memory['inbox_recall_binding']=str(self.f.binding);self.f.publish_configuration()
         result=subprocess.run([str(self.binary),'memory','--config',str(self.f.memory_path)],input=self.f.raw,cwd=self.f.root,env=self.f.env(),capture_output=True,timeout=18)

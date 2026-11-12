@@ -364,7 +364,7 @@ class OpenCodeAmbientTests(unittest.TestCase):
         for fallback in ('provider-selected', 1):
             self.configure(semantic_fallback=fallback); self.refused()
         self.selection()
-        for harness in ('agy', 'codex'):
+        for harness in ('agy',):
             self.configure(harness=harness, semantic_fallback=False); self.refused()
         self.configure(harness='opencode')
         for mode in ('unsupported', None, False):

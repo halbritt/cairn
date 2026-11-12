@@ -13,7 +13,7 @@ client. Integrators must connect a decision to the action it is intended to gate
 | [`procpeer.ReadLine` and `WriteLine`](../../internal/procpeer/frame.go) | The bridge retains an 8192-byte request payload excluding newline and two-second socket deadlines. MCP emission keeps its separate deadline. |
 | [`procpeer.ConnectClient` and client I/O](../../internal/procpeer/client.go) | Go wake clients validate credentials and expected identity before payload. Callers select process-owned or same-user policy, timing, framing and cumulative read budgets. The connector returns the actual peer identity. |
 | [`binding.ValidateBinary`](../../internal/lifecycle/binding/binary_linux.go) | Checked lifecycle entries validate real-UID ownership, safe staging, stable descriptor metadata and matching pinned/running digest and inode before handler execution. Validation does not activate an installed binding. |
-| [`memoryhost`](../../internal/lifecycle/memoryhost/checked.go) | The private `memory` entry verifies the receipt, source closure, selected profiles, executable and retained launcher before dispatch. Unbound Claude/OpenCode/Hermes ambient recall admits either boolean `semantic_fallback`; Hermes also admits its actual post-tool success/failure events through the existing tool handler. |
+| [`memoryhost`](../../internal/lifecycle/memoryhost/checked.go) | The private `memory` entry verifies the receipt, source closure, selected profiles, executable and retained launcher before dispatch. Unbound Codex/Claude/OpenCode/Hermes ambient recall admits either boolean `semantic_fallback`; Claude and Hermes admit their actual post-tool success/failure events through the existing tool handler. |
 | [`memoryhook` ordinary provider recall](../../internal/lifecycle/memoryhook/ordinary_provider.go) | Ambient fallback performs lexical/semantic discovery, optional preview admission, checked current whole/span reads and one body applicability selection. Required context remains whole, aliases share actual receipt allowances, and only delivered whole optional bodies become seen. |
 
 See [primitive test boundaries](../developer/testing.md#shared-go-lifecycle-primitives).
@@ -28,6 +28,10 @@ invocation deadline, including stdin and preflight; its eleven-second recall
 budget and each selector deadline are capped by that invocation deadline.
 The installed Hermes recall callback is `UserPromptSubmit`; engine support for
 `SessionStart` does not imply that Hermes installs such a callback.
+Unbound Codex `agent_tools` recall uses the existing native-turn budget and
+checkpoint implementation. Its explicit ambient override uses the ambient
+recall path. Both enter through the checked selection; the bare ordinary Go
+entry continues to refuse Codex and Hermes recall.
 
 When ambient `semantic_fallback` is true, discovery reads at most four semantic
 pages and 32 semantic previews, alongside ten lexical previews. A preview

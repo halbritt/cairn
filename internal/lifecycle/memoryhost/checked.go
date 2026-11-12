@@ -78,6 +78,8 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	}
 	defer snapshot.Close()
 	hermes := value.SameText(snapshot.Config().Get("harness"), "hermes")
+	claude := value.SameText(snapshot.Config().Get("harness"), "claude")
+	codex := value.SameText(snapshot.Config().Get("harness"), "codex")
 	mode := snapshot.Config().Get("recall_mode")
 	opencodeAmbient := value.SameText(snapshot.Config().Get("harness"), "opencode") && (mode == nil || value.SameText(mode, "ambient"))
 	if (hermes || opencodeAmbient) && snapshot.Bound() {
@@ -106,7 +108,9 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	if name := event.Get("hook_event_name"); !snapshot.Bound() && !value.SameText(name, "SessionStart") && !value.SameText(name, "UserPromptSubmit") && !value.SameText(name, "PreToolUse") && !value.SameText(name, "PostToolUse") && !value.SameText(name, "PostToolUseFailure") {
 		return refuse()
 	}
-	if !snapshot.Bound() && (value.SameText(snapshot.Config().Get("harness"), "claude") || hermes || opencodeAmbient) && !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") && !(hermes && (value.SameText(event.Get("hook_event_name"), "PostToolUse") || value.SameText(event.Get("hook_event_name"), "PostToolUseFailure"))) {
+	recallEvent := value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")
+	postToolEvent := value.SameText(event.Get("hook_event_name"), "PostToolUse") || value.SameText(event.Get("hook_event_name"), "PostToolUseFailure")
+	if !snapshot.Bound() && (claude || hermes || codex || opencodeAmbient) && !recallEvent && !((claude || hermes) && postToolEvent) {
 		return refuse()
 	}
 	directory, err := os.Getwd()

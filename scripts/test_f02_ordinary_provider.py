@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import unittest
 import uuid
 
@@ -74,6 +75,11 @@ sys.exit(spec.get('exit',0))
 
     def recall_status(self):
         return self.state()[self.state_key()+'.json']['last_recall']
+
+    def configure_harness(self,harness,**changes):
+        self.configure(harness=harness,**changes)
+        self.f.coord['harness']=harness
+        self.overwrite(self.f.coord_path,ordinary.encoded(self.f.coord));self.repin()
 
     def state_key(self):
         session = self.f.event['session_id']
@@ -222,7 +228,7 @@ sys.exit(spec.get('exit',0))
 
     def test_supported_harness_events_use_real_provider_and_scope(self):
         self.optional_note('Concrete current lifecycle guidance.')
-        for harness in ('opencode', 'claude', 'hermes'):
+        for harness in ('opencode', 'claude', 'hermes', 'codex'):
             for event in ('SessionStart', 'UserPromptSubmit'):
                 with self.subTest(harness=harness, event=event):
                     self.reset_state()
@@ -472,6 +478,91 @@ sys.exit(spec.get('exit',0))
             status=next(json.loads(v['raw'])['last_recall'] for k,v in row['files'].items() if k.endswith('.json'))
             self.assertGreaterEqual(status['elapsed_seconds'],10.8)
             self.assertLess(status['elapsed_seconds'],11.5)
+
+    def test_claude_checked_post_tool_cells_never_start_api_or_selector(self):
+        (self.f.root/'current.go').write_text('fixture\n')
+        for mode in ('ambient','agent_tools'):
+            self.configure_harness('claude',recall_mode=mode)
+            for name,fields in (
+                ('PostToolUse',dict(tool_name='Read',tool_input=dict(file_path='current.go'))),
+                ('PostToolUseFailure',dict(error='LeaseExpiredError'))):
+                with self.subTest(mode=mode,event=name):
+                    self.reset_state()
+                    self.event(name,session_id='22222222-2222-4222-8222-222222222222',**fields)
+                    result=self.pair()
+                    self.assertEqual((result.returncode,result.stdout,result.stderr),(0,b'{}\n',b''))
+                    self.assertEqual(self.calls,[]);self.assertEqual(self.provider_sides['go'],[])
+                    hints=self.state()[self.state_key()+'.json']['hints']
+                    if name=='PostToolUse':self.assertIn('current.go',hints['files'])
+                    else:self.assertEqual(hints['errors'],['LeaseExpiredError'])
+
+    def test_checked_new_caller_identity_and_selection_fail_without_effects(self):
+        for harness,event in (('claude','PostToolUseFailure'),('codex','SessionStart')):
+            with self.subTest(harness=harness):
+                self.reset_state();self.configure_harness(harness,recall_mode='agent_tools')
+                self.event(event,session_id='',error='LeaseExpiredError')
+                result=self.pair()
+                self.assertEqual((result.returncode,result.stdout),(1,b''))
+                self.assertEqual(self.calls,[]);self.assertEqual(self.files(),{})
+                self.assertEqual(self.provider_sides['go'],[])
+                self.event(event,session_id='22222222-2222-4222-8222-222222222222',error='LeaseExpiredError')
+                old=self.f.receipt_path.read_bytes();self.overwrite(self.f.receipt_path,old+b' ')
+                try:
+                    for launch in (self.source,self.go):
+                        result=launch()
+                        self.assertEqual((result.returncode,result.stdout),(1,b''))
+                        self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n')
+                        self.assertEqual(self.calls,[]);self.assertEqual(self.files(),{})
+                finally:self.overwrite(self.f.receipt_path,old)
+
+    def test_codex_checked_agent_tools_uses_existing_grants_without_selector(self):
+        self.configure_harness('codex',recall_mode='agent_tools',semantic_fallback=True)
+        self.required();self.optional_note('Concrete retained guidance.')
+        session='22222222-2222-4222-8222-222222222222'
+        self.event('SessionStart',session_id=session,source='startup',prompt='storage')
+        result=self.pair()
+        self.assertEqual(len(self.context(result)['selected']),1)
+        self.assertEqual(self.provider_sides['go'],[])
+        self.event('UserPromptSubmit',session_id=session,turn_id='33333333-3333-4333-8333-333333333333',prompt='Find retained guidance.')
+        result=self.pair();context=self.context(result)
+        self.assertEqual(context['candidate_bodies'][0]['response']['selection']['record']['body'],self.optional[0]['body'])
+        self.assertEqual(self.provider_sides['go'],[])
+        ledger=self.state()[session+'.memory-budget.json']
+        grant=ledger['turns'][self.f.event['turn_id']]
+        self.assertTrue(grant['granted'])
+        first=copy.deepcopy(grant)
+        self.pair()
+        self.assertEqual(self.state()[session+'.memory-budget.json']['turns'][self.f.event['turn_id']],first)
+
+    def test_codex_bare_recall_and_unproduced_checked_cells_stay_refused(self):
+        self.configure_harness('codex',recall_mode='agent_tools')
+        for name in ('SessionStart','UserPromptSubmit'):
+            self.event(name,session_id='22222222-2222-4222-8222-222222222222')
+            result=subprocess.run([str(self.f.binary),'memory','--config',str(self.f.memory_path)],
+                input=self.f.raw,cwd=self.f.root,env=self.f.env(),capture_output=True,timeout=18)
+            self.assertEqual((result.returncode,result.stdout),(1,b''))
+            self.assertIn(b'ordinary memory harness remains unavailable',result.stderr)
+            self.assertEqual(self.calls,[]);self.assertEqual(self.files(),{})
+        for name in ('PreToolUse','PostToolUse','PostToolUseFailure','PreCompact','Stop','SessionEnd'):
+            self.event(name,session_id='22222222-2222-4222-8222-222222222222')
+            result=self.go()
+            self.assertEqual((result.returncode,result.stdout),(1,b''))
+            self.assertEqual(result.stderr,b'Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n')
+            self.assertEqual(self.calls,[]);self.assertEqual(self.files(),{})
+            self.assertEqual(self.provider_sides['go'],[])
+
+    def test_disabled_codex_binding_keeps_ordinary_ambient_without_native_grants(self):
+        self.configure_harness('codex',recall_mode='ambient')
+        self.configure(inbox_recall_binding=str(self.f.binding))
+        self.required();self.optional_note('Concrete retained guidance.')
+        for name in ('SessionStart','UserPromptSubmit'):
+            with self.subTest(event=name):
+                self.reset_state()
+                self.event(name,session_id='22222222-2222-4222-8222-222222222222',prompt='storage')
+                result=self.pair()
+                self.assertEqual(self.context(result)['expanded']['selection']['record']['body'],self.optional[0]['body'])
+                self.assertEqual(set(self.files()),{self.state_key()+'.json',self.state_key()+'.lock'})
+                self.assertEqual(len(self.provider_sides['go']),1)
 
 
 def load_tests(loader, tests, pattern):

@@ -23,7 +23,7 @@ func RunBound(ctx context.Context, invocation *binding.MemoryInvocation) Result 
 	if captureEventName(checked.Event) {
 		return runMemory(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
 	}
-	if value.SameText(config.Get("harness"), "claude") {
+	if value.SameText(config.Get("harness"), "claude") || !value.SameText(config.Get("recall_mode"), "agent_tools") {
 		return runMemory(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, true, invocation)
 	}
 	return RunStart(ctx, config, checked.Event, checked.Disposition == "checked", directory, environment, checked.Coordinators...)
