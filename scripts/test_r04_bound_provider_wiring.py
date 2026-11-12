@@ -146,6 +146,17 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
             write(root / name, path.read_bytes(), 0o600)
         write(root / 'rows.json', encoded(self.rows), 0o600)
 
+    def required(self, body='Required lifecycle recall policy. 日本語 🛡.'):
+        super().required(body)
+        # The API serializes these zero-value Record fields even when the
+        # small external fixture omits them. Supply the complete fixture shape
+        # so the assertion preserves every returned field, not just body text.
+        self.selected[0]['record'].update({
+            'class': '', 'lifecycle': '', 'sensitivity': '', 'kind': '',
+            'scope': {'repo': '', 'task_id': '', 'run_id': ''},
+            'claim_type': '', 'observed_writer': '', 'witness': '',
+            'written_at': '0001-01-01T00:00:00Z', 'attribution_state': ''})
+
     def recall_pair(self, harness, mode, enabled=True):
         self.required('Required checked lifecycle policy. 日本語 🛡.')
         self.optional_note('Use PostgreSQL for durable lifecycle storage. 日本語 😀')
