@@ -278,6 +278,10 @@ func transitionForget(t *testing.T, d *transitionDB, n core.SemanticNote) {
 }
 
 func transitionLeaseBacklog(t *testing.T) {
+	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "6" {
+		transitionRealLeaseBacklog(t)
+		return
+	}
 	d := transitionDatabase(t)
 	w := transitionFixture(t, "lease")
 	note := d.source(t, "s05-a", "lease source")

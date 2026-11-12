@@ -335,6 +335,80 @@ CPython value-graph and RTERM1 holds remain open. Host `make test` remains FAILE
 exit 2 with 53 frozen baseline trial diagnostics; SDK spawn/ipc is NOT RUN.
 There is no ticket closure, production action or case-six self-assignment.
 
+## Explicit local real-worker case 6
+
+The bounded case-six dispatch uses the shared host task around the existing
+qualification command. Read [the testing guide](developer/testing.md) and the
+installed `test-workflow` skill before choosing a test command. The agent keeps
+its normal host HOME, PATH, tools and subscription; the existing campaign wrapper
+owns the application's disposable cluster and required isolation checks.
+
+```sh
+mise run host:exec --timeout 25m --weight 1 -- \
+  python3 -I -B scripts/check_semantic_transition.py --real-case6 \
+  --artifact-dir /absolute/new-local-case6-artifacts \
+  --python-selection /absolute/s04r/qualified-selection \
+  --rust-fixtures /absolute/retained-rust/observed/fixtures
+```
+
+Exact selected membership is `TestSemanticRealTransitionCase6` and its `python`
+and `rust` subcases, with no failures or skips. Both use real Go Index and
+CommandEmbedder owners and the unchanged canonical retained workers, separately
+on fresh private databases. Three ordinary sources across three collections
+remain eligible throughout; full record/version history, coverage/problems,
+queue rows and publication tuples are retained at every declared phase.
+
+An actual Step first acquires the target lease. A private table lock holds its
+source read while the harness kills its verified owned, warmed document PID.
+After lock release the actual exchange fails with a live caller and persists
+attempt one and ordinary backoff. The old process must be reaped and its reader
+discarded before the same-generation document lane restarts. This fault occurs
+before that Step's document exchange, not inside inference.
+
+The fixture extends only that target's retry timestamp. Legitimately due controls
+can run while the target's unleased future retry remains unchanged; after both
+controls publish, a further Step must refuse the target. A labelled fixture lease
+with retry already due isolates live-lease refusal. Expiring only its timestamp
+allows actual Step A to replace it with a different lease and compute a real
+result. The unchanged held-result adapter keeps that result from Index. Expiring
+only A's lease timestamp allows a second actual Index B, with identical source
+version/body/model, to acquire a new live lease and hold its own real result.
+
+The successor retry timestamp is extended without changing its actual lease or
+natural attempt one. Releasing A must return worked/true and nil error without
+publishing or changing/deleting the complete successor job row. B's current lease
+is still live and the source/history/model remain identical, isolating lease
+ownership from source freshness. Canceling and joining B retains the row because
+retry uses the canceled caller context; this is not successful retry persistence.
+Clearing only its fixture lease then isolates future-retry refusal again.
+
+Every fixture scheduler UPDATE has a label, SQL/arguments and complete OLD/NEW
+rows in a separate actor-labelled audit. Product changes include the actual
+attempt increment, lease replacements and final retained-row consumption. No
+fixture sets attempts, reinserts a job or resets another source. All writers are
+disabled/joined and old worker roots reaped before only the target retry timestamp
+is made due. Normal same-generation recovery completes the original population:
+the two earlier legitimate controls plus the retained target, exactly three
+current version/body-hash/model publications with valid passages/vectors and no
+pending jobs or excluded failure denominator. No derived state is reset.
+
+`real-case6-{python,rust}.json` and `real-case6.json` retain the causal receipts,
+lease UUID-to-Step/worker associations, worked/error results, complete audits and
+writer fences. A lease UUID identifies scheduler ownership; the queue does not
+store an authenticated process owner. Held results are already computed, raw
+strace stdout is prefix-limited, and CommandEmbedder has no embedding-cache
+protocol. Exact native/environment samples are required for every traced worker
+root including restarts, with zero worker-tree connect/store effects and nonempty
+positive controls. Production document/retrieval/lease/backoff limits stay intact.
+
+The focused observer, owned-PID and held-result cancellation checks, unchanged
+deterministic ten-case/32-entry/no-skip regression, real case six and `make check`
+run through `host:exec` and the existing wrapper. Host capacity or deadline exits
+are run-control outcomes; retained artifacts remain evidence. No earlier real
+case changes beyond additive dispatch/error-cleanup selection are required by
+this fixture. Four other real cases, full S-05, and all numeric, runtime, fleet,
+production, retirement and owner-closure holds remain open.
+
 ## Matrix and claim boundaries
 
 Each row names one top-level case under
