@@ -36,6 +36,8 @@ def main():
                         base_url='http://127.0.0.1:9/v1', toolsets=['mcp-cairn'], compact=True)
         assert cli._fallback_model == [], 'fixture provider fallback must be absent'
         assert cli._init_agent(), 'actual CLI owner failed initialization'
+        assert str(cli.base_url).startswith('http://127.0.0.1:9/'), 'fixture route changed'
+        assert cli.api_key == 'fixture-only', 'fixture credential selection changed'
         provider = cli.agent._memory_manager.get_provider('cairn')
         assert isinstance(provider, MemoryProvider) and provider.config == json.loads(original)
         selected, timeout = provider.engine_command('UserPromptSubmit')
@@ -66,7 +68,8 @@ def main():
         assert all(not handle.active for handle in handles)
         report = dict(passed=True, kind='actual HermesCLI initialization and memory hook; conversation API not invoked',
                       session=cli.session_id, selection_sha256=args.expected_sha256, calls=calls,
-                      cached_selection_preserved=bool(args.replacement_config), python=sys.version)
+                      cached_selection_preserved=bool(args.replacement_config), python=sys.version,
+                      provider=cli.provider, base_url=str(cli.base_url), fallback_chain=[], fixture_credential=True)
         (args.output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(dict(passed=True, session=cli.session_id, conversation_api_invoked=False)))
     finally:
