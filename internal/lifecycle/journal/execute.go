@@ -199,10 +199,13 @@ func execute(ctx context.Context, native RawContext, request Request, options Op
 			return Result{}, err
 		}
 		if !matched {
-			if _, err := required(slot, "status"); err != nil {
+			status, err := required(slot, "status")
+			if err != nil {
 				return Result{}, err
 			}
-			return Result{}, conflict(4, "this attempt already journaled a different "+name)
+			return Result{}, conflict(4, "this attempt already journaled a different "+name+
+				" ("+scalarString(status)+"); its request cannot change. The host reconciles this attempt; "+
+				"further work needs a new request from its sender or the operator")
 		}
 	} else {
 		id, err := native.requestID(name)
