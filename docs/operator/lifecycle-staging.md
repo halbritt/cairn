@@ -371,7 +371,8 @@ Every row records its `implementation` and `reason`. Current routing is:
 | --- | --- |
 | OpenCode unbound `agent_tools` SessionStart/UserPromptSubmit | Receipt-checked ordinary Go consumer; all selected profiles must be unbound. |
 | OpenCode unbound `agent_tools` PreToolUse/PostToolUse/PostToolUseFailure commands | Receipt-checked ordinary Go tool observation with the same H=13 and R-02 receipt/image/closure/profile/launcher checks. |
-| Bound Codex/Claude SessionStart/UserPromptSubmit in `agent_tools`, `ambient` or omitted/default mode | Receipt-checked bound Go `memory` recall with H=13 and the actual shared activation decision. The retained Codex `agent_tools` frontend already delegates to pinned Go; retained provider rows exercise the Python body. |
+| Bound Codex/Claude `agent_tools` SessionStart/UserPromptSubmit | Receipt-checked bound Go `memory` recall with H=13 and the actual shared activation decision. The retained Codex frontend already delegates to pinned Go; retained Claude recall exercises the Python body. |
+| Bound Codex/Claude ambient or omitted/default SessionStart/UserPromptSubmit | Retained Python selection. Enabled binding profile admission requires `agent_tools` in both Source and Go, so these modes remain refused before recall. Disabled binding provider fixtures do not establish enabled support. |
 | Bound Codex PreCompact/Stop and bound Claude PreCompact/SessionEnd | Receipt-checked bound Go capture with H=150, including the configured provider/selected-record writer. |
 | Other bound callbacks | Existing receipt-selected Python caller. |
 | Unbound Codex/Claude recall and OpenCode ambient/default recall | Receipt-checked ordinary Go `memory` with H=13, including the configured provider pipeline. All selected profiles must be unbound. |

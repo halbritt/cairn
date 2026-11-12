@@ -22,6 +22,9 @@ from test_f04_activation import SESSION, TURN, encoded, write, sha
 
 
 class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
+    go_vector = BoundMemoryCase.go_vector
+    go_launcher = BoundMemoryCase.go_launcher
+    timeout = BoundMemoryCase.timeout
     @classmethod
     def setUpClass(cls):
         # Build all images from this checkout, including its R02 issuer.
@@ -69,9 +72,12 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         self.assertIs(json.loads(self.f.binding.read_bytes())['enabled'], enabled)
         self.assertTrue(self.f.memory['inbox_recall_binding'])
         for event in ('SessionStart', 'UserPromptSubmit'):
-            self.assertEqual(self.rows[event]['implementation'], 'go')
+            self.assertEqual(self.rows[event]['implementation'], 'go' if mode == 'agent_tools' else 'python')
             self.assertEqual(self.rows[event]['hook']['timeout'], 13)
-            self.assertNotEqual(self.rows[event]['checked_launcher'], self.rows[event]['retained_launcher'])
+            if mode == 'agent_tools':
+                self.assertNotEqual(self.rows[event]['checked_launcher'], self.rows[event]['retained_launcher'])
+            else:
+                self.assertEqual(self.rows[event]['checked_launcher'], self.rows[event]['retained_launcher'])
         print('R04_BOUND_SELECTION ' + json.dumps(dict(test=self.id(), harness=harness, mode=mode,
             enabled=enabled, receipt_sha256=self.f.receipt_sha, image_sha256=self.f.receipt['binary']['sha256'],
             source_members=self.f.receipt['members'], rows=self.rows,
@@ -83,7 +89,13 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         return self.invoke_provider_side('source', lambda: bound.R04BoundWiringTests.staged_process(self, 'source'))
 
     def go(self):
-        return self.invoke_provider_side('go', lambda: bound.R04BoundWiringTests.staged_process(self, 'go'))
+        if self.f.memory.get('recall_mode') == 'agent_tools':
+            invoke = lambda: bound.R04BoundWiringTests.staged_process(self, 'go')
+        else:
+            # Capability/refusal comparison only: this direct checked consumer
+            # is not selected by the staged settings for unsupported modes.
+            invoke = lambda: BoundMemoryCase.go(self)
+        return self.invoke_provider_side('go', invoke)
 
     def invoke_provider_side(self, side, invoke):
         result = super().invoke_provider_side(side, invoke)
@@ -159,16 +171,31 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         self.recall_pair('claude', 'agent_tools')
 
     def test_staged_bound_claude_ambient(self):
-        self.recall_pair('claude', 'ambient')
+        self.refused_mode_pair('claude', 'ambient')
 
     def test_staged_bound_claude_default(self):
-        self.recall_pair('claude', None)
+        self.refused_mode_pair('claude', None)
 
     def test_staged_bound_codex_ambient(self):
-        self.recall_pair('codex', 'ambient')
+        self.refused_mode_pair('codex', 'ambient')
 
     def test_staged_bound_codex_default(self):
-        self.recall_pair('codex', None)
+        self.refused_mode_pair('codex', None)
+
+    def refused_mode_pair(self, harness, mode):
+        self.stage_bound(harness, mode)
+        for event in ('SessionStart', 'UserPromptSubmit'):
+            self.reset_state()
+            self.event(event, session_id=SESSION, turn_id=TURN, prompt='storage')
+            self.calls.clear()
+            results = [self.source(), self.go()]
+            self.assertEqual((results[0].returncode, results[0].stdout, results[0].stderr),
+                             (results[1].returncode, results[1].stdout, results[1].stderr))
+            self.assertEqual((results[0].returncode, results[0].stdout), (1, b''))
+            self.assertIn(b'phase=activation error_class=ValueError', results[0].stderr)
+            self.assertEqual(self.calls, [])
+            self.assertEqual(self.provider_sides['go'], [])
+            self.assertEqual(self.state(), {})
 
     def test_staged_bound_codex_agent_tools_transitive_baseline(self):
         self.recall_pair('codex', 'agent_tools')
@@ -181,7 +208,7 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
 
     def test_staged_bound_required_conflict_preserves_source_boundary(self):
         for harness in ('claude', 'codex'):
-            self.stage_bound(harness, 'ambient', remove_package=False)
+            self.stage_bound(harness, 'agent_tools', remove_package=False)
             self.refusal = 'OPEN_CONFLICT'
             for event in ('SessionStart', 'UserPromptSubmit'):
                 with self.subTest(harness=harness, event=event):
@@ -193,7 +220,7 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
                         self.assertEqual((result.returncode, result.stdout), (2, b''))
                     self.assertEqual(self.provider_sides['go'], [])
 
-    def test_staged_bound_provider_and_model_errors(self):
+    def test_staged_bound_disabled_provider_and_model_errors(self):
         self.required()
         self.optional_note('Concrete current storage guidance.')
         for harness in ('claude', 'codex'):
@@ -202,20 +229,20 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
                                    (dict(model='bad\0model', recall_model=None), 'ValueError')):
                 with self.subTest(harness=harness, changes=changes):
                     self.reset_state()
-                    self.stage_bound(harness, 'ambient', remove_package=False, changes=changes)
+                    self.stage_bound(harness, 'ambient', enabled=False, remove_package=False, changes=changes)
                     self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN, prompt='storage')
                     result = self.pair()
                     self.assertEqual((result.returncode, result.stdout), (1, b''))
                     self.assertIn(('error_class=' + error).encode(), result.stderr)
                     self.assertEqual(self.provider_sides['go'], [])
 
-    def test_staged_bound_invalid_selection_retains_whole_required(self):
+    def test_staged_bound_disabled_invalid_selection_retains_whole_required(self):
         self.required()
         self.optional_note('Concrete current storage guidance.')
         self.responses['recall'] = dict(result=dict(structured_output=dict(index='0')))
         for harness in ('claude', 'codex'):
             self.reset_state()
-            self.stage_bound(harness, 'ambient', remove_package=False)
+            self.stage_bound(harness, 'ambient', enabled=False, remove_package=False)
             self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN, prompt='storage')
             result = self.pair()
             self.assertEqual(self.context(result)['selected'][0]['record'], self.selected[0]['record'])
@@ -230,7 +257,7 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         self.before_run = lambda side: None
         self.after_run = lambda: None
         for harness in ('claude', 'codex'):
-            self.stage_bound(harness, 'ambient', remove_package=False)
+            self.stage_bound(harness, 'agent_tools', remove_package=False)
             self.reset_state()
             self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN, prompt=self.f.wake())
             first = BoundMemoryCase.pair(self)
