@@ -1,9 +1,15 @@
 import importlib.util
 import copy
 import json
+import contextlib
+import io
+import subprocess
+import threading
+from types import SimpleNamespace
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location('real', Path(__file__).resolve().parents[1] / 'semantic_transition_real.py')
 real = importlib.util.module_from_spec(spec)
@@ -187,6 +193,162 @@ class StartupObservationTests(unittest.TestCase):
         fixture[0][0]['phases'].append(copy.deepcopy(fixture[0][0]['phases'][0]))
         with self.assertRaisesRegex(RuntimeError, 'one designated cold phase'):
             real.case7_startup_samples(*fixture)
+
+
+class SamplerFailureCustodyTests(unittest.TestCase):
+    def invoke(self, artifacts, *, wait_timeout=False, exits=False, pid=42, case='7', pgid=42,
+               write_failure=False, stuck_join=False, interrupt=False):
+        entered = threading.Event()
+        process = SimpleNamespace(pid=pid, returncode=None, waits=[], terminated=0, killed=0,
+                                  visible_before_wait=False, interrupted=False)
+
+        def poll():
+            if not entered.wait(2):
+                raise AssertionError('sampler did not reach the injected observer failure')
+            if interrupt and not process.interrupted:
+                process.interrupted = True
+                raise KeyboardInterrupt('owner cancellation')
+            if exits:
+                process.returncode = 0
+            return process.returncode
+
+        def wait(timeout=None):
+            process.waits.append(timeout)
+            path = artifacts / 'sampler-before-cleanup.json'
+            process.visible_before_wait = path.exists() and 'SAMPLER_PRIMARY_SENTINEL' in path.read_text()
+            if wait_timeout and not process.killed:
+                raise subprocess.TimeoutExpired(['owned fixture strace'], timeout)
+            process.returncode = -9 if process.killed else 0
+            return process.returncode
+
+        def terminate():
+            process.terminated += 1
+
+        def kill():
+            process.killed += 1
+
+        process.poll, process.wait, process.terminate, process.kill = poll, wait, terminate, kill
+
+        def fail_snapshot(*args, **kwargs):
+            entered.set()
+            raise RuntimeError('SAMPLER_PRIMARY_SENTINEL')
+
+        python = SimpleNamespace(observer_controls=lambda path: None, mapped_worker=lambda *args: None,
+                                 process_terminal=lambda path: False)
+        rust = SimpleNamespace(descendant_of=lambda *args: False, process_snapshot=fail_snapshot)
+        modules = {'transition_python_observer': python, 'transition_python_environment': SimpleNamespace(),
+                   'transition_rust_observer': rust}
+        stderr = io.StringIO()
+        join_timeouts = []
+
+        class StuckThread:
+            def __init__(self, target, **kwargs):
+                self.target = target
+                self.daemon = kwargs.get('daemon', False)
+
+            def start(self):
+                self.target()
+
+            def join(self, timeout=None):
+                join_timeouts.append(timeout)
+
+            def is_alive(self):
+                return True
+
+        original_write = Path.write_text
+
+        def write(path, text, *args, **kwargs):
+            if write_failure and path.name.startswith('sampler-error-'):
+                raise OSError('DIAGNOSTIC_DISK_FAILURE')
+            return original_write(path, text, *args, **kwargs)
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(real, 'load', side_effect=lambda name, path: modules[name]))
+            stack.enter_context(mock.patch.object(real.subprocess, 'Popen', return_value=process))
+            group = stack.enter_context(mock.patch.object(real.os, 'killpg'))
+            stack.enter_context(mock.patch.object(real.os, 'getpgid', return_value=pgid))
+            stack.enter_context(mock.patch('sys.stderr', stderr))
+            stack.enter_context(mock.patch.object(Path, 'write_text', write))
+            if stuck_join:
+                stack.enter_context(mock.patch.object(real.threading, 'Thread', StuckThread))
+            try:
+                real.run_observed(['owned fixture command'], {'CAIRN_TRANSITION_REAL_CASE': case}, artifacts,
+                                  {'trace_prefix': str(artifacts / 'worker-trace')},
+                                  {'payload': {'path': '/selected', 'descriptor': {'entries': {}}}}, Path('/rust'))
+            except BaseException as error:
+                failure = error
+            else:
+                self.fail('sampler failure became a successful proof')
+            return process, failure, stderr.getvalue(), group.call_args_list, join_timeouts
+
+    def test_sampler_traceback_survives_child_wait_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            child, error, stderr, groups, _ = self.invoke(artifacts, wait_timeout=True)
+            self.assertIn('SAMPLER_PRIMARY_SENTINEL', str(error))
+            self.assertIn('Traceback (most recent call last)', str(error))
+            self.assertIn('TimeoutExpired', str(error))
+            self.assertTrue(child.visible_before_wait, 'primary must be retained before wait can fail')
+            observed = json.loads((artifacts / 'real-worker-observations.json').read_text())
+            self.assertIn('SAMPLER_PRIMARY_SENTINEL', observed['sampler_failures'][0]['traceback'])
+            self.assertIn('TimeoutExpired', str(observed['cleanup_errors']))
+            self.assertFalse(observed['proof_complete'])
+            self.assertEqual(child.terminated, 1)
+            self.assertEqual(child.killed, 1)
+            self.assertTrue(all(timeout is not None and 0 < timeout <= 10 for timeout in child.waits))
+            self.assertEqual(groups, [])
+
+    def test_error_arriving_as_child_exits_is_retained_and_refuses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            child, error, _, _, _ = self.invoke(artifacts, exits=True)
+            self.assertIn('SAMPLER_PRIMARY_SENTINEL', str(error))
+            first = json.loads((artifacts / 'sampler-error-0001.json').read_text())
+            self.assertIn('fail_snapshot', first['traceback'])
+            self.assertEqual(child.terminated, 0)
+            observed = json.loads((artifacts / 'real-worker-observations.json').read_text())
+            self.assertEqual(observed['returncode'], 0)
+            self.assertFalse(observed['proof_complete'])
+            self.assertTrue(observed['sampler_thread_joined'])
+
+    def test_diagnostic_write_failure_is_reported_with_original_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            _, error, stderr, _, _ = self.invoke(artifacts, write_failure=True)
+            self.assertIn('SAMPLER_PRIMARY_SENTINEL', str(error))
+            self.assertIn('DIAGNOSTIC_DISK_FAILURE', str(error))
+            self.assertIn('SAMPLER_PRIMARY_SENTINEL', stderr)
+            observed = json.loads((artifacts / 'real-worker-observations.json').read_text())
+            self.assertIn('DIAGNOSTIC_DISK_FAILURE', str(observed['diagnostic_write_errors']))
+
+    def test_unsafe_process_ids_never_receive_process_control(self):
+        for pid in (0, 1):
+            with self.subTest(pid=pid), tempfile.TemporaryDirectory() as directory:
+                child, error, _, groups, _ = self.invoke(Path(directory), pid=pid)
+                self.assertIn('SAMPLER_PRIMARY_SENTINEL', str(error))
+                self.assertEqual((child.terminated, child.killed, child.waits, groups), (0, 0, [], []))
+
+    def test_unsafe_group_ids_are_never_signalled(self):
+        for pgid in (0, 1, 99):
+            with self.subTest(pgid=pgid), tempfile.TemporaryDirectory() as directory:
+                _, error, _, groups, _ = self.invoke(Path(directory), case='1', pgid=pgid)
+                self.assertIn('SAMPLER_PRIMARY_SENTINEL', str(error))
+                self.assertEqual(groups, [])
+
+    def test_sampler_join_is_bounded_and_timeout_is_secondary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, error, _, _, joins = self.invoke(Path(directory), stuck_join=True)
+            self.assertIn('SAMPLER_PRIMARY_SENTINEL', str(error))
+            self.assertIn('sampler thread did not join', str(error))
+            self.assertTrue(joins and all(timeout is not None and 0 < timeout <= 10 for timeout in joins))
+
+    def test_keyboard_interrupt_keeps_its_type_after_diagnostic_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            _, error, _, _, _ = self.invoke(artifacts, interrupt=True)
+            self.assertIsInstance(error, KeyboardInterrupt)
+            observed = json.loads((artifacts / 'real-worker-observations.json').read_text())
+            self.assertIn('SAMPLER_PRIMARY_SENTINEL', observed['sampler_failures'][0]['traceback'])
 
 
 if __name__ == '__main__':
