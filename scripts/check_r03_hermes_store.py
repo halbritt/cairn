@@ -99,6 +99,7 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
                            body='Keep thirty days of retention in the synthetic R03 fixture.')])) )
         (output / 'selection.json').write_text(json.dumps(selection) + '\n')
         if args.semantic_fallback:
+            selector = output / 'provider-selector'
             installed.scripted_selector(selector, args.hermes_python, output / 'selection.json')
         (output / 'selector-pin.json').write_text(json.dumps(dict(path=str(selector), sha256=digest(selector),
             version='scripted-r03-selector/1', provider='fixture; no model account'), indent=2) + '\n')

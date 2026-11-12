@@ -313,9 +313,11 @@ class InstalledMemory(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_positive_ambient_provider_preview_and_body(self):
-        self.f.memory.update(recall_mode='ambient', semantic_fallback=True, recall_observations=True)
+        selector = self.root / 'positive-selector'
+        scripted_selector(selector, HERMES_PYTHON, self.root / 'provider.json')
+        self.f.memory.update(recall_mode='ambient', semantic_fallback=True, recall_observations=True,
+                             claude=str(selector))
         self.f.publish_configuration(enabled=False)
-        scripted_selector(self.root / 'selector', HERMES_PYTHON, self.root / 'provider.json')
         self.records.extend(dict(record_id='66666666-6666-4666-8666-%012d' % i, version=1,
             kind='decision', **{'class': 'A'}, body='installed project: retention policy\nRetain thirty days; fixture option %d.' % i)
             for i in range(5))
