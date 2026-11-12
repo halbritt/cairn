@@ -9,6 +9,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import traceback
 
@@ -221,6 +222,8 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
     rust_observer = load('transition_rust_observer', '/work/scripts/test_semantic_package_real.py')
     python_observer.observer_controls(artifacts)
     done, errors = threading.Event(), []
+    sampler_failures, cleanup_errors, diagnostic_write_errors = [], [], []
+    cursor = {}
     python_workers, rust_workers = {}, {}
     pending_permissions, exit_races = {}, set()
     payload = Path(python['payload']['path'])
@@ -229,16 +232,82 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
             'trace=process,connect,openat,openat2,creat,mkdir,mkdirat,write,writev,pwrite64,pwritev,ftruncate,truncate,rename,renameat,renameat2,unlink,unlinkat',
             '-o', selected['trace_prefix'], *command]
     (artifacts / 'real-test-command.json').write_text(json.dumps(argv, indent=2) + '\n')
+    inventory = artifacts / 'source-inputs-prebuild.json'
+    run_binding = {'case': env.get('CAIRN_TRANSITION_REAL_CASE'), 'trace_prefix': selected['trace_prefix'],
+                   'command': argv, 'source_inputs_prebuild_sha256':
+                   hashlib.sha256(inventory.read_bytes()).hexdigest() if inventory.exists() else None}
+    joined = False
+
+    def emit(text):
+        try:
+            sys.stderr.write(text + '\n')
+            sys.stderr.flush()
+        except Exception:
+            diagnostic_write_errors.append({'path': 'stderr', 'traceback': traceback.format_exc()})
+
+    def write_diagnostic(name, value):
+        try:
+            (artifacts / name).write_text(json.dumps(value, indent=2) + '\n')
+        except Exception:
+            failure = {'path': name, 'traceback': traceback.format_exc()}
+            diagnostic_write_errors.append(failure)
+            emit('diagnostic write failed: ' + name + '\n' + failure['traceback'])
+
+    def snapshot():
+        return {'python_workers': list(python_workers.values()), 'rust_workers': list(rust_workers.values()),
+                'mapping_errors': list(errors), 'sampler_failures': list(sampler_failures),
+                'cleanup_errors': list(cleanup_errors), 'diagnostic_write_errors': list(diagnostic_write_errors),
+                'returncode': child.returncode, 'child_pid': child.pid, 'run_binding': run_binding,
+                'sampling_context': dict(cursor), 'sampler_thread_joined': joined, 'proof_complete': False,
+                'terminal_mapping_races': sorted(exit_races),
+                'unresolved_live_mapping_pids': list(pending_permissions)}
+
+    def cleanup_failure(stage, error=None):
+        text = traceback.format_exc() if error is None else ''.join(traceback.format_exception(error))
+        cleanup_errors.append({'stage': stage, 'traceback': text})
+
+    def owned_child():
+        if child.pid <= 1 or child.pid == os.getpid():
+            raise RuntimeError('refusing unsafe fixture process control')
+
+    def kill_and_reap():
+        owned_child()
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=2)
+
+    def stop_child():
+        # Popen created this child with start_new_session=True. Never signal an
+        # inferred host PID or an unverified process group.
+        owned_child()
+        write_diagnostic('sampler-before-cleanup.json', snapshot())
+        if env.get('CAIRN_TRANSITION_REAL_CASE') in ('2', '3', '4', '5', '6', '7'):
+            child.terminate()
+        else:
+            if os.getpgid(child.pid) != child.pid:
+                raise RuntimeError('refusing unsafe fixture process-group control')
+            os.killpg(child.pid, signal.SIGTERM)
+        try:
+            child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            cleanup_failure('terminate wait')
+            try:
+                kill_and_reap()
+            except Exception:
+                cleanup_failure('owned child kill/reap')
 
     def sample():
         published = None
         try:
             while not done.is_set():
                 for proc in Path('/proc').iterdir():
+                    cursor.clear()
+                    cursor.update(operation='python candidate ancestry', candidate_pid=proc.name, ancestor=child.pid)
                     if not proc.name.isdigit() or not rust_observer.descendant_of(int(proc.name), child.pid):
                         continue
                     try:
                         for mode in ('rank', 'embed'):
+                            cursor.update(operation='python mapped_worker', mode=mode)
                             row = python_observer.mapped_worker(proc, payload, mode)
                             if row is None:
                                 continue
@@ -259,9 +328,12 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
                         continue
                     except PermissionError:
                         mapping_permission(proc, pending_permissions, exit_races, python_observer.process_terminal)
+                cursor.clear()
+                cursor.update(operation='rust process_snapshot', ancestor=child.pid)
                 for row in rust_observer.process_snapshot(rust_payload, rust_workers, ancestor=child.pid, standalone=False):
                     rust_workers[row['pid']] = row
                 if selected.get('sample_pids'):
+                    cursor.update(operation='publish ready PID receipt')
                     ready = ready_sample_pids(python_workers, rust_workers)
                     if ready != published:
                         path = Path(selected['sample_pids'])
@@ -270,41 +342,83 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
                         temporary.replace(path)
                         published = ready
                 for pid in list(pending_permissions):
+                    cursor.update(operation='pending Python mapping permission', candidate_pid=pid)
                     if python_observer.process_terminal(Path('/proc') / str(pid)):
                         exit_races.add(pid)
                         pending_permissions.pop(pid)
                 done.wait(0.02)
-        except BaseException as error:
-            errors.append(traceback.format_exc())
+        except BaseException:
+            text = traceback.format_exc()
+            failure = {'ordinal': len(sampler_failures) + 1, 'traceback': text, 'context': dict(cursor),
+                       'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                       'child_pid': child.pid, 'run_binding': run_binding}
+            sampler_failures.append(failure)
+            errors.append(text)
+            # This file has a single writer. The monitor also snapshots the
+            # original traceback before any terminate/wait operation can fail.
+            write_diagnostic('sampler-error-%04d.json' % failure['ordinal'], failure)
+            emit('sampler traceback (primary retained separately from cleanup):\n' + text)
 
     with (artifacts / 'tests.jsonl').open('wb') as output:
         child = subprocess.Popen(argv, env=env, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
-        thread = threading.Thread(target=sample)
-        thread.start()
+        thread = threading.Thread(target=sample, daemon=True)
+        started, stop_attempted, monitor_exception = False, False, None
         try:
+            thread.start()
+            started = True
             while child.poll() is None:
                 if errors:
-                    if child.pid <= 1:
-                        raise RuntimeError('refusing unsafe fixture process control')
-                    if env.get('CAIRN_TRANSITION_REAL_CASE') in ('2', '3', '4', '5', '6', '7'):
-                        child.terminate()
-                    else:
-                        if os.getpgid(child.pid) != child.pid:
-                            raise RuntimeError('refusing unsafe fixture process-group control')
-                        os.killpg(child.pid, signal.SIGTERM)
-                    child.wait(timeout=10)
+                    stop_attempted = True
+                    stop_child()
                     break
                 done.wait(0.1)
+        except BaseException:
+            monitor_exception = sys.exc_info()
+            cleanup_failure('observation monitor/process control')
         finally:
             done.set()
-            thread.join()
-    observations = {'python_workers': list(python_workers.values()), 'rust_workers': list(rust_workers.values()),
-                    'mapping_errors': errors, 'returncode': child.returncode,
-                    'terminal_mapping_races': sorted(exit_races),
-                    'unresolved_live_mapping_pids': [pid for pid in pending_permissions if not python_observer.process_terminal(Path('/proc') / str(pid))]}
-    (artifacts / 'real-worker-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
-    if child.returncode or errors or observations['unresolved_live_mapping_pids']:
-        raise RuntimeError('real transition execution/mapping failed: ' + repr(errors))
+            try:
+                if child.poll() is None:
+                    if stop_attempted:
+                        kill_and_reap()
+                    else:
+                        stop_attempted = True
+                        stop_child()
+            except BaseException:
+                cleanup_failure('final owned child cleanup')
+                if monitor_exception is None:
+                    monitor_exception = sys.exc_info()
+            if started:
+                try:
+                    thread.join(timeout=5)
+                    joined = not thread.is_alive()
+                    if not joined:
+                        cleanup_failure('sampler join', RuntimeError('sampler thread did not join within 5 seconds'))
+                except BaseException:
+                    cleanup_failure('sampler join')
+                    if monitor_exception is None:
+                        monitor_exception = sys.exc_info()
+    unresolved = []
+    for pid in list(pending_permissions):
+        try:
+            if not python_observer.process_terminal(Path('/proc') / str(pid)):
+                unresolved.append(pid)
+        except Exception:
+            cleanup_failure('final mapping permission state')
+            unresolved.append(pid)
+    observations = snapshot()
+    observations['unresolved_live_mapping_pids'] = unresolved
+    write_diagnostic('real-worker-observations.json', observations)
+    if monitor_exception is not None and isinstance(monitor_exception[1], (KeyboardInterrupt, SystemExit)):
+        raise monitor_exception[1].with_traceback(monitor_exception[2])
+    if child.returncode or errors or cleanup_errors or diagnostic_write_errors or not joined or unresolved:
+        detail = ('real transition observation failed; partial evidence is not a complete proof\n' +
+                  '\n'.join('SAMPLER TRACEBACK %d:\n%s' % (n + 1, text) for n, text in enumerate(errors)) +
+                  '\nCLEANUP FAILURES:\n' + json.dumps(cleanup_errors, indent=2) +
+                  '\nDIAGNOSTIC WRITE FAILURES:\n' + json.dumps(diagnostic_write_errors, indent=2) +
+                  '\nchild returncode=' + repr(child.returncode))
+        emit(detail)
+        raise RuntimeError(detail)
     traces = {int(path.name.rsplit('.', 1)[1]): path.read_text() for path in artifacts.glob('worker-trace.*')}
     launchers = [selected[label][mode] for label in ('python', 'rust') for mode in ('rank', 'embed')]
     roots, descendants = worker_trace_scope(traces, launchers)
@@ -334,4 +448,6 @@ def run_observed(command, env, artifacts, selected, python, rust_payload):
             raise RuntimeError('worker HOME/cache changed: ' + home)
     for role in ('payload', 'controls'):
         closure.verify_generation(python[role]['path'], python[role]['descriptor'])
+    observations['proof_complete'] = True
+    (artifacts / 'real-worker-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
     return observations
