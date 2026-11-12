@@ -32,7 +32,7 @@ When `compatibility` (`InvocationContext`) is active on a bound Coordination
    where `limit = min(self.deadline, float(outer_deadline))` preserves the
    parent's `bridge_deadline`.
 3. **Bounded 5-member producer stdin (`<= 1 MiB`):**
-   ```json
+   ```text
    {
      "event": <dict>,
      "observation": <dict>,
