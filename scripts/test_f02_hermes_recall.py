@@ -386,8 +386,14 @@ class HermesRecallTests(unittest.TestCase):
                 self.refused()
 
     def test_ambient_and_mixed_bound_profiles_remain_refused(self):
-        self.configure(recall_mode='ambient')
+        fallback_present = 'semantic_fallback' in self.f.memory
+        fallback = self.f.memory.get('semantic_fallback')
+        self.configure(recall_mode='ambient', semantic_fallback=True)
         self.refused()
+        if fallback_present:
+            self.f.memory['semantic_fallback'] = fallback
+        else:
+            self.f.memory.pop('semantic_fallback')
         self.configure(recall_mode='agent_tools')
         for path in (self.f.memory_path, self.f.coord_path):
             with self.subTest(profile=path.name):
