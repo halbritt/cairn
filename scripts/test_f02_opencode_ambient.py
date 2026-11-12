@@ -365,7 +365,7 @@ class OpenCodeAmbientTests(unittest.TestCase):
             self.configure(semantic_fallback=fallback); self.refused()
         self.selection()
         for harness in ('claude', 'hermes', 'agy', 'codex'):
-            self.configure(harness=harness, semantic_fallback=(harness == 'hermes')); self.refused()
+            self.configure(harness=harness, semantic_fallback=(harness in ('claude', 'hermes'))); self.refused()
         self.configure(harness='opencode')
         for mode in ('unsupported', None, False):
             self.configure(recall_mode=mode); self.refused()
