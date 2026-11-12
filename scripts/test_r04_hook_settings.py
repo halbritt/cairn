@@ -190,7 +190,7 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
     def test_each_emitted_hook_runs_selected_real_activation_after_producer_inputs_are_removed(self):
         for harness in ('codex', 'claude'):
             f = self.fixture(harness + " hook's profile", harness)
-            recall_calls = self.recall_api(f) if harness == 'codex' else None
+            recall_calls = self.recall_api(f)
             _, _, metadata = self.selected(f)
             shutil.rmtree(f.package)
             for row in metadata['rows']:
