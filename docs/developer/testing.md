@@ -140,6 +140,11 @@ For staged hooks and native trust in a disposable Codex app-server, use the
 selections, receipt refusals and archive/unarchive/resume with the same thread
 UUID and history, while control threads keep their original selections.
 
+For receipt-checked coordination in a disposable native Agy CLI, use the
+[native Agy hook fixture](native-agy-hook-fixture.md). It checks project-layer
+PreInvocation/Stop selection, same-conversation continuity, receipt refusals
+and reversal with raw kernel evidence.
+
 ### Shared Go lifecycle primitives
 
 The Go CLI's state-file wrapper and Claude channel bridge use the shared
