@@ -265,6 +265,16 @@ class InstalledMemory(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertFalse(Path(self.f.memory['state_dir']).exists())
 
+    def test_checked_provider_fallback_gap_is_refused_before_effects(self):
+        self.f.memory.update(recall_mode='ambient', semantic_fallback=True)
+        self.f.publish_configuration(enabled=False)
+        self.install()
+        result = self.run_event('UserPromptSubmit')
+        self.assertEqual((result.returncode, result.stdout), (1, b''))
+        self.assertIn(b'CompatibilityPreflightError', result.stderr)
+        self.assertEqual(self.calls, [])
+        self.assertFalse(Path(self.f.memory['state_dir']).exists())
+
     def test_explicit_reverse_to_retained_python_preserves_go_state_and_dedup(self):
         installer.install(self.home, self.native, str(self.root / 'selector'), self.skill,
                           model='fixture-model', recall_mode='agent_tools')

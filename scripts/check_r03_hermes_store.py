@@ -31,6 +31,7 @@ def main():
     parser.add_argument('--pg-bin', type=Path, required=True)
     parser.add_argument('--hermes-root', type=Path, required=True)
     parser.add_argument('--hermes-python', type=Path, required=True)
+    parser.add_argument('--recall-mode', choices=('agent_tools', 'ambient'), default='agent_tools')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(mode=0o700)
@@ -67,7 +68,10 @@ def main():
         (output / 'owned-processes.json').write_text(json.dumps(dict(
             postgres=dict(pid=pg_pid, executable=os.readlink('/proc/' + str(pg_pid) + '/exe')),
             api=dict(pid=host.process.pid, executable=os.readlink('/proc/' + str(host.process.pid) + '/exe'))), indent=2) + '\n')
-        seed = host.agent('worker', 'remember', 'R03 retention policy\nRetain thirty days in the synthetic fixture.',
+        seed_body = ('project: retention policy\nFor project, retain thirty days in the synthetic R03 fixture.'
+                     if args.recall_mode == 'ambient' else
+                     'R03 retention policy\nRetain thirty days in the synthetic fixture.')
+        seed = host.agent('worker', 'remember', seed_body,
             args=('--repo', host.repo, '--kind', 'decision', '--shareable', '--request-id', str(uuid.uuid4()), '--stdin'))
         (output / 'seed.json').write_text(json.dumps(seed, indent=2) + '\n')
         selector = output / 'selector'
@@ -89,7 +93,7 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
         for config in (f.memory, f.coord):
             config.update(cairn=str(images / 'cairn'), socket=str(host.socket), token_file=str(host.token('worker')),
                           repo=host.repo)
-        f.memory.update(claude=str(selector), model='r03-scripted-fixture', recall_mode='agent_tools',
+        f.memory.update(claude=str(selector), model='r03-scripted-fixture', recall_mode=args.recall_mode,
                         semantic_fallback=False, capture_observations=True, recall_observations=True)
         f.publish_configuration(enabled=False)
         home = f.account
@@ -132,7 +136,7 @@ print(json.dumps(json.loads((root/'selection.json').read_text())['result']))
         assert counts['memory_record'] == 2, 'completed capture was duplicated or lost'
         assert counts['capture_observation'] >= 1 and counts['recall_observation'] == 1
         assert counts['agent_session_attempt'] == counts['agent_delivery'] == 0
-        report = dict(schema='cairn.r03-hermes-store/1', passed=True, source=source, counts=counts,
+        report = dict(schema='cairn.r03-hermes-store/1', passed=True, source=source, counts=counts, recall_mode=args.recall_mode,
             seed_record=seed['record_id'], saved_record=saved_ids[0], dialogue_stored=False,
             provider='scripted external selector; no real model', checked_tools='baseline refusal; Foundation input pending',
             lifecycle_image_sha256=f.receipt['binary']['sha256'])
