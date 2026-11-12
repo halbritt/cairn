@@ -107,9 +107,16 @@ func transitionObserveStartup(pid, owner int, selected transitionStartupSelectio
 		if len(fields) != 6 || fields[4] != strconv.FormatUint(row.ImageInode, 10) || fields[5] != row.Image || !strings.Contains(fields[1], "x") {
 			continue
 		}
-		target, err := os.Readlink(proc + "map_files/" + fields[0])
+		first, last, ok := strings.Cut(fields[0], "-")
+		start, startErr := strconv.ParseUint(first, 16, 64)
+		end, endErr := strconv.ParseUint(last, 16, 64)
+		if !ok || startErr != nil || endErr != nil || start >= end {
+			return row, fmt.Errorf("invalid startup mapping range")
+		}
+		// map_files names omit address padding used by /proc/maps.
+		target, err := os.Readlink(proc + fmt.Sprintf("map_files/%x-%x", start, end))
 		if err != nil || target != row.Image {
-			return row, fmt.Errorf("startup kernel map_files target differs")
+			return row, fmt.Errorf("startup kernel map_files target %q differs: %v", target, err)
 		}
 		row.MappedImage, row.MapFilesPath = line, target
 		break
@@ -195,7 +202,7 @@ func TestSemanticPartialStartupObservation(t *testing.T) {
 	pid := cmd.Process.Pid
 	row, err := transitionObserveStartup(pid, os.Getpid(), want)
 	if err != nil || row.PID != pid || row.Image != image || row.MappedImage == "" || row.CompletedAt.Before(row.StartedAt) {
-		t.Fatalf("actual owned executable/environment observation: %+v %v", row, err)
+		t.Fatalf("actual owned observation pid=%d image=%s mapping=%q: %v", row.PID, row.Image, row.MappedImage, err)
 	}
 	wrongHash := want
 	wrongHash.SHA256 = strings.Repeat("0", 64)
