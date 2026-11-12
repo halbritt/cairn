@@ -118,8 +118,15 @@ class InstalledMemory(unittest.TestCase):
             files = {str(p.relative_to(self.root)): dict(mode=stat.S_IMODE(p.stat().st_mode),
                      base64=base64.b64encode(p.read_bytes()).decode())
                      for root in roots if root.exists() for p in sorted(root.rglob('*')) if p.is_file()}
-            for path in self.root.rglob('calls.json'):
-                files[str(path.relative_to(self.root))] = dict(base64=base64.b64encode(path.read_bytes()).decode())
+            extra = [self.f.memory_path, self.f.coord_path, self.f.binding, self.f.receipt_path]
+            if hasattr(self, 'selected'):
+                extra += [Path(argv[0]) for argv in self.selected['commands'].values()]
+            for pattern in ('calls.json', 'result.json', 'provider.json', 'r03-fixture.json'):
+                extra += list(self.root.rglob(pattern))
+            for path in extra:
+                if path.is_file():
+                    files[str(path.relative_to(self.root))] = dict(mode=stat.S_IMODE(path.stat().st_mode),
+                        base64=base64.b64encode(path.read_bytes()).decode())
             print('R03_CASE=' + json.dumps(dict(name=self._testMethodName, processes=getattr(self, 'results', []),
                   api=self.calls, states=files, sockets=sockets, records=getattr(self, 'records', []),
                   selection=getattr(self, 'selected', None),
@@ -239,6 +246,50 @@ class InstalledMemory(unittest.TestCase):
             self.assertIn(b'CompatibilityPreflightError', result.stderr)
         self.assertEqual(self.calls, [])
         self.assertFalse(Path(self.f.memory['state_dir']).exists())
+
+    def test_explicit_reverse_to_retained_python_preserves_go_state_and_dedup(self):
+        installer.install(self.home, self.native, str(self.root / 'selector'), self.skill,
+                          model='fixture-model', recall_mode='agent_tools')
+        legacy = json.loads(self.home.joinpath('cairn-lifecycle.json').read_bytes())
+        engine_path = Path(legacy['engine_config'])
+        engine = json.loads(engine_path.read_bytes())
+        engine.update(state_dir=self.f.memory['state_dir'], semantic_fallback=False, capture_observations=True)
+        installer.shared.write_json(engine_path, engine)
+        retained = {path: path.read_bytes() for path in
+                    (self.home / 'cairn-lifecycle.json', self.home / 'cairn/installed.json', engine_path)}
+        script_hash = sha(legacy['script'])
+        self.install()
+        result = self.run_event('SessionEnd', messages=[dict(role='user', text='Retain thirty days.'),
+                                                      dict(role='assistant', text='Agreed.')])
+        self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout)
+        self.assertEqual(self.write_count, 1)
+        state_path = Path(self.f.memory['state_dir']) / (self.session_key() + '.json')
+        state = json.loads(state_path.read_bytes())
+        state['opaque_reverse_canary'] = ['日本語', 900719925474099312345]
+        state_path.write_text(json.dumps(state))
+        self.assertEqual(engine_path.read_bytes(), retained[engine_path])
+        self.assertEqual(sha(legacy['script']), script_hash)
+        # This is an explicit fixture reversal, never an error fallback. The
+        # old selected profile/manifest and its existing state are retained.
+        for path, raw in retained.items():
+            pending = path.with_suffix(path.suffix + '.restore')
+            pending.write_bytes(raw)
+            pending.chmod(0o600)
+            pending.replace(path)
+        argv = [sys.executable, legacy['script'], '--config', legacy['engine_config']]
+        for event, fields in (('UserPromptSubmit', {}), ('SessionEnd', dict(messages=[
+                dict(role='user', text='Retain thirty days.'), dict(role='assistant', text='Agreed.')]))):
+            raw = json.dumps(dict(self.f.event, hook_event_name=event, **fields)).encode()
+            observed = subprocess.run(argv, input=raw, cwd=self.f.root, env=self.f.env(), capture_output=True, timeout=155)
+            self.results.append(dict(argv=argv, input=raw.decode(), exit=observed.returncode,
+                                     stdout=observed.stdout.decode(), stderr=observed.stderr.decode(), explicit_reverse=True))
+            self.assertEqual((observed.returncode, observed.stderr), (0, b''), observed.stdout)
+        self.assertEqual(self.write_count, 1, 'reversal duplicated the completed capture')
+        after = json.loads(state_path.read_bytes())
+        self.assertEqual(after['opaque_reverse_canary'], state['opaque_reverse_canary'])
+        self.assertEqual(after['captured_digest'], state['captured_digest'])
+        self.assertEqual(after['last_capture']['outcome'], 'unchanged')
+        self.assertTrue(any(op == 'index' for op, _, _ in self.calls))
 
     def native_objects(self, name, refusal=False):
         self.home.joinpath('r03-fixture.json').write_text(json.dumps(dict(
