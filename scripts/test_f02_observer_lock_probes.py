@@ -40,8 +40,10 @@ class ObserverLockProbeTests(unittest.TestCase):
         return {p.name:dict(mode=p.stat().st_mode & 0o777, raw=p.read_text())
                 for p in sorted(directory.iterdir())} if directory.exists() else {}
 
-    def exercise(self, kind, *, contention=False, separate=False):
+    def exercise(self, kind, *, contention=False, separate=False, event=None):
         case = self.fixture(kind)
+        if event is not None:
+            case.event(event)
         real_flock = fcntl.flock
         phase = 'setup'
         physical, recorded, rows, captured = [], [], [], []
@@ -86,10 +88,13 @@ class ObserverLockProbeTests(unittest.TestCase):
             nonlocal phase
             phase = side+'-frontend'
             case.trace.unlink(missing_ok=True)
+            raw = case.f.raw
             result = invoke()
             calls = copy.deepcopy(list(case.calls))
             trace = [json.loads(line) for line in case.trace.read_bytes().splitlines()]
-            rows.append(dict(side=side, exit=result.returncode, stdout=result.stdout,
+            rows.append(dict(side=side, event=json.loads(raw)['hook_event_name'],
+                             input=raw.decode(), input_sha256=ordinary.sha(raw),
+                             exit=result.returncode, stdout=result.stdout,
                              stderr=result.stderr, files=self.files(case), calls=calls,
                              trace=trace, locks=list(case.report_locks)))
             phase = side+'-collector'
@@ -141,6 +146,8 @@ class ObserverLockProbeTests(unittest.TestCase):
             after = len(physical), len(recorded)
         type(self).pairs += 1
         print('OBSERVER_RAW_PAIR='+json.dumps(dict(kind=kind, contention=contention, separate=separate,
+              event=rows[0]['event'], recall_mode=case.f.memory.get('recall_mode', '<absent>'),
+              semantic_fallback=case.f.memory.get('semantic_fallback', '<absent>'),
               receipt_sha256=case.f.receipt_sha, image_sha256=case.f.receipt['binary']['sha256'],
               source_members=case.f.receipt['members'], physical=physical, recorded=recorded,
               captured_types=[type(value).__name__ for value in captured], future_before=before,
@@ -150,7 +157,12 @@ class ObserverLockProbeTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertTrue(captured, 'the actual collector snapshot must be observed')
         for row in rows:
+            self.assertEqual(json.loads(row['input'])['hook_event_name'], row['event'])
+            self.assertEqual(ordinary.sha(row['input'].encode()), row['input_sha256'])
+            if event is not None:
+                self.assertEqual(row['event'], event)
             self.assertEqual([item['kind'] for item in row['trace']], ['entry', 'parsed', 'exit'])
+            self.assertEqual([item['event'] for item in row['trace'][1:]], [row['event']]*2)
             self.assertEqual(row['trace'][-1]['phase'], 'handle')
             self.assertEqual(len({item['inv'] for item in row['trace']}), 1)
             reports = sum(op == 'recall-observation' for op, _, _ in row['calls'])
@@ -214,6 +226,16 @@ class ObserverLockProbeTests(unittest.TestCase):
 
     def test_separate_source_snapshot_is_plain_and_independent(self):
         self.exercise('hermes', separate=True)
+
+    def test_prompt_collectors_copy_without_replaying_real_probe(self):
+        for kind in ('hermes', 'ambient'):
+            with self.subTest(kind=kind):
+                self.exercise(kind, event='UserPromptSubmit')
+
+    def test_prompt_real_false_probe_survives_and_original_assertion_rejects(self):
+        for kind in ('hermes', 'ambient'):
+            with self.subTest(kind=kind):
+                self.exercise(kind, contention=True, event='UserPromptSubmit')
 
 
 if __name__ == '__main__':
