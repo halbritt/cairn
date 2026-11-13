@@ -8,14 +8,18 @@ an explicit NOTRUN boundary; neither a fixture flag nor this report admits it.
 import argparse
 import ast
 import hashlib
+import http.server
 import json
 import os
 from pathlib import Path
 import stat
 import subprocess
 import sys
+import threading
+import time
 import tomllib
 import uuid
+from datetime import datetime, timezone
 
 BASE = '522a13a63b64fc4f960ad0664e9ebe6ef4293fe9'
 HERMES_REVISION = '9904fd411587729dcdf7440cfb830e96e9830597'
@@ -23,6 +27,11 @@ MANIFEST_SHA256 = 'b2910e13d782eef359ce920659518385c6c022e2901d71b765d86617eb9c3
 SCHEMA = 'cairn.r03-hermes-continuity/1'
 NOTRUN = 75
 ROOT = Path(__file__).resolve().parents[1]
+RELEASE_ROOT = 'agent/a4139631-599c-4e0b-a9ba-1bd723ba0a2c'
+AGENT_ID = 'a6f6a17d-5a15-4f84-806f-00b27d50acc4'
+EXECUTION_ID = '498eaa6e-0e24-4e5b-98ab-b6c49f1cab60'
+MODEL = 'r03-scripted-fixture'
+PROVIDER_URL = 'http://127.0.0.1:43867/v1'
 
 
 class PrerequisiteError(RuntimeError):
@@ -196,6 +205,121 @@ def native_boundary():
                  'real disposable Cairn Store effects and cleanup across all three phases',
                  'qualified shared watcher/hook/config/state unit joined in R06'],
         provider_recreation_is_continuity=False, admission_flag_is_authority=False)
+
+
+def validate_admission(status, admission, context, bindings):
+    """Bind an authenticated server readback, never a caller's admitted flag."""
+    event = status['event']
+    require(event['from'] == RELEASE_ROOT and event['kind'] == 'request', 'R03_ADMISSION: not a Release Root request')
+    require(event['event_id'] == context['event_id'] and event['ref'] == context['source'],
+            'R03_ADMISSION: event/source mismatch')
+    require(event['destination'] == dict(type='agent', name='agent/' + AGENT_ID),
+            'R03_ADMISSION: wrong recipient')
+    require(context['agent_id'] == AGENT_ID and context['execution_id'] == EXECUTION_ID,
+            'R03_ADMISSION: foreign execution')
+    require(event['resolution']['execution_id'] == EXECUTION_ID, 'R03_ADMISSION: stale resolution')
+    require(any(row['delivery_id'] == context['delivery_id'] and row['state'] == 'leased'
+                and row['consumer'] == 'agent/' + AGENT_ID for row in status['deliveries']),
+            'R03_ADMISSION: delivery is not currently leased to this execution')
+    require(admission.get('schema') == 'cairn.r03-hermes-native-admission/1'
+            and admission.get('operation') == 'one-isolated-hermes-continuity'
+            and admission.get('attempt_limit') == 1, 'R03_ADMISSION: no exact native operation admitted')
+    require(admission.get('bindings') == bindings, 'R03_ADMISSION: exact code/image/runtime/provider bindings differ')
+    expires = datetime.fromisoformat(admission['expires_at'].replace('Z', '+00:00'))
+    require(expires.tzinfo is not None and datetime.now(timezone.utc) < expires,
+            'R03_ADMISSION: expired or unzoned admission')
+    return dict(event_id=event['event_id'], delivery_id=context['delivery_id'], source=event['ref'],
+                bindings=bindings, expires_at=admission['expires_at'])
+
+
+def authenticated_admission(context_path, bindings):
+    context = json.loads(Path(context_path).read_bytes())
+    require(context['agent_id'] == AGENT_ID and context['execution_id'] == EXECUTION_ID,
+            'R03_ADMISSION: foreign context')
+    cli = ['/home/halbritt/.local/bin/cairn', '--token-file',
+           '/home/halbritt/.local/share/cairn/hosted-agent.token',
+           '--agent-id', AGENT_ID, '--execution-id', EXECUTION_ID]
+    def read(operation, tail, stdin=None):
+        argv = [cli[0], operation, *cli[1:], *tail]
+        result = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=30)
+        require(result.returncode == 0, 'R03_ADMISSION: authenticated read failed: ' + operation)
+        envelope = json.loads(result.stdout)
+        require(envelope.get('ok') is True, 'R03_ADMISSION: server refused read')
+        return envelope['data']
+    status = read('event-status', ['--limit', '100', context['event_id']])
+    # history uses ordinary memory authentication, not session-inbox flags.
+    history_argv = [cli[0], 'agent', '--token-file', cli[2], 'history']
+    result = subprocess.run(history_argv, input=json.dumps(context['source']),
+                            capture_output=True, text=True, timeout=30)
+    require(result.returncode == 0, 'R03_ADMISSION: exact source unavailable')
+    history = json.loads(result.stdout)
+    require(history.get('ok') is True, 'R03_ADMISSION: source read refused')
+    version = history['data']['versions'][0]
+    require(version['version'] == context['source']['version'], 'R03_ADMISSION: wrong source version')
+    admission = json.loads(version['body'])
+    return validate_admission(status, admission, context, bindings)
+
+
+class ScriptedChat:
+    """A real local chat-completions transport, including SDK SSE streaming."""
+    def __init__(self, output, port=43867):
+        self.output, self.requests, self.phase = Path(output), [], 'A'
+        owner = self
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                length = int(self.headers.get('Content-Length', '0'))
+                require(0 < length <= 2_000_000, 'R03_TRANSPORT: invalid request size')
+                body = json.loads(self.rfile.read(length))
+                row = dict(path=self.path, body=body, phase=owner.phase,
+                           authorization=self.headers.get('Authorization'))
+                owner.requests.append(row)
+                write_json(owner.output, owner.requests)
+                if (self.path != '/v1/chat/completions' or body.get('model') != MODEL
+                        or self.headers.get('Authorization') != 'Bearer r03-fixture-only'):
+                    self.send_error(400, 'Unexpected provider route, model or credential')
+                    return
+                content = 'Synthetic continuity response ' + owner.phase + '.'
+                base = dict(id='r03-' + str(len(owner.requests)), object='chat.completion',
+                            created=1, model=MODEL)
+                if body.get('stream'):
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/event-stream')
+                    self.end_headers()
+                    for delta, reason in [(dict(role='assistant', content=content), None), ({}, 'stop')]:
+                        event = dict(base, object='chat.completion.chunk',
+                                     choices=[dict(index=0, delta=delta, finish_reason=reason)])
+                        self.wfile.write(('data: ' + json.dumps(event) + '\n\n').encode())
+                    self.wfile.write(b'data: [DONE]\n\n')
+                else:
+                    result = dict(base, choices=[dict(index=0, message=dict(role='assistant', content=content),
+                                                     finish_reason='stop')],
+                                  usage=dict(prompt_tokens=10, completion_tokens=5, total_tokens=15))
+                    raw = json.dumps(result).encode()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', port), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+        require(not self.thread.is_alive(), 'R03_TRANSPORT: owned server did not join')
+
+
+def require_idle_boundary(owner_finalized, original_session, next_session):
+    require(owner_finalized, 'R03_REFRESH: cached owner remains; supported idle finalization required')
+    require(original_session == next_session, 'R03_REFRESH: replacement conversation refused')
 
 
 def native_readback_request(native_root, manifest, home, baseline):

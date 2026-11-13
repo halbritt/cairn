@@ -1,5 +1,17 @@
 # R03 Hermes existing-conversation continuity preparation
 
+The native-mechanism child starts at exact accepted prep `417b4e81`. The
+accepted review `c7a4b3cb-e137-4c3a-873c-0a87f663af45/v1` was read in full.
+Its N1 finalizer/auxiliary-call, N2 stale hardcoded-request and N3 missing-full-
+mechanism findings govern this child. The old constructor request must not run.
+The held standalone Python plus its frozen venv packages work under the
+unchanged qualified isolation wrapper, with no native client imported by the
+runtime probe. The local transport supports actual chat-completions SSE.
+Admission validation requires an authenticated Cairn event/source readback
+from Release Root, the currently leased delivery for this exact execution,
+and exact source/tree/image/runtime/provider bindings. A file or phase flag
+alone cannot supply that admission. Code/setup evidence is not native PASS.
+
 This child of `522a13a63b64fc4f960ad0664e9ebe6ef4293fe9` prepares the
 CAIRN-305 AC4 experiment. It does not close AC4. The held Hermes input is
 `9904fd411587729dcdf7440cfb830e96e9830597` (package 0.20.5), with Python
