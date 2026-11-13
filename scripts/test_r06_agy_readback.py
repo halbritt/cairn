@@ -17,6 +17,16 @@ class AgyReadbackGapTests(unittest.TestCase):
             native_qualification=False, authenticated_d2=False))
         self.assertEqual(result, before)
 
+    def test_empty_fixture_association_does_not_claim_native_or_d2(self):
+        result = self.result()
+        result['Census']['FixtureReady'], result['Error'] = True, ''
+        report = not_ready(result, association_only=True)
+        self.assertEqual(report['status'], 'ASSOCIATION_ONLY')
+        self.assertFalse(report['native_qualification'])
+        self.assertFalse(report['authenticated_d2'])
+        with self.assertRaises(AssertionError):
+            not_ready(result)
+
     def test_different_failure_or_positive_coverage_cannot_pass_the_probe(self):
         for field, changed in (('Error', 'different setup failure'), ('FixtureReady', True),
                                ('ExternalCoverage', 'known'), ('NativeRefresh', 'observed')):

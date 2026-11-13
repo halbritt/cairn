@@ -1,64 +1,78 @@
-# Agy native readback: blocked consumer interface
+# Unbound census association and the next Agy blocker
 
-The Agy reader cannot be made reachable by changing only the hook dispatcher
-on base `7d22b663d6abb0295dda0263adc9033353e5cefa`. The setup probe reproduces
-the current consumer's refusal with genuine installed R02/R04 producer material.
-It adds no product reader or native qualification.
+The finite census can associate genuine disabled `/3` receipts with unbound
+profiles without editing their JSON. This removes the empty-binding-path
+failure recorded by diagnostic `094393e2648d978998f8b00c59e469c03ffbc085` on
+`7d22b663d6abb0295dda0263adc9033353e5cefa`. Its frozen packet remains historical
+evidence. This association does not implement Agy native hook readback.
 
-## Profile association blocks hook inspection
+## Selected receipt evidence
 
-The [actual producer](../../scripts/stage_lifecycle_hooks.py) requires Agy's
-memory and coordination profiles to be unbound. It rejects a nonempty
-`inbox_recall_binding`, emits only coordination `PreInvocation` and `Stop`
-rows, and records `ordinary memory hook` as unsupported. Its `/3` compatibility
-receipt still pins the disabled manifest and the exact unbound profiles; it
-does not insert a runtime binding into those profiles.
+`WatchCensusCatalog.UnboundReceipts` optionally supplies exact receipt path/hash
+pins. It selects observations, never liveness, refresh, drain or authority.
+Every selected unbound coordinator must match exactly one receipt descriptor's
+actual bytes. Missing, duplicate, ambiguous, mixed or omitted users refuse.
+The existing bound `/2` and `/3` paths retain their profile checks.
 
-`CLI.InspectWatchUnitCensus` calls `loadHookSelections`, then `members`, then
-`inspectHookSelections`. In
-[member loading](../../internal/lifecycle/coordination/shared_unit_census_files.go),
-every selected configuration unconditionally selects its manifest through
-`config.inbox_recall_binding`. An actual unbound profile therefore attempts
-`jsonFile("")` and returns the exact error
-`census reference outside observation universe: `, before hook inspection.
-`sessions` later repeats that same bound-profile assumption when finding memory
-state. Adding a field to the actual producer profile would violate its contract.
-A hooks-only dispatcher cannot repair either association.
+The reader first registers the receipt, manifest, binary, every role profile
+and every source member through the existing path/alias/inode, credential
+exclusion and pin checks. All JSON association inputs reject duplicate fields
+and invalid Unicode. The accepted `CompatibilityContext.VerifyReceipt` checks
+source closure, aliases, content address and binary pins using the observed
+receipt. It cannot discover paths from a replacement receipt. All validator
+disk reads are already in census facts and final readback. The manifest/profile
+predicates from `UnboundProfiles` run against tracked bytes, avoiding that
+method's separate `controlledData` reads.
 
-The existing catalog can name binding pins, but the member reader does not use
-them to associate an unbound profile with its independently selected receipt.
-Supporting that association requires a separately scoped change to the member
-and session readers. It must preserve exact profile bytes, ambiguity refusal,
-resource closure and authenticated D2 correspondence. This report introduces
-no alias, inferred authority, alternate binding, or fabricated registration.
+The manifest must be private, explicitly disabled `/3`, match its selected
+binding pin and retain the receipt's exact binary and role descriptors. Every
+role remains unbound, with agreeing harness/client/socket/credential/repository
+selectors. State and account paths stay in the declared universe. Coordinator
+homes are distinct; memory belongs to a selected coordinator account and has a
+separate state directory. Selected configurations are never given an inserted
+`inbox_recall_binding`. Unknown and unsupported associations refuse.
 
-## Native observation boundary
+Members and session memory enumeration share that verified association. Receipt,
+source and manifest roots participate in resource closure. Memory grants,
+retained attempts and authenticated D2 requirements keep their existing checks;
+the disabled manifest is not proof of a current owning turn's settlement.
+The inspector still rereads facts and refuses change or unknown coverage.
+These point observations are not a global atomic barrier.
 
-The [current hook reader](../../internal/lifecycle/coordination/shared_unit_census_hooks.go)
-accepts only `cairn.watch-claude-hooks/1`, harness `claude`, layer
-`flagSettings`. Its role/event coverage, hook JSON, four-element coordination
-tail and effective-listing checks describe Claude. Actual Agy rows have the
-additional `--event EVENT` tail and cumulative account/project groups.
+## Consumed proof and limits
 
-The retained [Agy native fixture](../../scripts/check_r04_native_agy.py) observes
-real client writes, literal launcher/Go execs, callback stdin, conversation and
-workspace identities, selected file opens and command multiplicities. Its
-`hook_layers` list comes from the fixture's declared active layers. It is not
-a native `get_hooks_listing` response or a general effective-settings API.
-Identical commands across both layers run twice; individual identical-command
-PIDs are not attributed to one file. These are finite, versioned, prompt-interval
-observations with synthetic API registration, not authenticated D2 or exhaustive
-native coverage of unknown groups. A future typed reader needs explicit native
-file-read/dispatch evidence and complete declared inventories. This audit does
-not establish that all needed client observables are unavailable, nor invent
-positive coverage from the current report shape.
+The maintained [probe](../../scripts/check_r06_agy_readback.py) constructs actual
+R02/R04 Agy material and invokes the existing process helper that calls public
+`CLI.InspectWatchUnitCensus`. Agy's actual profiles remain null/unbound, and the
+producer still emits only coordination `PreInvocation`/`Stop`, with ordinary
+memory unsupported. No hooks, native client, registration or API execute.
 
-## Reproduce the exact interface refusal
+Two independent owned fixtures distinguish the claims:
 
-Build and independently pin `control` (`cmd/cairn-lifecycle`), `stager`
+- With the ordinary nonempty account, receipt association succeeds and the
+  current account-layer reader returns the exact next refusal:
+  `account hook/config coverage is unknown: selected native settings/readback seam is unavailable`.
+- With explicitly empty account/state layers, finite association and resource
+  enumeration can succeed. The report says `ASSOCIATION_ONLY`, never native or
+  authenticated D2 qualification. External coverage stays unknown and native
+  refresh unobserved.
+
+The zero-byte mode-0000 credential selector is a metadata-only fixture sentinel,
+never authentication or a content read. Before/after snapshots preserve profile,
+source, settings and unrelated bigint/Unicode bytes and metadata. Consumer traces
+check no credential opens, owned writes, locks, renames, unlinks, signals or
+network connections.
+
+The private Go fixture uses that genuine produced selection for public positive
+association and missing, duplicate, ambiguous, tampered, external-source,
+mixed-profile, enabled-manifest, omitted-user and source-pin refusals. It also
+checks retained positive grants and changed tracked bytes at final readback.
+Derived negative inputs are unit fixtures, not new receipts for native use.
+
+Build and pin `control` (`cmd/cairn-lifecycle`), `stager`
 (`cmd/cairn-stage-lifecycle`) and race-instrumented `observer`
-(`go test -c ./internal/lifecycle/coordination`). The image JSON uses fixture
-schema `cairn.r06-agy-readback-images/1` and `images.ROLE.path/sha256`.
+(`go test -c ./internal/lifecycle/coordination`). The fixture image schema is
+`cairn.r06-agy-readback-images/1`, with `images.ROLE.path/sha256`.
 
 ```sh
 mise run host:exec -- --timeout 10m --weight 1 -- \
@@ -67,24 +81,21 @@ mise run host:exec -- --timeout 10m --weight 1 -- \
 mise run test:unit -- scripts/test_r06_agy_readback.py
 ```
 
-The probe uses existing fixture construction and actual stagers. It copies the
-unmodified produced coordination profile into the selected config directory,
-declares its exact original binding/image/credential selectors, and invokes the
-existing private process helper that calls the public census. No hooks or native
-client execute, and no session, registration or journal is created. The zero-byte
-mode-0000 credential selector is a metadata-only fixture sentinel, never submitted
-as authentication or read for content. The API fixture is never called.
+For the focused race invocation, set `CAIRN_R06_UNBOUND_FIXTURE` to the resulting
+`association-only/go-unit-fixture.json` and select
+`TestR06UnboundCensusAssociationProcess` in the pinned observer, alongside the
+affected bound census/Claude/D2 unit tests. Without that explicit material the
+private fixture entry is inactive and does not count as coverage.
 
-The expected error is checked exactly, with `FixtureReady=false`, external
-coverage unknown and native refresh unobserved. Protected bytes/metadata and
-membership are compared before and after. The trace checks no credential content
-opens, owned writes, locks, renames, unlinks, signals or network connections.
-Passing this probe means the blocker was reproduced, not that Agy is ready.
+The current native hook reader continues to recognize Claude `flagSettings`.
+Actual Agy account/project groups are cumulative; identical commands in both
+layers execute twice. The retained Agy report's layer list is fixture-declared,
+not a native `get_hooks_listing` response. A future typed reader requires the
+correct native observations and exhaustive declared inventories. This cut does
+not deduplicate commands, invent effective settings, or bypass that reader.
 
-Strict install-3/install-5 remain open: transient both-active settings with two
-journals, twenty post-rename NEW-active hard-kill observations, legacy writers
-and opaque attribution retain their existing limits. No old Agy baseline,
-receipt-fault series, hard-kill series, API/D2 or native run is repeated here.
-D6 retains existing read facts, reread and refusal on change/unknown; this work
-adds no barrier or global atomicity. Native9 belongs only to agent-1468's separate
-frozen-7d admission. Live/installed/production actions remain outside this cut.
+Strict install-3/install-5 remain open, including transient both-active settings
+with two journals, twenty post-rename NEW-active hard-kill observations, legacy
+writers and opaque attribution. No old Agy baseline, receipt-fault/SIGKILL series,
+real API/D2 replay, native/model run or full suite is part of this cut. Full
+R06/HC05/native/live R07 remain separate and open.

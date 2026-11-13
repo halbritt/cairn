@@ -35,6 +35,7 @@ type WatchCensusCatalog struct {
 	Bindings        []WatchCensusPin
 	Clients         []WatchCensusPin
 	HookSelections  []WatchCensusPin
+	UnboundReceipts []WatchCensusPin
 }
 
 // WatchCensusProposal names all members, sessions and callbacks proposed for
@@ -111,6 +112,7 @@ type watchCensusRead struct {
 	clientPins            map[string]string
 	control               *unitCensusScope
 	hookSelections        []WatchCensusClaudeHooks
+	associations          map[string]*watchCensusAssociation
 }
 
 // InspectWatchUnitCensus performs filesystem and process observations only.

@@ -159,6 +159,11 @@ func (r *watchCensusRead) loadCatalog(ctx context.Context, pin WatchCensusPin) e
 	if err := censusDecode(raw, &r.catalog); err != nil {
 		return err
 	}
+	if len(r.catalog.UnboundReceipts) != 0 {
+		if err := hookDecode(raw, &r.catalog); err != nil {
+			return err
+		}
+	}
 	if r.catalog.Schema != "cairn.watch-unit-catalog/1" || (r.catalog.Scope != "disposable-fixture" && r.catalog.Scope != "external-unknown") {
 		return errors.New("unknown census schema or observation coverage")
 	}
@@ -234,24 +239,41 @@ func (r *watchCensusRead) members(ctx context.Context) error {
 			r.nodes[path] = &WatchCensusMember{Config: WatchCensusPin{path, selection.Pins[name]}, Account: nativeText(config.Get("config_home")), Repository: nativeText(config.Get("repo")), Resources: []string{selection.Directory}}
 		}
 	}
+	if err := r.unboundAssociations(ctx); err != nil {
+		return err
+	}
 	for _, path := range slices.Sorted(maps.Keys(r.nodes)) {
 		config, err := r.jsonFile(path)
 		if err != nil {
 			return err
 		}
 		node := r.nodes[path]
-		manifest, err := r.jsonFile(nativeText(config.Get("inbox_recall_binding")))
-		if err != nil {
-			return err
+		association := r.associations[path]
+		if value.Truth(config.Get("inbox_recall_binding")) {
+			manifest, err := r.jsonFile(nativeText(config.Get("inbox_recall_binding")))
+			if err != nil {
+				return err
+			}
+			bindingPin := WatchCensusPin{nativeText(config.Get("inbox_recall_binding")), r.files[nativeText(config.Get("inbox_recall_binding"))]}
+			if r.bindingPins[bindingPin.Path] != bindingPin.SHA256 {
+				return errors.New("selected binding pin is missing or changed")
+			}
+			memory, err := r.profiles(config, manifest)
+			if err != nil {
+				return err
+			}
+			association = &watchCensusAssociation{manifest: manifest, memory: memory,
+				binding: bindingPin}
+			r.associations[path] = association
 		}
-		node.Binding = WatchCensusPin{nativeText(config.Get("inbox_recall_binding")), r.files[nativeText(config.Get("inbox_recall_binding"))]}
+		if association == nil {
+			return errors.New("unbound census profile has no selected receipt association")
+		}
+		manifest, memory := association.manifest, association.memory
+		node.Resources = append(node.Resources, association.resources...)
+		node.Binding = association.binding
 		if r.bindingPins[node.Binding.Path] != node.Binding.SHA256 {
 			return errors.New("selected binding pin is missing or changed")
-		}
-		// Reuse the accepted profile agreement, membership and descriptor checks.
-		memory, err := r.profiles(config, manifest)
-		if err != nil {
-			return err
 		}
 		if manifest.Get("enabled").Boolean {
 			r.nodeBlockers[path] = append(r.nodeBlockers[path], "selected binding is enabled; disabled refresh is unobserved")
@@ -469,14 +491,11 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 	states, memories := map[string]bool{}, map[string]bool{}
 	for _, config := range r.local.configs {
 		states[nativeText(config.Get("state_dir"))] = true
-		manifest, err := r.jsonFile(nativeText(config.Get("inbox_recall_binding")))
-		if err != nil {
-			return err
+		association := r.associations[r.configPaths[config]]
+		if association == nil {
+			return errors.New("session memory has no verified census association")
 		}
-		memory, _, err := r.descriptor(manifest.Get("memory_config"))
-		if err != nil {
-			return err
-		}
+		memory := association.memory
 		memories[nativeText(memory.Get("state_dir"))] = true
 	}
 	wanted := map[string]string{}
