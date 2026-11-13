@@ -29,7 +29,7 @@ type UnitControlPlan struct {
 	} `json:"current"`
 	Next      []install.File     `json:"next"`
 	Retained  string             `json:"retained"`
-	Callbacks json.RawMessage    `json:"callbacks"`
+	Callbacks json.RawMessage    `json:"callbacks,omitempty"`
 	Census    *UnitControlCensus `json:"census,omitempty"`
 }
 

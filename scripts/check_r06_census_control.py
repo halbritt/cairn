@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 import check_r06_unit_census as census
 import check_r06_unit_control as control
@@ -51,10 +52,12 @@ class Fixture(census.Fixture):
     def __init__(self, cluster, scratch, evidence, images, name):
         super().__init__(scratch, evidence, images['helper'], name)
         self.host = None
+        self.api_launch = None
         try:
             self.host = DisposableHost.start(cluster, binary=images['api'], repo='fixture:census:a',
                 database='adopt_' + name.replace('-', '_'), home=self.universe / 'api-home',
                 roles=('sender', 'worker'), socket_path=self.root / 'api.sock', log=self.evidence / 'api.log')
+            self.api_launch = census.process_ref(self.host.process.pid)
             self.images = images
             self.transport = self.evidence / 'transport.json'
             census.write(self.transport, dict(api=str(images['api']), universe=str(self.universe)))
@@ -98,6 +101,7 @@ class Fixture(census.Fixture):
             lock = Path(self.selection['Directory']) / '.watch.lock'
             lock.write_bytes(b'');lock.chmod(0o600)
             self.proposal['Bindings'] = [copy.deepcopy(self.selection)]
+            self.proposal['Callbacks'] = []
             self.retained = []
             self.call_serial = 0
             # B is a genuinely different complete immutable selection, with
@@ -149,8 +153,12 @@ class Fixture(census.Fixture):
         census.write(self.evidence / (label + '.before.json'), before)
         files_before = census.snapshot(self.universe)
         census.write(self.evidence / (label + '.files-before.json'), files_before)
-        result = control.command([self.images['control'],'unit-control',operation,'--plan',plan_path,
-            '--sha256',census.sha(plan_path)], self.evidence / label, env=self.host.env, expected=1 if error else 0)
+        started=time.time_ns()
+        try:
+            result = control.command([self.images['control'],'unit-control',operation,'--plan',plan_path,
+                '--sha256',census.sha(plan_path)], self.evidence / label, env=self.host.env, expected=1 if error else 0)
+        finally:
+            census.write(self.evidence/(label+'.time.json'),dict(start_unix_ns=started,end_unix_ns=time.time_ns()))
         parsed = json.loads(result.stdout)
         after = control.snapshot(self.host.dsn, self.host.pg_bin, self.universe / 'state-a')
         census.write(self.evidence / (label + '.after.json'), after)
@@ -191,7 +199,7 @@ class Fixture(census.Fixture):
             group = os.getpgid(process.pid) if process.poll() is None else None
             require(group is None or group > 1, 'owned API group must exceed 1')
             code = self.host.close()
-            census.write(self.evidence/'api-cleanup.json',dict(pid=process.pid,group=group,exit=code,joined=True,group_signals=False))
+            census.write(self.evidence/'api-cleanup.json',dict(pid=process.pid,process=self.api_launch,group=group,exit=code,joined=True,group_signals=False))
 
 
 CASES = ('roundtrip-disjoint','joined-selected','omitted-binding','omitted-session','omitted-callback',
