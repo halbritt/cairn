@@ -15,6 +15,9 @@ import (
 )
 
 func runCommand(ctx context.Context, args []string, input io.Reader, out, diagnostic io.Writer) error {
+	if len(args) != 0 && args[0] == "agy-layer" {
+		return runAgyLayer(ctx, args[1:], input, out, diagnostic)
+	}
 	if len(args) == 0 || args[0] != "generation" && args[0] != "inspect-generation" && args[0] != "directory" && args[0] != "inspect-directory" {
 		return run(ctx, args, out, diagnostic)
 	}
