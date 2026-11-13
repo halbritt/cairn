@@ -1,8 +1,10 @@
-"""Bound Claude tool events through retained Source and emitted checked Go.
+"""Held bound Claude tool producer: Source controls and negative Go probes.
 
-The existing installed/provider fixture and full comparator own execution and
-normalization. These cases require real hint updates with no external calls;
-they never substitute a direct Go capability probe for a selected producer row.
+Actual emitted Go failed at the current memoryhost recall/capture admission
+guard. The producer therefore remains Python. The existing fixture/comparator
+checks retained Source against that actual selected Python command; those are
+controls, not Go parity. Separate explicit capability probes retain the exact
+unsupported-Go refusal without treating it as producer support.
 """
 import base64
 import copy
@@ -11,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -20,6 +23,9 @@ from test_r04_bound_provider_wiring import R04BoundProviderWiringTests
 
 
 class R04BoundToolWiringTests(R04BoundProviderWiringTests):
+    before_run = BoundMemoryCase.before_run
+    after_run = BoundMemoryCase.after_run
+
     @classmethod
     def setUpClass(cls):
         root = os.environ.get('R04_BOUND_EVIDENCE_DIR')
@@ -42,19 +48,22 @@ class R04BoundToolWiringTests(R04BoundProviderWiringTests):
         self.assertFalse(self.f.package.exists())
         for name in ('PostToolUse', 'PostToolUseFailure'):
             row = self.rows[name]
-            self.assertEqual((row['implementation'], row['hook']['timeout']), ('go', 13))
-            self.assertNotEqual(row['argv'], row['retained_launcher'])
-            self.assertEqual(row['reason'], 'receipt-checked bound Go tool observation')
-            vector = shlex.split(Path(row['argv'][0]).read_text().splitlines()[1])
-            self.assertEqual(vector[:3], ['exec', str(self.f.binary), 'memory'])
-            self.assertEqual(vector[-2:], ['--', '$@'])
-            self.assertEqual(len(vector), 21)
-            self.assertEqual(vector[3:-2:2], ['--receipt', '--receipt-sha256', '--role', '--entrypoint',
-                '--config', '--hook-timeout', '--launch-root', '--shell'])
+            self.assertEqual((row['implementation'], row['hook']['timeout']), ('python', 13))
+            self.assertEqual(row['argv'], row['retained_launcher'])
+            self.assertEqual(row['reason'], 'bound callback')
+        print('R04_BOUND_TOOL_SELECTION ' + json.dumps(dict(
+            kind='retained Source producer control; Go unsupported', enabled=enabled,
+            tool_rows={name: self.rows[name] for name in ('PostToolUse', 'PostToolUseFailure')})), flush=True)
 
     def go(self):
-        self.assertEqual(self.rows[self.f.event['hook_event_name']]['implementation'], 'go')
-        return super().go()
+        row = self.rows[self.f.event['hook_event_name']]
+        self.assertEqual(row['implementation'], 'python')
+        # The existing comparator calls its second side "go". This cell is an
+        # actual emitted Python producer control and is labelled as such.
+        print('R04_BOUND_TOOL_CONTROL retained-python-versus-emitted-python', flush=True)
+        return self.invoke_provider_side('go', lambda: subprocess.run(
+            ['/bin/sh', '-c', row['hook']['command']], input=self.f.raw,
+            cwd=self.f.root, env=self.f.env(), capture_output=True, timeout=20))
 
     def retain_pair(self):
         if not self.evidence:
@@ -77,6 +86,8 @@ class R04BoundToolWiringTests(R04BoundProviderWiringTests):
                 availability[name]['sha256'] = sha(data)
         write(root / 'input-availability.json', encoded(availability))
         write(root / 'rows.json', encoded(self.rows))
+        write(root / 'comparison-kind.json', encoded(dict(
+            kind='retained Python versus emitted Python; no Go parity claim')))
         write(root / 'event.json', self.f.raw)
         write(root / 'provider-input.json', encoded(dict(sha256=sha(self.provider.read_bytes()),
               responses=self.responses, calls=self.provider_sides)))
@@ -281,6 +292,44 @@ class R04BoundToolWiringTests(R04BoundProviderWiringTests):
         self.quiet_result(result, code=1, stdout=b'')
         self.assertIn(b'error_class=TypeError', result.stderr)
         self.assertEqual(self.state(), {})
+
+    def unsupported_consumer(self, enabled):
+        self.stage_tool(enabled=enabled)
+        write(self.f.root / 'current.go', b'fixture retention policy\n')
+        for event in ('PostToolUse', 'PostToolUseFailure'):
+            self.reset_state()
+            self.event(event, tool_name='Read', tool_input=dict(file_path='current.go'), error='LeaseExpiredError')
+            self.calls.clear()
+            source = self.source()
+            source_files = self.files()
+            self.assertEqual((source.returncode, source.stdout, source.stderr), (0, b'{}\n', b''))
+            self.assertIn(SESSION + '.json', self.state())
+            self.reset_state()
+            print('R04_BOUND_TOOL_CAPABILITY_PROBE ' + json.dumps(dict(
+                selected_implementation='python', probe='direct checked Go; not emitted producer support',
+                event=event, enabled=enabled, vector=self.go_vector())), flush=True)
+            result = self.invoke_provider_side('go', lambda: BoundMemoryCase.go(self))
+            self.quiet_result(result, code=1, stdout=b'')
+            self.assertEqual(result.stderr,
+                b'Cairn lifecycle diagnostic: phase=activation error_class=HookError\n'
+                b'Cairn lifecycle: checked bound memory cell remains unavailable; use native tools or an explicit handoff.\n')
+            self.assertEqual(self.state(), {})
+            if self.evidence:
+                def raw(value):
+                    if isinstance(value, bytes):
+                        return dict(base64=base64.b64encode(value).decode())
+                    raise TypeError(type(value).__name__)
+                write(self.evidence / (self._testMethodName + '-' + event + '.json'),
+                    json.dumps(dict(kind='negative direct capability probe; no Go parity', event=self.f.event,
+                        source=dict(exit=source.returncode, stdout=source.stdout, stderr=source.stderr, files=source_files),
+                        checked_go=dict(exit=result.returncode, stdout=result.stdout, stderr=result.stderr, files=self.files()),
+                        vector=self.go_vector(), rows=self.rows), default=raw).encode())
+
+    def test_tool_enabled_checked_consumer_remains_unproduced(self):
+        self.unsupported_consumer(True)
+
+    def test_tool_disabled_checked_consumer_remains_unproduced(self):
+        self.unsupported_consumer(False)
 
 
 def load_tests(loader, tests, pattern):

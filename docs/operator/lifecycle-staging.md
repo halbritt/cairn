@@ -387,6 +387,17 @@ Bound Claude tool callbacks and every bound OpenCode memory row retain their
 existing Python selection. Agy bound recall remains unsupported. These staged
 pairs do not qualify a native client, installed hook or live refresh.
 
+Bound Claude PostToolUse/PostToolUseFailure remain held at the producer: the
+[checked memory host](../../internal/lifecycle/memoryhost/bound.go) currently
+admits recall and capture before reaching the deeper tool consumer. Actual
+emitted Go tool callbacks refuse at that boundary while Source updates hints.
+The [bound tool tests](../../scripts/test_r04_bound_tool_wiring.py) preserve the
+selected Python callback, meaningful file/search/error hints and Source
+exclusions. Their Python producer comparisons are controls; the separately
+labelled direct Go probes assert the current refusal. Neither establishes Go
+support or native tool-event qualification. A consumer repair requires a new
+emitted Source/Go comparison before changing these producer rows.
+
 The selected OpenCode plugin emits PostToolUse for its existing read/edit/write
 after-tool callback, and PostToolUseFailure for tool error updates. It has no
 before-tool callback. The PreToolUse command is available in the eligible staged
