@@ -135,6 +135,31 @@ class MechanismGuards(unittest.TestCase):
                         self.assertIn(b'Synthetic continuity response A.', raw)
                     connection.close()
                 self.assertEqual(len(transport.requests), 2)
+                self.assertEqual(len(transport.violations), 1)
+
+    def test_host_namespace_refused_before_native_images_or_client_import(self):
+        with self.assertRaisesRegex(continuity.PrerequisiteError, 'host network namespace'):
+            continuity.inside_isolation(dict(host_net_namespace=os.readlink('/proc/self/ns/net')), native=True)
+
+    def test_syscall_audit_distinguishes_absent_nss_from_dns_and_live_nss(self):
+        with tempfile.TemporaryDirectory(prefix='r03-audit-', dir=Path.home() / '.cache') as name:
+            trace = Path(name) / 'syscalls'
+            trace.write_text('10 connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT\n'
+                '10 connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = 0\n'
+                '10 connect(3, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("127.0.0.1")}, 16) = 0\n')
+            result = continuity.audit_syscalls(set(), set(), trace_path=trace)
+            self.assertEqual(len(result['declared_negative_or_anchor_probes']), 1)
+            self.assertEqual(len(result['violations']), 2)
+
+    def test_go_phase_rejects_descendant_python_source_fallback(self):
+        with tempfile.TemporaryDirectory(prefix='r03-fallback-', dir=Path.home() / '.cache') as name:
+            trace = Path(name) / 'syscalls'
+            python = '/opt/assets/held/python/bin/python3.11'
+            trace.write_text('100 clone(child_stack=NULL) = 101\n'
+                '101 execve("' + python + '", ["python", "memory.py"], 0x0) = 0\n')
+            result = continuity.audit_syscalls({python}, set(), {100: 'A'}, trace_path=trace)
+            self.assertEqual(len(result['violations']), 1)
+            self.assertIn('Source Python fallback', result['violations'][0])
 
 
 if __name__ == '__main__':
