@@ -61,15 +61,50 @@ def checked_go_launcher(stager, image, role, vector):
     return [launcher]
 
 
-def definitions(stager, plan):
+def retained_definitions(stager, plan):
+    install = installation.inspect_retained(stager, plan['selection'])
+    index = plan['coordination_index']
+    if index >= len(install['coordination_configs']):
+        raise ValueError('selected coordination configuration is absent')
+    profiles = {'memory': install['memory_config'], 'coordination': install['coordination_configs'][index]}
+    all_unbound = not any(selected_data(pin).get('inbox_recall_binding')
+                          for pin in [install['memory_config'], *install['coordination_configs']])
+    if plan['harness'] == 'agy' and not all_unbound:
+        raise ValueError('Agy coordination requires unbound profiles; bound recall is unsupported')
+    rows = []
+    for role, profile in profiles.items():
+        config = selected_data(profile)
+        if config['harness'] != plan['harness'] or config.get('config_home') and config['config_home'] != plan['account_home']:
+            raise ValueError('hook harness/account differs from retained configuration')
+        launcher = install['launchers'][role]
+        if launcher[-1] != profile['path']:
+            raise ValueError('retained argv selects another coordination configuration')
+        events = dict(MEMORY[plan['harness']] if role == 'memory' else COORDINATION[plan['harness']])
+        if role == 'memory' and all_unbound and plan['harness'] == 'opencode' and config.get('recall_mode') == 'agent_tools':
+            events['PreToolUse'] = 13
+        for event, timeout in events.items():
+            argv = [*launcher, *(['--event', event] if plan['harness'] == 'agy' else [])]
+            hook = dict(type='command', command=shlex.join(argv), timeout=timeout)
+            if role == 'memory' and plan['harness'] == 'codex':
+                if event in ('SessionStart', 'UserPromptSubmit'): hook['additionalContextLimit'] = 12000
+                if event == 'Stop': hook['async'] = True
+            rows.append(dict(role=role, event=event, argv=argv, checked_launcher=launcher, retained_launcher=launcher,
+                             hook=hook, implementation='python', reason='verified retained Python/2 hook'))
+    return rows, profiles, install['retained_python']
+
+
+def hook_materials(stager, plan):
     required = {'id', 'selection', 'harness', 'account_home', 'settings', 'replace_commands', 'coordination_index'}
     if plan.get('harness') == 'opencode':
         required |= {'coordination_settings', 'plugins'}
-    if set(plan) != required or plan['harness'] not in MEMORY or not installation.canonical(plan['account_home']):
+    if (set(plan) not in (required, required | {'legacy'}) or type(plan.get('legacy', False)) is not bool
+            or plan['harness'] not in MEMORY or not installation.canonical(plan['account_home'])):
         raise ValueError('explicit supported harness, account home and hook plan required')
     index = plan['coordination_index']
     if type(index) is not int or not 0 <= index < 8:
         raise ValueError('explicit coordination configuration index required')
+    if plan.get('legacy', False):
+        return retained_definitions(stager, plan)
     install = installation.inspect(stager, plan['selection'])
     generation = installation.backend(stager, ['inspect-generation', '--path', plan['selection']['path'],
                                               '--sha256', plan['selection']['sha256']])
@@ -155,6 +190,11 @@ def definitions(stager, plan):
                 if event == 'Stop': hook['async'] = True
             rows.append(dict(role=role, event=event, argv=argv, checked_launcher=launcher, retained_launcher=retained, hook=hook,
                              implementation=implementation, reason=reason))
+    return rows, profiles, None
+
+
+def definitions(stager, plan):
+    rows, profiles, _ = hook_materials(stager, plan)
     return rows, profiles
 
 
@@ -260,7 +300,7 @@ def opencode_payloads(plan, rows):
 def stage(stager, root, plan):
     if not installation.canonical(stager) or not installation.canonical(str(root)):
         raise ValueError('canonical tool and staging root required')
-    rows, profiles = definitions(stager, plan)
+    rows, profiles, retained_python = hook_materials(stager, plan)
     if plan['harness'] == 'opencode':
         payloads, layout = opencode_payloads(plan, rows)
     else:
@@ -273,6 +313,8 @@ def stage(stager, root, plan):
                   rows=rows, layout=layout, plugin_sources=plan.get('plugins', {}),
                   unsupported_operations=['ordinary memory hook'] if plan['harness'] == 'agy' else [],
                   native_trust='not-performed', refresh='not-performed', activation='not-performed')
+    if retained_python is not None:
+        record['retained_python'] = retained_python
     payloads['hook-selection.json'] = installation.encoded(record)
     with installation.directory(str(root), private=True):
         pass
