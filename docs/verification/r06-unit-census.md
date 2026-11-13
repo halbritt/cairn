@@ -157,13 +157,33 @@ be the repository root. This selected-input seam is unavailable for
 
 This bounded cell supports Claude `flagSettings` and the eleven emitted hook
 rows. It verifies the real generation manifest and lifecycle selection, selected
-role configurations, preserved unrelated settings, canonical content-addressed
-launchers, compatibility receipts and their retained source closure. The native
+role configurations and preserved unrelated settings. A selected `/3` uses
+canonical content-addressed launchers, compatibility receipts and their retained
+source closure. A genuine retained `/2` uses its complete installed engine and
+bridge bundles and `retained-argv.json`; it does not acquire a `/3` receipt.
+The native
 observation must match the exact effective hooks and listing. Both prompt roles
 must identify successful actual launcher/program executions with the exact
 literal argv. Stale cached A against selected B, missing readback, changed
 receipt/config/program/shell, mixed units and unsupported harnesses/layers refuse.
 The inspector does not execute hooks or change settings.
+
+The retained hook producer's `retained_python` record must agree with the
+selected binding, bundle manifest, engine and bridge descriptors, and retained
+argv pin. Every bundle member must belong to that same verified generation.
+Both role rows retain the original direct Python command, including its exact
+interpreter flags, entrypoint, role configuration and coordination `hook` tail.
+The recorded command must equal the shell rendering of that argv. Prompt
+execution observations use the direct interpreter frame, without adding a
+compatibility launcher's `--` separator. Missing executions, changed program
+hashes or argv, nonzero exits, and PID or role conflicts still refuse.
+
+`TestWatchCensusRetainedPythonRow` checks literal-frame acceptance and refusals
+with selected retained source files. `test_r06_retained_hook_census` checks the
+collector's distinct direct-Python and checked-launcher frames. These are unit
+checks; they do not establish a real native `/2` observation, authenticated
+drain, or a complete transition from Python to Go. The complete consumed setup
+must provide its own matching session, real API history and issued journals.
 
 `HookObservations` reports only the selected fixture observations that agree.
 `ExternalCoverage` remains `unknown` and `NativeRefresh` remains `unobserved`.

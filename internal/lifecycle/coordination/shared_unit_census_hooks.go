@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"unicode/utf8"
 
 	"github.com/halbritt/cairn/internal/jsontext"
 	"github.com/halbritt/cairn/internal/lifecycle/install"
@@ -274,6 +275,7 @@ func (r *watchCensusRead) inspectClaudeHooks(ctx context.Context, selected Watch
 		return err
 	}
 	bindingMatched := false
+	lifeMembers := map[string]WatchCensusPin{}
 	for _, file := range lifeFiles {
 		pin := WatchCensusPin{file.Path, file.SHA256}
 		if !censusWithin(r.catalog.Root, file.Path) {
@@ -283,9 +285,15 @@ func (r *watchCensusRead) inspectClaudeHooks(ctx context.Context, selected Watch
 			return err
 		}
 		bindingMatched = bindingMatched || pin == node.Binding
+		lifeMembers[file.Name] = pin
 	}
 	if !bindingMatched {
 		return errors.New("native hook generation selects another lifecycle binding")
+	}
+	if node.Mode == "cairn.inbox-recall-binding/2" {
+		if err := r.claudeRetainedMembers(node, lifeMembers, producer); err != nil {
+			return err
+		}
 	}
 	if !exactReceiptObject(producer.Get("layout"), "hook-settings.json") || !value.SameText(producer.Get("layout").Get("hook-settings.json"), "settings.json") || nativeText(producer.Get("source_settings").Get("path")) != filepath.Join(selected.Account, "settings.json") {
 		return errors.New("unsupported native hook source/layout selection")
@@ -332,6 +340,191 @@ func (r *watchCensusRead) inspectClaudeHooks(ctx context.Context, selected Watch
 		}
 	}
 	return r.claudeHookReadback(selected, state, producer, settings)
+}
+
+// Retained /2 observations select the installed bundle and literal Python
+// commands. They cannot borrow a /3 receipt or a different generation's code.
+func (r *watchCensusRead) claudeRetainedMembers(node *WatchCensusMember, members map[string]WatchCensusPin, producer *value.Value) error {
+	if members["retained-argv.json"].Path == "" || members["selection.json"].Path != "" || members["receipt.json"].Path != "" {
+		return errors.New("retained native selection is missing argv or mixes compatibility metadata")
+	}
+	manifest, err := r.jsonFile(node.Binding.Path)
+	if err != nil {
+		return err
+	}
+	proof := producer.Get("retained_python")
+	if !exactReceiptObject(proof, "binding", "binding_schema", "engine", "bridge", "bundle_manifest", "retained_argv") ||
+		!value.SameText(proof.Get("binding_schema"), "cairn.inbox-recall-binding/2") {
+		return errors.New("unsupported retained native producer selection")
+	}
+	for field, pin := range map[string]WatchCensusPin{"binding": node.Binding, "bundle_manifest": members["lifecycle-bundle.json"], "retained_argv": members["retained-argv.json"]} {
+		desc := proof.Get(field)
+		if !exactReceiptObject(desc, "path", "sha256") || pin.Path == "" || nativeText(desc.Get("path")) != pin.Path || nativeText(desc.Get("sha256")) != pin.SHA256 {
+			return errors.New("retained native producer pin differs from selected generation")
+		}
+	}
+	bundle, err := r.jsonFile(members["lifecycle-bundle.json"].Path)
+	if err != nil {
+		return err
+	}
+	for _, role := range []string{"engine", "bridge"} {
+		desc := manifest.Get(role)
+		if !hookValuesEqual(proof.Get(role), desc) || !hookValuesEqual(desc.Get("bundle"), bundle) {
+			return errors.New("retained native producer engine/bridge bundle disagrees")
+		}
+		path := nativeText(desc.Get("path"))
+		if members[filepath.Base(path)] != (WatchCensusPin{path, nativeText(desc.Get("sha256"))}) {
+			return errors.New("retained native bundle entrypoint is outside its selected generation")
+		}
+		for _, member := range desc.Get("bundle").Get("files").Members {
+			pin := members[string(member.Key)]
+			if pin.Path != filepath.Join(filepath.Dir(path), string(member.Key)) || pin.SHA256 != nativeText(member.Value) {
+				return errors.New("retained native bundle differs from selected generation members")
+			}
+		}
+	}
+	return nil
+}
+
+func (r *watchCensusRead) claudeHookLaunches(selected WatchCensusClaudeHooks, producer *value.Value) (*value.Value, error) {
+	node := r.nodes[selected.Config.Path]
+	if node == nil {
+		return nil, errors.New("unknown native hook lifecycle selection")
+	}
+	name := "selection.json"
+	if node.Mode == "cairn.inbox-recall-binding/2" {
+		name = "retained-argv.json"
+	} else if node.Mode != "cairn.inbox-recall-binding/3" {
+		return nil, errors.New("unsupported native hook lifecycle selection")
+	}
+	path := filepath.Join(filepath.Dir(nativeText(producer.Get("lifecycle_selection").Get("path"))), name)
+	if r.files[path] == "" {
+		return nil, errors.New("native hook launch metadata is not a selected generation member")
+	}
+	metadata, err := r.jsonFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if node.Mode == "cairn.inbox-recall-binding/2" {
+		if !exactReceiptObject(metadata, "memory", "coordination") {
+			return nil, errors.New("unsupported retained native role argv coverage")
+		}
+		return metadata, nil
+	}
+	anchors := metadata.Get("anchors")
+	if anchors == nil || anchors.Kind != value.Object {
+		return nil, errors.New("native emitter launcher anchors are missing")
+	}
+	return anchors, nil
+}
+
+func hookStringVector(vector *value.Value) ([]string, error) {
+	if vector == nil || vector.Kind != value.Array || len(vector.Items) == 0 {
+		return nil, errors.New("missing native hook argv")
+	}
+	var argv []string
+	for _, part := range vector.Items {
+		if part.Kind != value.String {
+			return nil, errors.New("invalid native hook argv")
+		}
+		for _, codepoint := range part.String {
+			if codepoint == 0 || !utf8.ValidRune(codepoint) {
+				return nil, errors.New("invalid native hook argv code point")
+			}
+		}
+		argv = append(argv, nativeText(part))
+	}
+	return argv, nil
+}
+
+func (r *watchCensusRead) claudeRetainedHookRow(selected WatchCensusClaudeHooks, row *value.Value, executions []WatchCensusHookExecution, retained *value.Value) error {
+	role, event := nativeText(row.Get("role")), nativeText(row.Get("event"))
+	if role != "memory" && role != "coordination" || !value.SameText(row.Get("implementation"), "python") {
+		return errors.New("unsupported retained native role or implementation")
+	}
+	argv, err := hookStringVector(row.Get("argv"))
+	if err != nil {
+		return err
+	}
+	expected, err := hookStringVector(retained.Get(role))
+	if err != nil || !slices.Equal(argv, expected) {
+		return errors.New("retained native row differs from selected literal argv")
+	}
+	command, err := shlexJoinStrings(argv)
+	if err != nil || command != nativeText(row.Get("hook").Get("command")) {
+		return errors.New("retained native command and literal argv disagree")
+	}
+	for _, field := range []string{"checked_launcher", "retained_launcher"} {
+		launcher, err := hookStringVector(row.Get(field))
+		if err != nil || !slices.Equal(launcher, argv) {
+			return errors.New("retained native launcher differs from selected literal argv")
+		}
+	}
+	node := r.nodes[selected.Config.Path]
+	manifest, err := r.jsonFile(node.Binding.Path)
+	if err != nil {
+		return err
+	}
+	profile := manifest.Get("memory_config")
+	if role == "coordination" {
+		profiles := manifest.Get("coordination_configs")
+		if profiles == nil || profiles.Kind != value.Array {
+			return errors.New("unsupported retained native coordination argv coverage")
+		}
+		profile = nil
+		for _, candidate := range profiles.Items {
+			if nativeText(candidate.Get("path")) == argv[len(argv)-1] && nativeText(candidate.Get("sha256")) == node.Config.SHA256 {
+				if profile != nil {
+					return errors.New("ambiguous retained native coordination profile")
+				}
+				profile = candidate
+			}
+		}
+		if profile == nil {
+			return errors.New("retained native coordination config disagrees")
+		}
+	}
+	configPath := nativeText(profile.Get("path"))
+	offset := 1
+	flags := map[string]bool{}
+	for offset < len(argv) && slices.Contains([]string{"-I", "-S", "-B"}, argv[offset]) {
+		if flags[argv[offset]] {
+			return errors.New("ambiguous retained native Python flags")
+		}
+		flags[argv[offset]] = true
+		offset++
+	}
+	if offset >= len(argv) {
+		return errors.New("missing retained native Python entrypoint")
+	}
+	script := argv[offset]
+	canonicalScript := filepath.Join(filepath.Dir(node.Binding.Path), role+".py")
+	tail := []string{"--config", configPath}
+	if role == "coordination" {
+		tail = append([]string{"hook"}, tail...)
+	}
+	if !slices.Equal(argv[offset+1:], tail) || filepath.Dir(script) != filepath.Dir(node.Binding.Path) || r.files[script] == "" || r.files[script] != r.files[canonicalScript] {
+		return errors.New("unsupported retained native Python program/config frame")
+	}
+	if event == "UserPromptSubmit" {
+		matched := 0
+		for _, execution := range executions {
+			if execution.Role != role || execution.Event != event {
+				continue
+			}
+			matched++
+			if execution.PID <= 1 || execution.Exit != 0 || execution.Program.Path != argv[0] || execution.Launcher != execution.Program || !slices.Equal(execution.Argv, argv) {
+				return errors.New("retained native observed program/literal argv/exit disagrees")
+			}
+			if err := r.hookProgram(execution.Program); err != nil {
+				return err
+			}
+		}
+		if matched == 0 {
+			return errors.New("retained native prompt execution/readback is missing")
+		}
+	}
+	return nil
 }
 
 func hookDecode(raw []byte, dst any) error {
@@ -433,13 +626,9 @@ func (r *watchCensusRead) claudeHookReadback(selected WatchCensusClaudeHooks, st
 		return err
 	}
 	expectedRows := map[string]int{"memory:SessionStart": 13, "memory:UserPromptSubmit": 13, "memory:PreCompact": 150, "memory:SessionEnd": 150, "memory:PostToolUse": 13, "memory:PostToolUseFailure": 13, "coordination:SessionStart": 15, "coordination:UserPromptSubmit": 15, "coordination:Stop": 15, "coordination:SessionEnd": 2, "coordination:PostToolUse": 2}
-	lifeMetadata, err := r.jsonFile(filepath.Join(filepath.Dir(nativeText(producer.Get("lifecycle_selection").Get("path"))), "selection.json"))
+	anchors, err := r.claudeHookLaunches(selected, producer)
 	if err != nil {
 		return err
-	}
-	anchors := lifeMetadata.Get("anchors")
-	if anchors == nil || anchors.Kind != value.Object {
-		return errors.New("native emitter launcher anchors are missing")
 	}
 	wanted := map[string]bool{}
 	for _, row := range rows.Items {
@@ -517,6 +706,9 @@ func (r *watchCensusRead) claudeHookReadback(selected WatchCensusClaudeHooks, st
 }
 
 func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *value.Value, executions []WatchCensusHookExecution, anchors *value.Value) error {
+	if r.nodes[selected.Config.Path].Mode == "cairn.inbox-recall-binding/2" {
+		return r.claudeRetainedHookRow(selected, row, executions, anchors)
+	}
 	role, event := nativeText(row.Get("role")), nativeText(row.Get("event"))
 	if role != "memory" && role != "coordination" {
 		return errors.New("unsupported native hook role")
