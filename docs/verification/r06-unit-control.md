@@ -148,6 +148,9 @@ argv, PID/start/boot, actual lock ownership, both configuration pins and real
 session heartbeats are read back. The fixture owner stops and joins each
 watcher before the next executor starts. The control process independently
 inspects, switches and reverses through `/2` census plans.
+Both fixture profiles disable native delivery and idle wakeup; the observed
+watcher cycle is real authenticated presence against the two retained sessions.
+The read-only drain still checks all principal/session claim and wake scopes.
 
 The fixture owner archives only its exactly joined watcher reference after
 publication, retaining the immutable configuration, issued argv, join receipt
@@ -156,7 +159,9 @@ current selection; the inspector never retires a reference. Unjoined, delayed
 or running callbacks remain blockers. Separate cases cover omitted connected
 bindings, changed configuration/runtime pins, incomplete retained reverse, and
 a real authenticated claim admitted by the existing forwarding injector between
-initial and final API reads. Refusal must keep the active selection; an admitted
+initial and final API reads. The two-session fixture has three initial wake
+reads; its actor is admitted before the fourth, at the first final wake read.
+Refusal must keep the active selection; an admitted
 claim must invalidate the receipt. Existing 15/19/9 driver assertions are unchanged.
 
 The enabled disjoint unit stays alive and unchanged. State preservation checks

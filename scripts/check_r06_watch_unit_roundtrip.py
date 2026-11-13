@@ -40,6 +40,17 @@ def copy_image(source, target):
 def forward(path, argv):
     """Use the existing real-API read/claim injector; record watcher children."""
     if argv[-1] in control.READS:
+        plan = json.loads(path.read_text())
+        counts_path = Path(plan['counter'])
+        counts = json.loads(counts_path.read_text()) if counts_path.exists() else {}
+        # The complete two-session unit has three initial wake reads: one
+        # principal scope plus both session scopes. Inject before read four.
+        actor = plan.get('roundtrip_claim')
+        if actor and argv[-1] == 'wake-attempts' and counts.get('wake-attempts', 0) == 3:
+            census.write(path.with_name('actor-before.json'), control.snapshot(actor['dsn'], actor['pg_bin'], Path(actor['state_dir'])))
+            admitted = control.run_envelope(actor['argv'], actor['body'], expected='OK', timeout=10)
+            census.write(path.with_name('actor-result.json'), admitted)
+            census.write(path.with_name('actor-after.json'), control.snapshot(actor['dsn'], actor['pg_bin'], Path(actor['state_dir'])))
         return control.forward_api(path, argv)
     require(argv[-1] == 'agent-heartbeat', 'watcher attempted an unexpected API operation')
     plan = json.loads(path.read_text())
@@ -77,6 +88,7 @@ class Fixture(composition.Fixture):
                               for name in sorted(self.selection['Pins'])]
             for config in self.templates:
                 config['idle_wakeup'] = False
+                config['native_delivery'] = False
             self.memory = json.loads(Path(self.memories['a']).read_text())
             self.legacy = self.stage_legacy(images['stager'])
             self.go = self.stage_go(images['stager'])
@@ -371,6 +383,14 @@ class Fixture(composition.Fixture):
                     'refusal changed active selection')
             if not actor:
                 require(files_before == files_after, 'early refusal changed unit files')
+            else:
+                prepared = Path(plan['retained'])
+                require({p.name for p in prepared.iterdir()} == {member['name'] for member in plan['next']} | {'.watch.lock'},
+                        'D6 refusal did not retain the complete preparation')
+                require({p.name: census.sha(p) for p in prepared.glob('*.json')} ==
+                        {member['name']: member['sha256'] for member in plan['next']}, 'D6 refusal changed prepared pins')
+                require(os.path.samefile(prepared / '.watch.lock', Path(self.selection['Directory']) / '.watch.lock'),
+                        'D6 refusal split unit lock inode')
         else:
             require(result.returncode == 0 and parsed['inspected'] and parsed['census']['FixtureReady'], f'{label}: {parsed}')
             require(parsed['census']['ExternalCoverage'] == 'unknown' and parsed['census']['NativeRefresh'] == 'unobserved', 'finite proof claimed native/external coverage')
@@ -463,7 +483,7 @@ def negative(f, name):
             ref=dict(record_id=source['record_id'], version=source['version']), destination=dict(type='agent', name=agent['inbox'])))
         delivery = f.host.agent('sender', 'event-inspect', dict(event_id=event['event_id']))['deliveries'][0]
         transport = json.loads(f.transport.read_text())
-        transport['claim'] = dict(dsn=f.host.dsn, pg_bin=str(f.host.pg_bin), state_dir=str(f.universe / 'state-a'),
+        transport['roundtrip_claim'] = dict(dsn=f.host.dsn, pg_bin=str(f.host.pg_bin), state_dir=str(f.universe / 'state-a'),
             argv=[str(f.images['api']), 'agent', *map(str, f.host.connection('worker')), 'session-inbox-claim'],
             body=dict(request_id=control.uid(), session={key: agent[key] for key in ('agent_id', 'execution_id')},
                       delivery_id=delivery['delivery_id'], native_turn_id='roundtrip-injection', turn_exclusive=True))
@@ -505,8 +525,11 @@ def check(evidence, selected):
             finally:
                 f.close()
     finally:
+        pid_path = scratch / 'pg/data/postmaster.pid'
+        pg_pid = int(pid_path.read_text().splitlines()[0]) if pid_path.exists() else None
+        pg_process = census.process_ref(pg_pid) if pg_pid else None
         stopped = cluster.stop()
-        census.write(evidence / 'cleanup.json', dict(stopped=stopped, group_signals=False))
+        census.write(evidence / 'cleanup.json', dict(process=pg_process, stopped=stopped, group_signals=False))
         require(stopped, 'owned PG cleanup unresolved')
     census.write(evidence / 'outcomes.json', outcomes)
     print(f'R06 watch-unit roundtrip: {len(outcomes)} passed, 0 failed, 0 skipped', flush=True)
