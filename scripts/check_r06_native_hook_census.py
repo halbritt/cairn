@@ -18,15 +18,146 @@ import shlex
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
+from types import SimpleNamespace
 import uuid
 
 from check_r04_native_claude import ClaudeSession, MessagesFixture, NativeFixture
 from check_r04_native_opencode import native_api_fixture, successful_execs, wait_for
-from check_r06_unit_census import Fixture as CensusFixture, process_ref, require, sha, write
+from check_r06_unit_census import Fixture as CensusFixture, process_ref, require, sha, snapshot, write
 from test_f04_activation import encoded, overwrite_fixture
 from test_r04_host_wiring import R04HostWiringTests, pin
+
+HOST_OPERATOR_IO = False
+
+
+def transport_archive(root):
+    data = io.BytesIO()
+    with tarfile.open(fileobj=data, mode='w:gz') as archive:
+        archive.add(root, arcname=root.name)
+    return base64.b64encode(data.getvalue()).decode()
+
+
+def extract_transport(encoded, destination):
+    def checked(member, target):
+        safe = tarfile.data_filter(member, target)
+        # Transport must never hide a writable mode from the real inspector.
+        safe.mode = member.mode
+        return safe
+
+    with tarfile.open(fileobj=io.BytesIO(base64.b64decode(encoded, validate=True)), mode='r:gz') as archive:
+        archive.extractall(destination, filter=checked)
+
+
+def operator_request(f, catalog, proposal, output, label, ready, reason):
+    write(f.root / 'census-catalog.json', catalog)
+    before = snapshot(f.root)
+    owners = {name: dict(uid=Path(name).lstat().st_uid, gid=Path(name).lstat().st_gid) for name in before}
+    return dict(schema='cairn.fixture-host-census/1', output=str(output), root=str(f.root),
+                account=str(f.account), coord_state=f.coord['state_dir'], memory_state=f.memory['state_dir'],
+                catalog=catalog, proposal=proposal, label=label, ready=ready, reason=reason,
+                source_snapshot=before, source_owners=owners, archive=transport_archive(f.root.parent))
+
+
+def host_operator_inspect(request, image):
+    require(request['schema'] == 'cairn.fixture-host-census/1', 'invalid operator transport')
+    output = Path(request['output'])
+    require(output.parent == Path('/tmp') and output.name.startswith(('r06hc-', 'r06st-')),
+            'operator transport is outside the disposable fixture')
+    root = Path(request['root'])
+    require(root == output / 'owned' / 'installation', 'operator root does not match fixture')
+    require(not output.exists(), 'operator refuses to overwrite an existing host path')
+    output.mkdir(mode=0o700)
+    response = dict(schema='cairn.fixture-host-census-result/1')
+    try:
+        extract_transport(request['archive'], output)
+        copied = snapshot(root)
+        for name, original in request['source_snapshot'].items():
+            if stat.S_ISSOCK(original['mode']):
+                # SDK socket is not selected by the census and cannot be copied.
+                # Its original metadata stays in the namespace snapshot proof.
+                require(name not in copied, 'socket transport must not fabricate a replacement')
+                continue
+            require(name in copied, 'operator transport omitted a fixture input: ' + name)
+            actual = copied[name]
+            require(actual['mode'] == original['mode'], 'operator transport changed input mode: ' + name)
+            require(Path(name).lstat().st_uid == request['source_owners'][name]['uid'],
+                    'operator transport changed input owner: ' + name)
+            if not stat.S_ISDIR(original['mode']):
+                require(actual['bytes'] == original['bytes'], 'operator transport changed input size: ' + name)
+            if 'sha256' in original:
+                require(actual.get('sha256') == original['sha256'], 'operator transport changed bytes: ' + name)
+        require(set(copied) <= set(request['source_snapshot']), 'operator transport added fixture inputs')
+        f = SimpleNamespace(root=root, account=Path(request['account']),
+                            coord=dict(state_dir=request['coord_state']),
+                            memory=dict(state_dir=request['memory_state']))
+        try:
+            response['result'] = inspect(image, f, request['catalog'], request['proposal'], output,
+                                         request['label'], ready=request['ready'], reason=request['reason'])
+        except Exception as exc:
+            response['error'] = str(exc)
+        evidence = output / request['label']
+        evidence.mkdir(mode=0o700, exist_ok=True)
+        write(evidence / 'host-operator-provenance.json',
+              dict(placement='host operator on byte-exact current namespace export', uid=os.getuid(),
+                   usr=directory_metadata(Path('/usr')), source_snapshot=request['source_snapshot'],
+                   copied_snapshot=copied, raw_state_rewritten=False,
+                   omitted_objects='unselected SDK sockets; original namespace snapshots retained'))
+        response['evidence'] = transport_archive(evidence)
+        return response
+    finally:
+        shutil.rmtree(output)
+
+
+def inspect_via_host(f, catalog, proposal, output, label, ready, reason):
+    request = operator_request(f, catalog, proposal, output, label, ready, reason)
+    print(json.dumps(dict(host_census_request=request)), flush=True)
+    raw = sys.stdin.readline()
+    require(bool(raw), 'host operator did not return a result')
+    response = json.loads(raw)
+    require(response.get('schema') == 'cairn.fixture-host-census-result/1', 'invalid host operator result')
+    if response.get('evidence'):
+        extract_transport(response['evidence'], output)
+    (output / label).mkdir(mode=0o700, exist_ok=True)
+    after = snapshot(f.root)
+    write(output / label / 'namespace-before.json', request['source_snapshot'])
+    write(output / label / 'namespace-after.json', after)
+    require(after == request['source_snapshot'], 'host census changed original namespace fixture state')
+    if 'error' in response:
+        raise AssertionError(response['error'])
+    return response['result']
+
+
+def host_operator_main(argv):
+    command_file, image = Path(argv[0]), Path(argv[1])
+    command = json.loads(command_file.read_text())
+    require('scripts/test_hybrid_runtime_operations.py' in command, 'existing native wrapper required')
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                               start_new_session=False)
+    require(process.pid > 1, 'owned wrapper PID must exceed 1')
+    try:
+        for line in process.stdout:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                value = None
+            if isinstance(value, dict) and 'host_census_request' in value:
+                try:
+                    response = host_operator_inspect(value['host_census_request'], image)
+                except Exception as exc:
+                    response = dict(schema='cairn.fixture-host-census-result/1', error=str(exc))
+                process.stdin.write(json.dumps(response) + '\n')
+                process.stdin.flush()
+            else:
+                print(line, end='', flush=True)
+        return process.wait()
+    finally:
+        process.stdin.close()
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)
 
 
 def selected_pin(path):
@@ -207,6 +338,8 @@ class EmittedCensus(CensusFixture):
 
 
 def inspect(image, f, catalog, proposal, output, label, *, ready, reason=''):
+    if HOST_OPERATOR_IO:
+        return inspect_via_host(f, catalog, proposal, output, label, ready, reason)
     # Reuse the accepted real Go entry, syscall guards and complete protected
     # snapshot checks; this adapter only supplies the emitted/native catalog.
     fixture = EmittedCensus(image, f, catalog, proposal, output, label)
@@ -388,6 +521,9 @@ def run(args, output):
 
 
 def main():
+    global HOST_OPERATOR_IO
+    if sys.argv[1:2] == ['--host-operator']:
+        raise SystemExit(host_operator_main(sys.argv[2:]))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--claude', type=Path, required=True)
     parser.add_argument('--census-image', type=Path, required=True)
@@ -395,7 +531,9 @@ def main():
     parser.add_argument('--stager', type=Path, required=True)
     parser.add_argument('--sha256', required=True)
     parser.add_argument('--archive-stdout', action='store_true')
+    parser.add_argument('--host-operator-io', action='store_true')
     args = parser.parse_args()
+    HOST_OPERATOR_IO = args.host_operator_io
     require(os.environ.get('HOME') == '/tmp/home' and Path('/tmp/work-tmp').is_dir(), 'existing hybrid wrapper required')
     require(sha(args.claude) == args.sha256, 'selected native binary mismatch')
     with tempfile.TemporaryDirectory(prefix='r06hc-', dir='/tmp') as temporary:
