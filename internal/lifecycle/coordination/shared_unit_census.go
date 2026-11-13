@@ -111,7 +111,7 @@ type watchCensusRead struct {
 	bindingPins           map[string]string
 	clientPins            map[string]string
 	control               *unitCensusScope
-	hookSelections        []WatchCensusClaudeHooks
+	hookSelections        []watchCensusHookSelection
 	associations          map[string]*watchCensusAssociation
 }
 

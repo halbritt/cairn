@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise genuine unbound association and the next native coverage refusal."""
+"""Consume genuine unbound Agy layers without claiming native qualification."""
 import argparse
 import hashlib
 import json
@@ -14,6 +14,7 @@ from test_r04_host_wiring import R04HostWiringTests
 
 
 GAP = 'account hook/config coverage is unknown: selected native settings/readback seam is unavailable'
+AGY_GAP = 'Agy native session/file-read/exec provenance is unobserved; code preparation is not native qualification'
 
 
 def sha(path):
@@ -21,8 +22,9 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def not_ready(result, *, association_only=False):
-    require(result['Census']['FixtureReady'] is association_only and result['Error'] == ('' if association_only else GAP),
+def not_ready(result, *, association_only=False, typed=False):
+    require(result['Census']['FixtureReady'] is association_only and result['Error'] ==
+        ('' if association_only else AGY_GAP if typed else GAP),
         'unexpected consumed association/coverage result: ' + json.dumps(result))
     require(result['Census']['ExternalCoverage'] == 'unknown'
         and result['Census']['NativeRefresh'] == 'unobserved', 'refusal must not imply native coverage/refresh')
@@ -42,7 +44,7 @@ def snapshot(root, credential):
     return result
 
 
-def run(images, evidence, *, association_only=False):
+def run(images, evidence, *, association_only=False, typed=False):
     # Reuse construction, not a prior Agy test method or native baseline.
     case = R04HostWiringTests(methodName='runTest')
     case.root, case.binary, case.stager = evidence, images['control'], images['stager']
@@ -94,6 +96,29 @@ def run(images, evidence, *, association_only=False):
         Clients=[dict(Path=str(fixture.api), SHA256=sha(fixture.api))], HookSelections=[],
         UnboundReceipts=[dict(Path=str(fixture.receipt_path), SHA256=sha(fixture.receipt_path))])
     proposal = dict(Bindings=[selection], Sessions=[], Callbacks=[])
+    if typed:
+        workspace = fixture.root / 'project'
+        project_hooks = workspace / '.agents'
+        workspace.mkdir(mode=0o700)
+        project_hooks.mkdir(mode=0o700)
+        layers = []
+        for name, destination in (('account', fixture.account / 'hooks.json'),
+                                  ('project', project_hooks / 'hooks.json')):
+            destination.write_bytes(Path(selected['settings']['path']).read_bytes())
+            destination.chmod(0o600)
+            layers.append(dict(Layer=name,
+                Generation=dict(Path=selected['selection']['path'], SHA256=selected['selection']['sha256']),
+                Settings=dict(Path=selected['settings']['path'], SHA256=selected['settings']['sha256']),
+                Installed=dict(Path=str(destination), SHA256=sha(destination))))
+        readback = write(fixture.root / 'agy-readback.json',
+            dict(Schema='cairn.watch-agy-readback/1', Harness='agy', EvidenceKind='code-preparation'))
+        inventory = [dict(Path=str(path), SHA256=sha(path))
+            for directory in (fixture.account, workspace) for path in sorted(directory.rglob('*')) if path.is_file()]
+        packet = write(fixture.root / 'agy-hook-selection.json', dict(Schema='cairn.watch-agy-hooks/1',
+            Harness='agy', Account=str(fixture.account), Workspace=str(workspace),
+            Config=dict(Path=str(config), SHA256=sha(config)), Readback=readback,
+            Layers=layers, LayerFiles=inventory))
+        catalog['HookSelections'] = [packet]
     catalog_pin = write(evidence / 'catalog.json', catalog)
     result_path = evidence / 'consumer.result.json'
     plan = evidence / 'consumer.plan.json'
@@ -120,8 +145,9 @@ def run(images, evidence, *, association_only=False):
     result = json.loads(result_path.read_bytes())
     require(result['Census']['Facts'].get('file:' + str(fixture.receipt_path)) == sha(fixture.receipt_path),
         'consumed result lacks the selected receipt fact')
-    report = dict(schema='cairn.r06-agy-readback-association/1', **not_ready(result, association_only=association_only),
+    report = dict(schema='cairn.r06-agy-readback-association/1', **not_ready(result, association_only=association_only, typed=typed),
         consumed_entry='CLI.InspectWatchUnitCensus', unbound_association_observed=True,
+        typed_agy_reader_reached=typed, cumulative_layers=2 if typed else 0,
         protected_entries=len(before), protected_unchanged=True, credential_content_opens=0,
         api_calls=0, native_executions=0, model_calls=0, tests_are_setup_only=True)
     write(evidence / 'gap-result.json', report)
@@ -129,6 +155,9 @@ def run(images, evidence, *, association_only=False):
         write(evidence / 'go-unit-fixture.json', dict(Catalog=catalog_pin, Proposal=proposal,
             Receipt=dict(Path=str(fixture.receipt_path), SHA256=sha(fixture.receipt_path)),
             Config=dict(Path=str(config), SHA256=sha(config)), Root=str(fixture.root)))
+    if typed:
+        write(evidence / 'go-typed-fixture.json', dict(Catalog=catalog_pin, Proposal=proposal,
+            Selection=packet, Readback=readback, Root=str(fixture.root)))
     print(json.dumps(report), flush=True)
 
 
@@ -150,10 +179,11 @@ def main():
         images[role] = path
     write(args.evidence / 'images-before-use.json', pins)
     try:
-        for name, empty in (('native-unknown', False), ('association-only', True)):
+        for name, empty, typed in (('native-unknown', False, False), ('association-only', True, False),
+                                    ('typed-agy-preparation', False, True)):
             evidence = args.evidence / name
             evidence.mkdir(mode=0o700)
-            run(images, evidence, association_only=empty)
+            run(images, evidence, association_only=empty, typed=typed)
     finally:
         after = {role: dict(path=str(path), sha256=sha(path)) for role, path in images.items()}
         write(args.evidence / 'images-after-use.json', after)

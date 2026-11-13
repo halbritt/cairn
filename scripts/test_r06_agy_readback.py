@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from check_r06_agy_readback import GAP, not_ready
+from check_r06_agy_readback import GAP, AGY_GAP, not_ready
 
 
 class AgyReadbackGapTests(unittest.TestCase):
@@ -16,6 +16,15 @@ class AgyReadbackGapTests(unittest.TestCase):
         self.assertEqual(report, dict(status='NOTREADY', actual_error=GAP,
             native_qualification=False, authenticated_d2=False))
         self.assertEqual(result, before)
+
+    def test_typed_reader_preparation_requires_its_exact_native_refusal(self):
+        result = self.result()
+        result['Error'] = AGY_GAP
+        report = not_ready(result, typed=True)
+        self.assertEqual(report['status'], 'NOTREADY')
+        self.assertFalse(report['native_qualification'])
+        with self.assertRaises(AssertionError):
+            not_ready(result)
 
     def test_empty_fixture_association_does_not_claim_native_or_d2(self):
         result = self.result()

@@ -31,6 +31,15 @@ type WatchCensusClaudeHooks struct {
 	LayerFiles             []WatchCensusPin
 }
 
+// Common identity fields let account/session closure find either tagged reader.
+// The harness-specific contracts remain separate.
+type watchCensusHookSelection struct {
+	Account, Workspace string
+	Config, Session    WatchCensusPin
+	Claude             *WatchCensusClaudeHooks
+	Agy                *WatchCensusAgyHooks
+}
+
 type WatchCensusHookExecution struct {
 	Role, Event       string
 	Launcher, Program WatchCensusPin
@@ -68,11 +77,42 @@ func (r *watchCensusRead) loadHookSelections() error {
 		if err != nil {
 			return err
 		}
-		var selected WatchCensusClaudeHooks
-		if err := hookDecode(raw, &selected); err != nil {
+		var tag map[string]json.RawMessage
+		if err := hookDecode(raw, &tag); err != nil {
 			return err
 		}
-		if selected.Schema != "cairn.watch-claude-hooks/1" || selected.Harness != "claude" || selected.Layer != "flagSettings" {
+		var schema string
+		for key, raw := range tag {
+			if strings.EqualFold(key, "Schema") {
+				if schema != "" {
+					return errors.New("duplicate native hook schema tag")
+				}
+				if err := json.Unmarshal(raw, &schema); err != nil {
+					return err
+				}
+			}
+		}
+		var selected watchCensusHookSelection
+		switch schema {
+		case "cairn.watch-claude-hooks/1":
+			var claude WatchCensusClaudeHooks
+			if err := hookDecode(raw, &claude); err != nil {
+				return err
+			}
+			if claude.Harness != "claude" || claude.Layer != "flagSettings" {
+				return errors.New("unsupported native harness/layer; connection refresh remains unobserved")
+			}
+			selected = watchCensusHookSelection{Account: claude.Account, Workspace: claude.Workspace, Config: claude.Config, Session: claude.Session, Claude: &claude}
+		case "cairn.watch-agy-hooks/1":
+			var agy WatchCensusAgyHooks
+			if err := hookDecode(raw, &agy); err != nil {
+				return err
+			}
+			if agy.Harness != "agy" {
+				return errors.New("unsupported Agy harness tag")
+			}
+			selected = watchCensusHookSelection{Account: agy.Account, Workspace: agy.Workspace, Config: agy.Config, Session: agy.Session, Agy: &agy}
+		default:
 			return errors.New("unsupported native harness/layer; connection refresh remains unobserved")
 		}
 		if !censusWithin(r.catalog.Root, selected.Account) || !censusWithin(r.catalog.Root, selected.Workspace) {
@@ -95,11 +135,20 @@ func (r *watchCensusRead) inspectHookSelections(ctx context.Context) error {
 			return errors.New("duplicate native hook session selection")
 		}
 		seen[key] = true
-		if err := r.inspectClaudeHooks(ctx, selected); err != nil {
-			return err
+		if selected.Agy != nil {
+			observed, err := r.inspectAgyHooks(ctx, *selected.Agy)
+			if err != nil {
+				return err
+			}
+			observations = append(observations, observed...)
+		} else {
+			if err := r.inspectClaudeHooks(ctx, *selected.Claude); err != nil {
+				return err
+			}
+			claude := selected.Claude
+			observations = append(observations, WatchCensusHookObservation{claude.Config, claude.Session,
+				claude.Generation, claude.Settings, claude.Layer, "selected settings, native listing and prompt-interval command frames agree; shared event frames are not per-event PID attribution; connection refresh unobserved"})
 		}
-		observations = append(observations, WatchCensusHookObservation{selected.Config, selected.Session,
-			selected.Generation, selected.Settings, selected.Layer, "selected settings, native listing and prompt-interval command frames agree; shared event frames are not per-event PID attribution; connection refresh unobserved"})
 	}
 	for path, node := range r.nodes {
 		if len(r.directories[node.Account]) == 0 {

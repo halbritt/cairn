@@ -4,7 +4,7 @@ The finite census can associate genuine disabled `/3` receipts with unbound
 profiles without editing their JSON. This removes the empty-binding-path
 failure recorded by diagnostic `094393e2648d978998f8b00c59e469c03ffbc085` on
 `7d22b663d6abb0295dda0263adc9033353e5cefa`. Its frozen packet remains historical
-evidence. This association does not implement Agy native hook readback.
+evidence. The typed Agy reader described below builds on that association without qualifying a fresh native session.
 
 ## Selected receipt evidence
 
@@ -47,7 +47,7 @@ R02/R04 Agy material and invokes the existing process helper that calls public
 producer still emits only coordination `PreInvocation`/`Stop`, with ordinary
 memory unsupported. No hooks, native client, registration or API execute.
 
-Two independent owned fixtures distinguish the claims:
+Three independent owned fixtures distinguish the claims:
 
 - With the ordinary nonempty account, receipt association succeeds and the
   current account-layer reader returns the exact next refusal:
@@ -56,6 +56,12 @@ Two independent owned fixtures distinguish the claims:
   enumeration can succeed. The report says `ASSOCIATION_ONLY`, never native or
   authenticated D2 qualification. External coverage stays unknown and native
   refresh unobserved.
+
+- With genuine emitted settings copied into both cumulative Agy layers, a strict
+  `cairn.watch-agy-hooks/1` packet reaches the Agy producer reader. Both layers
+  select actual generation/settings pins and exhaustive inventories. The explicit
+  `code-preparation` readback contains no native session, PID, client or trace.
+  The exact result is `Agy native session/file-read/exec provenance is unobserved; code preparation is not native qualification`.
 
 The zero-byte mode-0000 credential selector is a metadata-only fixture sentinel,
 never authentication or a content read. Before/after snapshots preserve profile,
@@ -87,12 +93,55 @@ For the focused race invocation, set `CAIRN_R06_UNBOUND_FIXTURE` to the resultin
 affected bound census/Claude/D2 unit tests. Without that explicit material the
 private fixture entry is inactive and does not count as coverage.
 
-The current native hook reader continues to recognize Claude `flagSettings`.
-Actual Agy account/project groups are cumulative; identical commands in both
-layers execute twice. The retained Agy report's layer list is fixture-declared,
-not a native `get_hooks_listing` response. A future typed reader requires the
-correct native observations and exhaustive declared inventories. This cut does
-not deduplicate commands, invent effective settings, or bypass that reader.
+## Typed Agy observations
+
+The public census dispatches tagged Claude and Agy inputs to separate readers.
+Claude `flagSettings` keeps its existing contract. Agy selects exactly the
+ordered account `hooks.json` and project `.agents/hooks.json` layers. A missing
+layer must be explicitly absent on disk, with no generation/settings claim.
+The reader walks both declared inventories, refuses missing or extra pins and
+ancestor project layers, and registers each observed generation/member through
+the existing path, inode, credential exclusion and file-fact checks.
+
+A present layer must equal its actual emitted settings. Its producer must select
+Agy, the same account, a selected unbound receipt/binding, immutable role profiles,
+and only coordination `PreInvocation` and `Stop` rows at timeout 15. Ordinary
+memory remains unsupported. The six-element event argv, canonical content-addressed
+launcher, receipt image, source entrypoint/alias, retained launcher and emitted
+anchor must agree. Unrelated settings bytes remain observed. Foreign, extra or
+partial hook coverage refuses rather than inferring command ownership.
+
+`cairn.watch-agy-readback/1` distinguishes `code-preparation` from
+`retained-native-strace`. Preparation cannot carry native-looking fields. The
+retained path requires an existing catalogued session, matching native identity,
+workspace/config, pinned client, literal client argv and a pinned complete raw
+`strace -f -xx` prefix with an explicit prompt interval. This is a finite codec,
+not an Agy settings or listing API. Unsupported, truncated and unfinished traces
+refuse. Trace bytes have a separate 256 MiB bound; the second hook inspection
+rereads their pins after the normal final census reread.
+
+The raw codec requires successful native file opens, complete bytes through EOF
+and close, exact native event/session/workspace writes, and matching literal
+callback program argv with distinct PIDs greater than one and later zero exits.
+Native threads come from observed `CLONE_THREAD` calls. Commands and native event
+frames are matched as multisets. Identical commands in two layers require two
+executions; there is no per-PID layer attribution or deduplication. Unknown hook
+paths, extra callbacks, stale identities and wrong bytes refuse.
+
+Retained provenance still adds a blocker for current image/session qualification
+and refresh. It cannot make `FixtureReady` true or satisfy authenticated D2.
+The historical native report's layer list is fixture-declared. It is never
+recast as a native `get_hooks_listing` result. Old trace paths and sessions are
+not rewritten into a current positive packet.
+
+The focused tests use explicitly synthetic in-memory codec bytes and selected
+exact frames from a pinned retained Agy 1.5.7 trace. The latter controls verify
+original byte offsets and hashes and test decoding only. Neither creates native
+settings, registration, authentication or session state. Set
+`CAIRN_R06_AGY_RETAINED_FRAMES` to the selected codec corpus. Set
+`CAIRN_R06_AGY_TYPED_FIXTURE` to `typed-agy-preparation/go-typed-fixture.json`
+for genuine producer controls via `TestR06AgyTypedCensusProcess`. These private
+entries are inactive without explicit inputs; a skip is not coverage.
 
 Strict install-3/install-5 remain open, including transient both-active settings
 with two journals, twenty post-rename NEW-active hard-kill observations, legacy
