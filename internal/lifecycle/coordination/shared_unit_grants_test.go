@@ -87,6 +87,7 @@ func newGrantCurrentnessFixture(t *testing.T, harness string) *grantCurrentnessF
 		"coordination_configs", nativeList(nativeMap("path", configPath, "sha256", cp))))
 	f.selected = WatchBindings{Directory: filepath.Join(f.root, "bindings"), Pins: map[string]string{}}
 	f.selected.Pins["one.json"] = write(filepath.Join(f.selected.Directory, "one.json"), config)
+	writePrivateFile(t, filepath.Join(f.selected.Directory, ".watch.lock"), nil, 0600)
 	nextPath := filepath.Join(f.root, "next.json")
 	nextRaw := append([]byte("\n"), mustCurrentnessJSON(t, config)...)
 	nextPin := writePrivateFile(t, nextPath, nextRaw, 0600)
