@@ -52,11 +52,14 @@ type agyConcurrencyFile struct {
 	Raw    []byte
 	SHA256 string
 	Mode   uint32
+	UID    uint32
+	Links  uint64
 	Inode  uint64
 	Error  string
 }
 
 type agyConcurrencySnapshot struct {
+	Paths    map[string]string
 	Layers   map[string]agyConcurrencyFile
 	Recovery map[string]agyConcurrencyFile
 }
@@ -92,12 +95,13 @@ func agyConcurrencyRead(path string) agyConcurrencyFile {
 	if !ok {
 		return agyConcurrencyFile{Raw: raw, Error: "unknown file identity"}
 	}
-	return agyConcurrencyFile{Raw: raw, SHA256: agyConcurrencyHash(raw), Mode: uint32(info.Mode().Perm()), Inode: stat.Ino}
+	return agyConcurrencyFile{Raw: raw, SHA256: agyConcurrencyHash(raw), Mode: uint32(info.Mode().Perm()), UID: stat.Uid, Links: stat.Nlink, Inode: stat.Ino}
 }
 
 func agyConcurrencyObserve(plan AgyLayerPlan) agyConcurrencySnapshot {
-	view := agyConcurrencySnapshot{Layers: map[string]agyConcurrencyFile{}, Recovery: map[string]agyConcurrencyFile{}}
+	view := agyConcurrencySnapshot{Paths: map[string]string{}, Layers: map[string]agyConcurrencyFile{}, Recovery: map[string]agyConcurrencyFile{}}
 	for layer, path := range map[string]string{"account": filepath.Join(plan.AccountHome, ".gemini/config/hooks.json"), "project": filepath.Join(plan.Workspace, ".agents/hooks.json")} {
+		view.Paths[layer] = path
 		view.Layers[layer] = agyConcurrencyRead(path)
 		entries, err := os.ReadDir(filepath.Dir(path))
 		if err != nil {
@@ -105,7 +109,7 @@ func agyConcurrencyObserve(plan AgyLayerPlan) agyConcurrencySnapshot {
 			continue
 		}
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".cairn-agy-") {
+			if strings.HasPrefix(entry.Name(), ".cairn-agy-") || strings.HasPrefix(entry.Name(), ".cairn-recovery-agy-") {
 				view.Recovery[layer+":"+entry.Name()] = agyConcurrencyRead(filepath.Join(filepath.Dir(path), entry.Name()))
 			}
 		}
@@ -376,6 +380,60 @@ type agyConcurrencyCaseRecord struct {
 	Limits                                                 []string
 }
 
+func agyConcurrencyRecoveryRecord(name string, file agyConcurrencyFile, view agyConcurrencySnapshot) error {
+	layer, base, ok := strings.Cut(name, ":")
+	token := strings.TrimSuffix(strings.TrimPrefix(base, ".cairn-recovery-agy-"), ".json")
+	nonce, err := hex.DecodeString(token)
+	if !ok || layer != "account" && layer != "project" || err != nil || len(nonce) != 16 || base != ".cairn-recovery-agy-"+hex.EncodeToString(nonce)+".json" {
+		return fmt.Errorf("unknown recovery record name %s", name)
+	}
+	if file.Error != "" || file.Mode != 0400 || file.UID != uint32(os.Geteuid()) || file.Links != 1 {
+		return fmt.Errorf("recovery record metadata differs: %s %+v", name, file)
+	}
+	var record agyRecoveryRecord
+	if err := json.Unmarshal(file.Raw, &record); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(record)
+	other := map[string]string{"account": "project", "project": "account"}[layer]
+	relative := map[string]string{"account": ".gemini/config/hooks.json", "project": ".agents/hooks.json"}
+	if err != nil || !bytes.Equal(raw, file.Raw) || record.Schema != "cairn.agy-layer-recovery/1" || record.Layer != layer || record.Temporary != ".cairn-agy-"+token ||
+		record.Selected.Relative != relative[layer] || record.Other.Relative != relative[other] ||
+		filepath.Join(record.Selected.Root, record.Selected.Relative) != view.Paths[layer] || filepath.Join(record.Other.Root, record.Other.Relative) != view.Paths[other] ||
+		!record.Selected.Present || record.Selected.SHA256 != agyConcurrencyHash([]byte(agyConcurrencyOld)) ||
+		record.Selected.File.Mode&07777 != 0640 || record.NewFile.Mode&07777 != 0640 ||
+		record.Selected.File.UID != uint32(os.Geteuid()) || record.NewFile.UID != uint32(os.Geteuid()) || record.NewFile.Ino == 0 {
+		return fmt.Errorf("recovery record correspondence differs: %s", name)
+	}
+	// Both inodes can move between selection and temporary names during the
+	// controlled exchanges. Match their actual observed bytes, not path guesses.
+	old, next := false, false
+	for _, files := range []map[string]agyConcurrencyFile{view.Layers, view.Recovery} {
+		for _, actual := range files {
+			if actual.Error == "" && actual.Mode == 0640 && actual.UID == uint32(os.Geteuid()) && actual.Links == 1 {
+				old = old || actual.Inode == record.Selected.File.Ino && actual.SHA256 == record.Selected.SHA256
+				next = next || actual.Inode == record.NewFile.Ino && actual.SHA256 == record.NewSHA256
+			}
+		}
+	}
+	if !old || !next {
+		return fmt.Errorf("recovery record lacks observed old/new inode bytes: %s", name)
+	}
+	return nil
+}
+
+func agyConcurrencySelectedRecovery(selection AgyLayerSelection, view agyConcurrencySnapshot) error {
+	if selection.Recovery == nil || filepath.Dir(selection.Recovery.Path) != filepath.Dir(view.Paths[selection.Layer]) {
+		return fmt.Errorf("successful publisher did not select its exact recovery record")
+	}
+	name := selection.Layer + ":" + filepath.Base(selection.Recovery.Path)
+	file, ok := view.Recovery[name]
+	if !ok || file.SHA256 != selection.Recovery.SHA256 {
+		return fmt.Errorf("successful publisher recovery pin is missing or changed: %s", name)
+	}
+	return agyConcurrencyRecoveryRecord(name, file, view)
+}
+
 func agyConcurrencyActive(view agyConcurrencySnapshot) (int, error) {
 	active := 0
 	for layer, file := range view.Layers {
@@ -406,6 +464,12 @@ func agyConcurrencyActive(view agyConcurrencySnapshot) (int, error) {
 		}
 	}
 	for name, file := range view.Recovery {
+		if _, base, ok := strings.Cut(name, ":"); ok && strings.HasPrefix(base, ".cairn-recovery-agy-") {
+			if err := agyConcurrencyRecoveryRecord(name, file, view); err != nil {
+				return 0, err
+			}
+			continue
+		}
 		if file.Error != "" || !json.Valid(file.Raw) || file.Mode != 0640 || !bytes.HasPrefix(file.Raw, []byte(agyConcurrencyOld[:len(agyConcurrencyOld)-2])) {
 			return 0, fmt.Errorf("recovery/staged member damaged: %s %+v", name, file)
 		}
@@ -485,7 +549,7 @@ func agyConcurrencyRunCase(t *testing.T, dir, image, pin string, schedule agyCon
 	first := agyConcurrencyStart(t, dir, image, pin, plans[0], own)
 	second := agyConcurrencyStart(t, dir, image, pin, plans[1], own)
 	for _, peer := range peers {
-		if peer.current.Initial == nil || !reflect.DeepEqual(initial.Layers, peer.current.Initial.Layers) {
+		if peer.current.Initial == nil || !reflect.DeepEqual(initial.Layers, peer.current.Initial.Layers) || !reflect.DeepEqual(initial.Paths, peer.current.Initial.Paths) {
 			t.Fatal("competing helpers did not begin with same recorded layer facts", peer.current)
 		}
 		peer.advance(t, "before:publication")
@@ -530,6 +594,11 @@ func agyConcurrencyRunCase(t *testing.T, dir, image, pin string, schedule agyCon
 	for _, peer := range peers {
 		if peer.current.Kind != "result" || peer.exit != map[bool]int{true: 1, false: 0}[peer.current.Error != ""] || !peer.joined || peer.cleanupError != "" {
 			t.Fatalf("actual process completion/exit/join differs: %s %+v exit=%d cleanup=%s", peer.name, peer.current, peer.exit, peer.cleanupError)
+		}
+		if peer.current.Error == "" && peer.current.Selection.Changed {
+			if err := agyConcurrencySelectedRecovery(peer.current.Selection, terminal); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if active == 2 {
@@ -625,5 +694,105 @@ func TestAgyLayerConcurrencyCheckedPublishers(t *testing.T) {
 		if !t.Run(schedule.name, func(t *testing.T) { agyConcurrencyRunCase(t, filepath.Join(run, schedule.name), image, pin, schedule) }) {
 			break
 		}
+	}
+}
+
+func TestAgyLayerConcurrencyRecoverySnapshotValidation(t *testing.T) {
+	for _, layer := range []string{"account", "project"} {
+		t.Run(layer, func(t *testing.T) {
+			plan, selected, other := agyTestPlan(t, layer, true)
+			for _, path := range []string{selected, other} {
+				agyTestWrite(t, path, agyConcurrencyOld, 0640)
+			}
+			prepared := `{"cairn-coordination":{"Stop":[{"type":"command","command":"/pinned/cairn-first hook","timeout":15}]}}`
+			agyTestWrite(t, plan.Settings.Path, prepared, 0400)
+			plan.Settings.SHA256 = agyConcurrencyHash([]byte(prepared))
+			selection, err := PublishAgyLayer(context.Background(), plan)
+			if err != nil || !selection.Changed || selection.Recovery == nil {
+				t.Fatal("actual publisher did not retain recovery correspondence", selection, err)
+			}
+			view := agyConcurrencyObserve(plan)
+			if active, err := agyConcurrencyActive(view); err != nil || active != 1 {
+				t.Fatal("actual retained snapshot invalid", active, err)
+			}
+			if err := agyConcurrencySelectedRecovery(selection, view); err != nil {
+				t.Fatal(err)
+			}
+			name := layer + ":" + filepath.Base(selection.Recovery.Path)
+			original := view.Recovery[name]
+			clone := func() agyConcurrencySnapshot {
+				raw, err := json.Marshal(view)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var copy agyConcurrencySnapshot
+				if err := json.Unmarshal(raw, &copy); err != nil {
+					t.Fatal(err)
+				}
+				return copy
+			}
+			change := func(view *agyConcurrencySnapshot, mutate func(*agyRecoveryRecord)) {
+				file := view.Recovery[name]
+				var record agyRecoveryRecord
+				if err := json.Unmarshal(file.Raw, &record); err != nil {
+					t.Fatal(err)
+				}
+				mutate(&record)
+				raw, err := json.Marshal(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				file.Raw, file.SHA256 = raw, agyConcurrencyHash(raw)
+				view.Recovery[name] = file
+			}
+			for _, test := range []struct {
+				name   string
+				mutate func(*agyConcurrencySnapshot)
+			}{
+				{"mode", func(v *agyConcurrencySnapshot) { f := v.Recovery[name]; f.Mode = 0640; v.Recovery[name] = f }},
+				{"owner", func(v *agyConcurrencySnapshot) { f := v.Recovery[name]; f.UID++; v.Recovery[name] = f }},
+				{"alias", func(v *agyConcurrencySnapshot) { f := v.Recovery[name]; f.Links = 2; v.Recovery[name] = f }},
+				{"schema", func(v *agyConcurrencySnapshot) { change(v, func(r *agyRecoveryRecord) { r.Schema = "unknown" }) }},
+				{"layer", func(v *agyConcurrencySnapshot) { change(v, func(r *agyRecoveryRecord) { r.Layer = "unknown" }) }},
+				{"root", func(v *agyConcurrencySnapshot) {
+					change(v, func(r *agyRecoveryRecord) { r.Selected.Root = "/outside" })
+				}},
+				{"temporary", func(v *agyConcurrencySnapshot) { change(v, func(r *agyRecoveryRecord) { r.Temporary += "other" }) }},
+				{"new-inode", func(v *agyConcurrencySnapshot) { change(v, func(r *agyRecoveryRecord) { r.NewFile.Ino++ }) }},
+				{"new-bytes", func(v *agyConcurrencySnapshot) {
+					change(v, func(r *agyRecoveryRecord) { r.NewSHA256 = strings.Repeat("0", 64) })
+				}},
+				{"noncanonical", func(v *agyConcurrencySnapshot) {
+					f := v.Recovery[name]
+					f.Raw = append(f.Raw, '\n')
+					v.Recovery[name] = f
+				}},
+				{"missing-old-inode", func(v *agyConcurrencySnapshot) {
+					var record agyRecoveryRecord
+					if err := json.Unmarshal(v.Recovery[name].Raw, &record); err != nil {
+						t.Fatal(err)
+					}
+					delete(v.Recovery, layer+":"+record.Temporary)
+				}},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					mutated := clone()
+					test.mutate(&mutated)
+					if _, err := agyConcurrencyActive(mutated); err == nil {
+						t.Fatal("snapshot accepted changed recovery evidence")
+					}
+				})
+			}
+			t.Run("missing-success-record", func(t *testing.T) {
+				mutated := clone()
+				delete(mutated.Recovery, name)
+				if err := agyConcurrencySelectedRecovery(selection, mutated); err == nil {
+					t.Fatal("successful publisher lost its selected record")
+				}
+			})
+			if actual := agyConcurrencyRead(selection.Recovery.Path); !reflect.DeepEqual(original, actual) {
+				t.Fatal("in-memory negative cases changed actual retained evidence")
+			}
+		})
 	}
 }

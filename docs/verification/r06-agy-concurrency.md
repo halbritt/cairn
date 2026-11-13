@@ -1,10 +1,11 @@
 # Agy checked publisher concurrency evidence
 
-This verification cut adds process tests for the checked Agy publisher on base
+The original verification cut added process tests for the checked Agy publisher on base
 `31a554ae4f503ac1cada270d8bea32680bf034c4` (tree
-`d1bba6c748ac0d79851eee5f305b1da233f52058`). The publisher implementation is
-unchanged by this cut. Test results and finite schedules are recorded below when
-collected; this document does not claim a completed run during implementation.
+`d1bba6c748ac0d79851eee5f305b1da233f52058`). That cut did not change the publisher.
+This document retains its historical results and describes the test adaptation
+for the separately reviewed recovery publisher below. Historical results do not
+qualify the composed source.
 
 The earlier component review accepted the paired-layer checked path and identified
 that concurrent checked publishers had source reasoning without a process test.
@@ -14,8 +15,10 @@ It uses the actual checked publisher rather than a substitute writer.
 
 ## Observation boundaries
 
-The existing private observer exposes before and after `settings-sync`,
-`publication`, `readback`, and `directory-sync`. Publication performs its paired
+The original private observer exposes before and after `settings-sync`,
+`publication`, `readback`, and `directory-sync`. The recovery composition also
+exposes `recovery-sync`; the controller forwards that actual boundary without
+inventing an observer inside publication. Publication performs its paired
 recheck and atomic rename inside one action; no observer separates that final
 recheck from rename. The final other-layer recheck follows the directory-sync
 observer. Schedules must state these boundaries accurately. Reaching a barrier
@@ -108,3 +111,40 @@ The local result and packet are Cairn record
 `51955e2b-7d66-4a62-9b89-07087e5cc9d2` version 1. Final candidate gates and
 independent review are recorded separately; this local run establishes neither
 final acceptance nor the broader qualification claims above.
+
+## Composition with durable recovery records
+
+The later final run of `d44c5dfc` and its independent review both observed a
+transient both-active state in the opposite-layer contended schedule, followed
+by both publishers returning errors and rolling back. Those results are recorded
+in `84364f01-c7a5-4908-9b99-b1518275213e` version 1 and
+`d7066677-a8b4-4d76-a32f-8d951cd9a53a` version 1. They differ from the earlier
+local run above; no absence of a transient window is inferred.
+
+The recovery publisher at `0c67d838b89000a7f6604899e29ddc4de22d8450` retains
+`.cairn-recovery-agy-<token>.json` correspondence records with mode `0400`, in
+addition to `.cairn-agy-<token>` staged or backup settings with mode `0640` in
+these fixtures. The original concurrency collector captured only the latter
+prefix. The composed test captures both families and keeps their actual bytes,
+mode, owner, link count and inode in every snapshot.
+
+Journal checks distinguish canonical records from settings: exact schema,
+record name/token, selected and other roots, layer and relative paths, plus the
+observed old and new inode/digest correspondence. Inodes may move between
+selection and temporary names during an exchange; the test matches their actual
+observed bytes instead of assuming a name still selects an inode. A successful
+publisher must return a recovery pin that selects the captured record. Settings
+retain the original literal-byte, mode, dispatch and ordered winner/refusal
+assertions. All eight schedules and ownership/join checks remain.
+
+Additional tests publish through the real checked path on both layers, then
+mutate copies of the captured observations. Wrong record mode, owner, links,
+schema, layer, root, temporary name, new inode or bytes, noncanonical encoding,
+missing old bytes and missing successful recovery pins must refuse. These
+negative cases do not edit retained files or change the publisher.
+
+Retained records are evidence under the explicit recovery contract, not proof
+of cleanup or a quiescence barrier. Strict install-3/install-5, legacy writer
+exclusion, immediate old-or-disabled state, power loss, native/installed unit
+and full R06 remain open. Exact composed gates and independent review are still
+required; this section makes no new completed-run claim.
