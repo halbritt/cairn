@@ -22,7 +22,7 @@ import uuid
 
 from check_r04_native_claude import ClaudeSession, MessagesFixture, NativeFixture
 from check_r04_native_opencode import native_api_fixture, successful_execs, wait_for
-from check_r06_unit_census import process_ref, require, sha, write
+from check_r06_unit_census import Fixture as CensusFixture, process_ref, require, sha, write
 from test_f04_activation import encoded, overwrite_fixture
 from test_r04_host_wiring import pin
 
@@ -134,26 +134,22 @@ def catalog_for(f, selection, identity, work, readback, output):
     return catalog, proposal, hook_input
 
 
+class EmittedCensus(CensusFixture):
+    def __init__(self, image, f, catalog, proposal, output, label):
+        self.image, self.universe = image, f.root
+        self.evidence, self.name, self.serial = output / label, label, 0
+        self.evidence.mkdir(mode=0o700)
+        self.catalog_path, self.catalog, self.proposal = f.root / 'census-catalog.json', catalog, proposal
+
+
 def inspect(image, f, catalog, proposal, output, label, *, ready, reason=''):
-    cell = output / label
-    cell.mkdir(mode=0o700)
-    catalog_pin = write(f.root / 'census-catalog.json', catalog)
-    plan = write(cell / 'plan.json', dict(Catalog=catalog_pin, Proposal=proposal, Result=str(cell / 'result.json')))
-    argv = [str(image), '-test.run=^TestR06NativeHookCensusProcess$', '-test.v']
-    env = dict(os.environ, CAIRN_R06_NATIVE_HOOK_CENSUS_PLAN=plan['Path'])
-    completed = subprocess.run(argv, env=env, capture_output=True, timeout=30)
-    write(cell / 'argv.json', argv)
-    (cell / 'stdout').write_bytes(completed.stdout)
-    (cell / 'stderr').write_bytes(completed.stderr)
-    write(cell / 'exit.json', completed.returncode)
-    require(completed.returncode == 0, 'Go census helper failed: ' + completed.stderr.decode(errors='replace'))
-    result = json.loads((cell / 'result.json').read_bytes())
-    require(result['Census']['FixtureReady'] is ready, label + ': ' + result['Error'])
+    # Reuse the accepted real Go entry, syscall guards and complete protected
+    # snapshot checks; this adapter only supplies the emitted/native catalog.
+    fixture = EmittedCensus(image, f, catalog, proposal, output, label)
+    result = fixture.inspect(ready, reason)
+    require(bool(result['Error']) is (not ready), 'census error/disposition disagrees')
     if ready:
-        require(not result['Error'] and len(result['Census']['HookObservations']) == 1, 'selected hook observation absent')
-        require(result['Census']['ExternalCoverage'] == 'unknown' and result['Census']['NativeRefresh'] == 'unobserved', 'fixture promoted coverage/refresh')
-    else:
-        require(reason in result['Error'], label + ': wrong refusal: ' + result['Error'])
+        require(len(result['Census']['HookObservations']) == 1, 'selected hook observation absent')
     return dict(case=label, passed=True, ready=ready, error=result['Error'])
 
 
@@ -167,7 +163,8 @@ def run(args, output):
     try:
         f = support.fixture('installation', harness='claude', bound=True)
         native_api_fixture(f.api)
-        token = Path(f.coord['token_file'])
+        token = f.root / 'fixture.token'
+        f.coord['token_file'] = f.memory['token_file'] = str(token)
         token.write_text('synthetic-fixture-token')
         token.chmod(0o000)
         f.coord.update(process_names=[args.claude.name], process_exe_dirs=[])
@@ -226,6 +223,7 @@ def run(args, output):
                                'program': Path(b_view['Executions'][0]['Program']['Path'])}[mutation]
                     saved = changed.read_bytes()
                     overwrite_fixture(changed, saved + b'\n')
+                    reason = {'receipt': 'pin changed', 'config': 'descriptor changed', 'launcher': 'content address', 'program': 'pin changed'}[mutation]
                 elif mutation == 'shell':
                     observed['Shell']['SHA256'] = '0' * 64
                     reason = 'shell pin changed'
@@ -234,6 +232,7 @@ def run(args, output):
                     reason = 'literal argv'
                 elif mutation == 'missing-readback':
                     selected['Readback']['Path'] += '.missing'
+                    reason = 'no such file'
                 elif mutation == 'mixed-unit':
                     selected['Config'] = selected['Session']
                     reason = 'mixed unit'
