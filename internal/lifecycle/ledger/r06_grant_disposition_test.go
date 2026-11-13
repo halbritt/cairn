@@ -17,7 +17,7 @@ import (
 func TestR06GrantDispositionPositiveActivationStaysStickyAfterDisable(t *testing.T) {
 	for _, harness := range []string{"codex", "claude"} {
 		t.Run(harness, func(t *testing.T) {
-			directory := t.TempDir()
+			directory := r06PrivateGrantDirectory(t)
 			memory := value.Mapping(value.Field("state_dir", value.Text(directory)), value.Field("context_bytes", value.IntegerText("9500")))
 			owner := Activation{Memory: memory, Harness: harness, Session: "11111111-1111-4111-8111-111111111111", Turn: "22222222-2222-4222-8222-222222222222", Enabled: true}
 			if harness == "claude" {
@@ -42,7 +42,7 @@ func TestR06GrantDispositionPositiveActivationStaysStickyAfterDisable(t *testing
 				t.Fatal(err)
 			}
 
-			independentDir := t.TempDir()
+			independentDir := r06PrivateGrantDirectory(t)
 			independent := owner
 			independent.Memory = value.Mapping(value.Field("state_dir", value.Text(independentDir)), value.Field("context_bytes", value.IntegerText("9500")))
 			independent.Session = "33333333-3333-4333-8333-333333333333"
@@ -86,7 +86,7 @@ func TestR06GrantDispositionPositiveActivationStaysStickyAfterDisable(t *testing
 }
 
 func TestR06GrantDispositionOrdinaryCodexSaveKeepsRetiredPositive(t *testing.T) {
-	directory := t.TempDir()
+	directory := r06PrivateGrantDirectory(t)
 	memory := value.Mapping(value.Field("state_dir", value.Text(directory)), value.Field("context_bytes", value.IntegerText("9500")))
 	session := "11111111-1111-4111-8111-111111111111"
 	first := "22222222-2222-4222-8222-222222222222"
@@ -140,7 +140,7 @@ func TestR06GrantDispositionOrdinaryCodexSaveKeepsRetiredPositive(t *testing.T) 
 	}
 	// Cross-read the real nonzero fixture with the Source strict reader/writer.
 	// Both paths must retain accounting, membership and activation decisions.
-	sourceDir := t.TempDir()
+	sourceDir := r06PrivateGrantDirectory(t)
 	sourcePath := filepath.Join(sourceDir, filepath.Base(path))
 	sourceMarker := filepath.Join(sourceDir, session+".memory-budget.initialized")
 	if err := os.WriteFile(sourcePath, r06ReadGrantBytes(t, path), 0600); err != nil {
@@ -195,7 +195,7 @@ func TestR06GrantDispositionCompactionKeepsRecentAndOwningPositive(t *testing.T)
 		{"owning_positive_older_than_recent_window", 65, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			directory := t.TempDir()
+			directory := r06PrivateGrantDirectory(t)
 			memory := value.Mapping(value.Field("state_dir", value.Text(directory)))
 			owner := Activation{Memory: memory, Harness: "claude", Session: "11111111-1111-4111-8111-111111111111", Turn: "claude-channel:owning-prompt", Enabled: true}
 			if enabled, err := DecideActivation(context.Background(), owner); err != nil || !enabled {
@@ -240,7 +240,7 @@ func TestR06GrantDispositionCompactionKeepsRecentAndOwningPositive(t *testing.T)
 			}
 			// Source independently creates each activation through its real
 			// operation, then compacts with the identical caller-owned turn set.
-			sourceDir := t.TempDir()
+			sourceDir := r06PrivateGrantDirectory(t)
 			r06PythonGrantOperation(t, `
 directory, session, owner, later, protected = sys.argv[2:]
 memory = {'state_dir': directory}
@@ -318,4 +318,13 @@ spec.loader.exec_module(source)
 		t.Fatal("Python Source changed during comparison")
 	}
 	t.Logf("unmodified grant_ledger.py sha256=%x; Source operation passed", sha256.Sum256(before))
+}
+
+func r06PrivateGrantDirectory(t *testing.T) string {
+	t.Helper()
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	return directory
 }
