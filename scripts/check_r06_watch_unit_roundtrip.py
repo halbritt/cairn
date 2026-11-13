@@ -168,8 +168,16 @@ class Fixture(composition.Fixture):
         names = sorted(self.selection['Pins'])
         inputs = self.profiles(final, names)
         desc = lambda p: dict(path=str(p), sha256=census.sha(p))
+        sources = self.universe / 'compatibility-sources'
+        sources.mkdir(mode=0o700)
+        for name in self.compatibility_members():
+            selected_source = ROOT / 'integrations/lifecycle' / name
+            destination = sources / name
+            shutil.copyfile(selected_source, destination)
+            destination.chmod(0o600)
+            require(census.sha(destination) == census.sha(selected_source), 'copied compatibility source changed')
         plan = dict(id=identity, enabled=False, source_revision='2520c0dc+roundtrip-fixture',
-            sources={name: desc(ROOT / 'integrations/lifecycle' / name) for name in self.compatibility_members()},
+            sources={name: desc(sources / name) for name in self.compatibility_members()},
             binary=desc(self.images['control']), memory_config=desc(inputs / 'memory.json'),
             coordination_configs=[desc(inputs / name) for name in names], aliases={},
             python=str(Path(sys.executable).resolve()), shell=str(Path('/bin/sh').resolve()))
@@ -529,9 +537,21 @@ def check(evidence, selected):
     finally:
         pid_path = scratch / 'pg/data/postmaster.pid'
         pg_pid = int(pid_path.read_text().splitlines()[0]) if pid_path.exists() else None
-        pg_process = census.process_ref(pg_pid) if pg_pid else None
-        stopped = cluster.stop()
-        census.write(evidence / 'cleanup.json', dict(process=pg_process, stopped=stopped, group_signals=False))
+        require(pg_pid is None or pg_pid > 1, 'unsafe owned PG PID')
+        group = os.getpgid(pg_pid) if pg_pid else None
+        require(group is None or group > 1, 'unsafe owned PG group')
+        pg_process = None
+        try:
+            if pg_pid:
+                raw = Path(f'/proc/{pg_pid}/stat').read_text()
+                fields = raw[raw.rfind(')') + 1:].split()
+                # pg_ctl deliberately daemonizes; parent 1 is valid. PID and
+                # process-group safety still apply before supported shutdown.
+                pg_process = dict(PID=pg_pid, PGID=group, Parent=int(fields[1]), Start=fields[19],
+                                  Boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+        finally:
+            stopped = cluster.stop()
+            census.write(evidence / 'cleanup.json', dict(process=pg_process, stopped=stopped, group_signals=False))
         require(stopped, 'owned PG cleanup unresolved')
     census.write(evidence / 'outcomes.json', outcomes)
     print(f'R06 watch-unit roundtrip: {len(outcomes)} passed, 0 failed, 0 skipped', flush=True)
