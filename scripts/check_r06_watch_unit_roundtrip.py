@@ -226,6 +226,16 @@ class Fixture(composition.Fixture):
         return child
 
     def watch(self, release, label):
+        require(all(not Path(f'/proc/{record["Process"]["PID"]}').exists()
+                    for _, record in self.references.values() if record['Role'] == 'watcher'),
+                'previous unit watcher has not been joined')
+        expected_pins = {member['name']: member['sha256'] for member in release['next']}
+        active_pins = {p.name: census.sha(p) for p in Path(self.selection['Directory']).glob('*.json')}
+        require(active_pins == self.selection['Pins'] == expected_pins, 'watcher selected an incomplete or wrong config set')
+        for member in release['next']:
+            active = Path(self.selection['Directory']) / member['name']
+            require(active.read_bytes() == Path(member['path']).read_bytes(), 'active copy differs from its immutable profile')
+        protected = self.watcher_state()
         log = self.transport.with_name('watcher-api.jsonl')
         offset = len(log.read_text().splitlines()) if log.exists() else 0
         child = self.spawn(release['argv'], label)
@@ -239,6 +249,11 @@ class Fixture(composition.Fixture):
             time.sleep(.02)
         require(len(rows) == 4 and all(row['exit'] == 0 and row['joined'] for row in rows),
                 f'{label}: two configurations did not each heartbeat both real sessions')
+        expected_sessions = {tuple(json.loads(Path(path).read_text())['agent'][key] for key in ('agent_id', 'execution_id'))
+                             for path in self.proposal['Sessions']}
+        observed_sessions = [tuple(row['input'][key] for key in ('agent_id', 'execution_id')) for row in rows]
+        require(set(observed_sessions) == expected_sessions and all(observed_sessions.count(ref) == 2 for ref in expected_sessions),
+                'watcher did not heartbeat both exact retained session/execution identities')
         actual = dict(executable=os.readlink(f'/proc/{child.pid}/exe'),
                       argv=Path(f'/proc/{child.pid}/cmdline').read_bytes().rstrip(b'\0').decode().split('\0'),
                       process=census.process_ref(child.pid))
@@ -250,8 +265,20 @@ class Fixture(composition.Fixture):
                   and line.split()[5].endswith(':' + str(lock.stat().st_ino))]
         require(len(owners) == 1 and 'FLOCK' in owners[0], 'selected watcher does not own the unit lock')
         census.write(self.evidence / (label + '.readback.json'), dict(**actual, lock_inode=lock.stat().st_ino,
-                     lock_owner=owners, pins={p.name: census.sha(p) for p in lock.parent.glob('*.json')}, api_calls=rows))
+                     lock_owner=owners, pins=active_pins, api_calls=rows, protected_before=protected))
         return child
+
+    def watcher_state(self):
+        states = {}
+        for path in self.proposal['Sessions']:
+            state = json.loads(Path(path).read_text())
+            for key in ('last_seen', 'expires_at'):
+                state['agent'].pop(key, None)
+            states[path] = state
+        token = self.host.token('worker')
+        return dict(states=states, ledger=census.snapshot(self.universe / 'memory-a'),
+                    credentials=dict(path=str(token), sha256=census.sha(token), mode=token.stat().st_mode),
+                    lock_inode=(Path(self.selection['Directory']) / '.watch.lock').stat().st_ino)
 
     def join_owned(self, child, label, *, watcher=False, receipt=True):
         path, record = self.references[label]
@@ -272,6 +299,16 @@ class Fixture(composition.Fixture):
             updated = census.write(path, record)
             self.catalog['Callbacks'] = [updated if pin['Path'] == str(path) else pin for pin in self.catalog['Callbacks']]
         self.repin_sessions()
+        if watcher:
+            readback = json.loads((self.evidence / (label + '.readback.json')).read_text())
+            after = self.watcher_state()
+            census.write(self.evidence / (label + '.state-after.json'), after)
+            require(after == readback['protected_before'], 'watcher changed retained state, journal selectors, ledger, credentials or lock')
+            require(not (self.evidence / (label + '.stdout')).read_text() and
+                    not (self.evidence / (label + '.stderr')).read_text(), 'watcher returned diagnostics instead of a clean cycle')
+            for row in readback['api_calls']:
+                for ref in (row['forwarder'], row['child']):
+                    require(not Path(f'/proc/{ref["PID"]}').exists(), 'watcher left a known API child unjoined')
 
     def retire_reference(self, label):
         path, record = self.references[label]
@@ -431,6 +468,13 @@ def negative(f, name):
 def check(evidence, selected):
     scratch = Path(tempfile.mkdtemp(prefix='r06-watch-unit-', dir=Path.home() / '.cache'))
     census.write(evidence / 'scratch.json', dict(path=str(scratch)))
+    source_files = [Path(__file__), ROOT / 'go.mod', ROOT / 'go.sum', ROOT / 'mise.toml',
+                    *sorted((ROOT / 'integrations/lifecycle').glob('*.py')),
+                    *sorted((ROOT / 'internal/lifecycle/coordination').glob('shared_unit*.go')),
+                    ROOT / 'internal/lifecycle/coordination/watch_cli.go',
+                    *(ROOT / 'scripts' / name for name in ('check_r06_census_control.py', 'check_r06_unit_control.py',
+                        'check_r06_unit_census.py', 'check_r06_status_consumer.py', 'disposable_host.py', 'stage_lifecycle_compatibility.py'))]
+    census.write(evidence / 'source-before-use.json', {str(path.relative_to(ROOT)): census.sha(path) for path in source_files})
     images = control.build(scratch)
     for name, target in (('stager', './cmd/cairn-stage-lifecycle'), ('helper', './internal/lifecycle/coordination')):
         image = scratch / 'tools' / name
@@ -438,6 +482,7 @@ def check(evidence, selected):
         control.command(argv, scratch / 'tools' / ('build-' + name))
         image.chmod(0o500)
         images[name] = image
+        control.command(['go', 'version', '-m', image], scratch / 'tools' / ('modules-' + name))
     census.write(evidence / 'images-before-use.json', {name: dict(path=str(path), sha256=census.sha(path)) for name, path in images.items()})
     pg_bin = pg_bindir()
     census.write(evidence / 'pg-before-use.json', {name: dict(path=str(pg_bin / name), sha256=census.sha(pg_bin / name)) for name in ('initdb', 'pg_ctl', 'postgres', 'createdb', 'psql')})

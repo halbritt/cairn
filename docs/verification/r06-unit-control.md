@@ -128,6 +128,46 @@ last final API read; publication must refuse and preserve the complete old
 selection/preparation. There is no production injection option. The known
 disjoint enabled callback remains alive and untouched; only its owner joins it.
 
+### Real watcher handoff fixture
+
+The bounded `scripts/check_r06_watch_unit_roundtrip.py` driver exercises actual
+watcher processes against disposable API/PostgreSQL state:
+
+```sh
+mise run host:exec -- --timeout 10m --weight 1 -- python3 -B scripts/check_r06_watch_unit_roundtrip.py --evidence /NEW/PRIVATE/evidence
+```
+
+It stages a complete immutable retained Python `/2` bundle with the generation
+installer and a disabled Go `/3` selection with the compatibility installer.
+The old and retained watchers execute the copied, pinned Python interpreter and
+retained `coordination.py`; the Go watcher executes the selected private image's
+`coordination --receipt … -- watch` command. The installed Python compatibility
+launcher is not a Go watcher entrypoint. Each watcher serves the same complete
+two-binding directory, lock inode and custom state paths. Running executable,
+argv, PID/start/boot, actual lock ownership, both configuration pins and real
+session heartbeats are read back. The fixture owner stops and joins each
+watcher before the next executor starts. The control process independently
+inspects, switches and reverses through `/2` census plans.
+
+The fixture owner archives only its exactly joined watcher reference after
+publication, retaining the immutable configuration, issued argv, join receipt
+and reference bytes. This permits the next finite catalog to describe its
+current selection; the inspector never retires a reference. Unjoined, delayed
+or running callbacks remain blockers. Separate cases cover omitted connected
+bindings, changed configuration/runtime pins, incomplete retained reverse, and
+a real authenticated claim admitted by the existing forwarding injector between
+initial and final API reads. Refusal must keep the active selection; an admitted
+claim must invalidate the receipt. Existing 15/19/9 driver assertions are unchanged.
+
+The enabled disjoint unit stays alive and unchanged. State preservation checks
+allow only the watcher's presence timestamps to advance and retain session and
+execution identity, journal selectors, ledger bytes and synthetic credential
+bytes/selectors. A nonzero result with `exchange.Published: true` still requires
+owner reconciliation; the driver never replays or cleans an uncertain exchange.
+This proves a finite disposable watcher handoff, not native per-conversation
+refresh, native layer coverage, positive-grant disposition or a final common
+image. Those joins, external coverage and production remain held.
+
 `inspect` validates the complete plan and captures the accepted D1-D5 facts
 without acquiring the watcher lock or creating a preparation. Its output is
 an observation, not an activation capability. `switch` and `reverse` each
