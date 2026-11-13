@@ -294,6 +294,69 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
             self.assertEqual(self.recall_status()['rejected'], dict(invalid_verdict=1))
             self.assertEqual(self.state()[SESSION + '.json']['seen'], {})
 
+    def test_staged_bound_claude_start_privacy_account_and_session_lock(self):
+        self.stage_bound('claude', 'agent_tools')
+        self.event('SessionStart', session_id=SESSION, source='startup', prompt='storage')
+        self.state = lambda: BoundMemoryCase.state(self)
+        observed = {}
+
+        def before(side):
+            self.boundary_side = side
+            self.boundary_offset = len(self.trace.read_text().splitlines()) if self.trace.exists() else 0
+
+        def after():
+            lines = self.trace.read_text().splitlines() if self.trace.exists() else []
+            observed[self.boundary_side] = dict(files=self.files(), calls=copy.deepcopy(self.calls),
+                trace=[json.loads(line) for line in lines[self.boundary_offset:]], locks=[])
+
+        self.before_run, self.after_run = before, after
+        for kind in ('privacy', 'account', 'session-lock'):
+            with self.subTest(boundary=kind):
+                self.reset_state({})
+                original_env, source, go = self.f.env, self.source, self.go
+                marker = self.f.root / '.cairn-no-memory'
+                parked = self.f.binding.with_name('parked-start-binding.json')
+                if kind == 'privacy':
+                    write(marker, b'')
+                if kind == 'account':
+                    self.f.env = lambda: dict(original_env(), CLAUDE_CONFIG_DIR=str(self.root / 'other-account'))
+                if kind != 'session-lock':
+                    self.f.binding.rename(parked)
+                else:
+                    def locked(launch):
+                        def invoke():
+                            directory = Path(self.f.memory['state_dir'])
+                            directory.mkdir(mode=0o700, exist_ok=True)
+                            with (directory / (SESSION + '.lock')).open('a') as lock:
+                                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                                return launch()
+                        return invoke
+                    # Acquire after the parent restores each side's snapshot;
+                    # never unlink an already-held lock between Source and Go.
+                    self.source, self.go = locked(source), locked(go)
+                try:
+                    result = BoundMemoryCase.pair(self)
+                    self.assertEqual((result.returncode, result.stdout),
+                                     (1, b'') if kind == 'session-lock' else (0, b'{}\n'))
+                    if kind == 'session-lock':
+                        self.assertIn(b'a memory hook is already running', result.stderr)
+                    else:
+                        self.assertEqual(result.stderr, b'')
+                    self.assertEqual(self.calls, [])
+                    self.assertEqual(self.state(), {})
+                    for row in observed.values():
+                        row.update(exit=result.returncode, stdout=result.stdout, stderr=result.stderr)
+                    self.validate_keysets([observed['source'], observed['go']])
+                    self.assertEqual(self.normalize(observed['source'], 'source'),
+                                     self.normalize(observed['go'], 'go'))
+                    print('R04_BOUND_START_BOUNDARY ' + json.dumps(dict(boundary=kind,
+                        source_trace=observed['source']['trace'], go_trace=observed['go']['trace'])), flush=True)
+                finally:
+                    self.source, self.go, self.f.env = source, go, original_env
+                    marker.unlink(missing_ok=True)
+                    if parked.exists():
+                        parked.rename(self.f.binding)
+
     def test_staged_bound_activation_wake_privacy_account_and_locks(self):
         # These boundaries intentionally stop before the Source recall body.
         # Reuse the existing exact-stream/state comparator without claiming
