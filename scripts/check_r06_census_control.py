@@ -172,6 +172,8 @@ class Fixture(census.Fixture):
             require(files_before==files_after,'refusing/inspect command changed the finite unit')
         if error:
             require(error in parsed['error'] and not parsed['exchange']['Published'], f'{label}: wrong refusal {parsed}')
+            if not mutation:
+                require(not self.transport.with_name('read-calls.jsonl').exists(), 'known census refusal reached API reads')
             require({p.name: census.sha(p) for p in Path(plan['current']['directory']).glob('*.json')} == plan['current']['pins'],
                     'refusal changed active selection')
         else:
@@ -237,7 +239,13 @@ def check(evidence, selected):
                     elif name in ('unjoined','unknown-process'):f.join(receipt=False)
                     if name=='unknown-process':
                         f.record['Process']['PID']=2147483646;f.update_record()
-                    if name=='cached-a':f.publish_disabled()
+                    if name=='cached-a':
+                        require(json.loads(f.observation.read_text())['Enabled'] is True,'callback did not actually cache enabled A')
+                        # The fixture owner publishes B before the command;
+                        # the retained A callback/reference/grant remain intact.
+                        for p in Path(f.selection['Directory']).glob('*.json'):p.chmod(0o600)
+                        f.publish_disabled()
+                        for p in Path(f.selection['Directory']).glob('*.json'):p.chmod(0o400)
                 if name=='positive-grant':
                     path=f.universe/'memory-a/retained.memory-budget.json'
                     body=json.loads(path.read_text());body['inbox_activation']['old-turn']=True;census.write(path,body)
@@ -271,7 +279,10 @@ def check(evidence, selected):
                                 (result['exchange']['Retained'],reversed_['exchange']['Retained'])), 'roundtrip split watcher lock inode')
                     require(f.child.poll() is None,'known disjoint enabled callback was stopped')
                 else:
-                    f.control('switch',plan,'control',error=error,mutation=name.removeprefix('final-') if name.startswith('final-') else None)
+                    result=f.control('switch',plan,'control',error=error,mutation=name.removeprefix('final-') if name.startswith('final-') else None)
+                    if name=='cached-a':
+                        require(result['census']['PositiveGrants'] and Path(f.record['Config']['Path']).exists(),
+                                'cached A or its positive grant was lost')
                 outcomes.append(dict(case=name,status='PASS'));print(json.dumps(outcomes[-1]),flush=True)
             finally:
                 f.close()
