@@ -46,6 +46,23 @@ class OwnerFixture(HookFixture):
         return plan
 
 
+class CurrentFixture(Fixture):
+    def __init__(self, *args, harness):
+        self.harness = harness
+        super().__init__(*args)
+
+    def register(self):
+        self.native = SESSION
+        return self.call('worker', 'agent-register', dict(request_id=control.uid(), binding=self.binding,
+            native_session_id=self.native, metadata=dict(harness=self.harness, project='r06-currentness',
+            workspace=str(self.root), state='idle', delivery_mode='existing-session')))
+
+    def call(self, role, operation, body, session=None, expected='OK'):
+        if operation == 'session-inbox-claim':
+            body['native_turn_id'] = TURN if self.harness == 'codex' else 'claude-channel:fixture-prompt'
+        return StatusFixture.call(self, role, operation, body, session=session, expected=expected)
+
+
 def memory_state(directory):
     result = {}
     if directory.exists():
@@ -94,7 +111,7 @@ print(json.dumps(dict(first=first,disabled=disabled,turn=turn)))
     return memory_state(directory)
 
 
-def run_activation(hook, event, evidence):
+def run_activation(hook, event, evidence, *, expected=True):
     # This existing checked operation is used by both immutable frontends.
     argv = hook.activation_argv('memory')
     control.write(evidence.with_suffix('.event.json'), event)
@@ -106,9 +123,65 @@ def run_activation(hook, event, evidence):
     evidence.with_suffix('.stdout').write_bytes(result.stdout)
     evidence.with_suffix('.stderr').write_bytes(result.stderr)
     control.write(evidence.with_suffix('.exit.json'), result.returncode)
-    require(result.returncode == 0 and not result.stderr and json.loads(result.stdout) == dict(enabled=True),
+    require(result.returncode == 0 and not result.stderr and json.loads(result.stdout) == dict(enabled=expected),
             f'{evidence.name}: checked activation failed: {result.returncode} {result.stderr!r}')
     return dict(exit=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode())
+
+
+def producer_activation(hook, side, event, evidence, *, expected=True):
+    if side == 'go':
+        return run_activation(hook, event, evidence, expected=expected)
+    code = '''import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('owner_source',sys.argv[1])
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+memory=json.load(open(sys.argv[2]));event=json.loads(sys.argv[4]);binding=json.load(open(sys.argv[3]))
+turn=event['turn_id'] if memory['harness']=='codex' else m.claude_owner(event)
+enabled=m.activation_decision(memory,memory['harness'],event['session_id'],turn,binding['enabled'])
+print(json.dumps(dict(enabled=enabled)))
+'''
+    result = control.command([sys.executable, '-I', '-S', '-B', '-c', code,
+        ROOT / 'integrations/lifecycle/grant_ledger.py', hook.memory_path, hook.binding, json.dumps(event)], evidence)
+    require(json.loads(result.stdout) == dict(enabled=expected), 'Source activation decision differs')
+
+
+def seed_opaque_owner_fields(hook, evidence):
+    code = '''import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('owner_source',sys.argv[1])
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+config=json.load(open(sys.argv[2]));ledger=m.GrantLedger(config['state_dir'],sys.argv[3])
+with ledger.locked():
+    if config['harness']=='codex':
+        state=ledger.load_codex(9500);state['pending']['fixture_opaque']={'text':'日本語 😀','integer':900719925474099312345}
+        ledger.save_codex(state)
+    else:
+        state=ledger.load_inbox();state['fixture_opaque']={'text':'日本語 😀','integer':900719925474099312345}
+        ledger.save_inbox(state)
+print(json.dumps({'seeded':True}))
+'''
+    control.command([sys.executable, '-I', '-S', '-B', '-c', code,
+        ROOT / 'integrations/lifecycle/grant_ledger.py', hook.memory_path, SESSION], evidence)
+
+
+def ordinary_codex_turn(hook, side, event, evidence, api):
+    """Use actual ordinary owner bodies, without a synthetic currentness oracle."""
+    if side == 'go':
+        return run_owner(hook, side, event, evidence)
+    config = json.loads(hook.memory_path.read_bytes())
+    require(json.loads(hook.binding.read_bytes())['enabled'] is False, 'Source body requires selected disabled B')
+    # This is the effective unbound body selected by disabled B. The Source
+    # body uses the actual CLI; checked Go uses the actual SDK at the same API.
+    config.pop('inbox_recall_binding')
+    config['cairn'] = str(api)
+    path = evidence.with_suffix('.config.json')
+    control.write(path, config)
+    control.write(evidence.with_suffix('.event.json'), event)
+    argv = [sys.executable, '-I', '-S', '-B', str(ROOT / 'integrations/lifecycle/memory.py'), '--config', str(path)]
+    control.write(evidence.with_suffix('.argv.json'), argv)
+    result = subprocess.run(argv, input=encoded(event), cwd=hook.root, env=hook.env(), capture_output=True, timeout=20)
+    evidence.with_suffix('.stdout').write_bytes(result.stdout)
+    evidence.with_suffix('.stderr').write_bytes(result.stderr)
+    control.write(evidence.with_suffix('.exit.json'), result.returncode)
+    require(result.returncode == 0 and not result.stderr, f'Source ordinary owner failed: {result.stderr!r}')
 
 
 def run_owner(hook, side, event, evidence):
@@ -300,6 +373,141 @@ def guard_case(cluster, images, scratch, name):
         control.write(f.root / 'api-cleanup.json', dict(pid=pid, exit=code, joined=True))
 
 
+def close_refresh_actor(plan_path):
+    """Retain a new real owner close request after the same API confirms it."""
+    plan = json.loads(plan_path.read_bytes())
+    body = json.loads(sys.stdin.read())
+    result = subprocess.run(plan['argv'], input=json.dumps(body), text=True, capture_output=True, timeout=15)
+    reply = json.loads(result.stdout)
+    require(result.returncode == 0 and reply.get('ok') is True and reply['data'].get('finished_at'),
+            'ordinary owner close refresh did not commit')
+    path = Path(plan['state'])
+    state = json.loads(path.read_bytes())
+    require(state['inbox_attempt']['attempt_id'] == body['attempt_id'] and state['agent']['agent_id'] == body['session']['agent_id'],
+            'close refresh actor ownership mismatch')
+    before = control.sha(path.read_bytes())
+    state['inbox_close'] = body
+    control.write(path, state)
+    control.write(plan_path.with_suffix('.result.json'), dict(api_reply=reply, before_sha256=before,
+        after_sha256=control.sha(path.read_bytes()), request=body))
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+def currentness_forward(plan_path, argv):
+    # Forward the actual read response unchanged. Refresh the owning close
+    # only after capture's last store read, before the final D6 file reread.
+    code = control.forward_api(plan_path, argv)
+    plan = json.loads(plan_path.read_bytes())
+    counts = json.loads(Path(plan['counter']).read_bytes())
+    if argv[-1] == 'event-watch' and counts['event-watch'] == 2:
+        actor = plan['close_refresh']
+        before = control.snapshot(actor['dsn'], actor['pg_bin'], Path(actor['state_dir']))
+        control.write(plan_path.with_name('close-actor-before.json'), before)
+        command = [sys.executable, '-B', str(Path(__file__).resolve()), '--refresh-close-actor', actor['plan']]
+        result = subprocess.run(command, input=json.dumps(actor['body']), text=True, capture_output=True, timeout=20)
+        plan_path.with_name('close-actor.stdout').write_text(result.stdout)
+        plan_path.with_name('close-actor.stderr').write_text(result.stderr)
+        control.write(plan_path.with_name('close-actor.exit.json'), result.returncode)
+        control.write(plan_path.with_name('close-actor-after.json'),
+            control.snapshot(actor['dsn'], actor['pg_bin'], Path(actor['state_dir'])))
+        require(result.returncode == 0 and json.loads(result.stdout).get('ok') is True,
+                'actual owner close refresh failed')
+    return code
+
+
+def currentness_case(cluster, images, scratch, harness, side, case, revision):
+    label = harness + '_' + side + '_' + case
+    f = CurrentFixture(cluster, images['api'], scratch / label, label, harness=harness)
+    try:
+        ended = case in ('ended_settled', 'ended_nonterminal', 'newer_false', 'close_invalidation')
+        f.retained(settle=case != 'ended_nonterminal', cleanup=ended)
+        control.transport(f, images['api'])
+        hook = OwnerFixture(f.root / 'owner', images['control'], stager=images['stager'],
+                            harness=harness, source_revision=revision)
+        for config in (hook.memory, hook.coord):
+            config.update(cairn=str(f.host.binary), socket=str(f.host.socket),
+                          token_file=str(f.host.token('worker')), repo=f.repo)
+        hook.memory.update(state_dir=str(f.root / 'memory'), recall_observations=False, capture_observations=False)
+        hook.coord.update(state_dir=str(f.state_dir), binding=f.binding)
+        hook.publish_configuration(enabled=True)
+        event = dict(hook.event)
+        seed_opaque_owner_fields(hook, f.root / 'owner-opaque-seed')
+        producer_activation(hook, side, event, f.root / 'positive')
+        directory = Path(hook.memory['state_dir'])
+        positive = memory_state(directory)
+        require(any(True in body.get('inbox_activation', {}).values() for body in positive.values()), 'positive activation missing')
+        hook.publish_configuration(enabled=False)
+        select_disabled(f, hook)
+        producer_activation(hook, side, event, f.root / 'disabled', expected=True)
+        require(memory_state(directory) == positive, 'disabled refresh rewrote retained positive')
+        if harness == 'codex' and case == 'current_active':
+            ordinary = dict(event, prompt='zzcurrentnessturnprobe')
+            ordinary_codex_turn(hook, side, ordinary, f.root / 'current-turn', images['api'])
+            budget = memory_state(directory)[SESSION + '.memory-budget.json']
+            require(budget['active_turn_id'] == TURN, 'actual ordinary operation did not establish current owner')
+        if case == 'newer_false':
+            later = dict(event, turn_id='ffffffff-ffff-4fff-8fff-ffffffffffff', prompt_id='later-prompt')
+            producer_activation(hook, side, later, f.root / 'newer-false', expected=False)
+            if harness == 'codex':
+                ordinary = dict(later, prompt='zzcurrentnessturnprobe')
+                ordinary_codex_turn(hook, side, ordinary, f.root / 'later-turn', images['api'])
+                budget = memory_state(directory)[SESSION + '.memory-budget.json']
+                require(budget['active_turn_id'] == later['turn_id'], 'actual ordinary operation did not advance current turn')
+        expected_pass = case in ('ended_settled', 'newer_false', 'close_invalidation')
+        before = f.snapshot()
+        pins = file_pins(directory)
+        result = control.invoke(f, images['control'], 'inspect', control.plan_for(f), 'currentness', expected=0 if expected_pass else 1)
+        require(f.snapshot() == before and file_pins(directory) == pins, 'currentness inspection mutated retained facts')
+        require(not result['exchange']['Published'], 'inspection published bindings')
+        if expected_pass:
+            require(result['inspected'] and not result.get('error'), 'ended settled owner refused')
+        else:
+            require(not result['inspected'] and bool(result.get('error')), 'unsafe owner admitted')
+            if case != 'ended_nonterminal':
+                require('D1 retained positive or unknown activation grant' in result['error'], 'unrelated refusal masked D1')
+            else:
+                require('D4' in result['error'], 'nonterminal case lost actual hold refusal')
+        if case == 'close_invalidation':
+            closing = dict(request_id=control.uid(), session=f.session,
+                attempt_id=f.state['inbox_attempt']['attempt_id'], reason='delivery_completed')
+            actor = f.root / 'refresh-close-actor.json'
+            control.write(actor, dict(argv=[str(images['api']), 'agent', *map(str, f.host.connection('worker')),
+                'session-inbox-reconcile'], state=str(f.state_path)))
+            transport = json.loads((f.root / 'transport.json').read_bytes())
+            transport['close_refresh'] = dict(dsn=f.host.dsn, pg_bin=str(f.host.pg_bin), state_dir=str(f.state_dir),
+                plan=str(actor), body=closing)
+            control.write(f.root / 'transport.json', transport)
+            wrapper = f.root / 'read-api'
+            wrapper.chmod(0o700)
+            wrapper.write_text('#!/bin/sh\nexec ' + shlex.join([sys.executable, '-B', str(Path(__file__).resolve()),
+                '--currentness-forward', str(f.root / 'transport.json')]) + ' "$@"\n')
+            wrapper.chmod(0o500)
+            # A new public capture/switch observes the new transport bytes.
+            counter = f.root / 'read-counts.json'
+            control.write(counter, {})
+            changed = control.invoke(f, images['control'], 'switch', control.plan_for(f), 'end-fact-change', expected=1)
+            require(changed['inspected'] and not changed['exchange']['Published'] and
+                    'D6 drain receipt invalidated' in changed.get('error', ''), 'changed close fact did not invalidate D6')
+            require(actor.with_suffix('.result.json').exists(), 'ordinary owner close actor never executed')
+            require(file_pins(directory) == pins and control.sha((f.active / 'one.json').read_bytes()) == f.pins['one.json'],
+                    'D6 refusal changed grants or old complete selection')
+        retained = {name: body for name, body in memory_state(directory).items()
+                    if name.endswith(('.memory-budget.json', '.inbox-recall.json', '.initialized'))}
+        opaque_ledger = retained[SESSION + ('.memory-budget.json' if harness == 'codex' else '.inbox-recall.json')]
+        opaque = opaque_ledger['pending']['fixture_opaque'] if harness == 'codex' else opaque_ledger['fixture_opaque']
+        require(opaque == dict(text='日本語 😀', integer=900719925474099312345), 'opaque Unicode/integer fields changed')
+        control.write(f.root / 'currentness-result.json', dict(harness=harness, producer=side, case=case,
+            expected_pass=expected_pass, result=result, ledger=retained, protected_pins=pins))
+        return retained
+    finally:
+        pid = f.host.process.pid
+        require(pid > 1, 'owned API PID must exceed 1')
+        code = f.host.close()
+        control.write(f.root / 'api-cleanup.json', dict(pid=pid, exit=code, joined=True))
+
+
 def check(evidence):
     evidence.mkdir(mode=0o700, parents=True, exist_ok=False)
     scratch = Path(tempfile.mkdtemp(prefix='r06-owner-', dir=Path.home() / '.cache'))
@@ -337,6 +545,13 @@ def check(evidence):
         for name in ('unknown_decision', 'malformed_decisions', 'wrong_owner', 'unresolved_owner'):
             outcomes.append(guard_case(cluster, images, scratch, name))
             print(json.dumps(outcomes[-1]), flush=True)
+        for harness in ('codex', 'claude'):
+            for case in ('ended_settled', 'current_active', 'ended_nonterminal', 'unknown_end', 'newer_false', 'close_invalidation'):
+                source = currentness_case(cluster, images, scratch, harness, 'source', case, revision)
+                go = currentness_case(cluster, images, scratch, harness, 'go', case, revision)
+                require(scalar_tree(source) == scalar_tree(go), f'{harness}/{case}: independent owner ledgers differ')
+                outcomes.append(dict(case=harness + '_' + case, status='PASS'))
+                print(json.dumps(outcomes[-1]), flush=True)
     finally:
         identity = None
         try:
@@ -363,12 +578,21 @@ def check(evidence):
     require(current.stdout.splitlines() == [revision, tree], 'source identity changed during run')
     control.write(evidence / 'outcomes.json', outcomes)
     control.write(evidence / 'disposition.json', dict(component='existing owner grant disposition',
-        status='BLOCKED', decision='Source retains positive activation after disabled refresh and ordinary owner finalization; an explicit owner policy/interface decision is required before D1 can become true.',
+        status='EXISTING_FACT_CURRENTNESS', decision='Historical true is ineffective only with observed ended/noncurrent owning turn and exact authoritative terminal delivery/close; current or unknown refuses.',
         full_R06='NOT_ESTABLISHED', production_grant='NONE'))
-    print(f'R06 owner evidence: {len(outcomes)} cases passed; positive disposition BLOCKED; full R06 not established', flush=True)
+    print(f'R06 owner evidence: {len(outcomes)} cases passed; ended settled historical grants classified read-only; full R06 not established', flush=True)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--evidence', type=Path, required=True)
-    check(parser.parse_args().evidence)
+    parser.add_argument('--evidence', type=Path)
+    parser.add_argument('--refresh-close-actor', type=Path)
+    parser.add_argument('--currentness-forward', type=Path)
+    args, forwarded = parser.parse_known_args()
+    if args.currentness_forward:
+        raise SystemExit(currentness_forward(args.currentness_forward, forwarded))
+    if args.refresh_close_actor:
+        require(not forwarded, 'unexpected close actor arguments')
+        raise SystemExit(close_refresh_actor(args.refresh_close_actor))
+    require(args.evidence is not None and not forwarded, '--evidence required')
+    check(args.evidence)

@@ -106,13 +106,28 @@ activation decisions, a foreign authenticated reader, and an unresolved real
 owning-session obligation. Inspector snapshots must preserve database, native
 state, journals, memory files and the selected bindings.
 
-The existing activation operation remembers the first decision for a turn;
-refreshing a disabled selection does not replace a retained `true` with
-`false`. Inbox compaction preserves recent decisions and explicitly retained
-owner turns; it is reached when a new admitted inbox grant is persisted.
-The finite fixture does not manufacture new work to age out a grant or supply
-an artificial set of live turns. Its successful assertions establish executable
-parity and refusal evidence. Positive grant disposition remains **BLOCKED**:
-an owner policy/interface decision is needed for retirement before a unit
-retaining a positive activation can satisfy D1. This is not full R06, whole-unit
-refresh, HC05, production adoption, or R07 evidence.
+The activation operation remembers the first decision for a turn; refreshing
+disabled B does not replace a retained `true` with `false`. Inbox compaction
+preserves recent decisions and explicitly retained owner turns. The D1 reader
+classifies an unchanged historical decision from existing owner facts: its
+exact turn must be observably ended and noncurrent, and the matching delivery,
+attempt, close, completion and reply must satisfy the existing authenticated
+D2–D4 correspondence checks. Missing, ambiguous or contradictory visibility
+refuses. UUID ordering, decision insertion order and a newer `false` alone do
+not prove turn end. No retirement operation or inspector settlement is added.
+
+The extended driver retains the six standing cases and adds independent
+Source/Go owner cases for ended and settled turns, current turns, ended turns
+with nonterminal deliveries, unknown turn end, and newer disabled decisions.
+It uses actual owning-session tool capture/stop and delivery completion/close
+operations. Codex current epochs are also produced by the ordinary Source and
+checked Go memory bodies. A new close request is confirmed by the real API and
+retained by the fixture owner after capture; the final D6 reread must refuse
+publication and preserve the old complete selection. Opaque Japanese/emoji
+text, a large integer, accounting, initialized markers and positive decision
+bytes remain protected. Source fixtures produce ledgers through unmodified
+owner operations; there is no Python clearance oracle or hand-written end flag.
+
+Every relied-on local and authoritative fact enters the private drain
+fingerprint and final reread. These finite cases do not establish complete unit
+census, native refresh, full R06, HC05, production adoption or R07.
