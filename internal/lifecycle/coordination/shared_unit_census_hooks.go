@@ -3,6 +3,7 @@ package coordination
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -414,6 +415,14 @@ func (r *watchCensusRead) claudeHookReadback(selected WatchCensusClaudeHooks, st
 		return err
 	}
 	expectedRows := map[string]int{"memory:SessionStart": 13, "memory:UserPromptSubmit": 13, "memory:PreCompact": 150, "memory:SessionEnd": 150, "memory:PostToolUse": 13, "memory:PostToolUseFailure": 13, "coordination:SessionStart": 15, "coordination:UserPromptSubmit": 15, "coordination:Stop": 15, "coordination:SessionEnd": 2, "coordination:PostToolUse": 2}
+	lifeMetadata, err := r.jsonFile(filepath.Join(filepath.Dir(nativeText(producer.Get("lifecycle_selection").Get("path"))), "selection.json"))
+	if err != nil {
+		return err
+	}
+	anchors := lifeMetadata.Get("anchors")
+	if anchors == nil || anchors.Kind != value.Object {
+		return errors.New("native emitter launcher anchors are missing")
+	}
 	wanted := map[string]bool{}
 	for _, row := range rows.Items {
 		role, event := nativeText(row.Get("role")), nativeText(row.Get("event"))
@@ -432,7 +441,7 @@ func (r *watchCensusRead) claudeHookReadback(selected WatchCensusClaudeHooks, st
 		if matched != 1 {
 			return errors.New("native hook listing is missing, duplicated or in another layer")
 		}
-		if err := r.claudeHookRow(selected, row, observed.Executions); err != nil {
+		if err := r.claudeHookRow(selected, row, observed.Executions, anchors); err != nil {
 			return err
 		}
 	}
@@ -482,7 +491,7 @@ func (r *watchCensusRead) claudeHookReadback(selected WatchCensusClaudeHooks, st
 	return nil
 }
 
-func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *value.Value, executions []WatchCensusHookExecution) error {
+func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *value.Value, executions []WatchCensusHookExecution, anchors *value.Value) error {
 	role, event := nativeText(row.Get("role")), nativeText(row.Get("event"))
 	if role != "memory" && role != "coordination" {
 		return errors.New("unsupported native hook role")
@@ -586,6 +595,53 @@ func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *va
 		if _, _, err := r.descriptor(desc); err != nil {
 			return err
 		}
+	}
+	anchorMatches := 0
+	for _, anchor := range anchors.Members {
+		parts := anchor.Value.Get("vector")
+		if parts == nil || parts.Kind != value.Array {
+			return errors.New("invalid emitted native launcher anchor")
+		}
+		av := []string{}
+		for _, part := range parts.Items {
+			if part.Kind != value.String {
+				return errors.New("invalid emitted anchor argv")
+			}
+			av = append(av, nativeText(part))
+		}
+		if len(av) != 21 || !slices.Equal(av[5:], vals) {
+			continue
+		}
+		expected := av
+		if flagStart == 2 {
+			expected = append([]string{nativeText(compat.Receipt.Get("binary").Get("path")), role}, av[5:]...)
+		}
+		if !slices.Equal(expected, vector) {
+			return errors.New("native launcher program/literal argv differs from emitted anchor")
+		}
+		retainedRaw, err := LauncherBytes(av, "/bin/sh")
+		if err != nil {
+			return err
+		}
+		retained := row.Get("retained_launcher")
+		if retained == nil || retained.Kind != value.Array || len(retained.Items) != 1 || nativeText(retained.Items[0]) != LauncherPath(vals[13], retainedRaw) {
+			return errors.New("retained native launcher differs from emitted anchor")
+		}
+		retainedPath := nativeText(retained.Items[0])
+		if !censusWithin(r.catalog.Root, retainedPath) {
+			return errors.New("external retained native launcher")
+		}
+		actual, err := r.pin(WatchCensusPin{retainedPath, fmt.Sprintf("%x", sha256.Sum256(retainedRaw))}, false)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(actual, retainedRaw) {
+			return errors.New("retained native launcher changed")
+		}
+		anchorMatches++
+	}
+	if anchorMatches != 1 {
+		return errors.New("native launcher lacks one exact emitted anchor")
 	}
 	if flagStart == 2 && vector[0] != nativeText(compat.Receipt.Get("binary").Get("path")) {
 		return errors.New("native hook program differs from receipt image")
