@@ -253,6 +253,7 @@ class Fixture(composition.Fixture):
         child = self.spawn(release['argv'], label)
         record = self.add_reference(label, child, release, 'watcher')
         deadline = time.monotonic() + 8
+        complete = False
         while time.monotonic() < deadline:
             require(child.poll() is None, f'{label}: selected watcher exited before readback')
             rows = [json.loads(line) for line in log.read_text().splitlines()[offset:]] if log.exists() else []
@@ -260,9 +261,10 @@ class Fixture(composition.Fixture):
                 last_agent = {json.loads(row['stdout'])['data']['agent_id']: json.loads(row['stdout'])['data'] for row in rows}
                 if all(json.loads(Path(path).read_text())['agent'] ==
                        last_agent.get(json.loads(Path(path).read_text())['agent']['agent_id']) for path in self.proposal['Sessions']):
+                    complete = True
                     break
             time.sleep(.02)
-        require(len(rows) == 4 and all(row['exit'] == 0 and row['joined'] for row in rows),
+        require(complete and len(rows) == 4 and all(row['exit'] == 0 and row['joined'] for row in rows),
                 f'{label}: two configurations did not each heartbeat both real sessions')
         expected_sessions = {tuple(json.loads(Path(path).read_text())['agent'][key] for key in ('agent_id', 'execution_id'))
                              for path in self.proposal['Sessions']}
@@ -291,7 +293,7 @@ class Fixture(composition.Fixture):
             for key in ('last_seen', 'expires_at'):
                 state['agent'].pop(key, None)
             states[path] = state
-        token = self.host.token('worker')
+        token = Path(self.host.token('worker'))
         return dict(states=states, ledger=census.snapshot(self.universe / 'memory-a'),
                     credentials=dict(path=str(token), sha256=census.sha(token), mode=token.stat().st_mode),
                     lock_inode=(Path(self.selection['Directory']) / '.watch.lock').stat().st_ino)
