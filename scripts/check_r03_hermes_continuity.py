@@ -117,6 +117,7 @@ def session_api(home, hermes_root, report):
             'R03_SESSION_API: private home required')
     require(os.environ.get('HERMES_HOME') == str(home), 'R03_SESSION_API: explicit disposable HERMES_HOME required')
     require(sys.version_info[:3] == (3, 11, 15), 'R03_SESSION_API: held Python 3.11.15 required')
+    require(os.getpid() > 1, 'R03_SESSION_API: invalid owned process identity')
     marker = json.loads((Path(home).parent / 'prep-marker.json').read_bytes())
     require(marker['schema'] == SCHEMA and marker['home'] == str(home)
             and marker['hermes_root'] == str(hermes_root), 'R03_SESSION_API: owned preparation marker required')
@@ -175,6 +176,8 @@ def session_api(home, hermes_root, report):
             credential_selectors_sha256=selector_sha, active_foreign_acquire=False,
             foreign_release_effect=False, idle_acquire=True, client_imported=False,
             api='hermes_state.SessionDB', scope='persistence prerequisite only; no native conversation proof',
+            owned_process=dict(pid=os.getpid(), parent_pid=os.getppid(),
+                               executable=os.readlink('/proc/self/exe')),
             python=sys.version, hermes_module_sha256=digest(Path(hermes_root) / 'hermes_state.py')))
     finally:
         db.close()
@@ -212,6 +215,8 @@ def native_readback_request(native_root, manifest, home, baseline):
     constructor = next(node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == '__init__')
     require('resume' in [arg.arg for arg in constructor.args.args], 'R03_INTERFACE: held CLI lacks supported resume constructor')
     baseline_path = home.parent / 'session-api.json'
+    baseline_sha = digest(baseline_path)
+    database_sha = digest(home / 'state.db')
     code = '\n'.join([
         'import hashlib,importlib.util,json,os,pathlib,sys',
         'assert os.getpid() > 1',
@@ -222,7 +227,10 @@ def native_readback_request(native_root, manifest, home, baseline):
         'prep.verify_inputs(pathlib.Path(' + repr(str(native_root)) + '),pathlib.Path(' + repr(str(manifest)) + '))',
         'home=pathlib.Path(' + repr(str(home)) + ')',
         'assert os.environ["HERMES_HOME"] == str(home)',
-        'baseline=json.loads(pathlib.Path(' + repr(str(baseline_path)) + ').read_text())',
+        'baseline_path=pathlib.Path(' + repr(str(baseline_path)) + ')',
+        'assert hashlib.sha256(baseline_path.read_bytes()).hexdigest() == ' + repr(baseline_sha),
+        'assert hashlib.sha256((home/"state.db").read_bytes()).hexdigest() == ' + repr(database_sha),
+        'baseline=json.loads(baseline_path.read_text())',
         'assert baseline["session"] == ' + repr(baseline['session']),
         'sys.path.insert(0,' + repr(str(hermes_root)) + ')',
         'from cli import HermesCLI, _finalize_single_query',
@@ -249,8 +257,10 @@ def native_readback_request(native_root, manifest, home, baseline):
                     cli_path=str(hermes_root / 'cli.py'), cli_sha256=digest(hermes_root / 'cli.py')),
         environment=dict(HERMES_HOME=str(home), HOME=os.environ.get('HOME')),
         argv=['mise', 'run', 'host:exec', '--', '--timeout', '4m', '--weight', '2', '--',
+              'env', 'HERMES_HOME=' + str(home),
               str(native_root / 'venv/bin/python'), '-I', '-B', '-c', code],
         interpreter_sha256=digest(native_root / 'venv/bin/python'),
+        baseline_sha256=baseline_sha, database_sha256=database_sha,
         prerequisite='Root must pin and admit this exact code/input/request image before execution; the candidate never dispatches it.',
         limits=['Readback may import native client dependencies and load configuration; this is why admission is required.',
                 'Loopback port 9 is a refusal destination, not a scripted model server.',
@@ -301,6 +311,10 @@ def main(argv=None):
         stdout=result.stdout, stderr=result.stderr))
     require(result.returncode == 0, 'R03_SESSION_API: held API prerequisite failed; retain session-process.json')
     baseline = json.loads((output / 'session-api.json').read_bytes())
+    require(baseline['owned_process']['pid'] > 1, 'R03_SESSION_API: missing owned child identity')
+    write_json(output / 'cleanup.json', dict(worker_reaped=True, worker_exit=result.returncode,
+        application_database_closed=True, api_started=False, postgres_started=False,
+        native_client_started=False, retained_state='synthetic evidence for Root readback admission only'))
     write_json(output / 'native-readback-request.json', native_readback_request(args.native_root, args.manifest, home, baseline))
     write_json(output / 'native-boundary.json', native_boundary())
     print(json.dumps(dict(schema=SCHEMA, status='PREPARED', session_api='passed',
