@@ -120,7 +120,15 @@ func TestWatchCensusProducedSessionIdentity(t *testing.T) {
 				agent["native_session_id"] = "foreign-native"
 				state["native_session_id"] = native
 			case "foreign-agent":
-				agent["agent_id"] = "not-an-agent-uuid"
+				other, err := os.ReadFile(f.catalog.Sessions[1].Path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var foreign map[string]any
+				if err := json.Unmarshal(other, &foreign); err != nil {
+					t.Fatal(err)
+				}
+				state["agent"] = foreign["agent"]
 			case "foreign-workspace":
 				agent["metadata"].(map[string]any)["workspace"] = "/foreign-workspace"
 			}
