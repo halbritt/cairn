@@ -85,7 +85,7 @@ The process driver builds a frozen race-enabled helper and starts only owned
 generic callbacks. It checks running/delayed, joined/unjoined, omitted callback,
 invalid group/start identity and cached-A/disabled-B cases. `strace` records actual
 inspection opens and checks that no credential is opened, protected file is
-opened for writing, or protected path is renamed, removed or locked. Protected
+opened for writing, or protected path is renamed, removed or locked.
 `flock`, `kill` and `creat` syscalls are rejected anywhere in the inspector
 trace before path filtering; descriptor-only lock calls are covered. Receipt
 counts come from those checked lines. Protected
