@@ -520,7 +520,7 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 			r.sessionRefs[path] = WatchCensusSession{Path: path, Binding: owner, NativeSession: nativeText(state.Get("native_session_id")), AgentID: nativeText(ref.Get("agent_id")), ExecutionID: nativeText(ref.Get("execution_id")), SHA256: r.files[path], Workspace: workspace}
 			for _, key := range AttemptKeys {
 				if !nativeNone(state.Get(key)) {
-					r.nodeBlockers[owner] = append(r.nodeBlockers[owner], "retained native "+key+" needs its authenticated drain correspondence")
+					r.nodeDrainRequirements[owner] = append(r.nodeDrainRequirements[owner], WatchCensusDrainRequirement{Session: r.sessionRefs[path], Field: key})
 				}
 			}
 		}

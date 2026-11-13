@@ -112,9 +112,18 @@ refuses an unexplained extra selection directory. Reverse uses the same path.
 Outputs include initial and final census observations when reached. `FixtureReady`
 remains a declared finite-fixture result, with `ExternalCoverage: unknown` and
 `NativeRefresh: unobserved`. Owner join receipts retain same-UID fixture trust;
-a dead/unknown process alone is not clearance. Retained native obligation fields
-that the census cannot establish remain conservative blockers, including when
-the legacy `/1` drain could independently prove historical correspondence.
+a dead/unknown process alone is not clearance. Non-null retained native fields
+are named census `DrainRequirements`, not permanent key-presence blockers.
+Standalone census remains not ready and retains every raw field and state pin.
+The combined `/2` path can satisfy each requirement only with the existing
+authenticated D2 check for the exact same session/path/native identity,
+agent/execution IDs, state SHA-256 and field, in this command's own receipt.
+It joins again using that receipt's successful final D2 read and fresh census.
+Absent/mismatched claims, unknown attempts, absent journals and changed final
+facts refuse; all unrelated blockers and D1/D3-D7 checks remain unchanged.
+No caller-supplied report, Boolean or serialized authentication result is
+accepted by the unchanged public `/2` input. The private per-session result
+comes only from the existing historical correspondence/completion checks.
 Per-fact/composite final-read-to-rename windows, native producer/refresh/readback,
 external coverage, grants, common-image qualification and full R06/R07 remain open.
 No new lock/barrier, authority, settlement or inspector cleanup is introduced.

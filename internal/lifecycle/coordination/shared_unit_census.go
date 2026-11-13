@@ -65,40 +65,49 @@ type WatchCensusCallback struct {
 
 type WatchCensusSession struct{ Path, Binding, NativeSession, AgentID, ExecutionID, SHA256, Workspace string }
 
+// WatchCensusDrainRequirement names an observation requiring authenticated D2
+// correspondence. It is output evidence, never caller-supplied authority.
+type WatchCensusDrainRequirement struct {
+	Session WatchCensusSession
+	Field   string
+}
+
 type WatchUnitCensus struct {
-	Scope            string
-	ExternalCoverage string
-	NativeRefresh    string
-	FixtureReady     bool
-	RequiredBindings []string
-	Members          []WatchCensusMember
-	Callbacks        []WatchCensusCallback
-	Sessions         []WatchCensusSession
-	PositiveGrants   []string
-	Facts            map[string]string
-	Blockers         []string
-	Digest           string
-	RetainedCopies   []WatchBindings
+	Scope             string
+	ExternalCoverage  string
+	NativeRefresh     string
+	FixtureReady      bool
+	RequiredBindings  []string
+	Members           []WatchCensusMember
+	Callbacks         []WatchCensusCallback
+	Sessions          []WatchCensusSession
+	PositiveGrants    []string
+	Facts             map[string]string
+	Blockers          []string
+	Digest            string
+	RetainedCopies    []WatchBindings
+	DrainRequirements []WatchCensusDrainRequirement
 }
 
 type watchCensusRead struct {
-	cli             *CLI
-	local           *watchDrainRead
-	catalog         WatchCensusCatalog
-	report          WatchUnitCensus
-	nodes           map[string]*WatchCensusMember
-	files           map[string]string
-	directories     map[string][]string
-	inodes          map[string]string
-	images          map[string]bool
-	nodeBlockers    map[string][]string
-	nodeGrants      map[string][]string
-	sessionRefs     map[string]WatchCensusSession
-	callbackRecords map[string]watchCensusCallbackRecord
-	configPaths     map[*value.Value]string
-	bindingPins     map[string]string
-	clientPins      map[string]string
-	control         *unitCensusScope
+	cli                   *CLI
+	local                 *watchDrainRead
+	catalog               WatchCensusCatalog
+	report                WatchUnitCensus
+	nodes                 map[string]*WatchCensusMember
+	files                 map[string]string
+	directories           map[string][]string
+	inodes                map[string]string
+	images                map[string]bool
+	nodeBlockers          map[string][]string
+	nodeGrants            map[string][]string
+	nodeDrainRequirements map[string][]WatchCensusDrainRequirement
+	sessionRefs           map[string]WatchCensusSession
+	callbackRecords       map[string]watchCensusCallbackRecord
+	configPaths           map[*value.Value]string
+	bindingPins           map[string]string
+	clientPins            map[string]string
+	control               *unitCensusScope
 }
 
 // InspectWatchUnitCensus performs filesystem and process observations only.
@@ -113,8 +122,9 @@ func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 	r := &watchCensusRead{cli: c, nodes: map[string]*WatchCensusMember{}, files: map[string]string{},
 		directories: map[string][]string{}, inodes: map[string]string{}, images: map[string]bool{},
 		nodeBlockers: map[string][]string{}, nodeGrants: map[string][]string{}, sessionRefs: map[string]WatchCensusSession{},
-		callbackRecords: map[string]watchCensusCallbackRecord{},
-		configPaths:     map[*value.Value]string{}, control: control,
+		nodeDrainRequirements: map[string][]WatchCensusDrainRequirement{},
+		callbackRecords:       map[string]watchCensusCallbackRecord{},
+		configPaths:           map[*value.Value]string{}, control: control,
 		report: WatchUnitCensus{ExternalCoverage: "unknown", NativeRefresh: "unobserved", Facts: map[string]string{}}}
 	if c == nil || c.Host == nil || c.profile() == nil {
 		return r.report, &value.ProfileUnavailable{}
@@ -146,18 +156,34 @@ func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 	slices.Sort(r.report.PositiveGrants)
 	r.report.PositiveGrants = slices.Compact(r.report.PositiveGrants)
 	r.report.Blockers = slices.Compact(r.report.Blockers)
-	r.report.FixtureReady = len(r.report.Blockers) == 0
-	// The encoded report has stable ordering and no clock-based readiness field.
-	raw, err := json.Marshal(r.report)
-	if err != nil {
+	r.report.FixtureReady = len(r.report.Blockers) == 0 && len(r.report.DrainRequirements) == 0
+	if err := sealWatchCensusReport(&r.report); err != nil {
 		return r.report, err
 	}
-	sum := sha256.Sum256(raw)
-	r.report.Digest = hex.EncodeToString(sum[:])
-	if !r.report.FixtureReady {
+	if len(r.report.Blockers) != 0 {
 		return r.report, errors.New(strings.Join(r.report.Blockers, "; "))
 	}
+	if len(r.report.DrainRequirements) != 0 {
+		return r.report, &watchCensusD2Required{requirements: r.report.DrainRequirements}
+	}
 	return r.report, nil
+}
+
+func sealWatchCensusReport(report *WatchUnitCensus) error {
+	slices.SortFunc(report.DrainRequirements, func(a, b WatchCensusDrainRequirement) int {
+		if order := strings.Compare(a.Session.Path, b.Session.Path); order != 0 {
+			return order
+		}
+		return strings.Compare(a.Field, b.Field)
+	})
+	report.Digest = ""
+	raw, err := json.Marshal(report)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(raw)
+	report.Digest = hex.EncodeToString(sum[:])
+	return nil
 }
 
 func (r *watchCensusRead) block(message string) {
@@ -258,6 +284,7 @@ func (r *watchCensusRead) closure(p WatchCensusProposal) error {
 		sessions = append(sessions, node.Sessions...)
 		r.report.Blockers = append(r.report.Blockers, r.nodeBlockers[path]...)
 		r.report.PositiveGrants = append(r.report.PositiveGrants, r.nodeGrants[path]...)
+		r.report.DrainRequirements = append(r.report.DrainRequirements, r.nodeDrainRequirements[path]...)
 		if mode != "" && (mode != node.Mode || image != node.Image) {
 			r.block("mixed runtime selection in the required unit")
 		}

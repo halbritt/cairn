@@ -64,6 +64,28 @@ Publishing B does not refresh A or clear the grant. Only the fixture owner joins
 its children; the inspector performs no cleanup or settlement. Old fixture
 references and grants remain on disk under retained scratch custody.
 
+Non-null retained `AttemptKeys` fields produce named `DrainRequirements`, each
+with its field name and the exact observed session path, native/session identity
+and raw state SHA-256 pin. The raw session fields remain untouched. These
+requirements belong only to selected members of the connected unit; unrelated
+units do not acquire a selected drain obligation. They are not permanent
+blockers merely because the keys remain present.
+
+Standalone inspection cannot authenticate this correspondence. It returns
+`FixtureReady: false` and an error naming each unresolved field and session,
+while preserving every other blocker. A census report does not authorize a
+switch. The combined private `unit-control/2` path can satisfy a requirement
+only with the existing authenticated D2 check for the same session in its own
+drain receipt. Missing journals, unknown attempts, mismatched claims or session
+identities still refuse. No caller Boolean or serialized report clears a
+requirement; the public `/2` input accepts no authenticated-result field.
+
+The receipt joins by exact path, native identity, agent/execution IDs, state pin
+and retained field name. It repeats that join against the final D2 read before
+publication. A changed or unobservable fact invalidates the receipt. This adds
+no API authority, settlement, grant/journal mutation, owner exception or lock;
+the existing final-read-to-rename interval remains non-atomic.
+
 ## Focused validation
 
 Use a clean committed checkout and a new evidence directory:
@@ -96,6 +118,17 @@ The process driver also observes a real callback in a disjoint enabled unit
 remaining alive while the selected two-binding inventory passes. Retained native
 obligation fields defer to the existing authenticated drain correspondence; the
 census does not classify an unverified historical field as active or delete it.
+
+`scripts/check_r06_census_d2.py` uses the existing disposable API/PostgreSQL
+fixtures to complete and close real matching deliveries while retaining their
+policy and journal fields. Its seven cases cover combined success, mismatched
+policy claim, absent journal, unknown attempt, wrong session and final policy
+or actual claim invalidation. Standalone inspection remains not ready in every
+case. Source's existing `completion_scope` is observed for the valid retained
+policy and used for the actual completion; Source has no census/drain-result
+counterpart, so the fixture does not invent one. Unit tests separately check
+named read-only requirements, identity/pin/field refusal, unrelated blockers and
+rejection of caller-supplied authentication fields.
 
 Evidence records source/tree, dependencies, toolchain/native executable and
 helper image hashes, argv, actual output/exits, reached assertions and owned

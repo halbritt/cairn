@@ -17,11 +17,12 @@ import (
 // Its private scope can only be constructed by CaptureWatchDrain. The release
 // owner still establishes complete unit membership and effective hook refresh.
 type WatchDrainReceipt struct {
-	reader    *CLI
-	selection WatchBindings
-	callbacks []*value.Value
-	facts     map[string]string
-	census    *unitCensusDrain
+	reader     *CLI
+	selection  WatchBindings
+	callbacks  []*value.Value
+	facts      map[string]string
+	census     *unitCensusDrain
+	d2Sessions map[string]watchDrainD2Session
 }
 
 // Facts returns fingerprints for the retained release evidence, never tokens
@@ -50,11 +51,11 @@ func (c *CLI) CaptureWatchDrain(ctx context.Context, selected WatchBindings, cal
 		}
 		refs[i] = nativeClone(ref)
 	}
-	facts, err := c.readWatchDrain(ctx, selected, refs)
+	read, err := c.readWatchDrain(ctx, selected, refs)
 	if err != nil {
 		return nil, err
 	}
-	return &WatchDrainReceipt{reader: c, selection: selected, callbacks: refs, facts: facts}, nil
+	return &WatchDrainReceipt{reader: c, selection: selected, callbacks: refs, facts: read.facts, d2Sessions: read.d2SessionResults()}, nil
 }
 
 // ExchangeWatchBindings publishes the whole stopped watcher selection and
@@ -96,9 +97,10 @@ func (r *WatchDrainReceipt) recheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("D6 drain receipt invalidated: %w", err)
 	}
-	if !maps.Equal(r.facts, current) {
+	if !maps.Equal(r.facts, current.facts) {
 		return errors.New("D6 drain receipt invalidated: D1-D5 facts changed")
 	}
+	r.d2Sessions = current.d2SessionResults()
 	return nil
 }
 
@@ -118,7 +120,7 @@ type watchDrainSession struct {
 	config, ref, state *value.Value
 }
 
-func (c *CLI) readWatchDrain(ctx context.Context, selected WatchBindings, callbacks []*value.Value) (map[string]string, error) {
+func (c *CLI) readWatchDrain(ctx context.Context, selected WatchBindings, callbacks []*value.Value) (*watchDrainRead, error) {
 	if c.Host == nil || c.profile() == nil {
 		return nil, &value.ProfileUnavailable{}
 	}
@@ -152,7 +154,7 @@ func (c *CLI) readWatchDrain(ctx context.Context, selected WatchBindings, callba
 			return nil, err
 		}
 	}
-	return read.facts, nil
+	return read, nil
 }
 
 func (r *watchDrainRead) record(key string, body *value.Value) error {

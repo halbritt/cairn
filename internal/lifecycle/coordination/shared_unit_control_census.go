@@ -32,6 +32,7 @@ type unitCensusDrain struct {
 	initial           WatchUnitCensus
 	final             *WatchUnitCensus
 	planPath, planPin string
+	drain             *WatchDrainReceipt
 }
 
 func validateUnitCensusInput(v *value.Value, input *UnitControlCensus) error {
@@ -89,7 +90,7 @@ func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings,
 	}
 	scope := &unitCensusScope{current: current, retained: input.Retained}
 	report, err := c.inspectWatchUnitCensus(ctx, input.Catalog, input.Proposal, scope)
-	if err != nil {
+	if err != nil && !censusOnlyNeedsD2(err) {
 		return nil, report, err
 	}
 	callbacks := make([]*value.Value, 0, len(report.Callbacks))
@@ -100,6 +101,9 @@ func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings,
 	if err != nil {
 		return nil, report, err
 	}
+	if err := satisfyCensusD2(&report, receipt.d2Sessions); err != nil {
+		return nil, report, err
+	}
 	bound := *input
 	bound.Proposal.Bindings = []WatchBindings{cloneCensusSelection(proposed)}
 	bound.Proposal.Sessions = slices.Clone(input.Proposal.Sessions)
@@ -108,7 +112,7 @@ func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings,
 	for i, s := range input.Retained {
 		bound.Retained[i] = cloneCensusSelection(s)
 	}
-	receipt.census = &unitCensusDrain{cli: c, input: bound, current: cloneCensusSelection(current), initial: report}
+	receipt.census = &unitCensusDrain{cli: c, input: bound, current: cloneCensusSelection(current), initial: report, drain: receipt}
 	return receipt, report, nil
 }
 
@@ -212,7 +216,14 @@ func (r *unitCensusDrain) recheck(ctx context.Context, swap *watchBindingsSwap) 
 	copies := append(slices.Clone(r.input.Retained), prepared)
 	report, err := r.cli.inspectWatchUnitCensus(ctx, r.input.Catalog, r.input.Proposal, &unitCensusScope{current: r.current, retained: copies})
 	r.final = &report
-	if err != nil {
+	if err != nil && !censusOnlyNeedsD2(err) {
+		return fail(err)
+	}
+	var passed map[string]watchDrainD2Session
+	if r.drain != nil {
+		passed = r.drain.d2Sessions
+	}
+	if err := satisfyCensusD2(&report, passed); err != nil {
 		return fail(err)
 	}
 	// Retain raw final observations. Only this swap's validated preparation is
