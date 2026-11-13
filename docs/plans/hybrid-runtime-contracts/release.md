@@ -604,10 +604,17 @@ because a corresponding legacy test exists.
    executes twice and delivers context twice, including identical
    commands. An installer must select one active layer for each Cairn hook and
    detect a conflicting copy in the other layer before writing; it must not
-   leave both copies active. The current installer does not implement this
-   check: for Agy hook configuration, it reads and writes only the given
-   `--settings` file and does not inspect the other layer. R-06 must qualify the
-   completed check and the resulting selection across cutover and rollback. The
+   leave both copies active. The explicit checked Go `agy-layer` publication
+   path, selected through the independently pinned `publish-agy` bridge in
+   [lifecycle staging](../../operator/lifecycle-staging.md#checked-agy-accountproject-publication),
+   checks both scoped layers before publishing the selected Cairn group.
+   The retained Python installer still reads and writes only the given
+   `--settings` file; it does not gain this guarantee. R-06 must qualify the
+   checked path and resulting selection across cutover and rollback. Final
+   observations do not exclude an uncooperating legacy write after the last
+   read and are not an atomic cross-root barrier. Strict old-or-disabled
+   recovery for a post-rename SIGKILL, and semantic attribution of opaque
+   commands outside the reserved group, remain unqualified. The
    [native Agy fixture](../../developer/native-agy-hook-fixture.md) observes the
    duplicate dispatch and removal behavior; it does not qualify installer
    conflict detection or a complete transition.

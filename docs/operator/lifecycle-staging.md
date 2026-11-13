@@ -1,9 +1,9 @@
 # Stage lifecycle selections
 
-The Linux `cairn-stage-lifecycle` tool implements the binary-staging part of
+The Linux `cairn-stage-lifecycle` binary-staging mode implements the binary-staging part of
 R-02. It copies an independently pinned executable into an existing private
 release directory and prints its `{path, sha256}` descriptor as JSON.
-It does not install a binding, configure a hook, validate the `/3` lifecycle
+This mode does not install a binding, configure a hook, validate the `/3` lifecycle
 interface or execute the staged program.
 
 Build the tool from the selected source with
@@ -213,6 +213,71 @@ check. That host orchestration entrypoint builds inside the existing wrapper,
 then starts a second wrapper namespace with only the package bound at `/work`.
 The second namespace contains no checkout or production home. It installs and
 invokes the selected real frontend again after removing the producer inputs.
+
+## Checked Agy account/project publication
+
+Agy account `ACCOUNT_HOME/.gemini/config/hooks.json` and project
+`WORKSPACE/.agents/hooks.json` are cumulative. Identical Cairn entries in both
+files still dispatch twice. The explicit `agy-layer` Go operation checks both
+scoped roots and publishes only the selected layer's `cairn-coordination`
+group. Its roots come from `--account-home` and `--workspace`, with
+`--layer account` or `--layer project`; it does not discover another account
+through `HOME` or a tool through `PATH`.
+
+Prepare the complete desired Cairn group using the settings renderer below.
+The publication plan selects its prepared settings file by independent pin:
+
+```json
+{"schema":"cairn.agy-layer-install/1","settings":{"path":"/private/prepared-hooks.json","sha256":"PREPARED_SHA256"}}
+```
+
+The optional `replace_commands` array selects exact prior command strings to
+replace in the selected group. Use the renderer's selected prior coordination
+commands; an empty or omitted array grants no removal by name or keyword.
+The prepared group must retain every unselected hook and its relative order.
+An unrelated hook does not become removable because its text contains
+`cairn`. The current outer settings supply all unrelated bytes and selectors;
+unrelated keys in the prepared file cannot overwrite them.
+
+Use the explicit bridge with the independently selected Go tool digest:
+
+```sh
+/usr/bin/python3 -I -S -B /package/stage_lifecycle_hooks.py publish-agy \
+  --stager /package/cairn-stage-lifecycle --stager-sha256 "$STAGER_SHA256" \
+  --account-home /accounts/selected --workspace /work/selected --layer account \
+  < agy-publication.json
+```
+
+The bridge verifies the tool's bytes and executes a private copy of those
+bytes. The Go command consumes the paired-layer check in the actual write
+path. It refuses an existing Cairn dispatch in the other layer, including an
+identical command. Unknown, malformed, unreadable, aliased or changed
+observations refuse. It preserves unrelated current settings and existing
+file modes, and does not remove or disable the other layer or chmod shared
+paths. A repeated selection is a no-op. Errors and interruptions require
+reconciliation of the observed settings; do not infer that no write occurred.
+
+Rooted reads and final readback are not an atomic transaction with legacy
+writers in the other root. A write after the last observation cannot be
+excluded by this installer. Supported unit drain, refresh, reverse selection
+and the separately authorized R-06/R-07 transition remain required. This
+operation neither grants runtime authority nor installs an Agy memory hook.
+The reserved Cairn group is detected directly; command-text suspicion outside
+that group cannot establish the identity of an opaque executable or shell
+indirection. That semantic attribution remains unqualified.
+
+Returned-error recovery restores the complete old settings or prior absence
+while the publisher still owns the selected inode. If another writer replaces
+it, the publisher leaves that writer's file alone and retains the complete old
+copy with an explicit reconciliation path. A hard kill after the atomic rename
+can instead leave the complete new settings and old backup. Strict
+old-or-disabled recovery for that SIGKILL window is not established here;
+returned-error tests do not qualify it. These limits remain open for the full
+R-06 installation and transition disposition.
+
+The retained `/2` installer and rollback operation remain unchanged; they do
+not gain this paired-layer guarantee. Default rendering below remains
+staging-only and does not apply a live configuration.
 
 ## Stage Codex, Claude and Agy hook settings
 

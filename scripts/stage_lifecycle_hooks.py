@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage selected shell/OpenCode hook settings; never apply or trust live hooks."""
+"""Stage hook settings; publish-agy explicitly selects checked Go publication."""
 import argparse
 import copy
 import importlib.util
@@ -292,10 +292,49 @@ def stage(stager, root, plan):
                 native_trust='not-performed', refresh='not-performed', activation='not-performed')
 
 
+def publish_agy(argv, raw):
+    """Forward one explicit publication to an independently pinned Go image."""
+    parser = argparse.ArgumentParser(prog='stage_lifecycle_hooks.py publish-agy')
+    parser.add_argument('--stager', required=True)
+    parser.add_argument('--stager-sha256', required=True)
+    parser.add_argument('--account-home', required=True)
+    parser.add_argument('--workspace', required=True)
+    parser.add_argument('--layer', choices=('account', 'project'), required=True)
+    args = parser.parse_args(argv)
+    for path in (args.stager, args.account_home, args.workspace):
+        if not installation.canonical(path):
+            raise ValueError('canonical tool, account home and workspace required')
+    image = installation.read_selected(
+        dict(path=args.stager, sha256=args.stager_sha256), 128 * 1024 * 1024)
+    # Execute these verified bytes, rather than reopening a mutable tool path
+    # after its digest check. The original package and both layers stay intact.
+    with tempfile.TemporaryDirectory(prefix='cairn-agy-publisher-') as temporary:
+        executable = Path(temporary) / 'cairn-stage-lifecycle'
+        executable.write_bytes(image)
+        executable.chmod(0o500)
+        result = installation.run_owned([str(executable),
+            'agy-layer', '--account-home', args.account_home,
+            '--workspace', args.workspace, '--layer', args.layer,
+        ], payload=installation.encoded(installation.decoded(raw)), timeout=120)
+        if result.returncode:
+            raise RuntimeError('Agy publication refused; reconcile both hook layers: ' +
+                               result.stderr.decode(errors='replace'))
+        return installation.decoded(result.stdout)
+
+
 def main():
     def interrupted(*args):
+        if sys.argv[1:2] == ['publish-agy']:
+            raise installation.InstallationInterrupted('Agy publication interrupted; reconcile both hook layers')
         raise installation.InstallationInterrupted('hook staging interrupted; reconcile selected generation')
     signal.signal(signal.SIGTERM, interrupted)
+    if sys.argv[1:2] == ['publish-agy']:
+        raw = sys.stdin.buffer.read(1024 * 1024 + 1)
+        if len(raw) > 1024 * 1024:
+            raise ValueError('Agy publication plan exceeds 1 MiB')
+        result = publish_agy(sys.argv[2:], raw)
+        sys.stdout.buffer.write(installation.encoded(result) + b'\n')
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stager', required=True)
     parser.add_argument('--root', required=True)
