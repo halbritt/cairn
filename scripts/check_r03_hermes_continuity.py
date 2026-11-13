@@ -6,6 +6,7 @@ It proves only the database prerequisite. Native CLI/gateway execution remains
 an explicit NOTRUN boundary; neither a fixture flag nor this report admits it.
 """
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -111,7 +112,8 @@ def source_pins():
 
 def session_api(home, hermes_root, report):
     """Use the supported persistence API only; never import cli or run_agent."""
-    require(Path(home).is_dir() and stat.S_IMODE(Path(home).stat().st_mode) == 0o700,
+    require(Path(home).is_dir() and Path(home).stat().st_uid == os.getuid()
+            and stat.S_IMODE(Path(home).stat().st_mode) == 0o700,
             'R03_SESSION_API: private home required')
     require(os.environ.get('HERMES_HOME') == str(home), 'R03_SESSION_API: explicit disposable HERMES_HOME required')
     require(sys.version_info[:3] == (3, 11, 15), 'R03_SESSION_API: held Python 3.11.15 required')
@@ -119,7 +121,9 @@ def session_api(home, hermes_root, report):
     require(marker['schema'] == SCHEMA and marker['home'] == str(home)
             and marker['hermes_root'] == str(hermes_root), 'R03_SESSION_API: owned preparation marker required')
     require(Path(report) == Path(home).parent / 'session-api.json', 'R03_SESSION_API: report escapes preparation')
-    require(not (Path(home) / 'state.db').exists(), 'R03_SESSION_API: fresh application state required')
+    private_output(Path(marker['evidence_root']), Path(report))
+    require(Path(home) == Path(home).resolve() and not list(Path(home).iterdir()),
+            'R03_SESSION_API: fresh application state required')
     sys.path.insert(0, str(hermes_root))
     from hermes_state import SessionDB
 
@@ -191,6 +195,68 @@ def native_boundary():
         provider_recreation_is_continuity=False, admission_flag_is_authority=False)
 
 
+def native_readback_request(native_root, manifest, home, baseline):
+    """Produce an exact, unexecuted first-client request for Root admission.
+
+    This requests only constructor + supported resume readback, not a turn.
+    A successful readback would still leave A/B/reverse callbacks and R06 open.
+    The command is data in the packet, never dispatched by this checker.
+    """
+    hermes_root = native_root / 'hermes'
+    mixin = hermes_root / 'hermes_cli/cli_agent_setup_mixin.py'
+    tree = ast.parse(mixin.read_text())
+    resume = next(node for node in ast.walk(tree)
+                  if isinstance(node, ast.FunctionDef) and node.name == '_preload_resumed_session')
+    cli_tree = ast.parse((hermes_root / 'cli.py').read_text())
+    owner = next(node for node in cli_tree.body if isinstance(node, ast.ClassDef) and node.name == 'HermesCLI')
+    constructor = next(node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == '__init__')
+    require('resume' in [arg.arg for arg in constructor.args.args], 'R03_INTERFACE: held CLI lacks supported resume constructor')
+    baseline_path = home.parent / 'session-api.json'
+    code = '\n'.join([
+        'import hashlib,importlib.util,json,os,pathlib,sys',
+        'assert os.getpid() > 1',
+        'checker=pathlib.Path(' + repr(str(Path(__file__).resolve())) + ')',
+        'assert hashlib.sha256(checker.read_bytes()).hexdigest() == ' + repr(digest(Path(__file__))),
+        'spec=importlib.util.spec_from_file_location("r03_continuity_prep",checker)',
+        'prep=importlib.util.module_from_spec(spec); spec.loader.exec_module(prep)',
+        'prep.verify_inputs(pathlib.Path(' + repr(str(native_root)) + '),pathlib.Path(' + repr(str(manifest)) + '))',
+        'home=pathlib.Path(' + repr(str(home)) + ')',
+        'assert os.environ["HERMES_HOME"] == str(home)',
+        'baseline=json.loads(pathlib.Path(' + repr(str(baseline_path)) + ').read_text())',
+        'assert baseline["session"] == ' + repr(baseline['session']),
+        'sys.path.insert(0,' + repr(str(hermes_root)) + ')',
+        'from cli import HermesCLI, _finalize_single_query',
+        'cli=None',
+        'try:',
+        ' cli=HermesCLI(model="r03-scripted-fixture",provider="custom",api_key="r03-fixture-only",base_url="http://127.0.0.1:9/v1",toolsets=["mcp-cairn"],compact=True,resume=baseline["session"])',
+        ' assert cli._fallback_model == []',
+        ' assert cli._preload_resumed_session()',
+        ' assert cli.session_id == baseline["session"]',
+        ' expected=[m for m in baseline["model_history"] if m.get("role") != "session_meta"]',
+        ' assert cli.conversation_history == expected',
+        ' assert cli.api_key == "r03-fixture-only"',
+        ' assert str(cli.base_url) == "http://127.0.0.1:9/v1"',
+        ' selectors=home/"credential-selectors.json"',
+        ' assert hashlib.sha256(selectors.read_bytes()).hexdigest() == baseline["credential_selectors_sha256"]',
+        ' print(json.dumps(dict(session=cli.session_id,history_rows=len(cli.conversation_history),agent_initialized=cli.agent is not None,conversation_turn_run=False)))',
+        'finally:',
+        ' if cli is not None: _finalize_single_query(cli)',
+    ])
+    return dict(schema=SCHEMA, status='REQUESTED_NOT_EXECUTED',
+        operation='One disposable native HermesCLI constructor and same-session resume/readback; no _init_agent, chat, model request or live profile.',
+        source=dict(path=str(mixin), sha256=digest(mixin),
+                    resume_method_lines=[resume.lineno, resume.end_lineno],
+                    cli_path=str(hermes_root / 'cli.py'), cli_sha256=digest(hermes_root / 'cli.py')),
+        environment=dict(HERMES_HOME=str(home), HOME=os.environ.get('HOME')),
+        argv=['mise', 'run', 'host:exec', '--', '--timeout', '4m', '--weight', '2', '--',
+              str(native_root / 'venv/bin/python'), '-I', '-B', '-c', code],
+        interpreter_sha256=digest(native_root / 'venv/bin/python'),
+        prerequisite='Root must pin and admit this exact code/input/request image before execution; the candidate never dispatches it.',
+        limits=['Readback may import native client dependencies and load configuration; this is why admission is required.',
+                'Loopback port 9 is a refusal destination, not a scripted model server.',
+                'No native conversation turn, selected callbacks, A/B/reverse continuity, Store effects or activation-unit acceptance established.'])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--phase', choices=('prepare', 'session-api', 'native'), default='prepare')
@@ -222,7 +288,7 @@ def main(argv=None):
     home = output / 'hermes-home'
     home.mkdir(mode=0o700)
     write_json(output / 'prep-marker.json', dict(schema=SCHEMA, home=str(home),
-               hermes_root=str(args.native_root / 'hermes')))
+               hermes_root=str(args.native_root / 'hermes'), evidence_root=str(args.evidence_root)))
     write_json(output / 'before-use.json', dict(held=pins, source=source,
         native_root=str(args.native_root), normal_home=os.environ.get('HOME'), client_started=False))
     command = [str(args.native_root / 'venv/bin/python'), '-I', '-B', str(Path(__file__).resolve()),
@@ -234,6 +300,8 @@ def main(argv=None):
     write_json(output / 'session-process.json', dict(argv=command, exit=result.returncode,
         stdout=result.stdout, stderr=result.stderr))
     require(result.returncode == 0, 'R03_SESSION_API: held API prerequisite failed; retain session-process.json')
+    baseline = json.loads((output / 'session-api.json').read_bytes())
+    write_json(output / 'native-readback-request.json', native_readback_request(args.native_root, args.manifest, home, baseline))
     write_json(output / 'native-boundary.json', native_boundary())
     print(json.dumps(dict(schema=SCHEMA, status='PREPARED', session_api='passed',
                          native='NOTRUN', ac4_closed=False, output=str(output))))
