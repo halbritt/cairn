@@ -87,7 +87,7 @@ class R04BoundWiringTests(BoundMemoryCase):
                 ('codex', 'agent_tools', {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'Stop': 150}),
                 ('codex', 'ambient', {'PreCompact': 150, 'Stop': 150}),
                 ('codex', None, {'PreCompact': 150, 'Stop': 150}),
-                ('claude', 'agent_tools', {'SessionStart': 13, 'PreCompact': 150, 'SessionEnd': 150}),
+                ('claude', 'agent_tools', {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150}),
                 ('claude', 'ambient', {'PreCompact': 150, 'SessionEnd': 150}),
                 ('claude', None, {'PreCompact': 150, 'SessionEnd': 150}),
                 ('codex', 'invalid', {'PreCompact': 150, 'Stop': 150}),
