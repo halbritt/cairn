@@ -96,17 +96,24 @@ class Fixture:
         command(argv, prefix, env=dict(os.environ, CAIRN_R06_CENSUS_PLAN=str(path)))
         if trace:
             lines = prefix.with_suffix('.strace').read_text().splitlines()
+            forbidden = {op: sum(op + '(' in line for line in lines) for op in ('flock', 'kill', 'creat')}
+            for op, count in forbidden.items():
+                require(count == 0, f'inspector used forbidden syscall: {op} ({count})')
+            counts = dict(credential_opens=0, protected_write_opens=0, protected_rename_unlink=0)
             for line in lines:
-                require(not ('.token"' in line and ('openat(' in line or 'open(' in line)),
+                counts['credential_opens'] += int('.token"' in line and ('openat(' in line or 'open(' in line))
+                require(counts['credential_opens'] == 0,
                         'inspector opened a credential selector for content')
                 if str(self.universe) not in line:
                     continue
-                require(not any(flag in line for flag in ('O_WRONLY', 'O_RDWR', 'O_CREAT', 'O_TRUNC')),
+                counts['protected_write_opens'] += int(any(flag in line for flag in ('O_WRONLY', 'O_RDWR', 'O_CREAT', 'O_TRUNC')))
+                require(counts['protected_write_opens'] == 0,
                         'inspector opened a protected unit file for writing')
-                require(not any(op in line for op in ('rename(', 'renameat(', 'renameat2(', 'unlink(', 'unlinkat(', 'flock(')),
+                counts['protected_rename_unlink'] += int(any(op in line for op in ('rename(', 'renameat(', 'renameat2(', 'unlink(', 'unlinkat(')))
+                require(counts['protected_rename_unlink'] == 0,
                         'inspector mutated/locked a protected path')
-            write(prefix.with_suffix('.trace-assertions.json'), dict(credential_opens=0, protected_write_opens=0,
-                protected_rename_unlink_flock=0, trace_lines=len(lines)))
+            write(prefix.with_suffix('.trace-assertions.json'), dict(**counts, inspector_syscalls=forbidden,
+                protected_rename_unlink_flock=counts['protected_rename_unlink'] + forbidden['flock'], trace_lines=len(lines)))
         return json.loads(prefix.with_suffix('.result.json').read_text())
 
     def inspect(self, expected, message, *, trace=True):

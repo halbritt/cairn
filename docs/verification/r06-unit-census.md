@@ -86,6 +86,9 @@ generic callbacks. It checks running/delayed, joined/unjoined, omitted callback,
 invalid group/start identity and cached-A/disabled-B cases. `strace` records actual
 inspection opens and checks that no credential is opened, protected file is
 opened for writing, or protected path is renamed, removed or locked. Protected
+`flock`, `kill` and `creat` syscalls are rejected anywhere in the inspector
+trace before path filtering; descriptor-only lock calls are covered. Receipt
+counts come from those checked lines. Protected
 file bytes, membership and modes are compared before and after inspection.
 Inactive private process entry points skip outside their explicit driver;
 required unit/process selectors run without skips.
