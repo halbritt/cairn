@@ -186,6 +186,10 @@ class Fixture(composition.Fixture):
         for selection in self.catalog['Selections']:
             owned(selection['Directory'])
             configs.extend(json.loads((Path(selection['Directory']) / name).read_text()) for name in selection['Pins'])
+        for pin in self.catalog['Bindings']:
+            manifest = json.loads(Path(owned(pin['Path'])).read_text())
+            configs.append(json.loads(Path(owned(manifest['memory_config']['path'])).read_text()))
+            configs.extend(json.loads(Path(owned(member['path'])).read_text()) for member in manifest['coordination_configs'])
         for config in configs:
             for key in ('state_dir', 'socket', 'token_file', 'cairn', 'inbox_recall_binding'):
                 owned(config[key])
