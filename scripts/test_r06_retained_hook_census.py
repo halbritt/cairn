@@ -6,6 +6,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -62,6 +63,33 @@ class RetainedHookMaterial(InstalledTools, unittest.TestCase):
         subprocess.run(['go', 'test', '-c', '-buildvcs=false', '-o', str(cls.census),
                         './internal/lifecycle/coordination'], cwd=ROOT, check=True, timeout=120)
         cls.census.chmod(0o500)
+        destination = os.environ.get('CAIRN_RETAINED_CENSUS_EVIDENCE')
+        if destination:
+            evidence = Path(destination)
+            evidence.mkdir(mode=0o700, parents=True, exist_ok=True)
+            images = evidence / 'images'
+            images.mkdir(mode=0o700)
+            pins = {}
+            for role, image in (('census', cls.census), ('control', cls.binary), ('stager', cls.stager)):
+                retained = images / role
+                shutil.copyfile(image, retained)
+                retained.chmod(0o500)
+                pins[role] = dict(actual=material_pin(image), retained=material_pin(retained))
+                build = subprocess.run(['go', 'version', '-m', str(image)], capture_output=True, check=True)
+                (images / (role + '.buildinfo')).write_bytes(build.stdout)
+            sources = [*sorted(ROOT.rglob('*.go')), *sorted((ROOT / 'integrations/lifecycle').glob('*.py')),
+                       ROOT / 'go.mod', ROOT / 'go.sum', Path(__file__).resolve(),
+                       ROOT / 'scripts/check_r06_native_hook_census.py',
+                       ROOT / 'scripts/stage_lifecycle_hooks.py', ROOT / 'scripts/stage_lifecycle_compatibility.py',
+                       ROOT / 'scripts/test_r04_retained2_hook_settings.py', ROOT / 'scripts/test_lifecycle_generation_install.py']
+            observer = shutil.which('strace')
+            if observer is None:
+                raise RuntimeError('strace is required by the retained census material fixture')
+            collector.write(evidence / 'images-before-first-use.json', dict(images=pins,
+                python=material_pin(Path(sys.executable)), shell=material_pin(Path('/bin/sh')),
+                observer=material_pin(Path(observer)),
+                sources={str(path.relative_to(ROOT)): material_pin(path)['SHA256'] for path in sources},
+                scope='synthetic registration/readback unit test; no native client or authenticated D2'))
 
     def test_real_retained_material_reaches_consumed_reader(self):
         from test_r04_retained2_hook_settings import Retained2HookSettingsTests
