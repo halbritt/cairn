@@ -421,7 +421,8 @@ def currentness_case(cluster, images, scratch, harness, side, case, revision):
     label = harness + '_' + side + '_' + case
     f = CurrentFixture(cluster, images['api'], scratch / label, label, harness=harness)
     try:
-        ended = case in ('ended_settled', 'ended_nonterminal', 'ended_mismatched_close', 'newer_false', 'close_invalidation')
+        ended = (case in ('ended_settled', 'ended_nonterminal', 'ended_mismatched_close', 'newer_false', 'close_invalidation')
+                 or harness == 'codex' and case == 'current_active')
         f.retained(settle=case != 'ended_nonterminal', cleanup=ended)
         if case == 'ended_mismatched_close':
             other = CurrentFixture(cluster, images['api'], scratch / (label + '_wrong_close'),
@@ -459,7 +460,7 @@ def currentness_case(cluster, images, scratch, harness, side, case, revision):
         select_disabled(f, hook)
         producer_activation(hook, side, event, f.root / 'disabled', expected=True)
         require(memory_state(directory) == positive, 'disabled refresh rewrote retained positive')
-        if harness == 'codex' and case == 'current_active':
+        if harness == 'codex' and case in ('current_active', 'newer_false'):
             ordinary = dict(event, prompt='zzcurrentnessturnprobe')
             ordinary_codex_turn(hook, side, ordinary, f.root / 'current-turn', images['api'])
             budget = memory_state(directory)[SESSION + '.memory-budget.json']
