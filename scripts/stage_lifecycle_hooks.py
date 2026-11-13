@@ -120,8 +120,7 @@ def definitions(stager, plan):
                                   and event in ('PreCompact', 'Stop', 'SessionEnd'))
             bound_go = (role == 'memory' and config.get('inbox_recall_binding') and (
                 (plan['harness'] == 'codex' and event in ('SessionStart', 'UserPromptSubmit')
-                 or plan['harness'] == 'claude' and event in (
-                     'SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure'))
+                 or plan['harness'] == 'claude' and event in ('SessionStart', 'UserPromptSubmit'))
                 and config.get('recall_mode') == 'agent_tools'
                 or plan['harness'] == 'codex' and event in ('PreCompact', 'Stop')
                 or plan['harness'] == 'claude' and event in ('PreCompact', 'SessionEnd')))
@@ -137,9 +136,8 @@ def definitions(stager, plan):
                 reason = ('receipt-checked ordinary Go recall' if event in ('SessionStart', 'UserPromptSubmit')
                           else 'receipt-checked ordinary Go tool observation')
             elif bound_go:
-                kind = ('recall' if event in ('SessionStart', 'UserPromptSubmit') else
-                        'tool observation' if event in ('PostToolUse', 'PostToolUseFailure') else 'capture')
-                reason = 'receipt-checked bound Go ' + kind
+                reason = ('receipt-checked bound Go recall' if event in ('SessionStart', 'UserPromptSubmit')
+                          else 'receipt-checked bound Go capture')
             elif unbound_capture_go:
                 reason = 'receipt-checked unbound Go capture'
             elif (not config.get('inbox_recall_binding') and role == 'memory'
