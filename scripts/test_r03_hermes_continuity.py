@@ -161,6 +161,7 @@ class MechanismGuards(unittest.TestCase):
             observer = continuity.NativeAudit(Path(name),spec)
             with self.assertRaisesRegex(continuity.PrerequisiteError,'arguments outside'):
                 observer.audit('subprocess.Popen',(executable,[executable,'claude','unadmitted'],None,None))
+            self.assertNotIn('unadmitted',(Path(name)/'audit.json').read_text())
 
     def test_syscall_audit_distinguishes_absent_nss_from_dns_and_live_nss(self):
         with tempfile.TemporaryDirectory(prefix='r03-audit-', dir=Path.home() / '.cache') as name:

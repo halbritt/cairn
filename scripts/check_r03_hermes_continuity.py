@@ -531,8 +531,9 @@ class NativeAudit:
                 self.reject('R03_NETWORK: external DNS refused')
         elif event in ('subprocess.Popen', 'os.exec'):
             executable, argv = str(args[0]), args[1]
-            self.events.append(dict(kind=event, executable=executable,
-                argv=[str(value) for value in argv] if isinstance(argv, (list, tuple)) else str(argv)))
+            row = dict(kind=event, executable=executable,
+                       argument_count=len(argv) if isinstance(argv,(list,tuple)) else 1)
+            self.events.append(row)
             import shutil
             resolved = str(Path(shutil.which(executable) or executable).resolve())
             if resolved not in self.spec['exec_pins']:
@@ -552,6 +553,7 @@ class NativeAudit:
                 exact = exact or read_command
             if not exact:
                 self.reject('R03_EXEC: executable arguments outside the owned fixture contract')
+            row['argv'] = actual  # Only already-admitted fixture arguments enter evidence.
 
     def profile(self, frame, event, result):
         filename, name = frame.f_code.co_filename, frame.f_code.co_name
