@@ -12,13 +12,14 @@ SessionEnd with H150. Select `--profile bound-agent-tools` to use the existing
 enabled binding with `agent_tools` recall: SessionStart and UserPromptSubmit
 select checked Go `memory` with H13 and the same eight flags/stdin. The producer
 also selects Go for bound `agent_tools` PostToolUse/PostToolUseFailure; other
-bound tool modes retain Python. This eleven-case native fixture exercises
-start/prompt callbacks, not native tool events, so its earlier observations do
-not qualify the new tool rows. The default `unbound` profile stays unbound.
+bound tool modes retain Python. The fixture now preserves the original eleven
+start/prompt cases and adds two actual native Read cases per profile: one
+successful read and one missing-file failure. Earlier eleven-case observations
+do not qualify these new tool cases. The default `unbound` profile stays unbound.
 Historical eleven-case observations used Python memory; current route claims
 require a fresh run of the selected profile. Coordination reaches the receipt-checked
 private Go image. `strace` binds each
-startup and prompt hook's launcher to the program and literal argv it executes in the same PID,
+startup, prompt and tool hook's launcher to the program and literal argv it executes in the same PID,
 and checks that process's exit status. Native settings and hook-listing
 readback must match the selected generation. Unexpected generation launchers,
 startup hook errors and SessionEnd failures fail the fixture.
@@ -29,6 +30,24 @@ and corrupt receipts, cached B before reversal, and resumed A. Receipt refusals
 must leave Cairn state and API calls unchanged. A native model response can
 still succeed after a hook fails; the child process's refusal is checked
 separately from that response.
+
+The five original startup controls retain empty tools and plain-text provider
+responses. An additional isolated conversation offers only Read, with permission
+rules for two exact synthetic workspace files. The local provider emits each
+Read once and requires its matching native `tool_result` before ending the turn.
+The existing strace transport additionally captures reads, writes and thread
+creation for this conversation. The joined hook process's stdin must contain
+the native session, Read input, tool-use ID and success/error event; stdout,
+stderr and exit status come from that process. A successful assistant message
+alone cannot qualify tool execution. Native hook or context errors fail the run.
+
+For each captured tool callback, the fixture restores its exact pre-tool memory
+state and runs the retained Source launcher with the observed stdin. It keeps
+both raw results and uses the existing full state/file/trace comparator without
+widening its normalization. A canonical UTF8 ledger containing Japanese, emoji
+and integer `900719925474099312345` must retain every byte. Tool callbacks must
+make no recall API calls. Before each native process starts, the fixture records
+the selected receipt, all Source closure members and actual program/client pins.
 
 Refresh closes and joins the target process, then invokes native `--resume`
 with the same conversation UUID, account and working directory, plus the exact

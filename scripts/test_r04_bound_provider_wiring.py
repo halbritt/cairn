@@ -14,6 +14,8 @@ import shutil
 import subprocess
 import sys
 import unittest
+import urllib.error
+import urllib.request
 
 import test_f02_ordinary_provider as provider
 from test_f02_bound_memory import BoundMemoryCase
@@ -526,9 +528,85 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         return BoundMemoryCase.reset_state(self, seed)
 
 
+class NativeClaudeProviderTests(unittest.TestCase):
+    """Local wire-protocol controls; native execution is qualified separately."""
+
+    def setUp(self):
+        from check_r04_native_claude import MessagesFixture
+        self.paths = (Path('/owned/read.txt'), Path('/owned/missing.txt'))
+        self.server = MessagesFixture(read_paths=self.paths)
+        self.addCleanup(self.server.close)
+
+    def request(self, messages, tools=()):
+        body = dict(model='r04-synthetic-model', messages=messages,
+                    tools=[dict(name=name) for name in tools])
+        request = urllib.request.Request(self.server.url + '/v1/messages', data=encoded(body),
+                                         headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return [json.loads(line[6:]) for line in response.read().decode().splitlines()
+                    if line.startswith('data: ')]
+
+    def test_default_keeps_empty_tools_and_plain_text(self):
+        events = self.request([dict(role='user', content='ordinary fixture prompt')])
+        self.assertEqual(next(e['content_block']['type'] for e in events
+                              if e['type'] == 'content_block_start'), 'text')
+        self.assertEqual(next(e['delta']['stop_reason'] for e in events
+                              if e['type'] == 'message_delta'), 'end_turn')
+        self.assertEqual(self.server.read_results, {})
+        self.assertEqual(self.server.failures, [])
+
+    def test_scripted_read_requires_matching_result_and_runs_before_once(self):
+        before = []
+        ident = self.server.script_read('read fixture', self.paths[0], lambda: before.append('before'))
+        messages = [dict(role='user', content='read fixture')]
+        events = self.request(messages, ('Read',))
+        block = next(e['content_block'] for e in events if e['type'] == 'content_block_start')
+        self.assertEqual((block['type'], block['id'], block['name']), ('tool_use', ident, 'Read'))
+        arguments = json.loads(next(e['delta']['partial_json'] for e in events
+                                   if e['type'] == 'content_block_delta'))
+        self.assertEqual(arguments, dict(file_path=str(self.paths[0])))
+        result = dict(type='tool_result', tool_use_id=ident, content='fixture result')
+        events = self.request(messages + [dict(role='user', content=[result])], ('Read',))
+        self.assertEqual(before, ['before'])
+        self.assertEqual(self.server.read_results, {ident: result})
+        self.assertEqual(next(e['delta']['stop_reason'] for e in events
+                              if e['type'] == 'message_delta'), 'end_turn')
+        self.assertIsNone(self.server.pending_read)
+
+    def test_read_path_and_single_pending_call_are_bounded(self):
+        with self.assertRaises(ValueError):
+            self.server.script_read('outside', Path('/outside/secret'), lambda: None)
+        self.server.script_read('one', self.paths[0], lambda: None)
+        with self.assertRaises(ValueError):
+            self.server.script_read('second', self.paths[1], lambda: None)
+        self.assertEqual(self.server.requests, [])
+
+    def test_script_refuses_other_tools_before_issuing_read(self):
+        before = []
+        self.server.script_read('read fixture', self.paths[0], lambda: before.append('before'))
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request([dict(role='user', content='read fixture')], ('Read', 'Bash'))
+        self.assertEqual(error.exception.code, 500)
+        self.assertEqual(before, [])
+        self.assertFalse(self.server.pending_read['issued'])
+        self.assertEqual(len(self.server.failures), 1)
+
+    def test_self_reported_text_does_not_complete_native_tool_result(self):
+        self.server.script_read('read fixture', self.paths[1], lambda: None)
+        messages = [dict(role='user', content='read fixture')]
+        self.request(messages, ('Read',))
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request(messages + [dict(role='assistant', content='I read the file')], ('Read',))
+        self.assertEqual(error.exception.code, 500)
+        self.assertEqual(self.server.read_results, {})
+        self.assertEqual(len(self.server.failures), 1)
+
+
 def load_tests(loader, tests, pattern):
-    return unittest.TestSuite(R04BoundProviderWiringTests(name) for name in sorted(
+    suite = unittest.TestSuite(R04BoundProviderWiringTests(name) for name in sorted(
         name for name in R04BoundProviderWiringTests.__dict__ if name.startswith('test_staged_bound_')))
+    suite.addTests(loader.loadTestsFromTestCase(NativeClaudeProviderTests))
+    return suite
 
 
 if __name__ == '__main__':

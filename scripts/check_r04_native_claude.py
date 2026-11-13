@@ -6,6 +6,7 @@ provider and Cairn responses are local.
 """
 import argparse
 import base64
+import copy
 import http.server
 import io
 import json
@@ -14,6 +15,7 @@ from pathlib import Path
 import re
 import selectors
 import shlex
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -27,11 +29,15 @@ from check_r04_native_opencode import digest, native_api_fixture, successful_exe
 from test_f04_activation import encoded, overwrite_fixture
 from test_r02_compatibility_install import InstalledTools
 from test_r04_host_wiring import R04HostWiringTests, pin
+from test_f02_opencode_ambient import OpenCodeAmbientTests
+from r04_agy_trace import io_bytes, thread_pids
 
 
 class MessagesFixture:
-    def __init__(self):
+    def __init__(self, *, read_paths=()):
         self.requests, self.failures = [], []
+        self.read_paths = {str(path) for path in read_paths}
+        self.pending_read, self.read_results = None, {}
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -44,10 +50,15 @@ class MessagesFixture:
                     owner.failures.append(dict(path=self.path, bytes=size))
                     self.send_error(400)
                     return
-                request = json.loads(self.rfile.read(size))
-                owner.requests.append(request)
-                body = response_events('r04_' + str(len(owner.requests)), request['model'],
-                                       dict(type='text', text='R04 local fixture reply.'))
+                try:
+                    request = json.loads(self.rfile.read(size))
+                    owner.requests.append(request)
+                    body = response_events('r04_' + str(len(owner.requests)), request['model'],
+                                           owner.response(request))
+                except (AssertionError, KeyError, TypeError, ValueError, OSError) as exc:
+                    owner.failures.append(dict(error=repr(exc)))
+                    self.send_error(500)
+                    return
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/event-stream')
                 self.send_header('Content-Length', str(len(body)))
@@ -59,6 +70,34 @@ class MessagesFixture:
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
+    def script_read(self, prompt, path, before):
+        if str(path) not in self.read_paths or self.pending_read is not None:
+            raise ValueError('Only one Read of an explicitly selected fixture path is permitted')
+        call = dict(id='toolu_r04_' + uuid.uuid4().hex, prompt=prompt, path=str(path),
+                    before=before, issued=False)
+        self.pending_read = call
+        return call['id']
+
+    def response(self, request):
+        call = self.pending_read
+        if call is not None:
+            if [tool['name'] for tool in request.get('tools', [])] != ['Read']:
+                raise ValueError('Native fixture must offer only Read')
+            if not call['issued']:
+                if call['prompt'] not in json.dumps(request['messages'], ensure_ascii=False):
+                    raise ValueError('Read script does not match the current native prompt')
+                call['before']()
+                call['issued'] = True
+                return dict(type='tool_use', id=call['id'], name='Read', input=dict(file_path=call['path']))
+            results = [block for message in request['messages']
+                       for block in (message.get('content', []) if isinstance(message.get('content'), list) else [])
+                       if block.get('type') == 'tool_result' and block.get('tool_use_id') == call['id']]
+            if len(results) != 1:
+                raise ValueError('Read completion requires one native tool_result with the issued ID')
+            self.read_results[call['id']] = copy.deepcopy(results[0])
+            self.pending_read = None
+        return dict(type='text', text='R04 local fixture reply.')
+
     def close(self):
         self.server.shutdown()
         self.server.server_close()
@@ -68,7 +107,7 @@ class MessagesFixture:
 
 
 class ClaudeSession:
-    def __init__(self, binary, root, account, settings, provider, output, work, *, resume=None):
+    def __init__(self, binary, root, account, settings, provider, output, work, *, resume=None, read_paths=()):
         self.root, self.output = root, output
         self.identity = resume or str(uuid.uuid4())
         root.mkdir(mode=0o700)
@@ -88,11 +127,21 @@ class ClaudeSession:
         self.stderr = open(self.diagnostics, 'wb')
         self.log = open(output / (root.name + '.events.jsonl'), 'wb')
         self.events, self.buffer = [], bytearray()
+        tools = ['--tools', '']
+        trace = 'execve'
+        if read_paths:
+            if any(not path.is_absolute() or path.parent != work for path in read_paths):
+                raise ValueError('Read permissions must name exact fixture files')
+            tools = ['--tools', 'Read', '--allowedTools',
+                     ','.join('Read(/' + str(path) + ')' for path in read_paths)]
+            # Retain the existing strace transport; observe stdin/stdout on the
+            # joined hook thread group rather than trusting a tool reply.
+            trace += ',clone,clone3,read,write'
         self.process = subprocess.Popen(
-            ['strace', '-f', '-s', '16384', '-e', 'trace=execve', '-o', str(self.trace), str(binary),
+            ['strace', '-f', '-s', '16384', '-e', 'trace=' + trace, '-o', str(self.trace), str(binary),
              '--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
              '--setting-sources', '', '--settings', str(settings), '--strict-mcp-config', '--mcp-config',
-             '{"mcpServers":{}}', '--tools', '', '--permission-mode', 'dontAsk', '--max-turns', '3',
+             '{"mcpServers":{}}', *tools, '--permission-mode', 'dontAsk', '--max-turns', '3',
              '--model', 'sonnet', '--resume' if resume else '--session-id', self.identity],
             cwd=work, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr,
             start_new_session=True)
@@ -218,11 +267,15 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         overwrite_fixture(f.settings, original)
         f.hook_plan.update(selection=f.selected, settings=pin(f.settings))
         a = self.selected(f)
-        provider = MessagesFixture()
-        self.addCleanup(provider.close)
         work = self.root / 'work'
         work.mkdir(mode=0o700)
         subprocess.run(['git', 'init', '--quiet', str(work)], check=True, capture_output=True, timeout=5)
+        read_ok, read_missing = work / 'native-read.txt', work / 'native-missing.txt'
+        read_body = 'Native fixture content: 日本語 🛡️ 😀 900719925474099312345\n'
+        read_ok.write_text(read_body)
+        provider = MessagesFixture(read_paths=(read_ok, read_missing))
+        self.addCleanup(provider.close)
+        (f.memory_path.parent / 'invocation-trace').mkdir(mode=0o700)
         observations, refreshes, startups = [], [], []
         image_pins = {name: dict(path=str(path), sha256=digest(path), mode=oct(path.stat().st_mode & 0o777),
                       build_info=subprocess.check_output(['go', 'version', '-m', str(path)], text=True))
@@ -234,15 +287,16 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         self.addCleanup(lambda: (output / 'cairn-api-calls.json').write_bytes(encoded(f.api_calls())))
         self.addCleanup(lambda: (output / 'observations.json').write_bytes(encoded(observations)))
 
-        def reached_hooks(trace, label, selection, event, refused=False):
+        def reached_hooks(trace, label, selection, event, refused=False, *, roles=('memory', 'coordination'), stdin=False):
             executions = list(successful_execs(trace))
             launch_root = str(f.root / 'release' / 'launch') + '/'
             selected_launchers = {row['argv'][0] for row in selection[2]['rows']}
             self.assertEqual([e for e in executions if e['path'].startswith(launch_root)
                               and e['path'] not in selected_launchers], [], label)
             reached = []
-            for role in ('memory', 'coordination'):
+            for role in roles:
                 row = next(r for r in selection[2]['rows'] if r['role'] == role and r['event'] == event)
+                self.assertEqual(row['implementation'], 'go')
                 launcher = row['argv'][0]
                 issued = [e for e in executions if e['path'] == launcher and e['argv'] == row['argv']]
                 self.assertTrue(issued, (label, role, trace[-5000:]))
@@ -269,11 +323,34 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                                     launcher=dict(path=launcher, sha256=digest(Path(launcher))),
                                     program=dict(path=vector[0], sha256=digest(Path(vector[0]))),
                                     execs=actual, exits=exits))
+                if stdin:
+                    self.assertEqual(len(actual), 1, (label, role))
+                    members = thread_pids(trace, actual[0]['pid'])
+                    raw = io_bytes(trace, members, 0, 'read')
+                    payload = json.loads(raw)
+                    self.assertEqual(payload['hook_event_name'], event)
+                    reached[-1].update(event=event, timeout=row['hook']['timeout'],
+                        stdin=dict(base64=base64.b64encode(raw).decode(), payload=payload),
+                        stdout=dict(base64=base64.b64encode(io_bytes(trace, members, 1, 'write')).decode()),
+                        stderr=dict(base64=base64.b64encode(io_bytes(trace, members, 2, 'write')).decode()))
             return reached
 
-        def start(name, selection, *, resume=None):
+        def start(name, selection, *, resume=None, read_paths=()):
+            memory = next(r for r in selection[2]['rows'] if r['role'] == 'memory' and r['event'] == 'SessionStart')
+            vector = shlex.split(Path(memory['argv'][0]).read_text().split('\n', 1)[1])
+            receipt_path = Path(vector[vector.index('--receipt') + 1])
+            receipt = json.loads(receipt_path.read_bytes())
+            members = {member: dict(sha256=digest(Path(receipt['snapshot_root']) / member),
+                                   bytes=(Path(receipt['snapshot_root']) / member).stat().st_size)
+                       for member in receipt['members']}
+            self.assertEqual(members, receipt['members'])
+            self.assertEqual(digest(Path(receipt['binary']['path'])), image_pins['lifecycle']['sha256'])
+            (output / ('before-native-' + name + '.json')).write_bytes(encoded(dict(
+                selection=selection[0]['selection'], receipt=pin(receipt_path), source_members=members,
+                images=image_pins, client=dict(path=str(binary), sha256=digest(binary)),
+                fixture_sha256=digest(Path(__file__)), read_paths=[str(path) for path in read_paths])))
             client = ClaudeSession(binary, self.root / name, f.account, Path(selection[0]['settings']['path']),
-                                   provider, output, work, resume=resume)
+                                   provider, output, work, resume=resume, read_paths=read_paths)
             self.addCleanup(client.close)
             readback(client, selection)
             quiet(client)
@@ -369,6 +446,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         prompt(target, 'existing-a', a)
         prompt(control, 'control-a', a)
         f.publish_configuration(enabled=bound_agent_tools)
+        (f.memory_path.parent / 'invocation-trace').mkdir(mode=0o700)
         f.hook_plan.update(id=str(uuid.uuid4()), selection=f.selected, settings=pin(f.settings))
         b = self.selected(f)
         self.assertNotEqual(a[0]['selection'], b[0]['selection'])
@@ -412,6 +490,120 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         prompt(target, 'cached-b-before-reverse', b)
         refresh(a)
         prompt(target, 'reversed-a', a)
+
+        # The five original clients keep their empty-tools argv. A separate
+        # conversation offers only Read of these two exact disposable files.
+        tools_client = start('read-client', a, read_paths=(read_ok, read_missing))
+        memory_row = next(row for row in a[2]['rows'] if row['role'] == 'memory' and row['event'] == 'PostToolUse')
+        memory_vector = shlex.split(Path(memory_row['argv'][0]).read_text().split('\n', 1)[1])
+        memory_config = Path(memory_vector[memory_vector.index('--config') + 1])
+        memory_trace = memory_config.parent / 'invocation-trace' / 'trace.jsonl'
+        directory = Path(f.memory['state_dir'])
+        comparator = OpenCodeAmbientTests()
+        comparator.f = f
+
+        def restore(files):
+            shutil.rmtree(directory)
+            directory.mkdir(mode=0o700)
+            for name, item in files.items():
+                path = directory / name
+                path.write_bytes(item['raw'].encode())
+                path.chmod(item['mode'])
+
+        def tool_case(label, path, failed):
+            quiet(tools_client)
+            offset, events_at = tools_client.trace.stat().st_size, len(tools_client.events)
+            before = {}
+
+            def before_read():
+                ledger = directory / (tools_client.identity + '.inbox-recall.json')
+                body = json.loads(ledger.read_bytes()) if ledger.exists() else dict(
+                    schema='cairn.inbox-recall-grants/1', session=tools_client.identity,
+                    grants={}, required=dict(pending=True))
+                body['opaque'] = ['日本語 🛡️ 😀', 900719925474099312345]
+                ledger.write_text(json.dumps(body, ensure_ascii=False, separators=(',', ':')))
+                ledger.chmod(0o600)
+                before.update(files=comparator.files(), ledger=ledger.read_bytes(),
+                              trace=len(memory_trace.read_text().splitlines()), recall=len(recall_calls),
+                              api=len(f.api_calls()))
+
+            text = 'R04 native Read ' + label
+            tool_id = provider.script_read(text, path, before_read)
+            result = tools_client.prompt(text)
+            quiet(tools_client)
+            trace = tools_client.trace.read_text()[offset:]
+            event = 'PostToolUseFailure' if failed else 'PostToolUse'
+            reached = reached_hooks(trace, label, a, event,
+                roles=('memory',) if failed else ('memory', 'coordination'), stdin=True)
+            self.assertEqual(result.get('subtype'), 'success', result)
+            self.assertFalse(result.get('is_error'), result)
+            self.assertEqual([e for e in tools_client.events[events_at:] if e.get('subtype') == 'hook_response'
+                and (e.get('exit_code') != 0 or e.get('outcome') != 'success')], [], label)
+            self.assertEqual(provider.failures, [])
+            native_result = provider.read_results[tool_id]
+            self.assertEqual(bool(native_result.get('is_error', False)), failed, native_result)
+            memory = next(item for item in reached if item['role'] == 'memory')
+            payload = memory['stdin']['payload']
+            self.assertEqual((payload['session_id'], payload['tool_name'], payload['tool_use_id']),
+                             (tools_client.identity, 'Read', tool_id))
+            self.assertEqual(payload['tool_input'], dict(file_path=str(path)))
+            if failed:
+                self.assertIsInstance(payload['error'], str)
+                self.assertTrue(payload['error'])
+            else:
+                self.assertIsInstance(payload['tool_response'], dict)
+                self.assertIn(read_body.strip(), json.dumps(native_result, ensure_ascii=False))
+            self.assertEqual(len(recall_calls), before['recall'])
+            files = comparator.files()
+            self.assertEqual(files[tools_client.identity + '.inbox-recall.json']['raw'].encode(), before['ledger'])
+            hints = json.loads(files[tools_client.identity + '.json']['raw'])['hints']
+            if failed:
+                self.assertIsInstance(hints['errors'], list)
+                comparator.measurement(hints['error_at'])
+                previous = json.loads(before['files'][tools_client.identity + '.json']['raw'])
+                self.assertGreater(hints['error_at'], previous.get('hints', {}).get('error_at', 0))
+            else:
+                self.assertIn(path.name, hints['files'])
+                comparator.measurement(hints['files'][path.name])
+            lines = [json.loads(line) for line in memory_trace.read_text().splitlines()[before['trace']:]]
+            entries = [line for line in lines if line['kind'] == 'entry' and
+                       str(line['pid']) == memory['execs'][0]['pid']]
+            self.assertEqual(len(entries), 1, label)
+            go_trace = [line for line in lines if line['inv'] == entries[0]['inv']]
+            go = dict(exit=0, stdout=base64.b64decode(memory['stdout']['base64']),
+                stderr=base64.b64decode(memory['stderr']['base64']), files=files, calls=[], trace=go_trace, locks=[])
+            raw = base64.b64decode(memory['stdin']['base64'])
+            row = next(row for row in a[2]['rows'] if row['role'] == 'memory' and row['event'] == event)
+            restore(before['files'])
+            trace_at = len(memory_trace.read_text().splitlines())
+            try:
+                source = subprocess.run(row['retained_launcher'], input=raw, cwd=work, env=f.env(),
+                                        capture_output=True, timeout=20)
+                source_trace = [json.loads(line) for line in memory_trace.read_text().splitlines()[trace_at:]]
+                source_row = dict(exit=source.returncode, stdout=source.stdout, stderr=source.stderr,
+                    files=comparator.files(), calls=[], trace=source_trace, locks=[])
+                self.assertEqual(len(recall_calls), before['recall'])
+                pair = [source_row, go]
+                (output / (label + '.pair.json')).write_text(json.dumps(pair,
+                    default=lambda value: dict(base64=base64.b64encode(value).decode()), ensure_ascii=False))
+                self.assertEqual((source.returncode, source.stdout, source.stderr), (0, b'{}\n', b''))
+                self.assertEqual([line['kind'] for line in source_trace], ['entry', 'parsed', 'exit'])
+                self.assertEqual(source_trace[-1]['phase'], 'handle')
+                f.event = payload
+                comparator.validate_keysets(pair)
+                self.assertEqual(comparator.normalize(source_row, 'source'), comparator.normalize(go, 'go'))
+            finally:
+                restore(files)
+            (output / (label + '.exec')).write_text(trace)
+            observations.append(dict(case=label, session_id=tools_client.identity, client=tools_client.root.name,
+                selection=a[0]['selection'], reached=reached, tool_result=native_result,
+                source_parity=True, recall_api_delta=len(recall_calls)-before['recall'],
+                coordination_api_delta=len(f.api_calls())-before['api'],
+                ledger_raw=dict(base64=base64.b64encode(before['ledger']).decode()),
+                trace=dict(name=label+'.exec', sha256=digest(output/(label+'.exec')))))
+
+        tool_case('native-read-success', read_ok, False)
+        tool_case('native-read-failure', read_missing, True)
         self.assertEqual((a[1]/'previous-settings.json').read_bytes(), original)
         for label, selection in (('a', a), ('b', b)):
             (output / ('selection-'+label+'.json')).write_bytes(encoded(selection[2]))
@@ -443,7 +635,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                                  control_remained_a=True),
                     limits=['Explicit --settings snapshots and same-conversation process restart only; no in-process patch, filesystem watcher or interactive trust claim.',
                             'Same private Go image with different receipt/config/V/L; not a code-image upgrade.',
-                            'Selected checked Go recall/coordination are observed; bound tool rows retain Python and are not exercised as Go.',
+                            'Selected checked Go recall/coordination and actual Read success/failure tool callbacks are observed in bound-agent-tools and unbound profiles; other bound tool modes remain outside this fixture.',
                             'Local scripted provider and synthetic Cairn API; no real model/account or production apply.',
                             'No complete watcher-unit barrier, store/auth qualification or full R04/R06 acceptance.'])
 
