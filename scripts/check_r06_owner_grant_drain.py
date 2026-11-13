@@ -31,7 +31,7 @@ class Fixture(StatusFixture):
 
     def call(self, role, operation, body, session=None, expected='OK'):
         if operation == 'session-inbox-claim':
-            body = dict(body, native_turn_id=TURN)
+            body['native_turn_id'] = TURN
         return super().call(role, operation, body, session=session, expected=expected)
 
 
@@ -164,6 +164,11 @@ def owner_case(cluster, images, scratch, harness, side, revision):
     try:
         f.retained()
         control.transport(f, images['api'])
+        baseline_state = f.snapshot()
+        baseline = control.invoke(f, images['control'], 'inspect', control.plan_for(f), 'settled-baseline')
+        require(baseline['inspected'] and not baseline['exchange']['Published'] and not baseline.get('error'),
+                'settled fixture did not establish its real API baseline')
+        require(f.snapshot() == baseline_state, 'baseline inspection changed protected state')
         hook = OwnerFixture(f.root / 'owner', images['control'], stager=images['stager'], harness=harness, source_revision=revision)
         for config in (hook.memory, hook.coord):
             config.update(cairn=str(f.host.binary), socket=str(f.host.socket),
