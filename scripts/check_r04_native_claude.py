@@ -290,7 +290,6 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         read_ok.write_text(read_body)
         provider = MessagesFixture(read_paths=(read_ok, read_missing))
         self.addCleanup(provider.close)
-        (f.memory_path.parent / 'invocation-trace').mkdir(mode=0o700)
         observations, refreshes, startups = [], [], []
         image_pins = {name: dict(path=str(path), sha256=digest(path), mode=oct(path.stat().st_mode & 0o777),
                       build_info=subprocess.check_output(['go', 'version', '-m', str(path)], text=True))
@@ -459,7 +458,6 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         prompt(target, 'existing-a', a)
         prompt(control, 'control-a', a)
         f.publish_configuration(enabled=bound_agent_tools)
-        (f.memory_path.parent / 'invocation-trace').mkdir(mode=0o700)
         f.hook_plan.update(id=str(uuid.uuid4()), selection=f.selected, settings=pin(f.settings))
         b = self.selected(f)
         self.assertNotEqual(a[0]['selection'], b[0]['selection'])
@@ -506,11 +504,14 @@ class NativeFixture(InstalledTools, unittest.TestCase):
 
         # The five original clients keep their empty-tools argv. A separate
         # conversation offers only Read of these two exact disposable files.
-        tools_client = start('read-client', a, read_paths=(read_ok, read_missing))
         memory_row = next(row for row in a[2]['rows'] if row['role'] == 'memory' and row['event'] == 'PostToolUse')
         memory_vector = shlex.split(Path(memory_row['argv'][0]).read_text().split('\n', 1)[1])
         memory_config = Path(memory_vector[memory_vector.index('--config') + 1])
         memory_trace = memory_config.parent / 'invocation-trace' / 'trace.jsonl'
+        # Observer files are not members of the immutable staged generation.
+        # Finish both staging operations before enabling this optional observer.
+        memory_trace.parent.mkdir(mode=0o700)
+        tools_client = start('read-client', a, read_paths=(read_ok, read_missing))
         directory = Path(f.memory['state_dir'])
         comparator = OpenCodeAmbientTests()
         comparator.f = f
