@@ -1,134 +1,134 @@
-# R03 Hermes native continuity mechanism
+# R03 Hermes continuity on the normal host
 
-This mechanism is a new child of accepted prep `417b4e818d67a77f097a92359403cd82cb92722b`.
-Only the continuity checker, its tests and this document change. The original
-prep remains frozen for Release Root. Review `c7a4b3cb-e137-4c3a-873c-0a87f663af45/v1`
-was read in full: N1 requires observing finalizer/auxiliary traffic, N2 requires
-fresh exact inputs rather than the old author-path constructor request, and N3
-requires an executable full A/B/reverse mechanism. The old constructor request
-is now deprecated data with no executable argv. Do not execute SHA `554d8e55`.
+This correction is a new child of frozen `d28f3f3941f4c81267011b7a1d9df23425b66b7c`.
+Only the same continuity checker, tests and document change. That earlier cut and
+all diagnostics remain frozen. Owner `28030d65-5545-4ca4-ba29-288f487242a7/v1`,
+coordinator `97195305-81b8-4698-a55e-a938edcb82a1/v1`, and Release notice
+`c212efb9-6139-41e8-a147-f31eb0e2e52f/v1` were read whole. They supersede the
+old bubblewrap execution assumption. Tests and fixtures run directly through
+maintained mise/host:exec, preserving normal HOME, PATH, tools and authentication.
+There is no namespace sandbox, remapped filesystem, replacement HOME, socket
+forward, shared-fixture-view extension or change to the old wrapper.
 
-The native mechanism is implemented but has not run. The permitted validation
-covers guards, the scripted transport, frozen runtime assets, installed setup
-and owned Cairn API/PostgreSQL preparation. A stub of the client-process boundary
-is labelled `SETUP_STUB_ONLY`; it creates no fake CLI, hook, registration,
-authentication record, conversation transcript or native PASS. AC4 and R06
-remain open even if the isolated component later passes.
+The actual Hermes client remains unadmitted. Code, guards and owned non-native
+API/PG preparation are authorized; imports/construction/chat/finalization and
+model use require Root's separately reviewed exact native admission. Setup uses
+an explicitly labelled stub of the client-process boundary. It creates no fake
+CLI, callback, registration, auth record or native transcript and cannot close
+AC4 or R06. Old constructor request `554d8e55` is deprecated and must not run.
 
-## Executable native sequence
+## Implemented native sequence, not yet executed
 
-1. An actual first HermesCLI owns selection A and generates the one native
-   session ID. Its genuine MemoryProvider and five PluginRegistration handles
-   are inspected. It completes a real baseline chat and durability barrier;
-   actual SessionDB history is recorded before B is staged. The parent waits
-   for the owned child's ready receipt, then
-   uses the maintained installer/stager to install B while that A owner remains
-   cached. The provider configuration and selected command must remain A.
-2. An attempted transition is refused while that owner remains open. Actual
-   `HermesCLI.chat()` uses the local scripted chat-completions transport. The
-   held client emits callbacks itself; the fixture never calls a hook dispatcher
-   or substitutes a provider. The agent/provider identities must remain stable.
-3. `_finalize_single_query()` performs the supported idle boundary. Finalizer,
-   plugin, auxiliary and atexit activity remain observed. The owned process must
-   exit and be reaped before another owner starts. A new CLI resumes the SAME
-   native session through `_preload_resumed_session()`, reads the same real
-   history, and selects checked Go B. It then chats and finalizes normally.
-4. The parent explicitly restores the retained Python /2 configuration,
-   installed manifest and engine settings, verifies its frozen runtime members,
-   and resumes that same session for the reverse turn. No error path chooses
-   this reverse. Profile/account/workspace, model route and credential-selector
-   bytes remain fixed throughout.
-5. After each child, real SessionDB readback must match its result after atexit,
-   preserve both prior history projections as prefixes. A contributes its
-   baseline and cached-A turns; B and retained /2 contribute one turn each.
-   All late callbacks must use the same session and exact selected argv.
-   The real disposable Cairn Store must gain exactly one selected record and
-   recall observation per turn, with no coordination-session/delivery effects
-   or raw dialogue capture. Repeated finalize capture must not duplicate records.
+1. One genuine A CLI generates the native session ID. Its real provider and five
+   registration handles are inspected. A real baseline chat and memory-manager
+   durability barrier establish actual history before B is staged.
+2. The parent waits for that owned ready receipt, stages B with the maintained
+   installer and checks that the same A provider/agent remains cached. A second
+   actual chat must still emit A's selected commands. Transition is refused
+   while the old owner remains open.
+3. Supported `_finalize_single_query()` plus atexit and process reap establish
+   the idle boundary. A new CLI resumes that SAME native session via
+   `_preload_resumed_session()`, preserves both real history projections, selects
+   checked Go B, chats and finalizes normally.
+4. Explicit retained Python /2 configuration, engine and installed manifest are
+   restored with their runtime-member pins. That same session resumes and chats
+   again. There is no error-triggered reverse or provider-only recreation.
+5. Each child is reaped before the next owner. Parent SessionDB readback after
+   atexit must preserve prior history prefixes without duplicate user turns.
+   The planned one fixture has three owned CLI processes and four native turns:
+   baseline A, cached A, B and retained /2. Credential-selector/profile bytes,
+   account and workspace remain fixed. Each turn must have one selected Store
+   capture/recall effect; finalize duplication, foreign callbacks and Source
+   fallback during Go phases fail the fixture. No direct hook call substitutes
+   for actual client emission and no held client method is patched.
 
-Successful ownership boundaries never use a kill/replacement to simulate idle.
-A failed owned fixture process may be cancelled solely for cleanup; that run
-fails and cannot continue or qualify the boundary.
+A failed owned fixture child can be terminated/killed by its exact PID for
+cleanup; no process-group signal targets unrelated host work. Such cancellation
+fails the run and never qualifies a supported idle boundary.
 
-## Admission and isolation
+## Direct host state, identity and provider
 
-`--phase native` without a plan and native admission context still returns
-75/NOTRUN before path inspection, client import or state creation. With both,
-the host queries authenticated Cairn `event-status` and the exact source body.
-The server event must be a request from Release Root, addressed to this agent
-and execution, with this delivery currently leased. Its JSON source must match
-`cairn.r03-hermes-native-admission/1`, `one-isolated-hermes-continuity`, one
-attempt, a fresh zoned expiry and every plan binding. A local file or phase flag
-is not authority. The existing hosted profile stays outside isolation and its
-token is never read or exported. A per-Root-event O_EXCL ledger prevents another
-attempt under a different output directory. NOTRUN creates no attempt ledger.
-Root must separately admit the reviewed exact plan; this code assignment does
-not admit a client run.
+The maintained disposable_host OwnedCluster/DisposableHost and installed Hermes
+fixtures create private temporary application state. `/tmp` holds only that
+short-lived fixture state, never a source worktree. API, PG, controller, client
+and hooks see the same actual files and host PIDs/namespaces. HOME and PATH are
+recorded and checked unchanged. HERMES_HOME names the one disposable application
+profile. No installed profile, live conversation, service or protected database
+is changed. Evidence is copied before owned state removal and process cleanup.
 
-The unchanged qualified `test_hybrid_runtime_operations.py` wrapper supplies
-fresh namespaces, a read-only source tree and disposable application state.
-The normal host HOME remains outside it. Inside, the wrapper's established
-HOME is `/tmp/home`; HERMES_HOME names only the owned fixture application home.
-The frozen standalone Python 3.11.15 uses its existing frozen venv packages
-through an explicit module path; there is no runtime rebuild or replacement
-environment. The same interpreter bytes also back the retained venv executable.
-The complete 64,533-file / 1,428,418,926-byte inventory is rehashed before use.
-Hermes is `9904fd411587729dcdf7440cfb830e96e9830597`, package 0.20.5;
-inventory SHA is `b2910e13d782eef359ce920659518385c6c022e2901d71b765d86617eb9c39c0`.
+The existing frozen venv Python 3.11.15 runs directly; no new interpreter,
+container, package environment or runtime relocation is built. Held Hermes is
+`9904fd411587729dcdf7440cfb830e96e9830597`, package 0.20.5. The full 64,533-file /
+1,428,418,926-byte inventory is rehashed before use; its manifest SHA is
+`b2910e13d782eef359ce920659518385c6c022e2901d71b765d86617eb9c39c0`.
+Root's exact five images come from `7d22b663d6abb0295dda0263adc9033353e5cefa`,
+tree `b9589ad0ac27a1557fd25e198143233239b322a5`. Their recorded source inventory
+is checked against those Git blobs; retained Python/installer/adapter sources
+must carry exactly. PostgreSQL assets, enumerated libraries and effective normal
+host tools/configuration are pinned. No product, Source, SDK, Store, auth,
+H13/H150, eight-flag, literal-argv or stdin contract changes.
 
-Root's exact five Go images come from `7d22b663d6abb0295dda0263adc9033353e5cefa`,
-tree `b9589ad0ac27a1557fd25e198143233239b322a5`. Their full recorded source
-inventory is checked against those Git blobs, and current retained Python,
-installer and adapter files must carry exactly. Image bytes, PostgreSQL assets,
-interpreter, libraries, tools, checker/tree/source and local provider target are
-bound into the plan before use. Literal selected argv, H13/H150, eight flags,
-stdin, backend, SDK, Store and authentication contracts are unchanged.
+A socket bound to port 0 lets the kernel select the proposed loopback provider
+port at plan time. The admitted run must exclusively bind that exact pinned
+127.0.0.1 target before starting any client; failure does not choose another
+provider. The local transport implements nonstreaming and SSE completions for
+one fixed synthetic model/key. Main and every auxiliary route point to it.
+No paid/external model, signin or provider fallback is admitted. Unexpected
+credentials are refused before a provider send and never logged as raw headers.
 
-The wrapper accepts explicit frozen runtime assets. This fixture freezes the
-existing `/etc/hosts` and `/etc/nsswitch.conf` at their standard locations so
-localhost lookup uses files rather than an undeclared DNS request. No DNS
-connection is admitted. Libc's absent `/var/run/nscd/socket` probe is recorded
-only when it returns ENOENT; a live connection is refused. Known failed `git`
-PATH probes and the maintained installer's deterministic private launch-anchor
-probe are recorded separately from executable targets. The locale executable
-and required dynamic libraries are pinned. The wrapper itself is not edited.
+Python audit hooks restrict native child execution to exact selected commands,
+the configured disposable MCP command and read-only Git operations. Shell/env
+chains do not grant model execution. Socket guards admit only the owned model
+and application API. Passive profiling observes provider/SDK/auxiliary/finalizer
+calls and genuine installed engine entries/returns without substituting them.
+Strace observes all owned descendants, including Go and selectors. It rejects
+unknown targets and Python Source fallback in Go phases; normal missing lookup
+and deterministic installer-anchor probes are separately recorded. The existing
+normal hosts/NSS files are used as shared host configuration, not copied or
+mounted into a synthetic environment. Workflow admission readback of Cairn's
+existing service is identified by exact helper PIDs and kept separate from
+application traffic; no test data is written to that service.
 
-Python audit hooks reject unexpected sockets, DNS targets and executables.
-Passive profiling records actual provider/SDK/request/auxiliary/finalizer calls
-and actual installed `run_engine` entries/returns without modifying held client
-or provider functions. The enclosing strace records all child process/network
-syscalls, including Go and selector descendants and finalizers. Unknown targets,
-provider fallback, wrong model/credential requests, foreign callbacks and Python
-Source fallback in Go phases fail the fixture. Only the pinned local scripted
-HTTP route is a model target. There are no paid providers, signins or outbound
-model calls. The response transport implements nonstreaming and SSE completions.
+## Live Root admission
+
+The ordinary native phase without both a plan and admission context still
+returns 75/NOTRUN before path inspection, import or state creation. With both,
+the checker queries authenticated Cairn event-status and the hook's exact source
+read using the supplied installed profile. It never reads the token contents,
+registers another session or claims another inbox. The request must be from
+Release Root, addressed to this execution with the delivery currently leased;
+its exact current active source must match the JSON admission schema, fresh
+zoned expiry, one-attempt operation and every code/tree/case/image/runtime/tool/
+provider binding. A file or phase flag is not authority.
+
+Every actual native worker repeats that live authenticated readback before any
+held client import. There is no offline receipt substituted for authorization.
+A per-Root-event O_EXCL ledger is claimed immediately before the first held
+client import, after readback; B and /2 require that same ledger/binding. Public
+CLI phase shortcuts do not expose native workers. The current execution
+correction admits no client run and obsolete wrapper failures are retained,
+not used to reset or invent native caps. Any genuine final failure stops.
 
 ## Shared users and limits
 
-| User | Configuration/state dependency |
+| User | Shared configuration/state |
 | --- | --- |
-| CLI owner and memory manager | Held `cli.py`, setup mixin, agent route/credentials and memory manager lifecycle |
-| SessionDB | Native session ID, history projections, active-session and turn leases |
-| Installed Cairn provider | Cached lifecycle selection, runtime bundle, six selected event commands and five registration handles |
-| Plugin manager | Pre/post LLM, post-tool, pre-command, request middleware and session-finalize plugins |
-| Cairn controls and MCP | Profile control/binding state, shared MCP process/connection, skill and selected API profile |
-| Memory/selector workers | Selected engine config, journal/dedup state, capture/recall observations, external selector process |
-| Gateway | Cached agents, profile environment reload, watcher and per-thread gateway/session-store users |
-| Native broker and coordination | Active-session lease/broker/RPC, queue/wake hooks and inherited coordination consumers if enabled |
-| Unobserved users | Any other watcher, plugin, inherited hook, config or binding user sharing those paths; unknown users are not omitted or presumed independent |
+| CLI and memory manager | Agent route/credentials, provider lifecycle and active-session ownership |
+| SessionDB | Native ID, both history projections, session and turn leases |
+| Installed provider | Cached lifecycle selection, runtime bundle, six selected commands and five handles |
+| Plugin manager | LLM/tool/command hooks, middleware and finalize plugins |
+| Controls/MCP | Profile control/binding state, shared MCP process/connection and skills |
+| Memory/selector workers | Engine configuration, journal/dedup state and Store observations |
+| Gateway/native broker | Cached agents, per-turn environment reload, watcher/session-store, active lease/RPC and wake/queue consumers |
+| Unknown users | Any other watcher, inherited hook, plugin, config or binding user sharing these paths; unknown does not mean independent |
 
-This fixture starts no live gateway or installed watcher and proves no unit
-independence. Shared/unknown users still join R06. Session switching changes
-per-session provider state; it is not lifecycle-config reload. MCP/skill reloads
-are not provider refresh. Neither isolated results nor preparation can be added
-up as a full shared-unit qualification.
+No live gateway/watcher is started. These users still join R06; isolated fixture
+results are not a sum proving complete-unit qualification. Actual native
+callbacks, history/credentials through A/B/reverse, auxiliary/finalizer outcomes
+and full native load coverage remain unmeasured until Root's exact admission.
+AC4, full R06/HC05, live/production and observation remain open.
 
-## Commands and receipts
-
-All execution uses maintained mise/host:exec, private 0700 evidence, one heavy
-case at a time and fresh owned state. `mechanism-plan` accepts explicit held
-native/manifest, PostgreSQL-root and Root-image manifest paths plus evidence-root
-and fresh output. It emits `plan.json` and an exact admission template.
+## Focused checks
 
 ```sh
 mise run test:unit -- test_r03_hermes_continuity -v
@@ -136,13 +136,10 @@ mise run host:exec -- --timeout 8m --weight 2 -- python3 -B \
   scripts/check_r03_hermes_continuity.py --phase mechanism-setup --plan PLAN
 ```
 
-The later Root-admitted invocation replaces the setup phase with `native` and
-adds `--admission-context` from that actual native request. The packet supplies
-concrete argv and all bindings. Native workers are not public CLI phases. The
-authenticated host entry dispatches private functions inside the wrapper;
-namespace and receipt checks bind that handoff, without replacing the host's
-live Cairn admission check. Root selects
-one exact 1416 code review and separately admits one actual native fixture.
-No author landing, push, coordinator CC or extra reviewer/session is implied.
-Raw streams, syscall/callback/request journals, selectors, Store readback,
-compiled-source/image/runtime pins and process cleanup accompany the candidate.
+`mechanism-plan` emits a fresh direct-host plan and admission template from the
+frozen code and explicit retained runtime/PG/Root image inputs. Older sandbox
+plans are refused. The later native command requires that plan and the actual
+separately admitted native request context. Root owns exact 1416 review and
+admission; the author does not land/push, launch a reviewer or recursively reply
+to the execution-correction notice. All old cuts, runtime assets and failures
+remain retained. The packet separates code/setup proof from native acceptance.

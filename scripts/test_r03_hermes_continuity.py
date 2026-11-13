@@ -94,7 +94,7 @@ class MechanismGuards(unittest.TestCase):
                                                    consumer='agent/' + continuity.AGENT_ID)])
         bindings = dict(tree='synthetic-tree', provider_url=continuity.PROVIDER_URL)
         admission = dict(schema='cairn.r03-hermes-native-admission/1',
-            operation='one-isolated-hermes-continuity', attempt_limit=1, bindings=bindings,
+            operation='one-direct-host-hermes-continuity', attempt_limit=1, bindings=bindings,
             expires_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat())
         return status, admission, context, bindings
 
@@ -137,15 +137,30 @@ class MechanismGuards(unittest.TestCase):
                 self.assertEqual(len(transport.requests), 2)
                 self.assertEqual(len(transport.violations), 1)
 
-    def test_host_namespace_refused_before_native_images_or_client_import(self):
-        with self.assertRaisesRegex(continuity.PrerequisiteError, 'host network namespace'):
-            continuity.inside_isolation(dict(host_net_namespace=os.readlink('/proc/self/ns/net')), native=True)
+    def test_foreign_namespace_refused_before_native_images_or_client_import(self):
+        plan = dict(normal_home=os.environ['HOME'],normal_path=os.environ['PATH'],
+                    host_net_namespace='foreign',host_pid_namespace=os.readlink('/proc/self/ns/pid'))
+        with self.assertRaisesRegex(continuity.PrerequisiteError,'foreign namespace'):
+            continuity.require_host_view(plan)
+
 
     def test_private_native_workers_are_not_cli_phase_shortcuts(self):
-        for phase in ('native-worker', 'isolated-native'):
+        for phase in ('native-worker', 'isolated-native', 'isolated-setup'):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                 continuity.main(['--phase', phase, '--plan', '/nonexistent/forged-grant'])
             self.assertEqual(error.exception.code, 2)
+
+    def test_host_identity_mismatch_refused_before_any_native_path_access(self):
+        with self.assertRaisesRegex(continuity.PrerequisiteError,'normal HOME/PATH'):
+            continuity.require_host_view(dict(normal_home='/wrong',normal_path=os.environ['PATH']))
+
+    def test_shell_environment_chain_is_not_a_native_execution_capability(self):
+        with tempfile.TemporaryDirectory(prefix='r03-exec-',dir=Path.home()/'.cache') as name:
+            executable = str(Path('/usr/bin/env').resolve())
+            spec = dict(exec_pins={executable:continuity.digest(executable)},exact_argv=[],git_executable='/unselected/git')
+            observer = continuity.NativeAudit(Path(name),spec)
+            with self.assertRaisesRegex(continuity.PrerequisiteError,'arguments outside'):
+                observer.audit('subprocess.Popen',(executable,[executable,'claude','unadmitted'],None,None))
 
     def test_syscall_audit_distinguishes_absent_nss_from_dns_and_live_nss(self):
         with tempfile.TemporaryDirectory(prefix='r03-audit-', dir=Path.home() / '.cache') as name:
@@ -160,10 +175,10 @@ class MechanismGuards(unittest.TestCase):
     def test_go_phase_rejects_descendant_python_source_fallback(self):
         with tempfile.TemporaryDirectory(prefix='r03-fallback-', dir=Path.home() / '.cache') as name:
             trace = Path(name) / 'syscalls'
-            python = '/opt/assets/held/python/bin/python3.11'
+            python = '/fixture/held/python'
             trace.write_text('100 clone(child_stack=NULL) = 101\n'
                 '101 execve("' + python + '", ["python", "memory.py"], 0x0) = 0\n')
-            result = continuity.audit_syscalls({python}, set(), {100: 'A'}, trace_path=trace)
+            result = continuity.audit_syscalls({python}, set(), {100: 'A'}, trace_path=trace, python_path=python, scratch_root='/fixture')
             self.assertEqual(len(result['violations']), 1)
             self.assertIn('Source Python fallback', result['violations'][0])
 

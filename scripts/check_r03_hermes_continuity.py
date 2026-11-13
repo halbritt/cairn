@@ -16,6 +16,9 @@ import os
 import re
 import shutil
 import signal
+import socket
+import tempfile
+from urllib.parse import urlsplit
 from pathlib import Path
 import stat
 import subprocess
@@ -233,7 +236,7 @@ def validate_admission(status, admission, context, bindings):
                 and row['consumer'] == 'agent/' + AGENT_ID for row in status['deliveries']),
             'R03_ADMISSION: delivery is not currently leased to this execution')
     require(admission.get('schema') == 'cairn.r03-hermes-native-admission/1'
-            and admission.get('operation') == 'one-isolated-hermes-continuity'
+            and admission.get('operation') == 'one-direct-host-hermes-continuity'
             and admission.get('attempt_limit') == 1, 'R03_ADMISSION: no exact native operation admitted')
     require(admission.get('bindings') == bindings, 'R03_ADMISSION: exact code/image/runtime/provider bindings differ')
     expires = datetime.fromisoformat(admission['expires_at'].replace('Z', '+00:00'))
@@ -243,40 +246,51 @@ def validate_admission(status, admission, context, bindings):
                 bindings=bindings, expires_at=admission['expires_at'])
 
 
-def authenticated_admission(context_path, bindings):
+def authenticated_admission(context_path, bindings, journal=None):
     context = json.loads(Path(context_path).read_bytes())
     require(context['agent_id'] == AGENT_ID and context['execution_id'] == EXECUTION_ID,
             'R03_ADMISSION: foreign context')
-    cli = ['/home/halbritt/.local/bin/cairn', '--token-file',
-           '/home/halbritt/.local/share/cairn/hosted-agent.token',
-           '--agent-id', AGENT_ID, '--execution-id', EXECUTION_ID]
-    def read(operation, tail, stdin=None):
-        argv = [cli[0], operation, *cli[1:], *tail]
-        result = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=30)
-        require(result.returncode == 0, 'R03_ADMISSION: authenticated read failed: ' + operation)
-        envelope = json.loads(result.stdout)
-        require(envelope.get('ok') is True, 'R03_ADMISSION: server refused read')
+    read_argv = context['read']
+    require(read_argv[0] == bindings['admission_cli'], 'R03_ADMISSION: hook CLI differs from pinned normal host CLI')
+    require('--socket' in read_argv and '--token-file' in read_argv, 'R03_ADMISSION: explicit hook profile/socket required')
+    api_socket = read_argv[read_argv.index('--socket') + 1]
+    profile = read_argv[read_argv.index('--token-file') + 1]
+    require(api_socket == bindings['admission_socket'] and profile == '/home/halbritt/.local/share/cairn/hosted-agent.token',
+            'R03_ADMISSION: hook profile/socket mismatch')
+    processes = []
+    def read(argv, payload=None):
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        require(process.pid > 1, 'R03_ADMISSION: invalid readback PID')
+        try:
+            stdout, stderr = process.communicate(payload, timeout=30)
+        except subprocess.TimeoutExpired as error:
+            process.terminate()
+            try: process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill(); process.communicate(timeout=5)
+            raise PrerequisiteError('R03_ADMISSION: readback deadline; no client admitted') from error
+        processes.append(dict(pid=process.pid, argv=argv, exit=process.returncode))
+        if journal is not None: write_json(journal, dict(processes=processes, socket=api_socket))
+        require(process.returncode == 0, 'R03_ADMISSION: authenticated readback failed')
+        envelope = json.loads(stdout)
+        require(envelope.get('ok') is True, 'R03_ADMISSION: server refused readback')
         return envelope['data']
-    status = read('event-status', ['--limit', '100', context['event_id']])
-    # history uses ordinary memory authentication, not session-inbox flags.
-    history_argv = [cli[0], 'agent', '--token-file', cli[2], 'history']
-    result = subprocess.run(history_argv, input=json.dumps(context['source']),
-                            capture_output=True, text=True, timeout=30)
-    require(result.returncode == 0, 'R03_ADMISSION: exact source unavailable')
-    history = json.loads(result.stdout)
-    require(history.get('ok') is True, 'R03_ADMISSION: source read refused')
-    version = history['data']['versions'][0]
+    status = read([read_argv[0], 'event-status', '--socket', api_socket, '--token-file', profile,
+        '--agent-id', AGENT_ID, '--execution-id', EXECUTION_ID, '--limit', '100', context['event_id']])
+    require(context['read_input'] == context['source'], 'R03_ADMISSION: hook source-read mismatch')
+    history = read(read_argv, json.dumps(context['read_input']))
+    require(history['current_version'] == context['source']['version'] and history['current_lifecycle'] == 'active',
+            'R03_ADMISSION: source superseded or inactive')
+    version = history['versions'][0]
     require(version['version'] == context['source']['version'], 'R03_ADMISSION: wrong source version')
-    admission = json.loads(version['body'])
-    receipt = validate_admission(status, admission, context, bindings)
-    receipt.update(server_status=status, admission=admission,
-                   context={key: context[key] for key in ('event_id', 'source', 'agent_id', 'execution_id', 'delivery_id')})
+    receipt = validate_admission(status, json.loads(version['body']), context, bindings)
+    receipt.update(source_sha256=version['body_sha256'], readback_processes=processes)
     return receipt
 
 
 class ScriptedChat:
     """A real local chat-completions transport, including SDK SSE streaming."""
-    def __init__(self, output, port=43867):
+    def __init__(self, output, port=0):
         self.output, self.requests, self.phase = Path(output), [], 'A'
         self.lock, self.violations = threading.Lock(), []
         owner = self
@@ -290,7 +304,7 @@ class ScriptedChat:
                     owner.violations.append('invalid request size'); self.send_error(400); return
                 body = json.loads(self.rfile.read(length))
                 row = dict(path=self.path, body=body, phase=owner.phase,
-                           authorization=self.headers.get('Authorization'))
+                           authorization_expected=self.headers.get('Authorization') == 'Bearer r03-fixture-only')
                 with owner.lock:
                     owner.requests.append(row)
                     write_json(owner.output, owner.requests)
@@ -322,6 +336,7 @@ class ScriptedChat:
                     self.end_headers()
                     self.wfile.write(raw)
         self.server = http.server.ThreadingHTTPServer(('127.0.0.1', port), Handler)
+        self.url = 'http://127.0.0.1:' + str(self.server.server_address[1]) + '/v1'
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def __enter__(self):
@@ -387,162 +402,107 @@ def make_mechanism_plan(args):
     source_count = image_source_carry(image_pins)
     pg = frozen_inventory(args.pg_root, args.pg_root.parent / 'native-pg-pins.json')
     source = source_pins()
-    require(not source['status'], 'R03_PLAN: commit and freeze the mechanism before pinning')
+    require(not source['status'], 'R03_PLAN: commit and freeze before pinning')
     tools = {}
-    for path in ('/usr/bin/bwrap', '/usr/bin/strace', '/usr/bin/git', '/usr/bin/env', '/bin/sh', '/usr/bin/locale'):
-        tools[path] = digest(path)
+    for name in ('strace', 'git', 'env', 'sh', 'locale'):
+        path = shutil.which(name)
+        require(path is not None, 'R03_TOOL: missing normal host tool: ' + name)
+        tools[str(Path(path).resolve())] = digest(path)
+    admission_cli = '/home/halbritt/.local/bin/cairn'
+    tools[admission_cli] = digest(admission_cli)
     libraries = {}
-    for executable in (args.native_root / 'python/bin/python3.11', *tools,
+    for executable in (args.native_root / 'venv/bin/python', *tools,
                        args.pg_root / 'usr/lib/postgresql/18/bin/postgres',
                        args.pg_root / 'usr/lib/postgresql/18/bin/psql'):
         result = subprocess.run(['ldd', str(executable)], text=True, capture_output=True, check=True)
-        for path in re.findall(r'(?:=>\s*)?(/[^\s()]+)', result.stdout):
-            libraries[path] = digest(path)
-    os.umask(0o077); output.mkdir(mode=0o700)
-    assets = output / 'runtime-assets'; assets.mkdir(mode=0o700)
-    runtime_assets = {}
-    for runtime_source in ('/etc/hosts', '/etc/nsswitch.conf'):
-        target = assets / Path(runtime_source).name
-        shutil.copyfile(runtime_source, target); target.chmod(0o400)
-        runtime_assets[runtime_source] = digest(target)
-    bindings = dict(case_id=str(uuid.uuid4()), source_head=source['head'], source_tree=source['tree'],
-        checker_sha256=digest(Path(__file__)), source_files=source['files'],
-        wrapper_sha256=digest(ROOT / 'scripts/test_hybrid_runtime_operations.py'),
+        for path in re.findall(r'(?:=>\s*)?(/[^\s()]+)', result.stdout): libraries[path] = digest(path)
+    # The kernel chooses the port. The admitted run must bind this exact port
+    # exclusively before any client starts; no alternate target is selected.
+    with socket.socket() as reservation:
+        reservation.bind(('127.0.0.1', 0)); port = reservation.getsockname()[1]
+    provider_url = 'http://127.0.0.1:' + str(port) + '/v1'
+    bindings = dict(case_id=str(uuid.uuid4()), execution_mode='direct-host',
+        source_head=source['head'], source_tree=source['tree'], checker_sha256=digest(__file__), source_files=source['files'],
         held_manifest_sha256=held['manifest_sha256'], hermes_revision=HERMES_REVISION,
-        interpreter_sha256=digest(args.native_root / 'python/bin/python3.11'),
+        interpreter_sha256=digest(args.native_root / 'venv/bin/python'),
         images_source_head=IMAGE_SOURCE, images_source_tree=IMAGE_TREE,
-        images={name: row['sha256'] for name, row in image_pins['images'].items()},
-        pg_manifest_sha256=pg['sha256'], libraries=libraries, native_tools=tools,
-        runtime_assets=runtime_assets,
-        provider=dict(provider='custom', url=PROVIDER_URL, model=MODEL,
+        images={name: row['sha256'] for name, row in image_pins['images'].items()}, pg_manifest_sha256=pg['sha256'],
+        libraries=libraries, native_tools=tools, admission_cli=admission_cli,
+        admission_socket='/home/halbritt/.local/share/cairn/api.sock',
+        system_configuration={path:digest(path) for path in ('/etc/hosts','/etc/nsswitch.conf')},
+        provider=dict(provider='custom', url=provider_url, model=MODEL,
                       api_key_sha256=hashlib.sha256(b'r03-fixture-only').hexdigest(), fallback=[]))
-    plan = dict(schema='cairn.r03-hermes-native-plan/1', bindings=bindings,
-        native_root=str(args.native_root), manifest=str(args.manifest), pg_root=str(args.pg_root),
+    os.umask(0o077); output.mkdir(mode=0o700)
+    plan = dict(schema='cairn.r03-hermes-native-plan/2', bindings=bindings,
+        source_root=str(ROOT), native_root=str(args.native_root), manifest=str(args.manifest), pg_root=str(args.pg_root),
         root_images=str(args.root_images), image_directory=str(Path(image_pins['images']['api']['path']).parent),
-        evidence_root=str(args.evidence_root), output=str(output), normal_home=os.environ['HOME'],
-        host_net_namespace=os.readlink('/proc/self/ns/net'), held=held, pg=pg,
-        verified_compiled_source_files=source_count,
-        admission_required=True, native_executed=False)
+        evidence_root=str(args.evidence_root), output=str(output), normal_home=os.environ['HOME'], normal_path=os.environ['PATH'],
+        host_net_namespace=os.readlink('/proc/self/ns/net'), host_pid_namespace=os.readlink('/proc/self/ns/pid'),
+        held=held, pg=pg, verified_compiled_source_files=source_count, admission_required=True, native_executed=False)
     write_json(output / 'plan.json', plan)
     write_json(output / 'admission-template.json', dict(schema='cairn.r03-hermes-native-admission/1',
-        operation='one-isolated-hermes-continuity', attempt_limit=1, bindings=bindings,
+        operation='one-direct-host-hermes-continuity', attempt_limit=1, bindings=bindings,
         expires_at='ROOT_MUST_SET_A_FRESH_RFC3339_EXPIRY'))
-    print(json.dumps(dict(status='MECHANISM_PLAN_PINNED', plan=str(output / 'plan.json'),
-                         native='NOTRUN', ac4_closed=False)))
+    print(json.dumps(dict(status='DIRECT_HOST_PLAN_PINNED',plan=str(output/'plan.json'),native='NOTRUN',ac4_closed=False)))
 
 
-def sandbox_python(tail):
-    code = ('import runpy,sys;sys.path.insert(0,"/opt/assets/held/venv/lib/python3.11/site-packages");'
-            'sys.path.insert(0,"/work/scripts");sys.argv=["/work/scripts/check_r03_hermes_continuity.py",*sys.argv[1:]];'
-            'runpy.run_path(sys.argv[0],run_name="__main__")')
-    return ['/opt/assets/held/python/bin/python3.11', '-I', '-B', '-c', code, *tail]
-
-
-def sandbox_private_call(function, argument, native=False):
-    # Native helpers are not public phase options. Only the authenticated host
-    # dispatcher builds this internal call; the retained receipt binds its
-    # isolated handoff, and is not a replacement for the host's live API check.
-    code = ('import runpy,sys;sys.path.insert(0,"/opt/assets/held/venv/lib/python3.11/site-packages");'
-            'sys.path.insert(0,"/work/scripts");'
-            'ns=runpy.run_path("/work/scripts/check_r03_hermes_continuity.py",run_name="r03_internal");'
+def host_private_call(plan, function, argument, native=False):
+    code = ('import runpy,sys;sys.path.insert(0,' + repr(str(ROOT/'scripts')) + ');'
+            'ns=runpy.run_path(' + repr(str(Path(__file__).resolve())) + ',run_name="r03_internal");'
             'ns[' + repr(function) + '](' + repr(str(argument)) + (',native=True' if native else '') + ')')
-    return ['/opt/assets/held/python/bin/python3.11', '-I', '-B', '-c', code]
+    return [str(Path(plan['native_root'])/'venv/bin/python'), '-I', '-B', '-c', code]
 
 
-def run_mechanism_wrapper(plan_path, mode, admission_context=None):
+def require_host_view(plan):
+    require(os.environ['HOME'] == plan['normal_home'] and os.environ['PATH'] == plan['normal_path'],
+            'R03_HOST: normal HOME/PATH changed')
+    require(os.readlink('/proc/self/ns/net') == plan['host_net_namespace']
+            and os.readlink('/proc/self/ns/pid') == plan['host_pid_namespace'], 'R03_HOST: foreign namespace refused')
+    require(str(ROOT) == plan['source_root'] and digest(__file__) == plan['bindings']['checker_sha256'],
+            'R03_HOST: source/checker changed')
+    for path, expected in {**plan['bindings']['libraries'], **plan['bindings']['native_tools'],
+                            **plan['bindings']['system_configuration']}.items():
+        require(digest(path) == expected, 'R03_HOST: pinned host input changed: ' + path)
+    for name, expected in plan['bindings']['images'].items():
+        require(digest(Path(plan['image_directory'])/name) == expected, 'R03_IMAGES: changed image: ' + name)
+
+
+def run_mechanism_host(plan_path, mode, admission_context=None):
     plan = json.loads(Path(plan_path).read_bytes())
+    require(plan['schema'] == 'cairn.r03-hermes-native-plan/2' and plan['bindings']['execution_mode'] == 'direct-host',
+            'R03_HOST: obsolete execution plan refused')
     current = source_pins()
     require(not current['status'] and current['files'] == plan['bindings']['source_files']
-            and plan['bindings']['source_head'] == current['head']
-            and plan['bindings']['source_tree'] == current['tree']
-            and plan['bindings']['checker_sha256'] == digest(__file__), 'R03_PLAN: source moved')
-    require(digest(ROOT / 'scripts/test_hybrid_runtime_operations.py') == plan['bindings']['wrapper_sha256'],
-            'R03_ISOLATION: qualified wrapper changed')
-    for path, expected in {**plan['bindings']['libraries'], **plan['bindings']['native_tools']}.items():
-        require(digest(path) == expected, 'R03_ASSET: library/tool changed before namespace launch: ' + path)
-    for name, expected in plan['bindings']['images'].items():
-        require(digest(Path(plan['image_directory']) / name) == expected, 'R03_IMAGES: image changed before namespace launch')
-    # The authenticated host gate is outside isolation; the ordinary host
-    # profile is never bound into the sandbox. No inbox consumption occurs.
-    grant = None
+            and current['head'] == plan['bindings']['source_head'] and current['tree'] == plan['bindings']['source_tree'],
+            'R03_PLAN: source moved')
+    require_host_view(plan)
     if mode == 'native':
         try:
             require(admission_context is not None, 'R03_ADMISSION: no native context')
-            grant = authenticated_admission(admission_context, plan['bindings'])
+            authenticated_admission(admission_context, plan['bindings'])
         except (PrerequisiteError, KeyError, ValueError, OSError) as error:
             raise AdmissionRefusal('R03_ADMISSION: ' + str(error)) from error
     verify_inputs(Path(plan['native_root']), Path(plan['manifest']))
-    output = Path(plan['output'])
-    for destination, expected in plan['bindings']['runtime_assets'].items():
-        require(digest(output / 'runtime-assets' / Path(destination).name) == expected,
-                'R03_ASSET: frozen libc configuration changed before use')
-    run_dir = output / ('native-run' if mode == 'native' else 'setup-run')
-    run_dir.mkdir(mode=0o700)
-    if grant is not None:
-        # O_EXCL is the one-attempt ledger. NOTRUN never reaches this point.
-        ledger = Path.home() / '.cache/cairn301-native-admission-ledger-1467'
-        ledger.mkdir(mode=0o700, exist_ok=True)
-        require(ledger.resolve() == ledger and stat.S_IMODE(ledger.stat().st_mode) == 0o700 and ledger.stat().st_uid == os.getuid(),
-                'R03_ADMISSION: private per-agent attempt ledger required')
-        fd = os.open(ledger / (grant['event_id'] + '.json'), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        with os.fdopen(fd, 'w') as stream: json.dump(grant, stream)
-        write_json(run_dir / 'grant.json', grant)
-    write_json(run_dir / 'plan.json', plan)
-    command = ['python3', '-I', '-B', str(ROOT / 'scripts/test_hybrid_runtime_operations.py'),
-        '--receipt', str(run_dir / 'isolation-receipt.json'),
-        '--ro-bind', plan['native_root'] + ':/opt/assets/held',
-        '--ro-bind', plan['manifest'] + ':/opt/assets/held-pins.json',
-        '--ro-bind', plan['pg_root'] + ':/opt/assets/pg',
-        '--ro-bind', plan['image_directory'] + ':/opt/assets/images',
-        '--ro-bind', str(run_dir) + ':/opt/assets/run',
-        *[item for destination, expected in plan['bindings']['runtime_assets'].items()
-          for item in ('--ro-bind', str(output / 'runtime-assets' / Path(destination).name) + ':' + destination)], '--',
-        '/usr/bin/strace', '-f', '-qq', '-s', '1000', '-e', 'trace=network,process',
-        '-o', '/tmp/r03-native-syscalls.log',
-        *(sandbox_private_call('isolated_suite', '/opt/assets/run/plan.json', native=True)
-          if mode == 'native' else sandbox_python(['--phase', 'isolated-setup', '--plan', '/opt/assets/run/plan.json']))]
-    write_json(run_dir / 'invocation.json', dict(argv=command, mode=mode, native_admitted=grant is not None))
-    result = subprocess.run(command, cwd=ROOT, capture_output=True, timeout=480)
-    (run_dir / 'stdout').write_bytes(result.stdout); (run_dir / 'stderr').write_bytes(result.stderr)
-    write_json(run_dir / 'process.json', dict(exit=result.returncode))
-    for line in result.stdout.splitlines():
-        if line.startswith(b'R03_EVIDENCE='):
-            evidence = json.loads(line[len(b'R03_EVIDENCE='):])
-            for name, raw in evidence.items():
-                path = run_dir / 'retained' / name
-                require('..' not in Path(name).parts and not Path(name).is_absolute(), 'R03_EVIDENCE: escaped path')
-                path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                path.write_bytes(base64.b64decode(raw))
-    require(result.returncode == 0, 'R03_MECHANISM: owned ' + mode + ' run failed; STOP, retain raw output')
-    print(json.dumps(dict(status='NATIVE_FIXTURE_PASSED' if mode == 'native' else 'SETUP_ONLY_PASSED',
-                         native=mode == 'native', ac4_closed=False, output=str(run_dir))))
-
-
-def inside_isolation(plan, native=False):
-    require(os.readlink('/proc/self/ns/net') != plan['host_net_namespace'], 'R03_ISOLATION: host network namespace refused')
-    require(str(ROOT) == '/work' and os.environ.get('HOME') == '/tmp/home',
-            'R03_ISOLATION: qualified wrapper layout required')
-    require(digest(__file__) == plan['bindings']['checker_sha256'], 'R03_ISOLATION: checker changed')
-    for name, expected in plan['bindings']['images'].items():
-        require(digest(Path('/opt/assets/images') / name) == expected, 'R03_IMAGES: bound image changed')
-    for path, expected in plan['bindings']['libraries'].items():
-        require(digest(path) == expected, 'R03_ASSET: native library changed: ' + path)
-    for path, expected in plan['bindings']['native_tools'].items():
-        require(digest(path) == expected, 'R03_ASSET: native tool changed: ' + path)
-    for path, expected in plan['bindings']['runtime_assets'].items():
-        require(digest(path) == expected, 'R03_ASSET: qualified libc runtime asset changed: ' + path)
-    if native:
-        grant = json.loads(Path('/opt/assets/run/grant.json').read_bytes())
-        validate_admission(grant['server_status'], grant['admission'], grant['context'], plan['bindings'])
-    return True
+    run_dir = Path(plan['output']) / ('native-run' if mode == 'native' else 'setup-run'); run_dir.mkdir(mode=0o700)
+    runtime = dict(plan, run_dir=str(run_dir), admission_context=str(admission_context) if admission_context else None)
+    write_json(run_dir/'runtime-plan.json',runtime)
+    trace = run_dir/'syscalls.log'
+    command = [shutil.which('strace'), '-f', '-qq', '-s', '2000', '-e', 'trace=network,process', '-o', str(trace),
+               *host_private_call(plan, 'host_suite', run_dir/'runtime-plan.json', native=mode=='native')]
+    write_json(run_dir/'invocation.json',dict(argv=command,mode=mode,execution='direct normal host',normal_home=os.environ['HOME'],normal_path=os.environ['PATH']))
+    result = subprocess.run(command,cwd=ROOT,capture_output=True,timeout=480)
+    (run_dir/'stdout').write_bytes(result.stdout);(run_dir/'stderr').write_bytes(result.stderr)
+    write_json(run_dir/'process.json',dict(exit=result.returncode))
+    require(result.returncode==0,'R03_MECHANISM: direct-host '+mode+' failed; STOP, retain raw output')
+    print(json.dumps(dict(status='NATIVE_FIXTURE_PASSED' if mode=='native' else 'DIRECT_HOST_SETUP_ONLY_PASSED',native=mode=='native',ac4_closed=False,output=str(run_dir))))
 
 
 class NativeAudit:
     """Passive Python call/engine observation plus fail-closed socket/exec audit.
 
-    No held client, provider method or hook dispatcher is replaced. strace in
-    the enclosing unchanged wrapper additionally records every child exec and
-    socket syscall, including Go/selector/auxiliary/finalizer descendants.
+    No held client, provider method or hook dispatcher is replaced. strace on
+    the normal host additionally records every owned child exec and
+    socket syscall, including Go/selector/auxiliary/finalizer descendants; HOME and PATH remain unchanged.
     """
     def __init__(self, output, spec):
         self.output, self.spec = Path(output), spec
@@ -557,7 +517,8 @@ class NativeAudit:
         if event == 'socket.connect':
             address = args[1]
             self.events.append(dict(kind=event, address=str(address)))
-            allowed = ((isinstance(address, tuple) and address[:2] == ('127.0.0.1', 43867))
+            target = urlsplit(self.spec['provider_url'])
+            allowed = ((isinstance(address, tuple) and address[:2] == ('127.0.0.1', target.port))
                        or (isinstance(address, str) and address == self.spec['api_socket']))
             if not allowed: self.reject('R03_NETWORK: unexpected connection ' + str(address))
         elif event == 'socket.getaddrinfo':
@@ -574,6 +535,19 @@ class NativeAudit:
                 self.reject('R03_EXEC: unexpected executable ' + executable)
             if digest(resolved) != self.spec['exec_pins'][resolved]:
                 self.reject('R03_EXEC: executable changed ' + executable)
+            actual = [str(value) for value in argv] if isinstance(argv, (list, tuple)) else [str(argv)]
+            exact = any(actual == candidate for candidate in self.spec['exact_argv'])
+            git = self.spec['git_executable']
+            if resolved == git:
+                tail = actual[1:]
+                if tail[:1] == ['-C']: tail = tail[2:]
+                read_command = bool(tail) and tail[0] in ('--version','version','rev-parse','status','diff','log','show','ls-files','symbolic-ref')
+                read_command = read_command or tail[:1] == ['branch'] and tail[1:] == ['--show-current']
+                read_command = read_command or tail[:2] == ['worktree','list']
+                read_command = read_command or tail[:1] == ['config'] and any(arg in ('--get','--get-all','--list') for arg in tail)
+                exact = exact or read_command
+            if not exact:
+                self.reject('R03_EXEC: executable arguments outside the owned fixture contract')
 
     def profile(self, frame, event, result):
         filename, name = frame.f_code.co_filename, frame.f_code.co_name
@@ -595,6 +569,11 @@ class NativeAudit:
                 value = frame.f_locals.get(key)
                 if isinstance(value, (str, int, bool)): row[key] = value
             self.events.append(row)
+            request = frame.f_locals.get('request')
+            if '/httpx/' in filename and name == 'send' and request is not None:
+                if str(request.url).startswith(self.spec['provider_url'] + '/'):
+                    if request.headers.get('authorization') != 'Bearer r03-fixture-only':
+                        self.reject('R03_PROVIDER: wrong credential selector before provider request')
             if name.startswith(('_try_payment_fallback', '_try_configured_fallback', '_try_main_fallback')):
                 self.reject('R03_PROVIDER: fallback resolution is not admitted')
         if len(self.events) > 200_000:
@@ -612,13 +591,25 @@ class NativeAudit:
 
 def native_worker(spec_path):
     spec = json.loads(Path(spec_path).read_bytes())
-    plan = json.loads(Path('/opt/assets/run/plan.json').read_bytes())
-    inside_isolation(plan, native=True)  # MUST precede every held client import.
+    plan = json.loads(Path(spec['plan']).read_bytes())
+    require_host_view(plan)
+    grant = authenticated_admission(plan['admission_context'], plan['bindings'], journal=Path(spec['output'])/'admission-readback.json')
+    # Live authenticated readback above MUST precede every held client import.
+    ledger = Path.home()/'.cache/cairn301-native-admission-ledger-1467'
+    if spec['label'] == 'A':
+        ledger.mkdir(mode=0o700, exist_ok=True)
+        require(ledger.resolve()==ledger and ledger.stat().st_uid==os.getuid()
+                and stat.S_IMODE(ledger.stat().st_mode)==0o700, 'R03_ADMISSION: private ledger required')
+        descriptor = os.open(ledger/(grant['event_id']+'.json'), os.O_CREAT|os.O_EXCL|os.O_WRONLY, 0o600)
+        with os.fdopen(descriptor,'w') as stream: json.dump(grant,stream)
+    else:
+        prior = json.loads((ledger/(grant['event_id']+'.json')).read_bytes())
+        require(prior['bindings']==plan['bindings'], 'R03_ADMISSION: continuation differs from the one native attempt')
     output, home = Path(spec['output']), Path(spec['home'])
     os.environ['HERMES_HOME'] = str(home)
     os.environ['TERMINAL_CWD'] = spec['project']
     audit = NativeAudit(output, spec); audit.install()
-    sys.path.insert(0, '/opt/assets/held/hermes')
+    sys.path.insert(0, str(Path(plan['native_root'])/'hermes'))
     from cli import HermesCLI, _finalize_single_query
     from agent.memory_provider import MemoryProvider
     from hermes_cli.plugins import PluginRegistration, get_plugin_manager
@@ -633,10 +624,12 @@ def native_worker(spec_path):
             return [{key: tuple(values) for key, values in registry.items() if values}
                     for registry in (manager._hooks, manager._middleware)]
         baseline_handles = registrations()
-        cli = HermesCLI(model=MODEL, provider='custom', api_key='r03-fixture-only', base_url=PROVIDER_URL,
+        cli = HermesCLI(model=MODEL, provider='custom', api_key='r03-fixture-only', base_url=spec['provider_url'],
                         toolsets=['mcp-cairn'], max_turns=1, compact=True, resume=spec['session'])
         initial_session = cli.session_id
         require(cli._fallback_model == [], 'R03_PROVIDER: fallback configured')
+        require(cli.api_key == 'r03-fixture-only' and str(cli.base_url).rstrip('/') == spec['provider_url'],
+                'R03_PROVIDER: constructor selected different credentials/target')
         if spec['session'] is not None:
             require(cli._preload_resumed_session(), 'R03_SESSION: real CLI failed supported resume')
             require(cli.session_id == spec['session'], 'R03_SESSION: conversation replaced')
@@ -690,7 +683,7 @@ def native_worker(spec_path):
         require(cli.agent is agent and agent._memory_manager.get_provider('cairn') is provider,
                 'R03_BOUNDARY: native chat silently recreated the cached provider/agent')
         require(cli.session_id == (spec['session'] or initial_session), 'R03_SESSION: chat rotated conversation')
-        require(cli.api_key == 'r03-fixture-only' and str(cli.base_url).rstrip('/') == PROVIDER_URL,
+        require(cli.api_key == 'r03-fixture-only' and str(cli.base_url).rstrip('/') == spec['provider_url'],
                 'R03_PROVIDER: native credential selectors changed')
         _finalize_single_query(cli); finalized = True
         require(all(not handle.active for handle in handles), 'R03_CLIENT: registration handles leaked at finalization')
@@ -724,101 +717,106 @@ def native_worker(spec_path):
         audit.flush()
 
 
-def auxiliary_routes():
-    tree = ast.parse(Path('/opt/assets/held/hermes/hermes_cli/config_defaults.py').read_text())
+def auxiliary_routes(native_root, provider_url):
+    tree = ast.parse((Path(native_root)/'hermes/hermes_cli/config_defaults.py').read_text())
     for node in ast.walk(tree):
         if not isinstance(node, ast.Dict): continue
         for key, value in zip(node.keys, node.values):
             if isinstance(key, ast.Constant) and key.value == 'auxiliary' and isinstance(value, ast.Dict):
-                return {key.value: dict(provider='custom', model=MODEL, base_url=PROVIDER_URL,
+                return {key.value: dict(provider='custom', model=MODEL, base_url=provider_url,
                     api_key='r03-fixture-only', fallback_chain=[], timeout=10)
                     for key, item in zip(value.keys, value.values)
                     if isinstance(key, ast.Constant) and isinstance(item, ast.Dict)}
     raise PrerequisiteError('R03_INTERFACE: held auxiliary routing defaults unavailable')
 
 
-def emit_evidence(root):
-    selected, binaries = {}, {}
+def retain_evidence(root, destination):
+    """Copy only owned synthetic fixture receipts before disposable cleanup."""
+    destination = Path(destination); destination.mkdir(mode=0o700)
+    metadata = {}
     for path in sorted(Path(root).rglob('*')):
-        if not path.is_file() or path.is_socket() or 'cluster/data' in str(path): continue
-        with path.open('rb') as source: header = source.read(4)
-        if header == b'\x7fELF':
-            binaries[str(path.relative_to(root))] = dict(bytes=path.stat().st_size, sha256=digest(path))
-            continue
-        if path.stat().st_size > 32_000_000:
-            raise PrerequisiteError('R03_EVIDENCE: raw receipt exceeded declared bound: ' + path.name)
-        selected[str(path.relative_to(root))] = base64.b64encode(path.read_bytes()).decode()
-    selected['installed-binary-pins.json'] = base64.b64encode(json.dumps(binaries, indent=2).encode()).decode()
-    trace = Path('/tmp/r03-native-syscalls.log')
-    if trace.exists(): selected['syscalls.log'] = base64.b64encode(trace.read_bytes()).decode()
-    print('R03_EVIDENCE=' + json.dumps(selected), flush=True)
+        relative = str(path.relative_to(root))
+        if relative.startswith('cluster/data'): continue
+        info = path.lstat()
+        metadata[relative] = dict(mode=stat.S_IMODE(info.st_mode), uid=info.st_uid, inode=info.st_ino,
+                                  device=info.st_dev, links=info.st_nlink)
+        if path.is_symlink():
+            metadata[relative]['symlink'] = os.readlink(path); continue
+        if not path.is_file() or path.is_socket(): continue
+        metadata[relative]['sha256'] = digest(path)
+        with path.open('rb') as stream: header = stream.read(4)
+        if header == b'\x7fELF': continue  # Exact Root image pins retain these bytes elsewhere.
+        target = destination / relative; target.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+        shutil.copy2(path,target)
+    write_json(destination/'filesystem-before-cleanup.json',metadata)
 
 
-def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path='/tmp/r03-native-syscalls.log'):
+def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None,
+                   provider_url=PROVIDER_URL, python_path=None, scratch_root=None, normal_path='',
+                   admission_socket=None, admission_pids=()):
     trace = Path(trace_path).read_text()
-    violations, executions, connections, runtime_probes = [], [], [], []
+    violations, executions, connections, runtime_probes, workflow_reads = [], [], [], [], []
     lines, pending = [], {}
     for line in trace.splitlines():
         if not line.strip(): continue
         pid = line.split()[0]
-        if '<unfinished ...>' in line:
-            pending[pid] = line.split('<unfinished ...>')[0]
+        if '<unfinished ...>' in line: pending[pid] = line.split('<unfinished ...>')[0]
         elif '<... ' in line and ' resumed>' in line:
-            if pid in pending: lines.append(pending.pop(pid) + line.split(' resumed>', 1)[1])
+            if pid in pending: lines.append(pending.pop(pid) + line.split(' resumed>',1)[1])
         else: lines.append(line)
     for line in pending.values():
-        if 'connect(' in line or 'execve(' in line: violations.append('unfinished audited operation: ' + line)
+        if 'connect(' in line or 'execve(' in line: violations.append('unfinished audited operation: '+line)
     parents = {}
     for line in lines:
-        if re.search(r'(clone|fork)', line):
-            child = re.search(r'= (\d+)\s*$', line)
+        if re.search(r'(clone|fork)',line):
+            child = re.search(r'= (\d+)\s*$',line)
             if child: parents[int(child[1])] = int(line.split()[0])
-    def phase_for(pid):
+    def ancestor(pid, candidates):
         seen = set()
         while pid not in seen:
             seen.add(pid)
-            if pid in (phase_roots or {}): return phase_roots[pid]
+            if pid in candidates: return pid
             if pid not in parents: return None
             pid = parents[pid]
         return None
+    target = urlsplit(provider_url)
+    normal_dirs = {str(Path(path).resolve()) for path in normal_path.split(':') if path}
+    tool_names = {Path(path).name for path in allowed_exec} | {'sh'}
     for line in lines:
+        pid = int(line.split()[0])
         if 'execve(' in line:
-            match = re.search(r'execve\(("(?:[^"\\]|\\.)*")', line)
-            if match:
-                path = json.loads(match[1]); executions.append(path)
-                # Failed PATH candidates and the deterministic maintained
-                # installer launch-anchor probe are explicitly declared;
-                # neither permits an unknown executable that actually runs.
-                negative_git = (path in ('/opt/toolchains/go/bin/git', '/opt/toolchains/rust/bin/git')
-                                and '= -1 ENOENT' in line)
-                anchor = re.fullmatch(r'/tmp/home/\.cache/r03-mechanism/project/release/\.prepare-[^/]+/probe', path)
-                if negative_git or anchor:
-                    runtime_probes.append(line)
-                elif str(Path(path).resolve()) not in allowed_exec:
-                    violations.append(line)
-                pid = int(line.split()[0]); phase = phase_for(pid)
-                if phase in ('A', 'B') and path == '/opt/assets/held/python/bin/python3.11' and pid not in (phase_roots or {}):
-                    if '/r03-mechanism/selector' not in line:
-                        violations.append('Source Python fallback in Go phase: ' + line)
-            else: violations.append(line)
+            match = re.search(r'execve\(("(?:[^"\\]|\\.)*")',line)
+            if not match: violations.append(line); continue
+            path = json.loads(match[1]); executions.append(path)
+            negative_lookup = Path(path).name in tool_names and str(Path(path).parent.resolve()) in normal_dirs and '= -1 ENOENT' in line
+            anchor = scratch_root is not None and re.fullmatch(re.escape(str(Path(scratch_root)/'project/release'))+r'/\.prepare-[^/]+/probe',path)
+            if negative_lookup or anchor: runtime_probes.append(line)
+            elif str(Path(path).resolve()) not in allowed_exec: violations.append(line)
+            owner = ancestor(pid,phase_roots or {})
+            if owner is not None and phase_roots[owner] in ('A','B') and path == python_path and pid != owner:
+                if str(Path(scratch_root)/'selector') not in line: violations.append('Source Python fallback in Go phase: '+line)
         if 'connect(' in line:
             connections.append(line)
             if 'AF_UNIX' in line:
-                match = re.search(r'sun_path="([^\"]+)"', line)
+                match = re.search(r'sun_path="([^\"]+)"',line)
                 if match and match[1] == '/var/run/nscd/socket' and '= -1 ENOENT' in line:
                     runtime_probes.append(line)
+                elif match and match[1] == admission_socket and ancestor(pid,set(admission_pids)) is not None:
+                    workflow_reads.append(line)
                 elif not match or match[1] not in allowed_unix: violations.append(line)
             elif 'AF_INET' in line:
-                if 'sin_port=htons(43867)' not in line or 'inet_addr("127.0.0.1")' not in line:
+                if 'sin_port=htons('+str(target.port)+')' not in line or 'inet_addr("127.0.0.1")' not in line:
                     violations.append(line)
             else: violations.append(line)
-    return dict(execve=executions, connect=connections, declared_negative_or_anchor_probes=runtime_probes,
-                violations=violations)
+    return dict(execve=executions,connect=connections,declared_negative_or_anchor_probes=runtime_probes,
+                authenticated_workflow_reads=workflow_reads,violations=violations)
 
 
-def isolated_suite(plan_path, native=False):
-    plan = json.loads(Path(plan_path).read_bytes()); inside_isolation(plan, native=native)
-    verify_inputs(Path('/opt/assets/held'), Path('/opt/assets/held-pins.json'))
+def host_suite(plan_path, native=False):
+    plan = json.loads(Path(plan_path).read_bytes()); require_host_view(plan)
+    native_root = Path(plan['native_root']); images = Path(plan['image_directory'])
+    provider_url = plan['bindings']['provider']['url']
+    verify_inputs(native_root,Path(plan['manifest']))
     if not native:
         def no_native_import(event, args):
             if event == 'import' and args[0] in ('cli', 'run_agent'):
@@ -830,19 +828,25 @@ def isolated_suite(plan_path, native=False):
     from test_r03_hermes_installer import installer
 
     os.umask(0o077)
-    root = Path('/tmp/home/.cache/r03-mechanism'); root.mkdir(parents=True, mode=0o700)
-    root.parent.chmod(0o700)
-    pg_bin = Path('/opt/assets/pg/usr/lib/postgresql/18/bin')
+    root = Path(tempfile.mkdtemp(prefix='cairn-r03h-'))
+    run_dir = Path(plan['run_dir'])
+    write_json(root/'host-view.json',dict(home=os.environ['HOME'],path=os.environ['PATH'],pid=os.getpid(),
+        net_namespace=os.readlink('/proc/self/ns/net'),pid_namespace=os.readlink('/proc/self/ns/pid'),
+        usr_uid=Path('/usr').stat().st_uid,usr_mode=stat.S_IMODE(Path('/usr').stat().st_mode),
+        scratch=str(root),execution='normal host; no environment/home replacement'))
+    pg_bin = Path(plan['pg_root'])/'usr/lib/postgresql/18/bin'
     cluster = host = None
     cleanup = {}; phases = []; session = None; previous_history = None
     allowed_exec = {str(Path(path).resolve()) for path in plan['bindings']['native_tools']}
-    allowed_exec.update(str(path.resolve()) for path in Path('/opt/assets/images').iterdir() if path.is_file())
+    allowed_exec.update(str(path.resolve()) for path in images.iterdir() if path.is_file())
     allowed_exec.update(str(path.resolve()) for path in pg_bin.iterdir() if path.is_file())
-    allowed_exec.add('/opt/assets/held/python/bin/python3.11')
+    python = str(native_root/'venv/bin/python')
+    allowed_exec.add(str(Path(python).resolve()))
     allowed_unix = set()
     try:
+        grant = authenticated_admission(plan['admission_context'],plan['bindings'],journal=root/'admission-readback.json') if native else None
         cluster = disposable_host.OwnedCluster.start(root / 'cluster', pg_bin=pg_bin)
-        host = disposable_host.DisposableHost.start(cluster, binary=Path('/opt/assets/images/api'),
+        host = disposable_host.DisposableHost.start(cluster, binary=images/'api',
             repo='fixture:r03-hermes-native-continuity', database='r03_hermes_continuity',
             home=root / 'api', roles=('worker',), principals={'worker': 'agent:r03-hermes-fixture'},
             label='r03_hermes_continuity', log=root / 'api.log')
@@ -857,26 +861,26 @@ def isolated_suite(plan_path, native=False):
             args=('--repo', host.repo, '--kind', 'decision', '--shareable', '--request-id', str(uuid.uuid4()), '--stdin'))
         write_json(root / 'seed.json', seed)
         selector = root / 'selector'
-        selector.write_text('#!/opt/assets/held/python/bin/python3.11\n' +
+        selector.write_text('#!'+python+'\n' +
             'import json,pathlib,sys\np=pathlib.Path(__file__).parent\n'
             'with (p/"selector-calls.jsonl").open("a") as f: f.write(json.dumps(dict(argv=sys.argv[1:],stdin=sys.stdin.read()))+"\\n")\n'
             'print(json.dumps(json.loads((p/"selection.json").read_text())))\n')
         selector.chmod(0o500); allowed_exec.add(str(selector))
         installed.SOURCE_REVISION = IMAGE_SOURCE
-        f = installed.HermesInstalledFixture(root / 'project', Path('/opt/assets/images/control'),
-                                             stager=Path('/opt/assets/images/stager'), harness='hermes', enabled=False)
+        f = installed.HermesInstalledFixture(root / 'project', images/'control',
+                                             stager=images/'stager', harness='hermes', enabled=False)
         for config in (f.memory, f.coord):
-            config.update(cairn='/opt/assets/images/api', socket=str(host.socket),
+            config.update(cairn=str(images/'api'), socket=str(host.socket),
                           token_file=str(host.token('worker')), repo=host.repo)
         f.memory.update(claude=str(selector), model=MODEL, recall_mode='agent_tools',
                         semantic_fallback=False, capture_observations=True, recall_observations=True)
         f.publish_configuration(enabled=False)
         home = f.account
-        write_json(home / 'config.yaml', dict(model=dict(default=MODEL, provider='custom', base_url=PROVIDER_URL,
+        write_json(home / 'config.yaml', dict(model=dict(default=MODEL, provider='custom', base_url=provider_url,
                 api_key='r03-fixture-only'), fallback_model=[], fallback_providers=[],
-                auxiliary=auxiliary_routes(), memory=dict(memory_enabled=True), plugins=dict(enabled=[])))
+                auxiliary=auxiliary_routes(native_root,provider_url), memory=dict(memory_enabled=True), plugins=dict(enabled=[])))
         skill = root / 'fixture-skill.md'; skill.write_text('Synthetic retained continuity fixture.\n')
-        native_config = dict(executable='/opt/assets/images/api', socket=str(host.socket),
+        native_config = dict(executable=str(images/'api'), socket=str(host.socket),
                              token_file=str(host.token('worker')), repo=host.repo)
         installer.install(home, native_config, str(selector), skill, model=MODEL, recall_mode='agent_tools')
         legacy = json.loads((home / 'cairn-lifecycle.json').read_bytes())
@@ -884,6 +888,7 @@ def isolated_suite(plan_path, native=False):
         engine = json.loads(engine_path.read_bytes())
         engine.update(state_dir=f.memory['state_dir'], semantic_fallback=False,
                       capture_observations=True, recall_observations=True)
+        require(engine.get('claude') == str(selector), 'R03_SETUP: retained memory config lacks the installed selector')
         installer.shared.write_json(engine_path, engine)
         retained = {str(path): path.read_bytes() for path in
                     (home / 'cairn-lifecycle.json', home / 'cairn/installed.json', engine_path)}
@@ -892,12 +897,12 @@ def isolated_suite(plan_path, native=False):
                     selection=legacy, members=legacy_members, engine_sha256=digest(engine_path)))
         def install_go():
             installer.install(home, native_config, str(selector), skill,
-                               lifecycle_selection=f.selected, stager='/opt/assets/images/stager')
+                               lifecycle_selection=f.selected, stager=str(images/'stager'))
             return json.loads((home / 'cairn-lifecycle.json').read_bytes())
         selected_a = install_go()
         credential_sha = digest(home / 'config.yaml')
         write_json(root / 'credential-selectors.json', dict(path=str(home / 'config.yaml'), sha256=credential_sha,
-                    provider='custom', model=MODEL, base_url=PROVIDER_URL, key_sha256=hashlib.sha256(b'r03-fixture-only').hexdigest()))
+                    provider='custom', model=MODEL, base_url=provider_url, key_sha256=hashlib.sha256(b'r03-fixture-only').hexdigest()))
         selected_b = None
         def stage_b():
             nonlocal selected_b
@@ -925,16 +930,24 @@ def isolated_suite(plan_path, native=False):
                            native=False, client_imported=False, before=before, after=before)
                 write_json(phase / 'result.json', row); phases.append(row)
                 return
-            exec_pins = {str(Path(path).resolve()): digest(path) for path in allowed_exec}
+            git_executable = str(Path(shutil.which('git')).resolve())
+            mcp = json.loads((home/'config.yaml').read_bytes())['mcp_servers']['cairn']
+            exact_argv = [[mcp['command'], *mcp['args']]]
+            actor_exec = {str(Path(python).resolve()), str((images/'api').resolve()), git_executable}
+            exec_pins = {path: digest(path) for path in actor_exec}
             for config in (selection, selected_a, selected_b or {}):
                 for argv in config.get('commands', {}).values():
                     exec_pins[str(Path(argv[0]).resolve())] = digest(argv[0]); allowed_exec.add(str(Path(argv[0]).resolve()))
+                    exact_argv.append(argv)
+            if 'commands' not in selection:
+                exact_argv.append([python, selection['script'], '--config', selection['engine_config']])
             spec = dict(label=label, selection=selection, home=str(home), project=str(f.root),
                 output=str(phase), session=session, previous_history=previous_history,
                 stage_b=transition is not None, api_socket=str(host.socket),
-                exec_pins=exec_pins, credential_selector_sha256=credential_sha)
+                exec_pins=exec_pins, exact_argv=exact_argv, git_executable=git_executable,
+                provider_url=provider_url, plan=str(plan_path), credential_selector_sha256=credential_sha)
             write_json(phase / 'spec.json', spec)
-            argv = sandbox_private_call('native_worker', phase / 'spec.json')
+            argv = host_private_call(plan,'native_worker',phase/'spec.json')
             process = subprocess.Popen(argv, cwd=f.root, stdin=subprocess.DEVNULL,
                 stdout=(phase / 'stdout').open('wb'), stderr=(phase / 'stderr').open('wb'), start_new_session=True)
             require(process.pid > 1, 'R03_PROCESS: invalid owned CLI PID')
@@ -953,16 +966,16 @@ def isolated_suite(plan_path, native=False):
                 require(process.wait(timeout=180) == 0, 'R03_CLIENT: actual native phase failed; STOP')
             finally:
                 if process.poll() is None:
-                    os.killpg(process.pid, signal.SIGTERM)
+                    process.terminate()
                     try: process.wait(timeout=5)
                     except subprocess.TimeoutExpired:
-                        os.killpg(process.pid, signal.SIGKILL); process.wait(timeout=5)
+                        process.kill(); process.wait(timeout=5)
             row = json.loads((phase / 'result.json').read_bytes())
             require(row['finalized'] is True and row['session'] == session, 'R03_BOUNDARY: no supported finalized owner')
             require_idle_boundary(True, session, row['session'])
             audit = json.loads((phase / 'audit.json').read_bytes())
             require(not audit['violations'], 'R03_AUDIT: late finalizer/atexit violation')
-            sys.path.insert(0, '/opt/assets/held/hermes')
+            sys.path.insert(0, str(Path(plan['native_root'])/'hermes'))
             from hermes_state import SessionDB
             readback = SessionDB(db_path=home / 'state.db')
             try: history = readback.get_resume_conversations(session)
@@ -972,7 +985,7 @@ def isolated_suite(plan_path, native=False):
             for call in calls:
                 event = call['payload']['hook_event_name']
                 expected = (selection['commands'][event] if 'commands' in selection else
-                            ['/opt/assets/held/python/bin/python3.11', selection['script'], '--config', selection['engine_config']])
+                            [python, selection['script'], '--config', selection['engine_config']])
                 require(call['payload']['session_id'] == session and call['argv'] == expected
                         and call.get('exit') == 0, 'R03_CALLBACK: late foreign, fallback or failed callback')
                 if 'commands' in selection:
@@ -993,7 +1006,8 @@ def isolated_suite(plan_path, native=False):
             row.update(before=before, after=after, owned_pid=process.pid, child_reaped=True)
             write_json(phase / 'result.json', row); phases.append(row)
 
-        with ScriptedChat(root / 'transport-requests.json') as transport:
+        with ScriptedChat(root/'transport-requests.json',port=urlsplit(provider_url).port) as transport:
+            require(transport.url==provider_url,'R03_PROVIDER: owned listener target differs')
             run_phase('A', selected_a, transition=stage_b)
             require(selected_b is not None, 'R03_SELECTION: B was not staged')
             require(digest(home / 'config.yaml') == credential_sha, 'R03_PROVIDER: B staging changed credential selectors')
@@ -1024,10 +1038,22 @@ def isolated_suite(plan_path, native=False):
         if host is not None: cleanup['api_exit'] = host.close()
         if cluster is not None: cleanup['postgres_stopped'] = cluster.stop()
         write_json(root / 'cleanup.json', cleanup)
-        syscall = audit_syscalls(allowed_exec, allowed_unix,
-                                {row['owned_pid']: row['label'] for row in phases if 'owned_pid' in row})
-        write_json(root / 'syscall-audit.json', syscall)
-        emit_evidence(root)
+        admission_pids = []
+        for receipt in root.rglob('admission-readback.json'):
+            admission_pids.extend(row['pid'] for row in json.loads(receipt.read_bytes())['processes'])
+        syscall = audit_syscalls(allowed_exec,allowed_unix,
+            {row['owned_pid']:row['label']for row in phases if 'owned_pid' in row},
+            trace_path=run_dir/'syscalls.log',provider_url=provider_url,python_path=python,
+            scratch_root=root,normal_path=plan['normal_path'],admission_socket=plan['bindings']['admission_socket'],
+            admission_pids=admission_pids)
+        write_json(root/'syscall-audit.json',syscall)
+        require(os.environ['HOME']==plan['normal_home'] and os.environ['PATH']==plan['normal_path'],
+                'R03_HOST: normal agent identity/environment changed')
+        retain_evidence(root,run_dir/'retained')
+        if cluster is None or cleanup.get('postgres_stopped') is True:
+            require(root.parent==Path(tempfile.gettempdir()) and root.name.startswith('cairn-r03h-')
+                    and root.stat().st_uid==os.getuid(),'R03_CLEANUP: wrong owned scratch root')
+            shutil.rmtree(root)
         require(cluster is None or cleanup.get('postgres_stopped') is True, 'R03_CLEANUP: owned PostgreSQL unresolved')
         require(not syscall['violations'], 'R03_AUDIT: unexpected child exec/socket target; retain syscall journal')
 
@@ -1035,7 +1061,7 @@ def isolated_suite(plan_path, native=False):
 def native_readback_request(native_root, manifest, home, baseline):
     """Retain prep compatibility without emitting the superseded constructor."""
     return dict(schema=SCHEMA, status='DEPRECATED_NOT_EXECUTABLE', argv=None,
-        replacement='mechanism-plan + authenticated native admission + unchanged qualified wrapper',
+        replacement='direct-host mechanism-plan + authenticated native admission through maintained mise/host:exec',
         reason='Reviewer N1/N2: finalization can call auxiliary providers; old author-path request must not execute.',
         native_executed=False, ac4_closed=False)
 
@@ -1043,7 +1069,7 @@ def native_readback_request(native_root, manifest, home, baseline):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--phase', choices=('prepare', 'session-api', 'native', 'mechanism-plan',
-        'mechanism-setup', 'isolated-setup'), default='prepare')
+        'mechanism-setup'), default='prepare')
     parser.add_argument('--native-root', type=Path)
     parser.add_argument('--manifest', type=Path)
     parser.add_argument('--evidence-root', type=Path)
@@ -1061,7 +1087,7 @@ def main(argv=None):
     if args.phase == 'native':
         if args.plan is not None and args.admission_context is not None:
             try:
-                run_mechanism_wrapper(args.plan, 'native', args.admission_context)
+                run_mechanism_host(args.plan, 'native', args.admission_context)
             except AdmissionRefusal as error:
                 print(json.dumps(dict(native_boundary(), reason=str(error))))
                 return NOTRUN
@@ -1075,11 +1101,7 @@ def main(argv=None):
         return 0
     if args.phase == 'mechanism-setup':
         require(args.plan is not None, 'R03_PLAN: missing plan')
-        run_mechanism_wrapper(args.plan, 'setup')
-        return 0
-    if args.phase == 'isolated-setup':
-        require(args.plan is not None, 'R03_PLAN: missing isolated plan')
-        isolated_suite(args.plan, native=False)
+        run_mechanism_host(args.plan, 'setup')
         return 0
     if args.phase == 'session-api':
         require(all((args.home, args.native_root, args.report, args.manifest)),
