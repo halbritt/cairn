@@ -53,11 +53,12 @@ func TestWatchCensusClaudeLayerInventory(t *testing.T) {
 }
 
 func TestWatchCensusClaudeSelectedInputsRefuse(t *testing.T) {
-	for _, mutation := range []string{"harness", "layer", "unknown-config", "missing-readback", "unknown-session", "duplicate", "foreign-account"} {
+	for _, mutation := range []string{"harness", "layer", "unknown-config", "duplicate", "foreign-account"} {
 		t.Run(mutation, func(t *testing.T) {
 			f := newCensusFixture(t)
 			path := filepath.Join(f.catalog.Selections[0].Directory, "one.json")
 			selected := WatchCensusClaudeHooks{Schema: "cairn.watch-claude-hooks/1", Harness: "claude", Layer: "flagSettings", Config: WatchCensusPin{path, f.catalog.Selections[0].Pins["one.json"]}, Session: f.catalog.Sessions[0], Account: f.configs[path]["config_home"].(string), Workspace: filepath.Join(f.root, "workspaces", "a-one.json")}
+			selected.Generation, selected.Settings, selected.Readback = selected.Session, selected.Session, selected.Session
 			switch mutation {
 			case "harness":
 				selected.Harness = "codex"

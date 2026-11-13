@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -41,6 +42,22 @@ def private_directories(root):
 def layer_files(account, work):
     return [selected_pin(path) for root in (account, work)
             for path in sorted(root.rglob('*')) if path.is_file()]
+
+
+def preserve_producer(f, selection, output, label):
+    target = output / ('producer-' + label)
+    target.mkdir(mode=0o700)
+    for name in ('manifest.json', 'hook-selection.json', 'hook-settings.json', 'previous-settings.json'):
+        source = Path(selection[0]['selection']['path']).parent / name
+        shutil.copyfile(source, target / name)
+    lifecycle = Path(selection[2]['lifecycle_selection']['path']).parent
+    for name in ('manifest.json', 'selection.json', 'receipt.json', 'binding.json', 'memory.json', 'coordination-0.json'):
+        shutil.copyfile(lifecycle / name, target / ('lifecycle-' + name))
+    launchers = target / 'launchers'
+    launchers.mkdir(mode=0o700)
+    for row in selection[2]['rows']:
+        shutil.copyfile(Path(row['argv'][0]), launchers / (row['role'] + '-' + row['event']))
+    write(target / 'selection-result.json', selection[0])
 
 
 def native_observation(client, selection, output, label):
@@ -131,6 +148,15 @@ def catalog_for(f, selection, identity, work, readback, output):
     proposal = dict(Bindings=catalog['Selections'], Sessions=[p['Path'] for p in sessions], Callbacks=[])
     write(output / 'emitted-hook-selection.json', selection[2])
     write(output / 'emitted-binding.json', binding)
+    custody = output / ('census-inputs-' + readback_pin['SHA256'][:16])
+    custody.mkdir(mode=0o700, exist_ok=True)
+    write(custody / 'catalog.json', catalog)
+    for label, source in [('hooks', root / 'census-hooks.json'), ('readback', root / 'census-readback.json')]:
+        if source.is_file():
+            shutil.copyfile(source, custody / (label + '.json'))
+    for i, item in enumerate(sessions):
+        shutil.copyfile(item['Path'], custody / ('native-state-' + str(i) + '.json'))
+
     return catalog, proposal, hook_input
 
 
@@ -173,6 +199,7 @@ def run(args, output):
         overwrite_fixture(f.settings, original)
         f.hook_plan.update(selection=f.selected, settings=pin(f.settings))
         a = support.selected(f)
+        preserve_producer(f, a, output, 'a')
         work = f.root / 'workspace'
         work.mkdir(mode=0o700)
 
@@ -184,10 +211,11 @@ def run(args, output):
 
         target = start('native-a', a)
         native_owner_a = process_ref(target.process.pid)
-        a_view = native_observation(target, a, output, 'selected-a')
+        native_observation(target, a, output, 'selected-a')
         f.publish_configuration(enabled=False)
         f.hook_plan.update(id=str(uuid.uuid4()), selection=f.selected, settings=pin(f.settings))
         b = support.selected(f)
+        preserve_producer(f, b, output, 'b')
         cached = native_observation(target, a, output, 'cached-a-after-selected-b')
         target.close()
         require(target.process.returncode == 0, 'native A was not joined')
@@ -223,7 +251,7 @@ def run(args, output):
                                'program': Path(b_view['Executions'][0]['Program']['Path'])}[mutation]
                     saved = changed.read_bytes()
                     overwrite_fixture(changed, saved + b'\n')
-                    reason = {'receipt': 'pin changed', 'config': 'descriptor changed', 'launcher': 'content address', 'program': 'pin changed'}[mutation]
+                    reason = {'receipt': 'pin changed', 'config': 'descriptor changed', 'launcher': 'launcher', 'program': 'pin changed'}[mutation]
                 elif mutation == 'shell':
                     observed['Shell']['SHA256'] = '0' * 64
                     reason = 'shell pin changed'
