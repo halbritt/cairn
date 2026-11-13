@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -30,6 +31,24 @@ from test_r04_host_wiring import R04HostWiringTests, pin
 
 def selected_pin(path):
     return dict(Path=str(path), SHA256=sha(path))
+
+
+def directory_metadata(path):
+    info = path.lstat()
+    return dict(path=str(path), canonical=str(path.resolve(strict=True)), uid=info.st_uid,
+                mode=stat.S_IMODE(info.st_mode), kind=stat.S_IFMT(info.st_mode),
+                device=info.st_dev, inode=info.st_ino)
+
+
+def owned_private_directory(path):
+    try:
+        path.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    facts = directory_metadata(path)
+    require(facts['kind'] == stat.S_IFDIR and facts['uid'] == os.getuid()
+            and facts['mode'] == 0o700 and facts['canonical'] == str(path),
+            'fixture directory must be canonical, owned, nonsymlink and exactly 0700: ' + str(path))
 
 
 def private_directories(root):
@@ -113,8 +132,10 @@ def native_observation(client, selection, output, label):
 
 def catalog_for(f, selection, identity, work, readback, output):
     root = f.root
-    selected = root / 'selected-configs' / 'claude'
-    selected.mkdir(mode=0o700, parents=True, exist_ok=True)
+    config_root = root / 'selected-configs'
+    owned_private_directory(config_root)
+    selected = config_root / 'claude'
+    owned_private_directory(selected)
     config = selected / 'one.json'
     config.write_bytes(f.coord_path.read_bytes())
     config.chmod(0o400)
@@ -178,6 +199,14 @@ def inspect(image, f, catalog, proposal, output, label, *, ready, reason=''):
     # Reuse the accepted real Go entry, syscall guards and complete protected
     # snapshot checks; this adapter only supplies the emitted/native catalog.
     fixture = EmittedCensus(image, f, catalog, proposal, output, label)
+    directories = {f.root, Path(catalog['ConfigRoot']), Path(catalog['CallbackRoot']),
+                   f.account, f.root / 'workspace', Path(f.coord['state_dir']), Path(f.memory['state_dir'])}
+    directories.update(Path(selection['Directory']) for selection in catalog['Selections'])
+    for path in (f.root / '.claude', f.root / 'workspace' / '.claude'):
+        if path.exists():
+            directories.add(path)
+    write(fixture.evidence / 'directory-metadata.json',
+          [directory_metadata(path) for path in sorted(directories)])
     result = fixture.inspect(ready, reason)
     require(bool(result['Error']) is (not ready), 'census error/disposition disagrees')
     if ready:

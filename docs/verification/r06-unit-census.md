@@ -161,6 +161,12 @@ key sets before checking the selected input; prior failures that preceded this
 capture do not supply that evidence. Unit fixtures use the existing coordination
 state producer rather than fabricate an outer identity.
 
+The disposable collector creates its config root and selected leaf separately
+at `0700`, and verifies their owner, directory type, canonical path and exact
+mode on both catalog constructions. It records directory UID, mode, device and
+inode before inspection. Existing unsafe directories are refused without chmod
+or alias normalization; the Go path guards and refusal reasons remain unchanged.
+
 ```sh
 mise run host:exec -- --timeout 10m --weight 1 -- \
   python3 -B scripts/test_hybrid_runtime_operations.py --timeout 480 \
