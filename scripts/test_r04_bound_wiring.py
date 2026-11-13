@@ -87,7 +87,9 @@ class R04BoundWiringTests(BoundMemoryCase):
                 ('codex', 'agent_tools', {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'Stop': 150}),
                 ('codex', 'ambient', {'PreCompact': 150, 'Stop': 150}),
                 ('codex', None, {'PreCompact': 150, 'Stop': 150}),
-                ('claude', 'agent_tools', {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150}),
+                ('claude', 'agent_tools', {'SessionStart': 13, 'UserPromptSubmit': 13,
+                                         'PostToolUse': 13, 'PostToolUseFailure': 13,
+                                         'PreCompact': 150, 'SessionEnd': 150}),
                 ('claude', 'ambient', {'PreCompact': 150, 'SessionEnd': 150}),
                 ('claude', None, {'PreCompact': 150, 'SessionEnd': 150}),
                 ('codex', 'invalid', {'PreCompact': 150, 'Stop': 150}),
@@ -117,7 +119,8 @@ class R04BoundWiringTests(BoundMemoryCase):
                                         ('--launch-root', str(self.f.launch_root)), ('--shell', '/bin/sh')):
                         self.assertEqual(vector.count(flag), 1)
                         self.assertEqual(vector[vector.index(flag) + 1], value)
-                    kind = 'recall' if expected[name] == 13 else 'capture'
+                    kind = ('recall' if name in ('SessionStart', 'UserPromptSubmit') else
+                            'tool observation' if name in ('PostToolUse', 'PostToolUseFailure') else 'capture')
                     self.assertEqual(row['reason'], 'receipt-checked bound Go ' + kind)
                 self.assertEqual(self.calls, [])
                 self.assertEqual(self.state(), {})

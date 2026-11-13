@@ -14,15 +14,8 @@ import (
 
 func runCheckedBound(ctx context.Context, entry *binding.MemoryEntry, event *value.Value, raw []byte, directory string, timeout time.Duration) memoryhook.Result {
 	config := entry.Config()
-	codex := value.SameText(config.Get("harness"), "codex")
-	claude := value.SameText(config.Get("harness"), "claude")
-	recall := value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")
-	capture := value.SameText(event.Get("hook_event_name"), "PreCompact") || codex && value.SameText(event.Get("hook_event_name"), "Stop") || claude && value.SameText(event.Get("hook_event_name"), "SessionEnd")
-	if !((recall || capture) && (codex || claude)) {
-		return memoryhook.InvalidInput("activation", "checked bound memory cell remains unavailable")
-	}
-	if recall && timeout != 13*time.Second || capture && timeout != 150*time.Second {
-		return memoryhook.Result{Stderr: "Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n", ExitCode: 1}
+	if refused := checkedBoundInput(config, event, timeout); refused != nil {
+		return *refused
 	}
 	invocation, err := entry.Resolve(ctx, raw, directory, os.Environ())
 	if err != nil {
@@ -33,6 +26,25 @@ func runCheckedBound(ctx context.Context, entry *binding.MemoryEntry, event *val
 		return checkedBoundFailure(config, event, err)
 	}
 	return result
+}
+
+// checkedBoundInput rejects unavailable cells and wrong budgets before Resolve
+// can read activation state or dispatch the existing body.
+func checkedBoundInput(config, event *value.Value, timeout time.Duration) *memoryhook.Result {
+	codex := value.SameText(config.Get("harness"), "codex")
+	claude := value.SameText(config.Get("harness"), "claude")
+	recall := value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")
+	capture := value.SameText(event.Get("hook_event_name"), "PreCompact") || codex && value.SameText(event.Get("hook_event_name"), "Stop") || claude && value.SameText(event.Get("hook_event_name"), "SessionEnd")
+	tool := claude && value.SameText(config.Get("recall_mode"), "agent_tools") &&
+		(value.SameText(event.Get("hook_event_name"), "PostToolUse") || value.SameText(event.Get("hook_event_name"), "PostToolUseFailure"))
+	if !((recall || capture) && (codex || claude) || tool) {
+		out := memoryhook.InvalidInput("activation", "checked bound memory cell remains unavailable")
+		return &out
+	}
+	if (recall || tool) && timeout != 13*time.Second || capture && timeout != 150*time.Second {
+		return &memoryhook.Result{Stderr: "Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n", ExitCode: 1}
+	}
+	return nil
 }
 
 func checkedBoundFailure(config, event *value.Value, err error) memoryhook.Result {
