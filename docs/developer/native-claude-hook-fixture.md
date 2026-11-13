@@ -49,7 +49,9 @@ state and runs the retained Source launcher with the observed stdin. It keeps
 both raw results and uses the existing full state/file/trace comparator without
 widening its normalization. A canonical UTF8 ledger containing Japanese, emoji
 and integer `900719925474099312345` must retain every byte. Tool callbacks must
-make no recall API calls. Before each native process starts, the fixture records
+make no recall API calls. These zero-recall comparisons initialize the borrowed
+comparator's empty optional-selection fixture state and still run its complete
+raw keyset validation and normalization. Before each native process starts, the fixture records
 the selected receipt, all Source closure members and actual program/client pins.
 
 Refresh closes and joins the target process, then invokes native `--resume`

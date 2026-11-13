@@ -114,6 +114,14 @@ def native_hook_io(trace, executions, event, *, raw_stdio=False):
     return selected
 
 
+def native_tool_comparator(fixture):
+    """Initialize the borrowed full comparator for proven zero-recall tools."""
+    comparator = OpenCodeAmbientTests()
+    comparator.f = fixture
+    comparator.optional = []
+    return comparator
+
+
 class MessagesFixture:
     def __init__(self, *, read_paths=()):
         self.requests, self.failures = [], []
@@ -585,8 +593,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         memory_trace.parent.mkdir(mode=0o700)
         tools_client = start('read-client', a, read_paths=(read_ok, read_missing))
         directory = Path(f.memory['state_dir'])
-        comparator = OpenCodeAmbientTests()
-        comparator.f = f
+        comparator = native_tool_comparator(f)
 
         def restore(files):
             shutil.rmtree(directory)

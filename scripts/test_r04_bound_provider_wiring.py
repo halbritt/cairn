@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 import urllib.error
 import urllib.request
@@ -546,6 +547,42 @@ class NativeClaudeProviderTests(unittest.TestCase):
         with urllib.request.urlopen(request, timeout=5) as response:
             return [json.loads(line[6:]) for line in response.read().decode().splitlines()
                     if line.startswith('data: ')]
+
+    def test_zero_recall_native_pair_reaches_complete_borrowed_comparator(self):
+        from check_r04_native_claude import native_tool_comparator
+        from test_f02_opencode_ambient import OpenCodeAmbientTests
+        ledger = encoded(dict(schema='cairn.inbox-recall-grants/1', required=dict(pending=True),
+                              opaque=['日本語 🛡️ 😀', 900719925474099312345])).decode()
+        for event in ('PostToolUse', 'PostToolUseFailure'):
+            with self.subTest(event=event):
+                comparator = native_tool_comparator(SimpleNamespace(event=dict(hook_event_name=event)))
+                self.assertIs(type(comparator), OpenCodeAmbientTests)
+
+                def row(inv, pid, at):
+                    hints = (dict(files={'fixture.txt': at}) if event == 'PostToolUse'
+                             else dict(errors=['FixtureError'], error_at=at))
+                    return dict(exit=0, stdout=b'{}\n', stderr=b'', calls=[], locks=[True],
+                        files={'session.json': dict(mode=0o600, raw=encoded(dict(hints=hints)).decode()),
+                               'session.inbox-recall.json': dict(mode=0o600, raw=ledger)},
+                        trace=[dict(kind='entry', inv=inv, at=at, pid=pid, ppid=pid-1),
+                               dict(kind='parsed', inv=inv, at=at, event=event, session='session'),
+                               dict(kind='exit', inv=inv, at=at, duration_ms=1, event=event,
+                                    session='session', phase='handle', main_return_code=0)])
+
+                pair = [row('a'*32, 101, 100), row('b'*32, 201, 200)]
+                original = copy.deepcopy(pair)
+                comparator.validate_keysets(pair)
+                source, go = (comparator.normalize(value, side)
+                              for value, side in zip(pair, ('source', 'go')))
+                self.assertEqual(source, go)
+                self.assertEqual(set(source), {'exit', 'stdout', 'stderr', 'files', 'requests', 'trace', 'locks'})
+                self.assertEqual((source['exit'], source['stdout'], source['stderr'], source['requests'], source['locks']),
+                                 (0, '{}\n', '', [], [True]))
+                self.assertEqual(source['files']['session.inbox-recall.json']['raw'], ledger)
+                self.assertEqual(pair, original, 'complete normalization must retain raw evidence')
+                changed = copy.deepcopy(pair[1])
+                changed['stderr'] = b'unexpected diagnostic'
+                self.assertNotEqual(source, comparator.normalize(changed, 'go'))
 
     def test_default_keeps_empty_tools_and_plain_text(self):
         events = self.request([dict(role='user', content='ordinary fixture prompt')])
