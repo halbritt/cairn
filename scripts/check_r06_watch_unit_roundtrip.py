@@ -444,13 +444,16 @@ def negative(f, name):
         path.chmod(0o600)
         path.write_bytes(path.read_bytes() + b'\n')
         path.chmod(0o400)
-        f.invoke_control('switch', 'negative', error='changed')
+        error = 'watch config pin changed' if name == 'changed-config' else 'census pin changed: ' + str(path)
+        f.invoke_control('switch', 'negative', error=error)
     elif name == 'incomplete-reverse':
         f.invoke_control('switch', 'to-go')
         f.select_catalog(f.go)
         path = Path(f.retained[0]['Directory']) / 'two.json'
         path.unlink()
-        f.invoke_control('reverse', 'negative', error='unit control next files must be immutable mode0400 data')
+        plan = f.plan(reverse=True)
+        plan['next'] = [member for member in plan['next'] if Path(member['path']).exists()]
+        f.invoke_control('reverse', 'negative', plan=plan, error='watch exchange must retain every binding name')
     elif name == 'final-claim':
         state_path = Path(f.proposal['Sessions'][0])
         agent = json.loads(state_path.read_text())['agent']
