@@ -25,7 +25,7 @@ from check_r04_native_claude import ClaudeSession, MessagesFixture, NativeFixtur
 from check_r04_native_opencode import native_api_fixture, successful_execs, wait_for
 from check_r06_unit_census import Fixture as CensusFixture, process_ref, require, sha, write
 from test_f04_activation import encoded, overwrite_fixture
-from test_r04_host_wiring import pin
+from test_r04_host_wiring import R04HostWiringTests, pin
 
 
 def selected_pin(path):
@@ -191,15 +191,23 @@ def run(args, output):
         f = support.fixture('installation', harness='claude', bound=True)
         native_api_fixture(f.api)
         support.addCleanup(lambda: write(output / 'cairn-api-calls.json', f.api_calls()))
+        recall_calls = R04HostWiringTests.recall_api(support, f)
+        # Keep the existing SDK server and its owned cleanup. Its readable,
+        # synthetic token uses the accepted census oracle's credential suffix,
+        # so snapshots retain metadata without opening credential content.
+        token = f.root / 'fixture.token'
+        Path(f.memory['token_file']).rename(token)
+        f.coord['token_file'] = f.memory['token_file'] = str(token)
+        require(token.stat().st_mode & 0o777 == 0o600, 'fixture token must be owner-readable')
+        require(Path(f.memory['socket']).is_socket(), 'disposable SDK socket is absent')
+        support.addCleanup(lambda: write(output / 'sdk-api-calls.json', [
+            dict(operation=operation, fixture_authorized=authorization == 'Bearer r04-synthetic-token')
+            for operation, authorization in recall_calls]))
         selector = f.root / 'null-selector'
         selector.write_text('#!/usr/bin/python3\nimport json,sys\njson.load(sys.stdin)\n'
                             'print(json.dumps({"structured_output":{"checkpoint":None,"workstream":None,"memories":[]}}))\n')
         selector.chmod(0o500)
         f.memory['claude'] = str(selector)
-        token = f.root / 'fixture.token'
-        f.coord['token_file'] = f.memory['token_file'] = str(token)
-        token.write_text('synthetic-fixture-token')
-        token.chmod(0o000)
         f.coord.update(process_names=[args.claude.name], process_exe_dirs=[])
         f.publish_configuration(enabled=False)
         original = encoded(dict(alwaysThinkingEnabled=False, permissions=dict(defaultMode='dontAsk')))
@@ -288,6 +296,9 @@ def run(args, output):
                             changed.parent.rmdir()
         require(f.settings.read_bytes() == original, 'unrelated settings changed after refusals')
         require(not provider.failures, 'local provider failed')
+        require('index' in [operation for operation, _ in recall_calls], 'native hook did not reach the SDK fixture')
+        require(all(authorization == 'Bearer r04-synthetic-token' for _, authorization in recall_calls),
+                'SDK fixture received unauthorized requests')
         return dict(schema='cairn.r06-native-hook-census/1', passed=True, cases=observations,
                     native=dict(sha256=sha(args.claude), old_process=native_owner_a, new_process=native_owner_b,
                                 same_conversation=target.identity, both_joined_exit0=True),

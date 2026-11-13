@@ -147,6 +147,13 @@ eleven-case R-04 collector or qualify a complete unit transition. Run it only
 through the existing hybrid wrapper, with fresh private Go images and selected
 hashes; no native executable invocation occurs on the host:
 
+The selected Go memory hooks use the existing R-04 disposable Unix HTTP recall
+fixture and its readable synthetic token. The token retains the `.token` suffix
+used by the census snapshot and syscall guards: the actual hook may read it,
+while inspection records its metadata without opening credential content. SDK
+request evidence records operation names and authorization success only. Startup,
+prompt and shutdown hook failures still fail the cell.
+
 ```sh
 mise run host:exec -- --timeout 10m --weight 1 -- \
   python3 -B scripts/test_hybrid_runtime_operations.py --timeout 480 \
