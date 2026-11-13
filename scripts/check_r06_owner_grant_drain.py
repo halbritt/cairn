@@ -35,6 +35,17 @@ class Fixture(StatusFixture):
         return super().call(role, operation, body, session=session, expected=expected)
 
 
+class OwnerFixture(HookFixture):
+    def __init__(self, *args, source_revision, **kwargs):
+        self.source_revision = source_revision
+        super().__init__(*args, **kwargs)
+
+    def configuration_plan(self, **kwargs):
+        plan = super().configuration_plan(**kwargs)
+        plan['source_revision'] = self.source_revision
+        return plan
+
+
 def memory_state(directory):
     result = {}
     if directory.exists():
@@ -122,13 +133,13 @@ def refusal(f, image, label, expected):
     return result['error']
 
 
-def owner_case(cluster, images, scratch, harness, side):
+def owner_case(cluster, images, scratch, harness, side, revision):
     label = harness + '_' + side
     f = Fixture(cluster, images['api'], scratch / label, label)
     try:
         f.retained()
         control.transport(f, images['api'])
-        hook = HookFixture(f.root / 'owner', images['control'], stager=images['stager'], harness=harness)
+        hook = OwnerFixture(f.root / 'owner', images['control'], stager=images['stager'], harness=harness, source_revision=revision)
         for config in (hook.memory, hook.coord):
             config.update(cairn=str(f.host.binary), socket=str(f.host.socket),
                           token_file=str(f.host.token('worker')), repo=f.repo)
@@ -152,7 +163,7 @@ def owner_case(cluster, images, scratch, harness, side):
         control.write(f.root / 'enabled-ledgers.json', dict(state=initial, pins=initial_pins))
 
         # Another whole unit remains positive while this owner attempts disposition.
-        independent = HookFixture(f.root / 'independent', images['control'], stager=images['stager'], harness=harness)
+        independent = OwnerFixture(f.root / 'independent', images['control'], stager=images['stager'], harness=harness, source_revision=revision)
         independent.memory.update(state_dir=str(f.root / 'independent-memory'), recall_observations=False, capture_observations=False)
         for config in (independent.memory, independent.coord):
             config.update(cairn=str(f.host.binary), socket=str(f.host.socket), token_file=str(f.host.token('worker')), repo=f.repo)
@@ -237,6 +248,11 @@ def check(evidence):
     evidence.mkdir(mode=0o700, parents=True, exist_ok=False)
     scratch = Path(tempfile.mkdtemp(prefix='r06-owner-', dir=Path.home() / '.cache'))
     control.write(evidence / 'scratch.json', dict(path=str(scratch)))
+    status = control.command(['git', 'status', '--porcelain'], evidence / 'source-status-before')
+    require(not status.stdout, 'clean committed source required')
+    source = control.command(['git', 'rev-parse', 'HEAD', 'HEAD^{tree}'], evidence / 'source-identity')
+    revision, tree = source.stdout.splitlines()
+    control.write(evidence / 'source.json', dict(head=revision, tree=tree))
     images = control.build(scratch)
     stager = scratch / 'tools/stager'
     control.command(['go', 'build', '-buildvcs=false', '-o', stager, './cmd/cairn-stage-lifecycle'], scratch / 'tools/build-stager')
@@ -255,8 +271,8 @@ def check(evidence):
     outcomes = []
     try:
         for harness in ('codex', 'claude'):
-            source = owner_case(cluster, images, scratch, harness, 'source')
-            go = owner_case(cluster, images, scratch, harness, 'go')
+            source = owner_case(cluster, images, scratch, harness, 'source', revision)
+            go = owner_case(cluster, images, scratch, harness, 'go', revision)
             # Existing normalization: exact JSON values/types/order, excluding
             # only the checked nonnegative runtime measurements above.
             require(scalar_tree(go) == scalar_tree(source), f'{harness}: Go/Source retained-state/output mismatch')
@@ -276,6 +292,10 @@ def check(evidence):
         shutil.copytree(scratch, evidence / 'fixtures', ignore=shutil.ignore_patterns(
             'data', 'socket', '*.token', 'identities.json', '*.sock', '*token*'))
         require(stopped, 'owned PostgreSQL cleanup unresolved')
+    status = control.command(['git', 'status', '--porcelain'], evidence / 'source-status-after')
+    require(not status.stdout, 'source changed during run')
+    current = control.command(['git', 'rev-parse', 'HEAD', 'HEAD^{tree}'], evidence / 'source-identity-after')
+    require(current.stdout.splitlines() == [revision, tree], 'source identity changed during run')
     control.write(evidence / 'outcomes.json', outcomes)
     control.write(evidence / 'disposition.json', dict(component='existing owner grant disposition',
         status='BLOCKED', decision='Source retains positive activation after disabled refresh and ordinary owner finalization; an explicit owner policy/interface decision is required before D1 can become true.',
