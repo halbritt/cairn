@@ -134,7 +134,10 @@ def checked_images(path):
     pins = json.loads(Path(path).read_text())
     require(pins['schema'] == 'cairn.r06-unit-images/1', 'explicit unit image pins required')
     images = {}
-    for role in ('api', 'control', 'helper', 'stager'):
+    roles = ['api', 'control', 'helper', 'stager']
+    if 'observer' in pins['images']:
+        roles.append('observer')
+    for role in roles:
         pin = pins['images'][role]
         image = Path(pin['path'])
         require(image.is_absolute() and not image.is_symlink() and image.is_file()
@@ -570,7 +573,7 @@ class NativeUnit(OwnedUnit):
             native=self.native, directory=actual, historical=historical))
         return current
 
-    def finish_native_request(self):
+    def finish_native_request(self, label='native'):
         state = self.state()
         attempt = state['inbox_attempt']
         context_path = self.state_dir / 'inbox' / (attempt['attempt_id'] + '.json')
@@ -578,10 +581,10 @@ class NativeUnit(OwnedUnit):
         current = {name: state['agent'][name] for name in ('agent_id', 'execution_id')}
         require(attempt['session'] == current and context['agent_id'] == current['agent_id']
                 and context['execution_id'] == current['execution_id'], 'issued native context selects another execution')
-        owned_command(context['read'], self.evidence / 'native-issued-read',
+        owned_command(context['read'], self.evidence / (label + '-issued-read'),
                       body=json.dumps(context['read_input']), env=self.host.env)
-        result = owned_command(context['finish_reply'], self.evidence / 'native-issued-finish',
-            body='Selected complete-unit fixture result from the actual native execution.\n', env=self.host.env)
+        result = owned_command(context['finish_reply'], self.evidence / (label + '-issued-finish'),
+            body='Selected owned-unit fixture result from the actual issued execution.\n', env=self.host.env)
         committed = json.loads(result.stdout)
         require(committed['ok'] and committed['data']['completion_committed'] and committed['data']['reply_committed'],
                 'native issued completion/reply did not commit')
@@ -591,8 +594,8 @@ class NativeUnit(OwnedUnit):
         require(journal['session'] == current and journal['completion']['result'] == committed['data']['result']
                 and journal['completion']['status'] == 'committed' and journal['response']['status'] == 'committed',
                 'actual native product journal does not correspond')
-        (self.evidence / 'native-product-journal.raw.json').write_bytes(raw)
-        write(self.evidence / 'native-request-result.json', dict(attempt=attempt, committed=committed,
+        (self.evidence / (label + '-product-journal.raw.json')).write_bytes(raw)
+        write(self.evidence / (label + '-request-result.json'), dict(attempt=attempt, committed=committed,
             context=selected_pin(context_path), journal=selected_pin(path)))
 
     def publish_request(self):
@@ -627,6 +630,77 @@ class NativeUnit(OwnedUnit):
         proposal = dict(Bindings=[selection], Sessions=[pin['Path'] for pin in sessions],
                         Callbacks=[pin['Path'] for pin in callback_pins])
         return catalog, proposal
+
+    def setup_callback(self, release, role, event, label):
+        rows = [row for row in release['hook_record']['rows']
+                if row['role'] == role and row['event'] == event['hook_event_name']]
+        require(len(rows) == 1, 'setup callback does not have one actual emitted hook row')
+        env = dict(self.host.env, CLAUDE_CONFIG_DIR=str(self.account))
+        result = owned_command(rows[0]['argv'], self.evidence / label,
+            body=json.dumps(event, ensure_ascii=False), env=env)
+        write(self.evidence / (label + '-emitted.json'), dict(row=rows[0], event=event,
+            exit=result.returncode, setup_only=True, native_client_executed=False))
+        return result
+
+    def prepare_setup(self):
+        """Exercise real setup callbacks, never a substitute native conversation."""
+        self.native = str(uuid.uuid4())
+        base = dict(session_id=self.native, cwd=str(self.work))
+        startup = dict(base, hook_event_name='SessionStart', source='startup')
+        self.setup_callback(self.legacy, 'coordination', startup, 'setup-python2-start')
+        self.setup_callback(self.legacy, 'memory', startup, 'setup-python2-memory-start')
+        self.publish_request()
+        prompt = dict(base, hook_event_name='UserPromptSubmit', prompt='Owned unit setup request; no native client is running.')
+        self.setup_callback(self.legacy, 'memory', prompt, 'setup-python2-memory-prompt')
+        self.setup_callback(self.legacy, 'coordination', prompt, 'setup-python2-prompt')
+        self.finish_native_request('setup')
+        self.setup_callback(self.legacy, 'coordination', dict(base, hook_event_name='Stop'), 'setup-python2-stop')
+        initial = self.correspondence('setup-python2')
+        watcher = self.start_watcher('setup-python2-watcher')
+        self.join_watcher(watcher, 'setup-python2-watcher')
+        # Candidate callbacks use the emitted /3 frame on the same setup row.
+        # The selected config directory is still /2; no activation is claimed.
+        self.setup_callback(self.go, 'coordination', dict(startup, source='resume'), 'setup-go3-start')
+        self.setup_callback(self.go, 'memory', startup, 'setup-go3-memory-start')
+        next_prompt = dict(prompt, prompt='Owned Go3 candidate callback setup; no native client is running.')
+        self.setup_callback(self.go, 'memory', next_prompt, 'setup-go3-memory-prompt')
+        self.setup_callback(self.go, 'coordination', next_prompt, 'setup-go3-prompt')
+        self.setup_callback(self.go, 'coordination', dict(base, hook_event_name='Stop'), 'setup-go3-stop')
+        current = self.correspondence('setup-go3')
+        require(current['agent_id'] == initial['agent_id'], 'candidate setup callbacks created another agent')
+        observation = self.observe_preparation()
+        write(self.evidence / 'setup-result.json', dict(initial=initial, current=current,
+            setup_session_id=self.native, native_client_executed=False, complete_unit_qualified=False,
+            selected_binding=str(self.legacy['manifest']), candidate_binding=str(self.go['manifest']),
+            candidate_callbacks_exercised=True, selected_watcher_joined=True, observer=observation))
+
+    def observe_preparation(self):
+        require('observer' in self.images, 'composed preparation requires its pinned actual observer image')
+        sessions = [selected_pin(path) for path in sorted(self.state_dir.glob('*.json'))]
+        callbacks = [selected_pin(path) for path in sorted(self.callbacks.iterdir())]
+        selection = dict(Directory=str(self.active), Pins=dict(self.pins))
+        catalog = dict(Schema='cairn.watch-unit-catalog/1', Scope='disposable-fixture', Root=str(self.root),
+            ConfigRoot=str(self.config_root), CallbackRoot=str(self.callbacks), Selections=[selection],
+            Sessions=sessions, Callbacks=callbacks, CredentialPaths=[str(self.host.token('worker'))],
+            Bindings=[selected_pin(self.current['manifest'])], Clients=[selected_pin(self.forwarder)], HookSelections=[])
+        proposal = dict(Bindings=[selection], Sessions=[pin['Path'] for pin in sessions],
+                        Callbacks=[pin['Path'] for pin in callbacks])
+        catalog_pin = write(self.root / 'preparation-catalog.json', catalog)
+        plan = self.evidence / 'preparation-observer.plan.json'
+        result_path = self.evidence / 'preparation-observer.result.json'
+        write(plan, dict(Mode='inspect', Catalog=catalog_pin, Proposal=proposal, Result=str(result_path)))
+        before = census.snapshot(self.root)
+        owned_command([self.images['observer'], '-test.run=^TestR06UnitCensusProcess$', '-test.v'],
+            self.evidence / 'preparation-observer', env=dict(self.host.env, CAIRN_R06_CENSUS_PLAN=str(plan)))
+        observed = json.loads(result_path.read_bytes())
+        after = census.snapshot(self.root)
+        write(self.evidence / 'preparation-observer-preservation.json', dict(before=before, after=after))
+        require(before == after, 'preparation observer mutated the declared unit')
+        require(not observed['Census']['FixtureReady'], 'setup session without native readback was declared ready')
+        require('selected native settings/readback seam is unavailable' in observed['Error'],
+                'actual preparation observer returned an unexpected product refusal: ' + observed['Error'])
+        return dict(result=selected_pin(result_path), actual_error=observed['Error'],
+                    native_readback_supplied=False, complete_unit_qualified=False)
 
     def control(self, operation, target, readback, label):
         catalog, proposal = self.catalog(readback)
@@ -919,9 +993,11 @@ def run_unit(images_path, evidence, admission=None):
         if admission is not None:
             native_roundtrip(unit, admission)
         else:
+            unit.prepare_setup()
             write(evidence / 'prepared-result.json', dict(schema='cairn.r06-unit-preparation/1',
                 profiles_staged=True, native_client_executed=False, complete_unit_qualified=False,
-                images=pins, inventory=selected_pin(evidence / 'declared-unit.json')))
+                images=pins, inventory=selected_pin(evidence / 'declared-unit.json'),
+                setup=selected_pin(evidence / 'setup-result.json')))
     finally:
         try:
             if unit is not None:
