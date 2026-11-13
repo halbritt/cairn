@@ -10,7 +10,7 @@ import (
 )
 
 func TestWatchCensusClaudeLayerInventory(t *testing.T) {
-	for _, mutation := range []string{"none", "extra-file", "changed-file", "extra-hook", "missing-file", "external-pin", "alias"} {
+	for _, mutation := range []string{"none", "extra-file", "changed-file", "extra-hook", "missing-file", "external-pin", "alias", "ancestor-hook"} {
 		t.Run(mutation, func(t *testing.T) {
 			f := newCensusFixture(t)
 			if err := os.Chmod(f.root, 0700); err != nil {
@@ -32,6 +32,8 @@ func TestWatchCensusClaudeLayerInventory(t *testing.T) {
 				censusTestJSON(t, settings.Path, map[string]bool{"changed": true})
 			case "extra-hook":
 				selected.LayerFiles[0] = censusTestJSON(t, settings.Path, map[string]any{"hooks": map[string]any{"UserPromptSubmit": []any{map[string]any{"hooks": []any{map[string]string{"command": "cairn hook extra"}}}}}})
+			case "ancestor-hook":
+				censusTestJSON(t, filepath.Join(f.root, ".claude", "settings.json"), map[string]any{"hooks": map[string]any{"UserPromptSubmit": []any{}}})
 			case "missing-file":
 				if err := os.Remove(settings.Path); err != nil {
 					t.Fatal(err)
@@ -53,21 +55,21 @@ func TestWatchCensusClaudeLayerInventory(t *testing.T) {
 }
 
 func TestWatchCensusClaudeSelectedInputsRefuse(t *testing.T) {
-	for _, mutation := range []string{"harness", "layer", "unknown-config", "duplicate", "foreign-account"} {
+	for _, mutation := range []string{"harness", "layer", "unknown-config", "duplicate", "foreign-account", "external-coverage"} {
 		t.Run(mutation, func(t *testing.T) {
 			f := newCensusFixture(t)
 			path := filepath.Join(f.catalog.Selections[0].Directory, "one.json")
 			selected := WatchCensusClaudeHooks{Schema: "cairn.watch-claude-hooks/1", Harness: "claude", Layer: "flagSettings", Config: WatchCensusPin{path, f.catalog.Selections[0].Pins["one.json"]}, Session: f.catalog.Sessions[0], Account: f.configs[path]["config_home"].(string), Workspace: filepath.Join(f.root, "workspaces", "a-one.json")}
 			selected.Generation, selected.Settings, selected.Readback = selected.Session, selected.Session, selected.Session
 			switch mutation {
+			case "external-coverage":
+				f.catalog.Scope = "external-unknown"
 			case "harness":
 				selected.Harness = "codex"
 			case "layer":
 				selected.Layer = "accountSettings"
 			case "unknown-config":
 				selected.Config = f.catalog.Sessions[0]
-			case "unknown-session":
-				selected.Session = selected.Config
 			case "foreign-account":
 				selected.Account = "/unknown-account"
 			}

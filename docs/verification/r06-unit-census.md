@@ -117,7 +117,10 @@ and an exhaustive list of account/workspace files. The inspector enumerates
 both actual trees and rejects omissions, extra pins, aliases and changed bytes.
 Every affected config/session needs its own readback; a caller completeness
 Boolean is not accepted. Other account/project settings containing hooks refuse
-as an unsupported layer, including extra Cairn hooks.
+as an unsupported layer, including extra Cairn hooks. Ancestor `.claude`
+layers inside the finite universe also refuse; the workspace is not assumed to
+be the repository root. This selected-input seam is unavailable for
+`external-unknown` scope.
 
 This bounded cell supports Claude `flagSettings` and the eleven emitted hook
 rows. It verifies the real generation manifest and lifecycle selection, selected

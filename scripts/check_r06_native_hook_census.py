@@ -238,7 +238,7 @@ def run(args, output):
         catalog, proposal, hook_input = catalog_for(f, b, refreshed.identity, work, b_view, output)
         observations.append(inspect(args.census_image, f, catalog, proposal, output, 'emitted-native-b', ready=True))
         require(f.settings.read_bytes() == original, 'source unrelated settings changed')
-        mutations = ('account-hook', 'project-hook', 'receipt', 'config', 'launcher', 'program', 'shell', 'argv', 'missing-readback', 'mixed-unit', 'unsupported-layer')
+        mutations = ('account-hook', 'project-hook', 'ancestor-hook', 'receipt', 'config', 'launcher', 'program', 'shell', 'argv', 'missing-readback', 'mixed-unit', 'unsupported-layer')
         for mutation in mutations:
             selected = copy.deepcopy(hook_input)
             observed = copy.deepcopy(b_view)
@@ -246,8 +246,8 @@ def run(args, output):
             saved = None
             reason = ''
             try:
-                if mutation in ('account-hook', 'project-hook'):
-                    changed = f.account / 'settings.local.json' if mutation == 'account-hook' else work / '.claude' / 'settings.json'
+                if mutation in ('account-hook', 'project-hook', 'ancestor-hook'):
+                    changed = f.account / 'settings.local.json' if mutation == 'account-hook' else (f.root if mutation == 'ancestor-hook' else work) / '.claude' / 'settings.json'
                     write(changed, dict(hooks=dict(UserPromptSubmit=[dict(hooks=[dict(type='command', command='cairn extra')])])) )
                     selected['LayerFiles'] = layer_files(f.account, work)
                     reason = 'hook layer'
@@ -284,7 +284,7 @@ def run(args, output):
                         overwrite_fixture(changed, saved)
                     else:
                         changed.unlink()
-                        if mutation == 'project-hook':
+                        if mutation in ('project-hook', 'ancestor-hook'):
                             changed.parent.rmdir()
         require(f.settings.read_bytes() == original, 'unrelated settings changed after refusals')
         require(not provider.failures, 'local provider failed')
@@ -303,8 +303,10 @@ def run(args, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('claude', 'census-image', 'lifecycle', 'stager'):
-        parser.add_argument('--' + name, type=Path, required=True)
+    parser.add_argument('--claude', type=Path, required=True)
+    parser.add_argument('--census-image', type=Path, required=True)
+    parser.add_argument('--lifecycle', type=Path, required=True)
+    parser.add_argument('--stager', type=Path, required=True)
     parser.add_argument('--sha256', required=True)
     parser.add_argument('--archive-stdout', action='store_true')
     args = parser.parse_args()

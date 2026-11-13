@@ -53,6 +53,10 @@ type WatchCensusHookObservation struct {
 }
 
 func (r *watchCensusRead) loadHookSelections() error {
+	if len(r.catalog.HookSelections) > 0 && r.catalog.Scope != "disposable-fixture" {
+		return errors.New("selected native hook readback is available only for a disposable fixture")
+	}
+
 	seen := map[string]bool{}
 	for _, pin := range r.catalog.HookSelections {
 		if seen[pin.Path] || !censusWithin(r.catalog.Root, pin.Path) {
@@ -163,6 +167,20 @@ func (r *watchCensusRead) hookLayers(ctx context.Context, selected WatchCensusCl
 	}
 	if selected.Account == selected.Workspace || censusOverlap(selected.Account, selected.Workspace) {
 		return errors.New("overlapping native account/project layer inventory")
+	}
+	// The workspace is not assumed to be the repository root. Ancestor
+	// project layers inside the finite universe cannot be silently omitted.
+	for parent := filepath.Dir(selected.Workspace); parent == r.catalog.Root || censusWithin(r.catalog.Root, parent); parent = filepath.Dir(parent) {
+		_, err := os.Lstat(filepath.Join(parent, ".claude"))
+		if err == nil {
+			return errors.New("unsupported ancestor project hook/config layer")
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if parent == r.catalog.Root {
+			break
+		}
 	}
 	for _, path := range []string{selected.Account, selected.Workspace} {
 		if err := walk(path); err != nil {
