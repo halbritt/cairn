@@ -551,8 +551,9 @@ class NativeClaudeProviderTests(unittest.TestCase):
     def test_zero_recall_native_pair_reaches_complete_borrowed_comparator(self):
         from check_r04_native_claude import native_tool_comparator
         from test_f02_opencode_ambient import OpenCodeAmbientTests
-        ledger = encoded(dict(schema='cairn.inbox-recall-grants/1', required=dict(pending=True),
-                              opaque=['日本語 🛡️ 😀', 900719925474099312345])).decode()
+        ledger = json.dumps(dict(schema='cairn.inbox-recall-grants/1', required=dict(pending=True),
+                                 opaque=['日本語 🛡️ 😀', 900719925474099312345]),
+                            ensure_ascii=False, separators=(',', ':'))
         for event in ('PostToolUse', 'PostToolUseFailure'):
             with self.subTest(event=event):
                 comparator = native_tool_comparator(SimpleNamespace(event=dict(hook_event_name=event)))
