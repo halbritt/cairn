@@ -401,10 +401,10 @@ def make_mechanism_plan(args):
     os.umask(0o077); output.mkdir(mode=0o700)
     assets = output / 'runtime-assets'; assets.mkdir(mode=0o700)
     runtime_assets = {}
-    for source in ('/etc/hosts', '/etc/nsswitch.conf'):
-        target = assets / Path(source).name
-        shutil.copyfile(source, target); target.chmod(0o400)
-        runtime_assets[source] = digest(target)
+    for runtime_source in ('/etc/hosts', '/etc/nsswitch.conf'):
+        target = assets / Path(runtime_source).name
+        shutil.copyfile(runtime_source, target); target.chmod(0o400)
+        runtime_assets[runtime_source] = digest(target)
     bindings = dict(case_id=str(uuid.uuid4()), source_head=source['head'], source_tree=source['tree'],
         checker_sha256=digest(Path(__file__)), source_files=source['files'],
         wrapper_sha256=digest(ROOT / 'scripts/test_hybrid_runtime_operations.py'),
@@ -447,6 +447,10 @@ def run_mechanism_wrapper(plan_path, mode, admission_context=None):
             and plan['bindings']['checker_sha256'] == digest(__file__), 'R03_PLAN: source moved')
     require(digest(ROOT / 'scripts/test_hybrid_runtime_operations.py') == plan['bindings']['wrapper_sha256'],
             'R03_ISOLATION: qualified wrapper changed')
+    for path, expected in {**plan['bindings']['libraries'], **plan['bindings']['native_tools']}.items():
+        require(digest(path) == expected, 'R03_ASSET: library/tool changed before namespace launch: ' + path)
+    for name, expected in plan['bindings']['images'].items():
+        require(digest(Path(plan['image_directory']) / name) == expected, 'R03_IMAGES: image changed before namespace launch')
     # The authenticated host gate is outside isolation; the ordinary host
     # profile is never bound into the sandbox. No inbox consumption occurs.
     grant = None
@@ -511,6 +515,8 @@ def inside_isolation(plan, native=False):
         require(digest(Path('/opt/assets/images') / name) == expected, 'R03_IMAGES: bound image changed')
     for path, expected in plan['bindings']['libraries'].items():
         require(digest(path) == expected, 'R03_ASSET: native library changed: ' + path)
+    for path, expected in plan['bindings']['native_tools'].items():
+        require(digest(path) == expected, 'R03_ASSET: native tool changed: ' + path)
     for path, expected in plan['bindings']['runtime_assets'].items():
         require(digest(path) == expected, 'R03_ASSET: qualified libc runtime asset changed: ' + path)
     if native:
