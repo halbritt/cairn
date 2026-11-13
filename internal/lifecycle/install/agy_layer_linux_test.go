@@ -13,11 +13,36 @@ import (
 const agyPreparedTest = `{"ignored":"not-installed","cairn-coordination":{"PreInvocation":[{"type":"command","command":"/pinned/cairn hook --event PreInvocation","timeout":15}]}}`
 const agyOldTest = "{\n  \"user\" : {\"big\":99999999999999999999999999999999999,\"unicode\":\"\\ud83d\\ude00\"},\n  \"token_file\" : \"/never-read.token\"\n}\n"
 
-func agyTestWrite(t *testing.T, path, raw string, mode os.FileMode) {
+func agyTestDirectories(t *testing.T, path string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+	info, err := os.Lstat(path)
+	if err == nil {
+		if !info.IsDir() {
+			t.Fatalf("fixture ancestor is not a directory: %s", path)
+		}
+		return
+	}
+	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
 	}
+	agyTestDirectories(t, filepath.Dir(path))
+	if err := os.Mkdir(path, 0750); err != nil {
+		t.Fatal(err)
+	}
+	// Pin only directories this fixture just created. Umask must not erase the
+	// permission difference exercised by the recovery ancestor-mode refusal.
+	if err := os.Chmod(path, 0750); err != nil {
+		t.Fatal(err)
+	}
+	info, err = os.Lstat(path)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0750 {
+		t.Fatalf("new fixture ancestor mode was not pinned to 0750: %s: %v %v", path, info, err)
+	}
+}
+
+func agyTestWrite(t *testing.T, path, raw string, mode os.FileMode) {
+	t.Helper()
+	agyTestDirectories(t, filepath.Dir(path))
 	if err := os.Chmod(path, 0600); err != nil && !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
 	}
@@ -38,9 +63,7 @@ func agyTestPlan(t *testing.T, layer string, existing bool) (AgyLayerPlan, strin
 	plan := AgyLayerPlan{AccountHome: filepath.Join(root, "account"), Workspace: filepath.Join(root, "workspace"), Layer: layer,
 		Settings: AgyLayerSettings{Path: filepath.Join(root, "prepared.json"), SHA256: agyDigest([]byte(agyPreparedTest))}}
 	for _, path := range []string{plan.AccountHome, plan.Workspace} {
-		if err := os.Mkdir(path, 0750); err != nil {
-			t.Fatal(err)
-		}
+		agyTestDirectories(t, path)
 	}
 	agyTestWrite(t, plan.Settings.Path, agyPreparedTest, 0400)
 	selected, other := filepath.Join(plan.AccountHome, ".gemini", "config", "hooks.json"), filepath.Join(plan.Workspace, ".agents", "hooks.json")

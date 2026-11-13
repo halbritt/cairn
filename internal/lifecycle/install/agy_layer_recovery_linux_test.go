@@ -205,9 +205,19 @@ func TestAgyRecoveryRefusesUnknownMutatedStaleOrAliasedInputs(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "ancestor-mode":
-				if err := os.Chmod(filepath.Dir(s), 0700); err != nil {
+				ancestor := filepath.Dir(s)
+				original, err := os.Stat(ancestor)
+				if err != nil || original.Mode().Perm() != 0750 {
+					t.Fatal("fixture ancestor did not start at intended mode 0750", original, err)
+				}
+				if err := os.Chmod(ancestor, 0700); err != nil {
 					t.Fatal(err)
 				}
+				changed, err := os.Stat(ancestor)
+				if err != nil || changed.Mode().Perm() != 0700 || changed.Mode() == original.Mode() || !os.SameFile(original, changed) {
+					t.Fatal("ancestor-mode mutation did not change the same fixture directory from 0750 to 0700", original, changed, err)
+				}
+				t.Log("fixture ancestor mode changed from 0750 to 0700 on the same inode")
 			case "record-selector":
 				p.Record.Path = filepath.Join(filepath.Dir(p.Record.Path), "unknown.json")
 			case "wrong-layer":
