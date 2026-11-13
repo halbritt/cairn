@@ -429,6 +429,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                 self.assertEqual(state(), before[0])
                 self.assertEqual(len(f.api_calls()), before[1])
                 self.assertEqual(len(recall_calls), before[3])
+                self.assertEqual(len(provider.requests)-before[2], 1, label)
             else:
                 self.assertEqual(result.get('subtype'), 'success', result)
                 self.assertFalse(result.get('is_error'), result)
