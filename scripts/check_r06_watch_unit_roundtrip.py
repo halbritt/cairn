@@ -245,7 +245,10 @@ class Fixture(composition.Fixture):
             require(child.poll() is None, f'{label}: selected watcher exited before readback')
             rows = [json.loads(line) for line in log.read_text().splitlines()[offset:]] if log.exists() else []
             if len(rows) >= 4:
-                break
+                last_agent = {json.loads(row['stdout'])['data']['agent_id']: json.loads(row['stdout'])['data'] for row in rows}
+                if all(json.loads(Path(path).read_text())['agent'] ==
+                       last_agent.get(json.loads(Path(path).read_text())['agent']['agent_id']) for path in self.proposal['Sessions']):
+                    break
             time.sleep(.02)
         require(len(rows) == 4 and all(row['exit'] == 0 and row['joined'] for row in rows),
                 f'{label}: two configurations did not each heartbeat both real sessions')
@@ -264,6 +267,7 @@ class Fixture(composition.Fixture):
                   if len(line.split()) >= 6 and line.split()[4] == str(child.pid)
                   and line.split()[5].endswith(':' + str(lock.stat().st_ino))]
         require(len(owners) == 1 and 'FLOCK' in owners[0], 'selected watcher does not own the unit lock')
+        self.repin_sessions()
         census.write(self.evidence / (label + '.readback.json'), dict(**actual, lock_inode=lock.stat().st_ino,
                      lock_owner=owners, pins=active_pins, api_calls=rows, protected_before=protected))
         return child
