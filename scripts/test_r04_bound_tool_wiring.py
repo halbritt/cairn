@@ -114,10 +114,12 @@ class R04BoundToolWiringTests(R04BoundProviderWiringTests):
             result = BoundMemoryCase.pair(self)
         finally:
             self.source, self.go, self.before_run, self.after_run, self.state = source, go, before, after, state
-        self.last_raw_pair = [rows['source'], rows['go']]
+            if set(rows) == {'source', 'go'}:
+                # Keep raw failures as well as passes, before key validation.
+                self.last_raw_pair = [rows['source'], rows['go']]
+                self.retain_pair()
         self.validate_keysets(self.last_raw_pair)
         self.assertEqual(self.normalize(rows['source'], 'source'), self.normalize(rows['go'], 'go'))
-        self.retain_pair()
         return result
 
     def hints(self, enabled):
@@ -153,7 +155,7 @@ class R04BoundToolWiringTests(R04BoundProviderWiringTests):
         directory = Path(self.f.memory['state_dir'])
         directory.mkdir(mode=0o700)
         pending = dict(schema='cairn.inbox-recall-grants/1', session=SESSION, grants={},
-                       required=dict(pending=True), opaque=['日本語', 900719925474099312345])
+                       required=dict(pending=True), opaque=['retained-source-state', 900719925474099312345])
         write(directory / (SESSION + '.inbox-recall.json'),
               json.dumps(pending, ensure_ascii=False, separators=(',', ':')).encode())
         self.event('PostToolUseFailure', prompt_id='not-an-inbox-lease', error='LeaseExpiredError')
@@ -198,12 +200,7 @@ class R04BoundToolWiringTests(R04BoundProviderWiringTests):
         for name, path in (('receipt', self.f.receipt_path), ('image', self.f.binary),
                            ('closure', Path(self.f.receipt['snapshot_root']) / 'memory.py')):
             old = path.read_bytes()
-            retained = Path(self.rows['PostToolUse']['retained_launcher'][0])
-            source_old = retained.read_bytes()
             self.overwrite(path, old + b'\n')
-            if name == 'launcher':
-                # Each side validates its own issued launcher, not its peer's.
-                self.overwrite(retained, source_old + b'\n')
             try:
                 for event in ('PostToolUse', 'PostToolUseFailure'):
                     self.event(event, error='LeaseExpiredError')
@@ -213,8 +210,6 @@ class R04BoundToolWiringTests(R04BoundProviderWiringTests):
                     self.assertEqual(self.state(), {})
             finally:
                 self.overwrite(path, old)
-                if name == 'launcher':
-                    self.overwrite(retained, source_old)
 
     def test_tool_selected_go_launcher_keeps_immutable_caller_preflight(self):
         self.stage_tool()
