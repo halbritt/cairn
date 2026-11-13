@@ -421,8 +421,25 @@ def currentness_case(cluster, images, scratch, harness, side, case, revision):
     label = harness + '_' + side + '_' + case
     f = CurrentFixture(cluster, images['api'], scratch / label, label, harness=harness)
     try:
-        ended = case in ('ended_settled', 'ended_nonterminal', 'newer_false', 'close_invalidation')
+        ended = case in ('ended_settled', 'ended_nonterminal', 'ended_mismatched_close', 'newer_false', 'close_invalidation')
         f.retained(settle=case != 'ended_nonterminal', cleanup=ended)
+        if case == 'ended_mismatched_close':
+            other = CurrentFixture(cluster, images['api'], scratch / (label + '_wrong_close'),
+                                   label + '_wrong_close', harness=harness)
+            try:
+                other.retained(cleanup=True)
+                control.write(f.root / 'mismatched-close-origin.json', dict(
+                    original=f.state['inbox_close'], unrelated_real_close=other.state['inbox_close'],
+                    unrelated_actor_state=str(other.state_path)))
+                # Deliberately misassociate a real other-owner close in this
+                # negative fixture; no terminal fields or clearance are invented.
+                f.state['inbox_close'] = other.state['inbox_close']
+                control.write(f.state_path, f.state)
+            finally:
+                pid = other.host.process.pid
+                require(pid > 1, 'owned witness API PID must exceed 1')
+                code = other.host.close()
+                control.write(other.root / 'api-cleanup.json', dict(pid=pid, exit=code, joined=True))
         control.transport(f, images['api'])
         hook = OwnerFixture(f.root / 'owner', images['control'], stager=images['stager'],
                             harness=harness, source_revision=revision)
@@ -465,8 +482,11 @@ def currentness_case(cluster, images, scratch, harness, side, case, revision):
             require(result['inspected'] and not result.get('error'), 'ended settled owner refused')
         else:
             require(not result['inspected'] and bool(result.get('error')), 'unsafe owner admitted')
-            if case != 'ended_nonterminal':
+            if case not in ('ended_nonterminal', 'ended_mismatched_close'):
                 require('D1 retained positive or unknown activation grant' in result['error'], 'unrelated refusal masked D1')
+            elif case == 'ended_mismatched_close':
+                require(result['error'] == 'D2 retained close does not match the authoritative close',
+                        'mismatched close lost exact correspondence refusal')
             else:
                 require('D4' in result['error'], 'nonterminal case lost actual hold refusal')
         if case == 'close_invalidation':
@@ -546,7 +566,7 @@ def check(evidence):
             outcomes.append(guard_case(cluster, images, scratch, name))
             print(json.dumps(outcomes[-1]), flush=True)
         for harness in ('codex', 'claude'):
-            for case in ('ended_settled', 'current_active', 'ended_nonterminal', 'unknown_end', 'newer_false', 'close_invalidation'):
+            for case in ('ended_settled', 'current_active', 'ended_nonterminal', 'ended_mismatched_close', 'unknown_end', 'newer_false', 'close_invalidation'):
                 source = currentness_case(cluster, images, scratch, harness, 'source', case, revision)
                 go = currentness_case(cluster, images, scratch, harness, 'go', case, revision)
                 require(scalar_tree(source) == scalar_tree(go), f'{harness}/{case}: independent owner ledgers differ')
