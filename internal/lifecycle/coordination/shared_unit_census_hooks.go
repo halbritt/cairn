@@ -94,7 +94,7 @@ func (r *watchCensusRead) inspectHookSelections(ctx context.Context) error {
 			return err
 		}
 		observations = append(observations, WatchCensusHookObservation{selected.Config, selected.Session,
-			selected.Generation, selected.Settings, selected.Layer, "selected settings, native listing and prompt exec observations agree; connection refresh unobserved"})
+			selected.Generation, selected.Settings, selected.Layer, "selected settings, native listing and prompt-interval command frames agree; shared event frames are not per-event PID attribution; connection refresh unobserved"})
 	}
 	for path, node := range r.nodes {
 		if len(r.directories[node.Account]) == 0 {
@@ -485,8 +485,15 @@ func (r *watchCensusRead) claudeHookReadback(selected WatchCensusClaudeHooks, st
 	if count != len(rows.Items) {
 		return errors.New("selected hook membership differs from emitted rows")
 	}
-	if len(observed.Executions) != 2 {
+	if len(observed.Executions) < 2 {
 		return errors.New("native prompt hook execution coverage is unknown")
+	}
+	pids := map[int]bool{}
+	for _, execution := range observed.Executions {
+		if execution.Event != "UserPromptSubmit" || execution.Role != "memory" && execution.Role != "coordination" || pids[execution.PID] {
+			return errors.New("extra/duplicate native prompt execution observation")
+		}
+		pids[execution.PID] = true
 	}
 	return nil
 }
@@ -671,7 +678,7 @@ func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *va
 				return err
 			}
 		}
-		if matched != 1 {
+		if matched < 1 {
 			return errors.New("native prompt hook execution/readback is missing")
 		}
 	}

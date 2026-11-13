@@ -68,6 +68,7 @@ def native_observation(client, selection, output, label):
     start = client.trace.stat().st_size
     response = client.prompt('R06 selected hook census ' + label)
     require(response.get('subtype') == 'success' and not response.get('is_error'), 'native fixture prompt failed')
+    require(not [e for e in client.events if e.get('subtype') == 'hook_response' and (e.get('exit_code') != 0 or e.get('outcome') != 'success')], 'native startup/prompt hook failed')
     rows = [r for r in selection[2]['rows'] if r['event'] == 'UserPromptSubmit']
 
     def observed():
@@ -84,16 +85,15 @@ def native_observation(client, selection, output, label):
                       and e['path'] == vector[0] and e['argv'] == vector + ['--'] + row['argv'][1:]]
             if not actual:
                 return None
-            require(len(actual) == 1, 'duplicate native prompt execution')
-            execution = actual[0]
-            exits = re.findall(r'^' + execution['pid'] + r'\s+\+\+\+ exited with (\d+) \+\+\+$', trace, re.M)
-            if not exits:
-                return None
-            require(exits == ['0'], 'native selected hook process failed: ' + repr(exits))
-            reached.append(dict(Role=row['role'], Event=row['event'], Launcher=selected_pin(Path(launcher)),
-                                Program=selected_pin(Path(vector[0])), Argv=execution['argv'],
-                                PID=int(execution['pid']), Exit=0))
-        require(len(reached) == 2, 'native prompt role membership changed')
+            for execution in actual:
+                exits = re.findall(r'^' + execution['pid'] + r'\s+\+\+\+ exited with (\d+) \+\+\+$', trace, re.M)
+                if not exits:
+                    return None
+                require(exits == ['0'], 'native selected hook process failed: ' + repr(exits))
+                reached.append(dict(Role=row['role'], Event=row['event'], Launcher=selected_pin(Path(launcher)),
+                                    Program=selected_pin(Path(vector[0])), Argv=execution['argv'],
+                                    PID=int(execution['pid']), Exit=0))
+        require({e['Role'] for e in reached} == {'memory', 'coordination'}, 'native prompt role membership changed')
         return reached
 
     wait_for(observed, 'selected native prompt hooks exited')
@@ -190,6 +190,7 @@ def run(args, output):
     try:
         f = support.fixture('installation', harness='claude', bound=True)
         native_api_fixture(f.api)
+        support.addCleanup(lambda: write(output / 'cairn-api-calls.json', f.api_calls()))
         selector = f.root / 'null-selector'
         selector.write_text('#!/usr/bin/python3\nimport json,sys\njson.load(sys.stdin)\n'
                             'print(json.dumps({"structured_output":{"checkpoint":None,"workstream":None,"memories":[]}}))\n')
