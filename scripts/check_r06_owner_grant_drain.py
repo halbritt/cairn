@@ -14,6 +14,7 @@ from check_r06_status_consumer import Fixture as StatusFixture
 from check_r06_unit_census import process_ref
 from disposable_host import OwnedCluster, pg_bindir, require
 from test_f04_activation import SESSION, TURN, encoded, scalar_tree
+from test_f04_deadlines import ROWS
 from test_r04_hook_settings import HookFixture
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -175,7 +176,9 @@ def owner_case(cluster, images, scratch, harness, side):
         # These are the existing checked owning-session capture/finalization entries.
         # Empty dialogue intentionally needs no selector/model or native client.
         finals = []
-        for name in ('PreCompact', 'Stop', 'SessionEnd'):
+        for name in ROWS[harness]['memory']:
+            if name not in ('PreCompact', 'Stop', 'SessionEnd'):
+                continue
             final_event = dict(hook_event_name=name, session_id=SESSION, cwd=str(hook.root), messages=[])
             finals.append(run_owner(hook, side, final_event, f.root / ('owner-' + name)))
             require(any(True in body.get('inbox_activation', {}).values()

@@ -88,7 +88,8 @@ measurements and excludes only those measurements from state comparison.
 The retained evidence includes raw bytes and hashes as well as normalized
 JSON, owner session/turn identities, actual commands, outputs and exits.
 
-`PreCompact`, `Stop` and `SessionEnd` are exercised with empty dialogue. These
+The declared Codex `PreCompact`/`Stop` and Claude `PreCompact`/`SessionEnd`
+entries are exercised with empty dialogue. These
 existing capture entries do not constitute grant settlement. The fixture
 requires the retained positive activation to remain visible and the real
 inspector to refuse before and after them. A separate positive unit must remain
