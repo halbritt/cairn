@@ -319,16 +319,25 @@ def check(evidence):
             outcomes.append(guard_case(cluster, images, scratch, name))
             print(json.dumps(outcomes[-1]), flush=True)
     finally:
-        postmaster = scratch / 'pg/data/postmaster.pid'
-        pid = int(postmaster.read_text().splitlines()[0]) if postmaster.exists() else None
-        require(pid is None or pid > 1, 'owned PostgreSQL PID must exceed 1')
-        identity = process_ref(pid) if pid is not None else None
-        stopped = cluster.stop()
-        control.write(evidence / 'cleanup.json', dict(identity=identity, postgres_stopped=stopped,
-            postmaster_pid_files=list(map(str, scratch.rglob('postmaster.pid')))))
-        shutil.copytree(scratch, evidence / 'fixtures', ignore=shutil.ignore_patterns(
-            'data', 'socket', '*.token', 'identities.json', '*.sock', '*token*'))
-        require(stopped, 'owned PostgreSQL cleanup unresolved')
+        identity = None
+        try:
+            postmaster = scratch / 'pg/data/postmaster.pid'
+            pid = int(postmaster.read_text().splitlines()[0]) if postmaster.exists() else None
+            require(pid is None or pid > 1, 'owned PostgreSQL PID must exceed 1')
+            if pid is not None:
+                raw = Path(f'/proc/{pid}/stat').read_text()
+                fields = raw[raw.rfind(')') + 1:].split()
+                # The daemon's parent may be PID1; only its own PID/group are signalled.
+                identity = dict(PID=pid, PGID=int(fields[2]), Parent=int(fields[1]), Start=fields[19],
+                                Boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+                require(identity['PGID'] > 1, 'owned PostgreSQL group must exceed 1')
+        finally:
+            stopped = cluster.stop()
+            control.write(evidence / 'cleanup.json', dict(identity=identity, postgres_stopped=stopped,
+                postmaster_pid_files=list(map(str, scratch.rglob('postmaster.pid')))))
+            shutil.copytree(scratch, evidence / 'fixtures', ignore=shutil.ignore_patterns(
+                'data', 'socket', '*.token', 'identities.json', '*.sock', '*token*'))
+            require(stopped, 'owned PostgreSQL cleanup unresolved')
     status = control.command(['git', 'status', '--porcelain'], evidence / 'source-status-after')
     require(not status.stdout, 'source changed during run')
     current = control.command(['git', 'rev-parse', 'HEAD', 'HEAD^{tree}'], evidence / 'source-identity-after')
