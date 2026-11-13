@@ -16,6 +16,7 @@ from pathlib import Path
 import selectors
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -29,7 +30,8 @@ from check_r06_watch_unit_roundtrip import copy_image
 import stage_lifecycle_compatibility as installer
 import stage_lifecycle_hooks as hook_installer
 from disposable_host import DisposableHost, OwnedCluster, pg_bindir, require
-from check_r04_native_claude import ClaudeSession, MessagesFixture
+from check_r04_native_claude import ClaudeSession, MessagesFixture, native_hook_io
+from check_r04_native_opencode import successful_execs
 from check_r06_status_consumer import snapshot as drain_snapshot
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,10 +63,67 @@ def within(root, path):
     return path
 
 
+CAPTURE_BYTES = 2 * 1024 * 1024
+CAPTURE_FILES = 64
+
+
+def capture_file(root, source, destination, credentials=()):
+    """Copy selected fixture bytes with original identity, never credential contents."""
+    source = within(root, source)
+    require(not source.is_symlink(), 'capture refuses a symlink')
+    with os.fdopen(os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        require(stat.S_ISREG(before.st_mode) and before.st_uid == os.getuid(), 'capture requires an owned regular file')
+        require(not any(os.path.samestat(before, Path(path).stat()) for path in credentials),
+                'capture refuses credential contents or aliases')
+        require(before.st_size <= CAPTURE_BYTES, 'fixture capture exceeds byte bound')
+        raw = stream.read(CAPTURE_BYTES + 1)
+        after = os.fstat(stream.fileno())
+    fields = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    require(fields(before) == fields(after) and len(raw) == before.st_size, 'fixture capture changed during read')
+    destination = Path(destination)
+    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    destination.write_bytes(raw)
+    destination.chmod(0o600)
+    return dict(source=str(source), copy=str(destination), bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest(),
+                source_device=before.st_dev, source_inode=before.st_ino, source_uid=before.st_uid,
+                source_gid=before.st_gid, source_mode=oct(stat.S_IMODE(before.st_mode)),
+                source_mtime_ns=before.st_mtime_ns, copy_is_original_inode=False)
+
+
+def install_null_selector(root, evidence):
+    """The maintained R04 null-provider pattern, with actual input/result custody."""
+    calls = Path(evidence) / 'selector-calls'
+    calls.mkdir(mode=0o700)
+    selector = Path(root) / 'null-selector'
+    selector.write_text('#!' + str(Path(sys.executable).resolve()) + '\n' +
+        'import hashlib,json,os,pathlib,sys,uuid\n'
+        'os.umask(0o077)\n'
+        'raw=sys.stdin.buffer.read(2097153)\n'
+        'if len(raw)>2097152: raise ValueError("fixture selector input exceeds bound")\n'
+        'json.loads(raw)\n' +
+        'prefix=pathlib.Path(' + repr(str(calls)) + ')/str(uuid.uuid4())\n'
+        'prefix.with_suffix(".stdin").write_bytes(raw)\n'
+        'reply=b\'{"structured_output":{"checkpoint":null,"workstream":null,"memories":[]}}\\n\'\n'
+        'sys.stdout.buffer.write(reply)\n'
+        'sys.stdout.buffer.flush()\n'
+        'prefix.with_suffix(".stdout").write_bytes(reply)\n'
+        'prefix.with_suffix(".json").write_text(json.dumps(dict(argv=sys.argv,stdout_written=True,\n'
+        ' program_sha256=hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),\n'
+        ' interpreter=str(pathlib.Path(sys.executable).resolve()),model_account_invoked=False)))\n')
+    selector.chmod(0o500)
+    info = selector.stat()
+    pin = dict(path=str(selector), sha256=digest(selector), interpreter=selected_pin(Path(sys.executable).resolve()),
+               device=info.st_dev, inode=info.st_ino, uid=info.st_uid, mode=oct(stat.S_IMODE(info.st_mode)))
+    write(Path(evidence) / 'selector-before-use.json', pin)
+    return selector, pin
+
+
 def owned_command(argv, prefix, *, body='', env=None, expected=0, timeout=40):
     """Observe and join only this invocation; never signal a process group."""
     prefix = Path(prefix)
     write(prefix.with_suffix('.argv.json'), list(map(str, argv)))
+    prefix.with_suffix('.stdin').write_bytes(body.encode('utf-8'))
     child = subprocess.Popen(list(map(str, argv)), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE, text=True, env=env, start_new_session=True)
     require(child.pid > 1, 'unsafe owned child PID')
@@ -187,6 +246,8 @@ class OwnedUnit:
                 token_file=str(self.host.token('worker')), repo=self.host.repo, config_home=str(self.account))
             self.memory = dict(common, state_dir=str(self.memory_dir), recall_mode='agent_tools',
                                recall_observations=False, context_bytes=9500)
+            self.local_selector, self.selector_pin = install_null_selector(self.root, self.evidence)
+            self.memory['claude'] = str(self.local_selector)
             self.coordination = dict(common, state_dir=str(self.state_dir), native_delivery=True,
                 binding=self.binding, process_names=['helper', 'claude'], process_exe_dirs=[])
             self.go = self.stage_go()
@@ -473,6 +534,7 @@ class NativeUnit(OwnedUnit):
     def __init__(self, root, evidence, images, cluster):
         self.native_clients, self.watchers, self.retained = [], [], []
         self.references, self.prompts = {}, []
+        self.capture_serial = 0
         super().__init__(root, evidence, images, cluster, enabled=False)
         try:
             self.prepare()
@@ -504,6 +566,48 @@ class NativeUnit(OwnedUnit):
         self.stage_hooks(self.legacy, 'python2')
         self.stage_hooks(self.go, 'go3')
         self.declared_inventory()
+        self.capture_memory('staged')
+
+    def capture_memory(self, label):
+        self.capture_serial += 1
+        destination = self.evidence / 'memory-capture' / (str(self.capture_serial) + '-' + label)
+        sources = {self.legacy['memory'], self.go['memory']}
+        sources.update(path for path in self.memory_dir.rglob('*') if not path.is_dir())
+        sources.update((self.account / 'projects').rglob('*.jsonl'))
+        require(len(sources) <= CAPTURE_FILES, 'fixture capture exceeds file bound')
+        require(sum(path.stat().st_size for path in sources) <= CAPTURE_BYTES * 8, 'fixture snapshot exceeds byte bound')
+        credentials = [self.host.token(role) for role in ('sender', 'worker')]
+        records = [capture_file(self.root, path, destination / path.relative_to(self.root), credentials)
+                   for path in sorted(sources)]
+        write(destination / 'provenance.json', dict(label=label, files=records, credential_contents_copied=False))
+        require(digest(self.local_selector) == self.selector_pin['sha256'], 'local selector changed during use')
+
+    def capture_hook_inputs(self, client):
+        from check_r06_native_hook_census import hook_process_frame
+        trace = client.trace.read_text()
+        executions = list(successful_execs(trace))
+        records = {}
+        for row in client.release['hook_record']['rows']:
+            program, argv = hook_process_frame(row)
+            actual = [entry for entry in executions if entry['path'] == program and entry['argv'] == argv]
+            for pid, streams in native_hook_io(trace, actual, row['event'], raw_stdio=True).items():
+                records[(row['role'], row['event'], pid)] = dict(role=row['role'], event=row['event'], pid=pid,
+                    argv=argv, observed_stdio=streams, source_trace=selected_pin(client.trace))
+        destination = self.evidence / 'hook-inputs' / client.label
+        require(len(records) <= CAPTURE_FILES, 'hook input capture exceeds file bound')
+        for (role, event, pid), value in records.items():
+            write(destination / (role + '-' + event + '-' + str(pid) + '.json'), value)
+        client.inputs_captured = True
+
+    def close_native(self, client):
+        try:
+            self.capture_memory(client.label + '-before-close')
+        finally:
+            try:
+                client.close()
+            finally:
+                self.capture_memory(client.label + '-after-close')
+                self.capture_hook_inputs(client)
 
     def stage_hooks(self, release, name):
         plan = dict(id=str(uuid.uuid4()), selection=release['selection'], harness='claude',
@@ -542,6 +646,8 @@ class NativeUnit(OwnedUnit):
                     within(self.root, config[name])
                 profiles.append(dict(path=str(path), sha256=descriptor['sha256'],
                                      state_dir=config['state_dir'], config_home=config['config_home']))
+                if descriptor == manifest['memory_config']:
+                    require(config['claude'] == str(self.local_selector), 'staged memory omitted the local selector')
         require(digest(self.settings_pin['Path']) == self.settings_pin['SHA256'], 'original account settings changed')
         write(self.evidence / 'declared-unit.json', dict(root=str(self.root), account=str(self.account),
             workspace=str(self.work), config_dir=str(self.active), profiles=profiles,
@@ -636,8 +742,15 @@ class NativeUnit(OwnedUnit):
                 if row['role'] == role and row['event'] == event['hook_event_name']]
         require(len(rows) == 1, 'setup callback does not have one actual emitted hook row')
         env = dict(self.host.env, CLAUDE_CONFIG_DIR=str(self.account))
-        result = owned_command(rows[0]['argv'], self.evidence / label,
-            body=json.dumps(event, ensure_ascii=False), env=env)
+        capture = role == 'memory' and event['hook_event_name'] == 'SessionEnd'
+        if capture:
+            self.capture_memory(label + '-before')
+        try:
+            result = owned_command(rows[0]['argv'], self.evidence / label,
+                body=json.dumps(event, ensure_ascii=False), env=env)
+        finally:
+            if capture:
+                self.capture_memory(label + '-after')
         write(self.evidence / (label + '-emitted.json'), dict(row=rows[0], event=event,
             exit=result.returncode, setup_only=True, native_client_executed=False))
         return result
@@ -668,6 +781,15 @@ class NativeUnit(OwnedUnit):
         self.setup_callback(self.go, 'coordination', dict(base, hook_event_name='Stop'), 'setup-go3-stop')
         current = self.correspondence('setup-go3')
         require(current['agent_id'] == initial['agent_id'], 'candidate setup callbacks created another agent')
+        for release, label in ((self.legacy, 'python2'), (self.go, 'go3')):
+            event = dict(base, hook_event_name='SessionEnd', reason='other', messages=[
+                dict(role='user', text='Synthetic capture for ' + label + ' 日本語 🙂 900719925474099312345'),
+                dict(role='assistant', text='No durable facts are selected in this fixture.')])
+            self.setup_callback(release, 'memory', event, 'setup-' + label + '-memory-close')
+        calls = list((self.evidence / 'selector-calls').glob('*.json'))
+        require(len(calls) >= 2 and all(json.loads(path.read_bytes())['program_sha256'] == self.selector_pin['sha256']
+                for path in calls), 'both staged capture providers were not actually executed')
+        self.capture_memory('setup-captured')
         self.setup_callback(self.go, 'coordination', dict(base, hook_event_name='SessionEnd', reason='other'), 'setup-go3-close')
         attempt = json.loads((self.evidence / 'setup-request-result.json').read_bytes())['attempt']
         stale = self.host.agent('worker', 'session-inbox-attempt-status',
@@ -847,9 +969,12 @@ class NativeUnit(OwnedUnit):
         for client in getattr(self, 'native_clients', []):
             if client.process.poll() is None:
                 try:
-                    client.close()
+                    self.close_native(client)
                 except (AssertionError, OSError, subprocess.SubprocessError) as error:
                     failures.append(repr(error))
+            elif not getattr(client, 'inputs_captured', False):
+                self.capture_memory(client.label + '-already-closed')
+                self.capture_hook_inputs(client)
             native_cleanup.append(dict(pid=client.process.pid, exit=client.process.poll(),
                                        joined=client.process.poll() is not None, group_signals=False))
         for child, stdout, stderr, label in getattr(self, 'watchers', []):
@@ -884,9 +1009,33 @@ class NativeUnit(OwnedUnit):
 
 
 class OwnedMessages(MessagesFixture):
-    def __init__(self):
+    def __init__(self, evidence):
         self.before_response = None
+        self.evidence = Path(evidence)
+        self.evidence.mkdir(mode=0o700)
         super().__init__()
+        owner, parent = self, self.server.RequestHandlerClass
+
+        class CapturedHandler(parent):
+            def do_POST(self):
+                size = int(self.headers.get('Content-Length', '0'))
+                if self.path.split('?')[0] != '/v1/messages' or not 0 < size <= CAPTURE_BYTES:
+                    return super().do_POST()
+                reader = self.rfile
+                raw = reader.read(size)
+                require(len(list(owner.evidence.glob('*.body'))) < CAPTURE_FILES, 'provider capture exceeds file bound')
+                prefix = owner.evidence / str(uuid.uuid4())
+                prefix.with_suffix('.body').write_bytes(raw)
+                write(prefix.with_suffix('.json'), dict(path=self.path, bytes=len(raw),
+                    sha256=hashlib.sha256(raw).hexdigest(), source='actual local HTTP request body',
+                    authorization_headers_copied=False))
+                self.rfile = io.BytesIO(raw)
+                try:
+                    return super().do_POST()
+                finally:
+                    self.rfile = reader
+
+        self.server.RequestHandlerClass = CapturedHandler
 
     def response(self, request):
         callback, self.before_response = self.before_response, None
@@ -898,6 +1047,7 @@ class OwnedMessages(MessagesFixture):
 class OwnedNativeSession(ClaudeSession):
     """Reuse the supported stream transport, preserving one HOME and account."""
     def __init__(self, unit, admission, provider, label):
+        self.label, self.release = label, unit.current
         self.identity = unit.native or str(uuid.uuid4())
         self.output, self.root = unit.evidence, unit.root
         self.trace = unit.evidence / (label + '.exec')
@@ -913,7 +1063,8 @@ class OwnedNativeSession(ClaudeSession):
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1', ENABLE_TOOL_SEARCH='false',
             ANTHROPIC_API_KEY='r06-local-fixture-unused', ANTHROPIC_BASE_URL=provider.url,
             CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS='150000')
-        argv = ['strace', '-f', '-s', '16384', '-e', 'trace=execve', '-o', str(self.trace), client['path'],
+        argv = ['strace', '-f', '-s', '16384', '-e', 'trace=execve,clone,clone3,read,write',
+            '-e', 'raw=read,write', '-e', 'read=0', '-e', 'write=1,2', '-o', str(self.trace), client['path'],
             '--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
             '--setting-sources', '', '--settings', settings['path'], '--strict-mcp-config', '--mcp-config',
             '{"mcpServers":{}}', '--tools', '', '--permission-mode', 'dontAsk', '--max-turns', '3', '--model', 'sonnet',
@@ -928,7 +1079,7 @@ class OwnedNativeSession(ClaudeSession):
         try:
             self.control('initialize')
         except BaseException:
-            self.close()
+            unit.close_native(self)
             raise
 
 
@@ -951,7 +1102,7 @@ def observe_native(unit, client, provider, label):
 
 
 def native_roundtrip(unit, admission):
-    provider = unit.provider = OwnedMessages()
+    provider = unit.provider = OwnedMessages(unit.evidence / 'provider-calls')
     original_home = os.environ['HOME']
     try:
         client = OwnedNativeSession(unit, admission, provider, 'python2-native')
@@ -968,7 +1119,7 @@ def native_roundtrip(unit, admission):
             changed = unit.control(operation, target, view, label)
             require(changed['final_census']['FixtureReady'], 'final publication census is not complete')
             unit.retire_watcher(label + '-old-watcher')
-            client.close()
+            unit.close_native(client)
             unit.current = target
             client = OwnedNativeSession(unit, admission, provider, label + '-resume')
             unit.native_clients.append(client)

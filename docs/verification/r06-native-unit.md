@@ -50,6 +50,12 @@ immutable bindings are disabled. The retained generation has its actual `/2`
 engine and bridge bundles and literal retained argv; it has no `/3` receipt.
 The ordinary hook stager produces each implementation's selected settings.
 The account's unrelated Unicode and large-integer settings remain pinned.
+Before either configuration is staged, the fixture installs the maintained
+private local null-selector and sets `memory.claude` to its pinned path. Its
+actual inputs, command, result and executable hash are retained. It selects
+no durable notes and never starts a model account. Preparation exercises the
+actual emitted capture callback for each generation; the Source missing-provider
+negative behavior remains unchanged.
 
 The native path uses the existing Claude stream-control transport with one
 local scripted Messages provider. `HOME`, account and workspace stay the same
@@ -90,8 +96,12 @@ The image file has schema `cairn.r06-unit-images/1`, a `source_tree`, a
 `api`, `control`, `helper`, `stager`, each with an absolute `path` and `sha256`.
 The complete-unit modes require the dedicated driver/helper and all named
 predecessor files in that source map and verify their bytes before use.
-Images must be built from the final composed tree, not reused from the old
-preflight. Build/module and compiler pins belong in the accompanying packet.
+Images must be built from the final composed tree or have explicit evidence
+that every compiled and embedded input, module and build flag is unchanged.
+A carried image retains its original build identity; it is not a fresh build.
+Build/module and compiler pins belong in the accompanying packet. Use absolute
+host image paths; old namespace paths and admission bytes do not select a
+changed candidate.
 
 The additional native admission file has schema
 `cairn.r06-native-unit-admission/1` and these fields:
@@ -108,24 +118,41 @@ remains held until that happens. Existing native allowances are unchanged.
 
 ## Validation commands
 
-Use the existing mise tasks and unchanged isolation wrapper. With freshly built
-and pinned images, preparation uses:
+Run directly on the normal host with the maintained mise task. The complete
+unit already owns its disposable application state and PostgreSQL cluster.
+The controller, API, watcher and hooks must share the same files, lock inode
+and process view. Keep normal host tools, HOME and authentication. Do not wrap
+these modes in `test_hybrid_runtime_operations.py` or add namespace plumbing.
+With pinned host images, preparation uses:
 
 ```sh
-mise run host:exec -- --timeout 10m --weight 1 -- \
-  python3 scripts/test_hybrid_runtime_operations.py --timeout 580 \
-  --receipt "$R06_EVIDENCE/preparation-isolation.json" \
-  --ro-bind "$R06_IMAGES:/opt/r06-unit-images" -- \
+mise run host:exec -- --timeout 10m --weight 2 -- \
   python3 -B scripts/check_r06_native_unit.py --prepare-unit \
-  --images /opt/r06-unit-images/images-wrapper.json \
-  --evidence /tmp/r06-unit-preparation --archive-stdout
+  --images "$R06_IMAGES/images-host.json" \
+  --evidence "$R06_EVIDENCE/preparation" --archive-stdout
 ```
 
-The admission file and its native image must also be explicitly bound for an
-admitted native run. Replace `--prepare-unit` with `--native-unit --admission`
-and its selected absolute path, plus `--admission-sha256` and the expected
-hash. Record the complete actual argv before invoking it; this example does
-not admit a run. Preserve every material failure and its cleanup result.
+For a separately admitted native run, replace `--prepare-unit` with
+`--native-unit --admission` and its selected absolute host path, plus
+`--admission-sha256` and the expected hash. The client must be the frozen host
+file named `claude`. Record full argv and pins before use; this example does
+not admit a run. Preserve every material failure and cleanup result.
+
+The driver captures selected stdio from actual hook processes using the
+maintained trace decoder. Other file-read payloads are not dumped. Exact
+selected memory configurations, relevant memory state and actual synthetic
+transcripts are copied before and after orderly native close, with original
+inode/device/mode/hash metadata. Copies are labeled as copies. Each snapshot
+allows at most 64 files, 2 MiB per file and 16 MiB total; overflow refuses rather
+than truncates. Credential files and their inode aliases are excluded. The
+local Messages fixture retains actual request bodies without authentication
+headers. These future captures do not reconstruct previously lost evidence.
+
+Focused driver checks, which start no native client, use:
+
+```sh
+mise run test:unit -- test_r06_native_unit_driver -v
+```
 
 Focused helper checks use:
 
@@ -156,5 +183,5 @@ external coverage as `unknown` and native refresh as `unobserved`; separate
 native readbacks describe only the observed stop/join/resume transition.
 Per-fact reads and final rename are not atomic. Legacy writers, opaque
 attribution and hard-kill intervals retain their existing limits. Production
-hold `98d46758 v1`, all-client/R04 matrix, common-image, CAIRN-305 AC4, HC05 and
-full R06 acceptance remain open. Root owns review, composition and integration.
+technical, backup, drain, rollback and phase admission gates, the all-client/R04
+matrix, common-image, CAIRN-305 AC4, HC05 and full R06 acceptance remain open. Root owns review, composition and integration.
