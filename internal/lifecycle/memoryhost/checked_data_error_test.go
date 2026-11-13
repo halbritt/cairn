@@ -24,7 +24,11 @@ func TestCheckedConfigurationFailureRecordsOnlySourceEntryAndExit(t *testing.T) 
 			if err := os.Mkdir(directory, 0700); err != nil {
 				t.Fatal(err)
 			}
-			data := &binding.OrdinaryDataError{Phase: "configuration", Err: &value.Error{Class: class, Message: "private-data-must-not-appear"}}
+			var sourceError error = &value.Error{Class: "ValueError", Message: "private-data-must-not-appear"}
+			if class == "OSError" {
+				sourceError = &os.PathError{Op: "open", Path: filepath.Join(root, "private-data-must-not-appear"), Err: os.ErrNotExist}
+			}
+			data := &binding.OrdinaryDataError{Phase: "configuration", Err: sourceError}
 			want := memoryhook.HostFailure(data.Phase, data.Err)
 			var out, diagnostic bytes.Buffer
 			if code := checkedDataFailure(config, data, &out, &diagnostic); code != want.ExitCode || out.String() != want.Stdout || diagnostic.String() != want.Stderr {
