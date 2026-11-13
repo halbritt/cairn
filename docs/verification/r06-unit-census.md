@@ -42,10 +42,11 @@ test input, not proof that no live user exists elsewhere. Global installed
 account/session discovery, authoritative native join/refresh readback, store
 drain and closure of unknown external users remain unavailable here.
 The finite fixture explicitly names account directories and each session's
-workspace. Their actual hook/config layers must be empty. Nonempty layers,
-missing account/workspace identity or unobserved native settings refuse with a
-named missing readback seam. This cut does not invent a native settings parser
-or refresh protocol to accept them.
+workspace. Their actual hook/config layers must be empty unless the selected Claude
+fixture input described below supplies exact emitted settings and native
+readback. Other nonempty layers, missing account/workspace identity or
+unobserved native settings refuse. No input establishes global absence or an
+authenticated native connection.
 
 ## Processes and retained obligations
 
@@ -104,3 +105,60 @@ Normal host `HOME`, tools and subscription state stay unchanged. No native
 client, model, live API/store, production transition or full suite is invoked.
 Full R06/HC-05, supported refresh, whole-unit D6, final dependency/control adoption
 and production R07 remain held.
+
+
+## Selected Claude hook observations
+
+An optional `HookSelections` catalog entry pins a
+`cairn.watch-claude-hooks/1` descriptor. It selects one catalogued configuration
+and native-session record, account and workspace, an actual immutable R-04 hook
+generation, its settings file, a pinned `cairn.watch-claude-readback/1` observation,
+and an exhaustive list of account/workspace files. The inspector enumerates
+both actual trees and rejects omissions, extra pins, aliases and changed bytes.
+Every affected config/session needs its own readback; a caller completeness
+Boolean is not accepted. Other account/project settings containing hooks refuse
+as an unsupported layer, including extra Cairn hooks.
+
+This bounded cell supports Claude `flagSettings` and the eleven emitted hook
+rows. It verifies the real generation manifest and lifecycle selection, selected
+role configurations, preserved unrelated settings, canonical content-addressed
+launchers, compatibility receipts and their retained source closure. The native
+observation must match the exact effective hooks and listing. Both prompt roles
+must identify successful actual launcher/program executions with the exact
+literal argv. Stale cached A against selected B, missing readback, changed
+receipt/config/program/shell, mixed units and unsupported harnesses/layers refuse.
+The inspector does not execute hooks or change settings.
+
+`HookObservations` reports only the selected fixture observations that agree.
+`ExternalCoverage` remains `unknown` and `NativeRefresh` remains `unobserved`.
+The records are supplied selected facts, not authenticated native ownership.
+A parent PID, manifest or successful prompt does not identify an active MCP
+connection. Codex, Agy, OpenCode and Hermes are not qualified by this cell.
+
+The new `scripts/check_r06_native_hook_census.py` cell uses the existing R-02
+installer/R-04 renderer, synthetic local provider/API, the frozen selected Claude
+executable, and real Go census inspection. It observes cached A after B is
+published and a process restart with the same conversation and selected B,
+then injects bounded file/readback refusals. It does not replace the existing
+eleven-case R-04 collector or qualify a complete unit transition. Run it only
+through the existing hybrid wrapper, with fresh private Go images and selected
+hashes; no native executable invocation occurs on the host:
+
+```sh
+mise run host:exec -- --timeout 10m --weight 1 -- \
+  python3 -B scripts/test_hybrid_runtime_operations.py --timeout 480 \
+  --receipt "$R06_EVIDENCE/isolation.json" \
+  --ro-bind "$R06_CLAUDE:/opt/r04-native/claude" \
+  --ro-bind "$R06_CENSUS_IMAGE:/opt/r06-hook-census/census-tests" \
+  --ro-bind "$R06_LIFECYCLE_IMAGE:/opt/r06-hook-census/lifecycle" \
+  --ro-bind "$R06_STAGER_IMAGE:/opt/r06-hook-census/stager" \
+  -- python3 -B scripts/check_r06_native_hook_census.py \
+  --claude /opt/r04-native/claude --sha256 "$R06_CLAUDE_SHA256" \
+  --census-image /opt/r06-hook-census/census-tests \
+  --lifecycle /opt/r06-hook-census/lifecycle \
+  --stager /opt/r06-hook-census/stager --archive-stdout
+```
+
+Retain the decoded synthetic evidence archive outside Git, including failed
+attempts. The final integrated image, full-unit barrier, supported connection
+refresh, grants, HC-05 and production acceptance remain separate.

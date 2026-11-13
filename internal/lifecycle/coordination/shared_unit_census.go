@@ -34,6 +34,7 @@ type WatchCensusCatalog struct {
 	CredentialPaths []string
 	Bindings        []WatchCensusPin
 	Clients         []WatchCensusPin
+	HookSelections  []WatchCensusPin
 }
 
 // WatchCensusProposal names all members, sessions and callbacks proposed for
@@ -79,6 +80,7 @@ type WatchUnitCensus struct {
 	Blockers         []string
 	Digest           string
 	RetainedCopies   []WatchBindings
+	HookObservations []WatchCensusHookObservation
 }
 
 type watchCensusRead struct {
@@ -99,6 +101,7 @@ type watchCensusRead struct {
 	bindingPins     map[string]string
 	clientPins      map[string]string
 	control         *unitCensusScope
+	hookSelections  []WatchCensusClaudeHooks
 }
 
 // InspectWatchUnitCensus performs filesystem and process observations only.
@@ -123,7 +126,13 @@ func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 	if err := r.loadCatalog(ctx, catalog); err != nil {
 		return r.report, err
 	}
+	if err := r.loadHookSelections(); err != nil {
+		return r.report, err
+	}
 	if err := r.members(ctx); err != nil {
+		return r.report, err
+	}
+	if err := r.inspectHookSelections(ctx); err != nil {
 		return r.report, err
 	}
 	if err := r.callbacks(ctx); err != nil {
@@ -136,6 +145,9 @@ func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 		return r.report, err
 	}
 	if err := r.readback(ctx); err != nil {
+		return r.report, err
+	}
+	if err := r.inspectHookSelections(ctx); err != nil {
 		return r.report, err
 	}
 	r.report.Scope = r.catalog.Scope

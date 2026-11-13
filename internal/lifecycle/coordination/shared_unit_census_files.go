@@ -512,6 +512,9 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 			if owner == "" {
 				return errors.New("session config ownership is unknown")
 			}
+			if err := r.requireHookSession(owner, path, workspace); err != nil {
+				return err
+			}
 			r.nodes[owner].Sessions = append(r.nodes[owner].Sessions, path)
 			r.nodes[owner].Resources = append(r.nodes[owner].Resources, workspace)
 			slices.Sort(r.nodes[owner].Resources)
@@ -570,6 +573,11 @@ func (r *watchCensusRead) emptyHookLayer(path, role string) error {
 		return err
 	}
 	if len(names) != 0 {
+		for _, selected := range r.hookSelections {
+			if role == "account" && selected.Account == path || role == "repository" && selected.Workspace == path {
+				return nil
+			}
+		}
 		return fmt.Errorf("%s hook/config coverage is unknown: selected native settings/readback seam is unavailable", role)
 	}
 	return nil
