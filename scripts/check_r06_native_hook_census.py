@@ -269,20 +269,21 @@ def run(args, output):
                                    provider, output, work, resume=resume)
             clients.append(client)
             support.addCleanup(client.close)
-            capture_lock = Path(f.memory['state_dir']) / (client.identity + '.capture.lock')
-            try:
-                lock_info = capture_lock.lstat()
-            except FileNotFoundError:
-                fd = os.open(capture_lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-                os.close(fd)
-                lock_info = capture_lock.lstat()
-            require(stat.S_ISREG(lock_info.st_mode) and lock_info.st_uid == os.getuid()
-                    and stat.S_IMODE(lock_info.st_mode) == 0o600
-                    and str(capture_lock.resolve(strict=True)) == str(capture_lock),
-                    'fixture capture lock must remain a canonical owned regular 0600 file')
-            write(output / (name + '-capture-lock-metadata.json'),
-                  dict(path=str(capture_lock), uid=lock_info.st_uid, mode=stat.S_IMODE(lock_info.st_mode),
-                       device=lock_info.st_dev, inode=lock_info.st_ino))
+            for suffix in ('.capture.lock', '.lock'):
+                capture_lock = Path(f.memory['state_dir']) / (client.identity + suffix)
+                try:
+                    lock_info = capture_lock.lstat()
+                except FileNotFoundError:
+                    fd = os.open(capture_lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                    os.close(fd)
+                    lock_info = capture_lock.lstat()
+                require(stat.S_ISREG(lock_info.st_mode) and lock_info.st_uid == os.getuid()
+                        and stat.S_IMODE(lock_info.st_mode) == 0o600
+                        and str(capture_lock.resolve(strict=True)) == str(capture_lock),
+                        'fixture capture lock must remain a canonical owned regular 0600 file')
+                write(output / (name + suffix + '-metadata.json'),
+                      dict(path=str(capture_lock), uid=lock_info.st_uid, mode=stat.S_IMODE(lock_info.st_mode),
+                           device=lock_info.st_dev, inode=lock_info.st_ino))
             return client
 
         target = start('native-a', a)

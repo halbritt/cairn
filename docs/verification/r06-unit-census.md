@@ -174,8 +174,8 @@ are never overwritten or chmodded for writing. Local setup proofs replace only
 the native client boundary and remain labelled `SETUP/STUB ONLY`; their results
 do not qualify native behavior.
 
-The disposable fixture also provisions its known per-session capture lock as
-an owned regular `0600` file before shutdown capture, and verifies it on resume.
+The disposable fixture also provisions its two known per-session capture locks as
+owned regular `0600` files before shutdown capture, and verifies it on resume.
 It refuses unexpected existing metadata without chmod or overwrite. This keeps
 the fixture's selected state private; it does not change capture or census
 product behavior or qualify ordinary installations.
