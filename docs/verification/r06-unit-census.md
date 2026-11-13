@@ -185,7 +185,10 @@ case stages the complete real `/2` bundle and hook producer output, creates
 state through the Go producer with synthetic registration, and runs the actual
 Go inspector with synthetic readback input. It checks producer-pin, unknown
 proof-field and observed-argv refusals, complete unchanged snapshots and the
-existing syscall guards. These are unit checks; they do not establish a real
+existing syscall guards. With `CAIRN_RETAINED_CENSUS_EVIDENCE` selected, it
+retains the actual compiled census, control and stager images, build metadata,
+source/module pins and interpreter/shell/observer pins before staging or
+inspection begins. These are unit checks; they do not establish a real
 native `/2` observation, authenticated
 drain, or a complete transition from Python to Go. The complete consumed setup
 must provide its own matching session, real API history and issued journals.
