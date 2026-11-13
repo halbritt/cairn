@@ -352,6 +352,10 @@ func (r *watchCensusRead) claudeRetainedMembers(node *WatchCensusMember, members
 	if err != nil {
 		return err
 	}
+	if !exactReceiptObject(manifest, "schema", "enabled", "engine", "bridge", "memory_config", "coordination_configs") ||
+		!value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/2") {
+		return errors.New("unsupported retained native binding")
+	}
 	proof := producer.Get("retained_python")
 	if !exactReceiptObject(proof, "binding", "binding_schema", "engine", "bridge", "bundle_manifest", "retained_argv") ||
 		!value.SameText(proof.Get("binding_schema"), "cairn.inbox-recall-binding/2") {
@@ -367,20 +371,68 @@ func (r *watchCensusRead) claudeRetainedMembers(node *WatchCensusMember, members
 	if err != nil {
 		return err
 	}
+	if !exactReceiptObject(bundle, "schema", "sha256", "files") {
+		return errors.New("unsupported retained native bundle manifest")
+	}
+	expected := map[string]bool{"binding.json": true, "lifecycle-bundle.json": true, "retained-argv.json": true}
+	profiles := append([]*value.Value{manifest.Get("memory_config")}, manifest.Get("coordination_configs").Items...)
+	for _, profile := range profiles {
+		path := nativeText(profile.Get("path"))
+		if !exactReceiptObject(profile, "path", "sha256") || members[filepath.Base(path)] != (WatchCensusPin{path, nativeText(profile.Get("sha256"))}) {
+			return errors.New("retained native profile is outside its selected generation")
+		}
+		expected[filepath.Base(path)] = true
+	}
 	for _, role := range []string{"engine", "bridge"} {
 		desc := manifest.Get(role)
-		if !hookValuesEqual(proof.Get(role), desc) || !hookValuesEqual(desc.Get("bundle"), bundle) {
+		if !exactReceiptObject(desc, "path", "sha256", "bundle") || !hookValuesEqual(proof.Get(role), desc) || !hookValuesEqual(desc.Get("bundle"), bundle) {
 			return errors.New("retained native producer engine/bridge bundle disagrees")
 		}
 		path := nativeText(desc.Get("path"))
 		if members[filepath.Base(path)] != (WatchCensusPin{path, nativeText(desc.Get("sha256"))}) {
 			return errors.New("retained native bundle entrypoint is outside its selected generation")
 		}
+		entry := "memory.py"
+		if role == "bridge" {
+			entry = "inbox_recall.py"
+		}
+		if nativeText(desc.Get("sha256")) != members[entry].SHA256 {
+			return errors.New("retained native engine/bridge selects another bundle role")
+		}
+		expected[filepath.Base(path)] = true
 		for _, member := range desc.Get("bundle").Get("files").Members {
 			pin := members[string(member.Key)]
 			if pin.Path != filepath.Join(filepath.Dir(path), string(member.Key)) || pin.SHA256 != nativeText(member.Value) {
 				return errors.New("retained native bundle differs from selected generation members")
 			}
+			expected[string(member.Key)] = true
+		}
+	}
+	launches, err := r.jsonFile(members["retained-argv.json"].Path)
+	if err != nil {
+		return err
+	}
+	if !exactReceiptObject(launches, "memory", "coordination") {
+		return errors.New("unsupported retained native role argv coverage")
+	}
+	for _, role := range []string{"memory", "coordination"} {
+		argv, err := hookStringVector(launches.Get(role))
+		if err != nil {
+			return err
+		}
+		script, _, err := retainedPythonFrame(argv)
+		pin := members[filepath.Base(script)]
+		if err != nil || pin.Path != script || pin.SHA256 != members[role+".py"].SHA256 {
+			return errors.New("retained native argv selects another bundle entrypoint")
+		}
+		expected[filepath.Base(script)] = true
+	}
+	if len(expected) != len(members) {
+		return errors.New("retained native generation has unknown or missing members")
+	}
+	for name := range expected {
+		if members[name].Path == "" {
+			return errors.New("retained native generation has unknown or missing members")
 		}
 	}
 	return nil
@@ -437,6 +489,22 @@ func hookStringVector(vector *value.Value) ([]string, error) {
 	return argv, nil
 }
 
+func retainedPythonFrame(argv []string) (string, []string, error) {
+	offset := 1
+	flags := map[string]bool{}
+	for offset < len(argv) && slices.Contains([]string{"-I", "-S", "-B"}, argv[offset]) {
+		if flags[argv[offset]] {
+			return "", nil, errors.New("ambiguous retained native Python flags")
+		}
+		flags[argv[offset]] = true
+		offset++
+	}
+	if offset >= len(argv) {
+		return "", nil, errors.New("missing retained native Python entrypoint")
+	}
+	return argv[offset], argv[offset+1:], nil
+}
+
 func (r *watchCensusRead) claudeRetainedHookRow(selected WatchCensusClaudeHooks, row *value.Value, executions []WatchCensusHookExecution, retained *value.Value) error {
 	role, event := nativeText(row.Get("role")), nativeText(row.Get("event"))
 	if role != "memory" && role != "coordination" || !value.SameText(row.Get("implementation"), "python") {
@@ -485,25 +553,16 @@ func (r *watchCensusRead) claudeRetainedHookRow(selected WatchCensusClaudeHooks,
 		}
 	}
 	configPath := nativeText(profile.Get("path"))
-	offset := 1
-	flags := map[string]bool{}
-	for offset < len(argv) && slices.Contains([]string{"-I", "-S", "-B"}, argv[offset]) {
-		if flags[argv[offset]] {
-			return errors.New("ambiguous retained native Python flags")
-		}
-		flags[argv[offset]] = true
-		offset++
+	script, observedTail, err := retainedPythonFrame(argv)
+	if err != nil {
+		return err
 	}
-	if offset >= len(argv) {
-		return errors.New("missing retained native Python entrypoint")
-	}
-	script := argv[offset]
 	canonicalScript := filepath.Join(filepath.Dir(node.Binding.Path), role+".py")
 	tail := []string{"--config", configPath}
 	if role == "coordination" {
 		tail = append([]string{"hook"}, tail...)
 	}
-	if !slices.Equal(argv[offset+1:], tail) || filepath.Dir(script) != filepath.Dir(node.Binding.Path) || r.files[script] == "" || r.files[script] != r.files[canonicalScript] {
+	if !slices.Equal(observedTail, tail) || filepath.Dir(script) != filepath.Dir(node.Binding.Path) || r.files[script] == "" || r.files[script] != r.files[canonicalScript] {
 		return errors.New("unsupported retained native Python program/config frame")
 	}
 	if event == "UserPromptSubmit" {
@@ -601,7 +660,8 @@ func (r *watchCensusRead) claudeHookReadback(selected WatchCensusClaudeHooks, st
 	if err := hookDecode(raw, &observed); err != nil {
 		return err
 	}
-	if observed.Schema != "cairn.watch-claude-readback/1" || observed.Harness != "claude" || observed.Layer != "flagSettings" || observed.Settings != selected.Settings || observed.NativeSession == "" || observed.NativeSession != nativeText(state.Get("agent").Get("native_session_id")) {
+	native, identityErr := watchStateNativeSession(state)
+	if identityErr != nil || observed.Schema != "cairn.watch-claude-readback/1" || observed.Harness != "claude" || observed.Layer != "flagSettings" || observed.Settings != selected.Settings || observed.NativeSession != native {
 		return errors.New("missing, stale or mismatched native hook readback")
 	}
 	if observed.Shell.Path != "/bin/sh" {

@@ -2,6 +2,7 @@ package coordination
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,39 @@ import (
 
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
+
+// This entry creates unit-test state through the real producer with the same
+// synthetic registration service as censusFixtureAt. It never authenticates it.
+func TestR06RetainedCensusSession(t *testing.T) {
+	path := os.Getenv("CAIRN_R06_RETAINED_SESSION_PLAN")
+	if path == "" {
+		t.Skip("private retained material unit fixture")
+	}
+	var plan struct{ Config, Native, Workspace, Result string }
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := censusDecode(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(plan.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	pin := censusProducedSession(t, config, plan.Native, plan.Workspace)
+	raw, err = json.Marshal(pin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan.Result, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // These are literal-frame unit checks, not native refresh or authenticated D2
 // evidence. The full consumed setup must retain its own observed executions.

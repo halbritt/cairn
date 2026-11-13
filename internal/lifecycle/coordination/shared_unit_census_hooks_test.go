@@ -94,7 +94,7 @@ func TestWatchCensusClaudeSelectedInputsRefuse(t *testing.T) {
 }
 
 func TestWatchCensusProducedSessionIdentity(t *testing.T) {
-	for _, mutation := range []string{"none", "opaque-outer", "missing-nested", "outer-only", "outer-rescue", "foreign-agent", "foreign-workspace"} {
+	for _, mutation := range []string{"none", "consistent-outer", "legacy-outer", "opaque-outer", "missing-nested", "outer-only", "missing-all", "registration-conflict", "outer-rescue", "foreign-agent", "foreign-workspace"} {
 		t.Run(mutation, func(t *testing.T) {
 			f := newCensusFixture(t)
 			pin := f.catalog.Sessions[0]
@@ -109,6 +109,12 @@ func TestWatchCensusProducedSessionIdentity(t *testing.T) {
 			agent := state["agent"].(map[string]any)
 			native := agent["native_session_id"].(string)
 			switch mutation {
+			case "consistent-outer":
+				state["native_session_id"] = native
+			case "legacy-outer":
+				delete(agent, "native_session_id")
+				delete(state["registration"].(map[string]any), "native_session_id")
+				state["native_session_id"] = native
 			case "opaque-outer":
 				state["native_session_id"] = "unrelated opaque extension"
 			case "missing-nested":
@@ -116,6 +122,11 @@ func TestWatchCensusProducedSessionIdentity(t *testing.T) {
 			case "outer-only":
 				delete(agent, "native_session_id")
 				state["native_session_id"] = native
+			case "missing-all":
+				delete(agent, "native_session_id")
+				delete(state["registration"].(map[string]any), "native_session_id")
+			case "registration-conflict":
+				state["registration"].(map[string]any)["native_session_id"] = "foreign-native"
 			case "outer-rescue":
 				agent["native_session_id"] = "foreign-native"
 				state["native_session_id"] = native
@@ -135,7 +146,7 @@ func TestWatchCensusProducedSessionIdentity(t *testing.T) {
 			f.catalog.Sessions[0] = censusTestJSON(t, pin.Path, state)
 			before := censusTestSnapshot(t, f.root)
 			got, err := f.inspect(t)
-			positive := mutation == "none" || mutation == "opaque-outer"
+			positive := mutation == "none" || mutation == "consistent-outer" || mutation == "legacy-outer" || mutation == "missing-nested" || mutation == "outer-only"
 			if positive {
 				if err != nil || !got.FixtureReady {
 					t.Fatalf("producer state refused: %+v %v", got, err)

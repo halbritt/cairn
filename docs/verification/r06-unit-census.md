@@ -180,8 +180,13 @@ hashes or argv, nonzero exits, and PID or role conflicts still refuse.
 
 `TestWatchCensusRetainedPythonRow` checks literal-frame acceptance and refusals
 with selected retained source files. `test_r06_retained_hook_census` checks the
-collector's distinct direct-Python and checked-launcher frames. These are unit
-checks; they do not establish a real native `/2` observation, authenticated
+collector's distinct direct-Python and checked-launcher frames. Its material
+case stages the complete real `/2` bundle and hook producer output, creates
+state through the Go producer with synthetic registration, and runs the actual
+Go inspector with synthetic readback input. It checks producer-pin, unknown
+proof-field and observed-argv refusals, complete unchanged snapshots and the
+existing syscall guards. These are unit checks; they do not establish a real
+native `/2` observation, authenticated
 drain, or a complete transition from Python to Go. The complete consumed setup
 must provide its own matching session, real API history and issued journals.
 
@@ -207,9 +212,12 @@ while inspection records its metadata without opening credential content. SDK
 request evidence records operation names and authorization success only. Startup,
 prompt and shutdown hook failures still fail the cell.
 
-Native session identity comes from the coordination producer's
-`agent.native_session_id`. An opaque outer field does not supply or override
-that identity. The collector preserves the exact newly produced state and its
+Native session identity uses the shared observed-state reader. All present
+`registration.native_session_id`, `agent.native_session_id` and retained legacy
+outer identities must agree. Missing, malformed or conflicting identities
+refuse; a legacy outer identity cannot override a current producer identity.
+These fields establish correspondence only, and do not authenticate a caller.
+The collector preserves the exact newly produced state and its
 key sets before checking the selected input; prior failures that preceded this
 capture do not supply that evidence. Unit fixtures use the existing coordination
 state producer rather than fabricate an outer identity.
