@@ -137,8 +137,19 @@ def catalog_for(f, selection, identity, work, readback, output):
     selected = config_root / 'claude'
     owned_private_directory(selected)
     config = selected / 'one.json'
-    config.write_bytes(f.coord_path.read_bytes())
-    config.chmod(0o400)
+    source_config = f.coord_path.read_bytes()
+    try:
+        info = config.lstat()
+    except FileNotFoundError:
+        fd = os.open(config, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400)
+        with os.fdopen(fd, 'wb') as target:
+            target.write(source_config)
+    else:
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+                and stat.S_IMODE(info.st_mode) == 0o400,
+                'selected config must remain an owned nonsymlink regular 0400 file')
+        require(str(config.resolve(strict=True)) == str(config), 'selected config path is not canonical')
+        require(config.read_bytes() == source_config, 'selected config changed between catalog constructions')
     callbacks = root / 'census-callbacks'
     callbacks.mkdir(mode=0o700, exist_ok=True)
     for directory in (Path(f.coord['state_dir']), Path(f.memory['state_dir'])):

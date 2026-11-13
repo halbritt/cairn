@@ -167,6 +167,13 @@ mode on both catalog constructions. It records directory UID, mode, device and
 inode before inspection. Existing unsafe directories are refused without chmod
 or alias normalization; the Go path guards and refusal reasons remain unchanged.
 
+Later catalog construction reuses the selected config only when its canonical
+owned regular file remains `0400` and byte-identical to the emitted config.
+Creation uses exclusive no-follow opening; existing files and dangling symlinks
+are never overwritten or chmodded for writing. Local setup proofs replace only
+the native client boundary and remain labelled `SETUP/STUB ONLY`; their results
+do not qualify native behavior.
+
 ```sh
 mise run host:exec -- --timeout 10m --weight 1 -- \
   python3 -B scripts/test_hybrid_runtime_operations.py --timeout 480 \
