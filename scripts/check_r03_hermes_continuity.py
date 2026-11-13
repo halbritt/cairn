@@ -623,6 +623,7 @@ def native_worker(spec_path):
         baseline_handles = registrations()
         cli = HermesCLI(model=MODEL, provider='custom', api_key='r03-fixture-only', base_url=PROVIDER_URL,
                         toolsets=['mcp-cairn'], max_turns=1, compact=True, resume=spec['session'])
+        initial_session = cli.session_id
         require(cli._fallback_model == [], 'R03_PROVIDER: fallback configured')
         if spec['session'] is not None:
             require(cli._preload_resumed_session(), 'R03_SESSION: real CLI failed supported resume')
@@ -638,8 +639,25 @@ def native_worker(spec_path):
                 'R03_CLIENT: actual registration handles missing')
         require(provider.config == spec['selection'], 'R03_CLIENT: selected configuration changed')
         selected = provider.engine_command('UserPromptSubmit')
+        baseline_history = None
+        if spec['label'] == 'A':
+            baseline_reply = cli.chat('Synthetic existing-history baseline before B is staged.')
+            require(isinstance(baseline_reply, str) and 'Synthetic continuity response' in baseline_reply,
+                    'R03_SESSION: real A baseline conversation did not complete')
+            agent._memory_manager.flush_pending(timeout=10)
+            require(cli.agent is agent and cli.session_id == initial_session,
+                    'R03_SESSION: baseline replaced its native owner or session')
+            baseline_db = SessionDB(db_path=home / 'state.db')
+            try: baseline_history = baseline_db.get_resume_conversations(initial_session)
+            finally: baseline_db.close()
+            require(len([row for row in baseline_history[1] if row.get('role') == 'user']) == 1,
+                    'R03_SESSION: no real existing-history baseline before staging B')
+            require(digest(home / 'config.yaml') == spec['credential_selector_sha256'],
+                    'R03_PROVIDER: baseline changed credential selectors')
+            write_json(output / 'baseline-before-B.json', dict(session=initial_session,
+                        history=baseline_history, cached_selection=provider.config))
         write_json(output / 'ready.json', dict(pid=os.getpid(), session=cli.session_id,
-                    cached_selection=provider.config, cached_command=selected))
+                    cached_selection=provider.config, cached_command=selected, baseline_history=baseline_history))
         deadline = time.monotonic() + 45
         while not (output / 'continue.json').exists():
             require(time.monotonic() < deadline, 'R03_BOUNDARY: parent did not release owned idle fixture')
@@ -659,7 +677,7 @@ def native_worker(spec_path):
         require(isinstance(reply, str) and 'Synthetic continuity response' in reply, 'R03_CLIENT: actual scripted chat did not complete')
         require(cli.agent is agent and agent._memory_manager.get_provider('cairn') is provider,
                 'R03_BOUNDARY: native chat silently recreated the cached provider/agent')
-        require(cli.session_id == (spec['session'] or cli.session_id), 'R03_SESSION: chat rotated conversation')
+        require(cli.session_id == (spec['session'] or initial_session), 'R03_SESSION: chat rotated conversation')
         require(cli.api_key == 'r03-fixture-only' and str(cli.base_url).rstrip('/') == PROVIDER_URL,
                 'R03_PROVIDER: native credential selectors changed')
         _finalize_single_query(cli); finalized = True
@@ -685,6 +703,7 @@ def native_worker(spec_path):
         require(digest(home / 'config.yaml') == spec['credential_selector_sha256'], 'R03_PROVIDER: profile selectors changed')
         result = dict(native=True, label=spec['label'], session=cli.session_id, history=history,
                       finalized=True, callbacks=len(audit.calls), registrations_disposed=True,
+                      native_turns=2 if spec['label'] == 'A' else 1,
                       credential_selector_sha256=spec['credential_selector_sha256'])
         write_json(output / 'result.json', result)
     finally:
@@ -947,16 +966,18 @@ def isolated_suite(plan_path, native=False):
                 if 'commands' in selection:
                     require(call['timeout'] == (150 if event in ('PreCompact', 'SessionEnd') else 13),
                             'R03_CALLBACK: H13/H150 changed')
-            if previous_history is not None:
+            expected_prefix = previous_history if previous_history is not None else ready['baseline_history']
+            if expected_prefix is not None:
                 for index in (0, 1):
-                    require(history[index][:len(previous_history[index])] == previous_history[index],
+                    require(history[index][:len(expected_prefix[index])] == expected_prefix[index],
                             'R03_SESSION: history prefix lost, duplicated or replaced')
             users = [message for message in history[1] if message.get('role') == 'user']
-            require(len(users) == len(phases) + 1, 'R03_SESSION: duplicated or missing real native turn')
+            expected_turns = sum(prior['native_turns'] for prior in phases) + row['native_turns']
+            require(len(users) == expected_turns, 'R03_SESSION: duplicated or missing real native turn')
             previous_history = history
             after = {table: host.count(table) for table in before}
-            require(after['memory_record'] == before['memory_record'] + 1, 'R03_EFFECTS: missing or duplicated native capture')
-            require(after['recall_observation'] == before['recall_observation'] + 1, 'R03_EFFECTS: missing or duplicated native recall')
+            require(after['memory_record'] == before['memory_record'] + row['native_turns'], 'R03_EFFECTS: missing or duplicated native capture')
+            require(after['recall_observation'] == before['recall_observation'] + row['native_turns'], 'R03_EFFECTS: missing or duplicated native recall')
             row.update(before=before, after=after, owned_pid=process.pid, child_reaped=True)
             write_json(phase / 'result.json', row); phases.append(row)
 
@@ -976,7 +997,7 @@ def isolated_suite(plan_path, native=False):
                                                        'agent_session_attempt', 'agent_delivery')}
         require(counts['agent_session_attempt'] == counts['agent_delivery'] == 0,
                 'R03_EFFECTS: unexpected coordination/auth registration effects')
-        require(counts['memory_record'] == (4 if native else 1), 'R03_EFFECTS: total Store effects mismatch')
+        require(counts['memory_record'] == (5 if native else 1), 'R03_EFFECTS: total Store effects mismatch')
         bodies = host.sql('SELECT body FROM cairn.record_version')
         require('Synthetic continuity prompt' not in bodies, 'R03_PRIVACY: raw native dialogue stored')
         (root / 'stored-bodies.txt').write_text(bodies)

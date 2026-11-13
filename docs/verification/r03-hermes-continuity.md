@@ -19,7 +19,9 @@ remain open even if the isolated component later passes.
 
 1. An actual first HermesCLI owns selection A and generates the one native
    session ID. Its genuine MemoryProvider and five PluginRegistration handles
-   are inspected. The parent waits for the owned child's ready receipt, then
+   are inspected. It completes a real baseline chat and durability barrier;
+   actual SessionDB history is recorded before B is staged. The parent waits
+   for the owned child's ready receipt, then
    uses the maintained installer/stager to install B while that A owner remains
    cached. The provider configuration and selected command must remain A.
 2. An attempted transition is refused while that owner remains open. Actual
@@ -37,8 +39,9 @@ remain open even if the isolated component later passes.
    this reverse. Profile/account/workspace, model route and credential-selector
    bytes remain fixed throughout.
 5. After each child, real SessionDB readback must match its result after atexit,
-   preserve both prior history projections as prefixes and add exactly one user
-   turn. All late callbacks must use the same session and exact selected argv.
+   preserve both prior history projections as prefixes. A contributes its
+   baseline and cached-A turns; B and retained /2 contribute one turn each.
+   All late callbacks must use the same session and exact selected argv.
    The real disposable Cairn Store must gain exactly one selected record and
    recall observation per turn, with no coordination-session/delivery effects
    or raw dialogue capture. Repeated finalize capture must not duplicate records.
