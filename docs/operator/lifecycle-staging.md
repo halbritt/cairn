@@ -269,11 +269,14 @@ indirection. That semantic attribution remains unqualified.
 Returned-error recovery restores the complete old settings or prior absence
 while the publisher still owns the selected inode. If another writer replaces
 it, the publisher leaves that writer's file alone and retains the complete old
-copy with an explicit reconciliation path. A hard kill after the atomic rename
-can instead leave the complete new settings and old backup. Strict
-old-or-disabled recovery for that SIGKILL window is not established here;
-returned-error tests do not qualify it. These limits remain open for the full
-R-06 installation and transition disposition.
+copy with an explicit reconciliation path. Checked publication now syncs a
+pinned recovery correspondence before rename and retains it with the backup.
+The explicit [`recover-agy-layer` operation](../developer/agy-layer-recovery.md)
+can restore the exact old inode/bytes/mode or prior absence, without selecting
+by newest-file order. A hard kill after rename can still leave NEW active until
+that explicit operation runs. Owned SIGKILL/recovery tests retain this interval;
+they do not establish strict old-or-disabled behavior or full install-5/R-06
+qualification. Supported unit quiescence and transition disposition remain open.
 
 The retained `/2` installer and rollback operation remain unchanged; they do
 not gain this paired-layer guarantee. Default rendering below remains
