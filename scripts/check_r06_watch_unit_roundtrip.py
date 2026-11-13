@@ -82,6 +82,7 @@ class Fixture(composition.Fixture):
         self.references = {}
         self.retired = []
         try:
+            self.initialize_empty_callbacks()
             self.configure_transport()
             self.configure_disjoint_host()
             self.python = copy_image(Path(sys.executable).resolve(), self.universe / 'python-image/python')
@@ -113,6 +114,30 @@ class Fixture(composition.Fixture):
         except BaseException:
             self.close()
             raise
+
+    def initialize_empty_callbacks(self):
+        """Normalize only a freshly observed empty owner-fixture census."""
+        require(self.catalog.get('Scope') == 'disposable-fixture' and
+                self.catalog.get('Root') == str(self.universe), 'unknown callback census scope')
+        root = Path(self.catalog['CallbackRoot'])
+        require(root.is_dir() and not root.is_symlink() and
+                root.resolve().is_relative_to(self.universe.resolve()), 'foreign callback root')
+        collections = (self.catalog, self.proposal)
+        for collection in collections:
+            require('Callbacks' in collection and
+                    (collection['Callbacks'] is None or isinstance(collection['Callbacks'], list)),
+                    'missing or unexpected callback collection')
+        before = [copy.deepcopy(collection['Callbacks']) for collection in collections]
+        names = sorted(path.name for path in root.iterdir())
+        if any(members is None for members in before):
+            require(not names and all(members is None or members == [] for members in before),
+                    'null callback collection has unobserved or nonempty membership')
+            for collection in collections:
+                if collection['Callbacks'] is None:
+                    collection['Callbacks'] = []
+        census.write(self.evidence / 'initial-callback-collections.json',
+                     dict(root=str(root), observed_names=names, before=before,
+                          after=[collection['Callbacks'] for collection in collections]))
 
     def configure_transport(self):
         census.write(self.transport, dict(binary=str(self.images['api']),

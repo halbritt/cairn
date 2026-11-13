@@ -265,3 +265,13 @@ qualify native refresh, discover complete production membership or grant R07.
 Terminal run counts, raw commands/streams/exits, image/compiler/module pins,
 RED corrections and cleanup receipts belong to the exact candidate's retained
 evidence packet; this document alone is not a runtime PASS receipt.
+
+The watcher roundtrip fixture initializes its initial null callback collections
+once, before adding references. It requires the declared disposable fixture
+scope, an owned callback directory observed empty, explicit collection keys,
+and no nonempty membership in either catalog or proposal. Existing lists and
+their members are preserved; missing fields, unexpected types and null with
+observed or declared members refuse. This fixture setup repair changes neither
+the production census schema nor the runtime preservation/refusal assertions.
+The retained real roundtrip PASS and four failed full runs remain evidence for
+their exact inputs; the repaired input needs its own complete nine-case result.
