@@ -81,7 +81,7 @@ def native_observation(client, selection, output, label):
             require(vector[-2:] == ['--', '$@'], 'unexpected emitted launcher frame')
             vector = vector[:-2]
             actual = [e for e in executions if e['pid'] in {x['pid'] for x in issued}
-                      and e['path'] == vector[0] and e['argv'] == vector + row['argv'][1:]]
+                      and e['path'] == vector[0] and e['argv'] == vector + ['--'] + row['argv'][1:]]
             if not actual:
                 return None
             require(len(actual) == 1, 'duplicate native prompt execution')
@@ -186,9 +186,15 @@ def run(args, output):
     support.root.mkdir(mode=0o700)
     clients, observations = [], []
     provider = MessagesFixture()
+    support.addCleanup(provider.close)
     try:
         f = support.fixture('installation', harness='claude', bound=True)
         native_api_fixture(f.api)
+        selector = f.root / 'null-selector'
+        selector.write_text('#!/usr/bin/python3\nimport json,sys\njson.load(sys.stdin)\n'
+                            'print(json.dumps({"structured_output":{"checkpoint":None,"workstream":None,"memories":[]}}))\n')
+        selector.chmod(0o500)
+        f.memory['claude'] = str(selector)
         token = f.root / 'fixture.token'
         f.coord['token_file'] = f.memory['token_file'] = str(token)
         token.write_text('synthetic-fixture-token')
@@ -207,6 +213,7 @@ def run(args, output):
             client = ClaudeSession(args.claude, support.root / name, f.account, Path(selection[0]['settings']['path']),
                                    provider, output, work, resume=resume)
             clients.append(client)
+            support.addCleanup(client.close)
             return client
 
         target = start('native-a', a)
@@ -219,7 +226,6 @@ def run(args, output):
         cached = native_observation(target, a, output, 'cached-a-after-selected-b')
         target.close()
         require(target.process.returncode == 0, 'native A was not joined')
-        clients.remove(target)
         catalog, proposal, hook_input = catalog_for(f, b, target.identity, work, cached, output)
         observations.append(inspect(args.census_image, f, catalog, proposal, output, 'cached-a-refused', ready=False, reason='readback'))
         refreshed = start('native-b-resume', b, target.identity)
@@ -228,7 +234,6 @@ def run(args, output):
         b_view = native_observation(refreshed, b, output, 'selected-b-after-resume')
         refreshed.close()
         require(refreshed.process.returncode == 0, 'native B was not joined')
-        clients.remove(refreshed)
         catalog, proposal, hook_input = catalog_for(f, b, refreshed.identity, work, b_view, output)
         observations.append(inspect(args.census_image, f, catalog, proposal, output, 'emitted-native-b', ready=True))
         require(f.settings.read_bytes() == original, 'source unrelated settings changed')
@@ -289,10 +294,10 @@ def run(args, output):
                     limits=['Finite selected flagSettings and prompt-hook observations only; native connection refresh unobserved.',
                             'Synthetic provider/API; no model account, authenticated native owner or production acceptance.'])
     finally:
-        for client in clients:
-            client.close()
-        provider.close()
-        require(support.doCleanups(), 'fixture cleanup failed')
+        # unittest cleanups continue through every owned resource after a failure.
+        cleanup_ok = support.doCleanups()
+        write(output / 'cleanup.json', dict(passed=cleanup_ok, native=[dict(pid=c.process.pid, exit=c.process.returncode, joined=c.process.poll() is not None) for c in clients], provider_stopped=not provider.thread.is_alive()))
+        require(cleanup_ok, 'fixture cleanup failed')
 
 
 def main():

@@ -663,7 +663,7 @@ func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *va
 				continue
 			}
 			matched++
-			expected := append(slices.Clone(vector), argv[1:]...)
+			expected := append(append(slices.Clone(vector), "--"), argv[1:]...)
 			if execution.PID <= 1 || execution.Exit != 0 || execution.Launcher != (WatchCensusPin{argv[0], digest}) || execution.Program.Path != vector[0] || !slices.Equal(execution.Argv, expected) {
 				return errors.New("native hook observed program/literal argv/exit disagrees")
 			}
