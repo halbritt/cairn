@@ -615,10 +615,11 @@ def negative(f, name):
     elif name == 'incomplete-reverse':
         f.invoke_control('switch', 'to-go')
         f.select_catalog(f.go)
-        path = Path(f.retained[0]['Directory']) / 'two.json'
-        path.unlink()
         plan = f.plan(reverse=True)
-        plan['next'] = [member for member in plan['next'] if Path(member['path']).exists()]
+        # Preserve cardinality, source files and pins; omit only a required name.
+        for member in plan['next']:
+            if member['name'] == 'two.json':
+                member['name'] = 'other-two.json'
         f.invoke_control('reverse', 'negative', plan=plan, error='watch exchange must retain every binding name')
     elif name == 'final-claim':
         state_path = Path(f.proposal['Sessions'][0])

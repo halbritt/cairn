@@ -275,3 +275,9 @@ observed or declared members refuse. This fixture setup repair changes neither
 the production census schema nor the runtime preservation/refusal assertions.
 The retained real roundtrip PASS and four failed full runs remain evidence for
 their exact inputs; the repaired input needs its own complete nine-case result.
+
+The incomplete-reverse fixture keeps both retained source files, their paths and
+digests, and two valid `next` descriptors. It changes only the required
+`two.json` descriptor name to `other-two.json`, leaving current pins unchanged.
+The required-name set is incomplete while cardinality remains valid, so the
+unchanged refusal assertion targets the membership guard after plan parsing.
