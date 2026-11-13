@@ -80,8 +80,9 @@ mise run test:unit -- ./internal/lifecycle/ledger ./internal/lifecycle/memoryhoo
 ```
 
 Each owner case first establishes a successful read-only inspection of its
-settled synthetic session. The fixture then creates positive activation decisions through the actual checked
-owning-session entries for Codex and Claude, stages and selects disabled B,
+settled synthetic session. The fixture then creates positive activation decisions
+through the receipt-checked Go activation operation used by both immutable
+owning-session frontends for Codex and Claude, stages and selects disabled B,
 and invokes the refreshed owner. It preserves the original ledgers and
 initialized markers. Go and Source use separate directories; comparison never
 resets or deletes a positive ledger. Existing normalization checks runtime
@@ -90,9 +91,10 @@ The retained evidence includes raw bytes and hashes as well as normalized
 JSON, owner session/turn identities, actual commands, outputs and exits.
 It also calls the unmodified Python `grant_ledger.activation_decision`
 operation in a separate process and directory, comparing its initialized
-ledger to the checked entry. This independent ledger comparison is necessary:
-the installed `/3` Codex start frontend delegates to Go and is labelled as a
-frontend control. The declared capture entries still execute the Source body.
+ledger to the checked operation. It does not allocate or simulate a delivered
+memory grant. The installed `/3` Codex start frontend delegates to Go, so it
+does not provide an independent Python ledger oracle. The declared capture
+entries are compared through their installed Source and checked Go boundaries.
 
 The declared Codex `PreCompact`/`Stop` and Claude `PreCompact`/`SessionEnd`
 entries are exercised with empty dialogue. These

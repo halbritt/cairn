@@ -94,6 +94,23 @@ print(json.dumps(dict(first=first,disabled=disabled,turn=turn)))
     return memory_state(directory)
 
 
+def run_activation(hook, event, evidence):
+    # This existing checked operation is used by both immutable frontends.
+    argv = hook.activation_argv('memory')
+    control.write(evidence.with_suffix('.event.json'), event)
+    control.write(evidence.with_suffix('.argv.json'), argv)
+    control.write(evidence.with_suffix('.before-use.json'), dict(
+        image=dict(path=str(hook.binary), sha256=control.sha(hook.binary.read_bytes())),
+        receipt=dict(path=str(hook.receipt_path), sha256=control.sha(hook.receipt_path.read_bytes()))))
+    result = subprocess.run(argv, input=encoded(event), cwd=hook.root, env=hook.env(), capture_output=True, timeout=15)
+    evidence.with_suffix('.stdout').write_bytes(result.stdout)
+    evidence.with_suffix('.stderr').write_bytes(result.stderr)
+    control.write(evidence.with_suffix('.exit.json'), result.returncode)
+    require(result.returncode == 0 and not result.stderr and json.loads(result.stdout) == dict(enabled=True),
+            f'{evidence.name}: checked activation failed: {result.returncode} {result.stderr!r}')
+    return dict(exit=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode())
+
+
 def run_owner(hook, side, event, evidence):
     timeout = 150 if event['hook_event_name'] in ('Stop', 'SessionEnd', 'PreCompact') else 13
     if side == 'go':
@@ -183,7 +200,7 @@ def owner_case(cluster, images, scratch, harness, side, revision):
         owner = dict(session_id=SESSION, turn_id=TURN, native_owner=event.get('prompt_id'),
                      agent=f.session, native_session_id=f.native, event=event)
         control.write(f.root / 'owner-identity.json', owner)
-        first = run_owner(hook, side, event, f.root / 'enabled-owner')
+        first = run_activation(hook, event, f.root / 'enabled-owner')
         directory = Path(hook.memory['state_dir'])
         initial = memory_state(directory)
         reference = source_activation(f, harness, event)
@@ -201,7 +218,7 @@ def owner_case(cluster, images, scratch, harness, side, revision):
             config.update(cairn=str(f.host.binary), socket=str(f.host.socket), token_file=str(f.host.token('worker')), repo=f.repo)
         independent.publish_configuration(enabled=True)
         independent_event = dict(independent.event, session_id=control.uid(), turn_id=control.uid())
-        run_owner(independent, side, independent_event, f.root / 'independent-positive')
+        run_activation(independent, independent_event, f.root / 'independent-positive')
         independent_dir = Path(independent.memory['state_dir'])
         independent_pins = file_pins(independent_dir)
         require(any(True in body.get('inbox_activation', {}).values()
@@ -211,7 +228,7 @@ def owner_case(cluster, images, scratch, harness, side, revision):
         hook.publish_configuration(enabled=False)
         require(control.sha(hook.binding.read_bytes()) != enabled_binding, 'disabled selection was not staged')
         select_disabled(f, hook)
-        disabled = run_owner(hook, side, event, f.root / 'refreshed-disabled-owner')
+        disabled = run_activation(hook, event, f.root / 'refreshed-disabled-owner')
         require(memory_state(directory) == initial and file_pins(directory) == initial_pins,
                 'disabled owner erased or rewrote the positive activation')
         blocked_before = refusal(f, images['control'], 'disabled-positive', 'retained positive or unknown activation grant')
@@ -234,7 +251,8 @@ def owner_case(cluster, images, scratch, harness, side, revision):
         final_state = memory_state(directory)
         control.write(f.root / 'owner-result.json', dict(harness=harness, side=side, first=first,
             independent_python_activation=reference,
-            frontend_origin='Go delegated start control' if side == 'source' and harness == 'codex' else side,
+            activation_origin='receipt-checked Go binding activation / independent Python ledger operation',
+            capture_origin='installed Python Source' if side == 'source' else 'checked Go memory',
             disabled=disabled, finals=finals, initial=initial, final=final_state,
             blocked_before=blocked_before, blocked_after=blocked_after,
             independent_before=independent_pins, independent_after=file_pins(independent_dir),
