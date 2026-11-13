@@ -198,19 +198,22 @@ class NativeFixture(InstalledTools, unittest.TestCase):
     fixture = R04HostWiringTests.fixture
     selected = R04HostWiringTests.selected
     stage = R04HostWiringTests.stage
+    recall_api = R04HostWiringTests.recall_api
 
-    def run_fixture(self, binary, output):
+    def run_fixture(self, binary, output, *, bound_agent_tools=False):
         self.root = output / 'owned'
         self.root.mkdir(mode=0o700)
-        f = self.fixture('installation', harness='claude')
+        f = self.fixture('installation', harness='claude', bound=bound_agent_tools)
         native_api_fixture(f.api)
         selector = f.root / 'null-selector'
         selector.write_text('#!/usr/bin/python3\nimport json,sys\njson.load(sys.stdin)\n'
                             'print(json.dumps({"structured_output":{"checkpoint":None,"workstream":None,"memories":[]}}))\n')
         selector.chmod(0o500)
         f.memory['claude'] = str(selector)
+        f.memory['recall_mode'] = 'agent_tools'
         f.coord.update(process_names=[binary.name], process_exe_dirs=[])
-        f.publish_configuration(enabled=False)
+        recall_calls = self.recall_api(f)
+        f.publish_configuration(enabled=bound_agent_tools)
         original = encoded(dict(alwaysThinkingEnabled=False, permissions=dict(defaultMode='dontAsk')))
         overwrite_fixture(f.settings, original)
         f.hook_plan.update(selection=f.selected, settings=pin(f.settings))
@@ -220,18 +223,66 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         work = self.root / 'work'
         work.mkdir(mode=0o700)
         subprocess.run(['git', 'init', '--quiet', str(work)], check=True, capture_output=True, timeout=5)
-        observations, refreshes = [], []
+        observations, refreshes, startups = [], [], []
+        image_pins = {name: dict(path=str(path), sha256=digest(path), mode=oct(path.stat().st_mode & 0o777),
+                      build_info=subprocess.check_output(['go', 'version', '-m', str(path)], text=True))
+                      for name, path in (('lifecycle', self.binary), ('stager', self.stager))}
+        (output / 'image-pins.json').write_bytes(encoded(image_pins))
+        self.addCleanup(lambda: (output / 'recall-api-calls.json').write_bytes(
+            encoded([dict(operation=op) for op, _authorization in recall_calls])))
         self.addCleanup(lambda: (output / 'provider-requests.json').write_bytes(encoded(provider.requests)))
         self.addCleanup(lambda: (output / 'cairn-api-calls.json').write_bytes(encoded(f.api_calls())))
         self.addCleanup(lambda: (output / 'observations.json').write_bytes(encoded(observations)))
+
+        def reached_hooks(trace, label, selection, event, refused=False):
+            executions = list(successful_execs(trace))
+            launch_root = str(f.root / 'release' / 'launch') + '/'
+            selected_launchers = {row['argv'][0] for row in selection[2]['rows']}
+            self.assertEqual([e for e in executions if e['path'].startswith(launch_root)
+                              and e['path'] not in selected_launchers], [], label)
+            reached = []
+            for role in ('memory', 'coordination'):
+                row = next(r for r in selection[2]['rows'] if r['role'] == role and r['event'] == event)
+                launcher = row['argv'][0]
+                issued = [e for e in executions if e['path'] == launcher and e['argv'] == row['argv']]
+                self.assertTrue(issued, (label, role, trace[-5000:]))
+                # Shell launchers preserve the native event on stdin. Their
+                # entire exec statement, including a retained bootstrap, is one vector.
+                vector = shlex.split(Path(launcher).read_text().split('\n', 1)[1])[1:]
+                self.assertEqual(vector[-1], '$@')
+                if role == 'memory':
+                    self.assertEqual((row['implementation'], row['hook']['timeout']), ('go', 13))
+                    self.assertEqual(vector[1], 'memory')
+                    self.assertEqual(len(vector), 20)
+                    self.assertEqual(vector[2:-2:2], ['--receipt', '--receipt-sha256', '--role', '--entrypoint',
+                        '--config', '--hook-timeout', '--launch-root', '--shell'])
+                    self.assertEqual(vector[vector.index('--hook-timeout') + 1], '13')
+                    self.assertEqual(vector[vector.index('--role') + 1], 'memory')
+                actual = [e for e in executions if e['pid'] in {i['pid'] for i in issued} and
+                          e['path'] == vector[0] and e['argv'] == vector[:-1]+row['argv'][1:]]
+                self.assertTrue(actual, (label, role, trace[-5000:]))
+                exits = {e['pid']: re.findall(r'^' + e['pid'] + r'\s+\+\+\+ exited with (\d+) \+\+\+$',
+                                             trace, flags=re.MULTILINE) for e in actual}
+                self.assertEqual(exits, {e['pid']: ['1' if refused else '0'] for e in actual},
+                                 (label, role, exits))
+                reached.append(dict(role=role, implementation=row['implementation'], argv=row['argv'],
+                                    launcher=dict(path=launcher, sha256=digest(Path(launcher))),
+                                    program=dict(path=vector[0], sha256=digest(Path(vector[0]))),
+                                    execs=actual, exits=exits))
+            return reached
 
         def start(name, selection, *, resume=None):
             client = ClaudeSession(binary, self.root / name, f.account, Path(selection[0]['settings']['path']),
                                    provider, output, work, resume=resume)
             self.addCleanup(client.close)
             readback(client, selection)
+            quiet(client)
+            trace = client.trace.read_text()
+            reached = reached_hooks(trace, name, selection, 'SessionStart')
             self.assertEqual([e for e in client.events if e.get('subtype') == 'hook_response' and
                               (e.get('exit_code') != 0 or e.get('outcome') != 'success')], [], name)
+            startups.append(dict(client=name, session_id=client.identity, reached=reached,
+                                 selection=selection[0]['selection']))
             return client
 
         def state():
@@ -278,41 +329,17 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             quiet(client)
             offset = client.trace.stat().st_size
             events_at = len(client.events)
-            before = state(), len(f.api_calls()), len(provider.requests)
+            before = state(), len(f.api_calls()), len(provider.requests), len(recall_calls)
             result = client.prompt('R04 fixture ' + label)
             quiet(client)
             trace = client.trace.read_text()[offset:]
-            executions = list(successful_execs(trace))
-            launch_root = str(f.root / 'release' / 'launch') + '/'
-            selected_launchers = {row['argv'][0] for row in selection[2]['rows']}
-            self.assertEqual([e for e in executions if e['path'].startswith(launch_root)
-                              and e['path'] not in selected_launchers], [], label)
-            reached = []
-            for role in ('memory', 'coordination'):
-                row = next(r for r in selection[2]['rows'] if r['role'] == role and r['event'] == 'UserPromptSubmit')
-                launcher = row['argv'][0]
-                issued = [e for e in executions if e['path'] == launcher and e['argv'] == row['argv']]
-                self.assertTrue(issued, (label, role, trace[-5000:]))
-                # Retained Python launchers contain a shell-quoted multiline
-                # bootstrap; the entire exec statement is one vector.
-                vector = shlex.split(Path(launcher).read_text().split('\n', 1)[1])[1:]
-                self.assertEqual(vector[-1], '$@')
-                actual = [e for e in executions if e['pid'] in {i['pid'] for i in issued} and
-                          e['path'] == vector[0] and e['argv'] == vector[:-1]+row['argv'][1:]]
-                self.assertTrue(actual, (label, role, trace[-5000:]))
-                exits = {e['pid']: re.findall(r'^' + e['pid'] + r'\s+\+\+\+ exited with (\d+) \+\+\+$',
-                                             trace, flags=re.MULTILINE) for e in actual}
-                self.assertEqual(exits, {e['pid']: ['1' if refused else '0'] for e in actual},
-                                 (label, role, exits))
-                reached.append(dict(role=role, implementation=row['implementation'], argv=row['argv'],
-                                    launcher=dict(path=launcher, sha256=digest(Path(launcher))),
-                                    program=dict(path=vector[0], sha256=digest(Path(vector[0]))),
-                                    execs=actual, exits=exits))
+            reached = reached_hooks(trace, label, selection, 'UserPromptSubmit', refused)
             hook_errors = [e for e in client.events[events_at:] if e.get('subtype') == 'hook_response' and
                            (e.get('exit_code') != 0 or e.get('outcome') != 'success')]
             if refused:
                 self.assertEqual(state(), before[0])
                 self.assertEqual(len(f.api_calls()), before[1])
+                self.assertEqual(len(recall_calls), before[3])
             else:
                 self.assertEqual(result.get('subtype'), 'success', result)
                 self.assertFalse(result.get('is_error'), result)
@@ -333,6 +360,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                                      result=dict(subtype=result.get('subtype'), is_error=result.get('is_error')),
                                      native_readback=view, refused_before_cairn_effects=refused,
                                      api_delta=len(f.api_calls())-before[1], provider_delta=len(provider.requests)-before[2],
+                                     recall_operations=[op for op, _authorization in recall_calls[before[3]:]],
                                      trace=dict(name=label+'.exec', sha256=digest(output/(label+'.exec')))))
 
         target = start('target-client', a)
@@ -340,7 +368,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         prompt(target, 'fresh-a', a)
         prompt(target, 'existing-a', a)
         prompt(control, 'control-a', a)
-        f.publish_configuration(enabled=False)
+        f.publish_configuration(enabled=bound_agent_tools)
         f.hook_plan.update(id=str(uuid.uuid4()), selection=f.selected, settings=pin(f.settings))
         b = self.selected(f)
         self.assertNotEqual(a[0]['selection'], b[0]['selection'])
@@ -387,9 +415,18 @@ class NativeFixture(InstalledTools, unittest.TestCase):
         self.assertEqual((a[1]/'previous-settings.json').read_bytes(), original)
         for label, selection in (('a', a), ('b', b)):
             (output / ('selection-'+label+'.json')).write_bytes(encoded(selection[2]))
+        for label, record in (('a', a[2]), ('b', b[2])):
+            memory_row = next(r for r in record['rows'] if r['role'] == 'memory' and r['event'] == 'SessionStart')
+            vector = shlex.split(Path(memory_row['argv'][0]).read_text().split('\n', 1)[1])[1:]
+            config = Path(vector[vector.index('--config') + 1])
+            trace_path = config.parent / 'invocation-trace' / 'trace.jsonl'
+            if trace_path.exists():
+                (output / ('invocations-'+label+'.jsonl')).write_bytes(trace_path.read_bytes())
         (output / 'cairn-api-calls.json').write_bytes(encoded(f.api_calls()))
         (output / 'provider-requests.json').write_bytes(encoded(provider.requests))
-        return dict(schema='cairn.r04-native-claude/1', passed=True, cases=observations,
+        return dict(schema='cairn.r04-native-claude/1', passed=True, cases=observations, startups=startups,
+                    profile='bound-agent-tools' if bound_agent_tools else 'unbound',
+                    image_pins=image_pins,
                     fixture=dict(sha256=digest(Path(__file__))),
                     client=dict(path=str(binary), sha256=digest(binary),
                                 version=subprocess.check_output([binary, '--version'], text=True, timeout=10).strip()),
@@ -399,7 +436,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                                  control_remained_a=True),
                     limits=['Explicit --settings snapshots and same-conversation process restart only; no in-process patch, filesystem watcher or interactive trust claim.',
                             'Same private Go image with different receipt/config/V/L; not a code-image upgrade.',
-                            'Source Python memory and checked Go coordination are labelled separately.',
+                            'Selected checked Go recall/coordination are observed; bound tool rows retain Python and are not exercised as Go.',
                             'Local scripted provider and synthetic Cairn API; no real model/account or production apply.',
                             'No complete watcher-unit barrier, store/auth qualification or full R04/R06 acceptance.'])
 
@@ -409,6 +446,7 @@ def main():
     parser.add_argument('--claude', type=Path, required=True)
     parser.add_argument('--sha256', required=True)
     parser.add_argument('--archive-stdout', action='store_true')
+    parser.add_argument('--profile', choices=('unbound', 'bound-agent-tools'), default='unbound')
     args = parser.parse_args()
     if digest(args.claude) != args.sha256:
         parser.error('Selected native client hash mismatch')
@@ -419,11 +457,13 @@ def main():
         test, report = NativeFixture(), None
         try:
             test.setUpClass()
-            report = test.run_fixture(args.claude.resolve(), output)
+            report = test.run_fixture(args.claude.resolve(), output, bound_agent_tools=args.profile == 'bound-agent-tools')
         finally:
             cleanup_ok = test.doCleanups()
             if hasattr(test, 'build'):
                 test.tearDownClass()
+            if digest(args.claude) != args.sha256:
+                raise AssertionError('Selected native client changed during fixture')
             if report is not None:
                 report['cleanup_passed'] = cleanup_ok
                 report['passed'] = report['passed'] and cleanup_ok

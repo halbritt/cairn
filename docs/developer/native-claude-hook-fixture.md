@@ -8,11 +8,14 @@ and a synthetic Cairn API. It uses no model account or production installation.
 The fixture stages immutable selections A and B with the real R-02 installer
 and R-04 hook renderer. For unbound selections the current renderer uses checked Go
 for recall and tool observation with H13, and `memory-capture` for PreCompact and
-SessionEnd with H150. Bound Claude recall and tool observation retain Python.
-The retained eleven-case native observations used Python memory and do not
-qualify these new routes. Coordination reaches the receipt-checked
+SessionEnd with H150. Select `--profile bound-agent-tools` to use the existing
+enabled binding with `agent_tools` recall: SessionStart and UserPromptSubmit
+select checked Go `memory` with H13 and the same eight flags/stdin. Bound tool
+observation retains Python. The default `unbound` profile stays unbound.
+Historical eleven-case observations used Python memory; current route claims
+require a fresh run of the selected profile. Coordination reaches the receipt-checked
 private Go image. `strace` binds each
-prompt hook's launcher to the program and literal argv it executes in the same PID,
+startup and prompt hook's launcher to the program and literal argv it executes in the same PID,
 and checks that process's exit status. Native settings and hook-listing
 readback must match the selected generation. Unexpected generation launchers,
 startup hook errors and SessionEnd failures fail the fixture.
@@ -39,13 +42,15 @@ Select an executable and its expected SHA-256, and create an evidence directory
 outside the checkout. For example, with those paths in task-specific variables:
 
 ```sh
-python3 scripts/test_hybrid_runtime_operations.py \
+mise run host:exec -- --timeout 10m --weight 1 -- \
+  python3 scripts/test_hybrid_runtime_operations.py \
   --timeout 480 \
   --receipt "$CAIRN_R04_EVIDENCE/isolation.json" \
   --ro-bind "$CAIRN_R04_CLAUDE:/opt/r04-native/claude" \
   -- python3 -B scripts/check_r04_native_claude.py \
   --claude /opt/r04-native/claude \
   --sha256 "$CAIRN_R04_CLAUDE_SHA256" \
+  --profile bound-agent-tools \
   --archive-stdout > "$CAIRN_R04_EVIDENCE/run.log" 2>&1
 ```
 
@@ -57,3 +62,9 @@ fixture hash, client version/hash, executed program hashes, selections,
 refusals, refresh transitions and `cleanup_passed`. The wrapper's separate
 receipt binds the command and source checkout to its isolation self-checks.
 Homes, tokens, databases and executable binaries are excluded from the archive.
+The native executable must be frozen before use and read-only bound into the
+wrapper; its hash is checked before and after execution. The archive retains
+built-image pins, selected invocation traces and separate startup observations.
+Disabled-bound `agent_tools` Source parity and owner/repeat/wake assertions stay
+in `test_r04_bound_provider_wiring.py`; a disabled manifest does not establish an
+enabled native binding.

@@ -206,13 +206,17 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
 
     def test_staged_bound_claude_prompt_owner_does_not_refund_grant(self):
         self.required()
+        self.optional_note('Current optional retention guidance. 日本語 😀')
         self.stage_bound('claude', 'agent_tools')
         self.assertFalse(self.f.package.exists())
         self.event('SessionStart', session_id=SESSION, turn_id=TURN, source='startup', prompt='')
         self.assertEqual(self.pair().returncode, 0)
         self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN,
                    prompt_id='first-staged-owner', prompt='Inspect current retention policy.')
-        self.assertEqual(self.pair().returncode, 0)
+        first = self.pair()
+        self.assertEqual(first.returncode, 0)
+        self.assertEqual(self.context(first)['candidate_bodies'][0]['response']['selection']['record']['body'],
+                         self.optional[0]['body'])
         ledger_name = SESSION + '.inbox-recall.json'
         before = self.state()[ledger_name]
         grant = before['grants'][before['active']]
@@ -227,6 +231,58 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         self.assertEqual(after['grants'][after['active']]['output_bytes'], grant['output_bytes'])
         self.assertEqual(after['grants'][after['active']]['native_allowance_bytes'], grant['native_allowance_bytes'])
         self.assertEqual(self.provider_sides, dict(source=[], go=[]))
+
+    def test_staged_bound_disabled_claude_agent_tools_start_and_prompt(self):
+        self.required('Required checked lifecycle policy. 日本語 🛡.')
+        self.optional_note('Use PostgreSQL for durable lifecycle storage. 日本語 😀')
+        self.stage_bound('claude', 'agent_tools', enabled=False)
+        self.assertFalse(self.f.package.exists())
+        for event in ('SessionStart', 'UserPromptSubmit'):
+            with self.subTest(event=event):
+                self.reset_state()
+                self.event(event, session_id=SESSION, turn_id=TURN, source='startup', prompt='storage')
+                result = self.pair()
+                self.assertEqual((result.returncode, result.stderr), (0, b''))
+                context = self.context(result)
+                self.assertEqual(context['selected'][0]['record'], self.selected[0]['record'])
+                self.assertEqual(context['candidate_bodies'][0]['response']['selection']['record']['body'],
+                                 self.optional[0]['body'])
+                self.assertEqual(self.state().keys(), {SESSION + '.json'})
+                self.assertEqual([op for op, _, _ in self.calls], ['version', 'index', 'expand', 'recall-observation'])
+                self.assertEqual(self.provider_sides, dict(source=[], go=[]))
+
+    def test_staged_bound_disabled_claude_agent_tools_owner_repeat_and_wake(self):
+        self.required()
+        self.optional_note('Current optional retention guidance. 日本語 😀')
+        self.stage_bound('claude', 'agent_tools', enabled=False)
+        self.assertFalse(self.f.package.exists())
+        self.state = lambda: BoundMemoryCase.state(self)
+        self.event('SessionStart', session_id=SESSION, turn_id=TURN, source='startup', prompt='')
+        self.assertEqual(self.pair().returncode, 0)
+        self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN,
+                   prompt_id='disabled-staged-owner', prompt='Inspect current retention policy.')
+        first = self.pair()
+        self.assertEqual(first.returncode, 0)
+        self.assertEqual(self.context(first)['candidate_bodies'][0]['response']['selection']['record']['body'],
+                         self.optional[0]['body'])
+        ordinary = self.state()[SESSION + '.json']
+        repeated = self.pair()
+        self.assertEqual((repeated.returncode, repeated.stderr), (0, b''))
+        self.assertEqual(self.state().keys(), {SESSION + '.json'})
+        self.assertEqual(self.state()[SESSION + '.json']['seen'], ordinary['seen'])
+        self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN,
+                   prompt_id='disabled-staged-wake', prompt=self.f.wake())
+        for repeat in (False, True):
+            with self.subTest(repeat=repeat):
+                result = self.pair()
+                self.assertEqual((result.returncode, result.stderr), (0, b''))
+                self.assertEqual(self.context(result)['selected'][0]['record'], self.selected[0]['record'])
+                self.assertEqual(self.state().keys(), {SESSION + '.json', SESSION + '.inbox-recall.json'})
+                ledger = self.state()[SESSION + '.inbox-recall.json']
+                self.assertEqual(ledger['grants'], {})
+                self.assertEqual(ledger['inbox_activation'], {'claude-channel:disabled-staged-wake': False})
+                self.assertEqual([op for op, _, _ in self.calls], ['version', 'index', 'recall-observation'])
+                self.assertEqual(self.provider_sides, dict(source=[], go=[]))
 
     def test_staged_bound_claude_prompt_wake_keeps_exact_parent_keys(self):
         self.stage_bound('claude', 'agent_tools')
