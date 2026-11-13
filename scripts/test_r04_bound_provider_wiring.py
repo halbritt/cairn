@@ -277,7 +277,8 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
                 result = self.pair()
                 self.assertEqual((result.returncode, result.stderr), (0, b''))
                 self.assertEqual(self.context(result)['selected'][0]['record'], self.selected[0]['record'])
-                self.assertEqual(self.state().keys(), {SESSION + '.json', SESSION + '.inbox-recall.json'})
+                self.assertEqual(self.state().keys(), {
+                    SESSION + '.json', SESSION + '.inbox-recall.json', SESSION + '.inbox-recall.initialized'})
                 ledger = self.state()[SESSION + '.inbox-recall.json']
                 self.assertEqual(ledger['grants'], {})
                 self.assertEqual(ledger['inbox_activation'], {'claude-channel:disabled-staged-wake': False})

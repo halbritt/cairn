@@ -419,6 +419,13 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             memory_row = next(r for r in record['rows'] if r['role'] == 'memory' and r['event'] == 'SessionStart')
             vector = shlex.split(Path(memory_row['argv'][0]).read_text().split('\n', 1)[1])[1:]
             config = Path(vector[vector.index('--config') + 1])
+            receipt_path = Path(vector[vector.index('--receipt') + 1])
+            receipt = json.loads(receipt_path.read_bytes())
+            (output / ('receipt-'+label+'.json')).write_bytes(encoded(receipt))
+            (output / ('profiles-'+label+'.json')).write_bytes(encoded(dict(
+                memory=json.loads(config.read_bytes()),
+                coordination=[json.loads(Path(row['path']).read_bytes()) for row in receipt['coordination_configs']],
+                binding=json.loads(Path(receipt['binding']['path']).read_bytes()))))
             trace_path = config.parent / 'invocation-trace' / 'trace.jsonl'
             if trace_path.exists():
                 (output / ('invocations-'+label+'.jsonl')).write_bytes(trace_path.read_bytes())
