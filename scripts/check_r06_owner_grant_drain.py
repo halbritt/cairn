@@ -69,6 +69,31 @@ def file_pins(directory):
             if p.is_file() and p.suffix != '.lock'}
 
 
+def source_activation(f, harness, event):
+    directory = f.root / 'python-owner-ledger'
+    # Call the unmodified Python owner operation independently. The installed
+    # /3 Codex start frontend delegates to Go and is only a frontend control.
+    code = '''import importlib.util,json,pathlib,sys
+spec=importlib.util.spec_from_file_location('owner_ledger',sys.argv[1])
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+memory=dict(state_dir=sys.argv[2],context_bytes=9500)
+event=json.loads(sys.argv[4]);harness=sys.argv[3]
+turn=event['turn_id'] if harness=='codex' else m.claude_owner(event)
+first=m.activation_decision(memory,harness,event['session_id'],turn,True)
+before={p.name:p.read_bytes() for p in pathlib.Path(sys.argv[2]).iterdir() if p.suffix!='.lock'}
+disabled=m.activation_decision(memory,harness,event['session_id'],turn,False)
+after={p.name:p.read_bytes() for p in pathlib.Path(sys.argv[2]).iterdir() if p.suffix!='.lock'}
+if first is not True or disabled is not True or before!=after:raise AssertionError('Source owner activation changed')
+print(json.dumps(dict(first=first,disabled=disabled,turn=turn)))
+'''
+    result = control.command([sys.executable, '-I', '-S', '-B', '-c', code,
+        ROOT / 'integrations/lifecycle/grant_ledger.py', directory, harness, json.dumps(event)],
+        f.root / 'python-owner-ledger', env=f.host.env)
+    control.write(f.root / 'python-owner-ledger-result.json', dict(result=json.loads(result.stdout),
+        state=memory_state(directory), pins=file_pins(directory)))
+    return memory_state(directory)
+
+
 def run_owner(hook, side, event, evidence):
     timeout = 150 if event['hook_event_name'] in ('Stop', 'SessionEnd', 'PreCompact') else 13
     if side == 'go':
@@ -156,6 +181,8 @@ def owner_case(cluster, images, scratch, harness, side, revision):
         first = run_owner(hook, side, event, f.root / 'enabled-owner')
         directory = Path(hook.memory['state_dir'])
         initial = memory_state(directory)
+        reference = source_activation(f, harness, event)
+        require(scalar_tree(initial) == scalar_tree(reference), 'checked owner differs from independent Python owner ledger')
         activation = [body['inbox_activation'] for body in initial.values() if 'inbox_activation' in body]
         require(len(activation) == 1 and list(activation[0].values()) == [True],
                 'actual checked owner did not create one positive activation')
@@ -198,6 +225,8 @@ def owner_case(cluster, images, scratch, harness, side, revision):
         require(file_pins(independent_dir) == independent_pins, 'other unit positive grant changed')
         final_state = memory_state(directory)
         control.write(f.root / 'owner-result.json', dict(harness=harness, side=side, first=first,
+            independent_python_activation=reference,
+            frontend_origin='Go delegated start control' if side == 'source' and harness == 'codex' else side,
             disabled=disabled, finals=finals, initial=initial, final=final_state,
             blocked_before=blocked_before, blocked_after=blocked_after,
             independent_before=independent_pins, independent_after=file_pins(independent_dir),

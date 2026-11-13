@@ -87,6 +87,11 @@ resets or deletes a positive ledger. Existing normalization checks runtime
 measurements and excludes only those measurements from state comparison.
 The retained evidence includes raw bytes and hashes as well as normalized
 JSON, owner session/turn identities, actual commands, outputs and exits.
+It also calls the unmodified Python `grant_ledger.activation_decision`
+operation in a separate process and directory, comparing its initialized
+ledger to the checked entry. This independent ledger comparison is necessary:
+the installed `/3` Codex start frontend delegates to Go and is labelled as a
+frontend control. The declared capture entries still execute the Source body.
 
 The declared Codex `PreCompact`/`Stop` and Claude `PreCompact`/`SessionEnd`
 entries are exercised with empty dialogue. These
