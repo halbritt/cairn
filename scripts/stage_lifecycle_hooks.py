@@ -342,6 +342,7 @@ def publish_agy(argv, raw):
     parser.add_argument('--account-home', required=True)
     parser.add_argument('--workspace', required=True)
     parser.add_argument('--layer', choices=('account', 'project'), required=True)
+    parser.add_argument('--recovery-record')
     args = parser.parse_args(argv)
     for path in (args.stager, args.account_home, args.workspace):
         if not installation.canonical(path):
@@ -357,6 +358,7 @@ def publish_agy(argv, raw):
         result = installation.run_owned([str(executable),
             'agy-layer', '--account-home', args.account_home,
             '--workspace', args.workspace, '--layer', args.layer,
+            *(['--recovery-record', args.recovery_record] if args.recovery_record else []),
         ], payload=installation.encoded(installation.decoded(raw)), timeout=120)
         if result.returncode:
             raise RuntimeError('Agy publication refused; reconcile both hook layers: ' +

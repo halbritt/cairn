@@ -17,6 +17,7 @@ func runAgyLayer(ctx context.Context, args []string, input io.Reader, out, diagn
 	plan := install.AgyLayerPlan{}
 	flags.StringVar(&plan.AccountHome, "account-home", "", "explicit rooted Agy account home")
 	flags.StringVar(&plan.Workspace, "workspace", "", "explicit rooted Agy workspace")
+	flags.StringVar(&plan.RecoveryPath, "recovery-record", "", "explicit adjacent 32-hex recovery record path; retained with old inode")
 	flags.StringVar(&plan.Layer, "layer", "", "single selected account or project layer")
 	if err := flags.Parse(args); err != nil {
 		return err
