@@ -148,9 +148,16 @@ argv, PID/start/boot, actual lock ownership, both configuration pins and real
 session heartbeats are read back. The fixture owner stops and joins each
 watcher before the next executor starts. The control process independently
 inspects, switches and reverses through `/2` census plans.
-Both fixture profiles disable native delivery and omit the optional `idle_wakeup`
-key before staging. A Boolean false is invalid for that retained Python setting.
+Both fixture profiles use the required `native_delivery: true` and omit the optional
+`idle_wakeup` key before staging. These are fully synthetic profiles; before each
+watcher launch the driver checks every selector, session identity and API endpoint
+against its owned disposable roots and server. The disjoint unit also selects that
+server and its own synthetic session. No installed profile or native client is selected.
+A Boolean false is invalid for the retained Python idle-wakeup setting.
 The observed watcher cycle is real authenticated presence against the two retained sessions.
+The fixture owner initializes ordinary `owner_turn_required` delivery diagnostics
+through the real disposable API before the cycles. This carries no settlement or
+activation authority and leaves the existing strict state-preservation oracle intact.
 The read-only drain still checks all principal/session claim and wake scopes.
 
 The fixture owner archives only its exactly joined watcher reference after

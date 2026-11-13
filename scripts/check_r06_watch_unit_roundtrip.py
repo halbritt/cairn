@@ -6,6 +6,7 @@ used. The fixture owner, rather than the inspector, stops and joins processes.
 """
 import argparse
 import copy
+import datetime
 import importlib.util
 import json
 import os
@@ -82,13 +83,14 @@ class Fixture(composition.Fixture):
         self.retired = []
         try:
             self.configure_transport()
+            self.configure_disjoint_host()
             self.python = copy_image(Path(sys.executable).resolve(), self.universe / 'python-image/python')
             self.helper = copy_image(images['helper'], self.universe / 'callback-image/callback')
             self.templates = [json.loads((Path(self.selection['Directory']) / name).read_text())
                               for name in sorted(self.selection['Pins'])]
             for config in self.templates:
                 config.pop('idle_wakeup', None)
-                config['native_delivery'] = False
+                config['native_delivery'] = True
             self.memory = json.loads(Path(self.memories['a']).read_text())
             self.legacy = self.stage_legacy(images['stager'])
             self.go = self.stage_go(images['stager'])
@@ -104,6 +106,10 @@ class Fixture(composition.Fixture):
                                  roundtrip_opaque={'preserve': [1, 'custom', False]})
                     census.write(Path(selected['Path']), state)
             self.repin_sessions()
+            self.fixture_sessions = {pin['Path']: self.session_identity(pin['Path']) for pin in self.catalog['Sessions']}
+            self.assert_disposable('constructed')
+            self.initialize_delivery_observations()
+            self.repin_sessions()
         except BaseException:
             self.close()
             raise
@@ -117,6 +123,106 @@ class Fixture(composition.Fixture):
                            '--forward-api', str(self.transport)]) + ' "$@"\n')
         wrapper.chmod(0o500)
         self.catalog['Clients'][0]['SHA256'] = census.sha(wrapper)
+
+    def configure_disjoint_host(self):
+        """Give the generated control unit only this fixture's real endpoint."""
+        path = Path(self.manifests['b'])
+        manifest = json.loads(path.read_text())
+        common = dict(cairn=self.catalog['Clients'][0]['Path'], socket=str(self.host.socket),
+                      token_file=str(self.host.token('worker')), repo=self.host.repo)
+        memory_path = Path(self.memories['b'])
+        memory = dict(json.loads(memory_path.read_text()), **common)
+        memory_path.chmod(0o600)
+        memory_pin = census.write(memory_path, memory)
+        manifest['memory_config'] = dict(path=str(memory_path), sha256=memory_pin['SHA256'])
+        selection = self.catalog['Selections'][1]
+        for descriptor in manifest['coordination_configs']:
+            immutable = Path(descriptor['path'])
+            config = dict(json.loads(immutable.read_text()), **common, native_delivery=True)
+            config.pop('idle_wakeup', None)
+            immutable.chmod(0o600)
+            census.write(immutable, config)
+            immutable.chmod(0o400)
+            descriptor['sha256'] = census.sha(immutable)
+            active = Path(selection['Directory']) / immutable.name
+            active.chmod(0o600)
+            census.write(active, config)
+            active.chmod(0o400)
+            selection['Pins'][active.name] = census.sha(active)
+            native = 'fixture-native-b' + immutable.name
+            state_path = Path(config['state_dir']) / (control.sha((config['binding'] + '\0' + native).encode()) + '.json')
+            state = json.loads(state_path.read_text())
+            state['agent'] = self.host.agent('worker', 'agent-register', dict(request_id=control.uid(),
+                binding=config['binding'], native_session_id=native, metadata=dict(harness='codex',
+                project='r06-disjoint-fixture', workspace=state['agent']['metadata']['workspace'],
+                state='idle', delivery_mode='existing-session')))
+            census.write(state_path, state)
+        self.catalog['Bindings'][1] = census.write(path, manifest)
+
+    @staticmethod
+    def session_identity(path):
+        state = json.loads(Path(path).read_text())
+        return [state['native_session_id'], state['agent']['agent_id'], state['agent']['execution_id']]
+
+    def assert_disposable(self, label):
+        def owned(path):
+            p = Path(path)
+            require(p.is_absolute() and not p.is_symlink() and p.resolve().is_relative_to(self.root.resolve()),
+                    f'non-fixture selector: {path}')
+            return str(p)
+        require(self.host.source.owned and self.host.source.root.parent == self.root.parent,
+                'API is not backed by this owned disposable cluster')
+        require(self.host.dsn.startswith('host=' + str(self.host.source.socket) + ' dbname='), 'foreign PG endpoint')
+        require(self.host.env['CAIRN_DATABASE_URL'] == self.host.dsn and
+                self.host.env['CAIRN_TEST_DATABASE_URL'] == self.host.dsn and
+                self.host.env['CAIRN_HOME'] == str(self.host.home), 'foreign application environment')
+        owned(self.host.home); owned(self.host.socket); owned(self.host.token('worker'))
+        configs = []
+        for release in (self.legacy, self.go):
+            owned(release['executable']); owned(release['entry'])
+            manifest = json.loads(Path(owned(release['manifest'])).read_text())
+            configs.append(json.loads(Path(owned(manifest['memory_config']['path'])).read_text()))
+            configs.extend(json.loads(Path(owned(member['path'])).read_text()) for member in release['next'])
+        for selection in self.catalog['Selections']:
+            owned(selection['Directory'])
+            configs.extend(json.loads((Path(selection['Directory']) / name).read_text()) for name in selection['Pins'])
+        for config in configs:
+            for key in ('state_dir', 'socket', 'token_file', 'cairn', 'inbox_recall_binding'):
+                owned(config[key])
+            if config.get('config_home'): owned(config['config_home'])
+            require(config['socket'] == str(self.host.socket) and config['token_file'] == str(self.host.token('worker'))
+                    and config['cairn'] == self.catalog['Clients'][0]['Path'] and config['repo'] == self.host.repo,
+                    'profile does not select the disposable API/principal/client')
+            require('idle_wakeup' not in config and not any(key in config for key in
+                    ('_wake', 'claude_channel_dir', 'claude_channel_sessions', 'claude_channel_server')),
+                    'native client/launcher selector present')
+            if 'binding' in config: require(config['native_delivery'] is True, 'bound coordinator native_delivery must be true')
+        for pin in self.catalog['Sessions']:
+            state = json.loads(Path(owned(pin['Path'])).read_text())
+            agent = state['agent']
+            require(self.session_identity(pin['Path']) == self.fixture_sessions[pin['Path']]
+                    and state['native_session_id'].startswith('fixture-native-')
+                    and agent['native_session_id'] == state['native_session_id'] and agent['repo'] == self.host.repo,
+                    'non-synthetic session identity')
+            owned(agent['metadata']['workspace'])
+            require(agent['metadata']['state'] == 'idle' and not state.get('inbox_intent') and not state.get('idle_wake'),
+                    'fixture would address an active native client')
+        census.write(self.evidence / (label + '.disposable-preflight.json'),
+                     dict(root=str(self.root), socket=str(self.host.socket), dsn=self.host.dsn,
+                          sessions=self.fixture_sessions, checked_profiles=len(configs), native_clients=False))
+
+    def initialize_delivery_observations(self):
+        # Initialize the ordinary diagnostic through its real owner API. This
+        # is not settlement or a grant. No watcher oracle or timestamp is reset.
+        for number, path in enumerate(self.proposal['Sessions']):
+            state = json.loads(Path(path).read_text())
+            value = dict(session={key: state['agent'][key] for key in ('agent_id', 'execution_id')},
+                         condition='owner_turn_required')
+            request = dict(value, observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+            response = self.host.agent('worker', 'session-delivery-observe', request)
+            census.write(self.evidence / f'owner-diagnostic-{number}.json', dict(request=request, response=response))
+            state['delivery_observation'] = dict(value=value, sent_at=time.time())
+            census.write(Path(path), state)
 
     def profiles(self, final, names):
         binding = str(final / 'binding.json')
@@ -246,6 +352,7 @@ class Fixture(composition.Fixture):
         return child
 
     def watch(self, release, label):
+        self.assert_disposable(label)
         require(all(not Path(f'/proc/{record["Process"]["PID"]}').exists()
                     for _, record in self.references.values() if record['Role'] == 'watcher'),
                 'previous unit watcher has not been joined')
