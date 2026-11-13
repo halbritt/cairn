@@ -10,8 +10,11 @@ and R-04 hook renderer. For unbound selections the current renderer uses checked
 for recall and tool observation with H13, and `memory-capture` for PreCompact and
 SessionEnd with H150. Select `--profile bound-agent-tools` to use the existing
 enabled binding with `agent_tools` recall: SessionStart and UserPromptSubmit
-select checked Go `memory` with H13 and the same eight flags/stdin. Bound tool
-observation retains Python. The default `unbound` profile stays unbound.
+select checked Go `memory` with H13 and the same eight flags/stdin. The producer
+also selects Go for bound `agent_tools` PostToolUse/PostToolUseFailure; other
+bound tool modes retain Python. This eleven-case native fixture exercises
+start/prompt callbacks, not native tool events, so its earlier observations do
+not qualify the new tool rows. The default `unbound` profile stays unbound.
 Historical eleven-case observations used Python memory; current route claims
 require a fresh run of the selected profile. Coordination reaches the receipt-checked
 private Go image. `strace` binds each

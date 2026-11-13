@@ -372,6 +372,7 @@ Every row records its `implementation` and `reason`. Current routing is:
 | OpenCode unbound `agent_tools` SessionStart/UserPromptSubmit | Receipt-checked ordinary Go consumer; all selected profiles must be unbound. |
 | OpenCode unbound `agent_tools` PreToolUse/PostToolUse/PostToolUseFailure commands | Receipt-checked ordinary Go tool observation with the same H=13 and R-02 receipt/image/closure/profile/launcher checks. |
 | Bound Codex/Claude `agent_tools` SessionStart/UserPromptSubmit | Receipt-checked bound Go `memory` recall with H=13 and the actual shared activation decision. The retained Codex frontend already delegates to pinned Go; retained Claude recall exercises the Python body. Claude prompt staging includes ordinary owner/repeat and repaired reserved-wake Source pairs; the historical b45 RED remains retained. |
+| Bound Claude `agent_tools` PostToolUse/PostToolUseFailure | Receipt-checked Go `memory` tool observation with H=13 and the same eight flags/stdin. File/search/error hints retain Source behavior without recall, capture or provider calls. Native tool-event qualification remains separate. |
 | Bound Codex/Claude ambient or omitted/default SessionStart/UserPromptSubmit | Retained Python selection. Enabled binding profile admission requires `agent_tools` in both Source and Go, so these modes remain refused before recall. Disabled binding provider fixtures do not establish enabled support. |
 | Bound Codex PreCompact/Stop and bound Claude PreCompact/SessionEnd | Receipt-checked bound Go capture with H=150, including the configured provider/selected-record writer. |
 | Other bound callbacks | Existing receipt-selected Python caller. |
@@ -383,20 +384,20 @@ Every row records its `implementation` and `reason`. Current routing is:
 | Agy coordination PreInvocation/Stop | Checked Go `/3` hook with the selected event flag; all profiles in the receipt unbound. |
 | Agy ordinary memory hook | Not installed; this tool adds none. |
 
-Bound Claude tool callbacks and every bound OpenCode memory row retain their
-existing Python selection. Agy bound recall remains unsupported. These staged
+Bound Claude tool callbacks in other recall modes and every bound OpenCode memory
+row retain their existing Python selection. Agy bound recall remains unsupported. These staged
 pairs do not qualify a native client, installed hook or live refresh.
 
-Bound Claude PostToolUse/PostToolUseFailure remain held at the producer: the
-[checked memory host](../../internal/lifecycle/memoryhost/bound.go) currently
-admits recall and capture before reaching the deeper tool consumer. Actual
-emitted Go tool callbacks refuse at that boundary while Source updates hints.
-The [bound tool tests](../../scripts/test_r04_bound_tool_wiring.py) preserve the
-selected Python callback, meaningful file/search/error hints and Source
-exclusions. Their Python producer comparisons are controls; the separately
-labelled direct Go probes assert the current refusal. Neither establishes Go
-support or native tool-event qualification. A consumer repair requires a new
-emitted Source/Go comparison before changing these producer rows.
+The [checked memory host](../../internal/lifecycle/memoryhost/bound.go) admits
+only the two Claude `agent_tools` tool rows at H=13 before using the existing
+activation, body and post-body check. The
+[bound tool tests](../../scripts/test_r04_bound_tool_wiring.py) require actual
+emitted Source/Go hint updates, disabled/required/owner exclusions, account and
+privacy boundaries, exact state/stream/request keys and immutable caller
+refusals. Typed configuration-data failures retain the optional Source
+entry/exit trace before stdin parsing; unavailable observers do not change the
+refusal. The earlier unavailable-row RED and fixture failures remain retained.
+These producer tests do not qualify native tool events or production use.
 
 The selected OpenCode plugin emits PostToolUse for its existing read/edit/write
 after-tool callback, and PostToolUseFailure for tool error updates. It has no
