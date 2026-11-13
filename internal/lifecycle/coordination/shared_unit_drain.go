@@ -109,6 +109,9 @@ type watchDrainRead struct {
 	sessions   []watchDrainSession
 	locks      map[string]string
 	tokenPaths map[string]bool
+	memories   map[*value.Value]*value.Value
+	grants     []watchDrainGrant
+	settled    map[*value.Value]*value.Value
 }
 
 type watchDrainSession struct {
@@ -119,11 +122,14 @@ func (c *CLI) readWatchDrain(ctx context.Context, selected WatchBindings, callba
 	if c.Host == nil || c.profile() == nil {
 		return nil, &value.ProfileUnavailable{}
 	}
-	read := &watchDrainRead{cli: c, facts: map[string]string{}, locks: map[string]string{}, tokenPaths: map[string]bool{}}
+	read := &watchDrainRead{cli: c, facts: map[string]string{}, locks: map[string]string{}, tokenPaths: map[string]bool{}, memories: map[*value.Value]*value.Value{}, settled: map[*value.Value]*value.Value{}}
 	if err := read.local(selected); err != nil {
 		return nil, err
 	}
 	if err := read.store(ctx); err != nil {
+		return nil, err
+	}
+	if err := read.grantFacts(); err != nil {
 		return nil, err
 	}
 	if err := read.lockOwners(); err != nil {

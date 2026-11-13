@@ -58,7 +58,14 @@ func (r *watchDrainRead) historicalAttempt(ctx context.Context, session watchDra
 		!nativeEqual(close.Get("session"), local.Get("session")) || !nativeEqual(close.Get("reason"), remote.Get("reason")) || !value.Truth(close.Get("request_id"))) {
 		return errors.New("D2 retained close does not match the authoritative close")
 	}
-	return r.historicalCompletion(session, local, remote)
+	if err := r.historicalCompletion(session, local, remote); err != nil {
+		return err
+	}
+	if r.settled == nil {
+		r.settled = map[*value.Value]*value.Value{}
+	}
+	r.settled[session.state] = remote
+	return nil
 }
 
 func (r *watchDrainRead) historicalCompletion(session watchDrainSession, local, remote *value.Value) error {

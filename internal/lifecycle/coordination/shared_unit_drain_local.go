@@ -77,6 +77,7 @@ func (r *watchDrainRead) local(selected WatchBindings) error {
 			return err
 		}
 		memories[nativeText(memory.Get("state_dir"))] = true
+		r.memories[config] = memory
 	}
 	for directory := range states {
 		files, err := r.tree(directory)
@@ -97,7 +98,7 @@ func (r *watchDrainRead) local(selected WatchBindings) error {
 			if err != nil {
 				return err
 			}
-			if err := inactiveGrantFacts(ledger); err != nil {
+			if err := r.collectGrantFacts(directory, path, ledger); err != nil {
 				return err
 			}
 		}
@@ -141,20 +142,6 @@ func (r *watchDrainRead) disabledBinding(config *value.Value) (*value.Value, err
 		return nil, err
 	}
 	return memory, nil
-}
-
-func inactiveGrantFacts(ledger *value.Value) error {
-	if decisions := ledger.Get("inbox_activation"); decisions != nil {
-		if decisions.Kind != value.Object {
-			return errors.New("D1 activation ledger is unknown")
-		}
-		for _, decision := range decisions.Members {
-			if decision.Value == nil || decision.Value.Kind != value.Bool || decision.Value.Boolean {
-				return errors.New("D1 retained positive or unknown activation grant needs owning-session disposition")
-			}
-		}
-	}
-	return nil
 }
 
 // tree records directory membership and data bytes. It never reads lock or
