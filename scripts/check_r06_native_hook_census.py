@@ -201,13 +201,31 @@ def preserve_producer(f, selection, output, label):
         source = Path(selection[0]['selection']['path']).parent / name
         shutil.copyfile(source, target / name)
     lifecycle = Path(selection[2]['lifecycle_selection']['path']).parent
-    for name in ('manifest.json', 'selection.json', 'receipt.json', 'binding.json', 'memory.json', 'coordination-0.json'):
+    manifest = json.loads((lifecycle / 'manifest.json').read_bytes())
+    for name in ['manifest.json', *(member['name'] for member in manifest['files'])]:
         shutil.copyfile(lifecycle / name, target / ('lifecycle-' + name))
     launchers = target / 'launchers'
     launchers.mkdir(mode=0o700)
     for row in selection[2]['rows']:
-        shutil.copyfile(Path(row['argv'][0]), launchers / (row['role'] + '-' + row['event']))
+        if not retained_python_argv(row):
+            shutil.copyfile(Path(row['argv'][0]), launchers / (row['role'] + '-' + row['event']))
+    write(target / 'literal-commands.json', [dict(role=row['role'], event=row['event'], argv=row['argv'],
+          program=selected_pin(Path(row['argv'][0]))) for row in selection[2]['rows']])
     write(target / 'selection-result.json', selection[0])
+
+
+def retained_python_argv(row):
+    argv = row['argv']
+    return row['implementation'] == 'python' and len(argv) > 1
+
+
+def hook_process_frame(row):
+    argv = row['argv']
+    if retained_python_argv(row):
+        return argv[0], argv
+    vector = shlex.split(Path(argv[0]).read_text().split('\n', 1)[1])[1:]
+    require(vector[-2:] == ['--', '$@'], 'unexpected emitted launcher frame')
+    return vector[0], vector[:-2] + ['--'] + argv[1:]
 
 
 def native_observation(client, selection, output, label):
@@ -228,11 +246,9 @@ def native_observation(client, selection, output, label):
         for row in rows:
             launcher = row['argv'][0]
             issued = [e for e in executions if e['path'] == launcher and e['argv'] == row['argv']]
-            vector = shlex.split(Path(launcher).read_text().split('\n', 1)[1])[1:]
-            require(vector[-2:] == ['--', '$@'], 'unexpected emitted launcher frame')
-            vector = vector[:-2]
+            program, argv = hook_process_frame(row)
             actual = [e for e in executions if e['pid'] in {x['pid'] for x in issued}
-                      and e['path'] == vector[0] and e['argv'] == vector + ['--'] + row['argv'][1:]]
+                      and e['path'] == program and e['argv'] == argv]
             if not actual:
                 return None
             for execution in actual:
@@ -241,7 +257,7 @@ def native_observation(client, selection, output, label):
                     return None
                 require(exits == ['0'], 'native selected hook process failed: ' + repr(exits))
                 reached.append(dict(Role=row['role'], Event=row['event'], Launcher=selected_pin(Path(launcher)),
-                                    Program=selected_pin(Path(vector[0])), Argv=execution['argv'],
+                                    Program=selected_pin(Path(program)), Argv=execution['argv'],
                                     PID=int(execution['pid']), Exit=0))
         require({e['Role'] for e in reached} == {'memory', 'coordination'}, 'native prompt role membership changed')
         return reached

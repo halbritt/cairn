@@ -157,13 +157,38 @@ be the repository root. This selected-input seam is unavailable for
 
 This bounded cell supports Claude `flagSettings` and the eleven emitted hook
 rows. It verifies the real generation manifest and lifecycle selection, selected
-role configurations, preserved unrelated settings, canonical content-addressed
-launchers, compatibility receipts and their retained source closure. The native
+role configurations and preserved unrelated settings. A selected `/3` uses
+canonical content-addressed launchers, compatibility receipts and their retained
+source closure. A genuine retained `/2` uses its complete installed engine and
+bridge bundles and `retained-argv.json`; it does not acquire a `/3` receipt.
+The native
 observation must match the exact effective hooks and listing. Both prompt roles
 must identify successful actual launcher/program executions with the exact
 literal argv. Stale cached A against selected B, missing readback, changed
 receipt/config/program/shell, mixed units and unsupported harnesses/layers refuse.
 The inspector does not execute hooks or change settings.
+
+The retained hook producer's `retained_python` record must agree with the
+selected binding, bundle manifest, engine and bridge descriptors, and retained
+argv pin. Every bundle member must belong to that same verified generation.
+Both role rows retain the original direct Python command, including its exact
+interpreter flags, entrypoint, role configuration and coordination `hook` tail.
+The recorded command must equal the shell rendering of that argv. Prompt
+execution observations use the direct interpreter frame, without adding a
+compatibility launcher's `--` separator. Missing executions, changed program
+hashes or argv, nonzero exits, and PID or role conflicts still refuse.
+
+`TestWatchCensusRetainedPythonRow` checks literal-frame acceptance and refusals
+with selected retained source files. `test_r06_retained_hook_census` checks the
+collector's distinct direct-Python and checked-launcher frames. Its material
+case stages the complete real `/2` bundle and hook producer output, creates
+state through the Go producer with synthetic registration, and runs the actual
+Go inspector with synthetic readback input. It checks producer-pin, unknown
+proof-field and observed-argv refusals, complete unchanged snapshots and the
+existing syscall guards. These are unit checks; they do not establish a real
+native `/2` observation, authenticated
+drain, or a complete transition from Python to Go. The complete consumed setup
+must provide its own matching session, real API history and issued journals.
 
 `HookObservations` reports only the selected fixture observations that agree.
 `ExternalCoverage` remains `unknown` and `NativeRefresh` remains `unobserved`.
@@ -187,9 +212,12 @@ while inspection records its metadata without opening credential content. SDK
 request evidence records operation names and authorization success only. Startup,
 prompt and shutdown hook failures still fail the cell.
 
-Native session identity comes from the coordination producer's
-`agent.native_session_id`. An opaque outer field does not supply or override
-that identity. The collector preserves the exact newly produced state and its
+Native session identity uses the shared observed-state reader. All present
+`registration.native_session_id`, `agent.native_session_id` and retained legacy
+outer identities must agree. Missing, malformed or conflicting identities
+refuse; a legacy outer identity cannot override a current producer identity.
+These fields establish correspondence only, and do not authenticate a caller.
+The collector preserves the exact newly produced state and its
 key sets before checking the selected input; prior failures that preceded this
 capture do not supply that evidence. Unit fixtures use the existing coordination
 state producer rather than fabricate an outer identity.

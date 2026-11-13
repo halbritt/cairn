@@ -452,17 +452,13 @@ func (r *watchCensusRead) tree(ctx context.Context, directory string) ([]string,
 	return files, nil
 }
 
-// Census inputs use the state emitted by ensureHookAgentSession. Keep this
-// mapping local to inspection, without changing drain/control readers or
-// adapting the producer's opaque outer fields.
 func (r *watchCensusRead) sessionConfig(path string, state *value.Value) *value.Value {
-	agent := state.Get("agent")
-	native := agent.Get("native_session_id")
-	if native == nil || native.Kind != value.String || nativeText(native) == "" {
+	native, err := watchStateNativeSession(state)
+	if err != nil {
 		return nil
 	}
 	for _, config := range r.local.configs {
-		if SessionStatePath(nativeText(config.Get("state_dir")), nativeText(config.Get("binding")), nativeText(native)) == path {
+		if SessionStatePath(nativeText(config.Get("state_dir")), nativeText(config.Get("binding")), native) == path {
 			return config
 		}
 	}
@@ -518,6 +514,10 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			native, err := watchStateNativeSession(state)
+			if err != nil {
+				return err
+			}
 			workspace := nativeText(state.Get("agent").Get("metadata").Get("workspace"))
 			if workspace == "" {
 				return errors.New("native session workspace coverage is unknown")
@@ -537,7 +537,7 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 			slices.Sort(r.nodes[owner].Resources)
 			r.nodes[owner].Resources = slices.Compact(r.nodes[owner].Resources)
 			seen[path] = true
-			r.sessionRefs[path] = WatchCensusSession{Path: path, Binding: owner, NativeSession: nativeText(state.Get("agent").Get("native_session_id")), AgentID: nativeText(ref.Get("agent_id")), ExecutionID: nativeText(ref.Get("execution_id")), SHA256: r.files[path], Workspace: workspace}
+			r.sessionRefs[path] = WatchCensusSession{Path: path, Binding: owner, NativeSession: native, AgentID: nativeText(ref.Get("agent_id")), ExecutionID: nativeText(ref.Get("execution_id")), SHA256: r.files[path], Workspace: workspace}
 			for _, key := range AttemptKeys {
 				if !nativeNone(state.Get(key)) {
 					r.nodeDrainRequirements[owner] = append(r.nodeDrainRequirements[owner], WatchCensusDrainRequirement{Session: r.sessionRefs[path], Field: key})
