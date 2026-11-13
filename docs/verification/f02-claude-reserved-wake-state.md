@@ -36,7 +36,21 @@ grants, locking, disabled generations and enabled ambient/default refusals.
 The immutable original provider-corpus RED, including its two separate
 disabled-fixture errors, is not rewritten or reported as fixed by this repair.
 
-This is checked-entry Source parity. It does not qualify the hook-settings
-producer's Claude prompt selection, native/provider execution, a common-image
+The checked-entry regression is complemented by
+[staged producer tests](../../scripts/test_r04_bound_provider_wiring.py).
+For enabled bound Claude `agent_tools`, the producer selects the existing
+eight-flag Go memory command for `UserPromptSubmit`, with H=13. After removing
+the source package, the tests compare the retained Python callback and actual
+emitted Go command from restored generations. They preserve first/repeated wake
+streams, all parent keys and markers, API/provider silence, traces and released
+locks. Ordinary owner prompts also exercise required recall and verify that
+repeating an owner does not refund its grant or native allowance.
+
+```sh
+mise run test:unit -- test_r04_bound_provider_wiring test_r04_bound_wiring -v
+```
+
+These staged pairs do not qualify native/provider execution, a common-image
 release, deployed sessions or production adoption. Those joins retain their
-existing owners and holds.
+existing owners and holds. Ambient/default modes retain their Python selection
+and existing enabled-binding refusal.

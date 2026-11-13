@@ -83,7 +83,7 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         self.assertIs(json.loads(self.f.binding.read_bytes())['enabled'], enabled)
         self.assertTrue(self.f.memory['inbox_recall_binding'])
         for event in ('SessionStart', 'UserPromptSubmit'):
-            selected_go = mode == 'agent_tools' and (harness == 'codex' or event == 'SessionStart')
+            selected_go = mode == 'agent_tools'
             self.assertEqual(self.rows[event]['implementation'], 'go' if selected_go else 'python')
             self.assertEqual(self.rows[event]['hook']['timeout'], 13)
             if selected_go:
@@ -203,6 +203,56 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
 
     def test_staged_bound_claude_agent_tools(self):
         self.recall_pair('claude', 'agent_tools')
+
+    def test_staged_bound_claude_prompt_owner_does_not_refund_grant(self):
+        self.required()
+        self.stage_bound('claude', 'agent_tools')
+        self.assertFalse(self.f.package.exists())
+        self.event('SessionStart', session_id=SESSION, turn_id=TURN, source='startup', prompt='')
+        self.assertEqual(self.pair().returncode, 0)
+        self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN,
+                   prompt_id='first-staged-owner', prompt='Inspect current retention policy.')
+        self.assertEqual(self.pair().returncode, 0)
+        ledger_name = SESSION + '.inbox-recall.json'
+        before = self.state()[ledger_name]
+        grant = before['grants'][before['active']]
+        self.assertGreater(grant['output_bytes'], 0)
+        self.assertGreater(grant['native_allowance_bytes'], 0)
+        repeated = self.pair()
+        self.assertEqual((repeated.returncode, repeated.stderr), (0, b''))
+        self.assertNotIn(b'candidate_bodies', repeated.stdout)
+        after = self.state()[ledger_name]
+        self.assertEqual(len(after['grants']), 1)
+        self.assertEqual(after['active'], before['active'])
+        self.assertEqual(after['grants'][after['active']]['output_bytes'], grant['output_bytes'])
+        self.assertEqual(after['grants'][after['active']]['native_allowance_bytes'], grant['native_allowance_bytes'])
+        self.assertEqual(self.provider_sides, dict(source=[], go=[]))
+
+    def test_staged_bound_claude_prompt_wake_keeps_exact_parent_keys(self):
+        self.stage_bound('claude', 'agent_tools')
+        self.assertFalse(self.f.package.exists())
+        self.state = lambda: BoundMemoryCase.state(self)
+        self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN,
+                   prompt_id='staged-native-wake', prompt=self.f.wake())
+        first_state = None
+        for repeat in (False, True):
+            with self.subTest(repeat=repeat):
+                result = self.pair()
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b'{}\n', b''))
+                self.assertEqual(self.state().keys(), {
+                    SESSION + '.inbox-recall.initialized', SESSION + '.inbox-recall.json'})
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.provider_sides, dict(source=[], go=[]))
+                if repeat:
+                    self.assertEqual(self.state(), first_state)
+                else:
+                    first_state = self.state()
+                directory = Path(self.f.memory['state_dir'])
+                for name in self.files():
+                    if name.endswith('.lock'):
+                        with (directory / name).open('r+') as lock:
+                            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            fcntl.flock(lock, fcntl.LOCK_UN)
 
     def test_staged_bound_claude_ambient(self):
         self.refused_mode_pair('claude', 'ambient')
@@ -364,15 +414,10 @@ class R04BoundProviderWiringTests(provider.OrdinaryProviderTests):
         self.before_run = lambda side: None
         self.after_run = lambda: None
         self.state = lambda: BoundMemoryCase.state(self)
-        checked_go = self.go
         for harness in ('claude', 'codex'):
             self.stage_bound(harness, 'agent_tools', remove_package=False)
-            # Compare the actually selected callback here. Claude prompt stays
-            # retained after its explicit Go wake-state RED; no parity claimed
-            # for that held direct Go cell. Codex retains its selected Go row.
-            self.go = (lambda: self.invoke_provider_side('selected', lambda: subprocess.run(
-                self.rows[self.f.event['hook_event_name']]['argv'], input=self.f.raw,
-                cwd=self.f.root, env=self.f.env(), capture_output=True, timeout=20))) if harness == 'claude' else checked_go
+            # Both supported agent_tools prompt rows execute their emitted Go
+            # command against the retained Source callback and restored state.
             self.reset_state()
             self.event('UserPromptSubmit', session_id=SESSION, turn_id=TURN, prompt=self.f.wake())
             first = BoundMemoryCase.pair(self)
