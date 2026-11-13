@@ -506,6 +506,8 @@ class NativeUnit(OwnedUnit):
         plan = dict(id=str(uuid.uuid4()), selection=release['selection'], harness='claude',
             account_home=str(self.account), settings=dict(path=self.settings_pin['Path'], sha256=self.settings_pin['SHA256']),
             coordination_index=0, replace_commands=dict(memory=[], coordination=[]))
+        if release is self.legacy:
+            plan['legacy'] = True
         hooks_root = self.root / ('hooks-' + name)
         hooks_root.mkdir(mode=0o700)
         hooks = hook_installer.stage(str(self.images['stager']), hooks_root, plan)
