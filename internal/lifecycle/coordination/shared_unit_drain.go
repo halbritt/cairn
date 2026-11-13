@@ -21,11 +21,18 @@ type WatchDrainReceipt struct {
 	selection WatchBindings
 	callbacks []*value.Value
 	facts     map[string]string
+	census    *unitCensusDrain
 }
 
 // Facts returns fingerprints for the retained release evidence, never tokens
 // or raw session bodies. It is a copy, not an activation or permission flag.
-func (r *WatchDrainReceipt) Facts() map[string]string { return maps.Clone(r.facts) }
+func (r *WatchDrainReceipt) Facts() map[string]string {
+	facts := maps.Clone(r.facts)
+	if r.census != nil {
+		facts["unit-census"] = r.census.initial.Digest
+	}
+	return facts
+}
 
 // CaptureWatchDrain only reads existing files and authenticated status views.
 // Missing coverage, an unresolved reply, or a nonterminal obligation refuses.
@@ -71,7 +78,16 @@ func exchangeDrainedWatchBindings(ctx context.Context, receipt *WatchDrainReceip
 	if err != nil {
 		return WatchBindingsExchange{}, err
 	}
-	swap.observe, swap.verifyDrain = observe, receipt.recheck
+	swap.observe = observe
+	swap.verifyDrain = func(ctx context.Context) error {
+		if err := receipt.recheck(ctx); err != nil {
+			return err
+		}
+		if receipt.census != nil {
+			return receipt.census.recheck(ctx, swap)
+		}
+		return nil
+	}
 	return runWatchBindingsSwap(swap)
 }
 

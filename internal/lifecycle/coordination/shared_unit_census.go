@@ -78,6 +78,7 @@ type WatchUnitCensus struct {
 	Facts            map[string]string
 	Blockers         []string
 	Digest           string
+	RetainedCopies   []WatchBindings
 }
 
 type watchCensusRead struct {
@@ -97,6 +98,7 @@ type watchCensusRead struct {
 	configPaths     map[*value.Value]string
 	bindingPins     map[string]string
 	clientPins      map[string]string
+	control         *unitCensusScope
 }
 
 // InspectWatchUnitCensus performs filesystem and process observations only.
@@ -104,12 +106,16 @@ type watchCensusRead struct {
 // signal a process, or publish a selection. Its returned digest is selected
 // evidence, not a drain receipt. Observations and final readback are non-atomic.
 func (c *CLI) InspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin, proposed WatchCensusProposal) (WatchUnitCensus, error) {
+	return c.inspectWatchUnitCensus(ctx, catalog, proposed, nil)
+}
+
+func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin, proposed WatchCensusProposal, control *unitCensusScope) (WatchUnitCensus, error) {
 	r := &watchCensusRead{cli: c, nodes: map[string]*WatchCensusMember{}, files: map[string]string{},
 		directories: map[string][]string{}, inodes: map[string]string{}, images: map[string]bool{},
 		nodeBlockers: map[string][]string{}, nodeGrants: map[string][]string{}, sessionRefs: map[string]WatchCensusSession{},
 		callbackRecords: map[string]watchCensusCallbackRecord{},
-		configPaths:     map[*value.Value]string{},
-		report:          WatchUnitCensus{ExternalCoverage: "unknown", NativeRefresh: "unobserved", Facts: map[string]string{}}}
+		configPaths:     map[*value.Value]string{}, control: control,
+		report: WatchUnitCensus{ExternalCoverage: "unknown", NativeRefresh: "unobserved", Facts: map[string]string{}}}
 	if c == nil || c.Host == nil || c.profile() == nil {
 		return r.report, &value.ProfileUnavailable{}
 	}

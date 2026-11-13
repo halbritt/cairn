@@ -63,6 +63,71 @@ author's census interface is installed here.
 
 ## Receipt and control boundary
 
+### Explicit finite census adoption (`/2`)
+
+The same literal command also accepts `schema: cairn.unit-control/2`. It has
+the existing `current`, `next` and `retained` fields, and replaces `callbacks`
+with an explicit `census` object. `/1` remains compatible and retains its
+standing 19-case bounded proof. There is no fallback between the two forms.
+The census object uses the existing census API's literal field names:
+
+```json
+{
+  "Catalog": {"Path": "/DISPOSABLE/catalog.json", "SHA256": "CATALOG_SHA256"},
+  "Proposal": {
+    "Bindings": [{"Directory": "/DISPOSABLE/selections/unit", "Pins": {"one.json": "CURRENT_SHA256"}}],
+    "Sessions": [],
+    "Callbacks": []
+  },
+  "Retained": []
+}
+```
+
+This example is the `census` value; use actual digests and complete retained
+session/callback paths. All arrays are explicit. The proposal must match the
+actual current directory/pins exactly. Only one selected directory can be
+exchanged atomically; a connected user in another directory blocks the switch.
+The `/2` path requires the unit's existing owned mode0600 `.watch.lock` before
+inspection and never creates/acquires it during `inspect`.
+
+`Retained` names complete immutable sibling copies already kept by a preceding
+exchange, using `Directory`/`Pins`. Each has all binding names, the same unit
+selectors and the same watch-lock inode. They are data retained for reconciliation
+or reverse, not additional selected executors. Every copy is read and pinned;
+unknown entries, aliases, changed selectors or missing coverage refuse. Catalog
+and proposal are input bytes, never authority, a serialized receipt or proof of
+external closure.
+
+The command freshly calls the census, derives selected callback process refs,
+then runs the existing authenticated D1-D5 inspection. Its private receipt binds
+the full census digest and selected directory/file/lock identities. After the
+final API reads, the command freshly inspects that same pinned catalog/proposal
+and invalidates change/unknown/error before publication. The exchange's own
+complete preparation is validated against its live private swap, next pins,
+unit selectors and shared held lock inode. Raw final facts retain it; only that
+known preparation's additions are projected out of the baseline comparison.
+No caller can supply this private exception. Public ordinary census still
+refuses an unexplained extra selection directory. Reverse uses the same path.
+
+Outputs include initial and final census observations when reached. `FixtureReady`
+remains a declared finite-fixture result, with `ExternalCoverage: unknown` and
+`NativeRefresh: unobserved`. Owner join receipts retain same-UID fixture trust;
+a dead/unknown process alone is not clearance. Retained native obligation fields
+that the census cannot establish remain conservative blockers, including when
+the legacy `/1` drain could independently prove historical correspondence.
+Per-fact/composite final-read-to-rename windows, native producer/refresh/readback,
+external coverage, grants, common-image qualification and full R06/R07 remain open.
+No new lock/barrier, authority, settlement or inspector cleanup is introduced.
+
+The composed process proof is `scripts/check_r06_census_control.py` through the
+existing host task. It reuses both existing fixture families with actual API/PG
+sessions and a real two-binding CLI inspect/switch/reverse. Separate standing
+19-control and nine census process controls remain required. A fixture-owned
+forwarder returns actual API responses and mutates catalog/join bytes after the
+last final API read; publication must refuse and preserve the complete old
+selection/preparation. There is no production injection option. The known
+disjoint enabled callback remains alive and untouched; only its owner joins it.
+
 `inspect` validates the complete plan and captures the accepted D1-D5 facts
 without acquiring the watcher lock or creating a preparation. Its output is
 an observation, not an activation capability. `switch` and `reverse` each

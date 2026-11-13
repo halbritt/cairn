@@ -194,6 +194,11 @@ func (r *watchCensusRead) loadCatalog(ctx context.Context, pin WatchCensusPin) e
 		}
 		expected = append(expected, filepath.Base(selection.Directory))
 	}
+	if r.control != nil {
+		if err := r.controlCopies(&expected); err != nil {
+			return err
+		}
+	}
 	if !censusSameStrings(names, expected) {
 		return errors.New("unknown or omitted selected config directory")
 	}

@@ -27,9 +27,10 @@ type UnitControlPlan struct {
 		Directory string            `json:"directory"`
 		Pins      map[string]string `json:"pins"`
 	} `json:"current"`
-	Next      []install.File  `json:"next"`
-	Retained  string          `json:"retained"`
-	Callbacks json.RawMessage `json:"callbacks"`
+	Next      []install.File     `json:"next"`
+	Retained  string             `json:"retained"`
+	Callbacks json.RawMessage    `json:"callbacks"`
+	Census    *UnitControlCensus `json:"census,omitempty"`
 }
 
 type UnitControlResult struct {
@@ -44,6 +45,8 @@ type UnitControlResult struct {
 	Facts               map[string]string              `json:"facts,omitempty"`
 	Exchange            WatchBindingsExchange          `json:"exchange"`
 	Error               string                         `json:"error,omitempty"`
+	Census              *WatchUnitCensus               `json:"census,omitempty"`
+	FinalCensus         *WatchUnitCensus               `json:"final_census,omitempty"`
 }
 
 type UnitControlIdentity struct {
@@ -82,11 +85,21 @@ func (c *CLI) RunUnitControl(ctx context.Context, args []string, out io.Writer) 
 		}
 		stat := info.Sys().(*syscall.Stat_t)
 		r.CurrentIdentity = map[string]uint64{"device": uint64(stat.Dev), "inode": stat.Ino}
-		receipt, err := c.CaptureWatchDrain(ctx, r.Current, callbacks)
+		var receipt *WatchDrainReceipt
+		if p.Census != nil {
+			var report WatchUnitCensus
+			receipt, report, err = c.captureUnitCensusDrain(ctx, r.Current, p.Census)
+			r.Census = &report
+		} else {
+			receipt, err = c.CaptureWatchDrain(ctx, r.Current, callbacks)
+		}
 		if err != nil {
 			return err
 		}
 		r.Inspected, r.Facts = true, receipt.Facts()
+		if receipt.census != nil {
+			receipt.census.planPath, receipt.census.planPin = r.PlanPath, r.PlanSHA256
+		}
 		// Revalidate the pinned input and reverse source after capture too. No
 		// caller-supplied facts or completion flag can replace this receipt.
 		if _, _, err := readUnitControlPlan(r.PlanPath, r.PlanSHA256); err != nil {
@@ -97,6 +110,9 @@ func (c *CLI) RunUnitControl(ctx context.Context, args []string, out io.Writer) 
 		}
 		if r.Operation != "inspect" {
 			r.Exchange, err = ExchangeWatchBindings(ctx, receipt, p.Retained, p.Next)
+			if receipt.census != nil {
+				r.FinalCensus = receipt.census.final
+			}
 			if err != nil {
 				return err
 			}
@@ -164,7 +180,11 @@ func readUnitControlPlan(path, pin string) (*UnitControlPlan, []*value.Value, er
 	if err := unitControlUniqueKeys(tree, 0); err != nil {
 		return nil, nil, err
 	}
-	if err := unitControlFields(tree, "schema", "current", "next", "retained", "callbacks"); err != nil {
+	fields := []string{"schema", "current", "next", "retained", "callbacks"}
+	if value.SameText(tree.Get("schema"), "cairn.unit-control/2") {
+		fields = []string{"schema", "current", "next", "retained", "census"}
+	}
+	if err := unitControlFields(tree, fields...); err != nil {
 		return nil, nil, err
 	}
 	if err := unitControlFields(tree.Get("current"), "directory", "pins"); err != nil {
@@ -186,8 +206,14 @@ func readUnitControlPlan(path, pin string) (*UnitControlPlan, []*value.Value, er
 	if err := d.Decode(new(any)); err != io.EOF {
 		return nil, nil, errors.New("unit control requires exactly one JSON plan")
 	}
-	if plan.Schema != "cairn.unit-control/1" || len(plan.Current.Pins) < 1 || len(plan.Current.Pins) > 32 || len(plan.Next) != len(plan.Current.Pins) {
+	if (plan.Schema != "cairn.unit-control/1" && plan.Schema != "cairn.unit-control/2") || len(plan.Current.Pins) < 1 || len(plan.Current.Pins) > 32 || len(plan.Next) != len(plan.Current.Pins) {
 		return nil, nil, errors.New("unit control plan schema or bounded membership is unknown")
+	}
+	if plan.Schema == "cairn.unit-control/2" {
+		if err := validateUnitCensusInput(tree.Get("census"), plan.Census); err != nil {
+			return nil, nil, err
+		}
+		return &plan, nil, nil
 	}
 	refs, err := value.DecodeBytes(plan.Callbacks, 0)
 	if err != nil || refs == nil || refs.Kind != value.Array || len(refs.Items) > 256 {
