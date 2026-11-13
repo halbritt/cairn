@@ -141,6 +141,12 @@ class MechanismGuards(unittest.TestCase):
         with self.assertRaisesRegex(continuity.PrerequisiteError, 'host network namespace'):
             continuity.inside_isolation(dict(host_net_namespace=os.readlink('/proc/self/ns/net')), native=True)
 
+    def test_private_native_workers_are_not_cli_phase_shortcuts(self):
+        for phase in ('native-worker', 'isolated-native'):
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                continuity.main(['--phase', phase, '--plan', '/nonexistent/forged-grant'])
+            self.assertEqual(error.exception.code, 2)
+
     def test_syscall_audit_distinguishes_absent_nss_from_dns_and_live_nss(self):
         with tempfile.TemporaryDirectory(prefix='r03-audit-', dir=Path.home() / '.cache') as name:
             trace = Path(name) / 'syscalls'

@@ -138,8 +138,10 @@ mise run host:exec -- --timeout 8m --weight 2 -- python3 -B \
 
 The later Root-admitted invocation replaces the setup phase with `native` and
 adds `--admission-context` from that actual native request. The packet supplies
-concrete argv and all bindings. Internal isolated/worker phases refuse the host
-namespace or absent admitted grant before importing the client. Root selects
+concrete argv and all bindings. Native workers are not public CLI phases. The
+authenticated host entry dispatches private functions inside the wrapper;
+namespace and receipt checks bind that handoff, without replacing the host's
+live Cairn admission check. Root selects
 one exact 1416 code review and separately admits one actual native fixture.
 No author landing, push, coordinator CC or extra reviewer/session is implied.
 Raw streams, syscall/callback/request journals, selectors, Store readback,

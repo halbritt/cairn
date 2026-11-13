@@ -438,6 +438,17 @@ def sandbox_python(tail):
     return ['/opt/assets/held/python/bin/python3.11', '-I', '-B', '-c', code, *tail]
 
 
+def sandbox_private_call(function, argument, native=False):
+    # Native helpers are not public phase options. Only the authenticated host
+    # dispatcher builds this internal call; the retained receipt binds its
+    # isolated handoff, and is not a replacement for the host's live API check.
+    code = ('import runpy,sys;sys.path.insert(0,"/opt/assets/held/venv/lib/python3.11/site-packages");'
+            'sys.path.insert(0,"/work/scripts");'
+            'ns=runpy.run_path("/work/scripts/check_r03_hermes_continuity.py",run_name="r03_internal");'
+            'ns[' + repr(function) + '](' + repr(str(argument)) + (',native=True' if native else '') + ')')
+    return ['/opt/assets/held/python/bin/python3.11', '-I', '-B', '-c', code]
+
+
 def run_mechanism_wrapper(plan_path, mode, admission_context=None):
     plan = json.loads(Path(plan_path).read_bytes())
     current = source_pins()
@@ -488,7 +499,8 @@ def run_mechanism_wrapper(plan_path, mode, admission_context=None):
           for item in ('--ro-bind', str(output / 'runtime-assets' / Path(destination).name) + ':' + destination)], '--',
         '/usr/bin/strace', '-f', '-qq', '-s', '1000', '-e', 'trace=network,process',
         '-o', '/tmp/r03-native-syscalls.log',
-        *sandbox_python(['--phase', 'isolated-' + mode, '--plan', '/opt/assets/run/plan.json'])]
+        *(sandbox_private_call('isolated_suite', '/opt/assets/run/plan.json', native=True)
+          if mode == 'native' else sandbox_python(['--phase', 'isolated-setup', '--plan', '/opt/assets/run/plan.json']))]
     write_json(run_dir / 'invocation.json', dict(argv=command, mode=mode, native_admitted=grant is not None))
     result = subprocess.run(command, cwd=ROOT, capture_output=True, timeout=480)
     (run_dir / 'stdout').write_bytes(result.stdout); (run_dir / 'stderr').write_bytes(result.stderr)
@@ -922,7 +934,7 @@ def isolated_suite(plan_path, native=False):
                 stage_b=transition is not None, api_socket=str(host.socket),
                 exec_pins=exec_pins, credential_selector_sha256=credential_sha)
             write_json(phase / 'spec.json', spec)
-            argv = sandbox_python(['--phase', 'native-worker', '--spec', str(phase / 'spec.json')])
+            argv = sandbox_private_call('native_worker', phase / 'spec.json')
             process = subprocess.Popen(argv, cwd=f.root, stdin=subprocess.DEVNULL,
                 stdout=(phase / 'stdout').open('wb'), stderr=(phase / 'stderr').open('wb'), start_new_session=True)
             require(process.pid > 1, 'R03_PROCESS: invalid owned CLI PID')
@@ -1031,7 +1043,7 @@ def native_readback_request(native_root, manifest, home, baseline):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--phase', choices=('prepare', 'session-api', 'native', 'mechanism-plan',
-        'mechanism-setup', 'isolated-setup', 'isolated-native', 'native-worker'), default='prepare')
+        'mechanism-setup', 'isolated-setup'), default='prepare')
     parser.add_argument('--native-root', type=Path)
     parser.add_argument('--manifest', type=Path)
     parser.add_argument('--evidence-root', type=Path)
@@ -1065,13 +1077,9 @@ def main(argv=None):
         require(args.plan is not None, 'R03_PLAN: missing plan')
         run_mechanism_wrapper(args.plan, 'setup')
         return 0
-    if args.phase in ('isolated-setup', 'isolated-native'):
+    if args.phase == 'isolated-setup':
         require(args.plan is not None, 'R03_PLAN: missing isolated plan')
-        isolated_suite(args.plan, native=args.phase == 'isolated-native')
-        return 0
-    if args.phase == 'native-worker':
-        require(args.spec is not None, 'R03_PLAN: missing owned worker spec')
-        native_worker(args.spec)
+        isolated_suite(args.plan, native=False)
         return 0
     if args.phase == 'session-api':
         require(all((args.home, args.native_root, args.report, args.manifest)),
