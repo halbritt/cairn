@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
 
 type censusFixture struct {
@@ -34,13 +35,47 @@ func censusTestJSON(t *testing.T, path string, body any) WatchCensusPin {
 	return WatchCensusPin{path, writePrivateFile(t, path, append(raw, '\n'), 0600)}
 }
 
+func censusProducedSession(t *testing.T, config map[string]any, native, workspace string) WatchCensusPin {
+	t.Helper()
+	path := SessionStatePath(config["state_dir"].(string), config["binding"].(string), native)
+	cli, _ := newTestHookCLI(t, filepath.Dir(path))
+	cli.Host.Call = func(_ context.Context, _ *value.Value, op string, body *value.Value, _ NativeCallOptions) (*value.Value, error) {
+		if op != "agent-register" {
+			t.Fatalf("unexpected producer operation: %s", op)
+		}
+		id := uuid.NewString()
+		return nativeMap("agent_id", id, "execution_id", uuid.NewString(), "inbox", "agent/"+id,
+			"native_session_id", body.Get("native_session_id"), "metadata", body.Get("metadata")), nil
+	}
+	cfg := nativeMap("binding", config["binding"], "harness", config["harness"], "repo", config["repo"])
+	observation := nativeMap("native_id", native, "workspace", workspace, "project", "census-fixture", "phase", "start")
+	session := &NativeSession{Path: path, Record: value.Mapping(), Host: cli.Host}
+	if err := cli.ensureHookAgentSession(context.Background(), session, cfg, observation,
+		nativeMap("pid", os.Getpid(), "start", 1, "boot", "synthetic-census-producer"), nil, false); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Record.Get("native_session_id") != nil || nativeText(session.Record.Get("agent").Get("native_session_id")) != native {
+		t.Fatal("coordination producer emitted an unexpected identity shape")
+	}
+	sum := sha256.Sum256(raw)
+	return WatchCensusPin{path, hex.EncodeToString(sum[:])}
+}
+
 func newCensusFixture(t *testing.T) *censusFixture {
 	t.Helper()
 	return censusFixtureAt(t, t.TempDir())
 }
 
-func censusFixtureAt(t *testing.T, root string) *censusFixture {
+func censusFixtureAt(t *testing.T, root string, harnesses ...string) *censusFixture {
 	t.Helper()
+	harness := "codex"
+	if len(harnesses) != 0 {
+		harness = harnesses[0]
+	}
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +115,7 @@ func censusFixtureAt(t *testing.T, root string) *censusFixture {
 			}
 		}
 		censusTestJSON(t, filepath.Join(memoryDir, "retained.memory-budget.json"), map[string]any{"inbox_activation": map[string]bool{"old-turn": false}, "opaque": "preserved"})
-		common := map[string]any{"harness": "codex", "cairn": client, "socket": filepath.Join(f.root, "unused.sock"), "token_file": token, "repo": "fixture:census:" + unit, "inbox_recall_binding": binding}
+		common := map[string]any{"harness": harness, "cairn": client, "socket": filepath.Join(f.root, "unused.sock"), "token_file": token, "repo": "fixture:census:" + unit, "inbox_recall_binding": binding}
 		memory := map[string]any{}
 		for k, v := range common {
 			memory[k] = v
@@ -114,8 +149,7 @@ func censusFixtureAt(t *testing.T, root string) *censusFixture {
 			if err := os.MkdirAll(workspace, 0700); err != nil {
 				t.Fatal(err)
 			}
-			state := map[string]any{"schema": NativeSessionSchema, "native_session_id": native, "agent": map[string]any{"agent_id": uuid.NewString(), "execution_id": uuid.NewString(), "metadata": map[string]string{"workspace": workspace}}, "inbox_journals": []string{}}
-			sessionPin := censusTestJSON(t, SessionStatePath(stateDir, config["binding"].(string), native), state)
+			sessionPin := censusProducedSession(t, config, native, workspace)
 			f.catalog.Sessions = append(f.catalog.Sessions, sessionPin)
 			if unit == "a" {
 				f.proposal.Sessions = append(f.proposal.Sessions, sessionPin.Path)
