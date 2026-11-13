@@ -15,6 +15,27 @@ hook consumer. Their named frozen commits must be composed before preparing
 the unit. The original worktree and evidence packets remain frozen.
 A successful preparation or auth setup does not qualify the native path.
 
+The composed preparation selects the retained producer with the documented
+`legacy: true` hook-plan field. It uses Foundation's exact identity readers,
+the selected retained consumer/collector and Root's recovery/concurrency
+component. The producer bytes remain exactly those of `6249f82c` after the
+join; no partial `/3` receipt is constructed for the retained generation.
+
+Preparation exercises emitted memory and coordination callbacks from both
+generations against one actual setup session in its disposable API. It uses
+the context-issued read and completion/reply operations, retains the real
+product journal, and matches the API-returned current and historical IDs.
+The selected Python watcher heartbeats that setup execution and is stopped
+and joined with its observed argv and lock owner recorded. Go candidate
+callbacks run without publishing that candidate config directory.
+
+The pinned Go observer reads the same actual setup files without a fabricated
+native readback. The expected result is `FixtureReady: false` with
+`account hook/config coverage is unknown: selected native settings/readback seam is unavailable`.
+That refusal and the unchanged filesystem snapshot are retained. Preparation
+does not turn a setup row into a native row or prove a Go watcher activation,
+same-conversation refresh, native D2, or complete-unit qualification.
+
 ## Declared installation and operations
 
 One disposable PostgreSQL cluster and actual authenticated Cairn API issue the

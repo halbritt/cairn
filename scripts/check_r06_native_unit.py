@@ -598,15 +598,15 @@ class NativeUnit(OwnedUnit):
         write(self.evidence / (label + '-request-result.json'), dict(attempt=attempt, committed=committed,
             context=selected_pin(context_path), journal=selected_pin(path)))
 
-    def publish_request(self):
+    def publish_request(self, label='native'):
         state = self.state()
         source = self.host.agent('sender', 'create', dict(request_id=str(uuid.uuid4()), draft=dict(kind='note',
-            body='Selected request for the same real native complete-unit conversation.',
+            body='Selected fixture request for the owned installation.',
             scope=dict(repo=self.host.repo, task_id='*', run_id='*'), claim_type='self', sensitivity='shareable')))
         published = self.host.agent('sender', 'event-publish', dict(request_id=str(uuid.uuid4()), kind='request',
             ref=dict(record_id=source['record_id'], version=source['version']),
             destination=dict(type='agent', name=state['agent']['inbox'])))
-        write(self.evidence / 'native-request-published.json', dict(source=source, event=published))
+        write(self.evidence / (label + '-request-published.json'), dict(source=source, event=published))
 
     def catalog(self, readback):
         from check_r06_native_hook_census import layer_files
@@ -649,7 +649,7 @@ class NativeUnit(OwnedUnit):
         startup = dict(base, hook_event_name='SessionStart', source='startup')
         self.setup_callback(self.legacy, 'coordination', startup, 'setup-python2-start')
         self.setup_callback(self.legacy, 'memory', startup, 'setup-python2-memory-start')
-        self.publish_request()
+        self.publish_request('setup')
         prompt = dict(base, hook_event_name='UserPromptSubmit', prompt='Owned unit setup request; no native client is running.')
         self.setup_callback(self.legacy, 'memory', prompt, 'setup-python2-memory-prompt')
         self.setup_callback(self.legacy, 'coordination', prompt, 'setup-python2-prompt')
