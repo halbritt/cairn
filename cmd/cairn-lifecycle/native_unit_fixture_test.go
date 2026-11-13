@@ -12,22 +12,25 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 )
 
 type ownedUnitInvocation struct {
-	Program string   `json:"program"`
-	SHA256  string   `json:"sha256"`
-	Args    []string `json:"args"`
-	Input   string   `json:"input"`
-	Result  string   `json:"result"`
+	Program             string   `json:"program"`
+	SHA256              string   `json:"sha256"`
+	Args                []string `json:"args"`
+	Input               string   `json:"input"`
+	Result              string   `json:"result"`
+	TimeoutMilliseconds int      `json:"timeout_ms"`
 }
 
 type ownedUnitResult struct {
-	Exit   int    `json:"exit"`
-	Stdout string `json:"stdout"`
-	Stderr string `json:"stderr"`
-	PID    int    `json:"pid"`
-	PGID   int    `json:"pgid"`
+	Exit     int    `json:"exit"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	PID      int    `json:"pid"`
+	PGID     int    `json:"pgid"`
+	TimedOut bool   `json:"timed_out"`
 }
 
 func decodeOwnedUnitInvocation(raw []byte) (ownedUnitInvocation, error) {
@@ -60,8 +63,12 @@ func runOwnedUnitProgram(plan ownedUnitInvocation) (ownedUnitResult, error) {
 	if hex.EncodeToString(sum[:]) != plan.SHA256 {
 		return ownedUnitResult{}, errors.New("fixture program image changed before use")
 	}
+	if plan.TimeoutMilliseconds <= 0 || plan.TimeoutMilliseconds > 600000 {
+		return ownedUnitResult{}, errors.New("fixture deadline must be positive and at most ten minutes")
+	}
 	var output, diagnostic bytes.Buffer
 	command := exec.Command(plan.Program, plan.Args...)
+	command.WaitDelay = 5 * time.Second
 	command.Stdin, command.Stdout, command.Stderr = bytes.NewBufferString(plan.Input), &output, &diagnostic
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
@@ -82,13 +89,30 @@ func runOwnedUnitProgram(plan ownedUnitInvocation) (ownedUnitResult, error) {
 		command.Wait()
 		return ownedUnitResult{}, errors.New("unsafe owned callback group")
 	}
-	if err := command.Wait(); err != nil {
+	finished := make(chan error, 1)
+	go func() { finished <- command.Wait() }()
+	timer := time.NewTimer(time.Duration(plan.TimeoutMilliseconds) * time.Millisecond)
+	defer timer.Stop()
+	timedOut := false
+	var waitErr error
+	select {
+	case waitErr = <-finished:
+	case <-timer.C:
+		timedOut = true
+		// Only this started child's handle is signalled. The maintained outer
+		// host:exec deadline remains responsible for descendant teardown.
+		if err := command.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			return ownedUnitResult{}, err
+		}
+		waitErr = <-finished
+	}
+	if err := waitErr; err != nil {
 		var exited *exec.ExitError
 		if !errors.As(err, &exited) {
 			return ownedUnitResult{}, err
 		}
 	}
-	return ownedUnitResult{command.ProcessState.ExitCode(), output.String(), diagnostic.String(), pid, group}, nil
+	return ownedUnitResult{Exit: command.ProcessState.ExitCode(), Stdout: output.String(), Stderr: diagnostic.String(), PID: pid, PGID: group, TimedOut: timedOut}, nil
 }
 
 // The complete-unit driver uses the real dispatcher and configured API. It
@@ -163,5 +187,70 @@ func TestOwnedUnitFixtureRejectsChangedProgram(t *testing.T) {
 	}
 	if _, err := runOwnedUnitProgram(ownedUnitInvocation{Program: path, SHA256: "wrong"}); err == nil || err.Error() != "fixture program image changed before use" {
 		t.Fatal("changed image reached execution", err)
+	}
+}
+
+func ownedUnitTestProgram(t *testing.T) (string, string) {
+	t.Helper()
+	path, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path = filepath.Join(t.TempDir(), "owned-unit-test")
+	if err := os.WriteFile(path, raw, 0500); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(raw)
+	return path, hex.EncodeToString(sum[:])
+}
+
+func TestOwnedUnitFixtureRejectsUnboundedProcess(t *testing.T) {
+	program, digest := ownedUnitTestProgram(t)
+	for _, deadline := range []int{-1, 0, 600001} {
+		_, err := runOwnedUnitProgram(ownedUnitInvocation{Program: program, SHA256: digest, TimeoutMilliseconds: deadline})
+		if err == nil || err.Error() != "fixture deadline must be positive and at most ten minutes" {
+			t.Fatalf("unbounded process reached execution: %d: %v", deadline, err)
+		}
+	}
+}
+
+func TestR06OwnedUnitChildProcess(t *testing.T) {
+	switch os.Getenv("CAIRN_R06_OWNED_CHILD") {
+	case "success":
+		if _, err := os.Stdout.WriteString("observed owned child\n"); err != nil {
+			t.Fatal(err)
+		}
+	case "timeout":
+		time.Sleep(10 * time.Second)
+	default:
+		t.Skip("selected only by the owned-unit deadline test")
+	}
+}
+
+func TestOwnedUnitFixtureDeadlineAndExit(t *testing.T) {
+	program, digest := ownedUnitTestProgram(t)
+	for _, mode := range []string{"success", "timeout"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("CAIRN_R06_OWNED_CHILD", mode)
+			deadline := 5000
+			if mode == "timeout" {
+				deadline = 50
+			}
+			result, err := runOwnedUnitProgram(ownedUnitInvocation{Program: program, SHA256: digest,
+				Args: []string{"-test.run=^TestR06OwnedUnitChildProcess$"}, TimeoutMilliseconds: deadline})
+			if err != nil || result.PID <= 1 || result.PGID <= 1 || result.TimedOut != (mode == "timeout") {
+				t.Fatalf("owned child disposition: %+v %v", result, err)
+			}
+			if mode == "success" && (result.Exit != 0 || !bytes.Contains([]byte(result.Stdout), []byte("observed owned child"))) {
+				t.Fatalf("actual successful child output/exit lost: %+v", result)
+			}
+			if mode == "timeout" && result.Exit == 0 {
+				t.Fatalf("timed-out child reported successful exit: %+v", result)
+			}
+		})
 	}
 }
