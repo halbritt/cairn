@@ -28,6 +28,11 @@ product journal, and matches the API-returned current and historical IDs.
 The selected Python watcher heartbeats that setup execution and is stopped
 and joined with its observed argv and lock owner recorded. Go candidate
 callbacks run without publishing that candidate config directory.
+The actual close must fence the old reference with `STALE_SESSION`. A
+source-driven reopen of the same setup ID must return a new execution of the
+same API agent; that current reference reads the actual earlier attempt and
+must match its product-issued claim and completed journal. These are setup
+authentication checks and do not establish a real native conversation.
 
 The pinned Go observer reads the same actual setup files without a fabricated
 native readback. The expected result is `FixtureReady: false` with

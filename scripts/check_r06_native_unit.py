@@ -668,8 +668,22 @@ class NativeUnit(OwnedUnit):
         self.setup_callback(self.go, 'coordination', dict(base, hook_event_name='Stop'), 'setup-go3-stop')
         current = self.correspondence('setup-go3')
         require(current['agent_id'] == initial['agent_id'], 'candidate setup callbacks created another agent')
+        self.setup_callback(self.go, 'coordination', dict(base, hook_event_name='SessionEnd', reason='other'), 'setup-go3-close')
+        attempt = json.loads((self.evidence / 'setup-request-result.json').read_bytes())['attempt']
+        stale = self.host.agent('worker', 'session-inbox-attempt-status',
+            dict(session=current, attempt_id=attempt['attempt_id']), expected='STALE_SESSION')
+        write(self.evidence / 'setup-closed-refusal.json', stale)
+        self.setup_callback(self.go, 'coordination', dict(startup, source='resume'), 'setup-go3-reopen')
+        reopened = self.correspondence('setup-go3-reopened')
+        require(reopened['agent_id'] == current['agent_id'] and reopened['execution_id'] != current['execution_id'],
+                'setup reopen did not return the actual new current execution')
+        historical = self.host.agent('worker', 'session-inbox-attempt-status',
+            dict(session=reopened, attempt_id=attempt['attempt_id']))
+        require(historical['session'] == attempt['session'] and historical.get('finished_at'),
+                'actual setup historical reference does not match the product-issued claim')
+        write(self.evidence / 'setup-actual-historical-attempt.json', historical)
         observation = self.observe_preparation()
-        write(self.evidence / 'setup-result.json', dict(initial=initial, current=current,
+        write(self.evidence / 'setup-result.json', dict(initial=initial, closed=current, current=reopened,
             setup_session_id=self.native, native_client_executed=False, complete_unit_qualified=False,
             selected_binding=str(self.legacy['manifest']), candidate_binding=str(self.go['manifest']),
             candidate_callbacks_exercised=True, selected_watcher_joined=True, observer=observation))
