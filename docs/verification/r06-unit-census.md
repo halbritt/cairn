@@ -176,7 +176,8 @@ do not qualify native behavior.
 
 The disposable fixture also provisions its two known per-session capture locks as
 owned regular `0600` files before shutdown capture, and verifies it on resume.
-It refuses unexpected existing metadata without chmod or overwrite. This keeps
+The callback's known `0664` lock creation is narrowed through an inode-checked
+descriptor to `0600`; unexpected type, owner, alias or mode is refused. This keeps
 the fixture's selected state private; it does not change capture or census
 product behavior or qualify ordinary installations.
 

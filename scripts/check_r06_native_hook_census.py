@@ -277,6 +277,18 @@ def run(args, output):
                     fd = os.open(capture_lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
                     os.close(fd)
                     lock_info = capture_lock.lstat()
+                if (stat.S_ISREG(lock_info.st_mode) and lock_info.st_uid == os.getuid()
+                        and stat.S_IMODE(lock_info.st_mode) == 0o664
+                        and str(capture_lock.resolve(strict=True)) == str(capture_lock)):
+                    fd = os.open(capture_lock, os.O_RDONLY | os.O_NOFOLLOW)
+                    try:
+                        current = os.fstat(fd)
+                        require((current.st_dev, current.st_ino) == (lock_info.st_dev, lock_info.st_ino),
+                                'fixture capture lock changed during private setup')
+                        os.fchmod(fd, 0o600)
+                    finally:
+                        os.close(fd)
+                    lock_info = capture_lock.lstat()
                 require(stat.S_ISREG(lock_info.st_mode) and lock_info.st_uid == os.getuid()
                         and stat.S_IMODE(lock_info.st_mode) == 0o600
                         and str(capture_lock.resolve(strict=True)) == str(capture_lock),
