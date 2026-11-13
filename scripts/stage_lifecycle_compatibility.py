@@ -18,6 +18,14 @@ import uuid
 
 
 SELECTION_SCHEMA = 'cairn.lifecycle-install-selection/1'
+# The retained /2 bundle contract, independent of any selected payload loader.
+RETAINED_MEMBERS = frozenset((
+    'lifecycle_bundle.py', 'memory.py', 'coordination.py', 'inbox_recall.py',
+    'inbox_binding.py', 'grant_ledger.py', 'transcript_recovery.py',
+    'unix_peer_transport.py', 'wake_transport.py', 'process_scan.py',
+    'codex_queue.py', 'claude_channel.py', 'opencode_queue.py', 'hermes_queue.py',
+    'recall_dispatch.py', 'hook_admission.py', 'native_session.py',
+))
 
 
 class InstallationInterrupted(RuntimeError):
@@ -309,6 +317,93 @@ def stage(stager, root, plan):
             if (os.fstat(locked).st_dev, os.fstat(locked).st_ino) != (os.fstat(after).st_dev, os.fstat(after).st_ino):
                 raise ValueError('installation root changed; reconcile published paths')
         return selected
+
+
+def retained_member(files, descriptor):
+    if (type(descriptor) is not dict or set(descriptor) != {'path', 'sha256'}
+            or not canonical(descriptor['path'])):
+        raise ValueError('invalid retained input descriptor')
+    member = files.get(Path(descriptor['path']).name)
+    if member is None or descriptor != {key: member[key] for key in ('path', 'sha256')}:
+        raise ValueError('retained descriptor differs from verified generation member')
+    return Path(descriptor['path']).name
+
+
+def retained_vector(files, vector, role, profiles):
+    if (type(vector) is not list or not vector
+            or any(type(arg) is not str or '\0' in arg
+                   or any(0xd800 <= ord(c) <= 0xdfff for c in arg) for arg in vector)
+            or not canonical(vector[0])):
+        raise ValueError('invalid retained Python argv')
+    offset, flags = 1, set()
+    while offset < len(vector) and vector[offset] in ('-I', '-S', '-B'):
+        if vector[offset] in flags:
+            raise ValueError('ambiguous retained Python flags')
+        flags.add(vector[offset])
+        offset += 1
+    tail = ['--config', profiles[0]['path']] if role == 'memory' else None
+    if role == 'coordination':
+        matches = [pin for pin in profiles[1:] if vector[offset + 1:] == ['hook', '--config', pin['path']]]
+        if len(matches) != 1:
+            raise ValueError('retained coordination argv must select one verified profile')
+        tail = ['hook', '--config', matches[0]['path']]
+    if offset >= len(vector) or vector[offset + 1:] != tail or not canonical(vector[offset]):
+        raise ValueError('retained argv does not match its literal hook role')
+    name = Path(vector[offset]).name
+    if (name not in files or files[name]['path'] != vector[offset]
+            or files[name]['sha256'] != files[role + '.py']['sha256']):
+        raise ValueError('retained argv entrypoint differs from its verified bundle role')
+    return name
+
+
+def inspect_retained(stager, selected):
+    """Verify /2 data and literal argv without executing its selected code."""
+    generation = backend(stager, ['inspect-generation', '--path', selected['path'], '--sha256', selected['sha256']])
+    files = {member['name']: member for member in generation['files']}
+    pins = {name: {key: member[key] for key in ('path', 'sha256')} for name, member in files.items()}
+    required = RETAINED_MEMBERS | {'binding.json', 'lifecycle-bundle.json', 'retained-argv.json'}
+    if not required <= files.keys() or 'selection.json' in files or 'receipt.json' in files:
+        raise ValueError('explicit retained /2 generation required; no compatibility receipt is inferred')
+    binding = decoded(read_selected(pins['binding.json'], 1024 * 1024))
+    if (type(binding) is not dict
+            or set(binding) != {'schema', 'enabled', 'engine', 'bridge', 'memory_config', 'coordination_configs'}
+            or binding['schema'] != 'cairn.inbox-recall-binding/2' or type(binding['enabled']) is not bool
+            or type(binding['coordination_configs']) is not list or not 1 <= len(binding['coordination_configs']) <= 8):
+        raise ValueError('unsupported retained /2 binding')
+    profiles = [binding['memory_config'], *binding['coordination_configs']]
+    names = [retained_member(files, pin) for pin in profiles]
+    if len(set(names)) != len(names) or required.intersection(names):
+        raise ValueError('ambiguous retained profile selection')
+    expected = set(required) | set(names)
+    bundle = decoded(read_selected(pins['lifecycle-bundle.json'], 1024 * 1024))
+    if (type(bundle) is not dict or set(bundle) != {'schema', 'sha256', 'files'}
+            or bundle['schema'] != 'cairn.lifecycle-bundle/1' or type(bundle['files']) is not dict
+            or set(bundle['files']) != RETAINED_MEMBERS or sha(encoded(bundle['files'])) != bundle['sha256']
+            or bundle['files'] != {name: files[name]['sha256'] for name in RETAINED_MEMBERS}):
+        raise ValueError('retained bundle differs from verified generation closure')
+    for role, entry in (('engine', 'memory.py'), ('bridge', 'inbox_recall.py')):
+        descriptor = binding[role]
+        if type(descriptor) is not dict or set(descriptor) != {'path', 'sha256', 'bundle'} or descriptor['bundle'] != bundle:
+            raise ValueError('retained engine/bridge bundle selection disagrees')
+        name = retained_member(files, {key: descriptor[key] for key in ('path', 'sha256')})
+        if descriptor['sha256'] != files[entry]['sha256']:
+            raise ValueError('retained engine/bridge entrypoint differs from its bundle role')
+        expected.add(name)
+    for pin in profiles:
+        config = json.loads(read_selected(pin, 1024 * 1024))
+        if type(config) is not dict or config.get('inbox_recall_binding') not in (None, '', pins['binding.json']['path']):
+            raise ValueError('retained profile selects another binding')
+    launchers = decoded(read_selected(pins['retained-argv.json'], 1024 * 1024))
+    if type(launchers) is not dict or set(launchers) != {'memory', 'coordination'}:
+        raise ValueError('one literal retained argv per hook role required')
+    for role, vector in launchers.items():
+        expected.add(retained_vector(files, vector, role, profiles))
+    if files.keys() != expected:
+        raise ValueError('retained generation has unknown or unselected members')
+    return dict(selection=selected, launchers=launchers, memory_config=profiles[0], coordination_configs=profiles[1:],
+                retained_python=dict(binding=pins['binding.json'], binding_schema=binding['schema'],
+                                     engine=binding['engine'], bridge=binding['bridge'],
+                                     bundle_manifest=pins['lifecycle-bundle.json'], retained_argv=pins['retained-argv.json']))
 
 
 def inspect(stager, selected, legacy=False):

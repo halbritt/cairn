@@ -199,6 +199,45 @@ func agySameJSON(a, b []byte) bool {
 	return xe == nil && ye == nil && reflect.DeepEqual(x, y)
 }
 
+type agyHookDispatch struct{ event, command string }
+
+// Unrelated settings may be opaque. Only actual command hook objects contribute
+// to literal dispatch counts; this does not classify commands as Cairn code.
+func agyCommandHook(raw []byte) (string, bool) {
+	var hook map[string]json.RawMessage
+	var kind, command string
+	if json.Unmarshal(raw, &hook) != nil || json.Unmarshal(hook["type"], &kind) != nil ||
+		json.Unmarshal(hook["command"], &command) != nil {
+		return "", false
+	}
+	return command, kind == "command" && command != ""
+}
+
+func agyRefuseNewDuplicates(current map[string]agyJSONMember, introduced map[agyHookDispatch]int) error {
+	for name, group := range current {
+		if name == "cairn-coordination" || !bytes.HasPrefix(bytes.TrimSpace(group.raw), []byte("{")) {
+			continue
+		}
+		events, _, err := agyObject(group.raw)
+		if err != nil {
+			return err
+		}
+		for event, member := range events {
+			var hooks []json.RawMessage
+			if err := json.Unmarshal(member.raw, &hooks); err != nil {
+				continue // Non-array settings are not hook event entries.
+			}
+			for _, hook := range hooks {
+				command, actual := agyCommandHook(hook)
+				if actual && introduced[agyHookDispatch{event, command}] > 0 {
+					return fmt.Errorf("new Agy event %s command duplicates selected-layer group %s", event, name)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func agyMergeSettings(old, prepared []byte, replaceCommands []string) ([]byte, error) {
 	removable := map[string]bool{}
 	for _, command := range replaceCommands {
@@ -229,6 +268,7 @@ func agyMergeSettings(old, prepared []byte, replaceCommands []string) ([]byte, e
 	// Substitute the original unrelated hook bytes into the prepared group.
 	// Formatting by the bridge cannot rewrite an unrelated hook or big integer.
 	var edits []agyJSONMember
+	introduced := map[agyHookDispatch]int{}
 	if prior, exists := current["cairn-coordination"]; exists {
 		oldEvents, _, err := agyObject(prior.raw)
 		if err != nil {
@@ -249,6 +289,9 @@ func agyMergeSettings(old, prepared []byte, replaceCommands []string) ([]byte, e
 			}
 			next := 0
 			for _, hook := range oldHooks {
+				if command, actual := agyCommandHook(hook.raw); actual {
+					introduced[agyHookDispatch{event, command}]--
+				}
 				var entry struct{ Command string }
 				if err := json.Unmarshal(hook.raw, &entry); err != nil {
 					return nil, err
@@ -284,7 +327,11 @@ func agyMergeSettings(old, prepared []byte, replaceCommands []string) ([]byte, e
 			if err := json.Unmarshal(hook["command"], &command); err != nil || strings.TrimSpace(command) == "" {
 				return nil, errors.New("prepared Agy hook requires command text")
 			}
+			introduced[agyHookDispatch{event, command}]++
 		}
+	}
+	if err := agyRefuseNewDuplicates(current, introduced); err != nil {
+		return nil, err
 	}
 	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
 	groupBytes := append([]byte(nil), group.raw...)
