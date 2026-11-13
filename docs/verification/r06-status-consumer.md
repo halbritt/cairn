@@ -79,7 +79,8 @@ mise run test:unit -- ./internal/lifecycle/ledger ./internal/lifecycle/memoryhoo
   -run '^TestR06GrantDisposition' -count=1
 ```
 
-The fixture creates positive activation decisions through the actual checked
+Each owner case first establishes a successful read-only inspection of its
+settled synthetic session. The fixture then creates positive activation decisions through the actual checked
 owning-session entries for Codex and Claude, stages and selects disabled B,
 and invokes the refreshed owner. It preserves the original ledgers and
 initialized markers. Go and Source use separate directories; comparison never

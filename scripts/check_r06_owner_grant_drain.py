@@ -226,6 +226,9 @@ def owner_case(cluster, images, scratch, harness, side, revision):
             finals.append(run_owner(hook, side, final_event, f.root / ('owner-' + name)))
             require(any(True in body.get('inbox_activation', {}).values()
                         for body in memory_state(directory).values()), name + ' lost positive activation')
+            current_pins = file_pins(directory)
+            require(all(current_pins.get(path) == pin for path, pin in initial_pins.items()),
+                    name + ' changed retained ledger bytes, accounting or initialization')
         blocked_after = refusal(f, images['control'], 'finalized-positive', 'retained positive or unknown activation grant')
         require(file_pins(independent_dir) == independent_pins, 'other unit positive grant changed')
         final_state = memory_state(directory)
