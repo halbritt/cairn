@@ -15,6 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from test_f02_bound_memory import BoundMemoryCase
+from test_f02_opencode_ambient import OpenCodeAmbientTests
 from test_f04_activation import SESSION, encoded, write, sha
 from test_r04_bound_provider_wiring import R04BoundProviderWiringTests
 
@@ -58,6 +59,46 @@ class R04BoundToolWiringTests(R04BoundProviderWiringTests):
     def go(self):
         self.assertEqual(self.rows[self.f.event['hook_event_name']]['implementation'], 'go')
         return super().go()
+
+    def invoke_provider_side(self, side, invoke):
+        result = super().invoke_provider_side(side, invoke)
+        if hasattr(self, 'pending_ledger_raw'):
+            path = Path(self.f.memory['state_dir']) / (SESSION + '.inbox-recall.json')
+            raw = path.read_bytes()
+            self.assertEqual(raw, self.pending_ledger_raw, side + ' changed pending ledger bytes')
+            self.assertEqual(json.loads(raw), self.pending_ledger_body)
+            self.pending_raw_checks.append(dict(side=side, sha256=sha(raw), bytes=len(raw)))
+        return result
+
+    def normalize(self, row, side):
+        # Tool observations have no recall/capture API or timing-status body.
+        # Use the existing complete ambient comparator directly: the provider
+        # adapter's extra status serialization rewrites untouched Unicode seeds.
+        # No origin header is adapted: any API call here is an immediate failure.
+        self.assertEqual(row['calls'], [])
+        trace = row['trace']
+        if [item['kind'] for item in trace] != ['entry', 'exit']:
+            return OpenCodeAmbientTests.normalize(self, row, side)
+        # Configuration failed before parsing stdin. Raw counts and every key
+        # were compared by validate_keysets before this normalization; retain all
+        # trace fields while validating only the existing nondeterministic ones.
+        self.assertEqual((row['exit'], row['stdout']), (1, b''))
+        self.assertEqual(trace[-1]['phase'], 'configuration')
+        stable = copy.deepcopy(trace)
+        self.assertEqual(len({item['inv'] for item in stable}), 1)
+        for item in stable:
+            self.assertRegex(item['inv'], '^[0-9a-f]{32}$')
+            item['inv'] = '0' * 32
+            for key in ('at', 'duration_ms', 'pid', 'ppid'):
+                if key in item:
+                    self.measurement(item[key])
+                    if key in ('pid', 'ppid'):
+                        self.assertGreater(item[key], 1)
+                    item[key] = 0
+        frame = dict(row, trace=[])
+        normalized = OpenCodeAmbientTests.normalize(self, frame, side)
+        normalized['trace'] = stable
+        return normalized
 
     def retain_pair(self):
         if not self.evidence:
@@ -155,14 +196,19 @@ class R04BoundToolWiringTests(R04BoundProviderWiringTests):
         directory = Path(self.f.memory['state_dir'])
         directory.mkdir(mode=0o700)
         pending = dict(schema='cairn.inbox-recall-grants/1', session=SESSION, grants={},
-                       required=dict(pending=True), opaque=['retained-source-state', 900719925474099312345])
-        write(directory / (SESSION + '.inbox-recall.json'),
-              json.dumps(pending, ensure_ascii=False, separators=(',', ':')).encode())
+                       required=dict(pending=True), opaque=['日本語 🛡️ 😀', 900719925474099312345])
+        self.pending_ledger_raw = json.dumps(pending, ensure_ascii=False, separators=(',', ':')).encode()
+        self.pending_ledger_body = pending
+        self.pending_raw_checks = []
+        write(directory / (SESSION + '.inbox-recall.json'), self.pending_ledger_raw)
         self.event('PostToolUseFailure', prompt_id='not-an-inbox-lease', error='LeaseExpiredError')
         self.quiet_result(self.pair())
         self.assertEqual(self.state().keys(), {SESSION + '.json', SESSION + '.inbox-recall.json'})
         self.assertEqual(self.state()[SESSION + '.inbox-recall.json'], pending)
         self.assertEqual(self.state()[SESSION + '.json']['hints']['errors'], ['LeaseExpiredError'])
+        self.assertEqual([row['side'] for row in self.pending_raw_checks], ['source', 'go'])
+        if self.evidence:
+            write(self.evidence / 'pending-ledger-raw-preservation.json', encoded(self.pending_raw_checks))
 
     def test_tool_no_hints_and_shell_metacharacters_keep_source_noop(self):
         self.stage_tool()

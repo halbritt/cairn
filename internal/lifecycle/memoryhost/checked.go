@@ -72,7 +72,7 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	if err != nil {
 		var data *binding.OrdinaryDataError
 		if errors.As(err, &data) {
-			return checkedEmit(memoryhook.HostFailure(data.Phase, data.Err), out, diagnostic)
+			return checkedDataFailure(selection.ConfigPath, data, out, diagnostic)
 		}
 		return refuse()
 	}
@@ -140,6 +140,25 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	}
 	for k, v := range result.Trace {
 		trace.fields[k] = v
+	}
+	return checkedEmit(result, out, diagnostic)
+}
+
+// Only this typed, post-immutable-preflight configuration failure has Source's
+// entry/exit observer before stdin is read. Other refusal paths stay unchanged.
+func checkedDataFailure(configPath string, data *binding.OrdinaryDataError, out, diagnostic io.Writer) (code int) {
+	result := memoryhook.HostFailure(data.Phase, data.Err)
+	if data.Phase == "configuration" {
+		trace := newTrace(configPath)
+		trace.entry()
+		for key, field := range result.Trace {
+			trace.fields[key] = field
+		}
+		line, _, _ := strings.Cut(result.Stderr, "\n")
+		if _, class, ok := strings.Cut(line, "error_class="); ok {
+			trace.fields["error_class"] = class
+		}
+		defer func() { trace.finish(code, data.Phase) }()
 	}
 	return checkedEmit(result, out, diagnostic)
 }
