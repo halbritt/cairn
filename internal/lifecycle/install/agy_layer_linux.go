@@ -31,13 +31,15 @@ type AgyLayerPlan struct {
 	Layer           string
 	Settings        AgyLayerSettings
 	ReplaceCommands []string
+	RecoveryPath    string
 }
 
 type AgyLayerSelection struct {
-	Path    string `json:"path"`
-	SHA256  string `json:"sha256"`
-	Layer   string `json:"layer"`
-	Changed bool   `json:"changed"`
+	Path     string            `json:"path"`
+	SHA256   string            `json:"sha256"`
+	Layer    string            `json:"layer"`
+	Changed  bool              `json:"changed"`
+	Recovery *AgyLayerSettings `json:"recovery,omitempty"`
 }
 
 // PublishAgyLayer checks both explicit layers and publishes only the selected
@@ -89,7 +91,14 @@ func publishAgyLayer(ctx context.Context, plan AgyLayerPlan, observe func(string
 		return result, err
 	}
 	result = AgyLayerSelection{Path: filepath.Join(selected.Root, selected.Relative), SHA256: agyDigest(raw), Layer: plan.Layer}
-	check := func() error { return errors.Join(selected.recheck(), other.recheck(), prepared.recheck(), ctx.Err()) }
+	var recoverySnapshot *agyLayerSnapshot
+	check := func() error {
+		var recoveryErr error
+		if recoverySnapshot != nil {
+			recoveryErr = recoverySnapshot.recheck()
+		}
+		return errors.Join(selected.recheck(), other.recheck(), prepared.recheck(), recoveryErr, ctx.Err())
+	}
 	if err := check(); err != nil {
 		return AgyLayerSelection{}, err
 	}
@@ -132,16 +141,20 @@ func publishAgyLayer(ctx context.Context, plan AgyLayerPlan, observe func(string
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return AgyLayerSelection{}, err
 	}
-	temporary := ".cairn-agy-" + hex.EncodeToString(nonce[:])
+	recordName, temporary, err := agyRecoveryNames(selected, plan.RecoveryPath, hex.EncodeToString(nonce[:]))
+	if err != nil {
+		return AgyLayerSelection{}, err
+	}
 	mode := uint32(0600)
 	if selected.Present {
 		mode = selected.File.Mode
 	}
 	published := false
+	temporaryCreated, recordCreated := false, false
 	var staged agyFileID
 	defer func() {
 		if err != nil && published {
-			rollback := rollbackAgyLayer(parent, temporary, staged, selected.Present)
+			rollback := rollbackAgyLayer(parent, temporary, staged, selected)
 			err = errors.Join(err, rollback)
 			result = AgyLayerSelection{}
 			if rollback != nil {
@@ -149,22 +162,72 @@ func publishAgyLayer(ctx context.Context, plan AgyLayerPlan, observe func(string
 				return
 			}
 		}
+		if err == nil && published {
+			return
+		}
+		if temporaryCreated {
+			currentRaw, currentID, e := agyReadFile(parent, temporary)
+			if errors.Is(e, unix.ENOENT) && published && !selected.Present {
+				temporaryCreated = false
+			} else if e != nil || !agyRecoveryFileEqual(currentID, staged) || !bytes.Equal(currentRaw, raw) {
+				err = errors.Join(err, e, errors.New("Agy staged recovery member changed; retained correspondence"))
+				return
+			}
+		}
+		if recordCreated {
+			if recoverySnapshot == nil {
+				err = errors.Join(err, errors.New("Agy recovery record observation unknown; retained correspondence"))
+				return
+			}
+			if e := recoverySnapshot.recheck(); e != nil {
+				err = errors.Join(err, e)
+				return
+			}
+			err = errors.Join(err, unix.Unlinkat(int(parent.Fd()), recordName, 0))
+		}
+		if !temporaryCreated {
+			return
+		}
 		if e := unix.Unlinkat(int(parent.Fd()), temporary, 0); e != nil && !errors.Is(e, unix.ENOENT) {
 			err = errors.Join(err, e)
 		}
 	}()
-	if err := step("settings-sync", func() error { return agyWriteTemporary(parent, temporary, raw, mode) }); err != nil {
+	if err := step("settings-sync", func() error {
+		e := agyWriteTemporary(parent, temporary, raw, mode)
+		temporaryCreated = e == nil
+		if e != nil {
+			return e
+		}
+		_, staged, e = agyReadFile(parent, temporary)
+		return e
+	}); err != nil {
 		return AgyLayerSelection{}, err
 	}
-	_, staged, err = agyReadFile(parent, temporary)
+	stagedSnapshot, err := inspectAgyLayer(selected.Root, filepath.Join(filepath.Dir(selected.Relative), temporary))
 	if err != nil {
 		return AgyLayerSelection{}, err
 	}
 	if selected.Present && staged.GID != selected.File.GID {
 		return AgyLayerSelection{}, errors.New("Agy publication would change the selected file group")
 	}
+	if err := step("recovery-sync", func() error {
+		recovery, e := agyRetainRecovery(parent, recordName, selected, other, plan.Layer, temporary, staged, result.SHA256)
+		if e != nil {
+			return e
+		}
+		recordCreated = true
+		journal, e := inspectAgyLayer(selected.Root, filepath.Join(filepath.Dir(selected.Relative), recordName))
+		if e != nil || !journal.Present || agyDigest(journal.Raw) != recovery.SHA256 {
+			return errors.Join(e, errors.New("Agy recovery record changed before publication"))
+		}
+		recoverySnapshot = &journal
+		result.Recovery = &recovery
+		return nil
+	}); err != nil {
+		return AgyLayerSelection{}, err
+	}
 	if err := step("publication", func() error {
-		if err := check(); err != nil {
+		if err := errors.Join(check(), stagedSnapshot.recheck()); err != nil {
 			return err
 		}
 		flags := uint(unix.RENAME_NOREPLACE)
@@ -191,26 +254,29 @@ func publishAgyLayer(ctx context.Context, plan AgyLayerPlan, observe func(string
 			current.File.Mode&0777 != mode&0777 || !bytes.Equal(current.Raw, raw) {
 			return errors.Join(err, errors.New("Agy selected publication readback changed"))
 		}
-		return other.recheck()
+		return errors.Join(other.recheck(), recoverySnapshot.recheck(), agyRecoveryBackupUnchanged(parent, temporary, selected))
 	}); err != nil {
 		return AgyLayerSelection{}, err
 	}
 	if err := step("directory-sync", parent.Sync); err != nil {
 		return AgyLayerSelection{}, err
 	}
-	if err := other.recheck(); err != nil {
+	if err := errors.Join(other.recheck(), recoverySnapshot.recheck(), agyRecoveryBackupUnchanged(parent, temporary, selected)); err != nil {
 		return AgyLayerSelection{}, err
 	}
 	result.Changed = true
 	return result, nil
 }
 
-func rollbackAgyLayer(parent *os.File, temporary string, staged agyFileID, hadOld bool) error {
+func rollbackAgyLayer(parent *os.File, temporary string, staged agyFileID, old agyLayerSnapshot) error {
 	_, current, err := agyReadFile(parent, "hooks.json")
-	if err != nil || current.Dev != staged.Dev || current.Ino != staged.Ino {
+	if err != nil || !agyRecoveryFileEqual(current, staged) {
 		return errors.Join(err, errors.New("Agy rollback ownership changed; reconcile selected layer before reuse"))
 	}
-	if hadOld {
+	if err := agyRecoveryBackupUnchanged(parent, temporary, old); err != nil {
+		return err
+	}
+	if old.Present {
 		err = unix.Renameat2(int(parent.Fd()), temporary, int(parent.Fd()), "hooks.json", unix.RENAME_EXCHANGE)
 	} else {
 		err = unix.Unlinkat(int(parent.Fd()), "hooks.json", 0)
