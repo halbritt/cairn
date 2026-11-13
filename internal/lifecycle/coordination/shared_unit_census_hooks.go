@@ -220,7 +220,7 @@ func (r *watchCensusRead) inspectClaudeHooks(ctx context.Context, selected Watch
 	if err != nil {
 		return err
 	}
-	owner := r.local.sessionConfig(selected.Session.Path, state)
+	owner := r.sessionConfig(selected.Session.Path, state)
 	if owner == nil || r.configPaths[owner] != selected.Config.Path || nativeText(state.Get("agent").Get("metadata").Get("workspace")) != selected.Workspace || !value.SameText(state.Get("schema"), NativeSessionSchema) {
 		return errors.New("native hook session/workspace/config identity disagrees")
 	}
@@ -408,7 +408,7 @@ func (r *watchCensusRead) claudeHookReadback(selected WatchCensusClaudeHooks, st
 	if err := hookDecode(raw, &observed); err != nil {
 		return err
 	}
-	if observed.Schema != "cairn.watch-claude-readback/1" || observed.Harness != "claude" || observed.Layer != "flagSettings" || observed.Settings != selected.Settings || observed.NativeSession != nativeText(state.Get("native_session_id")) {
+	if observed.Schema != "cairn.watch-claude-readback/1" || observed.Harness != "claude" || observed.Layer != "flagSettings" || observed.Settings != selected.Settings || observed.NativeSession == "" || observed.NativeSession != nativeText(state.Get("agent").Get("native_session_id")) {
 		return errors.New("missing, stale or mismatched native hook readback")
 	}
 	if observed.Shell.Path != "/bin/sh" {

@@ -154,6 +154,13 @@ while inspection records its metadata without opening credential content. SDK
 request evidence records operation names and authorization success only. Startup,
 prompt and shutdown hook failures still fail the cell.
 
+Native session identity comes from the coordination producer's
+`agent.native_session_id`. An opaque outer field does not supply or override
+that identity. The collector preserves the exact newly produced state and its
+key sets before checking the selected input; prior failures that preceded this
+capture do not supply that evidence. Unit fixtures use the existing coordination
+state producer rather than fabricate an outer identity.
+
 ```sh
 mise run host:exec -- --timeout 10m --weight 1 -- \
   python3 -B scripts/test_hybrid_runtime_operations.py --timeout 480 \

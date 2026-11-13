@@ -124,8 +124,14 @@ def catalog_for(f, selection, identity, work, readback, output):
         directory.mkdir(mode=0o700, exist_ok=True)
     state_path = Path(f.coord['state_dir']) / (hashlib.sha256((f.coord['binding'] + '\0' + identity).encode()).hexdigest() + '.json')
     require(state_path.is_file(), 'native callback did not produce the selected native-session record')
-    state = json.loads(state_path.read_bytes())
-    require(state['native_session_id'] == identity, 'actual native record identity differs')
+    raw_state = state_path.read_bytes()
+    state = json.loads(raw_state)
+    # Preserve exact producer bytes before any selected-input assertion fails.
+    retained = output / ('actual-native-state-' + hashlib.sha256(raw_state).hexdigest() + '.json')
+    retained.write_bytes(raw_state)
+    write(output / (retained.stem + '-shape.json'), dict(outer_keys=sorted(state),
+          agent_keys=sorted(state.get('agent', {})), registration_keys=sorted(state.get('registration', {}))))
+    require(state.get('agent', {}).get('native_session_id') == identity, 'actual native record identity differs')
     require(state['agent']['metadata']['workspace'] == str(work), 'actual native record workspace differs')
     sessions = [selected_pin(p) for p in sorted(Path(f.coord['state_dir']).glob('*.json'))]
     private_directories(f.account)
@@ -227,6 +233,7 @@ def run(args, output):
 
         target = start('native-a', a)
         native_owner_a = process_ref(target.process.pid)
+        write(output / 'native-a-owner.json', native_owner_a)
         native_observation(target, a, output, 'selected-a')
         f.publish_configuration(enabled=False)
         f.hook_plan.update(id=str(uuid.uuid4()), selection=f.selected, settings=pin(f.settings))
@@ -239,6 +246,7 @@ def run(args, output):
         observations.append(inspect(args.census_image, f, catalog, proposal, output, 'cached-a-refused', ready=False, reason='readback'))
         refreshed = start('native-b-resume', b, target.identity)
         native_owner_b = process_ref(refreshed.process.pid)
+        write(output / 'native-b-owner.json', native_owner_b)
         require(refreshed.identity == target.identity and refreshed.process.pid != target.process.pid, 'refresh changed conversation or reused process')
         b_view = native_observation(refreshed, b, output, 'selected-b-after-resume')
         refreshed.close()
@@ -258,7 +266,7 @@ def run(args, output):
                     changed = f.account / 'settings.local.json' if mutation == 'account-hook' else (f.root if mutation == 'ancestor-hook' else work) / '.claude' / 'settings.json'
                     write(changed, dict(hooks=dict(UserPromptSubmit=[dict(hooks=[dict(type='command', command='cairn extra')])])) )
                     selected['LayerFiles'] = layer_files(f.account, work)
-                    reason = 'hook layer'
+                    reason = 'ancestor project hook/config layer' if mutation == 'ancestor-hook' else 'hook layer'
                 elif mutation in ('receipt', 'config', 'launcher', 'program'):
                     changed = {'receipt': f.receipt_path, 'config': f.coord_path,
                                'launcher': Path(b_view['Executions'][0]['Launcher']['Path']),
