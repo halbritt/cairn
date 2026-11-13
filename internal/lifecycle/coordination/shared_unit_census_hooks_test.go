@@ -75,7 +75,7 @@ func TestWatchCensusClaudeSelectedInputsRefuse(t *testing.T) {
 			case "foreign-account":
 				selected.Account = "/unknown-account"
 			case "foreign-workspace":
-				selected.Workspace = f.root
+				selected.Workspace = filepath.Join(f.root, "workspaces", "a-two.json")
 			case "foreign-session":
 				selected.Session = f.catalog.Sessions[2]
 			}
