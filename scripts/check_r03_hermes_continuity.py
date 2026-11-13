@@ -487,7 +487,11 @@ def run_mechanism_host(plan_path, mode, admission_context=None):
     runtime = dict(plan, run_dir=str(run_dir), admission_context=str(admission_context) if admission_context else None)
     write_json(run_dir/'runtime-plan.json',runtime)
     trace = run_dir/'syscalls.log'
-    command = [shutil.which('strace'), '-f', '-qq', '-s', '2000', '-e', 'trace=network,process', '-o', str(trace),
+    # Observe network/process identities without recording credential-bearing
+    # send/receive buffers. Synthetic model bodies and hook stdin have their
+    # own selected journals; workflow authentication wire bytes are never read.
+    trace_calls = 'process,socket,socketpair,connect,bind,listen,accept,accept4,getsockname,getpeername,shutdown'
+    command = [shutil.which('strace'), '-f', '-qq', '-s', '2000', '-e', 'trace='+trace_calls, '-o', str(trace),
                *host_private_call(plan, 'host_suite', run_dir/'runtime-plan.json', native=mode=='native')]
     write_json(run_dir/'invocation.json',dict(argv=command,mode=mode,execution='direct normal host',normal_home=os.environ['HOME'],normal_path=os.environ['PATH']))
     result = subprocess.run(command,cwd=ROOT,capture_output=True,timeout=480)

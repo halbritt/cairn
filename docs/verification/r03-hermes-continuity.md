@@ -81,7 +81,10 @@ the configured disposable MCP command and read-only Git operations. Shell/env
 chains do not grant model execution. Socket guards admit only the owned model
 and application API. Passive profiling observes provider/SDK/auxiliary/finalizer
 calls and genuine installed engine entries/returns without substituting them.
-Strace observes all owned descendants, including Go and selectors. It rejects
+Strace observes process/network metadata for all owned descendants, including
+Go and selectors; send/receive buffers are excluded so authentication wire
+bytes cannot enter evidence. Synthetic model bodies and hook stdin have their
+own selected journals. It rejects
 unknown targets and Python Source fallback in Go phases; normal missing lookup
 and deterministic installer-anchor probes are separately recorded. The existing
 normal hosts/NSS files are used as shared host configuration, not copied or
