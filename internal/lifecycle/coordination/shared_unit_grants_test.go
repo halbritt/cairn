@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -205,6 +206,73 @@ func assertCurrentnessSnapshot(t *testing.T, before, after map[string]string) {
 		if after[path] != pin {
 			t.Fatalf("inspection changed %s", path)
 		}
+	}
+}
+
+type currentnessOwnerSnapshot struct {
+	files         map[string]string
+	ledger        []byte
+	state, remote *value.Value
+}
+
+func snapshotCurrentnessOwner(t *testing.T, f *grantCurrentnessFixture) currentnessOwnerSnapshot {
+	t.Helper()
+	raw, err := os.ReadFile(f.ledgerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return currentnessOwnerSnapshot{files: censusTestSnapshot(t, f.root), ledger: raw,
+		state: nativeClone(f.state), remote: nativeClone(f.remote)}
+}
+
+func TestR06GrantCurrentnessCodexRetiredTurnWithoutStopPasses(t *testing.T) {
+	f := newGrantCurrentnessFixture(t, "codex")
+	nativePop(f.remote, "turn_stop_state")
+	grants := mustCurrentnessRead(t, f.ledgerPath)
+	grants.Set("active_turn_id", value.Text(currentnessLater))
+	if grants.Get("turns").Get(currentnessTurn) == nil || grants.Get("turns").Get(currentnessLater) == nil {
+		t.Fatal("fixture must retain both ordinary owner turn grants")
+	}
+	stage2WriteValue(t, stage2ServicesProfile(), f.ledgerPath, grants)
+	before := snapshotCurrentnessOwner(t, f)
+	t.Cleanup(func() {
+		if !reflect.DeepEqual(before, snapshotCurrentnessOwner(t, f)) {
+			t.Fatal("Codex no-stop positive changed filesystem, ledger, state or remote facts")
+		}
+	})
+	// Only the existing retired-turn semantics can prove end here; all exact
+	// delivery, close, completion and reply correspondence remains required.
+	receipt, err := f.cli.CaptureWatchDrain(context.Background(), f.selected, []*value.Value{})
+	if err != nil || receipt == nil {
+		t.Fatal("retired Codex owner without a stop report refused", err)
+	}
+	if err := receipt.recheck(context.Background()); err != nil {
+		t.Fatal("unchanged no-stop receipt did not survive final read", err)
+	}
+}
+
+func TestR06GrantCurrentnessCodexMissingRetiredTurnWithoutStopRefuses(t *testing.T) {
+	f := newGrantCurrentnessFixture(t, "codex")
+	nativePop(f.remote, "turn_stop_state")
+	grants := mustCurrentnessRead(t, f.ledgerPath)
+	grants.Set("active_turn_id", value.Text(currentnessLater))
+	if grants.Get("turns").Get(currentnessTurn) == nil || grants.Get("turns").Get(currentnessLater) == nil {
+		t.Fatal("fixture must start with both ordinary owner turn grants")
+	}
+	// Keep the current grant, retained true activation and exact settled owner.
+	// CodexBudget accepts this shape, so the membership guard must discriminate.
+	nativePop(grants.Get("turns"), currentnessTurn)
+	stage2WriteValue(t, stage2ServicesProfile(), f.ledgerPath, grants)
+	before := snapshotCurrentnessOwner(t, f)
+	t.Cleanup(func() {
+		if !reflect.DeepEqual(before, snapshotCurrentnessOwner(t, f)) {
+			t.Fatal("Codex no-stop negative changed filesystem, ledger, state or remote facts")
+		}
+	})
+	receipt, err := f.cli.CaptureWatchDrain(context.Background(), f.selected, []*value.Value{})
+	const want = "D1 retained positive or unknown activation grant needs owning-session disposition: Codex retired-turn membership is unknown"
+	if receipt != nil || err == nil || err.Error() != want {
+		t.Fatalf("missing retired member accepted or wrong refusal: receipt=%v err=%v; want %q", receipt != nil, err, want)
 	}
 }
 
