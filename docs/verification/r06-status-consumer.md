@@ -64,3 +64,46 @@ This qualifies a finite consumer seam. It does not establish complete production
 unit census, effective hook refresh, grant disposition, atomic cross-view
 snapshots, freedom from activity after the final read, full R06 acceptance or
 production adoption.
+
+## Existing owner grant disposition
+
+`scripts/check_r06_owner_grant_drain.py` joins the same real API/control seam
+to installed Python Source and checked Go memory entries. Run its finite cases
+from a clean committed checkout with a new evidence directory:
+
+```sh
+mise run host:exec -- --timeout 10m --weight 1 -- \
+  python3 -B scripts/check_r06_owner_grant_drain.py \
+  --evidence "$HOME/.cache/r06-owner-grant-run"
+mise run test:unit -- ./internal/lifecycle/ledger ./internal/lifecycle/memoryhook \
+  -run '^TestR06GrantDisposition' -count=1
+```
+
+The fixture creates positive activation decisions through the actual checked
+owning-session entries for Codex and Claude, stages and selects disabled B,
+and invokes the refreshed owner. It preserves the original ledgers and
+initialized markers. Go and Source use separate directories; comparison never
+resets or deletes a positive ledger. Existing normalization checks runtime
+measurements and excludes only those measurements from state comparison.
+The retained evidence includes raw bytes and hashes as well as normalized
+JSON, owner session/turn identities, actual commands, outputs and exits.
+
+`PreCompact`, `Stop` and `SessionEnd` are exercised with empty dialogue. These
+existing capture entries do not constitute grant settlement. The fixture
+requires the retained positive activation to remain visible and the real
+inspector to refuse before and after them. A separate positive unit must remain
+byte-identical. Separate negative fixtures exercise unknown and malformed
+activation decisions, a foreign authenticated reader, and an unresolved real
+owning-session obligation. Inspector snapshots must preserve database, native
+state, journals, memory files and the selected bindings.
+
+The existing activation operation remembers the first decision for a turn;
+refreshing a disabled selection does not replace a retained `true` with
+`false`. Inbox compaction preserves recent decisions and explicitly retained
+owner turns; it is reached when a new admitted inbox grant is persisted.
+The finite fixture does not manufacture new work to age out a grant or supply
+an artificial set of live turns. Its successful assertions establish executable
+parity and refusal evidence. Positive grant disposition remains **BLOCKED**:
+an owner policy/interface decision is needed for retirement before a unit
+retaining a positive activation can satisfy D1. This is not full R06, whole-unit
+refresh, HC05, production adoption, or R07 evidence.
