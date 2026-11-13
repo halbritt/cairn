@@ -601,6 +601,23 @@ class NativeClaudeProviderTests(unittest.TestCase):
         self.assertEqual(self.server.read_results, {})
         self.assertEqual(len(self.server.failures), 1)
 
+    def test_equal_launcher_argv_is_disambiguated_by_native_stdin(self):
+        from check_r04_native_claude import native_hook_io
+        trace = ''
+        for pid, event in [('7', 'UserPromptSubmit'), ('8', 'PostToolUse')]:
+            raw = encoded(dict(hook_event_name=event, tool_name='Read'))
+            trace += f'{pid} read(0, {json.dumps(raw.decode())}, 4096) = {len(raw)}\n'
+            trace += f'{pid} write(1, "{{}}\\n", 3) = 3\n'
+        rows = native_hook_io(trace, [dict(pid='7'), dict(pid='8')], 'PostToolUse')
+        self.assertEqual(set(rows), {'8'})
+        self.assertEqual(rows['8']['stdin']['payload']['hook_event_name'], 'PostToolUse')
+        self.assertEqual(base64.b64decode(rows['8']['stdout']['base64']), b'{}\n')
+
+    def test_truncated_native_stdin_cannot_be_dropped_as_another_event(self):
+        from check_r04_native_claude import native_hook_io
+        with self.assertRaisesRegex(AssertionError, 'truncated kernel I/O'):
+            native_hook_io('7 read(0, "{}"..., 500) = 500\n', [dict(pid='7')], 'PostToolUse')
+
 
 def load_tests(loader, tests, pattern):
     suite = unittest.TestSuite(R04BoundProviderWiringTests(name) for name in sorted(

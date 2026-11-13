@@ -33,6 +33,21 @@ from test_f02_opencode_ambient import OpenCodeAmbientTests
 from r04_agy_trace import io_bytes, thread_pids
 
 
+def native_hook_io(trace, executions, event):
+    """Disambiguate equal H13 launchers by their observed stdin, not argv."""
+    selected = {}
+    for execution in executions:
+        members = thread_pids(trace, execution['pid'])
+        raw = io_bytes(trace, members, 0, 'read')
+        payload = json.loads(raw)
+        if payload['hook_event_name'] == event:
+            selected[execution['pid']] = dict(
+                stdin=dict(base64=base64.b64encode(raw).decode(), payload=payload),
+                stdout=dict(base64=base64.b64encode(io_bytes(trace, members, 1, 'write')).decode()),
+                stderr=dict(base64=base64.b64encode(io_bytes(trace, members, 2, 'write')).decode()))
+    return selected
+
+
 class MessagesFixture:
     def __init__(self, *, read_paths=()):
         self.requests, self.failures = [], []
@@ -314,6 +329,9 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                     self.assertEqual(vector[vector.index('--role') + 1], 'memory')
                 actual = [e for e in executions if e['pid'] in {i['pid'] for i in issued} and
                           e['path'] == vector[0] and e['argv'] == vector[:-1]+row['argv'][1:]]
+                streams = native_hook_io(trace, actual, event) if stdin else {}
+                if stdin:
+                    actual = [execution for execution in actual if execution['pid'] in streams]
                 self.assertTrue(actual, (label, role, trace[-5000:]))
                 exits = {e['pid']: re.findall(r'^' + e['pid'] + r'\s+\+\+\+ exited with (\d+) \+\+\+$',
                                              trace, flags=re.MULTILINE) for e in actual}
@@ -325,14 +343,8 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                                     execs=actual, exits=exits))
                 if stdin:
                     self.assertEqual(len(actual), 1, (label, role))
-                    members = thread_pids(trace, actual[0]['pid'])
-                    raw = io_bytes(trace, members, 0, 'read')
-                    payload = json.loads(raw)
-                    self.assertEqual(payload['hook_event_name'], event)
                     reached[-1].update(event=event, timeout=row['hook']['timeout'],
-                        stdin=dict(base64=base64.b64encode(raw).decode(), payload=payload),
-                        stdout=dict(base64=base64.b64encode(io_bytes(trace, members, 1, 'write')).decode()),
-                        stderr=dict(base64=base64.b64encode(io_bytes(trace, members, 2, 'write')).decode()))
+                                          **streams[actual[0]['pid']])
             return reached
 
         def start(name, selection, *, resume=None, read_paths=()):
@@ -535,6 +547,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             event = 'PostToolUseFailure' if failed else 'PostToolUse'
             reached = reached_hooks(trace, label, a, event,
                 roles=('memory',) if failed else ('memory', 'coordination'), stdin=True)
+            prompt_reached = reached_hooks(trace, label, a, 'UserPromptSubmit', stdin=True)
             self.assertEqual(result.get('subtype'), 'success', result)
             self.assertFalse(result.get('is_error'), result)
             self.assertEqual([e for e in tools_client.events[events_at:] if e.get('subtype') == 'hook_response'
@@ -597,6 +610,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
             (output / (label + '.exec')).write_text(trace)
             observations.append(dict(case=label, session_id=tools_client.identity, client=tools_client.root.name,
                 selection=a[0]['selection'], reached=reached, tool_result=native_result,
+                prompt_reached=prompt_reached,
                 source_parity=True, recall_api_delta=len(recall_calls)-before['recall'],
                 coordination_api_delta=len(f.api_calls())-before['api'],
                 ledger_raw=dict(base64=base64.b64encode(before['ledger']).decode()),
