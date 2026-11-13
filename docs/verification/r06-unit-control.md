@@ -148,8 +148,9 @@ argv, PID/start/boot, actual lock ownership, both configuration pins and real
 session heartbeats are read back. The fixture owner stops and joins each
 watcher before the next executor starts. The control process independently
 inspects, switches and reverses through `/2` census plans.
-Both fixture profiles disable native delivery and idle wakeup; the observed
-watcher cycle is real authenticated presence against the two retained sessions.
+Both fixture profiles disable native delivery and omit the optional `idle_wakeup`
+key before staging. A Boolean false is invalid for that retained Python setting.
+The observed watcher cycle is real authenticated presence against the two retained sessions.
 The read-only drain still checks all principal/session claim and wake scopes.
 
 The fixture owner archives only its exactly joined watcher reference after

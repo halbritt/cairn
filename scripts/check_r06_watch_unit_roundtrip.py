@@ -87,7 +87,7 @@ class Fixture(composition.Fixture):
             self.templates = [json.loads((Path(self.selection['Directory']) / name).read_text())
                               for name in sorted(self.selection['Pins'])]
             for config in self.templates:
-                config['idle_wakeup'] = False
+                config.pop('idle_wakeup', None)
                 config['native_delivery'] = False
             self.memory = json.loads(Path(self.memories['a']).read_text())
             self.legacy = self.stage_legacy(images['stager'])
