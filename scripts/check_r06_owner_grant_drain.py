@@ -232,7 +232,7 @@ def select_disabled(f, hook):
     f.next.chmod(0o400)
 
 
-def refusal(f, image, label, expected):
+def refusal(f, image, label, expected, *, exact=False):
     before = f.snapshot()
     coordination = json.loads((f.active / 'one.json').read_bytes())
     manifest = json.loads(Path(coordination['inbox_recall_binding']).read_bytes())
@@ -240,7 +240,8 @@ def refusal(f, image, label, expected):
     memory = Path(memory_config['state_dir'])
     pins = file_pins(memory)
     result = control.invoke(f, image, 'inspect', control.plan_for(f), label, expected=1)
-    require(expected in result.get('error', ''), f'{label}: wrong refusal: {result}')
+    require(result.get('error') == expected if exact else expected in result.get('error', ''),
+            f'{label}: wrong refusal: {result}')
     require(not result['inspected'] and not result['exchange']['Published'], 'refusal admitted publication')
     require(f.snapshot() == before and file_pins(memory) == pins, 'inspector changed owner state')
     require(control.sha((f.active / 'one.json').read_bytes()) == f.pins['one.json'], 'selection changed')
@@ -352,7 +353,8 @@ def guard_case(cluster, images, scratch, name):
             # Separate negative input: never overwrite any owner's positive ledger.
             body = dict(inbox_activation={TURN: 'unknown'} if name == 'unknown_decision' else [])
             control.write(f.root / 'memory' / 'negative.json', body)
-            expected = 'activation'
+            expected = ('D1 retained positive or unknown activation grant needs owning-session disposition'
+                        if name == 'unknown_decision' else 'D1 activation ledger is unknown')
         elif name == 'wrong_owner':
             # A genuine registration under another principal cannot authenticate
             # the retained worker-owned session through that principal's token.
@@ -361,10 +363,10 @@ def guard_case(cluster, images, scratch, name):
             f.configs(token=f.host.token('sender'))
             (f.active / 'one.json').chmod(0o400)
             f.next.chmod(0o400)
-            expected = 'NOT_FOUND'
+            expected = 'D4 session-inbox-control visibility is unknown: NOT_FOUND: Cairn refused the lifecycle operation'
         else:
-            expected = 'D4'
-        error = refusal(f, images['control'], name, expected)
+            expected = 'D4 native inbox hold is not closed'
+        error = refusal(f, images['control'], name, expected, exact=True)
         return dict(case=name, status='PASS', error=error)
     finally:
         pid = f.host.process.pid
@@ -484,7 +486,10 @@ def currentness_case(cluster, images, scratch, harness, side, case, revision):
         else:
             require(not result['inspected'] and bool(result.get('error')), 'unsafe owner admitted')
             if case not in ('ended_nonterminal', 'ended_mismatched_close'):
-                require('D1 retained positive or unknown activation grant' in result['error'], 'unrelated refusal masked D1')
+                reason = ('owning Codex turn is still current'
+                          if harness == 'codex' and case == 'current_active' else 'owning native turn end is unknown')
+                require(result['error'] == 'D1 retained positive or unknown activation grant needs owning-session disposition: ' + reason,
+                        'wrong exact D1 currentness refusal or unrelated failure')
             elif case == 'ended_mismatched_close':
                 require(result['error'] == 'D2 retained close does not match the authoritative close',
                         'mismatched close lost exact correspondence refusal')
@@ -514,6 +519,12 @@ def currentness_case(cluster, images, scratch, harness, side, case, revision):
             require(actor.with_suffix('.result.json').exists(), 'ordinary owner close actor never executed')
             require(file_pins(directory) == pins and control.sha((f.active / 'one.json').read_bytes()) == f.pins['one.json'],
                     'D6 refusal changed grants or old complete selection')
+            require({entry.name for entry in f.active.iterdir()} == {'one.json', '.watch.lock'},
+                    'D6 refusal changed old selection membership')
+            prepared = Path(changed['exchange']['Preparation'])
+            require(prepared == f.root / 'retained' and (prepared / 'one.json').read_bytes() == f.next.read_bytes(),
+                    'D6 refusal lost the complete unpublished preparation')
+            require((f.active / '.watch.lock').samefile(prepared / '.watch.lock'), 'D6 refusal split the watcher lock inode')
         retained = {name: body for name, body in memory_state(directory).items()
                     if name.endswith(('.memory-budget.json', '.inbox-recall.json', '.initialized'))}
         opaque_ledger = retained[SESSION + ('.memory-budget.json' if harness == 'codex' else '.inbox-recall.json')]
