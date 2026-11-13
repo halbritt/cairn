@@ -1,6 +1,8 @@
 # R03 Hermes continuity on the normal host
 
-This correction is a new child of frozen `d28f3f3941f4c81267011b7a1d9df23425b66b7c`.
+This privacy correction is a new child of frozen
+`343bbb374325dbec0bc3c9dd45dd749967046ad0`, following the earlier direct-host
+child of `d28f3f3941f4c81267011b7a1d9df23425b66b7c`.
 Only the same continuity checker, tests and document change. That earlier cut and
 all diagnostics remain frozen. Owner `28030d65-5545-4ca4-ba29-288f487242a7/v1`,
 coordinator `97195305-81b8-4698-a55e-a938edcb82a1/v1`, and Release notice
@@ -92,6 +94,51 @@ mounted into a synthetic environment. Workflow admission readback of Cairn's
 existing service is identified by exact helper PIDs and kept separate from
 application traffic; no test data is written to that service.
 
+## Selected evidence and trace privacy
+
+Review `4815fad5-2a9d-42d7-af4d-bbe2bf2b0a01/v1` found two blockers in the
+earlier cut: blanket scratch retention copied disposable API credentials, and
+the raw strace file retained unvalidated descendant argv. Historical packets
+remain immutable finding evidence; their sensitive files are not copied into
+this candidate. This repair does not authorize any native execution.
+
+Retention now defaults to file hashes and stat metadata. Only named checker
+receipts are copied: selected synthetic Store bodies, hook stdin, observation
+rows, selection/member hashes, baseline/history/idle receipts and validated
+phase results. Unknown future files, identity/token documents, application
+configuration, source trees, databases and process logs retain no content.
+Selected JSON with credential fields fails closed before copying that file.
+Required selected bytes are preserved exactly. Credential continuity uses the
+existing hashes; it does not require a retained credential payload.
+
+Strace writes to an anonymous pipe, never a raw trace file. A bounded reader
+parses exec, process and socket events in memory. Full argv is consumed only
+transiently for exact digest matching or narrow source-derived PG/selector
+and retained-producer grammars. Pinned fixture-controller calls declare their
+exact vector hashes before launch; native vectors require selected commands or
+successful NativeAudit validation. The reducer never learns permissions from
+an observed descendant command. Extra/unknown argv also fails for declared
+negative PATH lookups and installer probes. Go-phase descendant Python Source
+fallback still fails independently.
+
+Retained trace facts contain PID, validated executable path, result, process
+ancestry/exit and approved sockaddr. Rejected paths/addresses retain hashes and
+fixed violation codes. Parse errors, truncation, unfinished input and limits
+fail closed without echoing raw lines. Wire buffers and environment contents
+are not traced. Controller and native-hook stdout/stderr retain lengths/hashes
+and exit status, preventing an error message from copying rejected argv into
+evidence. These policies apply on success and failure. Scratch cleanup runs
+even when receipt selection refuses; owned API/PG cleanup precedes retention.
+
+The original 15 guards remain. Privacy guards add random synthetic credential
+files (including an unknown future file), byte-exact selected receipts, schema
+refusal, pipe reduction, malformed/unfinished/unknown argv, literal hex decoding,
+probe exceptions, and a real strace descendant that prints a canary before its
+unapproved vector is rejected. No real credential is used in these guards.
+The controller still terminates only owned PIDs above 1 and never calls a
+process-group signal function. PostgreSQL's internal shutdown signals are
+observed as process metadata; the reducer does not replace PG's shutdown logic.
+
 ## Live Root admission
 
 The ordinary native phase without both a plan and admission context still
@@ -142,7 +189,7 @@ mise run host:exec -- --timeout 8m --weight 2 -- python3 -B \
 `mechanism-plan` emits a fresh direct-host plan and admission template from the
 frozen code and explicit retained runtime/PG/Root image inputs. Older sandbox
 plans are refused. The later native command requires that plan and the actual
-separately admitted native request context. Root owns exact 1416 review and
-admission; the author does not land/push, launch a reviewer or recursively reply
-to the execution-correction notice. All old cuts, runtime assets and failures
+separately admitted native request context. Root owns the same 1415 delta
+re-review and any later exact native admission; the author does not land/push
+or launch a reviewer. All old cuts, runtime assets and failures
 remain retained. The packet separates code/setup proof from native acceptance.

@@ -14,6 +14,8 @@ import http.server
 import json
 import os
 import re
+import select
+import shlex
 import shutil
 import signal
 import socket
@@ -484,20 +486,59 @@ def run_mechanism_host(plan_path, mode, admission_context=None):
             raise AdmissionRefusal('R03_ADMISSION: ' + str(error)) from error
     verify_inputs(Path(plan['native_root']), Path(plan['manifest']))
     run_dir = Path(plan['output']) / ('native-run' if mode == 'native' else 'setup-run'); run_dir.mkdir(mode=0o700)
-    runtime = dict(plan, run_dir=str(run_dir), admission_context=str(admission_context) if admission_context else None)
+    scratch = Path(tempfile.mkdtemp(prefix='cairn-r03h-'))
+    runtime = dict(plan, run_dir=str(run_dir), scratch_root=str(scratch),
+                   admission_context=str(admission_context) if admission_context else None)
     write_json(run_dir/'runtime-plan.json',runtime)
-    trace = run_dir/'syscalls.log'
     # Observe network/process identities without recording credential-bearing
     # send/receive buffers. Synthetic model bodies and hook stdin have their
     # own selected journals; workflow authentication wire bytes are never read.
     trace_calls = 'process,socket,socketpair,connect,bind,listen,accept,accept4,getsockname,getpeername,shutdown'
-    command = [shutil.which('strace'), '-f', '-qq', '-s', '2000', '-e', 'trace='+trace_calls, '-o', str(trace),
-               *host_private_call(plan, 'host_suite', run_dir/'runtime-plan.json', native=mode=='native')]
+    descriptor, writer = os.pipe()
+    reducer, stop = TraceReducer(plan, scratch), threading.Event()
+    reader = threading.Thread(target=reducer.drain, args=(descriptor, stop), daemon=True)
+    worker_argv = host_private_call(plan, 'host_suite', run_dir/'runtime-plan.json', native=mode=='native')
+    command = [shutil.which('strace'), '-f', '-s', '131072', '-xx', '-e', 'trace='+trace_calls,
+               '-o', '/dev/fd/'+str(writer), *worker_argv]
     write_json(run_dir/'invocation.json',dict(argv=command,mode=mode,execution='direct normal host',normal_home=os.environ['HOME'],normal_path=os.environ['PATH']))
-    result = subprocess.run(command,cwd=ROOT,capture_output=True,timeout=480)
-    (run_dir/'stdout').write_bytes(result.stdout);(run_dir/'stderr').write_bytes(result.stderr)
-    write_json(run_dir/'process.json',dict(exit=result.returncode))
-    require(result.returncode==0,'R03_MECHANISM: direct-host '+mode+' failed; STOP, retain raw output')
+    reader.start()
+    process = None; stdout = stderr = b''; timed_out = False
+    try:
+        process = subprocess.Popen(command,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE,pass_fds=(writer,))
+        os.close(writer); writer = None
+        require(process.pid > 1, 'R03_PROCESS: invalid owned tracer PID')
+        try: stdout, stderr = process.communicate(timeout=480)
+        except subprocess.TimeoutExpired:
+            timed_out = True; process.terminate()
+            try: stdout, stderr = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill(); stdout, stderr = process.communicate(timeout=5)
+    finally:
+        if writer is not None: os.close(writer)
+        reader.join(timeout=5)
+        if reader.is_alive():
+            stop.set(); reader.join(timeout=1); reducer.refuse('trace_incomplete')
+        # Unvalidated process diagnostics can echo argv. Retain facts only on
+        # success AND failure; communicate's exceptions never escape with argv.
+        write_json(run_dir/'process.json',dict(exit=process.returncode if process else None, timed_out=timed_out,
+            stdout_bytes=len(stdout),stderr_bytes=len(stderr),
+            stdout_sha256=hashlib.sha256(stdout).hexdigest(),stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+            raw_streams_retained=False))
+        stdout = stderr = b''
+    policy_path = run_dir/'trace-policy.json'
+    if not policy_path.is_file():
+        reducer.rows.clear(); reducer.pending.clear()
+        if scratch.exists() and not list(scratch.iterdir()): scratch.rmdir()
+    require(policy_path.is_file(), 'R03_TRACE: controller policy unavailable; STOP')
+    policy = json.loads(policy_path.read_bytes())
+    syscall = audit_syscalls(set(policy['allowed_exec']),set(policy['allowed_unix']),
+        {int(pid):label for pid,label in policy['phase_roots'].items()}, reducer=reducer,
+        provider_url=policy['provider_url'],python_path=policy['python_path'],scratch_root=scratch,
+        normal_path=plan['normal_path'],admission_socket=plan['bindings']['admission_socket'],
+        admission_pids=policy['admission_pids'],exact_argv_hashes=[argv_digest(worker_argv),*policy['exact_argv_hashes']])
+    write_json(run_dir/'syscall-audit.json',syscall)
+    require(not syscall['violations'], 'R03_AUDIT: unapproved or incomplete process/network observation; STOP')
+    require(process.returncode==0 and not timed_out,'R03_MECHANISM: direct-host '+mode+' failed; STOP; metadata retained')
     print(json.dumps(dict(status='NATIVE_FIXTURE_PASSED' if mode=='native' else 'DIRECT_HOST_SETUP_ONLY_PASSED',native=mode=='native',ac4_closed=False,output=str(run_dir))))
 
 
@@ -520,26 +561,26 @@ class NativeAudit:
     def audit(self, event, args):
         if event == 'socket.connect':
             address = args[1]
-            self.events.append(dict(kind=event, address=str(address)))
             target = urlsplit(self.spec['provider_url'])
             allowed = ((isinstance(address, tuple) and address[:2] == ('127.0.0.1', target.port))
                        or (isinstance(address, str) and address == self.spec['api_socket']))
-            if not allowed: self.reject('R03_NETWORK: unexpected connection ' + str(address))
+            if not allowed: self.reject('R03_NETWORK: unexpected connection')
+            self.events.append(dict(kind=event, address=str(address)))
         elif event == 'socket.getaddrinfo':
-            self.events.append(dict(kind=event, host=str(args[0])))
             if args[0] not in ('127.0.0.1', 'localhost'):
                 self.reject('R03_NETWORK: external DNS refused')
+            self.events.append(dict(kind=event, host=str(args[0])))
         elif event in ('subprocess.Popen', 'os.exec'):
             executable, argv = str(args[0]), args[1]
-            row = dict(kind=event, executable=executable,
+            row = dict(kind=event, executable_sha256=hashlib.sha256(executable.encode()).hexdigest(),
                        argument_count=len(argv) if isinstance(argv,(list,tuple)) else 1)
             self.events.append(row)
             import shutil
             resolved = str(Path(shutil.which(executable) or executable).resolve())
             if resolved not in self.spec['exec_pins']:
-                self.reject('R03_EXEC: unexpected executable ' + executable)
+                self.reject('R03_EXEC: unexpected executable')
             if digest(resolved) != self.spec['exec_pins'][resolved]:
-                self.reject('R03_EXEC: executable changed ' + executable)
+                self.reject('R03_EXEC: executable changed')
             actual = [str(value) for value in argv] if isinstance(argv, (list, tuple)) else [str(argv)]
             exact = any(actual == candidate for candidate in self.spec['exact_argv'])
             git = self.spec['git_executable']
@@ -553,19 +594,26 @@ class NativeAudit:
                 exact = exact or read_command
             if not exact:
                 self.reject('R03_EXEC: executable arguments outside the owned fixture contract')
-            row['argv'] = actual  # Only already-admitted fixture arguments enter evidence.
+            row.update(executable=resolved, argv_sha256=argv_digest(actual), argv_validated=True)
 
     def profile(self, frame, event, result):
         filename, name = frame.f_code.co_filename, frame.f_code.co_name
         if name == 'run_engine' and filename.endswith('/plugins/cairn/__init__.py'):
             if event == 'call':
-                row = dict(argv=list(frame.f_locals['command']), payload=dict(frame.f_locals['payload']),
+                command = list(frame.f_locals['command'])
+                if command not in self.spec['exact_argv']:
+                    self.reject('R03_EXEC: unselected engine vector')
+                row = dict(argv=command, payload=dict(frame.f_locals['payload']),
                            timeout=frame.f_locals.get('timeout'), started=time.monotonic())
                 self.calls.append(row); self.frames[id(frame)] = row
             elif event == 'return' and id(frame) in self.frames:
                 row = self.frames.pop(id(frame))
                 if result is not None:
-                    row.update(exit=result.returncode, stdout=result.stdout, stderr=result.stderr)
+                    row['exit'] = result.returncode
+                    for name, value in (('stdout',result.stdout),('stderr',result.stderr)):
+                        raw = value.encode() if isinstance(value,str) else value
+                        row[name+'_sha256'] = hashlib.sha256(raw).hexdigest()
+                        row[name+'_bytes'] = len(raw)
                 row['seconds'] = time.monotonic() - row['started']
         watched = ('/agent/auxiliary_client.py', '/hermes_cli/runtime_provider.py', '/openai/', '/httpx/', '/agent/backends/')
         if event == 'call' and (any(part in filename for part in watched)
@@ -737,46 +785,306 @@ def auxiliary_routes(native_root, provider_url):
 
 
 def retain_evidence(root, destination):
-    """Copy only owned synthetic fixture receipts before disposable cleanup."""
+    """Default to metadata; select only checker-owned synthetic receipts.
+
+    Application profiles, logs, databases, identity documents, code and unknown
+    future files are never content evidence. Configuration continuity is proved
+    by its existing hashes, not by copying credential-bearing configuration.
+    """
     destination = Path(destination); destination.mkdir(mode=0o700)
+    selected = {
+        'host-view.json', 'owned-processes.json', 'seed.json',
+        'retained2-before-use.json', 'credential-selectors.json',
+        'selection-A.json', 'selection-B.json', 'selection.json',
+        'transport-requests.json', 'stored-bodies.txt',
+        'capture_observation.jsonl', 'recall_observation.jsonl',
+        'result.json', 'cleanup.json', 'admission-readback.json',
+        'selector-calls.jsonl',
+    }
+    phase_receipts = {'spec.json', 'ready.json', 'continue.json', 'result.json',
+                      'calls.json', 'audit.json', 'admission-readback.json',
+                      'baseline-before-B.json', 'refresh-refusal.json'}
     metadata = {}
     for path in sorted(Path(root).rglob('*')):
         relative = str(path.relative_to(root))
-        if relative.startswith('cluster/data'): continue
+        if relative == 'cluster/data' or relative.startswith('cluster/data/'): continue
         info = path.lstat()
         metadata[relative] = dict(mode=stat.S_IMODE(info.st_mode), uid=info.st_uid, inode=info.st_ino,
                                   device=info.st_dev, links=info.st_nlink)
         if path.is_symlink():
-            metadata[relative]['symlink'] = os.readlink(path); continue
+            metadata[relative]['symlink_sha256'] = hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest(); continue
         if not path.is_file() or path.is_socket(): continue
         metadata[relative]['sha256'] = digest(path)
-        with path.open('rb') as stream: header = stream.read(4)
-        if header == b'\x7fELF': continue  # Exact Root image pins retain these bytes elsewhere.
+        metadata[relative]['bytes'] = info.st_size
+        parts = Path(relative).parts
+        keep = relative in selected or (len(parts) == 2 and parts[0] in ('A', 'B', 'retained2')
+                                         and parts[1] in phase_receipts)
+        metadata[relative]['content_selected'] = keep
+        if not keep: continue
+        require(info.st_uid == os.getuid() and info.st_nlink == 1 and info.st_size <= 16 * 1024 * 1024,
+                'R03_PRIVACY: invalid selected receipt metadata')
+        raw = path.read_bytes()
+        # Selected receipt schemas contain credential hashes/selectors only.
+        # Reject credential fields rather than redacting or altering proof bytes.
+        if path.suffix in ('.json', '.jsonl') and raw.strip():
+            values = ([json.loads(raw)] if path.suffix == '.json' else
+                      [json.loads(line) for line in raw.splitlines() if line.strip()])
+            def no_credentials(value):
+                if isinstance(value, dict):
+                    for key, item in value.items():
+                        require(key.lower() not in ('token', 'access_token', 'refresh_token', 'api_key',
+                            'password', 'secret', 'authorization', 'bearer', 'identities'),
+                            'R03_PRIVACY: credential field in selected receipt')
+                        no_credentials(item)
+                elif isinstance(value, list):
+                    for item in value: no_credentials(item)
+            for value in values: no_credentials(value)
         target = destination / relative; target.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
-        shutil.copy2(path,target)
+        target.write_bytes(raw); target.chmod(0o600)
     write_json(destination/'filesystem-before-cleanup.json',metadata)
+
+
+def argv_digest(argv):
+    return hashlib.sha256(json.dumps(list(argv), ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+
+
+class FixtureExecPolicy:
+    """Declare exact controller calls before exec; never learn native argv.
+
+    Only the pinned fixture controller runs in this process. Native clients run
+    separately and retain their existing pre-exec NativeAudit. A digest declared
+    here must match the independent kernel observation, including failed PATH
+    lookups. No command vector or process output is written by this observer.
+    """
+    def __init__(self, allowed_exec):
+        self.allowed_exec, self.hashes = allowed_exec, set()
+
+    def audit(self, event, args):
+        if event not in ('subprocess.Popen', 'os.exec'): return
+        executable, argv = str(args[0]), args[1]
+        resolved = str(Path(shutil.which(executable) or executable).resolve())
+        anchor = re.fullmatch(r'/tmp/cairn-r03h-[^/]+/project/release/\.prepare-[^/]+/probe', executable)
+        require(resolved in self.allowed_exec or anchor, 'R03_TRACE: undeclared controller executable')
+        require(isinstance(argv, (tuple, list)) and all(isinstance(arg, (str, os.PathLike)) for arg in argv),
+                'R03_TRACE: invalid controller vector')
+        argv = [os.fspath(arg) for arg in argv]
+        self.hashes.add(argv_digest(argv))
+        # The maintained installer creates this fixed shell/interpreter probe.
+        # Pin the literal vector before launch; do not infer argv from tracing.
+        if anchor:
+            lines = Path(executable).read_text().splitlines()
+            require(len(lines) == 2 and lines[1].startswith('exec '), 'R03_TRACE: malformed anchor')
+            self.hashes.add(argv_digest(shlex.split(lines[1])[1:]))
+
+
+def runtime_argv_allowed(path, argv, plan, scratch):
+    """Small source-derived grammars for pinned PG children and the selector.
+
+    Direct fixture calls and selected hooks use exact vector hashes instead.
+    These descendants are spawned inside PG/Go, outside Python audit hooks.
+    Every option, count and value is constrained; arbitrary extra argv fails.
+    """
+    if not plan or not scratch or not argv: return False
+    pg = str(Path(plan['pg_root'])/'usr/lib/postgresql/18/bin/postgres')
+    def postgres(vector):
+        if not vector or vector[0] != pg: return False
+        tail = vector[1:]
+        fixed = ['-F', '-c', 'log_checkpoints=false']
+        if tail == ['-V']: return True
+        if tail == ['-D', str(Path(scratch)/'cluster/data'), '-F', '-k',
+                    str(Path(scratch)/'cluster/socket'), '-c', 'listen_addresses=']: return True
+        if tail == ['--single', '-F', '-O', '-j', '-c', 'search_path=pg_catalog',
+                    '-c', 'exit_on_error=true', '-c', 'log_checkpoints=false', 'template1']: return True
+        if tail[:2] == ['--boot', '-x1']:
+            tail = tail[2:]
+            if tail[:2] == ['-X', '16777216']: tail = tail[2:]
+            if tail[:1] == ['-k']: tail = tail[1:]
+            return tail == fixed
+        if tail[:4] == ['--boot', *fixed]:
+            return tail[4:] in (['-X','16777216'], ['-X','16777216','-k'],
+                                ['-x1'], ['-x1','-X','16777216'],
+                                ['-x1','-X','16777216','-k'])
+        if tail[:1] != ['--check'] or tail[1:4] != fixed: return False
+        tail = tail[4:]
+        keys = ['max_connections', 'autovacuum_worker_slots', 'shared_buffers', 'dynamic_shared_memory_type']
+        return len(tail) == 8 and all(tail[2*i] == '-c' and
+            re.fullmatch(re.escape(key) + ('=(posix|sysv|mmap)' if i == 3 else r'=[1-9][0-9]{0,8}'), tail[2*i+1])
+            for i, key in enumerate(keys))
+    if path == pg: return postgres(argv)
+    if str(Path(path).resolve()) == str(Path('/bin/sh').resolve()) and argv[1:2] == ['-c']:
+        if len(argv) == 4 and argv[2] == '--': command = argv[3]
+        elif len(argv) == 3: command = argv[2]
+        else: return False
+        try: vector = shlex.split(command)
+        except ValueError: return False
+        if vector[:1] == ['exec']: vector = vector[1:]
+        for suffix in (['<', '/dev/null', '>>', str(Path(scratch)/'cluster/postgres.log'), '2>&1'],
+                       ['<', '/dev/null', '>', '/dev/null', '2>&1'],
+                       ['<', '/dev/null', '2>&1'], ['>', '/dev/null'], ['>/dev/null']):
+            if vector[-len(suffix):] == suffix:
+                vector = vector[:-len(suffix)]; break
+        return postgres(vector) or vector == ['locale','-a']
+    if str(Path(path).resolve()) == str(Path(shutil.which('locale')).resolve()):
+        return argv in (['locale', '-a'], [path, '-a'])
+    api = str(Path(plan['image_directory'])/'api')
+    base = [api, 'agent', '--socket', str(Path(scratch)/'api/api.sock'),
+            '--token-file', str(Path(scratch)/'api/worker.token')]
+    if path == api and argv[:len(base)] == base:
+        tail = argv[len(base):]
+        if tail in ([operation] for operation in ('pull','create','revise','recall-observation','capture-observation')):
+            return True  # Payload goes through stdin, never a trace buffer.
+        if tail[:3] != ['search','--repo','fixture:r03-hermes-native-continuity']: return False
+        # The retained producer's only variable argv are bounded lookup values.
+        # Require its exact scope/flag grammar; unknown or duplicate flags fail.
+        if len(tail) < 11 or tail[3] != '--task' or tail[5] != '--run' or tail[7] != '--tokens': return False
+        if tail[4] != 'hermes/'+tail[6] or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',tail[6]): return False
+        if not re.fullmatch(r'[1-9][0-9]{0,5}',tail[8]): return False
+        rest = tail[9:]
+        if rest[:1] == ['--request-id']:
+            if len(rest) < 2 or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',rest[1]): return False
+            rest = rest[2:]
+        if rest[:1] == ['--offset']:
+            if len(rest) < 2 or not re.fullmatch(r'0|[1-9][0-9]{0,5}',rest[1]): return False
+            rest = rest[2:]
+        for flag in ('--entity-file','--kind'):
+            while rest[:1] == [flag]:
+                if len(rest) < 2 or not rest[1] or len(rest[1]) > 4096: return False
+                if flag == '--kind' and rest[1] not in ('note','decision','preference','lesson','procedure'): return False
+                rest = rest[2:]
+        return len(rest) == 2 and rest[0] == '--' and len(rest[1]) <= 16000
+    selector = str(Path(scratch)/'selector')
+    if path != selector: return False
+    prefix = [selector, '--print', '--output-format', 'json', '--disable-slash-commands',
+        '--no-session-persistence', '--setting-sources', '', '--settings', '{"disableAllHooks":true}',
+        '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', '', '--max-turns', '2', '--json-schema']
+    if len(argv) != len(prefix) + 5 or argv[:len(prefix)] != prefix: return False
+    if argv[-2:] != ['--model', MODEL] or argv[-4] != '--system-prompt': return False
+    # Literal AST constants only: never import or execute the producer to learn
+    # a permissible selector vector. Both backends carry these same contracts.
+    constants = {}
+    for node in ast.parse((ROOT/'integrations/lifecycle/memory.py').read_text()).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            name = node.targets[0].id
+            if name in {stage+'_'+kind for stage in ('CAPTURE','PREVIEW','SHORTLIST') for kind in ('PROMPT','SCHEMA')}:
+                constants[name] = ast.literal_eval(node.value)
+    try: schema = json.loads(argv[len(prefix)])
+    except ValueError: return False
+    return any(schema == constants[stage+'_SCHEMA'] and argv[-3] == constants[stage+'_PROMPT']
+               for stage in ('CAPTURE','PREVIEW','SHORTLIST'))
+
+
+class TraceReducer:
+    """Bounded in-memory strace input. No raw line, argv or error is an artifact."""
+    max_line, max_bytes, max_rows = 1024*1024, 128*1024*1024, 50000
+
+    def __init__(self, plan=None, scratch=None):
+        self.plan, self.scratch = plan, scratch
+        self.rows, self.pending, self.errors = [], {}, []
+        self.bytes = 0
+
+    def refuse(self, code):
+        if code not in self.errors: self.errors.append(code)
+
+    @staticmethod
+    def string(token):
+        value = ast.literal_eval(token)
+        if '\\x' in token: value = value.encode('latin1').decode('utf-8')
+        return value
+
+    def feed(self, line):
+        self.bytes += len(line)
+        if self.bytes > self.max_bytes or len(line) > self.max_line or len(self.rows) >= self.max_rows:
+            self.refuse('trace_limit'); return
+        try:
+            line = line.decode('ascii') if isinstance(line, bytes) else line
+            match = re.fullmatch(r'(\d+)\s+(.*?)\s*', line)
+            if not match: raise ValueError()
+            pid, call = int(match[1]), match[2]
+            if pid <= 1: raise ValueError()
+            if '<unfinished ...>' in call:
+                if pid in self.pending or len(self.pending) >= 4096: raise ValueError()
+                self.pending[pid] = call.split('<unfinished ...>')[0]; return
+            if call.startswith('<... ') and ' resumed>' in call:
+                call = self.pending.pop(pid) + call.split(' resumed>', 1)[1]
+            if call.startswith('+++ exited with '):
+                status = re.fullmatch(r'\+\+\+ exited with (\d+) \+\+\+', call)
+                if not status: raise ValueError()
+                self.rows.append(dict(pid=pid, kind='exit', result=int(status[1]))); return
+            if call.startswith(('--- ', '+++ killed by ')):
+                signal_name = re.match(r'(?:--- |\+\+\+ killed by )(SIG[A-Z0-9]+)', call)
+                if not signal_name: raise ValueError()
+                self.rows.append(dict(pid=pid, kind='signal', signal=signal_name[1])); return
+            parsed = re.fullmatch(r'(\w+)\((.*)\)\s+=\s+(-?\d+|\?)(?: ([A-Z][A-Z0-9_]+))?.*', call)
+            if not parsed: raise ValueError()
+            name, args, result, error = parsed.groups(); args = args.strip()
+            row = dict(pid=pid, kind=name, result=int(result) if result != '?' else None)
+            if error: row['errno'] = error
+            if name == 'execve':
+                vector = re.fullmatch(r'("(?:[^"\\]|\\.)*"), (\[.*\]), (?:0x[0-9a-f]+|NULL)(?: /\* \d+ vars \*/)?', args)
+                if not vector: raise ValueError()
+                path = self.string(vector[1])
+                # literal_eval rejects truncation/ellipsis and non-string argv.
+                argv = ast.literal_eval(vector[2])
+                if not isinstance(argv, list) or not argv or not all(isinstance(v, str) for v in argv): raise ValueError()
+                if '\\x' in vector[2]: argv = [v.encode('latin1').decode('utf-8') for v in argv]
+                row.update(path=path, argv_sha256=argv_digest(argv), argument_count=len(argv),
+                    runtime_argv_validated=runtime_argv_allowed(path, argv, self.plan, self.scratch),
+                    selector_argument=bool(self.scratch and str(Path(self.scratch)/'selector') in argv))
+            elif name == 'execveat':
+                self.refuse('unapproved_execveat'); return
+            elif name in ('clone', 'clone3', 'fork', 'vfork'):
+                if row['result'] and row['result'] > 1: row['child'] = row['result']
+            elif name in ('kill','tkill','tgkill'):
+                signal_call = re.fullmatch(r'(-?\d+), (?:(-?\d+), )?(SIG[A-Z0-9]+|0)',args)
+                if not signal_call: raise ValueError()
+                targets = [int(value) for value in signal_call.groups()[:2] if value is not None]
+                row.update(targets=targets,signal=signal_call[3])
+            elif name in ('connect','bind','accept','accept4','getsockname','getpeername'):
+                quoted = r'"(?:[^"\\]|\\.)*"'
+                unix = re.search(r'sa_family=AF_UNIX, sun_path=('+quoted+')', args)
+                inet = re.search(r'sa_family=AF_INET, sin_port=htons\((\d+)\), sin_addr=inet_addr\(('+quoted+r')\)', args)
+                if unix: row['sockaddr'] = dict(family='AF_UNIX', path=self.string(unix[1]))
+                elif inet: row['sockaddr'] = dict(family='AF_INET', port=int(inet[1]), address=self.string(inet[2]))
+                elif name in ('connect', 'bind'): row['sockaddr'] = dict(family='unknown')
+            elif name not in ('socket','socketpair','listen','shutdown','wait4','waitid','exit','exit_group',
+                              'setsid','setpgid','getpgid','getsid','getpgrp','restart_syscall',
+                              'getpid','getppid','gettid','pidfd_open'):
+                self.refuse('unparsed_syscall'); return
+            self.rows.append(row)
+        except (ValueError, TypeError, KeyError, SyntaxError, UnicodeError, RecursionError):
+            self.refuse('trace_parse_error')
+        # Raw input and argv exist only inside this call, never in self.rows.
+
+    def drain(self, descriptor, stop):
+        pending = b''
+        try:
+            while not stop.is_set():
+                if not select.select([descriptor], [], [], .2)[0]: continue
+                chunk = os.read(descriptor, 65536)
+                if not chunk: break
+                pending += chunk
+                while b'\n' in pending:
+                    line, pending = pending.split(b'\n', 1); self.feed(line)
+                if len(pending) > self.max_line:
+                    self.refuse('trace_line_limit'); pending = b''
+            if pending: self.feed(pending)
+        except OSError:
+            self.refuse('trace_pipe_error')
+        finally:
+            pending = b''
+            os.close(descriptor)
 
 
 def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None,
                    provider_url=PROVIDER_URL, python_path=None, scratch_root=None, normal_path='',
-                   admission_socket=None, admission_pids=()):
-    trace = Path(trace_path).read_text()
-    violations, executions, connections, runtime_probes, workflow_reads = [], [], [], [], []
-    lines, pending = [], {}
-    for line in trace.splitlines():
-        if not line.strip(): continue
-        pid = line.split()[0]
-        if '<unfinished ...>' in line: pending[pid] = line.split('<unfinished ...>')[0]
-        elif '<... ' in line and ' resumed>' in line:
-            if pid in pending: lines.append(pending.pop(pid) + line.split(' resumed>',1)[1])
-        else: lines.append(line)
-    for line in pending.values():
-        if 'connect(' in line or 'execve(' in line: violations.append('unfinished audited operation: '+line)
-    parents = {}
-    for line in lines:
-        if re.search(r'(clone|fork)',line):
-            child = re.search(r'= (\d+)\s*$',line)
-            if child: parents[int(child[1])] = int(line.split()[0])
+                   admission_socket=None, admission_pids=(), reducer=None, exact_argv_hashes=()):
+    if reducer is None:
+        reducer = TraceReducer()
+        with Path(trace_path).open('rb') as stream:
+            for line in stream: reducer.feed(line.rstrip(b'\n'))
+    violations = list(reducer.errors)
+    if reducer.pending: violations.append('unfinished audited operation')
+    parents = {row['child']:row['pid'] for row in reducer.rows if 'child' in row}
     def ancestor(pid, candidates):
         seen = set()
         while pid not in seen:
@@ -788,34 +1096,54 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
     target = urlsplit(provider_url)
     normal_dirs = {str(Path(path).resolve()) for path in normal_path.split(':') if path}
     tool_names = {Path(path).name for path in allowed_exec} | {'sh'}
-    for line in lines:
-        pid = int(line.split()[0])
-        if 'execve(' in line:
-            match = re.search(r'execve\(("(?:[^"\\]|\\.)*")',line)
-            if not match: violations.append(line); continue
-            path = json.loads(match[1]); executions.append(path)
-            negative_lookup = Path(path).name in tool_names and str(Path(path).parent.resolve()) in normal_dirs and '= -1 ENOENT' in line
-            anchor = scratch_root is not None and re.fullmatch(re.escape(str(Path(scratch_root)/'project/release'))+r'/\.prepare-[^/]+/probe',path)
-            if negative_lookup or anchor: runtime_probes.append(line)
-            elif str(Path(path).resolve()) not in allowed_exec: violations.append(line)
-            owner = ancestor(pid,phase_roots or {})
+    executions, connections, probes, workflow, processes = [], [], [], [], []
+    hashes = set(exact_argv_hashes)
+    for row in reducer.rows:
+        pid, kind = row['pid'], row['kind']
+        safe = {key:value for key,value in row.items() if key in ('pid','kind','result','errno','child','signal','targets')}
+        if kind == 'execve':
+            path = row['path']
+            negative = (Path(path).name in tool_names and str(Path(path).parent.resolve()) in normal_dirs
+                        and row.get('errno') == 'ENOENT')
+            anchor = scratch_root is not None and re.fullmatch(re.escape(str(Path(scratch_root)/'project/release'))+r'/\.prepare-[^/]+/probe', path)
+            known_path = negative or anchor or str(Path(path).resolve()) in allowed_exec
+            argv_ok = row['argv_sha256'] in hashes or row['runtime_argv_validated']
+            if not known_path or not argv_ok:
+                violations.append('unapproved executable' if not known_path else 'unapproved executable arguments')
+            if known_path: safe.update(path=path, argument_count=row['argument_count'], argv_validated=argv_ok)
+            else: safe['path_sha256'] = hashlib.sha256(path.encode()).hexdigest()
+            if negative or anchor: probes.append(safe)
+            executions.append(safe)
+            owner = ancestor(pid, phase_roots or {})
             if owner is not None and phase_roots[owner] in ('A','B') and path == python_path and pid != owner:
-                if str(Path(scratch_root)/'selector') not in line: violations.append('Source Python fallback in Go phase: '+line)
-        if 'connect(' in line:
-            connections.append(line)
-            if 'AF_UNIX' in line:
-                match = re.search(r'sun_path="([^\"]+)"',line)
-                if match and match[1] == '/var/run/nscd/socket' and '= -1 ENOENT' in line:
-                    runtime_probes.append(line)
-                elif match and match[1] == admission_socket and ancestor(pid,set(admission_pids)) is not None:
-                    workflow_reads.append(line)
-                elif not match or match[1] not in allowed_unix: violations.append(line)
-            elif 'AF_INET' in line:
-                if 'sin_port=htons('+str(target.port)+')' not in line or 'inet_addr("127.0.0.1")' not in line:
-                    violations.append(line)
-            else: violations.append(line)
-    return dict(execve=executions,connect=connections,declared_negative_or_anchor_probes=runtime_probes,
-                authenticated_workflow_reads=workflow_reads,violations=violations)
+                if not row['selector_argument']: violations.append('Source Python fallback in Go phase')
+        elif 'sockaddr' in row:
+            address = row['sockaddr']; family = address['family']
+            absent_nss = family == 'AF_UNIX' and address['path'] == '/var/run/nscd/socket' and row.get('errno') == 'ENOENT'
+            workflow_read = (family == 'AF_UNIX' and address['path'] == admission_socket
+                             and ancestor(pid,set(admission_pids)) is not None)
+            owned = (family == 'AF_UNIX' and address['path'] in allowed_unix or
+                     family == 'AF_INET' and address['address'] == '127.0.0.1' and address['port'] == target.port)
+            # Unnamed ephemeral bind (port 0) is allowed only on loopback.
+            local_ephemeral = kind == 'bind' and family == 'AF_INET' and address['address'] == '127.0.0.1' and address['port'] == 0
+            # Local/accepted socket names are endpoint observations, not new
+            # outbound admissions. Every connect/bind is checked independently.
+            local_observation = (kind in ('accept','accept4','getsockname','getpeername')
+                and family == 'AF_INET' and address['address'] == '127.0.0.1' and 0 < address['port'] <= 65535)
+            if not (owned or absent_nss or workflow_read or local_ephemeral or local_observation):
+                violations.append('unapproved socket target')
+                safe['sockaddr_sha256'] = hashlib.sha256(json.dumps(address,sort_keys=True).encode()).hexdigest()
+            else: safe['sockaddr'] = address
+            connections.append(safe)
+            if absent_nss: probes.append(safe)
+            if workflow_read: workflow.append(safe)
+        else: processes.append(safe)
+    result = dict(execve=executions, connect=connections, processes=processes,
+        declared_negative_or_anchor_probes=probes, authenticated_workflow_reads=workflow,
+        violations=violations, raw_trace_retained=False, raw_argv_retained=False,
+        input_bytes=reducer.bytes, rows=len(reducer.rows))
+    reducer.rows.clear(); reducer.pending.clear()
+    return result
 
 
 def host_suite(plan_path, native=False):
@@ -834,7 +1162,11 @@ def host_suite(plan_path, native=False):
     from test_r03_hermes_installer import installer
 
     os.umask(0o077)
-    root = Path(tempfile.mkdtemp(prefix='cairn-r03h-'))
+    root = Path(plan['scratch_root'])
+    require(root.parent == Path(tempfile.gettempdir()) and root.name.startswith('cairn-r03h-')
+            and not root.is_symlink() and root.stat().st_uid == os.getuid()
+            and stat.S_IMODE(root.stat().st_mode) == 0o700 and not list(root.iterdir()),
+            'R03_CLEANUP: fresh owned scratch required')
     run_dir = Path(plan['run_dir'])
     write_json(root/'host-view.json',dict(home=os.environ['HOME'],path=os.environ['PATH'],pid=os.getpid(),
         net_namespace=os.readlink('/proc/self/ns/net'),pid_namespace=os.readlink('/proc/self/ns/pid'),
@@ -849,6 +1181,9 @@ def host_suite(plan_path, native=False):
     python = str(native_root/'venv/bin/python')
     allowed_exec.add(str(Path(python).resolve()))
     allowed_unix = set()
+    execution_policy = FixtureExecPolicy(allowed_exec)
+    sys.addaudithook(execution_policy.audit)
+    phase_roots = {}
     try:
         grant = authenticated_admission(plan['admission_context'],plan['bindings'],journal=root/'admission-readback.json') if native else None
         cluster = disposable_host.OwnedCluster.start(root / 'cluster', pg_bin=pg_bin)
@@ -869,7 +1204,8 @@ def host_suite(plan_path, native=False):
         selector = root / 'selector'
         selector.write_text('#!'+python+'\n' +
             'import json,pathlib,sys\np=pathlib.Path(__file__).parent\n'
-            'with (p/"selector-calls.jsonl").open("a") as f: f.write(json.dumps(dict(argv=sys.argv[1:],stdin=sys.stdin.read()))+"\\n")\n'
+            'import hashlib\n'
+            'with (p/"selector-calls.jsonl").open("a") as f: f.write(json.dumps(dict(argv_sha256=hashlib.sha256(json.dumps(sys.argv[1:]).encode()).hexdigest(),stdin=sys.stdin.read()))+"\\n")\n'
             'print(json.dumps(json.loads((p/"selection.json").read_text())))\n')
         selector.chmod(0o500); allowed_exec.add(str(selector))
         installed.SOURCE_REVISION = IMAGE_SOURCE
@@ -945,6 +1281,12 @@ def host_suite(plan_path, native=False):
                 for argv in config.get('commands', {}).values():
                     exec_pins[str(Path(argv[0]).resolve())] = digest(argv[0]); allowed_exec.add(str(Path(argv[0]).resolve()))
                     exact_argv.append(argv)
+                    # A selected shell launcher execs its pinned literal L.
+                    launcher = Path(argv[0]).read_bytes()
+                    if launcher.startswith(b'#!'):
+                        lines = launcher.decode().splitlines()
+                        require(len(lines) == 2 and lines[1].startswith('exec '), 'R03_TRACE: invalid selected launcher')
+                        execution_policy.hashes.add(argv_digest(shlex.split(lines[1])[1:] + argv[1:]))
             if 'commands' not in selection:
                 exact_argv.append([python, selection['script'], '--config', selection['engine_config']])
             spec = dict(label=label, selection=selection, home=str(home), project=str(f.root),
@@ -953,10 +1295,12 @@ def host_suite(plan_path, native=False):
                 exec_pins=exec_pins, exact_argv=exact_argv, git_executable=git_executable,
                 provider_url=provider_url, plan=str(plan_path), credential_selector_sha256=credential_sha)
             write_json(phase / 'spec.json', spec)
+            execution_policy.hashes.update(argv_digest(vector) for vector in exact_argv)
             argv = host_private_call(plan,'native_worker',phase/'spec.json')
             process = subprocess.Popen(argv, cwd=f.root, stdin=subprocess.DEVNULL,
                 stdout=(phase / 'stdout').open('wb'), stderr=(phase / 'stderr').open('wb'), start_new_session=True)
             require(process.pid > 1, 'R03_PROCESS: invalid owned CLI PID')
+            phase_roots[process.pid] = label
             try:
                 deadline = time.monotonic() + 60
                 while not (phase / 'ready.json').exists():
@@ -1046,22 +1390,24 @@ def host_suite(plan_path, native=False):
         write_json(root / 'cleanup.json', cleanup)
         admission_pids = []
         for receipt in root.rglob('admission-readback.json'):
-            admission_pids.extend(row['pid'] for row in json.loads(receipt.read_bytes())['processes'])
-        syscall = audit_syscalls(allowed_exec,allowed_unix,
-            {row['owned_pid']:row['label']for row in phases if 'owned_pid' in row},
-            trace_path=run_dir/'syscalls.log',provider_url=provider_url,python_path=python,
-            scratch_root=root,normal_path=plan['normal_path'],admission_socket=plan['bindings']['admission_socket'],
-            admission_pids=admission_pids)
-        write_json(root/'syscall-audit.json',syscall)
+            for row in json.loads(receipt.read_bytes())['processes']:
+                admission_pids.append(row['pid']); execution_policy.hashes.add(argv_digest(row['argv']))
+        for receipt in root.glob('*/audit.json'):
+            for row in json.loads(receipt.read_bytes())['events']:
+                if row.get('argv_validated'): execution_policy.hashes.add(row['argv_sha256'])
+        write_json(run_dir/'trace-policy.json', dict(allowed_exec=sorted(allowed_exec),allowed_unix=sorted(allowed_unix),
+            phase_roots=phase_roots,provider_url=provider_url,python_path=python,admission_pids=admission_pids,
+            exact_argv_hashes=sorted(execution_policy.hashes),controller='pinned fixture calls declared before launch',
+            native='selected vectors and successful NativeAudit validation only',raw_argv_retained=False))
         require(os.environ['HOME']==plan['normal_home'] and os.environ['PATH']==plan['normal_path'],
                 'R03_HOST: normal agent identity/environment changed')
-        retain_evidence(root,run_dir/'retained')
-        if cluster is None or cleanup.get('postgres_stopped') is True:
-            require(root.parent==Path(tempfile.gettempdir()) and root.name.startswith('cairn-r03h-')
-                    and root.stat().st_uid==os.getuid(),'R03_CLEANUP: wrong owned scratch root')
-            shutil.rmtree(root)
+        try: retain_evidence(root,run_dir/'retained')
+        finally:
+            if cluster is None or cleanup.get('postgres_stopped') is True:
+                require(root.parent==Path(tempfile.gettempdir()) and root.name.startswith('cairn-r03h-')
+                        and root.stat().st_uid==os.getuid(),'R03_CLEANUP: wrong owned scratch root')
+                shutil.rmtree(root)
         require(cluster is None or cleanup.get('postgres_stopped') is True, 'R03_CLEANUP: owned PostgreSQL unresolved')
-        require(not syscall['violations'], 'R03_AUDIT: unexpected child exec/socket target; retain syscall journal')
 
 
 def native_readback_request(native_root, manifest, home, baseline):
