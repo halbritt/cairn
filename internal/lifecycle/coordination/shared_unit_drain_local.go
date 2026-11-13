@@ -253,12 +253,12 @@ func (r *watchDrainRead) sessionFacts(directory string, files []string) error {
 }
 
 func (r *watchDrainRead) sessionConfig(path string, state *value.Value) *value.Value {
-	native := state.Get("native_session_id")
-	if native == nil || native.Kind != value.String {
+	native, err := watchStateNativeSession(state)
+	if err != nil {
 		return nil
 	}
 	for _, config := range r.configs {
-		expected := SessionStatePath(nativeText(config.Get("state_dir")), nativeText(config.Get("binding")), nativeText(native))
+		expected := SessionStatePath(nativeText(config.Get("state_dir")), nativeText(config.Get("binding")), native)
 		if expected == path {
 			return config
 		}

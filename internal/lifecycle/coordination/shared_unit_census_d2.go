@@ -37,7 +37,10 @@ func (r *watchDrainRead) d2SessionResults() map[string]watchDrainD2Session {
 		if r.settled[session.state] == nil {
 			continue
 		}
-		native := nativeText(session.state.Get("native_session_id"))
+		native, err := watchStateNativeSession(session.state)
+		if err != nil {
+			continue
+		}
 		path := SessionStatePath(nativeText(session.config.Get("state_dir")), nativeText(session.config.Get("binding")), native)
 		result := watchDrainD2Session{Path: path, NativeSession: native, AgentID: nativeText(session.ref.Get("agent_id")), ExecutionID: nativeText(session.ref.Get("execution_id")), SHA256: r.facts["file:"+path]}
 		for _, field := range AttemptKeys {
