@@ -281,3 +281,12 @@ digests, and two valid `next` descriptors. It changes only the required
 `two.json` descriptor name to `other-two.json`, leaving current pins unchanged.
 The required-name set is incomplete while cardinality remains valid, so the
 unchanged refusal assertion targets the membership guard after plan parsing.
+
+The watcher driver checks evidence ancestry before building images or starting
+fixture services. A group/other-writable or symlink ancestor refuses with its
+path in the diagnostic. The check uses existing metadata without resolving
+aliases or changing parent permissions; the fresh evidence leaf still uses
+mode 0700. Newly created intermediate parents are checked as well. The existing
+compatibility exception for root-owned sticky ancestors is retained. This is an
+early fixture diagnostic; the product's compatibility path and owner guards
+remain authoritative and unchanged.

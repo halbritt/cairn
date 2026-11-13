@@ -694,14 +694,37 @@ def check(evidence, selected):
     print(f'R06 watch-unit roundtrip: {len(outcomes)} passed, 0 failed, 0 skipped', flush=True)
 
 
-if __name__ == '__main__':
+def preflight_evidence_path(evidence):
+    """Diagnose unsafe evidence ancestry before any fixture process starts."""
+    import stat
+
+    absolute = evidence.absolute()
+    for ancestor in [*reversed(absolute.parents), absolute]:
+        try:
+            metadata = ancestor.lstat()
+        except FileNotFoundError:
+            continue
+        require(not stat.S_ISLNK(metadata.st_mode), f'symlink evidence ancestor: {ancestor}')
+        require(stat.S_ISDIR(metadata.st_mode), f'evidence ancestor is not a directory: {ancestor}')
+        root_sticky = metadata.st_uid == 0 and metadata.st_mode & stat.S_ISVTX
+        require(not metadata.st_mode & 0o022 or root_sticky, f'writable evidence ancestor: {ancestor}')
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path)
     parser.add_argument('--case', choices=CASES, action='append')
     parser.add_argument('--forward-api', type=Path)
-    args, extra = parser.parse_known_args()
+    args, extra = parser.parse_known_args(argv)
     if args.forward_api:
-        raise SystemExit(forward(args.forward_api, extra))
+        return forward(args.forward_api, extra)
     require(args.evidence is not None and not extra, '--evidence required')
+    preflight_evidence_path(args.evidence)
     args.evidence.mkdir(mode=0o700, parents=True, exist_ok=False)
+    # mkdir's new intermediate parents also depend on the caller's umask.
+    preflight_evidence_path(args.evidence)
     check(args.evidence, args.case or CASES)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
