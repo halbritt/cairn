@@ -36,7 +36,10 @@ responses. An additional isolated conversation offers only Read, with permission
 rules for two exact synthetic workspace files. The local provider emits each
 Read once and requires its matching native `tool_result` before ending the turn.
 The existing strace transport additionally captures reads, writes and thread
-creation for this conversation. The joined hook process's stdin must contain
+creation for this conversation. Payload dumps are restricted to stdin, stdout
+and stderr; regular binary reads retain syscall metadata without their contents.
+Selected stdio hex dumps must have complete byte counts and contiguous offsets.
+The joined hook process's stdin must contain
 the native session, Read input, tool-use ID and success/error event; stdout,
 stderr and exit status come from that process. A successful assistant message
 alone cannot qualify tool execution. Native hook or context errors fail the run.

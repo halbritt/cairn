@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
@@ -587,6 +588,7 @@ class NativeClaudeProviderTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as error:
             self.request([dict(role='user', content='read fixture')], ('Read', 'Bash'))
         self.assertEqual(error.exception.code, 500)
+        error.exception.close()
         self.assertEqual(before, [])
         self.assertFalse(self.server.pending_read['issued'])
         self.assertEqual(len(self.server.failures), 1)
@@ -598,6 +600,7 @@ class NativeClaudeProviderTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as error:
             self.request(messages + [dict(role='assistant', content='I read the file')], ('Read',))
         self.assertEqual(error.exception.code, 500)
+        error.exception.close()
         self.assertEqual(self.server.read_results, {})
         self.assertEqual(len(self.server.failures), 1)
 
@@ -617,6 +620,47 @@ class NativeClaudeProviderTests(unittest.TestCase):
         from check_r04_native_claude import native_hook_io
         with self.assertRaisesRegex(AssertionError, 'truncated kernel I/O'):
             native_hook_io('7 read(0, "{}"..., 500) = 500\n', [dict(pid='7')], 'PostToolUse')
+
+    def test_selected_raw_stdio_roundtrips_without_dumping_regular_file(self):
+        from check_r04_native_claude import native_hook_io
+        from check_r04_native_opencode import successful_execs
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            marker = b'regular-file-payload-must-not-be-dumped-' * 4096
+            regular, trace = root / 'regular', root / 'trace'
+            regular.write_bytes(marker)
+            raw = json.dumps(dict(hook_event_name='PostToolUse',
+                opaque=['日本語 😀', 900719925474099312345]), ensure_ascii=False).encode()
+            code = ('import os,sys; open(sys.argv[1],"rb").read(); '
+                    'data=os.read(0,4096); os.write(1,data); os.write(2,b"diag")')
+            result = subprocess.run(['strace', '-f', '-s', '16384', '-e',
+                'trace=execve,clone,clone3,read,write', '-e', 'raw=read,write',
+                '-e', 'read=0', '-e', 'write=1,2', '-o', str(trace),
+                sys.executable, '-I', '-S', '-c', code, str(regular)],
+                input=raw, capture_output=True, timeout=10)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, raw, b'diag'))
+            captured = trace.read_text()
+            self.assertNotIn(marker[:80].decode(), captured)
+            executions = list(successful_execs(captured))
+            self.assertEqual(len(executions), 1)
+            row = native_hook_io(captured, executions, 'PostToolUse', raw_stdio=True)[executions[0]['pid']]
+            self.assertEqual(base64.b64decode(row['stdin']['base64']), raw)
+            self.assertEqual(base64.b64decode(row['stdout']['base64']), raw)
+            self.assertEqual(base64.b64decode(row['stderr']['base64']), b'diag')
+
+    def test_raw_stdio_joins_resume_and_ignores_foreign_pending_client(self):
+        from check_r04_native_claude import stdio_trace
+        from r04_agy_trace import io_bytes
+        dump = ' | 00000  ' + '7b 7d 0a'.ljust(48) + '  {}.              |\n'
+        trace = ('9 read(0, 0x999, 0x1000 <unfinished ...>\n'
+                 '7 read(0, 0xabc, 0x1000 <unfinished ...>\n'
+                 '7 <... read resumed>) = 0x3\n' + dump)
+        self.assertEqual(io_bytes(stdio_trace(trace, ['7']), ['7'], 0, 'read'), b'{}\n')
+        for malformed in (trace.replace(dump, ''), trace.replace('00000', '00001'),
+                          trace.replace('7b 7d', 'zz 7d'), trace.replace('= 0x3', '= 0x4'),
+                          '7 <... read resumed>) = 0x3\n' + dump):
+            with self.subTest(trace=malformed), self.assertRaises(AssertionError):
+                stdio_trace(malformed, ['7'])
 
 
 def load_tests(loader, tests, pattern):

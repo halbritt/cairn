@@ -33,18 +33,84 @@ from test_f02_opencode_ambient import OpenCodeAmbientTests
 from r04_agy_trace import io_bytes, thread_pids
 
 
-def native_hook_io(trace, executions, event):
+def stdio_trace(trace, owners):
+    """Decode strace's selected FD hex dumps, rejecting incomplete owned I/O."""
+    owners, pending, output = set(owners), {}, []
+    frame = None
+
+    def finish():
+        nonlocal frame
+        if frame is None:
+            return
+        pid, operation, fd, requested, count, raw = frame
+        if len(raw) < count or len(raw) > requested or (operation == 'read' and len(raw) != count):
+            raise AssertionError('Incomplete selected stdio hex dump')
+        text = json.dumps(bytes(raw).decode('latin1'))
+        output.append(f'{pid} {operation}({fd}, {text}, {requested}) = {count}')
+        frame = None
+
+    for line in trace.splitlines():
+        dump = re.match(r'^\s*\| ([0-9a-f]+)  (.*) \|$', line)
+        if dump:
+            if frame is not None:
+                if int(dump[1], 16) != len(frame[-1]):
+                    raise AssertionError('Noncontiguous selected stdio hex dump')
+                tokens = dump[2][:48].split()
+                if not tokens or len(tokens) > 16 or any(not re.fullmatch('[0-9a-f]{2}', token) for token in tokens):
+                    raise AssertionError('Malformed selected stdio hex dump')
+                frame[-1].extend(bytes.fromhex(''.join(tokens)))
+            continue
+        finish()
+        match = re.match(r'^(\d+)\s+(.*)$', line)
+        if not match or match[1] not in owners:
+            continue
+        pid, call = match.groups()
+        resumed = re.match(r'<\.\.\. (read|write) resumed>(.*)$', call)
+        if resumed:
+            if pid not in pending or pending[pid][0] != resumed[1]:
+                raise AssertionError('Unpaired selected stdio resume')
+            operation, head = pending.pop(pid)
+            call = head + resumed[2]
+        elif re.match(r'(read|write)\(', call):
+            operation = call.split('(', 1)[0]
+            if call.endswith(' <unfinished ...>'):
+                if pid in pending:
+                    raise AssertionError('Overlapping selected stdio calls')
+                pending[pid] = operation, call.removesuffix(' <unfinished ...>')
+                continue
+        else:
+            continue
+        parsed = re.fullmatch(r'(read|write)\((0x[0-9a-f]+|\d+), (?:0x[0-9a-f]+|NULL), '
+                              r'(0x[0-9a-f]+|\d+)\)\s+= (-?\d+|0x[0-9a-f]+)(?: .*)?', call)
+        if not parsed:
+            raise AssertionError('Unrecognized selected raw stdio call')
+        operation, fd, requested, count = parsed.groups()
+        fd, requested, count = int(fd, 0), int(requested, 0), int(count, 0)
+        if not (operation == 'read' and fd == 0 or operation == 'write' and fd in (1, 2)):
+            continue
+        if count > 0:
+            frame = [pid, operation, fd, requested, count, bytearray()]
+        else:
+            output.append(f'{pid} {operation}({fd}, "", {requested}) = {count}')
+    finish()
+    if pending:
+        raise AssertionError('Unfinished selected stdio evidence')
+    return '\n'.join(output) + '\n'
+
+
+def native_hook_io(trace, executions, event, *, raw_stdio=False):
     """Disambiguate equal H13 launchers by their observed stdin, not argv."""
     selected = {}
     for execution in executions:
         members = thread_pids(trace, execution['pid'])
-        raw = io_bytes(trace, members, 0, 'read')
+        streams = stdio_trace(trace, members) if raw_stdio else trace
+        raw = io_bytes(streams, members, 0, 'read')
         payload = json.loads(raw)
         if payload['hook_event_name'] == event:
             selected[execution['pid']] = dict(
                 stdin=dict(base64=base64.b64encode(raw).decode(), payload=payload),
-                stdout=dict(base64=base64.b64encode(io_bytes(trace, members, 1, 'write')).decode()),
-                stderr=dict(base64=base64.b64encode(io_bytes(trace, members, 2, 'write')).decode()))
+                stdout=dict(base64=base64.b64encode(io_bytes(streams, members, 1, 'write')).decode()),
+                stderr=dict(base64=base64.b64encode(io_bytes(streams, members, 2, 'write')).decode()))
     return selected
 
 
@@ -144,6 +210,7 @@ class ClaudeSession:
         self.events, self.buffer = [], bytearray()
         tools = ['--tools', '']
         trace = 'execve'
+        trace_options = []
         if read_paths:
             if any(not path.is_absolute() or path.parent != work for path in read_paths):
                 raise ValueError('Read permissions must name exact fixture files')
@@ -152,8 +219,11 @@ class ClaudeSession:
             # Retain the existing strace transport; observe stdin/stdout on the
             # joined hook thread group rather than trusting a tool reply.
             trace += ',clone,clone3,read,write'
+            # Keep syscall metadata, but dump payloads only for stdio. Printing
+            # every binary read perturbs hook deadlines and fills the fixture.
+            trace_options = ['-e', 'raw=read,write', '-e', 'read=0', '-e', 'write=1,2']
         self.process = subprocess.Popen(
-            ['strace', '-f', '-s', '16384', '-e', 'trace=' + trace, '-o', str(self.trace), str(binary),
+            ['strace', '-f', '-s', '16384', '-e', 'trace=' + trace, *trace_options, '-o', str(self.trace), str(binary),
              '--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
              '--setting-sources', '', '--settings', str(settings), '--strict-mcp-config', '--mcp-config',
              '{"mcpServers":{}}', *tools, '--permission-mode', 'dontAsk', '--max-turns', '3',
@@ -328,7 +398,7 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                     self.assertEqual(vector[vector.index('--role') + 1], 'memory')
                 actual = [e for e in executions if e['pid'] in {i['pid'] for i in issued} and
                           e['path'] == vector[0] and e['argv'] == vector[:-1]+row['argv'][1:]]
-                streams = native_hook_io(trace, actual, event) if stdin else {}
+                streams = native_hook_io(trace, actual, event, raw_stdio=True) if stdin else {}
                 if stdin:
                     actual = [execution for execution in actual if execution['pid'] in streams]
                 self.assertTrue(actual, (label, role, trace[-5000:]))
@@ -401,9 +471,11 @@ class NativeFixture(InstalledTools, unittest.TestCase):
                     if len(pieces) != 2:
                         continue
                     pid, event = pieces
-                    if 'execve(' in event and '"' + str(binary) + '"' not in event:
+                    if not pid.isdecimal():
+                        continue
+                    if event.startswith('execve(') and '"' + str(binary) + '"' not in event:
                         active.add(pid)
-                    if '+++ exited with' in event or '+++ killed by' in event:
+                    if event.startswith('+++ exited with') or event.startswith('+++ killed by'):
                         active.discard(pid)
                 stamp = (len(raw), len(f.api_calls()))
                 if active or stamp != stable[0]:
