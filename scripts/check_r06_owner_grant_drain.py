@@ -269,6 +269,11 @@ def guard_case(cluster, images, scratch, name):
     f = Fixture(cluster, images['api'], scratch / name, name)
     try:
         f.retained(settle=name != 'unresolved_owner')
+        if name == 'wrong_owner':
+            foreign = f.host.agent('sender', 'agent-register', dict(request_id=control.uid(),
+                binding='foreign-owner', native_session_id='foreign-owner',
+                metadata=dict(harness='codex', project='r06', workspace=str(f.root), state='idle', delivery_mode='existing-session')))
+            control.write(f.root / 'foreign-registration.json', foreign)
         control.transport(f, images['api'])
         if name in ('unknown_decision', 'malformed_decisions'):
             # Separate negative input: never overwrite any owner's positive ledger.
@@ -278,10 +283,6 @@ def guard_case(cluster, images, scratch, name):
         elif name == 'wrong_owner':
             # A genuine registration under another principal cannot authenticate
             # the retained worker-owned session through that principal's token.
-            foreign = f.host.agent('sender', 'agent-register', dict(request_id=control.uid(),
-                binding='foreign-owner', native_session_id='foreign-owner',
-                metadata=dict(harness='codex', project='r06', workspace=str(f.root), state='idle', delivery_mode='existing-session')))
-            control.write(f.root / 'foreign-registration.json', foreign)
             (f.active / 'one.json').chmod(0o600)
             f.next.chmod(0o600)
             f.configs(token=f.host.token('sender'))
