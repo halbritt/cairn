@@ -452,6 +452,19 @@ func (r *watchCensusRead) tree(ctx context.Context, directory string) ([]string,
 	return files, nil
 }
 
+func (r *watchCensusRead) sessionConfig(path string, state *value.Value) *value.Value {
+	native, err := watchStateNativeSession(state)
+	if err != nil {
+		return nil
+	}
+	for _, config := range r.local.configs {
+		if SessionStatePath(nativeText(config.Get("state_dir")), nativeText(config.Get("binding")), native) == path {
+			return config
+		}
+	}
+	return nil
+}
+
 func (r *watchCensusRead) sessions(ctx context.Context) error {
 	states, memories := map[string]bool{}, map[string]bool{}
 	for _, config := range r.local.configs {
@@ -493,11 +506,15 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 			if wanted[path] == "" || wanted[path] != r.files[path] {
 				return errors.New("extra, missing or changed selected session")
 			}
-			config := r.local.sessionConfig(path, state)
+			config := r.sessionConfig(path, state)
 			if config == nil {
 				return errors.New("native session has an unknown binding user")
 			}
 			ref, err := r.cli.sessionRef(state.Get("agent"))
+			if err != nil {
+				return err
+			}
+			native, err := watchStateNativeSession(state)
 			if err != nil {
 				return err
 			}
@@ -512,12 +529,15 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 			if owner == "" {
 				return errors.New("session config ownership is unknown")
 			}
+			if err := r.requireHookSession(owner, path, workspace); err != nil {
+				return err
+			}
 			r.nodes[owner].Sessions = append(r.nodes[owner].Sessions, path)
 			r.nodes[owner].Resources = append(r.nodes[owner].Resources, workspace)
 			slices.Sort(r.nodes[owner].Resources)
 			r.nodes[owner].Resources = slices.Compact(r.nodes[owner].Resources)
 			seen[path] = true
-			r.sessionRefs[path] = WatchCensusSession{Path: path, Binding: owner, NativeSession: nativeText(state.Get("native_session_id")), AgentID: nativeText(ref.Get("agent_id")), ExecutionID: nativeText(ref.Get("execution_id")), SHA256: r.files[path], Workspace: workspace}
+			r.sessionRefs[path] = WatchCensusSession{Path: path, Binding: owner, NativeSession: native, AgentID: nativeText(ref.Get("agent_id")), ExecutionID: nativeText(ref.Get("execution_id")), SHA256: r.files[path], Workspace: workspace}
 			for _, key := range AttemptKeys {
 				if !nativeNone(state.Get(key)) {
 					r.nodeDrainRequirements[owner] = append(r.nodeDrainRequirements[owner], WatchCensusDrainRequirement{Session: r.sessionRefs[path], Field: key})
@@ -570,6 +590,11 @@ func (r *watchCensusRead) emptyHookLayer(path, role string) error {
 		return err
 	}
 	if len(names) != 0 {
+		for _, selected := range r.hookSelections {
+			if role == "account" && selected.Account == path || role == "repository" && selected.Workspace == path {
+				return nil
+			}
+		}
 		return fmt.Errorf("%s hook/config coverage is unknown: selected native settings/readback seam is unavailable", role)
 	}
 	return nil

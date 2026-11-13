@@ -42,10 +42,11 @@ test input, not proof that no live user exists elsewhere. Global installed
 account/session discovery, authoritative native join/refresh readback, store
 drain and closure of unknown external users remain unavailable here.
 The finite fixture explicitly names account directories and each session's
-workspace. Their actual hook/config layers must be empty. Nonempty layers,
-missing account/workspace identity or unobserved native settings refuse with a
-named missing readback seam. This cut does not invent a native settings parser
-or refresh protocol to accept them.
+workspace. Their actual hook/config layers must be empty unless the selected Claude
+fixture input described below supplies exact emitted settings and native
+readback. Other nonempty layers, missing account/workspace identity or
+unobserved native settings refuse. No input establishes global absence or an
+authenticated native connection.
 
 ## Processes and retained obligations
 
@@ -137,3 +138,128 @@ Normal host `HOME`, tools and subscription state stay unchanged. No native
 client, model, live API/store, production transition or full suite is invoked.
 Full R06/HC-05, supported refresh, whole-unit D6, final dependency/control adoption
 and production R07 remain held.
+
+
+## Selected Claude hook observations
+
+An optional `HookSelections` catalog entry pins a
+`cairn.watch-claude-hooks/1` descriptor. It selects one catalogued configuration
+and native-session record, account and workspace, an actual immutable R-04 hook
+generation, its settings file, a pinned `cairn.watch-claude-readback/1` observation,
+and an exhaustive list of account/workspace files. The inspector enumerates
+both actual trees and rejects omissions, extra pins, aliases and changed bytes.
+Every affected config/session needs its own readback; a caller completeness
+Boolean is not accepted. Other account/project settings containing hooks refuse
+as an unsupported layer, including extra Cairn hooks. Ancestor `.claude`
+layers inside the finite universe also refuse; the workspace is not assumed to
+be the repository root. This selected-input seam is unavailable for
+`external-unknown` scope.
+
+This bounded cell supports Claude `flagSettings` and the eleven emitted hook
+rows. It verifies the real generation manifest and lifecycle selection, selected
+role configurations and preserved unrelated settings. A selected `/3` uses
+canonical content-addressed launchers, compatibility receipts and their retained
+source closure. A genuine retained `/2` uses its complete installed engine and
+bridge bundles and `retained-argv.json`; it does not acquire a `/3` receipt.
+The native
+observation must match the exact effective hooks and listing. Both prompt roles
+must identify successful actual launcher/program executions with the exact
+literal argv. Stale cached A against selected B, missing readback, changed
+receipt/config/program/shell, mixed units and unsupported harnesses/layers refuse.
+The inspector does not execute hooks or change settings.
+
+The retained hook producer's `retained_python` record must agree with the
+selected binding, bundle manifest, engine and bridge descriptors, and retained
+argv pin. Every bundle member must belong to that same verified generation.
+Both role rows retain the original direct Python command, including its exact
+interpreter flags, entrypoint, role configuration and coordination `hook` tail.
+The recorded command must equal the shell rendering of that argv. Prompt
+execution observations use the direct interpreter frame, without adding a
+compatibility launcher's `--` separator. Missing executions, changed program
+hashes or argv, nonzero exits, and PID or role conflicts still refuse.
+
+`TestWatchCensusRetainedPythonRow` checks literal-frame acceptance and refusals
+with selected retained source files. `test_r06_retained_hook_census` checks the
+collector's distinct direct-Python and checked-launcher frames. Its material
+case stages the complete real `/2` bundle and hook producer output, creates
+state through the Go producer with synthetic registration, and runs the actual
+Go inspector with synthetic readback input. It checks producer-pin, unknown
+proof-field and observed-argv refusals, complete unchanged snapshots and the
+existing syscall guards. With `CAIRN_RETAINED_CENSUS_EVIDENCE` selected, it
+retains the actual compiled census, control and stager images, build metadata,
+source/module pins and interpreter/shell/observer pins before staging or
+inspection begins. These are unit checks; they do not establish a real
+native `/2` observation, authenticated
+drain, or a complete transition from Python to Go. The complete consumed setup
+must provide its own matching session, real API history and issued journals.
+
+`HookObservations` reports only the selected fixture observations that agree.
+`ExternalCoverage` remains `unknown` and `NativeRefresh` remains `unobserved`.
+The records are supplied selected facts, not authenticated native ownership.
+A parent PID, manifest or successful prompt does not identify an active MCP
+connection. Codex, Agy, OpenCode and Hermes are not qualified by this cell.
+
+The new `scripts/check_r06_native_hook_census.py` cell uses the existing R-02
+installer/R-04 renderer, synthetic local provider/API, the frozen selected Claude
+executable, and real Go census inspection. It observes cached A after B is
+published and a process restart with the same conversation and selected B,
+then injects bounded file/readback refusals. It does not replace the existing
+eleven-case R-04 collector or qualify a complete unit transition. Run it only
+through the existing hybrid wrapper, with fresh private Go images and selected
+hashes; no native executable invocation occurs on the host:
+
+The selected Go memory hooks use the existing R-04 disposable Unix HTTP recall
+fixture and its readable synthetic token. The token retains the `.token` suffix
+used by the census snapshot and syscall guards: the actual hook may read it,
+while inspection records its metadata without opening credential content. SDK
+request evidence records operation names and authorization success only. Startup,
+prompt and shutdown hook failures still fail the cell.
+
+Native session identity uses the shared observed-state reader. All present
+`registration.native_session_id`, `agent.native_session_id` and retained legacy
+outer identities must agree. Missing, malformed or conflicting identities
+refuse; a legacy outer identity cannot override a current producer identity.
+These fields establish correspondence only, and do not authenticate a caller.
+The collector preserves the exact newly produced state and its
+key sets before checking the selected input; prior failures that preceded this
+capture do not supply that evidence. Unit fixtures use the existing coordination
+state producer rather than fabricate an outer identity.
+
+The disposable collector creates its config root and selected leaf separately
+at `0700`, and verifies their owner, directory type, canonical path and exact
+mode on both catalog constructions. It records directory UID, mode, device and
+inode before inspection. Existing unsafe directories are refused without chmod
+or alias normalization; the Go path guards and refusal reasons remain unchanged.
+
+Later catalog construction reuses the selected config only when its canonical
+owned regular file remains `0400` and byte-identical to the emitted config.
+Creation uses exclusive no-follow opening; existing files and dangling symlinks
+are never overwritten or chmodded for writing. Local setup proofs replace only
+the native client boundary and remain labelled `SETUP/STUB ONLY`; their results
+do not qualify native behavior.
+
+The disposable fixture also provisions its two known per-session capture locks as
+owned regular `0600` files before shutdown capture, and verifies it on resume.
+The callback's known `0664` lock creation is narrowed through an inode-checked
+descriptor to `0600`; unexpected type, owner, alias or mode is refused. This keeps
+the fixture's selected state private; it does not change capture or census
+product behavior or qualify ordinary installations.
+
+```sh
+mise run host:exec -- --timeout 10m --weight 1 -- \
+  python3 -B scripts/test_hybrid_runtime_operations.py --timeout 480 \
+  --receipt "$R06_EVIDENCE/isolation.json" \
+  --ro-bind "$R06_CLAUDE:/opt/r04-native/claude" \
+  --ro-bind "$R06_CENSUS_IMAGE:/opt/r06-hook-census/census-tests" \
+  --ro-bind "$R06_LIFECYCLE_IMAGE:/opt/r06-hook-census/lifecycle" \
+  --ro-bind "$R06_STAGER_IMAGE:/opt/r06-hook-census/stager" \
+  -- python3 -B scripts/check_r06_native_hook_census.py \
+  --claude /opt/r04-native/claude --sha256 "$R06_CLAUDE_SHA256" \
+  --census-image /opt/r06-hook-census/census-tests \
+  --lifecycle /opt/r06-hook-census/lifecycle \
+  --stager /opt/r06-hook-census/stager --archive-stdout
+```
+
+Retain the decoded synthetic evidence archive outside Git, including failed
+attempts. The final integrated image, full-unit barrier, supported connection
+refresh, grants, HC-05 and production acceptance remain separate.
