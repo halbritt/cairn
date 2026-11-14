@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
+	"strings"
 
 	"github.com/halbritt/cairn/internal/lifecycle/install"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
@@ -40,6 +41,10 @@ func (r *WatchDrainReceipt) Facts() map[string]string {
 // callbacks is the observed watcher/wake/callback/capture process census; nil
 // means unknown. Conversation owner processes are not callback processes.
 func (c *CLI) CaptureWatchDrain(ctx context.Context, selected WatchBindings, callbacks []*value.Value) (*WatchDrainReceipt, error) {
+	return c.captureWatchDrainCensus(ctx, selected, callbacks, nil)
+}
+
+func (c *CLI) captureWatchDrainCensus(ctx context.Context, selected WatchBindings, callbacks []*value.Value, census *unitCensusDrain) (*WatchDrainReceipt, error) {
 	if callbacks == nil {
 		return nil, errors.New("D5 callback process census is unknown")
 	}
@@ -51,11 +56,11 @@ func (c *CLI) CaptureWatchDrain(ctx context.Context, selected WatchBindings, cal
 		}
 		refs[i] = nativeClone(ref)
 	}
-	read, err := c.readWatchDrain(ctx, selected, refs)
+	read, err := c.readWatchDrainCensus(ctx, selected, refs, census, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &WatchDrainReceipt{reader: c, selection: selected, callbacks: refs, facts: read.facts, d2Sessions: read.d2SessionResults()}, nil
+	return &WatchDrainReceipt{reader: c, selection: selected, callbacks: refs, facts: read.facts, d2Sessions: read.d2SessionResults(), census: census}, nil
 }
 
 // ExchangeWatchBindings publishes the whole stopped watcher selection and
@@ -81,7 +86,7 @@ func exchangeDrainedWatchBindings(ctx context.Context, receipt *WatchDrainReceip
 	}
 	swap.observe = observe
 	swap.verifyDrain = func(ctx context.Context) error {
-		if err := receipt.recheck(ctx); err != nil {
+		if err := receipt.recheckPrepared(ctx, swap); err != nil {
 			return err
 		}
 		if receipt.census != nil {
@@ -93,7 +98,10 @@ func exchangeDrainedWatchBindings(ctx context.Context, receipt *WatchDrainReceip
 }
 
 func (r *WatchDrainReceipt) recheck(ctx context.Context) error {
-	current, err := r.reader.readWatchDrain(ctx, r.selection, r.callbacks)
+	return r.recheckPrepared(ctx, nil)
+}
+func (r *WatchDrainReceipt) recheckPrepared(ctx context.Context, swap *watchBindingsSwap) error {
+	current, err := r.reader.readWatchDrainCensus(ctx, r.selection, r.callbacks, r.census, swap)
 	if err != nil {
 		return fmt.Errorf("D6 drain receipt invalidated: %w", err)
 	}
@@ -105,15 +113,17 @@ func (r *WatchDrainReceipt) recheck(ctx context.Context) error {
 }
 
 type watchDrainRead struct {
-	cli        *CLI
-	facts      map[string]string
-	configs    []*value.Value
-	sessions   []watchDrainSession
-	locks      map[string]string
-	tokenPaths map[string]bool
-	memories   map[*value.Value]*value.Value
-	grants     []watchDrainGrant
-	settled    map[*value.Value]*value.Value
+	configPaths   map[*value.Value]string
+	censusMembers map[string]WatchCensusMember
+	cli           *CLI
+	facts         map[string]string
+	configs       []*value.Value
+	sessions      []watchDrainSession
+	locks         map[string]string
+	tokenPaths    map[string]bool
+	memories      map[*value.Value]*value.Value
+	grants        []watchDrainGrant
+	settled       map[*value.Value]*value.Value
 }
 
 type watchDrainSession struct {
@@ -121,10 +131,29 @@ type watchDrainSession struct {
 }
 
 func (c *CLI) readWatchDrain(ctx context.Context, selected WatchBindings, callbacks []*value.Value) (*watchDrainRead, error) {
+	return c.readWatchDrainCensus(ctx, selected, callbacks, nil, nil)
+}
+func (c *CLI) readWatchDrainCensus(ctx context.Context, selected WatchBindings, callbacks []*value.Value, census *unitCensusDrain, swap *watchBindingsSwap) (*watchDrainRead, error) {
 	if c.Host == nil || c.profile() == nil {
 		return nil, &value.ProfileUnavailable{}
 	}
 	read := &watchDrainRead{cli: c, facts: map[string]string{}, locks: map[string]string{}, tokenPaths: map[string]bool{}, memories: map[*value.Value]*value.Value{}, settled: map[*value.Value]*value.Value{}}
+	if census != nil && len(census.associationFacts) != 0 {
+		members, facts, err := census.observeDrainAssociations(ctx, swap)
+		if err != nil {
+			return nil, err
+		}
+		if !maps.Equal(census.associationFacts, facts) {
+			return nil, errors.New("D1 private census association lost or changed")
+		}
+		read.censusMembers = members
+		for key, v := range facts {
+			read.facts["unbound-association:"+key] = v
+			if strings.HasPrefix(key, "credential-reference:") {
+				read.tokenPaths[strings.TrimPrefix(key, "credential-reference:")] = true
+			}
+		}
+	}
 	if err := read.local(selected); err != nil {
 		return nil, err
 	}
@@ -152,6 +181,15 @@ func (c *CLI) readWatchDrain(ctx context.Context, selected WatchBindings, callba
 		}
 		if err := read.record(fmt.Sprintf("callback:%d", i), ref); err != nil {
 			return nil, err
+		}
+	}
+	if census != nil && len(census.associationFacts) != 0 {
+		_, facts, err := census.observeDrainAssociations(ctx, swap)
+		if err != nil {
+			return nil, err
+		}
+		if !maps.Equal(census.associationFacts, facts) {
+			return nil, errors.New("D1 private census association changed during drain read")
 		}
 	}
 	return read, nil

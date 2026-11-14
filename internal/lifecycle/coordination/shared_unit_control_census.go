@@ -33,6 +33,7 @@ type unitCensusDrain struct {
 	final             *WatchUnitCensus
 	planPath, planPin string
 	drain             *WatchDrainReceipt
+	associationFacts  map[string]string
 }
 
 func validateUnitCensusInput(v *value.Value, input *UnitControlCensus) error {
@@ -97,13 +98,6 @@ func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings,
 	for _, callback := range report.Callbacks {
 		callbacks = append(callbacks, censusNativeProcess(callback.Process))
 	}
-	receipt, err := c.CaptureWatchDrain(ctx, current, callbacks)
-	if err != nil {
-		return nil, report, err
-	}
-	if err := satisfyCensusD2(&report, receipt.d2Sessions); err != nil {
-		return nil, report, err
-	}
 	bound := *input
 	bound.Proposal.Bindings = []WatchBindings{cloneCensusSelection(proposed)}
 	bound.Proposal.Sessions = slices.Clone(input.Proposal.Sessions)
@@ -112,7 +106,28 @@ func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings,
 	for i, s := range input.Retained {
 		bound.Retained[i] = cloneCensusSelection(s)
 	}
-	receipt.census = &unitCensusDrain{cli: c, input: bound, current: cloneCensusSelection(current), initial: report, drain: receipt}
+	initial := report
+	initial.Facts = maps.Clone(report.Facts)
+	source := &unitCensusDrain{cli: c, input: bound, current: cloneCensusSelection(current), initial: initial}
+	members, err := source.unboundDrainMembers(report)
+	if err != nil {
+		return nil, report, err
+	}
+	if len(members) != 0 {
+		_, facts, err := source.observeDrainAssociations(ctx, nil)
+		if err != nil {
+			return nil, report, err
+		}
+		source.associationFacts = maps.Clone(facts)
+	}
+	receipt, err := c.captureWatchDrainCensus(ctx, current, callbacks, source)
+	if err != nil {
+		return nil, report, err
+	}
+	if err := satisfyCensusD2(&report, receipt.d2Sessions); err != nil {
+		return nil, report, err
+	}
+	source.drain = receipt
 	return receipt, report, nil
 }
 
@@ -186,7 +201,18 @@ func (r *watchCensusRead) controlCopies(expected *[]string) error {
 			if r.local.tokenPaths[path] {
 				return errors.New("unit census retained copy overlaps a credential selector")
 			}
-			if err := r.cli.unitControlConfigPair(filepath.Join(s.current.Directory, name), path); err != nil {
+			current, err := r.jsonFile(filepath.Join(s.current.Directory, name))
+			if err != nil {
+				return err
+			}
+			if nativeNone(current.Get("inbox_recall_binding")) {
+				// The complete member/receipt validator still verifies current.
+				// A retained unbound copy may only retain those exact bytes;
+				// it cannot introduce a different profile or association.
+				if pin != s.current.Pins[name] {
+					return errors.New("unit census unbound retained copy must keep exact selected bytes")
+				}
+			} else if err := r.cli.unitControlConfigPair(filepath.Join(s.current.Directory, name), path); err != nil {
 				return err
 			}
 			info, err := os.Lstat(path)

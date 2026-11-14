@@ -93,6 +93,48 @@ For the focused race invocation, set `CAIRN_R06_UNBOUND_FIXTURE` to the resultin
 affected bound census/Claude/D2 unit tests. Without that explicit material the
 private fixture entry is inactive and does not count as coverage.
 
+## Private drain capture and receipt recheck
+
+The combined census/drain reader now carries its verified unbound association
+privately into drain capture and `WatchDrainReceipt.recheck`. It repeats the
+existing complete census validation before and after authenticated status reads,
+then compares the original file, directory, resource and identity observations.
+Receipt, manifest, profile, binary and member drift refuses. Credential selectors
+are checked by metadata; the verifier never opens their contents. Public
+`CaptureWatchDrain` has no association injection parameter and continues to
+refuse an unbound selection supplied without the private census context.
+
+The disabled flag does not settle grants or retained attempts. Existing D1–D5
+checks and authenticated D2 correspondence still run, followed by the existing
+D6 census/D2 checks before exchange. The only preparation exception covers the
+swap's independently verified retained copy and its directory membership change.
+An unbound retained copy must keep the exact selected profile bytes. Other
+changes and unknown coverage still refuse; the final read and rename remain
+separate observations.
+
+`TestR06UnboundDrainAssociationProcess` uses genuine maintained R02/R04 material
+for capture, independent recheck, lost or missing associations, duplicate
+receipts, byte and inode replacement, aliases, resource drift, changes during
+status reads and unknown API refusals. Its status doubles establish finite
+plumbing only. Activate it with `CAIRN_R06_UNBOUND_FIXTURE`, along with
+`TestR06UnboundCensusAssociationProcess`. Activate the existing typed refusal
+entry with `CAIRN_R06_AGY_TYPED_FIXTURE`.
+
+`TestR06UnboundDrainAuthenticatedProcess` uses a separate NEW disposable API/PG
+fixture and genuinely produced unbound profiles. Set
+`CAIRN_R06_UNBOUND_AUTH_FIXTURE` to its selected input. Capture and receipt
+recheck each execute the real `wake-attempts` and `event-watch` readers. This
+empty-session fixture proves authenticated reads; it supplies no retained D2
+success or native qualification. The maintained census D2 process fixture
+separately covers bound authenticated joins and their refusals. All gates run
+through mise with pinned images and explicit fixture inputs; inactive entries
+and skips do not count as coverage.
+
+The Agy reader and its preparation/historical blockers are unchanged. Public
+unit-control's preflight configuration-pair reader also remains bound-only;
+this private capture/recheck component does not extend that separate interface.
+Current Agy qualification, refresh and full R06/HC05 acceptance remain open.
+
 ## Typed Agy observations
 
 The public census dispatches tagged Claude and Agy inputs to separate readers.
@@ -145,6 +187,7 @@ entries are inactive without explicit inputs; a skip is not coverage.
 
 Strict install-3/install-5 remain open, including transient both-active settings
 with two journals, twenty post-rename NEW-active hard-kill observations, legacy
-writers and opaque attribution. No old Agy baseline, receipt-fault/SIGKILL series,
-real API/D2 replay, native/model run or full suite is part of this cut. Full
+writers and opaque attribution. The earlier typed-reader cut included no old Agy baseline, receipt-fault/SIGKILL
+series, real API/D2 replay, native/model run or full suite. The private drain
+component above adds only its stated disposable authenticated evidence. Full
 R06/HC05/native/live R07 remain separate and open.

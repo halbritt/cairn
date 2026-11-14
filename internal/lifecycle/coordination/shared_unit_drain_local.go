@@ -63,6 +63,10 @@ func (r *watchDrainRead) local(selected WatchBindings) error {
 			return err
 		}
 		r.configs = append(r.configs, config)
+		if r.configPaths == nil {
+			r.configPaths = map[*value.Value]string{}
+		}
+		r.configPaths[config] = filepath.Join(selected.Directory, name)
 		r.tokenPaths[nativeText(config.Get("token_file"))] = true
 		binary, err := compatibilityOpenedBinary(nativeText(config.Get("cairn")), uint32(os.Getuid()))
 		if err != nil {
@@ -107,6 +111,9 @@ func (r *watchDrainRead) local(selected WatchBindings) error {
 }
 
 func (r *watchDrainRead) disabledBinding(config *value.Value) (*value.Value, error) {
+	if !value.Truth(config.Get("inbox_recall_binding")) {
+		return r.unboundMemory(config)
+	}
 	manifest, err := r.file(nativeText(config.Get("inbox_recall_binding")))
 	if err != nil {
 		return nil, fmt.Errorf("D1 binding visibility is unknown: %w", err)

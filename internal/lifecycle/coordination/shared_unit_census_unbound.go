@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/halbritt/cairn/internal/jsontext"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
@@ -194,4 +195,127 @@ func (r *watchCensusRead) unboundAssociations(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// Select only actual unbound members of the already validated census. Bound
+// drain callers keep their existing capture/recheck observation order.
+func (r *unitCensusDrain) unboundDrainMembers(report WatchUnitCensus) (map[string]WatchCensusMember, error) {
+	members := map[string]WatchCensusMember{}
+	for _, member := range report.Members {
+		raw, pin, err := compatibilityOpened(member.Config.Path, 1048576, uint32(os.Getuid()))
+		if err != nil {
+			return nil, err
+		}
+		if pin != member.Config.SHA256 {
+			return nil, errors.New("D1 census member changed before drain association")
+		}
+		config, err := r.cli.profile().Decode(SiteSessionRead, raw)
+		if err != nil {
+			return nil, err
+		}
+		if nativeNone(config.Get("inbox_recall_binding")) {
+			members[member.Config.Path] = member
+		}
+	}
+	return members, nil
+}
+
+// Reuse the complete census validator; these private facts never enter a plan.
+func (r *unitCensusDrain) observeDrainAssociations(ctx context.Context, swap *watchBindingsSwap) (map[string]WatchCensusMember, map[string]string, error) {
+	scope := &unitCensusScope{current: r.current, retained: r.input.Retained}
+	var prepared *WatchBindings
+	if swap != nil {
+		if _, _, err := readUnitControlPlan(r.planPath, r.planPin); err != nil {
+			return nil, nil, err
+		}
+		if err := swap.verifyPrepared(); err != nil {
+			return nil, nil, err
+		}
+		copy := cloneCensusSelection(swap.selected)
+		copy.Directory = swap.retainedDir
+		prepared = &copy
+		scope.retained = append(slices.Clone(r.input.Retained), copy)
+	}
+	report, err := r.cli.inspectWatchUnitCensus(ctx, r.input.Catalog, r.input.Proposal, scope)
+	if err != nil && !censusOnlyNeedsD2(err) {
+		return nil, nil, err
+	}
+	facts := maps.Clone(report.Facts)
+	if prepared != nil {
+		for name := range prepared.Pins {
+			delete(facts, "file:"+filepath.Join(prepared.Directory, name))
+		}
+		delete(facts, "directory:"+prepared.Directory)
+		delete(facts, "retained-lock:"+prepared.Directory)
+		root := "directory:" + filepath.Dir(r.current.Directory)
+		facts[root] = r.initial.Facts[root]
+	}
+	if !maps.Equal(facts, r.initial.Facts) {
+		return nil, nil, errors.New("D1 census association/resource facts changed")
+	}
+	for key, v := range maps.Clone(facts) {
+		path := ""
+		directory := strings.HasPrefix(key, "directory:")
+		if directory {
+			path = strings.TrimPrefix(key, "directory:")
+		} else if strings.HasPrefix(key, "file:") {
+			path = strings.TrimPrefix(key, "file:")
+		} else if strings.HasPrefix(key, "credential-reference:") {
+			// Compare selector metadata only; authentication owns token reads.
+			path = strings.TrimPrefix(key, "credential-reference:")
+		}
+		if path == "" {
+			continue
+		}
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) && v == "absent" {
+			facts["identity:"+path] = "absent"
+			continue
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return nil, nil, errors.New("D1 association identity is unknown")
+		}
+		if directory {
+			facts["identity:"+path] = fmt.Sprintf("%d:%d:%d:%d:%d", st.Dev, st.Ino, st.Mode, st.Uid, st.Gid)
+		} else {
+			facts["identity:"+path] = fmt.Sprintf("%d:%d:%d:%d:%d:%d:%d:%v:%v", st.Dev, st.Ino, st.Mode, st.Uid, st.Gid, st.Nlink, st.Size, st.Mtim, st.Ctim)
+		}
+	}
+	members, err := r.unboundDrainMembers(report)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(members) == 0 {
+		return nil, nil, errors.New("D1 private unbound census association is missing")
+	}
+	return members, facts, nil
+}
+
+func (r *watchDrainRead) unboundMemory(config *value.Value) (*value.Value, error) {
+	path := r.configPaths[config]
+	member, ok := r.censusMembers[path]
+	if !ok || member.Config.Path != path || r.facts["file:"+path] != member.Config.SHA256 {
+		return nil, errors.New("D1 unbound profile needs its private verified census association")
+	}
+	manifest, err := r.file(member.Binding.Path)
+	if err != nil {
+		return nil, err
+	}
+	enabled := manifest.Get("enabled")
+	if r.facts["file:"+member.Binding.Path] != member.Binding.SHA256 || !value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/3") || enabled == nil || enabled.Kind != value.Bool || enabled.Boolean {
+		return nil, errors.New("D1 unbound manifest must remain exactly selected and disabled")
+	}
+	memory, err := r.descriptor(manifest.Get("memory_config"))
+	if err != nil {
+		return nil, err
+	}
+	desc := manifest.Get("memory_config")
+	if nativeText(desc.Get("path")) != member.Memory.Path || nativeText(desc.Get("sha256")) != member.Memory.SHA256 {
+		return nil, errors.New("D1 unbound memory association changed")
+	}
+	return memory, nil
 }
