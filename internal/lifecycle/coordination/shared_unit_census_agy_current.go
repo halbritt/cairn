@@ -183,20 +183,27 @@ func agyOneManagedSettings(raw []byte) error {
 	return nil
 }
 
-func agyCurrentLayer(selected WatchCensusAgyHooks, current WatchCensusAgyCurrentReadback, commands []agyCensusCommand) (WatchCensusAgyLayer, error) {
+func agyCurrentLayer(selected WatchCensusAgyHooks, current WatchCensusAgyCurrentReadback, commands []agyCensusCommand, target *unitCensusTargetObservation) (WatchCensusAgyLayer, error) {
 	var active []WatchCensusAgyLayer
 	for _, layer := range selected.Layers {
 		if layer.Installed.SHA256 != "" {
 			active = append(active, layer)
 		}
 	}
-	if len(active) != 1 || len(commands) != 2 || current.B.Generation != active[0].Generation || current.B.Settings != active[0].Settings || current.B.Config.SHA256 != selected.Config.SHA256 || current.A.Launcher == current.B.Launcher {
+	expected := selected.Config.SHA256
+	if target != nil {
+		if target.current != selected.Config || current.B.Config != target.config {
+			return WatchCensusAgyLayer{}, errors.New("Agy current observation selects another private target/current profile")
+		}
+		expected = target.config.SHA256
+	}
+	if len(active) != 1 || len(commands) != 2 || current.B.Generation != active[0].Generation || current.B.Settings != active[0].Settings || current.B.Config.SHA256 != expected || current.A.Launcher == current.B.Launcher {
 		return WatchCensusAgyLayer{}, errors.New("Agy current positive requires exactly one active layer and distinct A/B selections")
 	}
 	return active[0], nil
 }
 
-func (r *watchCensusRead) agyCurrentA(ctx context.Context, selected WatchCensusAgyHooks, a WatchCensusAgyCurrentSelection) ([]agyCensusCommand, []byte, error) {
+func (r *watchCensusRead) agyCurrentA(ctx context.Context, selected WatchCensusAgyHooks, a WatchCensusAgyCurrentSelection, target *unitCensusTargetObservation) ([]agyCensusCommand, []byte, error) {
 	members, err := r.agyGeneration(ctx, a.Generation)
 	if err != nil {
 		return nil, nil, err
@@ -236,13 +243,24 @@ func (r *watchCensusRead) agyCurrentA(ctx context.Context, selected WatchCensusA
 	if err != nil {
 		return nil, nil, err
 	}
+	if target != nil {
+		node := r.nodes[selected.Config.Path]
+		if node == nil || node.Config != target.current || !slices.Contains(r.catalog.UnboundReceipts, files["receipt.json"]) ||
+			association.binding != node.Binding || memory != node.Memory || a.Config.SHA256 != node.Config.SHA256 {
+			return nil, nil, errors.New("Agy target observation A is not the actual selected current receipt/profile")
+		}
+	}
 	prior := selected
 	prior.Config = a.Config
 	node := &WatchCensusMember{Config: a.Config, Binding: association.binding, Memory: memory}
-	return r.agyProducedLayerFor(ctx, prior, WatchCensusAgyLayer{Generation: a.Generation, Settings: a.Settings}, node, false)
+	produced, err := r.agyProducedLayerFor(ctx, prior, WatchCensusAgyLayer{Generation: a.Generation, Settings: a.Settings}, node, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	return produced.commands, produced.settings, nil
 }
 
-func (r *watchCensusRead) inspectAgyCurrent(ctx context.Context, selected WatchCensusAgyHooks, raw []byte, bCommands []agyCensusCommand, observations []WatchCensusHookObservation) ([]WatchCensusHookObservation, error) {
+func (r *watchCensusRead) inspectAgyCurrent(ctx context.Context, selected WatchCensusAgyHooks, raw []byte, bCommands []agyCensusCommand, observations []WatchCensusHookObservation, target *unitCensusTargetObservation) ([]WatchCensusHookObservation, error) {
 	readback, err := agyCurrentDescriptor(raw)
 	if err != nil {
 		return nil, err
@@ -250,7 +268,7 @@ func (r *watchCensusRead) inspectAgyCurrent(ctx context.Context, selected WatchC
 	if readback.Schema != "cairn.watch-agy-readback/2" || readback.Harness != "agy" || readback.EvidenceKind != "current-observation" || readback.Workspace != selected.Workspace || readback.NativeSession == "" {
 		return nil, errors.New("unsupported Agy current observation version/identity")
 	}
-	active, err := agyCurrentLayer(selected, readback, bCommands)
+	active, err := agyCurrentLayer(selected, readback, bCommands, target)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +307,7 @@ func (r *watchCensusRead) inspectAgyCurrent(ctx context.Context, selected WatchC
 	if err := r.agyCurrentPriorGeneration(generation.Before.Process, generation.After.Process); err != nil {
 		return nil, err
 	}
-	aCommands, aSettings, err := r.agyCurrentA(ctx, selected, readback.A)
+	aCommands, aSettings, err := r.agyCurrentA(ctx, selected, readback.A, target)
 	if err != nil {
 		return nil, err
 	}

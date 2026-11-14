@@ -43,6 +43,12 @@ type WatchCensusAgyReadback struct {
 
 const agyNativeUnknown = "Agy native session/file-read/exec provenance is unobserved; code preparation is not native qualification"
 
+type agyProducedObservation struct {
+	commands []agyCensusCommand
+	settings []byte
+	target   *unitCensusTargetObservation
+}
+
 type agyCensusCommand struct {
 	event             string
 	launcher, program WatchCensusPin
@@ -69,6 +75,7 @@ func (r *watchCensusRead) inspectAgyHooks(ctx context.Context, selected WatchCen
 	}
 	installed := map[string][]byte{}
 	var commands []agyCensusCommand
+	var targetObservation *unitCensusTargetObservation
 	var observations []WatchCensusHookObservation
 	for _, layer := range selected.Layers {
 		path := filepath.Join(selected.Account, "hooks.json")
@@ -88,12 +95,18 @@ func (r *watchCensusRead) inspectAgyHooks(ctx context.Context, selected WatchCen
 			installed[path] = nil
 			continue
 		}
-		rows, raw, err := r.agyProducedLayer(ctx, selected, layer)
+		produced, err := r.agyProducedLayer(ctx, selected, layer)
 		if err != nil {
 			return nil, err
 		}
-		commands = append(commands, rows...) // Identical commands in two layers remain two commands.
-		installed[path] = raw
+		commands = append(commands, produced.commands...) // Identical commands in two layers remain two commands.
+		installed[path] = produced.settings
+		if produced.target != nil {
+			if targetObservation != nil {
+				return nil, errors.New("duplicate installed Agy target observation")
+			}
+			targetObservation = produced.target
+		}
 		observations = append(observations, WatchCensusHookObservation{Config: selected.Config, Session: selected.Session,
 			Generation: layer.Generation, Settings: layer.Settings, Layer: layer.Layer,
 			Observation: "Agy cumulative layer: pinned producer and installed bytes; native provenance required; no per-PID layer attribution"})
@@ -113,7 +126,10 @@ func (r *watchCensusRead) inspectAgyHooks(ctx context.Context, selected WatchCen
 		return nil, err
 	}
 	if version.Schema == "cairn.watch-agy-readback/2" {
-		return r.inspectAgyCurrent(ctx, selected, raw, commands, observations)
+		return r.inspectAgyCurrent(ctx, selected, raw, commands, observations, targetObservation)
+	}
+	if targetObservation != nil {
+		return nil, errors.New("Agy target observation requires current readback version2")
 	}
 	var readback WatchCensusAgyReadback
 	if err := hookDecode(raw, &readback); err != nil {
@@ -250,130 +266,141 @@ func (r *watchCensusRead) agyGeneration(ctx context.Context, pin WatchCensusPin)
 	return members, nil
 }
 
-func (r *watchCensusRead) agyProducedLayer(ctx context.Context, selected WatchCensusAgyHooks, layer WatchCensusAgyLayer) ([]agyCensusCommand, []byte, error) {
+func (r *watchCensusRead) agyProducedLayer(ctx context.Context, selected WatchCensusAgyHooks, layer WatchCensusAgyLayer) (*agyProducedObservation, error) {
 	return r.agyProducedLayerFor(ctx, selected, layer, r.nodes[selected.Config.Path], true)
 }
 
 // Historical A bytes are verified with the same producer reader, without
 // comparing their old settings to the currently installed B file. Its caller
 // separately verifies the existing unbound receipt and exact raw file reads.
-func (r *watchCensusRead) agyProducedLayerFor(ctx context.Context, selected WatchCensusAgyHooks, layer WatchCensusAgyLayer, node *WatchCensusMember, installedNow bool) ([]agyCensusCommand, []byte, error) {
+func (r *watchCensusRead) agyProducedLayerFor(ctx context.Context, selected WatchCensusAgyHooks, layer WatchCensusAgyLayer, node *WatchCensusMember, installedNow bool) (*agyProducedObservation, error) {
 	members, err := r.agyGeneration(ctx, layer.Generation)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if len(members) != 3 || members["hook-settings.json"] != layer.Settings || members["previous-settings.json"].Path == "" || members["hook-selection.json"].Path == "" {
-		return nil, nil, errors.New("Agy hook generation membership disagrees")
+		return nil, errors.New("Agy hook generation membership disagrees")
 	}
 	producer, err := r.jsonFile(members["hook-selection.json"].Path)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if !value.SameText(producer.Get("schema"), "cairn.lifecycle-hook-settings/1") || !value.SameText(producer.Get("harness"), "agy") ||
 		nativeText(producer.Get("account_home")) != selected.Account || !exactReceiptObject(producer.Get("layout"), "hook-settings.json") ||
 		!value.SameText(producer.Get("layout").Get("hook-settings.json"), "hooks.json") ||
 		!hookValuesEqual(producer.Get("unsupported_operations"), &value.Value{Kind: value.Array, Items: []*value.Value{value.Text("ordinary memory hook")}}) {
-		return nil, nil, errors.New("unsupported Agy producer harness/account/layout/operations")
+		return nil, errors.New("unsupported Agy producer harness/account/layout/operations")
 	}
 	for _, field := range []string{"native_trust", "refresh", "activation"} {
 		if !value.SameText(producer.Get(field), "not-performed") {
-			return nil, nil, errors.New("Agy producer cannot assert native activation/refresh/trust")
+			return nil, errors.New("Agy producer cannot assert native activation/refresh/trust")
 		}
 	}
 	life := producer.Get("lifecycle_selection")
 	lifeMembers, err := r.agyGeneration(ctx, WatchCensusPin{nativeText(life.Get("path")), nativeText(life.Get("sha256"))})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := agyLegacyLifecycleRefusal(lifeMembers); err != nil {
-		return nil, nil, err
-	}
-	if node == nil || lifeMembers["binding.json"] != node.Binding || lifeMembers["receipt.json"].Path == "" {
-		return nil, nil, errors.New("Agy producer selects another binding/receipt")
+		return nil, err
 	}
 	receiptPin := lifeMembers["receipt.json"]
+	var targetObservation *unitCensusTargetObservation
 	if installedNow && !slices.Contains(r.catalog.UnboundReceipts, receiptPin) {
-		return nil, nil, errors.New("Agy producer receipt is not the selected unbound association")
+		targetObservation, err = r.observeUnitTarget(selected.Config, receiptPin)
+		if err != nil {
+			return nil, err
+		}
+		// Only this local producer view describes B. The selected A node,
+		// catalog, owner and selected receipt are not changed.
+		node = &WatchCensusMember{Config: targetObservation.config, Binding: targetObservation.binding, Memory: targetObservation.memory}
+	}
+	if node == nil || lifeMembers["binding.json"] != node.Binding || receiptPin.Path == "" {
+		return nil, errors.New("Agy producer selects another binding/receipt")
 	}
 	receipt, err := r.jsonFile(receiptPin.Path)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	metadata, err := r.jsonFile(lifeMembers["selection.json"].Path)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	anchors := metadata.Get("anchors")
 	if anchors == nil || anchors.Kind != value.Object {
-		return nil, nil, errors.New("Agy emitted launcher anchors are missing")
+		return nil, errors.New("Agy emitted launcher anchors are missing")
 	}
+	var coordinationProfile WatchCensusPin
 	for _, role := range []string{"memory", "coordination"} {
 		_, pin, err := r.descriptor(producer.Get("role_configurations").Get(role))
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		expected := node.Config
 		if role == "memory" {
 			expected = node.Memory
 		}
 		if pin.SHA256 != expected.SHA256 || role == "memory" && pin != expected {
-			return nil, nil, errors.New("Agy mixed role profile")
+			return nil, errors.New("Agy mixed role profile")
 		}
-		if role == "coordination" && producerProfile(receipt, pin.Path, pin.SHA256) == nil {
-			return nil, nil, errors.New("Agy producer role profile is outside its receipt")
+		if role == "coordination" {
+			if producerProfile(receipt, pin.Path, pin.SHA256) == nil || targetObservation != nil && pin != targetObservation.config {
+				return nil, errors.New("Agy producer role profile is outside its exact receipt/target")
+			}
+			coordinationProfile = pin
 		}
 	}
 	settings, err := r.pin(layer.Settings, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if installedNow {
 		actual, err := r.pin(layer.Installed, false)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if !bytes.Equal(settings, actual) {
-			return nil, nil, errors.New("Agy installed layer differs from selected settings")
+			return nil, errors.New("Agy installed layer differs from selected settings")
 		}
 	}
 	previous, err := r.pin(members["previous-settings.json"], false)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	source := producer.Get("source_settings")
 	if nativeText(source.Get("sha256")) != members["previous-settings.json"].SHA256 {
-		return nil, nil, errors.New("Agy previous/source settings pin disagrees")
+		return nil, errors.New("Agy previous/source settings pin disagrees")
 	}
 	if _, _, err := r.descriptor(source); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var rendered, old map[string]json.RawMessage
 	if err := hookDecode(settings, &rendered); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := hookDecode(previous, &old); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	for key, raw := range old {
 		if key != "cairn-coordination" && !hookJSONEqual(raw, rendered[key]) {
-			return nil, nil, errors.New("Agy producer changed unrelated settings")
+			return nil, errors.New("Agy producer changed unrelated settings")
 		}
 	}
 	for key := range rendered {
 		if key != "cairn-coordination" && old[key] == nil {
-			return nil, nil, errors.New("Agy producer added unrelated settings")
+			return nil, errors.New("Agy producer added unrelated settings")
 		}
 	}
 	rows := producer.Get("rows")
 	if rows == nil || rows.Kind != value.Array || len(rows.Items) != 2 {
-		return nil, nil, errors.New("unsupported Agy coordination event coverage")
+		return nil, errors.New("unsupported Agy coordination event coverage")
 	}
 	var groups map[string][]json.RawMessage
 	if err := hookDecode(rendered["cairn-coordination"], &groups); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if len(groups) != 2 {
-		return nil, nil, errors.New("extra or missing Agy native hook event")
+		return nil, errors.New("extra or missing Agy native hook event")
 	}
 	var commands []agyCensusCommand
 	for i, event := range []string{"PreInvocation", "Stop"} {
@@ -382,22 +409,22 @@ func (r *watchCensusRead) agyProducedLayerFor(ctx context.Context, selected Watc
 			!exactReceiptObject(row.Get("hook"), "type", "command", "timeout") || !value.SameText(row.Get("hook").Get("type"), "command") ||
 			row.Get("hook").Get("timeout") == nil || row.Get("hook").Get("timeout").Kind != value.Int || row.Get("hook").Get("timeout").Integer != "15" ||
 			len(groups[event]) != 1 {
-			return nil, nil, errors.New("unsupported or duplicate Agy native hook row")
+			return nil, errors.New("unsupported or duplicate Agy native hook row")
 		}
 		parsed, err := value.DecodeTextWithObjectPolicy(groups[event][0], "utf-8", 0, value.DuplicateReject)
 		if err != nil || !hookValuesEqual(parsed, row.Get("hook")) {
-			return nil, nil, errors.New("Agy rendered hook differs from producer row")
+			return nil, errors.New("Agy rendered hook differs from producer row")
 		}
-		command, err := r.agyCommand(selected, row, receipt, receiptPin, anchors)
+		command, err := r.agyCommand(coordinationProfile, row, receipt, receiptPin, anchors)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		commands = append(commands, command)
 	}
-	return commands, settings, nil
+	return &agyProducedObservation{commands: commands, settings: settings, target: targetObservation}, nil
 }
 
-func (r *watchCensusRead) agyCommand(selected WatchCensusAgyHooks, row, receipt *value.Value, receiptPin WatchCensusPin, anchors *value.Value) (agyCensusCommand, error) {
+func (r *watchCensusRead) agyCommand(coordinationProfile WatchCensusPin, row, receipt *value.Value, receiptPin WatchCensusPin, anchors *value.Value) (agyCensusCommand, error) {
 	var result agyCensusCommand
 	argv, err := hookStringVector(row.Get("argv"))
 	if err != nil {
@@ -408,8 +435,8 @@ func (r *watchCensusRead) agyCommand(selected WatchCensusAgyHooks, row, receipt 
 	if err != nil || len(checked) != 1 || len(argv) != 6 || argv[0] != checked[0] || argv[1] != "hook" || argv[2] != "--config" || argv[4] != "--event" || argv[5] != event {
 		return result, errors.New("Agy requires literal six-element coordination event argv")
 	}
-	profile := producerProfile(receipt, argv[3], selected.Config.SHA256)
-	if profile == nil {
+	profile := producerProfile(receipt, argv[3], coordinationProfile.SHA256)
+	if profile == nil || argv[3] != coordinationProfile.Path {
 		return result, errors.New("Agy hook selects another immutable coordination profile")
 	}
 	if _, _, err := r.descriptor(profile); err != nil {

@@ -879,11 +879,50 @@ def prepare_stubbed(evidence, *, python_sha256, strace_sha256):
                 os.umask(old_umask)
 
 
+
+def prepare_target_observation(evidence):
+    """Genuine Go /3 DATA for focused Go tests; no session/hook/API/PG."""
+    evidence = private_directory(evidence)
+    require(not list(evidence.iterdir()), 'fresh empty target evidence required')
+    packet = CONTROLLED_PACKET
+    images, _, _ = checked_packet(packet/'images-host.json',
+        'e132531f982044e89546e67242f0ae28d7b0d3db05e8fee4f21c8f428feca068',
+        packet/'index.json', 'f169590e02f41ba1b9e6578713a7f030a24d0a1f21432bf2a2c118bc200bbeaa',
+        packet/'build-complete.json', 'ddfcf61f4e63f44378e5009f16b510fa2436914d270dc807dcd865201a55745f')
+    runtime = evidence/'owned-runtime'
+    runtime.mkdir(mode=0o700)
+    def configure(f):
+        f.settings.write_bytes(b'{}\n')
+        f.settings.chmod(0o600)
+        Path(f.coord['token_file']).touch(mode=0o000)
+        Path(f.coord['token_file']).chmod(0o000)
+    f, fixture = roundtrip.produced_fixture(images, evidence, scratch=runtime, configure=configure)
+    work = f.root/'native-unit-workspace'
+    work.mkdir(mode=0o700)
+    (work/'.agents').mkdir(mode=0o700)
+    produced = json.loads((evidence/'actual-producer.json').read_bytes())['generations']
+    upper = lambda pin: dict(Path=pin['path'], SHA256=pin['sha256'])
+    for label in ('A','B'):
+        generation = produced[label]
+        hooks = generation['hook']
+        metadata = json.loads((Path(hooks['selection']['path']).parent/'hook-selection.json').read_bytes())
+        launcher = Path(metadata['rows'][0]['argv'][0])
+        fixture[label] = dict(Generation=upper(hooks['selection']), Config=generation['Config'],
+            Settings=upper(hooks['settings']), Launcher=checked_pin(launcher))
+    fixture.update(Account=str(f.account),Workspace=str(work),
+        Installed=str(f.account/'hooks.json'),
+        Scope='genuine producer DATA; empty actual native/session/callback inventories; no API/PG/provider',
+        Validation='new Go reader must be tested separately; old1508 material does not prove new behavior')
+    roundtrip.write(evidence/'agy-target-fixture.json', fixture)
+    return fixture
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--prepare-stubbed', action='store_true')
     mode.add_argument('--prepare-authenticated', action='store_true')
+    mode.add_argument('--prepare-target-observation', action='store_true')
     mode.add_argument('--native-unit', action='store_true', help='always refuses; actual case remains held')
     parser.add_argument('--evidence', type=Path)
     parser.add_argument('--python-sha256')
@@ -898,6 +937,10 @@ def main(argv=None):
     try:
         if args.native_unit:
             refuse_native()
+        if args.prepare_target_observation:
+            require(args.evidence is not None, 'explicit private target evidence required')
+            print(json.dumps(prepare_target_observation(args.evidence), sort_keys=True))
+            return 0
         if args.prepare_authenticated:
             require(args.evidence is not None, 'explicit private evidence required')
             result = prepare_authenticated(args.evidence, manifest=args.images,

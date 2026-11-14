@@ -191,11 +191,11 @@ func TestAgyCurrentUnitAllowsExactABeforeBoundary(t *testing.T) {
 func TestAgyCurrentUnitSingleLayerAndTraceReread(t *testing.T) {
 	f := newAgyCurrentUnit()
 	selection := WatchCensusAgyHooks{Config: f.observed.B.Config, Layers: []WatchCensusAgyLayer{{Generation: f.observed.B.Generation, Settings: f.observed.B.Settings, Installed: WatchCensusPin{Path: f.installed, SHA256: strings.Repeat("1", 64)}}}}
-	if _, err := agyCurrentLayer(selection, f.observed, f.bCommands); err != nil {
+	if _, err := agyCurrentLayer(selection, f.observed, f.bCommands, nil); err != nil {
 		t.Fatal(err)
 	}
 	selection.Layers = append(selection.Layers, selection.Layers[0])
-	if _, err := agyCurrentLayer(selection, f.observed, f.bCommands); err == nil {
+	if _, err := agyCurrentLayer(selection, f.observed, f.bCommands, nil); err == nil {
 		t.Fatal("duplicate active layers accepted")
 	}
 	root := t.TempDir()
@@ -225,6 +225,42 @@ func TestAgyCurrentUnitSingleLayerAndTraceReread(t *testing.T) {
 	r.local.tokenPaths[path] = true
 	if _, err := r.agyTrace(pin); err == nil {
 		t.Fatal("credential selector used as trace")
+	}
+}
+
+func TestAgyCurrentUnitTargetDoesNotSelectB(t *testing.T) {
+	f := newAgyCurrentUnit()
+	f.observed.A.Config.SHA256 = strings.Repeat("a", 64)
+	f.observed.B.Config.SHA256 = strings.Repeat("b", 64)
+	current := WatchCensusPin{Path: "/unit-current/selected/coordination.json", SHA256: f.observed.A.Config.SHA256}
+	selection := WatchCensusAgyHooks{Config: current, Layers: []WatchCensusAgyLayer{{Generation: f.observed.B.Generation, Settings: f.observed.B.Settings, Installed: WatchCensusPin{Path: f.installed, SHA256: strings.Repeat("1", 64)}}}}
+	if _, err := agyCurrentLayer(selection, f.observed, f.bCommands, nil); err == nil {
+		t.Fatal("different B accepted without a private target observation")
+	}
+	view := &unitCensusTargetObservation{current: current, config: f.observed.B.Config}
+	if _, err := agyCurrentLayer(selection, f.observed, f.bCommands, view); err != nil {
+		t.Fatal(err)
+	}
+	if selection.Config != current {
+		t.Fatal("target observation promoted B into current")
+	}
+	for _, mutation := range []string{"current-path", "current-pin", "target-path", "target-pin"} {
+		t.Run(mutation, func(t *testing.T) {
+			bad := *view
+			switch mutation {
+			case "current-path":
+				bad.current.Path += ".copy"
+			case "current-pin":
+				bad.current.SHA256 = bad.config.SHA256
+			case "target-path":
+				bad.config.Path += ".copy"
+			case "target-pin":
+				bad.config.SHA256 = current.SHA256
+			}
+			if _, err := agyCurrentLayer(selection, f.observed, f.bCommands, &bad); err == nil {
+				t.Fatal("mixed target/current tuple accepted")
+			}
+		})
 	}
 }
 

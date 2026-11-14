@@ -18,6 +18,59 @@ type unitCensusTarget struct {
 	profiles    map[string]WatchCensusPin
 }
 
+// A private observation of one already loaded target, never a selected user,
+// authentication result or drain receipt. No wire field constructs this view.
+type unitCensusTargetObservation struct {
+	current, receipt, config, binding, memory WatchCensusPin
+}
+
+func (r *watchCensusRead) observeUnitTarget(current, receipt WatchCensusPin) (*unitCensusTargetObservation, error) {
+	if r.control == nil || r.control.target == nil || r.target == nil || r.target.association == nil ||
+		r.report.target != r.target || receipt != *r.control.target || receipt != r.target.receipt ||
+		filepath.Dir(current.Path) != r.control.current.Directory || r.control.current.Pins[filepath.Base(current.Path)] != current.SHA256 {
+		return nil, errors.New("Agy observation lacks its private verified unit target")
+	}
+	node, selected := r.nodes[current.Path], r.associations[current.Path]
+	if node == nil || node.Config != current || selected == nil || node.Binding != selected.binding {
+		return nil, errors.New("Agy target observation lost its actual current association")
+	}
+	profile := r.target.profiles[filepath.Base(current.Path)]
+	if profile.Path == "" {
+		return nil, errors.New("Agy target observation has no bijective current profile")
+	}
+	// Reuse the complete pinned receipt/source/runtime validator. Its file facts
+	// join the normal census capture and existing D1-D6 final reread.
+	association, profiles, err := r.unboundReceipt(receipt)
+	if err != nil {
+		return nil, err
+	}
+	memory := WatchCensusPin{nativeText(association.manifest.Get("memory_config").Get("path")), nativeText(association.manifest.Get("memory_config").Get("sha256"))}
+	if association.binding != r.target.association.binding || memory != r.target.memory ||
+		len(profiles) != len(r.target.profiles) || !slices.Contains(profiles, profile) {
+		return nil, errors.New("Agy target receipt/profile/memory observation changed")
+	}
+	for _, expected := range r.target.profiles {
+		if !slices.Contains(profiles, expected) {
+			return nil, errors.New("Agy target/current profile bijection changed")
+		}
+	}
+	actual, err := r.jsonFile(current.Path)
+	if err != nil {
+		return nil, err
+	}
+	next, err := r.unboundJSON(profile)
+	if err != nil {
+		return nil, err
+	}
+	if !sameUnitProfile(actual, next) {
+		return nil, errors.New("Agy target observation belongs to another current unit")
+	}
+	if err := unitControlPairIdentity([]*value.Value{actual, next}, []string{nativeText(selected.memory.Get("state_dir")), nativeText(association.memory.Get("state_dir"))}); err != nil {
+		return nil, err
+	}
+	return &unitCensusTargetObservation{current: current, receipt: receipt, config: profile, binding: association.binding, memory: memory}, nil
+}
+
 func cloneUnitControlCensus(input *UnitControlCensus) UnitControlCensus {
 	copy := *input
 	copy.Proposal.Bindings = make([]WatchBindings, len(input.Proposal.Bindings))

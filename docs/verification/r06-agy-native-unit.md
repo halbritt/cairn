@@ -2,10 +2,11 @@
 
 ## Native admission authoring checkpoint
 
-The new selector and exclusive ledger helpers are being authored on exact
-8631. They are not wired to an executable native entry: `--native-unit` remains
-closed until the current/target producer association is resolved and the full
-driver is reviewed. This checkpoint does not authorize a native invocation.
+The selector and exclusive ledger helpers start from exact8631. The new
+private target observation resolves the forward producer association described
+below. The helpers are not yet wired to a complete executable native entry;
+`--native-unit` remains closed during this checkpoint. No native invocation
+is authorized by these data helpers or the component tests.
 
 `cairn.r06-agy-native-admission/1` selects the driver head/tree separately from
 the1508 image source; the controlled manifest, index and completion; all five
@@ -34,19 +35,35 @@ Root1481 decision40f30683/v1 explicitly permits only the future fixture Agy
 child and native-hook descendants to receive a private in-catalog HOME. The
 supervisor HOME/CODEX_HOME/tools/auth stay unchanged; real account hooks and
 subscription credentials must not be accessed, copied or relocated. The
-decision also permits an application-only user/network namespace, without a
-mount/PID namespace or container. The existing nonnative loopback probe is a
-prerequisite observation, not integrated network qualification.
+namespace experiment was dropped after its UID mapping made host root-owned
+ancestors appear as65534 to the unchanged ownership guards. Decisions258a6663
+and48783d49 select normal-host execution through maintained mise/host:exec
+with a strict actual-child/descendant connect audit. The audit must refuse
+external addresses including failed attempts, unknown or truncated addresses,
+unattributed records and foreign Unix sockets. Its receipt must state the
+observed syscall/interval scope and limits. The earlier loopback probe is a
+separate prerequisite observation, not integrated network qualification.
 
-The next unresolved contract is the forward census: after native Turn2B but
-before public A-to-B publication, current selected profile remains A. The
-current reader binds installed B to that selected profile hash and receipt;
-TargetReceipt supplies verified target data without promoting it to current.
-Author request39faa856/v1 proposes resolving B only through that existing
-private target association while preserving A ownership and D1-D6 rereads.
-No shared/Go edits are leased or implemented by this checkpoint. Native0
-continues through authoring and peer review; only1481 may issue a later
-conditional attempt after review, spot-check, landing and fresh readiness.
+Before public A-to-B publication, the current selected profile remains A even
+after the native client executes B. Arbitrationefe3447b permits a private
+typed observation of B through the existing loaded/reverified TargetReceipt.
+The reader checks B's exact receipt, binding, profile path/hash, memory and
+emitted launcher while retaining A's node, selected receipt and owner. Actual
+installed B is still read and compared; it never uses the historical A bypass.
+When a target view is present, the A interval must belong to the actual
+selected A receipt/profile. Current B with a reverse target A retains the
+ordinary strict current-B checks. No JSON/Facts/status field grants this view
+or authenticates drain. Both sides' source and runtime pins enter the existing
+D1-D6 final reread.
+
+`--prepare-target-observation` composes the maintained genuine Go /3 producer
+for explicit focused Go tests, with different A/B hashes and actual empty
+session/callback inventories. It starts no native client, hook, provider, API
+or PG. The old1508 producer inputs are data; the separately compiled new Go
+reader supplies the tested behavior. Synthetic trace/process codec tests are
+unit-only. Native0 continues through authoring and peer review; only1481 may
+issue a later conditional attempt after independent review, source/raw
+spot-check, landing and fresh readiness.
 
 This preparation cut starts at exact accepted
 `15080de3b1205b161faa66f60b8faf93c30f18da`, tree

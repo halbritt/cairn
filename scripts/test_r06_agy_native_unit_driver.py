@@ -248,6 +248,14 @@ class AgyPreparationTests(unittest.TestCase):
                 self.assertEqual(driver.main(['--prepare-stubbed', '--evidence', str(self.root)]), 2)
         self.assertEqual(list(self.root.iterdir()), [])
 
+    def test_target_data_entry_requires_inputs_before_producer_or_native(self):
+        with patch.object(driver.roundtrip,'produced_fixture',side_effect=AssertionError('producer before inputs')), \
+                patch.object(driver,'checked_packet',side_effect=driver.Refused('INPUT_NOT_READY')), \
+                patch.object(driver.r04,'AgySession',side_effect=AssertionError('native entry')):
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(driver.main(['--prepare-target-observation','--evidence',str(self.root)]),2)
+        self.assertEqual(list(self.root.iterdir()),[])
+
     def test_modes_cannot_be_combined(self):
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
