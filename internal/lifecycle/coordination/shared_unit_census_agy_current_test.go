@@ -84,6 +84,110 @@ func (f agyCurrentUnit) check() error {
 	return agyCurrentPair(f.before, f.after, f.observed, f.generation, f.aSettings, f.bSettings, f.aCommands, f.bCommands, f.account, f.installed)
 }
 
+func TestAgyCurrentUnitPendingInputRemainsRefused(t *testing.T) {
+	f := newAgyCurrentUnit()
+	if err := f.check(); err != nil {
+		t.Fatal("complete synthetic control", err)
+	}
+	// Complete hook callbacks and an idle frame do not complete a separate
+	// native input syscall. Preserve this guard until its contract is defined.
+	f.before = append(f.before, []byte("200 read(0 <unfinished ...>\n")...)
+	f.observed.Before.End = len(f.before)
+	if _, err := agyTraceCalls(f.before); err == nil || err.Error() != "incomplete Agy trace syscall coverage" {
+		t.Fatal("unfinished input was accepted or refused for another reason", err)
+	}
+	if err := f.check(); err == nil {
+		t.Fatal("current readback accepted an unfinished native input syscall")
+	}
+}
+
+// This opt-in test reads historical raw bytes only. It neither starts the
+// held image nor supplies a current process/session or authenticated drain.
+func TestAgyCurrentRetainedLivePrefix(t *testing.T) {
+	path := os.Getenv("CAIRN_R06_AGY_RETAINED_LIVE_PREFIX")
+	if path == "" {
+		t.Skip("explicit retained live-prefix codec source not selected")
+	}
+	var input struct {
+		Schema, NativeSession, Workspace string
+		Source, Prefix                   WatchCensusPin
+		NativePID, PendingPID            int
+		PendingStart                     int
+		PendingRaw                       string
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hookDecode(raw, &input); err != nil {
+		t.Fatal(err)
+	}
+	if input.Schema != "cairn.agy-retained-live-prefix/1" || input.NativePID <= 1 || input.PendingPID <= 1 ||
+		!filepath.IsAbs(input.Source.Path) || !filepath.IsAbs(input.Prefix.Path) || !filepath.IsAbs(input.Workspace) {
+		t.Fatal("missing retained source provenance")
+	}
+	source, err := os.ReadFile(input.Source.Path)
+	if err != nil || agyTraceSHA(source) != input.Source.SHA256 {
+		t.Fatal("retained source changed", err)
+	}
+	prefix, err := os.ReadFile(input.Prefix.Path)
+	if err != nil || agyTraceSHA(prefix) != input.Prefix.SHA256 || len(prefix) == 0 || len(prefix) >= len(source) ||
+		prefix[len(prefix)-1] != '\n' || !bytes.Equal(prefix, source[:len(prefix)]) {
+		t.Fatal("prefix is not an exact complete raw source prefix", err)
+	}
+	expected := fmt.Sprintf("%d  read(0 <unfinished ...>\n", input.PendingPID)
+	if input.PendingRaw != expected || input.PendingStart < 0 || input.PendingStart+len(expected) >= len(prefix) ||
+		string(prefix[input.PendingStart:input.PendingStart+len(expected)]) != expected {
+		t.Fatal("pending input locator differs from retained bytes")
+	}
+	calls, err := agyTraceCalls(source)
+	if err != nil {
+		t.Fatal("complete historical trace codec refused", err)
+	}
+	threads := map[int]bool{input.NativePID: true}
+	for changed := true; changed; {
+		changed = false
+		for _, call := range calls {
+			if call.start >= input.PendingStart || !threads[call.pid] ||
+				(call.name != "clone" && call.name != "clone3") || !strings.Contains(call.body, "CLONE_THREAD") {
+				continue
+			}
+			index := strings.LastIndex(call.body, " = ")
+			if index >= 0 {
+				child, err := strconv.Atoi(call.body[index+3:])
+				if err == nil && child > 1 && !threads[child] {
+					threads[child], changed = true, true
+				}
+			}
+		}
+	}
+	if !threads[input.PendingPID] {
+		t.Fatal("pending input is not a traced native thread")
+	}
+	idleAfterPending, laterCompleted := false, false
+	for _, call := range calls {
+		// The exact original read(0 prefix is pinned above. strace's resumed
+		// form can retain whitespace before its comma; the start locator ties
+		// the completed call to those same original bytes.
+		if call.pid == input.PendingPID && call.start == input.PendingStart && call.name == "read" {
+			laterCompleted = true
+		}
+		if call.start <= input.PendingStart || call.start >= len(prefix) || call.name != "write" || !threads[call.pid] {
+			continue
+		}
+		body, _, err := agyTraceIO(call)
+		if err == nil && agyCurrentFrame(body, "Stop", input.NativeSession, input.Workspace) == nil {
+			idleAfterPending = true
+		}
+	}
+	if !idleAfterPending || !laterCompleted {
+		t.Fatalf("missing actual idle frame or later raw completion: idle=%t completed=%t", idleAfterPending, laterCompleted)
+	}
+	if _, err := agyTraceCalls(prefix); err == nil || err.Error() != "incomplete Agy trace syscall coverage" {
+		t.Fatal("live prefix did not reproduce the exact remaining guard", err)
+	}
+}
+
 func TestAgyCurrentUnitRelations(t *testing.T) {
 	for _, mutation := range []string{"none", "missing-generation", "pid-reuse", "boot-change", "foreign-session", "missing-B", "A-after-B", "extra-B", "truncated", "missing-stdin-eof", "wrong-config", "wrong-argv", "wrong-locator", "wrong-layer", "fullyIdle-false", "fullyIdle-string", "fullyIdle-missing"} {
 		t.Run(mutation, func(t *testing.T) {

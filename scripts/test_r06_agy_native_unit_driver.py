@@ -236,10 +236,15 @@ class AgyPreparationTests(unittest.TestCase):
 
     def test_native_entry_refuses_before_any_process_or_file(self):
         with patch.object(driver.r04, 'TracedProcess', side_effect=AssertionError('trace launch')), \
-                patch.object(driver.r04, 'AgySession', side_effect=AssertionError('native launch')):
+                patch.object(driver.r04, 'AgySession', side_effect=AssertionError('native launch')), \
+                patch.object(driver.r04, 'GeminiFixture', side_effect=AssertionError('provider launch')), \
+                patch.object(driver.OwnedCluster, 'start', side_effect=AssertionError('PG launch')), \
+                patch.object(driver.DisposableHost, 'start', side_effect=AssertionError('API launch')), \
+                patch.object(driver, 'NativeReservation', side_effect=AssertionError('native reservation')):
             with contextlib.redirect_stderr(io.StringIO()) as diagnostic:
-                self.assertEqual(driver.main(['--native-unit']), 2)
+                self.assertEqual(driver.main(['--native-unit']), 75)
         self.assertIn('target resource closure', diagnostic.getvalue())
+        self.assertIn('read(0)', diagnostic.getvalue())
         self.assertEqual(list(self.root.iterdir()), [])
 
     def test_entry_requires_explicit_tool_pins(self):

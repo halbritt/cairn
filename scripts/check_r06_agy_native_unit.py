@@ -60,14 +60,16 @@ STUB = (
 )
 INPUT = b'CAIRN_NON_NATIVE_PREPARATION_INPUT\n'
 STOP = (
-    'STOP: actual Agy entry remains CLOSED. Accepted1508 supplies the finite '
-    'Go /3 target resource closure and authenticated public control preparation; '
-    'it does not supply actual Agy generation/session/hook/refresh or native D2 '
-    'facts. Existing checked_admission selects Claude/local-scripted-messages, '
-    'not Agy permission. No supported Agy admission/driver seam is implemented '
-    'here. Retained Python /2 binding/argv/17-member reverse remains separate. '
-    'Lead must select the qualified inputs and an independently reviewed '
-    'supported Agy seam before any actual native invocation.'
+    'PREREQUISITE_STOP: actual Agy entry remains CLOSED. The finite Go /3 '
+    'target resource closure and private target observation do not resolve '
+    'the live trace contract. agyTraceCalls rejects every unfinished syscall; '
+    'the retained held-image idle prefix contains a native-thread read(0) '
+    'that is still pending after fullyIdle Stop. Current readback also requires '
+    'that native generation to remain live. No pending-read contract is '
+    'implemented or authorized by this checkpoint. Preserve complete raw '
+    'prefixes, callback EOF/zero-exit and live-generation guards. No Agy, '
+    'provider, API, PG or native ledger starts at this entry. Native0; '
+    'retained Python /2 reverse remains unsupported.'
 )
 
 
@@ -137,7 +139,7 @@ def finish_ledger(ledger, outcome):
 
 def refuse_native():
     # No caller flag, supplied status, schema, or admission file releases this.
-    raise Refused(STOP)
+    raise PrerequisiteUnavailable(STOP)
 
 
 class PrerequisiteUnavailable(Refused):
@@ -955,6 +957,9 @@ def main(argv=None):
                                  strace_sha256=args.strace_sha256)
         print(json.dumps(result, sort_keys=True))
         return 0
+    except PrerequisiteUnavailable as error:
+        print(str(error), file=sys.stderr)
+        return 75
     except (ValueError, OSError, AssertionError) as error:
         print(str(error), file=sys.stderr)
         return 2

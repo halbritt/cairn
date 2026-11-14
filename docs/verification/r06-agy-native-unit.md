@@ -1,5 +1,36 @@
 # R06 authenticated Agy-unit preparation
 
+## Remaining live-prefix prerequisite
+
+`--native-unit` returns prerequisite status75 before a native reservation or
+any Agy, provider, API or PostgreSQL startup. The target observation below is
+a component checkpoint. The native entry is incomplete.
+
+The current reader requires a live native generation and exact raw prefixes.
+Its `agyTraceCalls` parser refuses every unfinished syscall. In an actual
+retained held-image prefix, a native thread starts a blocking `read(0)` before
+the managed callbacks and remains blocked after the actual Boolean
+`fullyIdle=true` Stop frame. Completed hook stdin/EOF and zero exits do not
+complete that separate native input syscall. The historical full trace later
+completes it, but that later completion is outside the idle prefix.
+
+The opt-in `TestAgyCurrentRetainedLivePrefix` checks the source and prefix
+hashes, their exact byte relationship, the pending-read locator, the thread's
+kernel clone ancestry and the later fully idle frame. It verifies the exact
+`incomplete Agy trace syscall coverage` refusal. Set
+`CAIRN_R06_AGY_RETAINED_LIVE_PREFIX` to its selected private codec descriptor.
+This reads historical bytes only; it supplies no current process or drain
+authority. The portable pending-input regression also preserves the refusal
+after otherwise complete synthetic callbacks.
+
+An explicit pending-input contract is needed before integrating the driver.
+Dropping the pending line, rewriting the raw prefix or appending a fabricated
+resume would violate raw correspondence. Closing Agy before public control
+would violate the live-generation check. This checkpoint changes neither
+guard. The normal-host descendant connect audit, complete future native entry
+and fresh common image packet remain unimplemented or unselected; the
+admission helpers below do not establish their readiness.
+
 ## Native admission authoring checkpoint
 
 The selector and exclusive ledger helpers start from exact8631. The new
