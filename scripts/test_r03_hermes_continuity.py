@@ -185,7 +185,7 @@ class MechanismGuards(unittest.TestCase):
             trace.write_text('100 clone(child_stack=NULL) = 101\n'
                 '101 execve("' + python + '", ["python", "memory.py"], 0x0) = 0\n')
             result = continuity.audit_syscalls({python}, set(), {100: 'A'}, trace_path=trace, python_path=python,
-                scratch_root='/fixture',exact_argv_hashes=[continuity.argv_digest(['python','memory.py'])])
+                scratch_root='/fixture')
             self.assertEqual(len(result['violations']), 1)
             self.assertIn('Source Python fallback', result['violations'][0])
 
@@ -238,16 +238,15 @@ class EvidencePrivacy(unittest.TestCase):
         lines = ('100 clone(child_stack=NULL) = 101\n'
             '101 execve("/selected/hook", ["/selected/hook", "literal"], 0x0) = 0\n'
             '101 connect(3, {sa_family=AF_UNIX, sun_path="/owned/api.sock"}, 110) = 0\n'
-            '101 execve("/selected/hook", ["/selected/hook", "'+canary+'"], 0x0) = -1 ENOENT\n'
+            '101 execve("/unknown/hook", ["/unknown/hook", "'+canary+'"], 0x0) = 0\n'
             '101 exit_group(0) = ?\n101 +++ exited with 0 +++\n')
         os.write(writer,lines.encode()); os.close(writer); thread.join(timeout=5)
         self.assertFalse(thread.is_alive())
         self.assert_private(canary,json.dumps(reducer.rows))
-        result = continuity.audit_syscalls({'/selected/hook'},{'/owned/api.sock'},reducer=reducer,
-            exact_argv_hashes=[continuity.argv_digest(['/selected/hook','literal'])])
-        self.assertEqual(result['violations'],['unapproved executable arguments'])
-        self.assertTrue(result['execve'][0]['argv_validated'])
-        self.assertFalse(result['execve'][1]['argv_validated'])
+        result = continuity.audit_syscalls({'/selected/hook'},{'/owned/api.sock'},reducer=reducer)
+        self.assertEqual(result['violations'],['unapproved or changed executable'])
+        self.assertTrue(result['execve'][0]['executable_validated'])
+        self.assertNotIn('path',result['execve'][1])
         self.assertEqual(result['connect'][0]['sockaddr']['path'],'/owned/api.sock')
         self.assertTrue(any(row.get('child') == 101 for row in result['processes']))
         self.assertTrue(any(row['kind'] == 'exit' and row['result'] == 0 for row in result['processes']))
@@ -268,29 +267,29 @@ class EvidencePrivacy(unittest.TestCase):
                 self.assert_private(canary,json.dumps(result))
                 self.assertEqual(reducer.pending,{})
 
-    def test_unfinished_resume_and_hex_escaped_vectors_match_literal_digest(self):
+    def test_unfinished_resume_and_hex_escaped_vectors_retain_safe_facts(self):
         reducer = continuity.TraceReducer()
         reducer.feed('100 execve("\\x2f\\x61", ["\\x2f\\x61", "\\xc3\\xa9"], 0x0 <unfinished ...>')
         reducer.feed('100 <... execve resumed>) = 0')
-        result = continuity.audit_syscalls({'/a'},set(),reducer=reducer,
-            exact_argv_hashes=[continuity.argv_digest(['/a','é'])])
+        result = continuity.audit_syscalls({'/a'},set(),reducer=reducer)
         self.assertEqual(result['violations'],[])
-        self.assertTrue(result['execve'][0]['argv_validated'])
+        self.assertTrue(result['execve'][0]['executable_validated'])
 
-    def test_extra_argv_cannot_use_declared_negative_lookup_or_anchor_exceptions(self):
+    def test_successful_unknown_exec_cannot_use_negative_lookup_or_anchor_exceptions(self):
         for path, normal in (('/missing/git','/missing'),('/fixture/project/release/.prepare-123/probe','')):
             reducer = continuity.TraceReducer()
-            reducer.feed('100 execve('+json.dumps(path)+', ["git", "--version", "extra"], 0x0) = -1 ENOENT')
+            reducer.feed('100 execve('+json.dumps(path)+', ["git", "--version", "extra"], 0x0) = 0')
             result = continuity.audit_syscalls({'/usr/bin/git'},set(),reducer=reducer,
-                scratch_root='/fixture',normal_path=normal,
-                exact_argv_hashes=[continuity.argv_digest(['git','--version'])])
-            self.assertEqual(result['violations'],['unapproved executable arguments'])
+                scratch_root='/fixture',normal_path=normal)
+            self.assertEqual(result['violations'],['unapproved or changed executable'])
 
     def test_real_strace_pipe_discards_descendant_canary_on_refusal(self):
         canary = secrets.token_hex(24)
         executable = str(Path(sys.executable).resolve())
-        code = ('import subprocess,sys;subprocess.run([sys.executable,"-I","-B","-c",'
-                '"import sys;print(sys.argv[1]);print(sys.argv[1],file=sys.stderr)",'+repr(canary)+'])')
+        unknown = self.root/'unselected-child'
+        unknown.write_text('#!'+executable+'\nimport sys;print(sys.argv[1]);print(sys.argv[1],file=sys.stderr)\n')
+        unknown.chmod(0o500)
+        code = 'import subprocess;subprocess.run(['+repr(str(unknown))+','+repr(canary)+'])'
         approved = [executable,'-I','-B','-c',code]
         descriptor, writer = os.pipe(); stop = threading.Event(); reducer = continuity.TraceReducer()
         thread = threading.Thread(target=reducer.drain,args=(descriptor,stop)); thread.start()
@@ -306,24 +305,83 @@ class EvidencePrivacy(unittest.TestCase):
             if thread.is_alive(): stop.set(); thread.join(timeout=1)
         self.assertEqual(process.returncode,0)
         self.assertTrue(canary.encode() in stdout and canary.encode() in stderr)
-        result = continuity.audit_syscalls({executable},set(),reducer=reducer,
-            exact_argv_hashes=[continuity.argv_digest(approved)])
-        self.assertEqual(result['violations'],['unapproved executable arguments'])
+        result = continuity.audit_syscalls({executable},set(),reducer=reducer)
+        self.assertEqual(result['violations'],['unapproved or changed executable'])
         self.assertEqual(len(result['execve']),2)
         self.assertTrue(any(row['kind'] == 'exit' for row in result['processes']))
         stdout = stderr = b''
         self.assert_private(canary,json.dumps(result))
+        unknown.unlink()
         self.assertEqual(list(self.root.iterdir()),[])
 
-    def test_pg_shell_descendant_grammars_reject_extra_options_and_shell_commands(self):
-        plan = dict(pg_root='/held/pg',image_directory='/held/images')
-        pg = '/held/pg/usr/lib/postgresql/18/bin/postgres'
-        boot = [pg,'--boot','-F','-c','log_checkpoints=false','-X','16777216','-k']
-        self.assertTrue(continuity.runtime_argv_allowed(pg,boot,plan,'/fixture'))
-        self.assertFalse(continuity.runtime_argv_allowed(pg,boot+['--unknown'],plan,'/fixture'))
-        self.assertTrue(continuity.runtime_argv_allowed('/bin/sh',['sh','-c','--','locale -a'],plan,'/fixture'))
-        for command in ('locale -a extra','locale -a; echo secret','locale -a > /unknown'):
-            self.assertFalse(continuity.runtime_argv_allowed('/bin/sh',['sh','-c','--',command],plan,'/fixture'))
+    def test_pinned_descendant_without_parent_audit_is_accepted_and_changed_bytes_refuse(self):
+        executable = self.root/'stager'; executable.write_bytes(b'pinned fixture executable'); executable.chmod(0o500)
+        pins = {str(executable):continuity.digest(executable)}
+        for changed in (False,True):
+            if changed:
+                executable.chmod(0o700); executable.write_bytes(b'changed'); executable.chmod(0o500)
+            reducer = continuity.TraceReducer(exec_pins=pins)
+            reducer.feed('101 execve('+json.dumps(str(executable))+', ["stager", "literal"], 0x0) = 0')
+            result = continuity.audit_syscalls(set(pins),set(),reducer=reducer,exec_pins=pins)
+            self.assertEqual(bool(result['violations']),changed)
+
+    def test_real_producer_probe_requires_exact_bytes_private_parent_and_no_alias(self):
+        import stage_lifecycle_compatibility as producer
+        python = str(Path(sys.executable).resolve())
+        scratch = self.root/'project/release/.prepare-test'; scratch.mkdir(parents=True,mode=0o700)
+        producer.qualify_launch_anchors(dict(python=python,shell='/bin/sh'),scratch)
+        probe = scratch/'probe'
+        for changed in (False,True):
+            if changed:
+                probe.chmod(0o700); probe.write_text('#!/bin/sh\nexit 0\n'); probe.chmod(0o500)
+            reducer = continuity.TraceReducer(scratch=self.root)
+            reducer.feed('101 execve('+json.dumps(str(probe))+', ["probe"], 0x0) = 0')
+            result = continuity.audit_syscalls(set(),set(),reducer=reducer,scratch_root=self.root,python_path=python,exec_pins={})
+            self.assertEqual(bool(result['violations']),changed)
+
+    def test_credential_inode_alias_is_not_selected_content(self):
+        source,target = self.root/'scratch',self.root/'retained'; source.mkdir(mode=0o700)
+        canary = secrets.token_hex(24); (source/'unknown-credential').write_text(canary)
+        os.link(source/'unknown-credential',source/'stored-bodies.txt')
+        with self.assertRaises(continuity.PrerequisiteError) as error:
+            continuity.retain_evidence(source,target)
+        self.assert_private(canary,str(error.exception))
+        self.assertFalse((target/'stored-bodies.txt').exists())
+
+    def test_native_exact_argv_still_rejects_canary_without_echo(self):
+        executable = str(Path(sys.executable).resolve()); canary = secrets.token_hex(24)
+        observer = continuity.NativeAudit(self.root,dict(exec_pins={executable:continuity.digest(executable)},
+            exact_argv=[[executable,'literal']],git_executable='/unselected/git'))
+        with self.assertRaises(continuity.PrerequisiteError) as error:
+            observer.audit('subprocess.Popen',(executable,[executable,canary],None,None))
+        self.assert_private(canary,str(error.exception))
+        for path in self.root.iterdir(): self.assert_private(canary,path.read_text())
+
+    def test_daemon_shutdown_waits_and_detach_keep_metadata(self):
+        for pending in ('accept4(5, NULL, NULL, SOCK_CLOEXEC','wait4(-1, NULL, 0, NULL'):
+            reducer = continuity.TraceReducer()
+            reducer.feed('100 '+pending+' <unfinished ...>')
+            reducer.feed('100 <detached ...>')
+            reducer.feed('100 +++ exited with 0 +++')
+            result = continuity.audit_syscalls(set(),set(),reducer=reducer)
+            self.assertEqual(result['violations'],[])
+            self.assertEqual(len(result['expected_shutdown']),1)
+        reducer = continuity.TraceReducer()
+        reducer.feed('100 accept4(5, NULL, NULL, SOCK_CLOEXEC <detached ...>')
+        reducer.feed('100 +++ exited with 0 +++')
+        self.assertEqual(continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'],[])
+
+    def test_consequential_unfinished_and_unowned_detach_still_refuse(self):
+        for call in ('execve("/selected", ["private"], 0x0',
+                     'connect(3, {sa_family=AF_UNIX, sun_path="/unknown"}, 110'):
+            reducer = continuity.TraceReducer()
+            reducer.feed('100 '+call+' <unfinished ...>'); reducer.feed('100 +++ exited with 0 +++')
+            self.assertIn('unfinished audited operation',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
+        reducer = continuity.TraceReducer(); reducer.feed('100 <detached ...>')
+        self.assertIn('unexpected detached process',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
+        result = continuity.audit_syscalls(set(),{'/owned/socket'},reducer=continuity.TraceReducer(),owned_daemons={100:'/owned/api'})
+        self.assertIn('missing owned daemon execution',result['violations'])
+        self.assertIn('missing owned socket connection',result['violations'])
 
 
 if __name__ == '__main__':

@@ -112,32 +112,50 @@ Required selected bytes are preserved exactly. Credential continuity uses the
 existing hashes; it does not require a retained credential payload.
 
 Strace writes to an anonymous pipe, never a raw trace file. A bounded reader
-parses exec, process and socket events in memory. Full argv is consumed only
-transiently for exact digest matching or narrow source-derived PG/selector
-and retained-producer grammars. Pinned fixture-controller calls declare their
-exact vector hashes before launch; native vectors require selected commands or
-successful NativeAudit validation. The reducer never learns permissions from
-an observed descendant command. Extra/unknown argv also fails for declared
-negative PATH lookups and installer probes. Go-phase descendant Python Source
-fallback still fails independently.
+parses exec, process and socket events in memory and discards argv. Exact
+executable paths and byte hashes identify the pinned tools, PG images, held
+interpreter, Root images and selected owned launchers. The controller checks
+stable executable bytes before launch. The reducer observes file identity while
+children run, including Go descendants that parent Python audit hooks cannot
+see. Dynamic installer probes additionally require the exact source-produced
+script bytes, an owned private parent, mode 0500 and no inode alias; their name
+or prefix alone never admits them. Failed normal PATH lookups remain declared
+negative probes. Unknown or changed successful executables refuse.
+
+NativeAudit still enforces the exact selected hook/MCP vectors before exec and
+records literal selected callback stdin. The tracer does not invent an argv
+registration requirement for all subprocess descendants. Go-phase descendant
+Python Source fallback still fails independently. Rejected native argv, process
+errors and tracing input never become retained raw output.
 
 Retained trace facts contain PID, validated executable path, result, process
 ancestry/exit and approved sockaddr. Rejected paths/addresses retain hashes and
-fixed violation codes. Parse errors, truncation, unfinished input and limits
-fail closed without echoing raw lines. Wire buffers and environment contents
-are not traced. Controller and native-hook stdout/stderr retain lengths/hashes
-and exit status, preventing an error message from copying rejected argv into
-evidence. These policies apply on success and failure. Scratch cleanup runs
-even when receipt selection refuses; owned API/PG cleanup precedes retention.
+fixed violation codes. A terminated process or verified-gone owned daemon can
+leave a blocking accept/wait unfinished when strace detaches; those operations
+remain explicit shutdown metadata. Unfinished exec/connect, unexplained detach,
+other malformed input, limits, forbidden network targets and missing required
+owned daemon/socket observations still fail. Wire buffers and environment
+contents are not traced. Controller and native-hook stdout/stderr retain only
+lengths/hashes and exit status on success and failure. Scratch cleanup runs even
+when receipt selection refuses; owned API/PG cleanup precedes retention.
 
-The original 15 guards remain. Privacy guards add random synthetic credential
-files (including an unknown future file), byte-exact selected receipts, schema
-refusal, pipe reduction, malformed/unfinished/unknown argv, literal hex decoding,
-probe exceptions, and a real strace descendant that prints a canary before its
-unapproved vector is rejected. No real credential is used in these guards.
-The controller still terminates only owned PIDs above 1 and never calls a
-process-group signal function. PostgreSQL's internal shutdown signals are
-observed as process metadata; the reducer does not replace PG's shutdown logic.
+The original 15 guards remain. Privacy guards cover random synthetic credential
+files (including unknown files and inode aliases), byte-exact selected receipts,
+schema refusal, pipe reduction, malformed/consequential unfinished input, hex
+string decoding, successful unknown execs, legitimate pinned descendants,
+changed executable bytes, actual producer probe bytes, daemon shutdown and
+missing observations. A real strace child prints a canary before its unknown
+executable path is rejected. NativeAudit separately refuses a random argv
+canary without echoing it. No real credential is used in these guards.
+The controller terminates only owned PIDs above 1 and never calls a process-group
+signal function. PostgreSQL's internal shutdown signals remain process metadata.
+
+Owner-proxy `c1571966-e783-4da0-9374-18d53c0a74fb/v1` and Root assignment
+`3c9f7bb0-55e7-40fc-a49e-51c5436d6d54/v1` authorize iteration of these local
+non-native gates. They supersede the completed `442cb347` local retry stop.
+Frozen `c58b0c79` and its sealed failed packet remain historical failures; no
+source change or passing run rewrites them. This permission makes no native,
+client-import, model, live or production allowance and resets no real-run cap.
 
 ## Live Root admission
 

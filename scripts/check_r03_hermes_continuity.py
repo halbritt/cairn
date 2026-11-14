@@ -495,7 +495,10 @@ def run_mechanism_host(plan_path, mode, admission_context=None):
     # own selected journals; workflow authentication wire bytes are never read.
     trace_calls = 'process,socket,socketpair,connect,bind,listen,accept,accept4,getsockname,getpeername,shutdown'
     descriptor, writer = os.pipe()
-    reducer, stop = TraceReducer(plan, scratch), threading.Event()
+    reducer, stop = TraceReducer(scratch=scratch, exec_pins=mechanism_exec_pins(plan)), threading.Event()
+    require(all((identity := reducer.identity(path)) is not None and identity['sha256'] == expected
+                for path,expected in reducer.exec_pins.items()),
+            'R03_PINS: executable changed before launch')
     reader = threading.Thread(target=reducer.drain, args=(descriptor, stop), daemon=True)
     worker_argv = host_private_call(plan, 'host_suite', run_dir/'runtime-plan.json', native=mode=='native')
     command = [shutil.which('strace'), '-f', '-s', '131072', '-xx', '-e', 'trace='+trace_calls,
@@ -535,7 +538,8 @@ def run_mechanism_host(plan_path, mode, admission_context=None):
         {int(pid):label for pid,label in policy['phase_roots'].items()}, reducer=reducer,
         provider_url=policy['provider_url'],python_path=policy['python_path'],scratch_root=scratch,
         normal_path=plan['normal_path'],admission_socket=plan['bindings']['admission_socket'],
-        admission_pids=policy['admission_pids'],exact_argv_hashes=[argv_digest(worker_argv),*policy['exact_argv_hashes']])
+        admission_pids=policy['admission_pids'],exec_pins=policy['exec_pins'],
+        owned_daemons={int(pid):path for pid,path in policy['owned_daemons'].items()})
     write_json(run_dir/'syscall-audit.json',syscall)
     require(not syscall['violations'], 'R03_AUDIT: unapproved or incomplete process/network observation; STOP')
     require(process.returncode==0 and not timed_out,'R03_MECHANISM: direct-host '+mode+' failed; STOP; metadata retained')
@@ -848,139 +852,57 @@ def argv_digest(argv):
     return hashlib.sha256(json.dumps(list(argv), ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
 
 
-class FixtureExecPolicy:
-    """Declare exact controller calls before exec; never learn native argv.
-
-    Only the pinned fixture controller runs in this process. Native clients run
-    separately and retain their existing pre-exec NativeAudit. A digest declared
-    here must match the independent kernel observation, including failed PATH
-    lookups. No command vector or process output is written by this observer.
-    """
-    def __init__(self, allowed_exec):
-        self.allowed_exec, self.hashes = allowed_exec, set()
-
-    def audit(self, event, args):
-        if event not in ('subprocess.Popen', 'os.exec'): return
-        executable, argv = str(args[0]), args[1]
-        resolved = str(Path(shutil.which(executable) or executable).resolve())
-        anchor = re.fullmatch(r'/tmp/cairn-r03h-[^/]+/project/release/\.prepare-[^/]+/probe', executable)
-        require(resolved in self.allowed_exec or anchor, 'R03_TRACE: undeclared controller executable')
-        require(isinstance(argv, (tuple, list)) and all(isinstance(arg, (str, os.PathLike)) for arg in argv),
-                'R03_TRACE: invalid controller vector')
-        argv = [os.fspath(arg) for arg in argv]
-        self.hashes.add(argv_digest(argv))
-        # The maintained installer creates this fixed shell/interpreter probe.
-        # Pin the literal vector before launch; do not infer argv from tracing.
-        if anchor:
-            lines = Path(executable).read_text().splitlines()
-            require(len(lines) == 2 and lines[1].startswith('exec '), 'R03_TRACE: malformed anchor')
-            self.hashes.add(argv_digest(shlex.split(lines[1])[1:]))
+def mechanism_exec_pins(plan):
+    """Exact stable images, tools and interpreter pinned before tracing starts."""
+    pins = dict(plan['bindings']['native_tools'])
+    pins.update({str(Path(plan['image_directory'])/name): value
+                 for name,value in plan['bindings']['images'].items()})
+    pins[str(Path(plan['native_root'])/'venv/bin/python')] = plan['bindings']['interpreter_sha256']
+    manifest = Path(plan['pg_root']).parent/'native-pg-pins.json'
+    require(digest(manifest) == plan['bindings']['pg_manifest_sha256'], 'R03_PINS: PG inventory changed')
+    for name,row in json.loads(manifest.read_bytes())['files'].items():
+        if Path(name).parent == Path('usr/lib/postgresql/18/bin'):
+            pins[str(Path(plan['pg_root'])/name)] = row['sha256']
+    return {str(Path(path).resolve()): value for path,value in pins.items()}
 
 
-def runtime_argv_allowed(path, argv, plan, scratch):
-    """Small source-derived grammars for pinned PG children and the selector.
-
-    Direct fixture calls and selected hooks use exact vector hashes instead.
-    These descendants are spawned inside PG/Go, outside Python audit hooks.
-    Every option, count and value is constrained; arbitrary extra argv fails.
-    """
-    if not plan or not scratch or not argv: return False
-    pg = str(Path(plan['pg_root'])/'usr/lib/postgresql/18/bin/postgres')
-    def postgres(vector):
-        if not vector or vector[0] != pg: return False
-        tail = vector[1:]
-        fixed = ['-F', '-c', 'log_checkpoints=false']
-        if tail == ['-V']: return True
-        if tail == ['-D', str(Path(scratch)/'cluster/data'), '-F', '-k',
-                    str(Path(scratch)/'cluster/socket'), '-c', 'listen_addresses=']: return True
-        if tail == ['--single', '-F', '-O', '-j', '-c', 'search_path=pg_catalog',
-                    '-c', 'exit_on_error=true', '-c', 'log_checkpoints=false', 'template1']: return True
-        if tail[:2] == ['--boot', '-x1']:
-            tail = tail[2:]
-            if tail[:2] == ['-X', '16777216']: tail = tail[2:]
-            if tail[:1] == ['-k']: tail = tail[1:]
-            return tail == fixed
-        if tail[:4] == ['--boot', *fixed]:
-            return tail[4:] in (['-X','16777216'], ['-X','16777216','-k'],
-                                ['-x1'], ['-x1','-X','16777216'],
-                                ['-x1','-X','16777216','-k'])
-        if tail[:1] != ['--check'] or tail[1:4] != fixed: return False
-        tail = tail[4:]
-        keys = ['max_connections', 'autovacuum_worker_slots', 'shared_buffers', 'dynamic_shared_memory_type']
-        return len(tail) == 8 and all(tail[2*i] == '-c' and
-            re.fullmatch(re.escape(key) + ('=(posix|sysv|mmap)' if i == 3 else r'=[1-9][0-9]{0,8}'), tail[2*i+1])
-            for i, key in enumerate(keys))
-    if path == pg: return postgres(argv)
-    if str(Path(path).resolve()) == str(Path('/bin/sh').resolve()) and argv[1:2] == ['-c']:
-        if len(argv) == 4 and argv[2] == '--': command = argv[3]
-        elif len(argv) == 3: command = argv[2]
-        else: return False
-        try: vector = shlex.split(command)
-        except ValueError: return False
-        if vector[:1] == ['exec']: vector = vector[1:]
-        for suffix in (['<', '/dev/null', '>>', str(Path(scratch)/'cluster/postgres.log'), '2>&1'],
-                       ['<', '/dev/null', '>', '/dev/null', '2>&1'],
-                       ['<', '/dev/null', '2>&1'], ['>', '/dev/null'], ['>/dev/null']):
-            if vector[-len(suffix):] == suffix:
-                vector = vector[:-len(suffix)]; break
-        return postgres(vector) or vector == ['locale','-a']
-    if str(Path(path).resolve()) == str(Path(shutil.which('locale')).resolve()):
-        return argv in (['locale', '-a'], [path, '-a'])
-    api = str(Path(plan['image_directory'])/'api')
-    base = [api, 'agent', '--socket', str(Path(scratch)/'api/api.sock'),
-            '--token-file', str(Path(scratch)/'api/worker.token')]
-    if path == api and argv[:len(base)] == base:
-        tail = argv[len(base):]
-        if tail in ([operation] for operation in ('pull','create','revise','recall-observation','capture-observation')):
-            return True  # Payload goes through stdin, never a trace buffer.
-        if tail[:3] != ['search','--repo','fixture:r03-hermes-native-continuity']: return False
-        # The retained producer's only variable argv are bounded lookup values.
-        # Require its exact scope/flag grammar; unknown or duplicate flags fail.
-        if len(tail) < 11 or tail[3] != '--task' or tail[5] != '--run' or tail[7] != '--tokens': return False
-        if tail[4] != 'hermes/'+tail[6] or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',tail[6]): return False
-        if not re.fullmatch(r'[1-9][0-9]{0,5}',tail[8]): return False
-        rest = tail[9:]
-        if rest[:1] == ['--request-id']:
-            if len(rest) < 2 or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',rest[1]): return False
-            rest = rest[2:]
-        if rest[:1] == ['--offset']:
-            if len(rest) < 2 or not re.fullmatch(r'0|[1-9][0-9]{0,5}',rest[1]): return False
-            rest = rest[2:]
-        for flag in ('--entity-file','--kind'):
-            while rest[:1] == [flag]:
-                if len(rest) < 2 or not rest[1] or len(rest[1]) > 4096: return False
-                if flag == '--kind' and rest[1] not in ('note','decision','preference','lesson','procedure'): return False
-                rest = rest[2:]
-        return len(rest) == 2 and rest[0] == '--' and len(rest[1]) <= 16000
-    selector = str(Path(scratch)/'selector')
-    if path != selector: return False
-    prefix = [selector, '--print', '--output-format', 'json', '--disable-slash-commands',
-        '--no-session-persistence', '--setting-sources', '', '--settings', '{"disableAllHooks":true}',
-        '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', '', '--max-turns', '2', '--json-schema']
-    if len(argv) != len(prefix) + 5 or argv[:len(prefix)] != prefix: return False
-    if argv[-2:] != ['--model', MODEL] or argv[-4] != '--system-prompt': return False
-    # Literal AST constants only: never import or execute the producer to learn
-    # a permissible selector vector. Both backends carry these same contracts.
-    constants = {}
-    for node in ast.parse((ROOT/'integrations/lifecycle/memory.py').read_text()).body:
-        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-            name = node.targets[0].id
-            if name in {stage+'_'+kind for stage in ('CAPTURE','PREVIEW','SHORTLIST') for kind in ('PROMPT','SCHEMA')}:
-                constants[name] = ast.literal_eval(node.value)
-    try: schema = json.loads(argv[len(prefix)])
-    except ValueError: return False
-    return any(schema == constants[stage+'_SCHEMA'] and argv[-3] == constants[stage+'_PROMPT']
-               for stage in ('CAPTURE','PREVIEW','SHORTLIST'))
+def probe_sha256(python):
+    vector = [python, '-I', '-S', '-B', '-c',
+        'import json,sys;print(json.dumps(dict(version=sys.version,path=sys.path,isolated=sys.flags.isolated,no_site=sys.flags.no_site)))']
+    raw = '#!/bin/sh\nexec '+shlex.join(vector)+'\n'
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 class TraceReducer:
     """Bounded in-memory strace input. No raw line, argv or error is an artifact."""
     max_line, max_bytes, max_rows = 1024*1024, 128*1024*1024, 50000
 
-    def __init__(self, plan=None, scratch=None):
-        self.plan, self.scratch = plan, scratch
+    def __init__(self, scratch=None, exec_pins=None):
+        self.scratch, self.exec_pins = scratch, exec_pins or {}
         self.rows, self.pending, self.errors = [], {}, []
+        self.identities, self.terminal = {}, set()
         self.bytes = 0
+        for path in self.exec_pins: self.identity(path)
+
+    def identity(self, path):
+        """Observe only declared host images or owned disposable files."""
+        candidate = Path(path)
+        try:
+            resolved = candidate.resolve()
+            owned = self.scratch is not None and resolved.is_relative_to(Path(self.scratch))
+            if str(resolved) not in self.exec_pins and not owned: return None
+            if owned and candidate != resolved: return None
+            info = resolved.stat()
+            if not stat.S_ISREG(info.st_mode): return None
+            key = (info.st_dev,info.st_ino,info.st_size,info.st_mtime_ns,info.st_ctime_ns)
+            if key not in self.identities:
+                self.identities[key] = dict(sha256=digest(resolved),uid=info.st_uid,
+                    mode=stat.S_IMODE(info.st_mode),links=info.st_nlink,
+                    private_parent=resolved.parent.stat().st_uid == os.getuid()
+                        and stat.S_IMODE(resolved.parent.stat().st_mode) == 0o700)
+            return self.identities[key]
+        except (OSError, RuntimeError):
+            return None
 
     def refuse(self, code):
         if code not in self.errors: self.errors.append(code)
@@ -1001,18 +923,26 @@ class TraceReducer:
             if not match: raise ValueError()
             pid, call = int(match[1]), match[2]
             if pid <= 1: raise ValueError()
+            if call.startswith('<... ') and ' resumed>' in call:
+                call = self.pending.pop(pid) + call.split(' resumed>', 1)[1]
+            if '<detached ...>' in call:
+                prefix = call.split('<detached ...>')[0]
+                if prefix.strip():
+                    if pid in self.pending: raise ValueError()
+                    self.pending[pid] = prefix
+                self.rows.append(dict(pid=pid,kind='detached',result=None)); return
             if '<unfinished ...>' in call:
                 if pid in self.pending or len(self.pending) >= 4096: raise ValueError()
                 self.pending[pid] = call.split('<unfinished ...>')[0]; return
-            if call.startswith('<... ') and ' resumed>' in call:
-                call = self.pending.pop(pid) + call.split(' resumed>', 1)[1]
             if call.startswith('+++ exited with '):
                 status = re.fullmatch(r'\+\+\+ exited with (\d+) \+\+\+', call)
                 if not status: raise ValueError()
+                self.terminal.add(pid)
                 self.rows.append(dict(pid=pid, kind='exit', result=int(status[1]))); return
             if call.startswith(('--- ', '+++ killed by ')):
                 signal_name = re.match(r'(?:--- |\+\+\+ killed by )(SIG[A-Z0-9]+)', call)
                 if not signal_name: raise ValueError()
+                if call.startswith('+++ killed by '): self.terminal.add(pid)
                 self.rows.append(dict(pid=pid, kind='signal', signal=signal_name[1])); return
             parsed = re.fullmatch(r'(\w+)\((.*)\)\s+=\s+(-?\d+|\?)(?: ([A-Z][A-Z0-9_]+))?.*', call)
             if not parsed: raise ValueError()
@@ -1027,8 +957,7 @@ class TraceReducer:
                 argv = ast.literal_eval(vector[2])
                 if not isinstance(argv, list) or not argv or not all(isinstance(v, str) for v in argv): raise ValueError()
                 if '\\x' in vector[2]: argv = [v.encode('latin1').decode('utf-8') for v in argv]
-                row.update(path=path, argv_sha256=argv_digest(argv), argument_count=len(argv),
-                    runtime_argv_validated=runtime_argv_allowed(path, argv, self.plan, self.scratch),
+                row.update(path=path, identity=self.identity(path), argument_count=len(argv),
                     selector_argument=bool(self.scratch and str(Path(self.scratch)/'selector') in argv))
             elif name == 'execveat':
                 self.refuse('unapproved_execveat'); return
@@ -1077,13 +1006,12 @@ class TraceReducer:
 
 def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None,
                    provider_url=PROVIDER_URL, python_path=None, scratch_root=None, normal_path='',
-                   admission_socket=None, admission_pids=(), reducer=None, exact_argv_hashes=()):
+                   admission_socket=None, admission_pids=(), reducer=None, exec_pins=None, owned_daemons=None):
     if reducer is None:
         reducer = TraceReducer()
         with Path(trace_path).open('rb') as stream:
             for line in stream: reducer.feed(line.rstrip(b'\n'))
     violations = list(reducer.errors)
-    if reducer.pending: violations.append('unfinished audited operation')
     parents = {row['child']:row['pid'] for row in reducer.rows if 'child' in row}
     def ancestor(pid, candidates):
         seen = set()
@@ -1094,10 +1022,19 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             pid = parents[pid]
         return None
     target = urlsplit(provider_url)
+    owned_daemons = owned_daemons or {}
+    def daemon_gone(pid):
+        return ancestor(pid,owned_daemons) is not None and not Path('/proc',str(pid)).exists()
+    shutdown = []
+    for pid, prefix in reducer.pending.items():
+        match = re.match(r'(\w+)\(',prefix)
+        name = match[1] if match else None
+        if name in ('accept','accept4','wait4','waitid','restart_syscall') and (pid in reducer.terminal or daemon_gone(pid)):
+            shutdown.append(dict(pid=pid,kind=name,result=None,expected_shutdown=True))
+        else: violations.append('unfinished audited operation')
     normal_dirs = {str(Path(path).resolve()) for path in normal_path.split(':') if path}
     tool_names = {Path(path).name for path in allowed_exec} | {'sh'}
     executions, connections, probes, workflow, processes = [], [], [], [], []
-    hashes = set(exact_argv_hashes)
     for row in reducer.rows:
         pid, kind = row['pid'], row['kind']
         safe = {key:value for key,value in row.items() if key in ('pid','kind','result','errno','child','signal','targets')}
@@ -1105,18 +1042,26 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             path = row['path']
             negative = (Path(path).name in tool_names and str(Path(path).parent.resolve()) in normal_dirs
                         and row.get('errno') == 'ENOENT')
-            anchor = scratch_root is not None and re.fullmatch(re.escape(str(Path(scratch_root)/'project/release'))+r'/\.prepare-[^/]+/probe', path)
+            identity = row.get('identity')
+            anchor = (scratch_root is not None and python_path is not None and
+                re.fullmatch(re.escape(str(Path(scratch_root)/'project/release'))+r'/\.prepare-[A-Za-z0-9_-]{1,64}/probe', path)
+                and identity is not None and identity['uid'] == os.getuid() and identity['mode'] == 0o500
+                and identity['links'] == 1 and identity['private_parent']
+                and identity['sha256'] == probe_sha256(python_path))
             known_path = negative or anchor or str(Path(path).resolve()) in allowed_exec
-            argv_ok = row['argv_sha256'] in hashes or row['runtime_argv_validated']
-            if not known_path or not argv_ok:
-                violations.append('unapproved executable' if not known_path else 'unapproved executable arguments')
-            if known_path: safe.update(path=path, argument_count=row['argument_count'], argv_validated=argv_ok)
+            pinned = (negative or anchor or exec_pins is None or identity is not None and
+                      identity['sha256'] == exec_pins.get(str(Path(path).resolve())))
+            if not known_path or not pinned: violations.append('unapproved or changed executable')
+            if known_path: safe.update(path=path, argument_count=row['argument_count'], executable_validated=bool(pinned))
             else: safe['path_sha256'] = hashlib.sha256(path.encode()).hexdigest()
             if negative or anchor: probes.append(safe)
             executions.append(safe)
             owner = ancestor(pid, phase_roots or {})
             if owner is not None and phase_roots[owner] in ('A','B') and path == python_path and pid != owner:
                 if not row['selector_argument']: violations.append('Source Python fallback in Go phase')
+        elif kind == 'detached':
+            if pid not in reducer.terminal and not daemon_gone(pid): violations.append('unexpected detached process')
+            processes.append(safe)
         elif 'sockaddr' in row:
             address = row['sockaddr']; family = address['family']
             absent_nss = family == 'AF_UNIX' and address['path'] == '/var/run/nscd/socket' and row.get('errno') == 'ENOENT'
@@ -1138,7 +1083,16 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             if absent_nss: probes.append(safe)
             if workflow_read: workflow.append(safe)
         else: processes.append(safe)
-    result = dict(execve=executions, connect=connections, processes=processes,
+    for pid,path in owned_daemons.items():
+        if not any(row['pid'] == pid and row.get('path') == path and row['result'] == 0
+                   and row.get('executable_validated') for row in executions):
+            violations.append('missing owned daemon execution')
+    if owned_daemons:
+        for path in allowed_unix:
+            if not any(row['kind'] == 'connect' and row['result'] == 0
+                       and row.get('sockaddr',{}).get('path') == path for row in connections):
+                violations.append('missing owned socket connection')
+    result = dict(execve=executions, connect=connections, processes=processes,expected_shutdown=shutdown,
         declared_negative_or_anchor_probes=probes, authenticated_workflow_reads=workflow,
         violations=violations, raw_trace_retained=False, raw_argv_retained=False,
         input_bytes=reducer.bytes, rows=len(reducer.rows))
@@ -1181,8 +1135,7 @@ def host_suite(plan_path, native=False):
     python = str(native_root/'venv/bin/python')
     allowed_exec.add(str(Path(python).resolve()))
     allowed_unix = set()
-    execution_policy = FixtureExecPolicy(allowed_exec)
-    sys.addaudithook(execution_policy.audit)
+    trace_exec_pins = mechanism_exec_pins(plan)
     phase_roots = {}
     try:
         grant = authenticated_admission(plan['admission_context'],plan['bindings'],journal=root/'admission-readback.json') if native else None
@@ -1207,7 +1160,7 @@ def host_suite(plan_path, native=False):
             'import hashlib\n'
             'with (p/"selector-calls.jsonl").open("a") as f: f.write(json.dumps(dict(argv_sha256=hashlib.sha256(json.dumps(sys.argv[1:]).encode()).hexdigest(),stdin=sys.stdin.read()))+"\\n")\n'
             'print(json.dumps(json.loads((p/"selection.json").read_text())))\n')
-        selector.chmod(0o500); allowed_exec.add(str(selector))
+        selector.chmod(0o500); allowed_exec.add(str(selector)); trace_exec_pins[str(selector)] = digest(selector)
         installed.SOURCE_REVISION = IMAGE_SOURCE
         f = installed.HermesInstalledFixture(root / 'project', images/'control',
                                              stager=images/'stager', harness='hermes', enabled=False)
@@ -1281,12 +1234,7 @@ def host_suite(plan_path, native=False):
                 for argv in config.get('commands', {}).values():
                     exec_pins[str(Path(argv[0]).resolve())] = digest(argv[0]); allowed_exec.add(str(Path(argv[0]).resolve()))
                     exact_argv.append(argv)
-                    # A selected shell launcher execs its pinned literal L.
-                    launcher = Path(argv[0]).read_bytes()
-                    if launcher.startswith(b'#!'):
-                        lines = launcher.decode().splitlines()
-                        require(len(lines) == 2 and lines[1].startswith('exec '), 'R03_TRACE: invalid selected launcher')
-                        execution_policy.hashes.add(argv_digest(shlex.split(lines[1])[1:] + argv[1:]))
+                    exec_pins[str(Path(argv[0]).resolve())] = digest(argv[0])
             if 'commands' not in selection:
                 exact_argv.append([python, selection['script'], '--config', selection['engine_config']])
             spec = dict(label=label, selection=selection, home=str(home), project=str(f.root),
@@ -1294,8 +1242,8 @@ def host_suite(plan_path, native=False):
                 stage_b=transition is not None, api_socket=str(host.socket),
                 exec_pins=exec_pins, exact_argv=exact_argv, git_executable=git_executable,
                 provider_url=provider_url, plan=str(plan_path), credential_selector_sha256=credential_sha)
+            trace_exec_pins.update(exec_pins)
             write_json(phase / 'spec.json', spec)
-            execution_policy.hashes.update(argv_digest(vector) for vector in exact_argv)
             argv = host_private_call(plan,'native_worker',phase/'spec.json')
             process = subprocess.Popen(argv, cwd=f.root, stdin=subprocess.DEVNULL,
                 stdout=(phase / 'stdout').open('wb'), stderr=(phase / 'stderr').open('wb'), start_new_session=True)
@@ -1391,14 +1339,14 @@ def host_suite(plan_path, native=False):
         admission_pids = []
         for receipt in root.rglob('admission-readback.json'):
             for row in json.loads(receipt.read_bytes())['processes']:
-                admission_pids.append(row['pid']); execution_policy.hashes.add(argv_digest(row['argv']))
-        for receipt in root.glob('*/audit.json'):
-            for row in json.loads(receipt.read_bytes())['events']:
-                if row.get('argv_validated'): execution_policy.hashes.add(row['argv_sha256'])
+                admission_pids.append(row['pid'])
+        owned_daemons = {}
+        if (root/'owned-processes.json').is_file():
+            owned = json.loads((root/'owned-processes.json').read_bytes())
+            owned_daemons = {owned[name]:owned[name+'_executable'] for name in ('api','postgres')}
         write_json(run_dir/'trace-policy.json', dict(allowed_exec=sorted(allowed_exec),allowed_unix=sorted(allowed_unix),
             phase_roots=phase_roots,provider_url=provider_url,python_path=python,admission_pids=admission_pids,
-            exact_argv_hashes=sorted(execution_policy.hashes),controller='pinned fixture calls declared before launch',
-            native='selected vectors and successful NativeAudit validation only',raw_argv_retained=False))
+            exec_pins=trace_exec_pins,owned_daemons=owned_daemons,raw_argv_retained=False))
         require(os.environ['HOME']==plan['normal_home'] and os.environ['PATH']==plan['normal_path'],
                 'R03_HOST: normal agent identity/environment changed')
         try: retain_evidence(root,run_dir/'retained')
