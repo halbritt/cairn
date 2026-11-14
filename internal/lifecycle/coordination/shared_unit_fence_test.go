@@ -111,7 +111,7 @@ func TestSelectedUnitFenceReceiptOriginScopeAndCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	facts := r.Facts()
-	if facts["external_coverage"] != "selected-units-only" || facts["outside_scope"] != "unknown" {
+	if facts["external_coverage"] != "selected-units-only" || facts["outside_scope"] != "unknown" || facts["database_coverage"] != "selected" {
 		t.Fatal("selected-only evidence boundary missing")
 	}
 	facts["scope"] = "caller-forged"
@@ -138,6 +138,71 @@ func TestSelectedUnitFenceReceiptOriginScopeAndCopy(t *testing.T) {
 	}
 	if zero.Recheck(context.Background(), f.scope) == nil {
 		t.Fatal("JSON replay became usable")
+	}
+}
+
+func TestSelectedUnitFenceLifecycleWithoutDatabase(t *testing.T) {
+	for _, mutation := range []string{"none", "selected-database", "active-unit"} {
+		t.Run(mutation, func(t *testing.T) {
+			f := newSelectedFenceFixture(t)
+			f.scope.Database, f.scope.DatabaseSystemID = "", ""
+			f.host.dbRead = func(context.Context, SelectedUnitFenceScope) (map[string]string, error) {
+				t.Fatal("unselected database reader was called")
+				return nil, errors.New("unreachable")
+			}
+			r := f.capture()
+			facts := r.Facts()
+			if facts["database_coverage"] != "not-selected" || facts["outside_scope"] != "unknown" {
+				t.Fatal("unselected database coverage was not explicit")
+			}
+			for key := range facts {
+				if strings.HasPrefix(key, "database:") {
+					t.Fatal("unselected database acquired writer evidence")
+				}
+			}
+			facts["database_coverage"] = "selected"
+			copy := *r
+			if copy.Recheck(context.Background(), f.scope) == nil {
+				t.Fatal("copied lifecycle receipt acquired origin")
+			}
+			expected := f.scope
+			switch mutation {
+			case "selected-database":
+				expected.Database, expected.DatabaseSystemID = "caller-selected", "12345"
+			case "active-unit":
+				f.units["selected.service"]["ActiveState"] = "active"
+			}
+			err := r.Recheck(context.Background(), expected)
+			if mutation == "none" {
+				if err != nil || r.Facts()["database_coverage"] != "not-selected" {
+					t.Fatal("lifecycle recheck failed or caller facts altered coverage")
+				}
+			} else if err == nil || r.Recheck(context.Background(), f.scope) == nil {
+				t.Fatal("lifecycle drift or database scope change did not invalidate")
+			}
+		})
+	}
+}
+
+func TestSelectedUnitFenceDatabaseSelectionRefuses(t *testing.T) {
+	for _, test := range []struct {
+		name, database, systemID string
+		connection               *pgx.Conn
+	}{
+		{"name-only", "selected", "", nil},
+		{"system-only", "", "12345", nil},
+		{"name-with-connection", "selected", "", &pgx.Conn{}},
+		{"system-with-connection", "", "12345", &pgx.Conn{}},
+		{"unselected-connection", "", "", &pgx.Conn{}},
+		{"selected-without-connection", "selected", "12345", nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newSelectedFenceFixture(t)
+			f.scope.Database, f.scope.DatabaseSystemID = test.database, test.systemID
+			if _, err := CaptureSelectedUnitFence(context.Background(), f.scope, test.connection); err == nil {
+				t.Fatal("partial selection or mismatched connection accepted")
+			}
+		})
 	}
 }
 

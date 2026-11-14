@@ -28,10 +28,10 @@ func (r *SelectedUnitFenceReceipt) Facts() map[string]string
 ```
 
 The scope contains the local UID, exact declared units, executable path/hash
-pins, optional complete command-line hashes, database name/system identifier,
+pins, optional complete command-line hashes, optional database name/system identifier,
 and an observation window of at most 30 seconds. Capture copies and normalizes
 the selection. It binds actual machine, boot, process generation, tool, unit,
-cgroup, process and database observations to that selection.
+cgroup, process and any selected database observations to that selection.
 
 The receipt has private origin and scope. A zero value, copied handle,
 serialized status, `stopped=true`, `complete`, `Inspected` or returned facts
@@ -79,7 +79,14 @@ returned as evidence. Other executable identities and other hosts remain outside
 the declared coverage. This does not qualify mapped shared-library bytes or
 resolve the separate ABI/runtime-adoption holds.
 
-The database input must already be an authenticated local Unix `*pgx.Conn`.
+Database coverage is optional only when both `scope.Database` and
+`scope.DatabaseSystemID` are empty and `db == nil`. That lifecycle selection
+returns `database_coverage=not-selected`, performs no PostgreSQL dial or query,
+and supplies no database identity, activity or writer-closure evidence. Partial
+database selections and a connection supplied without selection refuse.
+
+When explicitly selected, database input must already be an authenticated local
+Unix `*pgx.Conn`, and facts report `database_coverage=selected`.
 It must be idle and exclusively borrowed for observation; an existing caller
 transaction refuses without being rolled back. The caller must not use this
 connection concurrently. Observation cleanup has its own bounded rollback
@@ -94,11 +101,15 @@ No database credentials or connection strings are retained in `Facts()`.
 
 ## Consumer prerequisite and limits
 
-The current unit-bootstrap frontend has an authenticated local Cairn API
-profile but no authenticated process-local PostgreSQL connection. Its
-integration therefore remains unsupported until Release supplies an explicit
-operator-side connection-selection and ownership contract under an exact lease.
-A nil connection fails before service/process queries. JSON, a DSN presented as
+The lifecycle-only selection does not require a database constructor. Under
+Release follow-on `38c06372-4562-4fd5-be0c-f2810622db61` version 1, the semantic
+`pg_stat_activity`/`semantic_job` writer observation moves to an explicit operator
+step at the `cairn-api` STOP boundary in the R07 packet. This component does not
+execute or attest to that step; database coverage remains outside the selection.
+Consumer integration and operational admission still require their own contracts.
+The current unit-bootstrap frontend has no authenticated process-local PostgreSQL
+connection for the optional selected-database branch. A selected database with a
+nil connection refuses before service/process queries. JSON, a DSN presented as
 authority, borrowed credentials and a fake database adapter are not substitutes.
 
 The observations are not a transaction across systemd, files, `/proc` and
@@ -118,7 +129,9 @@ qualification or observation-clock start follows from a successful receipt.
 [The tests](../../internal/lifecycle/coordination/shared_unit_fence_test.go)
 exercise a closed selected-set fixture and negative active/restartable/trigger,
 new transient, definition, cgroup, UID, generation, permission, replay and final
-reread cases. Systemd responses and the fixture cgroup tree are unit inputs;
+reread cases. Lifecycle-only cases prove database readers are never called,
+unselected coverage is explicit, partial selections refuse, and scope/lifecycle
+drift still invalidates. Systemd responses and the fixture cgroup tree are unit inputs;
 they do not qualify the installed host's manager or cgroups.
 
 The owned-child test reads an actual child PID, then closes its input, waits

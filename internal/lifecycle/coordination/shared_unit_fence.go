@@ -91,10 +91,17 @@ func (r *SelectedUnitFenceReceipt) Facts() map[string]string {
 }
 
 // CaptureSelectedUnitFence issues no stop, mask, start, restart or data write.
-// db must already be an authenticated local Unix PostgreSQL connection owned by
-// this caller. No DSN, caller principal flag or serialized fact is accepted.
+// An empty database name and system ID require db == nil and select no database
+// coverage. Otherwise db must already be an authenticated local Unix PostgreSQL
+// connection owned by this caller. No DSN or serialized fact is accepted.
 func CaptureSelectedUnitFence(ctx context.Context, scope SelectedUnitFenceScope, db *pgx.Conn) (*SelectedUnitFenceReceipt, error) {
-	if db == nil || db.IsClosed() || db.PgConn().Conn() == nil || db.PgConn().Conn().RemoteAddr().Network() != "unix" || db.PgConn().TxStatus() != 'I' {
+	if _, err := selectedFenceScope(scope); err != nil {
+		return nil, err
+	}
+	if scope.Database == "" && db != nil {
+		return nil, selectedFenceUnknown("database connection supplied without selection")
+	}
+	if scope.Database != "" && (db == nil || db.IsClosed() || db.PgConn().Conn() == nil || db.PgConn().Conn().RemoteAddr().Network() != "unix" || db.PgConn().TxStatus() != 'I') {
 		return nil, selectedFenceUnknown("authenticated local database connection required")
 	}
 	host := &selectedFenceHost{procRoot: "/proc", cgroupRoot: "/sys/fs/cgroup", machineFile: "/etc/machine-id", db: db}
@@ -105,8 +112,9 @@ func CaptureSelectedUnitFence(ctx context.Context, scope SelectedUnitFenceScope,
 func selectedFenceScope(scope SelectedUnitFenceScope) (SelectedUnitFenceScope, error) {
 	if scope.UID != uint32(os.Getuid()) || os.Getuid() != os.Geteuid() || len(scope.Units) == 0 || len(scope.Units) > 128 ||
 		len(scope.Executables) == 0 || len(scope.Executables) > 128 || len(scope.CommandSHA256) > 128 ||
-		scope.Database == "" || !utf8.ValidString(scope.Database) || len(scope.Database) > 63 || strings.ContainsRune(scope.Database, 0) ||
-		!regexp.MustCompile(`^[1-9][0-9]{0,19}$`).MatchString(scope.DatabaseSystemID) ||
+		(scope.Database == "") != (scope.DatabaseSystemID == "") ||
+		scope.Database != "" && (!utf8.ValidString(scope.Database) || len(scope.Database) > 63 || strings.ContainsRune(scope.Database, 0) ||
+			!regexp.MustCompile(`^[1-9][0-9]{0,19}$`).MatchString(scope.DatabaseSystemID)) ||
 		scope.Window <= 0 || scope.Window > 30*time.Second {
 		return scope, selectedFenceUnknown("explicit bounded local selection required")
 	}
@@ -617,22 +625,30 @@ func (h *selectedFenceHost) observe(ctx context.Context, scope SelectedUnitFence
 		return nil, err
 	}
 	facts["matching-selected-processes"] = "0"
-	database := h.dbRead
-	if database == nil {
-		database = func(ctx context.Context, scope SelectedUnitFenceScope) (map[string]string, error) {
-			return selectedFenceDatabase(ctx, h.db, scope)
+	if scope.Database == "" {
+		if h.db != nil {
+			return nil, selectedFenceUnknown("database connection supplied without selection")
 		}
-	}
-	dbFacts, err := database(ctx, scope)
-	if err != nil {
-		return nil, err
-	}
-	if len(dbFacts) != 4 || !censusDigest(dbFacts["identity"]) || dbFacts["other-backends"] != "0" ||
-		dbFacts["visibility"] != "pg_read_all_stats-or-superuser" || dbFacts["transaction"] != "read-only" {
-		return nil, selectedFenceUnknown("database fact coverage incomplete")
-	}
-	for key, value := range dbFacts {
-		facts["database:"+key] = value
+		facts["database_coverage"] = "not-selected"
+	} else {
+		database := h.dbRead
+		if database == nil {
+			database = func(ctx context.Context, scope SelectedUnitFenceScope) (map[string]string, error) {
+				return selectedFenceDatabase(ctx, h.db, scope)
+			}
+		}
+		dbFacts, err := database(ctx, scope)
+		if err != nil {
+			return nil, err
+		}
+		if len(dbFacts) != 4 || !censusDigest(dbFacts["identity"]) || dbFacts["other-backends"] != "0" ||
+			dbFacts["visibility"] != "pg_read_all_stats-or-superuser" || dbFacts["transaction"] != "read-only" {
+			return nil, selectedFenceUnknown("database fact coverage incomplete")
+		}
+		facts["database_coverage"] = "selected"
+		for key, value := range dbFacts {
+			facts["database:"+key] = value
+		}
 	}
 	last, err := list()
 	if err != nil || !slices.Equal(transients, last) {
