@@ -48,7 +48,7 @@ type selectedFenceOrigin struct {
 	boot     string
 	scope    SelectedUnitFenceScope
 	facts    map[string]string
-	observe  func(context.Context, SelectedUnitFenceScope) (map[string]string, error)
+	reader   *selectedFenceHost
 	created  time.Time
 	deadline time.Time
 	invalid  bool
@@ -99,7 +99,7 @@ func CaptureSelectedUnitFence(ctx context.Context, scope SelectedUnitFenceScope,
 	}
 	host := &selectedFenceHost{procRoot: "/proc", cgroupRoot: "/sys/fs/cgroup", machineFile: "/etc/machine-id", db: db}
 	host.query = host.systemd
-	return captureSelectedUnitFence(ctx, scope, host.observe)
+	return captureSelectedUnitFence(ctx, scope, host)
 }
 
 func selectedFenceScope(scope SelectedUnitFenceScope) (SelectedUnitFenceScope, error) {
@@ -144,9 +144,9 @@ func selectedFenceHash(v any) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func captureSelectedUnitFence(ctx context.Context, scope SelectedUnitFenceScope, observe func(context.Context, SelectedUnitFenceScope) (map[string]string, error)) (*SelectedUnitFenceReceipt, error) {
+func captureSelectedUnitFence(ctx context.Context, scope SelectedUnitFenceScope, reader *selectedFenceHost) (*SelectedUnitFenceReceipt, error) {
 	scope, err := selectedFenceScope(scope)
-	if err != nil || observe == nil {
+	if err != nil || reader == nil || reader.query == nil {
 		return nil, errors.Join(err, selectedFenceUnknown("producer required"))
 	}
 	created := time.Now()
@@ -161,17 +161,17 @@ func captureSelectedUnitFence(ctx context.Context, scope SelectedUnitFenceScope,
 	if err != nil || boot == "" {
 		return nil, selectedFenceUnknown("origin boot unknown")
 	}
-	first, err := observe(ctx, scope)
+	first, err := reader.observe(ctx, scope)
 	if err != nil || len(first) == 0 {
 		return nil, errors.Join(err, selectedFenceUnknown("initial observation incomplete"))
 	}
-	last, err := observe(ctx, scope)
+	last, err := reader.observe(ctx, scope)
 	if err != nil || !maps.Equal(first, last) || ctx.Err() != nil {
 		return nil, errors.Join(err, selectedFenceUnknown("capture final reread changed or expired"))
 	}
 	r := &SelectedUnitFenceReceipt{}
 	r.origin = &selectedFenceOrigin{owner: r, pid: os.Getpid(), start: start.start, boot: boot,
-		scope: scope, facts: maps.Clone(last), observe: observe, created: created, deadline: deadline}
+		scope: scope, facts: maps.Clone(last), reader: reader, created: created, deadline: deadline}
 	return r, nil
 }
 
@@ -185,7 +185,7 @@ func (r *SelectedUnitFenceReceipt) Recheck(ctx context.Context, expected Selecte
 	o := r.origin
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.owner != r || o.pid != os.Getpid() {
+	if o.owner != r || o.pid != os.Getpid() || o.reader == nil {
 		return selectedFenceUnknown("copied or foreign receipt")
 	}
 	if o.invalid {
@@ -204,7 +204,7 @@ func (r *SelectedUnitFenceReceipt) Recheck(ctx context.Context, expected Selecte
 	ctx, cancel := context.WithDeadline(ctx, o.deadline)
 	defer cancel()
 	for range 2 {
-		facts, err := o.observe(ctx, o.scope)
+		facts, err := o.reader.observe(ctx, o.scope)
 		if err != nil || !maps.Equal(o.facts, facts) || ctx.Err() != nil {
 			return errors.Join(err, selectedFenceUnknown("fresh selected facts changed or unreadable"))
 		}

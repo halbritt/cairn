@@ -36,6 +36,7 @@ cgroup, process and database observations to that selection.
 The receipt has private origin and scope. A zero value, copied handle,
 serialized status, `stopped=true`, `complete`, `Inspected` or returned facts
 cannot construct one. JSON marshal/unmarshal refuse a receipt handoff.
+Construction binds the concrete reader; it accepts no generic fact-map adapter.
 `Facts()` returns a copy for selected evidence, without command lines,
 credentials, DSNs or unit source bodies. It grants no operational authority.
 

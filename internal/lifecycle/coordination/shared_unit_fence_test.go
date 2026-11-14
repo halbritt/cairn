@@ -97,7 +97,7 @@ func (f *selectedFenceFixture) unit(name, group string) {
 
 func (f *selectedFenceFixture) capture() *SelectedUnitFenceReceipt {
 	f.t.Helper()
-	r, err := captureSelectedUnitFence(context.Background(), f.scope, f.host.observe)
+	r, err := captureSelectedUnitFence(context.Background(), f.scope, f.host)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestSelectedUnitFenceScopeAndWindowRefuse(t *testing.T) {
 			case "command":
 				s.CommandSHA256 = []string{"private-argv-must-not-be-accepted"}
 			}
-			if _, err := captureSelectedUnitFence(context.Background(), s, f.host.observe); err == nil {
+			if _, err := captureSelectedUnitFence(context.Background(), s, f.host); err == nil {
 				t.Fatal("unknown scope captured")
 			}
 		})
@@ -197,7 +197,7 @@ func TestSelectedUnitFenceUnitStatesAndTriggersRefuse(t *testing.T) {
 			f := newSelectedFenceFixture(t)
 			values := map[string]string{"ActiveState": "active", "SubState": "running", "MainPID": "123", "Restart": "always", "UnitFileState": "enabled", "LoadState": "not-found", "NeedDaemonReload": "yes", "ControlGroup": "", "StateChangeTimestampMonotonic": "unknown", "TriggeredBy": "unknown.timer"}
 			f.units["selected.service"][field] = values[field]
-			if _, err := captureSelectedUnitFence(context.Background(), f.scope, f.host.observe); err == nil {
+			if _, err := captureSelectedUnitFence(context.Background(), f.scope, f.host); err == nil {
 				t.Fatal("unsafe or unknown selected unit accepted")
 			}
 		})
@@ -258,14 +258,17 @@ func TestSelectedUnitFenceDefinitionTransientHostAndFinalDrift(t *testing.T) {
 	}
 	f := newSelectedFenceFixture(t)
 	reads := 0
-	observe := func(ctx context.Context, scope SelectedUnitFenceScope) (map[string]string, error) {
-		reads++
-		if reads == 4 {
-			f.units["selected.service"]["StateChangeTimestampMonotonic"] = "101"
+	query := f.host.query
+	f.host.query = func(ctx context.Context, args ...string) (string, error) {
+		if args[0] == "show" && args[len(args)-1] == "selected.service" {
+			reads++
+			if reads == 4 {
+				f.units["selected.service"]["StateChangeTimestampMonotonic"] = "101"
+			}
 		}
-		return f.host.observe(ctx, scope)
+		return query(ctx, args...)
 	}
-	r, err := captureSelectedUnitFence(context.Background(), f.scope, observe)
+	r, err := captureSelectedUnitFence(context.Background(), f.scope, f.host)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -658,7 +661,7 @@ func TestSelectedUnitFenceConcurrentRecheck(t *testing.T) {
 func TestSelectedUnitFenceMissingDatabaseFactsAndPrivateEvidence(t *testing.T) {
 	f := newSelectedFenceFixture(t)
 	f.host.dbRead = func(context.Context, SelectedUnitFenceScope) (map[string]string, error) { return nil, nil }
-	if _, err := captureSelectedUnitFence(context.Background(), f.scope, f.host.observe); err == nil {
+	if _, err := captureSelectedUnitFence(context.Background(), f.scope, f.host); err == nil {
 		t.Fatal("missing database facts became a receipt")
 	}
 	f = newSelectedFenceFixture(t)
