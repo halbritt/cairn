@@ -6,6 +6,7 @@ Python stub does not produce Agy events, sessions, or hook callbacks. Genuine
 receipts and authenticated API reads belong to the separate setup entry.
 """
 import argparse
+import ast
 import copy
 from datetime import datetime, timezone
 import hashlib
@@ -16,6 +17,7 @@ import re
 import selectors
 import shlex
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -65,8 +67,9 @@ STOP = (
     'the live trace contract. agyTraceCalls rejects every unfinished syscall; '
     'the retained held-image idle prefix contains a native-thread read(0) '
     'that is still pending after fullyIdle Stop. Current readback also requires '
-    'that native generation to remain live. No pending-read contract is '
-    'implemented or authorized by this checkpoint. Preserve complete raw '
+    'that native generation to remain live. No actual Agy pause/input-boundary '
+    'contract is implemented or authorized by this checkpoint; nonnative '
+    'kernel mechanics do not qualify Agy. Preserve complete raw '
     'prefixes, callback EOF/zero-exit and live-generation guards. No Agy, '
     'provider, API, PG or native ledger starts at this entry. Native0; '
     'retained Python /2 reverse remains unsupported.'
@@ -144,6 +147,277 @@ def refuse_native():
 
 class PrerequisiteUnavailable(Refused):
     """Known pre-start prerequisite refusal; no native reservation is consumed."""
+
+
+class OwnedKernelTrace:
+    """Private nonnative kernel fixture; no Agy admission or pause contract."""
+    SYSCALLS = ('execve,openat,fstat,connect,read,write,close,clone,clone3,fork,vfork,'
+                'readlink,wait4,waitid,futex,poll,ppoll,pselect6,exit,exit_group')
+
+    def __init__(self, argv, root):
+        self.root = private_directory(root)
+        require(type(argv) is list and argv and all(type(a) is str and '\0' not in a for a in argv),
+                'literal fixture argv required')
+        self.image = checked_pin(argv[0])
+        require(self.image['SHA256'] != AGY_SHA256, 'nonnative fixture only')
+        require(Path(argv[0]).is_relative_to(self.root), 'fixture image must be owned in-root')
+        require(stat.S_IMODE(Path(argv[0]).lstat().st_mode) == 0o500, 'controlled0500 fixture image required')
+        require(hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'), 'pidfd prerequisite')
+        tracer = shutil.which('strace')
+        require(tracer is not None, 'strace prerequisite')
+        tool_pin(Path(tracer).resolve())
+        self.trace = self.root/'kernel.trace'
+        self.trace.touch(mode=0o600, exist_ok=False)
+        self.stderr = (self.root/'kernel.stderr').open('xb')
+        os.fchmod(self.stderr.fileno(),0o600)
+        try:
+            self.process = subprocess.Popen([str(Path(tracer).resolve()), '-f', '-xx',
+                '-s', '262144', '-e', 'trace='+self.SYSCALLS, '-e', 'abbrev=!fstat',
+                '-o', str(self.trace), *argv], cwd=self.root, env=dict(os.environ),
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr, start_new_session=True)
+        except BaseException:
+            self.stderr.close()
+            raise
+        self.pidfd, self.generation, self.closed, self.pause_attempted = None, None, False, False
+        try:
+            def identify():
+                for path in Path('/proc').iterdir():
+                    if not path.name.isdigit():
+                        continue
+                    try:
+                        parent = int((path/'stat').read_text().rsplit(')', 1)[1].split()[1])
+                        if parent == self.process.pid and os.readlink(path/'exe') == argv[0]:
+                            return int(path.name)
+                    except (OSError, ValueError, IndexError):
+                        continue
+                return None
+            self.pid = r04.wait_for(identify, 'owned nonnative tracee', timeout=10)
+            self.pidfd = os.pidfd_open(self.pid)
+            self.generation = collector.capture_owned_generation(self.pid)
+            require(self.generation['Client'] == self.image and self.generation['ClientArgv'] == argv,
+                    'fixture identity/argv mismatch')
+        except BaseException:
+            self.close()
+            raise
+
+    def send(self, number):
+        require(self.pidfd is not None and self.pid > 1, 'owned pidfd required')
+        current = collector.capture_owned_generation(self.pid)
+        require(current == self.generation, 'owned fixture generation changed before signal')
+        signal.pidfd_send_signal(self.pidfd, number)
+
+    def snapshot(self, name):
+        # Retain exactly what strace has emitted, including a partial last
+        # record. The strict consumer decides whether that prefix is closed.
+        raw = self.trace.read_bytes()
+        require(raw and len(raw) <= 256*1024*1024, 'empty/oversized kernel trace')
+        path = self.root/name
+        path.write_bytes(raw)
+        path.chmod(0o400)
+        return checked_pin(path)
+
+    def task_states(self):
+        return {int(path.name):(path/'stat').read_text().rsplit(')', 1)[1].split()[0]
+                for path in Path(f'/proc/{self.pid}/task').iterdir()}
+
+    def pause_input(self):
+        """One owned nonnative pause; raw acceptance remains a separate check."""
+        require(not self.pause_attempted and not self.closed, 'owned pause is one-shot')
+        self.pause_attempted = True
+        self.send(signal.SIGSTOP)
+        def stopped():
+            states = self.task_states()
+            return states if states and all(s in ('T','t') for s in states.values()) else None
+        states = r04.wait_for(stopped, 'all owned fixture tasks stopped', timeout=5)
+        capture = collector.capture_owned_generation(self.pid)
+        require(capture == self.generation, 'fixture generation changed while stopped')
+        return dict(scope='UNIT/KERNELMECHANICS',states=states,capture=capture,
+                    trace=self.snapshot('stopped.trace'),NativePASS=False)
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        forced, gone = [], False
+        try:
+            if self.process.poll() is None:
+                if self.pidfd is not None:
+                    try:
+                        signal.pidfd_send_signal(self.pidfd,signal.SIGCONT)
+                    except ProcessLookupError:
+                        gone = True
+                self.process.stdin.close()
+                try:
+                    self.process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    if self.pidfd is None:
+                        raise Refused('unidentified fixture cleanup unresolved')
+                    for number in (signal.SIGTERM, signal.SIGKILL):
+                        try:
+                            signal.pidfd_send_signal(self.pidfd,number)
+                            forced.append(number)
+                        except ProcessLookupError:
+                            gone = True
+                        try:
+                            self.process.wait(timeout=5)
+                            break
+                        except subprocess.TimeoutExpired:
+                            continue
+                    require(self.process.poll() is not None, 'owned fixture cleanup unresolved')
+        finally:
+            for stream in (self.process.stdin, self.process.stdout, self.stderr):
+                stream.close()
+            if self.pidfd is not None:
+                os.close(self.pidfd)
+        raw = self.trace.read_bytes()
+        pids = sorted({int(x) for x in re.findall(rb'^(\d+)\s+', raw, re.M)} | {self.process.pid})
+        self.cleanup = dict(pids=pids, exit=self.process.returncode, forced_signals=forced,
+            group_signals=False, already_gone=gone,
+            all_absent=all(pid > 1 and not Path(f'/proc/{pid}').exists() for pid in pids))
+        require(self.cleanup['all_absent'], 'traced fixture PID remains after join')
+        require(checked_pin(self.image['Path']) == self.image, 'fixture image changed')
+
+
+def kernel_calls(raw):
+    """Read the selected strace dialect; preserve original byte locators."""
+    require(type(raw) is bytes and 0 < len(raw) <= 256*1024*1024 and raw.endswith(b'\n'),
+            'partial/empty/oversized trace')
+    allowed = set(OwnedKernelTrace.SYSCALLS.split(','))
+    calls, pending, position = [], {}, 0
+    for line in raw.splitlines(keepends=True):
+        start, position = position, position+len(line)
+        match = re.fullmatch(rb'([1-9]\d*)\s+([^\n]*)\n', line)
+        require(match is not None and int(match[1]) > 1, 'unknown trace PID/prefix')
+        pid, body = int(match[1]), match[2].decode('ascii')
+        resumed = re.fullmatch(r'<\.\.\. (\w+) resumed>(.*)', body)
+        if resumed:
+            old = pending.pop(pid, None)
+            require(old is not None and old['name'] == resumed[1], 'unpaired syscall resume')
+            body, start = old['body']+resumed[2], old['start']
+        name = re.match(r'(\w+)\(', body)
+        if name is None:
+            require(re.fullmatch(r'\+\+\+ (?:exited with \d+|killed by SIG\w+(?: \(core dumped\))?) \+\+\+', body)
+                    or re.fullmatch(r'--- SIG\w+ .* ---', body)
+                    or re.fullmatch(r'--- stopped by SIG\w+ ---', body), 'unknown trace record')
+            calls.append(dict(pid=pid,name='exit' if body.startswith('+++') else 'signal',
+                              body=body,start=start,end=position))
+            continue
+        require(name[1] in allowed, 'unselected/unclassifiable syscall')
+        record = dict(pid=pid,name=name[1],body=body,start=start,end=position)
+        if body.endswith(' <unfinished ...>'):
+            require(pid not in pending, 'overlapping unfinished syscall')
+            record['body'] = body.removesuffix(' <unfinished ...>')
+            pending[pid] = record
+        else:
+            calls.append(record)
+    require(not any(row['name'] in ('connect','execve','clone','clone3','fork','vfork')
+                    for row in pending.values()), 'unfinished connect/exec/descendant coverage')
+    return sorted(calls,key=lambda row:row['start']), list(pending.values())
+
+
+def trace_string(quoted):
+    try:
+        value = ast.literal_eval(quoted)
+        require(type(value) is str, 'nonstring trace address')
+        return value.encode('latin1').decode('utf-8')
+    except (ValueError, SyntaxError, UnicodeError) as error:
+        raise Refused('invalid trace address string') from error
+
+
+def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True):
+    """Finite connect(2) audit; neither egress enforcement nor currentness."""
+    root = private_directory(root)
+    require(Path(capture['Client']['Path']).is_relative_to(root)
+            and checked_pin(capture['Client']['Path']) == capture['Client']
+            and capture['ClientArgv'] and capture['ClientArgv'][0] == capture['Client']['Path'],
+            'selected root image/argv pin differs')
+    require(type(ports) in (set, list, tuple) and all(type(p) is int and 0 < p < 65536 for p in ports),
+            'explicit owned loopback ports required')
+    sockets = set()
+    for selected in unix_paths:
+        path = Path(selected)
+        require(path.is_absolute() and path.resolve() == path and path.is_relative_to(root)
+                and str(path) == os.path.normpath(str(path)), 'Unix selection outside owned root')
+        info = path.lstat()
+        require(stat.S_ISSOCK(info.st_mode) and info.st_uid == os.getuid()
+                and info.st_mode & 0o077 == 0, 'owned private Unix socket required')
+        sockets.add(str(path))
+    calls, pending = kernel_calls(raw)
+    leader = capture['Process']['PID']
+    require(type(leader) is int and leader > 1, 'selected root PID required')
+    births, parents = {leader:-1}, {}
+    for row in calls:
+        if row['name'] not in ('clone','clone3','fork','vfork'):
+            continue
+        result = re.search(r'\)\s+= (-?\d+)(?: ([A-Z][A-Z0-9_]+) \([^\n]*\))?$', row['body'])
+        require(result is not None, 'unclassifiable descendant result')
+        child = int(result[1])
+        if child == -1:
+            require(result[2] is not None, 'unknown failed descendant result')
+            continue
+        require(child > 1 and child not in births and result[2] is None, 'unsafe/reused descendant PID')
+        births[child], parents[child] = row['start'], row['pid']
+    owned = {leader}
+    while True:
+        expanded = owned | {child for child,parent in parents.items() if parent in owned}
+        if expanded == owned:
+            break
+        owned = expanded
+    require(set(births) == owned, 'unattributed descendant creator')
+    for row in [*calls,*pending]:
+        require(row['pid'] in owned and row['start'] >= births[row['pid']], 'unattributed trace PID')
+    executions = list(r04.successful_execs(trace.exec_lines(raw.decode('ascii'), start_offset=0)))
+    selected_execs = [row for row in executions if int(row['pid']) == leader]
+    require(len(selected_execs) == 1 and selected_execs[0]['path'] == capture['Client']['Path']
+            and selected_execs[0]['argv'] == capture['ClientArgv'], 'root literal exec/argv differs')
+    root_execs = [row for row in calls if row['pid'] == leader and row['name'] == 'execve']
+    require(len(root_execs) == 1 and all(row['start'] >= root_execs[0]['start'] for row in calls),
+            'records precede selected root exec')
+    deaths = {}
+    for row in calls:
+        require(row['pid'] not in deaths, 'record after PID exit/reuse')
+        if row['name'] == 'exit':
+            deaths[row['pid']] = row['start']
+    exited = set(deaths)
+    require(not final or exited == owned, 'descendant interval does not include all exits')
+    quoted = r'"(?:\\.|[^"\\])*"'
+    connections = []
+    for row in calls:
+        if row['name'] != 'connect':
+            continue
+        body = row['body']
+        require('...' not in body, 'truncated connect address')
+        call = re.fullmatch(r'connect\((\d+), (\{.*\}), (\d+)\)\s+= (0|-1 [A-Z][A-Z0-9_]+ \([^\n]*\))',body)
+        require(call is not None, 'unclassifiable connect record/result')
+        address, size, result = call[2], int(call[3]), call[4]
+        inet = re.fullmatch(r'\{sa_family=AF_INET, sin_port=htons\((\d+)\), sin_addr=inet_addr\(('+quoted+r')\)\}',address)
+        inet6 = re.fullmatch(r'\{sa_family=AF_INET6, sin6_port=htons\((\d+)\), sin6_flowinfo=htonl\(0\), inet_pton\(AF_INET6, ('+quoted+r'), &sin6_addr\), sin6_scope_id=0\}',address)
+        unix = re.fullmatch(r'\{sa_family=AF_UNIX, sun_path=('+quoted+r')\}',address)
+        if inet or inet6:
+            selected = inet or inet6
+            host, port = trace_string(selected[2]), int(selected[1])
+            require(host == ('127.0.0.1' if inet else '::1') and port in ports
+                    and size == (16 if inet else 28), 'external/unselected loopback connect attempt')
+            destination = dict(family='AF_INET' if inet else 'AF_INET6',host=host,port=port)
+        elif unix:
+            path = trace_string(unix[1])
+            # R04's sole outside-root allowance is a raw failed nscd lookup,
+            # exactly sockaddr length110 and ENOENT. No DNS/proxy allowance.
+            missing_nscd = path == '/var/run/nscd/socket' and size == 110 and result == '-1 ENOENT (No such file or directory)'
+            require(missing_nscd or path in sockets and 2+len(path.encode()) <= size <= 110,
+                    'foreign/unknown Unix connect attempt')
+            destination = dict(family='AF_UNIX',path=path,missing_nscd=missing_nscd)
+        else:
+            raise Refused('unknown/truncated connect address family')
+        connections.append(dict(pid=row['pid'],start=row['start'],end=row['end'],
+                                result=result,destination=destination))
+    return dict(schema='cairn.r06-host-connect-audit/1',connections=connections,
+        root_pid=leader,traced_pids=sorted(owned),parents=parents,interval=dict(Start=0,End=len(raw)),
+        raw_sha256=hashlib.sha256(raw).hexdigest(),all_observed_descendants_exited=exited==owned,
+        pending_nonconnect=[dict(pid=r['pid'],name=r['name'],start=r['start']) for r in pending],
+        ExternalCoverage='Observed connect(2) attempts only in this raw interval for the selected exec and kernel-derived descendants. Includes failed attempts. No kernel egress enforcement, sendto/sendmsg/unconnected UDP, inherited/preconnected descriptors, tracer/controller traffic, future interval or global coverage.',
+        currentness='not evaluated; pending nonconnect input does not satisfy the strict Go currentness decoder',
+        NativePASS=False)
 
 
 def strict_object(value, names, label):

@@ -101,6 +101,82 @@ func TestAgyCurrentUnitPendingInputRemainsRefused(t *testing.T) {
 	}
 }
 
+func TestAgyCurrentUnitStopMarkerRemainsRefused(t *testing.T) {
+	f := newAgyCurrentUnit()
+	if err := f.check(); err != nil {
+		t.Fatal("complete synthetic control", err)
+	}
+	// This is the actual kernel notification form observed by the owned
+	// nonnative probe, used here only in a synthetic codec control.
+	f.after = append(f.after, []byte("200 --- stopped by SIGSTOP ---\n")...)
+	f.observed.After.End = len(f.after)
+	if _, err := agyTraceCalls(f.after); err != nil {
+		t.Fatal("the syscall codec should accept the kernel marker", err)
+	}
+	if err := f.check(); err == nil || err.Error() != "unknown current Agy trace record" {
+		t.Fatal("full current phase stop-marker guard changed", err)
+	}
+}
+
+// Opt-in kernel mechanics only: this consumes a real owned NONNATIVE child
+// while its Python owner keeps it stopped. No native session is manufactured.
+func TestAgyOwnedKernelBoundary(t *testing.T) {
+	path := os.Getenv("CAIRN_R06_AGY_KERNEL_BOUNDARY")
+	if path == "" {
+		t.Skip("explicit owned nonnative kernel probe not selected")
+	}
+	var input struct {
+		Schema     string
+		Prefix     WatchCensusPin
+		Historical WatchCensusPin
+		Capture    agyGenerationCapture
+		Result     string
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hookDecode(raw, &input); err != nil || input.Schema != "cairn.agy-owned-kernel-boundary/1" {
+		t.Fatal("invalid kernel probe input", err)
+	}
+	prefix, err := os.ReadFile(input.Prefix.Path)
+	if err != nil || agyTraceSHA(prefix) != input.Prefix.SHA256 {
+		t.Fatal("actual prefix changed", err)
+	}
+	_, parseErr := agyTraceCalls(prefix)
+	historical, err := os.ReadFile(input.Historical.Path)
+	if err != nil || agyTraceSHA(historical) != input.Historical.SHA256 || input.Historical.SHA256 != "76a6337a698e36ff0e3fc2de06c82ea14e9a9ebd1fc517fa2819f755caef3d9e" {
+		t.Fatal("historical held-image prefix changed", err)
+	}
+	if _, err := agyTraceCalls(historical); err == nil || err.Error() != "incomplete Agy trace syscall coverage" {
+		t.Fatal("historical pending Agy input no longer refuses", err)
+	}
+	r := &watchCensusRead{cli: &CLI{}, files: map[string]string{}, images: map[string]bool{}, inodes: map[string]string{},
+		report: WatchUnitCensus{Facts: map[string]string{}}, local: &watchDrainRead{tokenPaths: map[string]bool{}}}
+	generationErr := r.agyCurrentGeneration(input.Capture, nativeMap("process", censusNativeProcess(input.Capture.Process)))
+	text := func(err error) string {
+		if err != nil {
+			return err.Error()
+		}
+		return ""
+	}
+	result, err := json.MarshalIndent(struct {
+		Scope, ParserError, GenerationError string
+	}{"UNIT/KERNELMECHANICS; not native qualification", text(parseErr), text(generationErr)}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(input.Result, append(result, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if generationErr != nil {
+		t.Fatal("actual live generation refused", generationErr)
+	}
+	if parseErr != nil {
+		t.Fatal("strict prefix remains refused:", parseErr)
+	}
+}
+
 // This opt-in test reads historical raw bytes only. It neither starts the
 // held image nor supplies a current process/session or authenticated drain.
 func TestAgyCurrentRetainedLivePrefix(t *testing.T) {

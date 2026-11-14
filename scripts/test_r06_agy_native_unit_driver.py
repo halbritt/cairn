@@ -8,14 +8,255 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
+import socket
+import subprocess
 import sys
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 import uuid
 import unittest
 from unittest.mock import patch
 
 import check_r06_agy_native_unit as driver
+
+
+class HostConnectAuditTests(unittest.TestCase):
+    """Synthetic refusal corpus plus one real owned multigeneration client."""
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-connect-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup)
+        self.root=Path(temporary.name)
+        self.image=self.root/'unit-client';self.image.write_bytes(b'UNIT ONLY; never executed\n');self.image.chmod(0o500)
+        self.capture=dict(Process=dict(PID=200,Start='1',Boot='UNIT'),Client=driver.checked_pin(self.image),ClientArgv=[str(self.image)])
+        self.local=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+        self.local.bind(str(self.root/'local.sock'));(self.root/'local.sock').chmod(0o600)
+        self.addCleanup(self.local.close)
+
+    def raw(self,body,pid=200,extra=''):
+        path=json.dumps(str(self.image))
+        return (f'200 execve({path}, [{path}], 0x0 /* UNIT */) = 0\n'+extra+
+                f'{pid} {body}\n200 +++ exited with 0 +++\n').encode()
+
+    def audit(self,raw,**kw):
+        return driver.audit_host_connections(raw,self.capture,self.root,ports={4321},
+            unix_paths=[self.root/'local.sock'],**kw)
+
+    def test_literal_ipv4_ipv6_failed_local_and_owned_unix(self):
+        forms=[
+            'connect(3, {sa_family=AF_INET, sin_port=htons(4321), sin_addr=inet_addr("127.0.0.1")}, 16) = 0',
+            'connect(3, {sa_family=AF_INET6, sin6_port=htons(4321), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "::1", &sin6_addr), sin6_scope_id=0}, 28) = -1 ECONNREFUSED (Connection refused)',
+            'connect(3, {sa_family=AF_UNIX, sun_path='+json.dumps(str(self.root/'local.sock'))+'}, 110) = 0']
+        for body in forms:
+            with self.subTest(body=body):
+                report=self.audit(self.raw(body));self.assertEqual(len(report['connections']),1)
+                self.assertFalse(report['NativePASS']);self.assertIn('No kernel egress enforcement',report['ExternalCoverage'])
+
+    def test_exact_missing_nscd_is_only_outside_root_exception(self):
+        body='connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)'
+        self.assertTrue(self.audit(self.raw(body))['connections'][0]['destination']['missing_nscd'])
+        for changed in [body.replace('110','109'),body.replace('ENOENT (No such file or directory)','ECONNREFUSED (Connection refused)'),body.replace('= -1 ENOENT (No such file or directory)','= 0'),body.replace('/var/run/nscd/socket','/run/nscd/socket')]:
+            with self.subTest(body=changed),self.assertRaises(driver.Refused):self.audit(self.raw(changed))
+
+    def test_external_failed_wrong_unix_unknown_family_and_address_refuse(self):
+        good='connect(3, {sa_family=AF_INET, sin_port=htons(4321), sin_addr=inet_addr("127.0.0.1")}, 16) = 0'
+        forms=[good.replace('127.0.0.1','198.51.100.23').replace('= 0','= -1 ENETUNREACH (Network is unreachable)'),
+            good.replace('127.0.0.1','127.0.0.2'),good.replace('4321','53'),good.replace('16)','4)'),
+            'connect(3, {sa_family=AF_UNIX, sun_path="/outside-owned-root.sock"}, 110) = -1 ENOENT (No such file or directory)',
+            'connect(3, {sa_family=AF_UNIX, sun_path=@"abstract"}, 10) = 0',
+            'connect(3, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, 12) = 0',
+            good.replace('"127.0.0.1"','"127.0"...'),good.replace('= 0','= ? ERESTARTSYS (To be restarted)'),
+            'connect(3, 0x1234, 16) = -1 EFAULT (Bad address)']
+        for body in forms:
+            with self.subTest(body=body),self.assertRaises(driver.Refused):self.audit(self.raw(body))
+
+    def test_unknown_pid_unfinished_connect_partial_and_malformed_records_refuse(self):
+        good='connect(3, {sa_family=AF_INET, sin_port=htons(4321), sin_addr=inet_addr("127.0.0.1")}, 16) = 0'
+        cases=[self.raw(good,pid=900),self.raw('connect(3, {sa_family=AF_INET <unfinished ...>'),
+            self.raw(good)[:-1],self.raw('<... connect resumed>) = 0'),
+            self.raw(good)+b'unattributed connect(0, NULL, 0) = 0\n',
+            self.raw(good,extra='200 clone(child_stack=NULL, flags=SIGCHLD) = 201\n201 ???\n')]
+        for raw in cases:
+            with self.subTest(raw=raw[-120:]),self.assertRaises(driver.Refused):self.audit(raw)
+
+    def test_multihop_fork_attribution_and_missing_exit(self):
+        body='connect(3, {sa_family=AF_INET, sin_port=htons(4321), sin_addr=inet_addr("127.0.0.1")}, 16) = 0'
+        extra='200 fork() = 201\n201 vfork() = 202\n'
+        raw=self.raw(body,pid=202,extra=extra).replace(b'200 +++',b'202 +++ exited with 0 +++\n201 +++ exited with 0 +++\n200 +++')
+        report=self.audit(raw);self.assertEqual(report['traced_pids'],[200,201,202])
+        with self.assertRaises(driver.Refused):self.audit(raw.replace(b'201 +++ exited with 0 +++\n',b''))
+
+    def test_pending_stdin_is_labelled_without_granting_currentness(self):
+        report=self.audit(self.raw('read(0 <unfinished ...>'))
+        self.assertEqual(report['pending_nonconnect'][0]['name'],'read')
+        self.assertIn('does not satisfy',report['currentness'])
+
+    def test_connect_before_selected_exec_or_after_exit_refuses(self):
+        connect='200 connect(3, {sa_family=AF_INET, sin_port=htons(4321), sin_addr=inet_addr("127.0.0.1")}, 16) = 0\n'
+        baseline=self.raw(connect.removeprefix('200 ').rstrip())
+        for raw in [connect.encode()+baseline,baseline+connect.encode(),baseline+b'200 +++ exited with 0 +++\n']:
+            with self.subTest(raw=raw[-100:]),self.assertRaises(driver.Refused):self.audit(raw)
+
+    def test_changed_generation_refuses_before_pidfd_signal(self):
+        child=object.__new__(driver.OwnedKernelTrace)
+        child.pidfd,child.pid,child.generation=12345,200,self.capture
+        changed=copy.deepcopy(self.capture);changed['Process']['Start']='2'
+        with patch.object(driver.collector,'capture_owned_generation',return_value=changed), \
+                patch.object(driver.signal,'pidfd_send_signal',side_effect=AssertionError('signal before identity check')):
+            with self.assertRaisesRegex(driver.Refused,'generation changed'):child.send(signal.SIGSTOP)
+
+    def test_pause_refuses_a_second_attempt_before_signal(self):
+        child=object.__new__(driver.OwnedKernelTrace)
+        child.pause_attempted,child.closed=True,False
+        with patch.object(child,'send',side_effect=AssertionError('second pause signal')):
+            with self.assertRaisesRegex(driver.Refused,'one-shot'):child.pause_input()
+
+    def test_fixture_rejects_uncontrolled_or_native_image_before_process(self):
+        self.image.chmod(0o600)
+        with patch.object(driver.subprocess,'Popen',side_effect=AssertionError('process before preflight')):
+            with self.assertRaisesRegex(driver.Refused,'0500'):driver.OwnedKernelTrace([str(self.image)],self.root)
+        self.image.chmod(0o500)
+        with patch.object(driver,'AGY_SHA256',self.capture['Client']['SHA256']), \
+                patch.object(driver.subprocess,'Popen',side_effect=AssertionError('native process')):
+            with self.assertRaisesRegex(driver.Refused,'nonnative'):driver.OwnedKernelTrace([str(self.image)],self.root)
+
+    def test_trace_launch_failure_closes_its_owned_stderr(self):
+        with patch.object(driver.subprocess,'Popen',side_effect=OSError('fixture launch failure')):
+            with self.assertRaisesRegex(OSError,'fixture launch failure'):
+                driver.OwnedKernelTrace([str(self.image)],self.root)
+        opened=[]
+        for fd in Path('/proc/self/fd').iterdir():
+            try:opened.append(os.readlink(fd))
+            except FileNotFoundError:continue
+        self.assertNotIn(str(self.root/'kernel.stderr'),opened)
+
+    def test_actual_owned_root_child_and_grandchild_loopback_and_unix(self):
+        selected=os.environ.get('CAIRN_R06_AGY_HOST_AUDIT_EVIDENCE')
+        if selected:
+            root=Path(selected);root.mkdir(mode=0o700)
+        else:
+            temporary=tempfile.TemporaryDirectory(prefix='cairn-net-',dir=Path.home()/'.cache')
+            self.addCleanup(temporary.cleanup);root=Path(temporary.name)
+        image=root/'owned-python';shutil.copyfile(Path(sys.executable).resolve(),image);image.chmod(0o500)
+        inet=socket.socket();inet.bind(('127.0.0.1',0));inet.listen(4);inet.settimeout(10)
+        local=socket.socket(socket.AF_UNIX);unix=root/'echo.sock';local.bind(str(unix));unix.chmod(0o600);local.listen(2);local.settimeout(10)
+        port=inet.getsockname()[1];errors=[]
+        def echo(listener,count):
+            try:
+                for _ in range(count):
+                    with listener.accept()[0] as connection:
+                        connection.settimeout(5);data=connection.recv(32)
+                        if data!=b'owned-echo':raise AssertionError('wrong fixture payload')
+                        connection.sendall(data)
+            except BaseException as error:errors.append(repr(error))
+        threads=[threading.Thread(target=echo,args=(inet,2)),threading.Thread(target=echo,args=(local,1))]
+        for thread in threads:thread.start()
+        program=('import os,socket,sys\n'
+            'def request(family,address):\n'
+            ' s=socket.socket(family);s.settimeout(5);s.connect(address);s.sendall(b"owned-echo");assert s.recv(32)==b"owned-echo";s.close()\n'
+            f'request(socket.AF_INET,("127.0.0.1",{port}))\n'
+            'child=os.fork()\n'
+            'if child==0:\n'
+            f' request(socket.AF_UNIX,{str(unix)!r})\n'
+            ' grand=os.fork()\n'
+            ' if grand==0:\n'
+            f'  request(socket.AF_INET,("127.0.0.1",{port}));os._exit(0)\n'
+            ' assert os.waitpid(grand,0)[1]==0;os._exit(0)\n'
+            'assert os.waitpid(child,0)[1]==0\n'
+            'print("AUDIT_READY",flush=True)\n'
+            'sys.stdin.buffer.read()\n')
+        child=None
+        try:
+            child=driver.OwnedKernelTrace([str(image),'-I','-S','-B','-c',program],root)
+            with driver.selectors.DefaultSelector() as selector:
+                selector.register(child.process.stdout,driver.selectors.EVENT_READ)
+                self.assertTrue(selector.select(timeout=15));self.assertEqual(child.process.stdout.readline(),b'AUDIT_READY\n')
+            capture=driver.collector.capture_owned_generation(child.pid)
+            child.close()
+            raw=child.trace.read_bytes()
+            report=driver.audit_host_connections(raw,capture,root,ports={port},unix_paths=[unix])
+            self.assertEqual(len(report['connections']),3);self.assertEqual(len(report['traced_pids']),3)
+            self.assertTrue(child.cleanup['all_absent']);self.assertEqual(child.cleanup['forced_signals'],[])
+            for policy in [dict(ports={port+1 if port<65535 else port-1},unix_paths=[unix]),dict(ports={port},unix_paths=[])]:
+                with self.assertRaises(driver.Refused):driver.audit_host_connections(raw,capture,root,**policy)
+            driver.write_json(root/'audit-result.json',dict(audit=report,capture=capture,cleanup=child.cleanup,
+                trace=driver.checked_pin(child.trace),scope='owned nonnative sockets; no model/provider/API/PG'))
+        finally:
+            if child is not None:child.close()
+            for listener in (inet,local):listener.close()
+            for thread in threads:thread.join(timeout=12)
+            self.assertFalse(any(thread.is_alive() for thread in threads));self.assertEqual(errors,[])
+
+
+class KernelBoundaryProbe(unittest.TestCase):
+    def test_owned_stop_keeps_exact_generation_and_records_strict_parser_result(self):
+        root = driver.private_directory(os.environ['CAIRN_R06_AGY_KERNEL_PROBE'])
+        self.assertEqual(list(root.iterdir()), [])
+        historical=driver.checked_pin(Path(os.environ['CAIRN_R06_AGY_HISTORICAL_PREFIX']),
+            '76a6337a698e36ff0e3fc2de06c82ea14e9a9ebd1fc517fa2819f755caef3d9e')
+        image = root/'owned-python'
+        shutil.copyfile(Path(sys.executable).resolve(), image)
+        image.chmod(0o500)
+        program = ('import os,sys,threading\n'
+            'r,w=os.pipe()\n'
+            'threading.Thread(target=lambda:os.read(r,1),daemon=True).start()\n'
+            'threading.Thread(target=lambda:threading.Event().wait(),daemon=True).start()\n'
+            'print("OWNED_KERNEL_READY",flush=True)\n'
+            'sys.stdin.buffer.read()\n')
+        child = driver.OwnedKernelTrace([str(image),'-I','-S','-B','-c',program],root)
+        try:
+            with driver.selectors.DefaultSelector() as selector:
+                selector.register(child.process.stdout, driver.selectors.EVENT_READ)
+                self.assertTrue(selector.select(timeout=10))
+                self.assertEqual(child.process.stdout.readline(), b'OWNED_KERNEL_READY\n')
+            # Observe the real waiting syscalls before the only SIGSTOP probe.
+            driver.r04.wait_for(lambda: b'read(0' in child.trace.read_bytes()
+                and b'futex(' in child.trace.read_bytes(), 'actual stdin and sibling waits', timeout=5)
+            before = child.snapshot('before-stop.trace')
+            paused = child.pause_input()
+            states,stopped,capture = paused['states'],paused['trace'],paused['capture']
+            self.assertEqual(capture,child.generation)
+            selected = root/'probe-input.json'
+            driver.write_json(selected,dict(Schema='cairn.agy-owned-kernel-boundary/1',
+                Prefix=stopped,Historical=historical,Capture=capture,Result=str(root/'go-consumer.json')))
+            env=dict(os.environ,CAIRN_R06_AGY_KERNEL_BOUNDARY=str(selected))
+            argv=['mise','run','test:unit','--','./internal/lifecycle/coordination',
+                  '-run','TestAgyOwnedKernelBoundary$','-count=1','-json']
+            process=subprocess.run(argv,env=env,text=True,capture_output=True,timeout=120)
+            driver.write_json(root/'go-process.json',dict(argv=argv,exit=process.returncode,
+                stdout=process.stdout,stderr=process.stderr))
+            self.assertEqual(process.returncode,0,process.stdout+process.stderr)
+            result=json.loads((root/'go-consumer.json').read_bytes())
+            child.send(signal.SIGCONT)
+            child.process.stdin.write(b'actual input after resume\n');child.process.stdin.flush()
+            self.assertEqual(driver.collector.capture_owned_generation(child.pid),capture)
+            resumed=child.snapshot('after-resume.trace')
+            driver.write_json(root/'mechanical-result.json',dict(scope='UNIT/KERNELMECHANICS',
+                stopped_states=states,generation=capture,before=before,stopped=stopped,resumed=resumed,
+                parser=result,input_contract='OPEN_FOR_ACTUAL_AGY',
+                mechanical_strict_prefix_closed=not (result['ParserError'] or result['GenerationError']),
+                NativePASS=False,native_runs=0,real_Agy_pause_authorized=False))
+        finally:
+            child.close()
+            driver.write_json(root/'cleanup.json',child.cleanup)
+            if 'stopped' in locals():
+                prefix=Path(stopped['Path']).read_bytes();full=child.trace.read_bytes()
+                self.assertEqual(full[:len(prefix)],prefix)
+                self.assertIn(b'--- SIGCONT ',full[len(prefix):])
+                calls,_=driver.kernel_calls(full)
+                input_rows=[]
+                for row in calls:
+                    if row['pid']!=child.pid or row['name']!='read' or row['start']<len(prefix):continue
+                    match=driver.re.fullmatch(r'read\(0, ("(?:\\.|[^"\\])*"), \d+\)\s+= (\d+)',row['body'])
+                    if match:
+                        data=driver.ast.literal_eval(match[1]).encode('latin1')
+                        self.assertEqual(len(data),int(match[2]));input_rows.append(dict(start=row['start'],end=row['end'],raw_bytes=data))
+                self.assertEqual(b''.join(row['raw_bytes'] for row in input_rows),b'actual input after resume\n')
+                self.assertTrue(input_rows and input_rows[-1]['raw_bytes']==b'')
+                driver.write_json(root/'final-trace.json',dict(trace=driver.checked_pin(child.trace),
+                    stopped_prefix_exact=True,suffix_start=len(prefix),suffix_bytes=len(full)-len(prefix),
+                    resumed_stdin=[dict(start=r['start'],end=r['end'],bytes=len(r['raw_bytes'])) for r in input_rows]))
 
 
 class NativeAdmissionTests(unittest.TestCase):
@@ -545,10 +786,12 @@ class SealedRecipeCompatibilityTests(unittest.TestCase):
 def load_tests(loader, standard, pattern):
     # Normal discovery keeps the standing portable controls. This explicit
     # fixture input adds real sealed-recipe controls, with no skipped tests.
+    cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests]
     if os.environ.get('CAIRN_R06_AGY_CONTROLLED_PACKET'):
-        return standard
-    return unittest.TestSuite(loader.loadTestsFromTestCase(case) for case in
-        (AgyPreparationTests, AuthenticatedPreparationBoundaries, NativeAdmissionTests))
+        cases.append(SealedRecipeCompatibilityTests)
+    if os.environ.get('CAIRN_R06_AGY_KERNEL_PROBE'):
+        cases.append(KernelBoundaryProbe)
+    return unittest.TestSuite(loader.loadTestsFromTestCase(case) for case in cases)
 
 
 if __name__ == '__main__':
