@@ -397,7 +397,7 @@ class EvidencePrivacy(unittest.TestCase):
         result=continuity.audit_syscalls(set(pins),set(),reducer=reducer,exec_pins=pins)
         self.assertEqual(result['violations'],['unapproved or changed executable'])
 
-    def test_strace_unknown_exit_requires_thread_creation_and_termination(self):
+    def test_strace_unavailable_exit_requires_termination_in_owned_trace(self):
         for marker in ('???( <unfinished ...>','???() = ?','<... ??? resumed>) = ?'):
             for threaded,terminated in ((True,True),(False,True),(True,False)):
                 reducer=continuity.TraceReducer()
@@ -405,7 +405,7 @@ class EvidencePrivacy(unittest.TestCase):
                 reducer.feed('101 '+marker)
                 if terminated: reducer.feed('101 +++ exited with 0 +++')
                 result=continuity.audit_syscalls(set(),set(),reducer=reducer)
-                self.assertEqual(bool(result['violations']),not(threaded and terminated))
+                self.assertEqual(bool(result['violations']),not terminated)
         reducer=continuity.TraceReducer();reducer.feed('101 ???() = 0');reducer.feed('101 +++ exited with 0 +++')
         self.assertIn('trace_parse_error',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
 

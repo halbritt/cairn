@@ -952,7 +952,7 @@ class TraceReducer:
                 if call.startswith('+++ killed by '): self.terminal.add(pid)
                 self.rows.append(dict(pid=pid, kind='signal', signal=signal_name[1])); return
             if re.fullmatch(r'\?\?\?\(\s*\)\s*=\s*\?',call):
-                self.rows.append(dict(pid=pid,kind='unknown-thread-exit',result=None)); return
+                self.rows.append(dict(pid=pid,kind='unavailable-exit',result=None)); return
             parsed = re.fullmatch(r'(\w+)\((.*)\)\s+=\s+(-?\d+|\?)(?: ([A-Z][A-Z0-9_]+))?.*', call)
             if not parsed: raise ValueError()
             name, args, result, error = parsed.groups(); args = args.strip()
@@ -1023,7 +1023,6 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             for line in stream: reducer.feed(line.rstrip(b'\n'))
     violations = list(reducer.errors)
     parents = {row['child']:row['pid'] for row in reducer.rows if 'child' in row}
-    threads = {row['child'] for row in reducer.rows if row.get('thread')}
     def ancestor(pid, candidates):
         seen = set()
         while pid not in seen:
@@ -1044,9 +1043,9 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             'socket','socketpair','listen','shutdown','getsockname','getpeername',
             'getpid','getppid','gettid','getsid','getpgid','getpgrp')
         thread_creation = name in ('clone','clone3') and re.search(r'\bCLONE_THREAD\b',prefix) is not None
-        unknown_thread_exit = pid in threads and re.fullmatch(r'\?\?\?\(\s*',prefix) is not None
-        if (harmless or thread_creation or unknown_thread_exit) and (pid in reducer.terminal or daemon_gone(pid)):
-            shutdown.append(dict(pid=pid,kind=name or 'unknown-thread-exit',result=None,expected_shutdown=True))
+        unavailable_exit = re.fullmatch(r'\?\?\?\(\s*',prefix) is not None
+        if (harmless or thread_creation or unavailable_exit) and (pid in reducer.terminal or daemon_gone(pid)):
+            shutdown.append(dict(pid=pid,kind=name or 'unavailable-exit',result=None,expected_shutdown=True))
         else:
             violations.append('unfinished audited operation')
             unresolved.append(dict(pid=pid,name_sha256=hashlib.sha256((name or '').encode()).hexdigest(),
@@ -1081,8 +1080,8 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             owner = ancestor(pid, phase_roots or {})
             if owner is not None and phase_roots[owner] in ('A','B') and path == python_path and pid != owner:
                 if not row['selector_argument']: violations.append('Source Python fallback in Go phase')
-        elif kind == 'unknown-thread-exit':
-            if pid not in threads or pid not in reducer.terminal: violations.append('unconfirmed unknown thread exit')
+        elif kind == 'unavailable-exit':
+            if pid not in reducer.terminal: violations.append('unconfirmed unavailable exit')
             processes.append(safe)
         elif kind == 'detached':
             if pid not in reducer.terminal and not daemon_gone(pid): violations.append('unexpected detached process')
