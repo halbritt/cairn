@@ -77,6 +77,11 @@ store and filesystem snapshots around each operation; protected state must
 remain unchanged. Every declared callback reference and native layer file
 is included in the catalog.
 
+Reverse selects every pinned member of the last retained watch directory.
+The original installation generation is not a retained watch selection: it
+contains additional runtime files and does not share the watch lock. Its
+membership refusal remains unchanged.
+
 After publication, orderly native stop/join and `--resume` select the next
 settings. The same conversation must retain its prior prompts and API agent
 identity, with one native executor at a time. The final phase runs and drains
@@ -153,6 +158,29 @@ Focused driver checks, which start no native client, use:
 ```sh
 mise run test:unit -- test_r06_native_unit_driver -v
 ```
+
+The retained-watch regression requires an explicit pinned HOST image manifest
+and a fresh evidence leaf under an existing private `0700` parent:
+
+```sh
+CAIRN_R06_UNIT_IMAGES=/absolute/path/images-host.json \
+CAIRN_R06_CONTROL_EVIDENCE=/absolute/private/parent/new-control-proof \
+mise run host:exec -- --timeout 5m --weight 2 -- \
+  python3 -B -m unittest discover -s scripts \
+  -p test_r06_native_unit_driver.py -v
+```
+
+It calls the actual `NativeUnit.control()` plan construction and real
+`cairn-lifecycle unit-control switch`, `reverse` and final `inspect` against
+the maintained disposable API/PostgreSQL fixtures. Both disabled installations
+use an empty account and workspace, with no native session, callbacks or
+fabricated native readback. The test checks `retained-to-go3` and
+`retained-to-python2`, complete pinned membership, target bytes and the shared
+`.watch.lock` inode. The original installation-directory reverse still must
+refuse. Store and protected-file checks remain active. This is a non-native
+configuration proof; it does not qualify native conversation or refresh.
+Without the explicit image manifest, unittest reports this prerequisite check
+as skipped. The four pure driver checks remain available without images.
 
 Focused helper checks use:
 

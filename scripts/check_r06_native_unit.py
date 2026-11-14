@@ -841,8 +841,14 @@ class NativeUnit(OwnedUnit):
     def control(self, operation, target, readback, label):
         catalog, proposal = self.catalog(readback)
         catalog_pin = write(self.root / ('catalog-' + label + '.json'), catalog)
+        if operation == 'reverse':
+            retained = self.retained[-1]
+            next_files = [dict(name=name, path=str(Path(retained['Directory']) / name), sha256=pin)
+                          for name, pin in sorted(retained['Pins'].items())]
+        else:
+            next_files = [dict(name='coordination.json', path=str(target['config']), sha256=digest(target['config']))]
         plan = dict(schema='cairn.unit-control/2', current=dict(directory=str(self.active), pins=dict(self.pins)),
-            next=[dict(name='coordination.json', path=str(target['config']), sha256=digest(target['config']))],
+            next=next_files,
             retained=str(self.config_root / ('retained-' + label)),
             census=dict(Catalog=catalog_pin, Proposal=proposal, Retained=copy.deepcopy(self.retained)))
         path = self.evidence / (label + '.plan.json')
