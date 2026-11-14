@@ -130,10 +130,53 @@ separately covers bound authenticated joins and their refusals. All gates run
 through mise with pinned images and explicit fixture inputs; inactive entries
 and skips do not count as coverage.
 
-The Agy reader and its preparation/historical blockers are unchanged. Public
-unit-control's preflight configuration-pair reader also remains bound-only;
-this private capture/recheck component does not extend that separate interface.
+The Agy reader and its preparation/historical blockers are unchanged. The public
+preflight extension below is a separate component with its own correspondence
+checks.
 Current Agy qualification, refresh and full R06/HC05 acceptance remain open.
+
+## Public unbound preflight correspondence
+
+Public unit-control preflight accepts a null/unbound pair only through its exact
+pinned current census. It runs the existing complete validator without API calls
+and requires the proposed path/hash to be an actual immutable coordinator
+descriptor in the selected disabled `/3` receipt and manifest. An arbitrary copy
+of matching bytes is not enough. Both actual configurations are decoded, their
+unit selectors are compared, and their memory association is checked through
+the real selected descriptors. Untracked, absent, ambiguous, foreign or changed
+associations refuse. The current plan/census directory and pins must agree.
+
+This bounds what existing facts can establish. A new proposed profile or receipt
+that the selected census does not already observe has no trusted correspondence;
+preflight refuses it. It does not apply the current memory directory to an
+unknown proposed profile. Admitting a distinct future receipt would require an
+explicit existing fact linking that proposal, with its complete validation.
+
+The proposed descriptor already participates in the full census file/resource
+and identity facts. Preflight keeps its original comparison across capture;
+the existing drain D6 reread independently covers that same proposed file.
+Credential selector paths and inode aliases are excluded before catalog or
+generic proposed-file reads. Bound
+pairs keep their existing validator and authenticated-read order. Existing next
+membership and mode0400 checks, watcher-lock identity, retained-copy rules,
+D1–D6 refusals and the census/D2-before-exchange sequence remain active. No new
+public operation, field, permission or trust mode is added.
+
+Activate `TestR06UnboundControlPreflightProcess`, its refusal/identity variants
+and `TestR06UnboundControlPreflightBetweenReadsProcess` with the genuine
+`CAIRN_R06_UNBOUND_FIXTURE`. They exercise the public `RunUnitControl` path,
+exact refusal reasons and the same preflight entry's original identity window.
+Set `CAIRN_R06_PREFLIGHT_EVIDENCE` to an owned output directory to retain whole
+before/after file, directory and inode snapshots. Credential contents are never
+included. Owned drift actors have separate snapshots, so unrelated operation
+changes cannot pass as injected changes.
+
+The separate `TestR06UnboundControlAuthenticatedProcess` uses NEW disposable
+API/PG material selected by `CAIRN_R06_UNBOUND_AUTH_FIXTURE`. It exercises public
+inspect through the concrete authenticated status readers. These are finite
+preflight and correspondence checks. The unchanged Agy preparation/historical
+blockers still refuse current-native qualification, and no retained-unbound D2,
+refresh, ordinary Agy memory or full R06/HC05 acceptance follows.
 
 ## Typed Agy observations
 

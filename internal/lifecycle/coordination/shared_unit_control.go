@@ -76,7 +76,8 @@ func (c *CLI) RunUnitControl(ctx context.Context, args []string, out io.Writer) 
 			return err
 		}
 		r.Current = WatchBindings{Directory: p.Current.Directory, Pins: p.Current.Pins}
-		if err := c.validateUnitControlSelection(p, r.Operation); err != nil {
+		var unbound *unitControlUnboundPreflight
+		if err := c.validateUnitControlSelection(ctx, p, r.Operation, &unbound); err != nil {
 			return err
 		}
 		info, err := os.Stat(p.Current.Directory)
@@ -105,7 +106,7 @@ func (c *CLI) RunUnitControl(ctx context.Context, args []string, out io.Writer) 
 		if _, _, err := readUnitControlPlan(r.PlanPath, r.PlanSHA256); err != nil {
 			return err
 		}
-		if err := c.validateUnitControlSelection(p, r.Operation); err != nil {
+		if err := c.validateUnitControlSelection(ctx, p, r.Operation, &unbound); err != nil {
 			return err
 		}
 		if r.Operation != "inspect" {
@@ -297,7 +298,7 @@ func unitControlDirectory(path string) error {
 	return nil
 }
 
-func (c *CLI) validateUnitControlSelection(p *UnitControlPlan, operation string) error {
+func (c *CLI) validateUnitControlSelection(ctx context.Context, p *UnitControlPlan, operation string, unbound **unitControlUnboundPreflight) error {
 	current := WatchBindings{Directory: p.Current.Directory, Pins: p.Current.Pins}
 	if err := unitControlDirectory(current.Directory); err != nil {
 		return err
@@ -314,6 +315,9 @@ func (c *CLI) validateUnitControlSelection(p *UnitControlPlan, operation string)
 	if err := readWatchBindings(current); err != nil {
 		return err
 	}
+	if err := c.unitControlUnboundPreflight(ctx, p, unbound); err != nil {
+		return err
+	}
 	next, _, err := nextWatchBindingFiles(current, p.Next)
 	if err != nil {
 		return err
@@ -326,8 +330,11 @@ func (c *CLI) validateUnitControlSelection(p *UnitControlPlan, operation string)
 		if err != nil || info.Mode() != 0400 {
 			return errors.Join(err, errors.New("unit control next files must be immutable mode0400 data"))
 		}
-		if err := c.unitControlConfigPair(filepath.Join(current.Directory, file.Name), file.Path); err != nil {
-			return err
+		path := filepath.Join(current.Directory, file.Name)
+		if *unbound == nil || (*unbound).members[path].Config.Path == "" {
+			if err := c.unitControlConfigPair(path, file.Path); err != nil {
+				return err
+			}
 		}
 	}
 	if operation == "reverse" {
@@ -381,6 +388,10 @@ func (c *CLI) unitControlConfigPair(currentPath, nextPath string) error {
 		configs = append(configs, config)
 		memories = append(memories, nativeText(memory.Get("state_dir")))
 	}
+	return unitControlPairIdentity(configs, memories)
+}
+
+func unitControlPairIdentity(configs []*value.Value, memories []string) error {
 	for _, key := range []string{"binding", "state_dir", "harness", "repo", "socket", "token_file", "config_home"} {
 		if !nativeEqual(configs[0].Get(key), configs[1].Get(key)) {
 			return fmt.Errorf("unit control cannot change unit identity/selector %s", key)
