@@ -131,8 +131,9 @@ errors and tracing input never become retained raw output.
 Retained trace facts contain PID, validated executable path, result, process
 ancestry/exit and approved sockaddr. Rejected paths/addresses retain hashes and
 fixed violation codes. A terminated process or verified-gone owned daemon can
-leave a blocking accept/wait unfinished when strace detaches; those operations
-remain explicit shutdown metadata. Unfinished exec/connect, unexplained detach,
+leave a blocking accept/wait, thread creation, or socket metadata operation
+unfinished when strace detaches; these remain explicit shutdown metadata.
+Unfinished exec/connect/bind or process creation, unexplained detach,
 other malformed input, limits, forbidden network targets and missing required
 owned daemon/socket observations still fail. Wire buffers and environment
 contents are not traced. Controller and native-hook stdout/stderr retain only
