@@ -84,20 +84,75 @@ func (f agyCurrentUnit) check() error {
 	return agyCurrentPair(f.before, f.after, f.observed, f.generation, f.aSettings, f.bSettings, f.aCommands, f.bCommands, f.account, f.installed)
 }
 
-func TestAgyCurrentUnitPendingInputRemainsRefused(t *testing.T) {
+func TestAgyCurrentUnitNativeInputLiveOnly(t *testing.T) {
 	f := newAgyCurrentUnit()
 	if err := f.check(); err != nil {
 		t.Fatal("complete synthetic control", err)
 	}
-	// Complete hook callbacks and an idle frame do not complete a separate
-	// native input syscall. Preserve this guard until its contract is defined.
+	// Readback/2 may observe one native stdin wait after complete callbacks.
+	// Closed/readback1 decoding still requires every syscall to complete.
 	f.before = append(f.before, []byte("200 read(0 <unfinished ...>\n")...)
 	f.observed.Before.End = len(f.before)
 	if _, err := agyTraceCalls(f.before); err == nil || err.Error() != "incomplete Agy trace syscall coverage" {
 		t.Fatal("unfinished input was accepted or refused for another reason", err)
 	}
-	if err := f.check(); err == nil {
-		t.Fatal("current readback accepted an unfinished native input syscall")
+	if err := f.check(); err != nil {
+		t.Fatal("bounded native stdin wait refused by current phase", err)
+	}
+}
+
+func TestAgyCurrentUnitLivePendingBounds(t *testing.T) {
+	for _, name := range []string{"native-thread", "no-pending", "fd00", "fd1", "fd-argument", "fd-hex", "nonread", "second-pending", "overlap", "complete-overlap", "fork", "callback", "fork-thread", "fake-thread-flag", "failed-thread", "missing-eof", "not-idle"} {
+		t.Run(name, func(t *testing.T) {
+			f := newAgyCurrentUnit()
+			tail := "200 read(0 <unfinished ...>\n"
+			switch name {
+			case "native-thread":
+				tail = "200 clone(child_stack=NULL, flags=CLONE_VM|CLONE_SIGHAND|CLONE_THREAD) = 290\n290 read(0 <unfinished ...>\n"
+			case "no-pending":
+				tail = ""
+			case "fd00":
+				tail = "200 read(00 <unfinished ...>\n"
+			case "fd1":
+				tail = "200 read(1 <unfinished ...>\n"
+			case "fd-argument":
+				tail = "200 read(0, <unfinished ...>\n"
+			case "fd-hex":
+				tail = "200 read(0x0 <unfinished ...>\n"
+			case "nonread":
+				tail = "200 futex(0x1, FUTEX_WAIT, 0, NULL <unfinished ...>\n"
+			case "second-pending":
+				tail = "200 clone(child_stack=NULL, flags=CLONE_THREAD) = 290\n200 read(0 <unfinished ...>\n290 read(0 <unfinished ...>\n"
+			case "overlap":
+				tail += "200 read(0 <unfinished ...>\n"
+			case "complete-overlap":
+				tail += "200 close(9) = 0\n"
+			case "fork":
+				tail = "200 fork() = 290\n290 read(0 <unfinished ...>\n"
+			case "callback":
+				tail = "340 read(0 <unfinished ...>\n"
+			case "fork-thread":
+				tail = "200 fork() = 290\n290 clone(child_stack=NULL, flags=CLONE_THREAD) = 291\n291 read(0 <unfinished ...>\n"
+			case "fake-thread-flag":
+				tail = "200 clone(child_stack=NULL, flags=NOT_CLONE_THREAD) = 290\n290 read(0 <unfinished ...>\n"
+			case "failed-thread":
+				tail = "200 clone3({flags=CLONE_THREAD}, 88) = -1 ENOSYS (Function not implemented)\n290 read(0 <unfinished ...>\n"
+			case "missing-eof":
+				f.after = bytes.Replace(f.after, []byte("340 read(0, \"\", 4096) = 0\n"), []byte("340 close(0) = 0\n"), 1)
+			case "not-idle":
+				f.after, f.observed.After = agyUnitPhase(200, 340, f.observed.Client.Path, f.observed.B, f.bCommands, f.bSettings, json.RawMessage("false"))
+			}
+			f.after = append(f.after, []byte(tail)...)
+			f.observed.After.End = len(f.after)
+			err := f.check()
+			positive := name == "native-thread" || name == "no-pending"
+			if positive && err != nil {
+				t.Fatal(err)
+			}
+			if !positive && err == nil {
+				t.Fatal("invalid pending input accepted")
+			}
+		})
 	}
 }
 
@@ -115,65 +170,6 @@ func TestAgyCurrentUnitStopMarkerRemainsRefused(t *testing.T) {
 	}
 	if err := f.check(); err == nil || err.Error() != "unknown current Agy trace record" {
 		t.Fatal("full current phase stop-marker guard changed", err)
-	}
-}
-
-// Opt-in kernel mechanics only: this consumes a real owned NONNATIVE child
-// while its Python owner keeps it stopped. No native session is manufactured.
-func TestAgyOwnedKernelBoundary(t *testing.T) {
-	path := os.Getenv("CAIRN_R06_AGY_KERNEL_BOUNDARY")
-	if path == "" {
-		t.Skip("explicit owned nonnative kernel probe not selected")
-	}
-	var input struct {
-		Schema     string
-		Prefix     WatchCensusPin
-		Historical WatchCensusPin
-		Capture    agyGenerationCapture
-		Result     string
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := hookDecode(raw, &input); err != nil || input.Schema != "cairn.agy-owned-kernel-boundary/1" {
-		t.Fatal("invalid kernel probe input", err)
-	}
-	prefix, err := os.ReadFile(input.Prefix.Path)
-	if err != nil || agyTraceSHA(prefix) != input.Prefix.SHA256 {
-		t.Fatal("actual prefix changed", err)
-	}
-	_, parseErr := agyTraceCalls(prefix)
-	historical, err := os.ReadFile(input.Historical.Path)
-	if err != nil || agyTraceSHA(historical) != input.Historical.SHA256 || input.Historical.SHA256 != "76a6337a698e36ff0e3fc2de06c82ea14e9a9ebd1fc517fa2819f755caef3d9e" {
-		t.Fatal("historical held-image prefix changed", err)
-	}
-	if _, err := agyTraceCalls(historical); err == nil || err.Error() != "incomplete Agy trace syscall coverage" {
-		t.Fatal("historical pending Agy input no longer refuses", err)
-	}
-	r := &watchCensusRead{cli: &CLI{}, files: map[string]string{}, images: map[string]bool{}, inodes: map[string]string{},
-		report: WatchUnitCensus{Facts: map[string]string{}}, local: &watchDrainRead{tokenPaths: map[string]bool{}}}
-	generationErr := r.agyCurrentGeneration(input.Capture, nativeMap("process", censusNativeProcess(input.Capture.Process)))
-	text := func(err error) string {
-		if err != nil {
-			return err.Error()
-		}
-		return ""
-	}
-	result, err := json.MarshalIndent(struct {
-		Scope, ParserError, GenerationError string
-	}{"UNIT/KERNELMECHANICS; not native qualification", text(parseErr), text(generationErr)}, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(input.Result, append(result, '\n'), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if generationErr != nil {
-		t.Fatal("actual live generation refused", generationErr)
-	}
-	if parseErr != nil {
-		t.Fatal("strict prefix remains refused:", parseErr)
 	}
 }
 
@@ -261,6 +257,9 @@ func TestAgyCurrentRetainedLivePrefix(t *testing.T) {
 	}
 	if _, err := agyTraceCalls(prefix); err == nil || err.Error() != "incomplete Agy trace syscall coverage" {
 		t.Fatal("live prefix did not reproduce the exact remaining guard", err)
+	}
+	if _, err := agyTraceCallsLive(prefix, input.NativePID); err != nil {
+		t.Fatal("retained prefix codec refused the approved native-thread wait", err)
 	}
 }
 

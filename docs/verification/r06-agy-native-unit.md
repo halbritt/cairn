@@ -1,84 +1,31 @@
-# R06 authenticated Agy-unit preparation
+# R06 Agy-unit driver
 
-## Normal-host audit and owned kernel mechanics
+## Current live-prefix contract
 
-The component continuation from `fa215450` implements a finite connect audit
-and an explicitly nonnative kernel fixture in the two leased Python scripts.
-Production Go readers and shared R04 helpers are unchanged.
+Readback/1 keeps the closed/historical `agyTraceCalls` decoder: any unfinished
+syscall refuses. Only readback/2 `agyCurrentPhase` uses `agyTraceCallsLive`, after
+the ordinary live generation correspondence checks. It permits at most one
+unfinished `read(0` on the native PID or a thread derived from actual
+CLONE_THREAD records. Other descriptors, additional arguments, other syscalls,
+multiple waits, overlapping calls and forked/callback children refuse. Managed
+callbacks still need complete stdin EOF and zero exits; Stop requires Boolean
+fullyIdle=true. No raw bytes are dropped or rewritten. The historical held-image
+prefix is a live-parser codec control, never current/native qualification.
 
-`audit_host_connections` pairs the selected strace records with their original
-byte offsets, derives all descendants from clone/clone3/fork/vfork results and
-checks every recorded PID against that graph. It binds the root's literal
-exec/argv and owned image pin. Missing ancestry, PID reuse, incomplete creation
-or connect calls, partial records, unknown families, truncated addresses and
-unclassifiable connects refuse. Both successful and failed attempts are
-checked. IPv4 `127.0.0.1` and IPv6 `::1` require selected fixture ports; Unix
-sockets require exact selected private owned paths within the fixture root.
-The sole outside-root exception is R04's exact `/var/run/nscd/socket` lookup
-with length110 and `-1 ENOENT`. It grants no DNS or proxy allowance.
+## Normal-host connect audit
 
-The real fixture uses an owned root process, child and grandchild to exchange
-bytes with owned IPv4 and Unix echo listeners. Synthetic controls exercise
-failed external attempts, IPv6, wrong ports/Unix paths, unknown PIDs/families,
-unfinished calls and malformed records. The receipt's `ExternalCoverage` is
-connect(2) attempts in that exact descendant interval. It does not cover
-unconnected UDP, sendto/sendmsg, inherited sockets, tracer/controller traffic,
-future traffic or global egress. It supplies no kernel network enforcement,
-currentness, authenticated drain or native qualification.
-
-`OwnedKernelTrace` is restricted to an owned0500 nonnative image inside its
-private root. It rejects the held Agy hash. The one-shot pause helper verifies
-the captured PID/start/boot/image/argv, signals only its pidfd, observes every
-task in kernel `T` or tracing-stop `t`, and preserves the exact raw prefix.
-The probe uses actual stdin, pipe and futex waits. SIGSTOP produces actual
-interrupted-call `ERESTARTSYS` records; these are not callback EOF or successful
-reads. The unchanged Go syscall parser accepts the resulting closed record
-prefix, and its live-generation consumer accepts the same actual stopped
-generation. Resume, actual subsequent stdin bytes/EOF and orderly joins are
-retained. The historical unpaused Agy prefix still refuses in the same control.
-These are UNIT/KERNELMECHANICS observations, not an Agy pause contract.
-
-An additional full-currentness guard remains: `agyCurrentPhase` refuses the
-actual `--- stopped by SIGSTOP ---` record form as `unknown current Agy trace
-record`. A synthetic control proves that refusal after otherwise complete
-callbacks, while the lower syscall parser accepts the record. Passing the two
-mechanical consumers therefore does not establish current readback2. Production
-decoder and generation guards are unchanged. Actual Agy pausing, full fixture
-orchestration, public native D1-D6 and a common image packet still need an
-explicit contract, independent review, landing and fresh admission. Native
-entry remains prerequisite75 before effects or reservation.
-
-## Remaining live-prefix prerequisite
-
-`--native-unit` returns prerequisite status75 before a native reservation or
-any Agy, provider, API or PostgreSQL startup. The target observation below is
-a component checkpoint. The native entry is incomplete.
-
-The current reader requires a live native generation and exact raw prefixes.
-Its `agyTraceCalls` parser refuses every unfinished syscall. In an actual
-retained held-image prefix, a native thread starts a blocking `read(0)` before
-the managed callbacks and remains blocked after the actual Boolean
-`fullyIdle=true` Stop frame. Completed hook stdin/EOF and zero exits do not
-complete that separate native input syscall. The historical full trace later
-completes it, but that later completion is outside the idle prefix.
-
-The opt-in `TestAgyCurrentRetainedLivePrefix` checks the source and prefix
-hashes, their exact byte relationship, the pending-read locator, the thread's
-kernel clone ancestry and the later fully idle frame. It verifies the exact
-`incomplete Agy trace syscall coverage` refusal. Set
-`CAIRN_R06_AGY_RETAINED_LIVE_PREFIX` to its selected private codec descriptor.
-This reads historical bytes only; it supplies no current process or drain
-authority. The portable pending-input regression also preserves the refusal
-after otherwise complete synthetic callbacks.
-
-An explicit native input-boundary contract is needed before integrating the driver.
-Dropping the pending line, rewriting the raw prefix or appending a fabricated
-resume would violate raw correspondence. Closing Agy before public control
-would violate the live-generation check. This checkpoint changes neither
-guard. The finite audit and nonnative pause helper above are implemented, but
-the complete future native entry and fresh common image packet remain
-unimplemented or unselected. The admission helpers below do not establish
-their readiness.
+The private audit pairs strace records at original byte offsets, follows all
+clone/clone3/fork/vfork descendants, binds the root's literal exec/argv and image,
+and checks successful and failed connect attempts. Partial/truncated/unknown
+records, untracked PIDs, unselected ports, foreign Unix paths and nonloopback
+addresses refuse. Only selected127.0.0.1/::1 ports and exact private owned Unix
+sockets are accepted; the sole outside-root exception is R04's exact failed
+nscd lookup with sockaddr length110 and ENOENT. Coverage is observed connect(2)
+attempts in that finite descendant interval, excluding unconnected UDP,
+inherited sockets, tracer/controller traffic, future intervals and global
+egress. The real nonnative fixture exercises a root, child and grandchild with
+owned loopback and Unix echo listeners. There is no pause helper or pause
+orchestration in this candidate.
 
 ## Native admission authoring checkpoint
 

@@ -568,10 +568,69 @@ var agyTraceLine = regexp.MustCompile(`^(\d+)\s+(.*)$`)
 var agyTraceResume = regexp.MustCompile(`^<\.\.\. (\w+) resumed>(.*)$`)
 var agyTraceName = regexp.MustCompile(`^(\w+)\(`)
 var agyTraceString = regexp.MustCompile(`"(?:\\.|[^"\\])*"`)
+var agyTraceFlags = regexp.MustCompile(`\bflags=([^,})\s]+)`)
 
 // Only the documented strace -f -xx dialect is accepted. Unit codec inputs
 // are synthetic bytes; successful decoding never makes them native evidence.
 func agyTraceCalls(raw []byte) ([]agyTraceCall, error) {
+	calls, pending, err := agyTraceDecode(raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(pending) != 0 {
+		return nil, errors.New("incomplete Agy trace syscall coverage")
+	}
+	return calls, nil
+}
+
+// Only current readback/2 calls this decoder after matching the live process
+// generation. Callback EOF/exit and Boolean fullyIdle remain phase checks.
+func agyTraceCallsLive(raw []byte, nativePID int) ([]agyTraceCall, error) {
+	calls, pending, err := agyTraceDecode(raw)
+	if err != nil {
+		return nil, err
+	}
+	if nativePID <= 1 || len(pending) > 1 {
+		return nil, errors.New("invalid live Agy pending-call coverage")
+	}
+	// Pairing preserves original start offsets. Start order also preserves
+	// ancestry when a clone resumes after its child's first kernel record.
+	slices.SortStableFunc(calls, func(a, b agyTraceCall) int { return a.start - b.start })
+	threads, births, exited := map[int]bool{nativePID: true}, map[int]int{nativePID: -1}, map[int]bool{}
+	for _, call := range calls {
+		if call.name == "exit" {
+			exited[call.pid] = true
+		}
+		if !slices.Contains([]string{"clone", "clone3", "fork", "vfork"}, call.name) {
+			continue
+		}
+		index := strings.LastIndex(call.body, " = ")
+		if index < 0 {
+			return nil, errors.New("unknown live Agy descendant result")
+		}
+		result := call.body[index+3:]
+		if strings.HasPrefix(result, "-1 ") {
+			continue
+		}
+		child, err := strconv.Atoi(result)
+		if _, exists := births[child]; err != nil || child <= 1 || exists {
+			return nil, errors.New("invalid or reused live Agy descendant")
+		}
+		births[child] = call.start
+		flags := agyTraceFlags.FindStringSubmatch(call.body)
+		if threads[call.pid] && (call.name == "clone" || call.name == "clone3") && len(flags) == 2 && slices.Contains(strings.Split(flags[1], "|"), "CLONE_THREAD") {
+			threads[child] = true
+		}
+	}
+	for _, call := range pending {
+		if call.name != "read" || strings.TrimSpace(call.body) != "read(0" || !threads[call.pid] || exited[call.pid] || call.start <= births[call.pid] {
+			return nil, errors.New("unsupported live Agy unfinished syscall")
+		}
+	}
+	return calls, nil
+}
+
+func agyTraceDecode(raw []byte) ([]agyTraceCall, map[int]agyTraceCall, error) {
 	pending := map[int]agyTraceCall{}
 	var out []agyTraceCall
 	position := 0
@@ -582,25 +641,27 @@ func agyTraceCalls(raw []byte) ([]agyTraceCall, error) {
 			continue
 		}
 		if line[len(line)-1] != '\n' {
-			return nil, errors.New("partial Agy trace line")
+			return nil, nil, errors.New("partial Agy trace line")
 		}
 		parts := agyTraceLine.FindStringSubmatch(strings.TrimSuffix(string(line), "\n"))
 		if parts == nil {
-			return nil, errors.New("unsupported Agy trace prefix")
+			return nil, nil, errors.New("unsupported Agy trace prefix")
 		}
 		pid, err := strconv.Atoi(parts[1])
 		if err != nil || pid <= 1 {
-			return nil, errors.New("invalid Agy trace PID")
+			return nil, nil, errors.New("invalid Agy trace PID")
 		}
 		body := parts[2]
 		if resumed := agyTraceResume.FindStringSubmatch(body); resumed != nil {
 			old, ok := pending[pid]
 			if !ok || old.name != resumed[1] {
-				return nil, errors.New("Agy resumed syscall lacks its original prefix")
+				return nil, nil, errors.New("Agy resumed syscall lacks its original prefix")
 			}
 			delete(pending, pid)
 			body = old.body + resumed[2]
 			start = old.start
+		} else if _, overlaps := pending[pid]; overlaps && agyTraceName.MatchString(body) {
+			return nil, nil, errors.New("overlapping unfinished Agy syscall")
 		}
 		name := agyTraceName.FindStringSubmatch(body)
 		if name == nil {
@@ -612,18 +673,15 @@ func agyTraceCalls(raw []byte) ([]agyTraceCall, error) {
 		call := agyTraceCall{pid, start, name[1], body}
 		if strings.HasSuffix(body, "<unfinished ...>") {
 			if _, ok := pending[pid]; ok {
-				return nil, errors.New("overlapping unfinished Agy syscall")
+				return nil, nil, errors.New("overlapping unfinished Agy syscall")
 			}
-			call.body = strings.TrimSuffix(body, "<unfinished ...>")
+			call.body = strings.TrimSuffix(body, " <unfinished ...>")
 			pending[pid] = call
 			continue
 		}
 		out = append(out, call)
 	}
-	if len(pending) != 0 {
-		return nil, errors.New("incomplete Agy trace syscall coverage")
-	}
-	return out, nil
+	return out, pending, nil
 }
 
 func agyQuoted(raw string) (string, error) {

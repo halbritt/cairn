@@ -426,7 +426,7 @@ func agyCurrentPhase(raw []byte, phase WatchCensusAgyCurrentPhase, capture agyGe
 	if phase.Start < 0 || phase.End != len(raw) || phase.End <= phase.Start || raw[phase.End-1] != '\n' || phase.Start > 0 && raw[phase.Start-1] != '\n' || len(phase.Callbacks) != 2 || len(commands) != 2 {
 		return errors.New("incomplete Agy current interval or callback references")
 	}
-	calls, err := agyTraceCalls(raw)
+	calls, err := agyTraceCallsLive(raw, capture.Process.PID)
 	if err != nil {
 		return err
 	}

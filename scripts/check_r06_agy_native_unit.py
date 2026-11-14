@@ -178,7 +178,7 @@ class OwnedKernelTrace:
         except BaseException:
             self.stderr.close()
             raise
-        self.pidfd, self.generation, self.closed, self.pause_attempted = None, None, False, False
+        self.pidfd, self.generation, self.closed = None, None, False
         try:
             def identify():
                 for path in Path('/proc').iterdir():
@@ -200,11 +200,11 @@ class OwnedKernelTrace:
             self.close()
             raise
 
-    def send(self, number):
-        require(self.pidfd is not None and self.pid > 1, 'owned pidfd required')
+
+    def capture_generation(self):
         current = collector.capture_owned_generation(self.pid)
-        require(current == self.generation, 'owned fixture generation changed before signal')
-        signal.pidfd_send_signal(self.pidfd, number)
+        require(current == self.generation, 'owned fixture generation changed')
+        return current
 
     def snapshot(self, name):
         # Retain exactly what strace has emitted, including a partial last
@@ -220,19 +220,6 @@ class OwnedKernelTrace:
         return {int(path.name):(path/'stat').read_text().rsplit(')', 1)[1].split()[0]
                 for path in Path(f'/proc/{self.pid}/task').iterdir()}
 
-    def pause_input(self):
-        """One owned nonnative pause; raw acceptance remains a separate check."""
-        require(not self.pause_attempted and not self.closed, 'owned pause is one-shot')
-        self.pause_attempted = True
-        self.send(signal.SIGSTOP)
-        def stopped():
-            states = self.task_states()
-            return states if states and all(s in ('T','t') for s in states.values()) else None
-        states = r04.wait_for(stopped, 'all owned fixture tasks stopped', timeout=5)
-        capture = collector.capture_owned_generation(self.pid)
-        require(capture == self.generation, 'fixture generation changed while stopped')
-        return dict(scope='UNIT/KERNELMECHANICS',states=states,capture=capture,
-                    trace=self.snapshot('stopped.trace'),NativePASS=False)
 
     def close(self):
         if self.closed:
@@ -241,11 +228,6 @@ class OwnedKernelTrace:
         forced, gone = [], False
         try:
             if self.process.poll() is None:
-                if self.pidfd is not None:
-                    try:
-                        signal.pidfd_send_signal(self.pidfd,signal.SIGCONT)
-                    except ProcessLookupError:
-                        gone = True
                 self.process.stdin.close()
                 try:
                     self.process.wait(timeout=10)
