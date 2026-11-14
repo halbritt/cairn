@@ -344,8 +344,10 @@ def check(evidence, cases):
                     f.state['inbox_journals'].append(new)
                     write(f.state_path, f.state)
                 if case == 'foreign':
+                    # Preserve this record's native identity so the consumer
+                    # reaches the foreign-attempt API association check.
                     other = f.call('worker', 'agent-register', dict(request_id=uid(), binding='fixture-other',
-                        native_session_id='fixture-other', metadata=f.agent['metadata']))
+                        native_session_id=f.native, metadata=f.agent['metadata']))
                     f.state['agent'] = other
                     write(f.state_path, f.state)
                 if case == 'stale':
