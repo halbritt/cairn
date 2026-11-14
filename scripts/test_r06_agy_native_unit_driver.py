@@ -1,4 +1,4 @@
-"""Preparation boundaries; no actual Agy/native/API/provider invocation."""
+"""Driver boundaries and owned nonnative audit; no actual Agy or provider."""
 import contextlib
 import copy
 from datetime import datetime, timedelta, timezone
@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 import uuid
 import unittest
@@ -76,6 +77,7 @@ class HostConnectAuditTests(unittest.TestCase):
             self.raw(good)[:-1],self.raw('<... connect resumed>) = 0'),
             self.raw(good)+b'unattributed connect(0, NULL, 0) = 0\n',
             self.raw(good,extra='200 clone(child_stack=NULL, flags=SIGCHLD) = 201\n201 ???\n')]
+        cases.append(self.raw(good,extra='200 read(0 <unfinished ...>\n'))
         for raw in cases:
             with self.subTest(raw=raw[-120:]),self.assertRaises(driver.Refused):self.audit(raw)
 
@@ -112,7 +114,7 @@ class HostConnectAuditTests(unittest.TestCase):
         self.image.chmod(0o500)
         with patch.object(driver,'AGY_SHA256',self.capture['Client']['SHA256']), \
                 patch.object(driver.subprocess,'Popen',side_effect=AssertionError('native process')):
-            with self.assertRaisesRegex(driver.Refused,'nonnative'):driver.OwnedKernelTrace([str(self.image)],self.root)
+            with self.assertRaisesRegex(driver.Refused,'native image requires'):driver.OwnedKernelTrace([str(self.image)],self.root)
 
     def test_trace_launch_failure_closes_its_owned_stderr(self):
         with patch.object(driver.subprocess,'Popen',side_effect=OSError('fixture launch failure')):
@@ -184,6 +186,82 @@ class HostConnectAuditTests(unittest.TestCase):
 
 
 
+class NativeDriverBoundaries(unittest.TestCase):
+    """CLI/environment/codec controls; never execute Agy or a provider."""
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-native-boundary-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup);self.root=Path(temporary.name)
+
+    def test_native_cli_dispatches_through_reservation_and_preflight(self):
+        approved={'UNIT':'no native admission or execution'}
+        def reserved(selected,preflight,execute):
+            self.assertIs(selected,approved);self.assertIs(preflight,driver.native_preflight)
+            self.assertIs(execute,driver.execute_native)
+            return dict(state='passed',NativePASS=False,scope='UNIT dispatch only')
+        with patch.object(driver,'checked_native_admission',return_value=approved) as checked, \
+                patch.object(driver,'run_native_attempt',side_effect=reserved), \
+                patch.object(driver.r04,'GeminiFixture',side_effect=AssertionError('provider')), \
+                patch.object(driver,'open_native_session',side_effect=AssertionError('native')):
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                code=driver.main(['--native-unit','--admission',str(self.root/'input.json'),
+                    '--admission-sha256','a'*64,'--attempt-id',str(uuid.uuid4())])
+        self.assertEqual(code,0);self.assertFalse(json.loads(out.getvalue())['NativePASS'])
+        self.assertEqual(checked.call_count,1);self.assertEqual(list(self.root.iterdir()),[])
+
+    def test_expired_or_missing_selection_cannot_reach_reservation(self):
+        with patch.object(driver,'checked_native_admission',side_effect=driver.Refused('expired selector')), \
+                patch.object(driver,'run_native_attempt',side_effect=AssertionError('reservation before admission')):
+            with contextlib.redirect_stderr(io.StringIO()):self.assertEqual(driver.main(['--native-unit']),75)
+        self.assertEqual(list(self.root.iterdir()),[])
+
+    def test_long_unix_path_refuses_before_any_application_or_reservation(self):
+        catalog=self.root/('x'*80);catalog.mkdir(mode=0o700)
+        evidence=self.root/'evidence';evidence.mkdir(mode=0o700)
+        approved=dict(admission=dict(catalog_root=str(catalog),evidence=str(evidence)))
+        with patch.object(driver,'pg_bindir',side_effect=AssertionError('PG lookup before path refusal')), \
+                patch.object(driver,'NativeReservation',side_effect=AssertionError('reservation')):
+            with self.assertRaisesRegex(driver.PrerequisiteUnavailable,'too long'):driver.native_preflight(approved)
+        self.assertEqual(list(catalog.iterdir()),[]);self.assertEqual(list(evidence.iterdir()),[])
+
+    def test_child_home_key_and_proxy_scope_preserve_parent(self):
+        home=self.root/'native-home';home.mkdir(mode=0o700)
+        account=self.root/'settings';account.mkdir(mode=0o700)
+        fixture=SimpleNamespace(home=home,f=SimpleNamespace(account=account))
+        injected={'GEMINI_API_KEY':'UNIT owner key','HTTP_PROXY':'http://unit.invalid','CAIRN_WAKE_CONTEXT':'UNIT context',
+            'CAIRN_DATABASE_URL':'UNIT DSN','OPENROUTER_API_KEY':'UNIT forbidden route'}
+        with patch.dict(os.environ,injected):
+            before=dict(os.environ);env,settings=driver.native_child_environment(fixture,'http://127.0.0.1:4321')
+            self.assertEqual(dict(os.environ),before)
+        self.assertEqual(env['HOME'],str(home));self.assertEqual(env['GEMINI_API_KEY'],'r04-synthetic-unused')
+        self.assertEqual(env['PATH'],os.environ['PATH']);self.assertEqual(env.get('CODEX_HOME'),os.environ.get('CODEX_HOME'))
+        self.assertTrue(all(key not in env for key in injected if key!='GEMINI_API_KEY'))
+        self.assertEqual(json.loads(settings.read_bytes()),dict(modelProvider='gemini'))
+
+    def test_callback_io_requires_exact_byte_count_and_actual_eof(self):
+        self.assertEqual(driver.kernel_io(dict(body='read(0, "\\x61\\x62", 4096) = 2')),(0,b'ab'))
+        self.assertEqual(driver.kernel_io(dict(body='read(0, "", 4096) = 0')),(0,b''))
+        for raw in ['read(0, "ab", 4096) = 3','write(9, "ab", 2) = 1',
+                    'read(0, 0x1234, 4096) = ? ERESTARTSYS (To be restarted)',
+                    'write(9, "ab"..., 32) = 32']:
+            with self.subTest(raw=raw),self.assertRaises(driver.Refused):driver.kernel_io(dict(body=raw))
+
+    def test_collection_does_not_make_pending_connect_auditable(self):
+        raw=b'200 connect(3, {sa_family=AF_INET <unfinished ...>\n'
+        calls,pending=driver.kernel_calls(raw,collecting=True)
+        self.assertEqual(calls,[]);self.assertEqual(pending[0]['name'],'connect')
+        with self.assertRaisesRegex(driver.Refused,'unfinished connect'):driver.kernel_calls(raw)
+
+    def test_unrelated_truncated_asset_is_not_a_callback_frame(self):
+        self.assertIsNone(driver.kernel_hook_frame(dict(pid=200,body='write(24, "<svg"..., 9000) = 9000')))
+        truncated='write(29, "{\\\"conversationId\\\":\\\"UNIT\\\""..., 9000) = 9000'
+        with self.assertRaisesRegex(AssertionError,'Truncated native hook'):driver.kernel_hook_frame(dict(pid=200,body=truncated))
+
+    def test_invalid_packet_shape_returns75_without_reservation(self):
+        with patch.object(driver,'checked_native_admission',side_effect=KeyError('missing packet field')), \
+                patch.object(driver,'run_native_attempt',side_effect=AssertionError('reservation')):
+            with contextlib.redirect_stderr(io.StringIO()):self.assertEqual(driver.main(['--native-unit']),75)
+
+
 class NativeAdmissionTests(unittest.TestCase):
     """Owned nonnative files and injected packet/source boundaries; no native run."""
     def setUp(self):
@@ -207,7 +285,7 @@ class NativeAdmissionTests(unittest.TestCase):
         now = datetime.now(timezone.utc).replace(microsecond=0)
         fmt = lambda value: value.strftime('%Y-%m-%dT%H:%M:%SZ')
         tools = {name:driver.tool_pin(Path(sys.executable).resolve() if name == 'python3'
-                 else Path(shutil.which(name)).resolve()) for name in ('python3','strace','unshare','ip')}
+                 else Path(shutil.which(name)).resolve()) for name in ('python3','strace')}
         self.body = dict(schema=driver.NATIVE_SCHEMA, source_head='1'*40, source_tree='2'*40,
             images={role:dict(Path=str(path),SHA256=self.pins['images'][role]['sha256'])
                     for role,path in self.images.items()},
@@ -409,8 +487,7 @@ class AgyPreparationTests(unittest.TestCase):
                 patch.object(driver, 'NativeReservation', side_effect=AssertionError('native reservation')):
             with contextlib.redirect_stderr(io.StringIO()) as diagnostic:
                 self.assertEqual(driver.main(['--native-unit']), 75)
-        self.assertIn('target resource closure', diagnostic.getvalue())
-        self.assertIn('read(0)', diagnostic.getvalue())
+        self.assertIn('INPUT_NOT_READY', diagnostic.getvalue())
         self.assertEqual(list(self.root.iterdir()), [])
 
     def test_entry_requires_explicit_tool_pins(self):
@@ -535,7 +612,7 @@ class AuthenticatedPreparationBoundaries(unittest.TestCase):
         ledger.write_bytes(b'consumed preparation; native_runs=0\n')
         saved = ledger.read_bytes()
         with contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(driver.main(['--native-unit', '--evidence', str(self.root)]), 2)
+                self.assertEqual(driver.main(['--native-unit', '--evidence', str(self.root)]), 75)
         self.assertEqual(ledger.read_bytes(), saved)
 
     def manifest(self):
@@ -546,7 +623,7 @@ class AuthenticatedPreparationBoundaries(unittest.TestCase):
     def test_images_must_name_exact1508_tree(self):
         pins = self.manifest()
         pins['source_tree'] = '71302f4fe158e7d59fa3d5b077df2447af03ad54'
-        with self.assertRaisesRegex(driver.Refused, 'exact1508'):
+        with self.assertRaisesRegex(driver.Refused, 'exact selected image source tree'):
             driver.validate_image_manifest(pins)
 
     def test_five_roles_cannot_alias_helper_observer(self):
@@ -567,7 +644,7 @@ class AuthenticatedPreparationBoundaries(unittest.TestCase):
             driver.checked_packet(*self.packet_paths('images-host.pending.json'))
 
     def test_unsealed_index_is_not_consumable(self):
-        with self.assertRaisesRegex(driver.Refused, 'sealed index'):
+        with self.assertRaisesRegex(driver.Refused, 'selected sealed image index'):
             driver.checked_packet(*self.packet_paths('images-host.json'))
 
     def test_privacy_snapshot_never_hashes_credentials_aliases_or_api_home(self):
@@ -707,13 +784,57 @@ class SealedRecipeCompatibilityTests(unittest.TestCase):
             self.packet/'index.json', 'f169590e02f41ba1b9e6578713a7f030a24d0a1f21432bf2a2c118bc200bbeaa',
             self.packet/'build-complete.json', 'ddfcf61f4e63f44378e5009f16b510fa2436914d270dc807dcd865201a55745f')
 
+    def test_historical_packet_cannot_supply_current_native_behavior(self):
+        with self.assertRaisesRegex(driver.Refused,'native images lack current Go/embedded source behavior'):
+            driver.checked_packet(self.packet/'images-host.json',
+                'e132531f982044e89546e67242f0ae28d7b0d3db05e8fee4f21c8f428feca068',
+                self.packet/'index.json','f169590e02f41ba1b9e6578713a7f030a24d0a1f21432bf2a2c118bc200bbeaa',
+                self.packet/'build-complete.json','ddfcf61f4e63f44378e5009f16b510fa2436914d270dc807dcd865201a55745f',native=True)
+
+
+class RetainedCollectorCodecTests(unittest.TestCase):
+    """Historical bytes only: no /proc, process, source-path replay or currentness."""
+    def test_actual_callback_eof_frames_and_pending_native_thread(self):
+        source=Path(os.environ['CAIRN_R06_AGY_RETAINED_PREFIX'])
+        driver.checked_pin(source,'76a6337a698e36ff0e3fc2de06c82ea14e9a9ebd1fc517fa2819f755caef3d9e')
+        observations=Path(os.environ['CAIRN_R06_AGY_RETAINED_OBSERVATIONS'])
+        driver.checked_pin(observations,'fc6a499fc2abd608543cf9a0cc7abe6cdccc76c24ed7e6c95d8a460cd417ecd1')
+        original=json.loads(observations.read_bytes())[0]
+        calls,pending=driver.kernel_calls(source.read_bytes())
+        self.assertEqual(len(pending),1);self.assertEqual(pending[0]['pid'],3049)
+        self.assertEqual(pending[0]['body'].strip(),'read(0')
+        threads=driver.kernel_threads(calls,original['native_pid'])
+        self.assertIn(pending[0]['pid'],threads)
+        frames=[]
+        for row in calls:
+            if row['name']=='write' and row['pid'] in threads:
+                selected=driver.kernel_hook_frame(row)
+                if selected is not None:frames.append(selected[0])
+        self.assertEqual(len(frames),2)
+        for index,reached in enumerate(original['reached']):
+            pid=int(reached['pid'])
+            executions=[row for row in calls if row['pid']==pid and row['name']=='execve']
+            self.assertEqual(len(executions),2)
+            self.assertEqual(driver.kernel_exec(executions[0]),(reached['launcher']['path'],reached['argv']))
+            self.assertEqual(driver.kernel_exec(executions[1]),(reached['program']['path'],reached['exec']['argv']))
+            callback_threads=driver.kernel_threads([row for row in calls if row['start']>=executions[1]['start']],pid)
+            reads=[driver.kernel_io(row)[1] for row in calls if row['pid'] in callback_threads
+                and row['name']=='read' and row['start']>executions[1]['start'] and row['body'].startswith('read(0,')]
+            self.assertTrue(reads and reads[-1]==b'');self.assertTrue(all(reads[:-1]))
+            self.assertEqual(b''.join(reads),frames[index]);self.assertEqual(json.loads(frames[index]),reached['payload'])
+            exits=[row for row in calls if row['pid']==pid and row['name']=='exit']
+            self.assertEqual([row['body'] for row in exits],['+++ exited with 0 +++'])
+        self.assertIs(json.loads(frames[1])['fullyIdle'],True)
+
 
 def load_tests(loader, standard, pattern):
     # Normal discovery keeps the standing portable controls. This explicit
     # fixture input adds real sealed-recipe controls, with no skipped tests.
-    cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests]
+    cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests,NativeDriverBoundaries]
     if os.environ.get('CAIRN_R06_AGY_CONTROLLED_PACKET'):
         cases.append(SealedRecipeCompatibilityTests)
+    if os.environ.get('CAIRN_R06_AGY_RETAINED_PREFIX'):
+        cases.append(RetainedCollectorCodecTests)
     return unittest.TestSuite(loader.loadTestsFromTestCase(case) for case in cases)
 
 

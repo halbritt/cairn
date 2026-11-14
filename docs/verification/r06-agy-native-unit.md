@@ -1,250 +1,175 @@
-# R06 Agy-unit driver
+# R06 owned Agy Go /3 unit driver
 
-## Current live-prefix contract
+`scripts/check_r06_agy_native_unit.py` implements a future, explicitly admitted
+disposable Agy A→B→restored-A case. Authoring and review use no actual Agy,
+model or provider calls. A runnable entry is separate from permission to run
+it, commonRC qualification, and a native PASS. Three-role validation images
+used for finite authoring checks are not a five-role native image packet.
 
-Readback/1 keeps the closed/historical `agyTraceCalls` decoder: any unfinished
-syscall refuses. Only readback/2 `agyCurrentPhase` uses `agyTraceCallsLive`, after
-the ordinary live generation correspondence checks. It permits at most one
-unfinished `read(0` on the native PID or a thread derived from actual
-CLONE_THREAD records. Other descriptors, additional arguments, other syscalls,
-multiple waits, overlapping calls and forked/callback children refuse. Managed
-callbacks still need complete stdin EOF and zero exits; Stop requires Boolean
-fullyIdle=true. No raw bytes are dropped or rewritten. The historical held-image
-prefix is a live-parser codec control, never current/native qualification.
+The driver composes the maintained Go /3 producer, authenticated public unit
+control, R04 stream-json protocol, local synthetic `GeminiFixture`, current
+generation collector and descendant `connect(2)` audit. It uses no synthetic
+status fixture, Claude-specific admission, pause helper, fabricated callback
+or session state, or rewritten trace bytes.
 
-## Normal-host connect audit
+## Native admission and one-attempt boundary
 
-The private audit pairs strace records at original byte offsets, follows all
-clone/clone3/fork/vfork descendants, binds the root's literal exec/argv and image,
-and checks successful and failed connect attempts. Partial/truncated/unknown
-records, untracked PIDs, unselected ports, foreign Unix paths and nonloopback
-addresses refuse. Only selected127.0.0.1/::1 ports and exact private owned Unix
-sockets are accepted; the sole outside-root exception is R04's exact failed
-nscd lookup with sockaddr length110 and ENOENT. Coverage is observed connect(2)
-attempts in that finite descendant interval, excluding unconnected UDP,
-inherited sockets, tracer/controller traffic, future intervals and global
-egress. The real nonnative fixture exercises a root, child and grandchild with
-owned loopback and Unix echo listeners. There is no pause helper or pause
-orchestration in this candidate.
+The only native entry is:
 
-## Native admission authoring checkpoint
+```sh
+mise run host:exec -- --timeout 10m -- python3 -B scripts/check_r06_agy_native_unit.py \
+  --native-unit --admission /absolute/private/admission.json \
+  --admission-sha256 SELECTED_SHA256 --attempt-id SELECTED_UUID
+```
 
-The selector and exclusive ledger helpers start from exact8631. The new
-private target observation resolves the forward producer association described
-below. The helpers are not yet wired to a complete executable native entry;
-`--native-unit` remains closed during this checkpoint. No native invocation
-is authorized by these data helpers or the component tests.
+The selector uses schema `cairn.r06-agy-native-admission/1`. Unknown, duplicate
+or missing fields refuse. Its exact fields are `schema`, `source_head`,
+`source_tree`, `manifest`, `index`, `build_complete`, `images`, `client`,
+`provider`, `attempt_id`, `attempt_limit`, `issued_at`, `expires_at`, `ledger`,
+`evidence`, `catalog_root` and `tools`. Pins contain exactly `Path` and `SHA256`.
+The attempt UUID is canonical, its limit is one, and the UTC validity interval
+is at most15 minutes. The source must be the actual clean driver checkout.
 
-`cairn.r06-agy-native-admission/1` selects the driver head/tree separately from
-the1508 image source; the controlled manifest, index and completion; all five
-distinct roles; the exact held Agy image; four normal-host tool images; one
-canonical attempt UUID; a private exclusive ledger; and distinct new private
-evidence/catalog roots. Unknown/duplicate fields, aliases, malformed tuples,
-incorrect source/packet/image/client/provider/tool pins, reused paths and time
-windows outside issued-at through strict expiry refuse before application
-startup. UTC windows last at most15minutes. The exact provider is an ephemeral
-`127.0.0.1` GeminiFixture with the synthetic key and exact loopback NO_PROXY.
-The selector is ordinary data and does not authenticate its writer or grant
-project authority.
+The selected sealed packet must contain five distinct original API, control,
+stager, helper and observer images; full source archive; successful real build,
+buildid and buildinfo receipts; complete custody index; and unchanged native,
+compiler, Go-runtime and mapped-runtime provenance. Go, embedded assets and
+test compilation inputs must match the checkout. Driver and image commits are
+separately recorded. Partial manifests, three-role validation packets, stale
+inputs and aliased roles refuse.
 
-The reservation is an immutable O_EXCL marker bound to the admission bytes
-and tuple. Complete fsynced terminal bytes are published by exclusive link,
-followed by directory fsync; an existing terminal is preserved. Expiry and
-admission bytes are reread immediately before reservation. A known pre-start
-prerequisite refusal reserves nothing. Once the application-start boundary
-is entered, any error preserves consumption and an atomic failed result;
-there is no retry or fallback. These helper controls do not alter any prior
-preparation/native ledger or global counter. Owned nonnative tests exercise
-simultaneous reservations, preservation, terminal publication and source-copy
-custody without executing Agy, API, PG, a provider or hooks.
+The client is Root1383's frozen Agy1.5.7 image, SHA256
+`5df525a2d6908989c57b897723caea66e00d7c4d2e24411f91ad306989574642`, under
+`/home/halbritt/.cache/cairn301-release-1383/agy-receipt-filetype-20261112/`.
+The driver copies its bytes to `catalog_root/native-agy`, an owned0500 regular
+file with a distinct inode. It never uses a moving installed client.
 
-Root1481 decision40f30683/v1 explicitly permits only the future fixture Agy
-child and native-hook descendants to receive a private in-catalog HOME. The
-supervisor HOME/CODEX_HOME/tools/auth stay unchanged; real account hooks and
-subscription credentials must not be accessed, copied or relocated. The
-namespace experiment was dropped after its UID mapping made host root-owned
-ancestors appear as65534 to the unchanged ownership guards. Decisions258a6663
-and48783d49 select normal-host execution through maintained mise/host:exec
-with a strict actual-child/descendant connect audit. The audit must refuse
-external addresses including failed attempts, unknown or truncated addresses,
-unattributed records and foreign Unix sockets. Its receipt must state the
-observed syscall/interval scope and limits. The earlier loopback probe is a
-separate prerequisite observation, not integrated network qualification.
+The provider tuple is exactly local `GeminiFixture`, host `127.0.0.1`, port0,
+synthetic key `r04-synthetic-unused`, and `NO_PROXY=127.0.0.1,localhost`.
+Normal-host Python and strace are explicitly pinned. Evidence and catalog
+directories must be fresh, empty, private0700 and disjoint from the admission
+and ledger. The catalog path must fit the owned Unix socket limit. PID-fd
+support, nonroot execution, executable PostgreSQL tools and selected
+source/tools/images are checked before reservation or application startup.
+Known missing prerequisites return75 without consuming an attempt.
 
-Before public A-to-B publication, the current selected profile remains A even
-after the native client executes B. Arbitrationefe3447b permits a private
-typed observation of B through the existing loaded/reverified TargetReceipt.
-The reader checks B's exact receipt, binding, profile path/hash, memory and
-emitted launcher while retaining A's node, selected receipt and owner. Actual
-installed B is still read and compared; it never uses the historical A bypass.
-When a target view is present, the A interval must belong to the actual
-selected A receipt/profile. Current B with a reverse target A retains the
-ordinary strict current-B checks. No JSON/Facts/status field grants this view
-or authenticates drain. Both sides' source and runtime pins enter the existing
-D1-D6 final reread.
+An exclusive immutable consumption marker binds the entire admitted tuple.
+After that boundary, any failure consumes the attempt. A complete fsynced
+terminal result is published exclusively without replacing an earlier result
+or consumption marker. There is no automatic retry or fallback route. An
+admission selects already-authorized work; it is not authentication or an
+expansion of the owner's authorization.
 
-`--prepare-target-observation` composes the maintained genuine Go /3 producer
-for explicit focused Go tests, with different A/B hashes and actual empty
-session/callback inventories. It starts no native client, hook, provider, API
-or PG. The old1508 producer inputs are data; the separately compiled new Go
-reader supplies the tested behavior. Synthetic trace/process codec tests are
-unit-only. Native0 continues through authoring and peer review; only1481 may
-issue a later conditional attempt after independent review, source/raw
-spot-check, landing and fresh readiness.
+## Genuine producer and authenticated transport
 
-This preparation cut starts at exact accepted
-`15080de3b1205b161faa66f60b8faf93c30f18da`, tree
-`11ec0c51352505930e64236a99b929767e71cc2c`. It composes the maintained
-`check_r06_unbound_roundtrip.py` fixture for genuine producer inputs, disposable
-API/PostgreSQL, and public Go /3 TargetReceipt control. A separate entry composes
-the R04 tracer and [current-generation collector](r06-agy-current-observation.md)
-with a fixed **non-native Python stub**. Native entry remains **CLOSED**.
+`NativeUnitFixture` prepares genuine null/unbound, disabled Go /3 receipts,
+profiles, source/runtime members, hook generations and exact settings bytes.
+One private account layer is published by the actual stager; project hooks
+remain absent. The native application alone receives a private HOME and
+session settings directory. The parent keeps its normal HOME, PATH,
+CODEX_HOME, tools, services and authentication. The child receives the local
+synthetic key and provider URL; ambient provider keys, proxies, database DSNs
+and Cairn wake context are excluded.
 
-The previous e8cd/247e STOP packet remains immutable and held. Its missing public
-target-receipt engineering prerequisite was resolved in accepted1508. The
-private/public component acceptance does not establish an actual Agy native
-session, generation, hook, current observation, refresh, or native drain.
+`DisposableHost` and `OwnedCluster` own a real local API and fresh PostgreSQL.
+The traced launcher uses a private Unix transport to the pinned API CLI outside
+the traced descendant tree, so credential contents do not enter raw strace.
+The transport forwards unchanged stdout, stderr and exit status for selected
+operations. The actual API authenticates the issued worker profile and owns
+all status, session and permission responses. Selector mismatches and
+transport failures refuse; the transport invents no API envelope or response.
 
-## Genuine authenticated preparation
+After an actual A turn completes, a fresh disabled B generation is staged while
+the same native generation remains live. The actual stager publishes B; the
+same client produces the B turn. PID/start/boot/image/literal argv,
+conversation, workspace and native history must remain equal. The driver
+collects actual emitted owner state and callback facts. It creates no
+native-looking state to satisfy the census.
 
-The controlled continuation starts from unaccepted author29 in a new child;
-the five Go images still come from accepted1508. The original29 and its two
-prior physical standalone stub runs remain held. This continuation permits
-at most one fresh final standalone stub and one genuine setup program.
+Public A→B and B→retained Go /3 A use literal TargetReceipt, actual session
+paths, maintained `plan`/`invoke` and unchanged authenticated reads. Reverse
+examines current B while B remains installed. Both publications preserve
+protected filesystem and API state and the same watch-lock inode. The stager
+restores exact A settings; a third actual turn must use the same native
+generation/history. The local provider's final request must contain all three
+actual prompts. Shutdown must be orderly, zero and joined.
 
-Use the selected controlled packet
-`/home/halbritt/.cache/cairn301-release-1465/r06-main-images-15080de3-controlled-20261114/`.
-Its pinned lineage and final lineage sidecar bind the copied0600 data to the
-unchanged original packet and external0500 image identities. The manifest is
-byte-identical; current candidate/completion/index references point to the new
-packet. Historical build argv, cwd and timestamps remain unchanged.
+## Current readback and raw trace contract
 
-Recipe validation recognizes the actual `go test -race -buildvcs=false -c`
-compile options, allowing their order to vary while requiring each exactly
-once, one exact output, the exact role package and an approved pinned Go image.
-Execution-only tests, missing safety flags, extra flags, wrong outputs/packages,
-role aliases and0664 data remain refused. Set
-`CAIRN_R06_AGY_CONTROLLED_PACKET` to that root when running the focused module
-to add regressions using the actual sealed recipes and full packet preflight.
-Normal discovery retains the standing controls without a host artifact
-dependency or skipped tests.
+Private `agyTraceCallsLive` is called only by `agyCurrentPhase` for
+`cairn.watch-agy-readback/2`. It permits at most one pending syscall, exactly
+named `read`, with `TrimSpace(body) == "read(0"`, on the captured native PID
+or an actual kernel-derived CLONE_THREAD descendant. Forked helpers and
+callbacks cannot supply that wait. Other descriptors, extra arguments,
+overlapping calls, multiple waits, unknown framing and incomplete
+creation/exec/connect coverage refuse. `readback/1` and all closed-trace
+decoders continue to reject every pending syscall.
 
-`--prepare-authenticated` requires a complete, sealed, five-role BUILD-ONLY1508
-image packet with exact manifest/index/build-complete pins. It uses the existing
-image manifest format and requires the1508 tree and distinct api, control,
-stager, helper and observer paths/hashes. The author separately reconciles the
-packet's complete source archive/tree, role, tool and runtime provenance before
-use. No new image build, e8cd reuse, helper/observer alias, partial manifest,
-silent rebase or repin is allowed. Missing inputs return `INPUT_NOT_READY` before
-API/PG startup or ledger consumption.
+The allowance does not substitute for callback facts. Both actual emitted
+roles need exact outer and inner literal argv, complete stdin bytes, actual
+EOF, zero exit and matching raw native write frames. Stop must carry Boolean
+`fullyIdle=true`. The current owner/process tuple must remain live. Current A,
+private verified target B and D1–D6 final rereads retain their existing checks.
+The historical held-image prefix is decoder evidence, not a new native run.
 
-The driver calls the existing `produced_fixture`, `plan`, `invoke`, `forward`
-and privacy-preserving snapshot functions. `DisposableHost` and `OwnedCluster`
-own the actual local API and fresh PostgreSQL. The transport executes the
-maintained roundtrip read forwarder against the actual pinned API; it does not
-implement status responses. `R04 NativeFixture.run_fixture` and its synthetic
-API status are never called.
+The collector waits for callbacks to finish, then seals a complete raw prefix
+verbatim. It never trims an unfinished record or appends a synthetic resume,
+wait or exit. BEFORE/AFTER byte offsets and exec/join/frame references locate
+those exact bytes. AFTER ends before the later restored-A turn; the full final
+trace retains that turn and must contain the sealed AFTER prefix unchanged.
+Extra A callbacks within the B phase refuse.
 
-The positive disposable unit preserves genuine null memory/coordination
-profiles and prepares both Go /3 A and B receipts, bindings, source/runtime
-members, hook selections, exact profile hashes and current/target resource
-closures. Its plans use literal `Census.TargetReceipt`. It proves public switch
-A→B and reverse B→retained Go /3 A with the same watch-lock identity, exact
-restored A pins, protected filesystem state and unchanged authenticated API
-state. Before publication, missing TargetReceipt, an unlinked profile, and a
-credential-inode alias each refuse without changing protected state.
+## Finite descendant connect audit
 
-A second disposable unit mutates the target memory input at the maintained
-authenticated `event-watch` D6 seam. Its result must reach `inspected=true`,
-`Published=false`, and the explicit D6 invalidation refusal. It does not pass
-through an early generic error. The main prepared A/B inputs remain unchanged.
-The two units share one owned cluster and run sequentially. After each API
-stops, only content-pinned non-private producer files enter a private archive;
-credential aliases and API-home never enter it. Raw fixture DSNs are refused.
-Once all owned API/PG PIDs are absent, the new runtime/scratch is removed.
-Custody snapshots retain original paths and metadata; archived producer files
-provide bytes for review without preserving disposable credentials or PG data.
+Normal-host strace includes the selected literal native exec and every observed
+clone/clone3/fork/vfork descendant, recursively. Every PID needs a causal
+kernel-derived birth. PID reuse, events before the root exec or after exit,
+unknown records, partial lines, overlapping calls and unfinished
+connect/exec/creation coverage refuse. The final interval requires every
+observed descendant to exit.
 
-`prepared-inputs.json` retains exact generated inputs and plans for the next
-technical decision. Disposable API/PG services stop before return. This packet
-does not authorize reuse of stopped services or credentials for a native case.
-Session and callback inventories are empty: no agent or native-looking session
-is invented. Authenticated finite empty-inventory/control checks are distinct
-from actual native D1 per-turn grants/terminals, native-session D2, callback D5
-and independent native final D6, which remain unestablished.
+Each observed connect attempt, including failures, must name an explicit owned
+loopback port at exactly `127.0.0.1` or `::1`, or a selected owned private Unix
+socket inside the catalog. The sole outside-root exception is exactly
+`/var/run/nscd/socket`, sockaddr length110, returning `-1 ENOENT`.
+Unknown/truncated addresses, other loopback addresses, proxy/DNS/external
+destinations and foreign Unix sockets refuse. Collection of an in-flight
+prefix does not make a pending connect auditable.
 
-## Separate full traced stub proof
+ExternalCoverage covers observed `connect(2)` attempts in that raw interval.
+It excludes sendto/sendmsg, unconnected UDP, inherited/preconnected descriptors,
+tracer/controller traffic, future intervals and global coverage. It is an
+audit, not kernel egress enforcement or proof of Go currentness.
 
-`--prepare-stubbed` launches only an owned byte-identical copy of the normal host
-Python image with the fixed stub program. It retains the collector's ownership
-guard. Actual PID/start/boot/image/literal argv are captured before input and
-again while the same tracee is live before EOF. The maintained raw parser must
-find exactly one exec, complete stdin bytes, a raw EOF, exact stdout, zero exit,
-and joined tracee/tracer PIDs greater than one. The trace interval starts at
-byte0 and ends at complete raw EOF. There are no callback references or B hook;
-refresh stays unobserved. No Agy/client/model/provider/hook/session runs.
+## Validation, custody and remaining scope
 
-The authenticated and stub entries have separate exclusive preparation
-ledgers. Reuse refuses. Neither ledger is native admission, a global run
-counter, or authority. Native entry and unknown-input controls must preserve
-consumed ledger and counter bytes. Import launches nothing. Normal host HOME,
-PATH, tools and auth remain available; fixture application state is private.
+Use `mise run test:unit` for focused Python and Go checks. Run bounded process
+checks and documentation tiers1–4 through `mise run host:exec`; run
+`mise run check`. Retain failures and exact source/image/tool receipts. Refusal
+tests cover expiry, mutated/aliased tuples, malformed packets, consumed
+attempts, concurrent reservation, custody, callback I/O and connect coverage.
+A real owned nonnative root, child and grandchild exercise TCP/Unix attribution
+and cleanup without Agy or a model.
 
-Use `mise run test:unit` for the driver, existing trace and collector tests;
-run the standalone entries and documentation tiers1–4 through `mise run
-host:exec`, and run `mise run check`. Freeze one final child tree for all gates.
-Retain prior failures, exact source/tools/image pins before and after use,
-raw stub bytes, public control results, preservation snapshots and PID/PG
-cleanup. Evidence and owned runtimes are0700; checkout inputs used by the
-collector must be controlled regular files. Tightening permissions in the new
-owned checkout does not change source bytes or relax a guard.
+Finite authoring checks use genuine producer material and the real disposable
+API/PG for forward/reverse control and an independent target-memory mutation
+at final D6. They establish those tested finite claims. They do not establish
+actual native callbacks, refresh, a future admitted run or full design
+acceptance. Separate authenticated and fixed nonnative stub preparation
+entries retain their own exclusive local ledgers; neither consumes native
+admission or makes a native PASS claim.
 
-Credentials, every inode alias, and all API-home content are metadata-only in
-custody indices. They are never content-hashed or archived. PG data is excluded
-from evidence archives. Null profile JSON may include credential selectors;
-selectors alone do not authenticate anything. Preserve raw inputs privately and
-publish only selected diagnostics. Stop/join only owned PIDs greater than one,
-stop the owned PG cluster, and never signal process groups.
+Cleanup targets owned PIDs greater than one. Exact pidfds preserve generation
+identity for bounded cleanup; no process-group signals are used. Evidence
+records API, client/tracer/descendant and PG joins. Credentials, every inode
+alias and API-home contents are metadata-only in custody snapshots and are
+excluded from hashes and archives. PG data stays outside the catalog.
+Non-private files enter a private archive only with matching pins and no raw
+fixture DSN. PG scratch is removed only after cleanup succeeds. Unresolved
+cleanup fails the attempt.
 
-## Remaining native and legacy facts
-
-`--native-unit` always refuses before effects. The existing
-`check_r06_native_unit.checked_admission` selects a client named Claude and the
-`local-scripted-messages` provider. Its `NativeUnit`/`OwnedNativeSession` path is
-Claude-specific; it is not an Agy admission seam. This driver defines no native
-admission schema, trust flag, status adapter, or bypass. Lead must select an
-independently reviewed supported Agy seam and qualified source/image/config/
-host/client/runtime tuple before an actual client invocation is possible.
-
-For a future admitted Agy /3 A→B positive current observation, retain actual
-owning generation and owner-state at start/attach before any turn and match
-them at capture and final D6. The first actual pinned B launcher/config exec
-must have exact inner argv, full stdin EOF, native write frame and zero join;
-no A may appear after B anywhere in the complete retained AFTER trace. Use
-the same actual conversation, workspace and history, exactly one managed layer,
-both real callback roles, and actual Boolean `fullyIdle=true` Stop. Empty B
-execution is unobserved. No forced probe, kill or restart manufactures refresh.
-
-The existing R04 same-process publication case observes B. If a future case
-requires a new PID, `TracedProcess` does not retain the tracer parent's `wait4`;
-an approved fact-producing seam is needed for the actual old orderly zero
-exit/parent wait4/same-history relation. No synthetic wait record is acceptable.
-
-Retained Python /2 reverse is separate. `loadUnitTarget` requires a Go /3 receipt;
-`agyLegacyLifecycleRefusal` explicitly refuses the old binding.json plus
-retained-argv.json shape without receipt.json. The /2 binding, retained literal
-argv, complete17-member bundle and actual native reverse observations cannot
-be inferred from this Go /3 roundtrip. Do not normalize the legacy shape, copy
-unsupported state into Go /3, or waive refusal.
-
-The held Agy1.5.7 image is Root1383's exact frozen file under
-`/home/halbritt/.cache/cairn301-release-1383/agy-receipt-filetype-20261112/`,
-SHA256 `5df525a2d6908989c57b897723caea66e00d7c4d2e24411f91ad306989574642`.
-Read-only image/ELF inspection is separate from execution. Current host ELF
-pins are not historical-library or runtime-loaded proof. Never use the moving
-installed Agy path or execute the held image during preparation.
-
-Ordinary Agy memory remains unsupported, ExternalCoverage unknown and native
-refresh unobserved. BUILD-ONLY images are not commonRC. No actual native PASS,
-fullR06/HC05/R07/clock, production change, legacy reverse, global13/Hermes4,
-old consumed-ledger replay or held-runtime qualification follows from this cut.
+Retained Python /2 reverse remains unsupported: `loadUnitTarget` requires a
+Go /3 receipt and the old binding/retained-argv shape cannot be normalized into
+one. Ordinary Agy memory remains unsupported. Authoring checks, BUILD-ONLY
+images and finite audits do not qualify commonRC, production, HC05/R07/clock,
+held runtimes, legacy reverse, global budgets or future runs.
