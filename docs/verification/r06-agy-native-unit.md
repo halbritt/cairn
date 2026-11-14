@@ -1,5 +1,53 @@
 # R06 authenticated Agy-unit preparation
 
+## Native admission authoring checkpoint
+
+The new selector and exclusive ledger helpers are being authored on exact
+8631. They are not wired to an executable native entry: `--native-unit` remains
+closed until the current/target producer association is resolved and the full
+driver is reviewed. This checkpoint does not authorize a native invocation.
+
+`cairn.r06-agy-native-admission/1` selects the driver head/tree separately from
+the1508 image source; the controlled manifest, index and completion; all five
+distinct roles; the exact held Agy image; four normal-host tool images; one
+canonical attempt UUID; a private exclusive ledger; and distinct new private
+evidence/catalog roots. Unknown/duplicate fields, aliases, malformed tuples,
+incorrect source/packet/image/client/provider/tool pins, reused paths and time
+windows outside issued-at through strict expiry refuse before application
+startup. UTC windows last at most15minutes. The exact provider is an ephemeral
+`127.0.0.1` GeminiFixture with the synthetic key and exact loopback NO_PROXY.
+The selector is ordinary data and does not authenticate its writer or grant
+project authority.
+
+The reservation is an immutable O_EXCL marker bound to the admission bytes
+and tuple. Complete fsynced terminal bytes are published by exclusive link,
+followed by directory fsync; an existing terminal is preserved. Expiry and
+admission bytes are reread immediately before reservation. A known pre-start
+prerequisite refusal reserves nothing. Once the application-start boundary
+is entered, any error preserves consumption and an atomic failed result;
+there is no retry or fallback. These helper controls do not alter any prior
+preparation/native ledger or global counter. Owned nonnative tests exercise
+simultaneous reservations, preservation, terminal publication and source-copy
+custody without executing Agy, API, PG, a provider or hooks.
+
+Root1481 decision40f30683/v1 explicitly permits only the future fixture Agy
+child and native-hook descendants to receive a private in-catalog HOME. The
+supervisor HOME/CODEX_HOME/tools/auth stay unchanged; real account hooks and
+subscription credentials must not be accessed, copied or relocated. The
+decision also permits an application-only user/network namespace, without a
+mount/PID namespace or container. The existing nonnative loopback probe is a
+prerequisite observation, not integrated network qualification.
+
+The next unresolved contract is the forward census: after native Turn2B but
+before public A-to-B publication, current selected profile remains A. The
+current reader binds installed B to that selected profile hash and receipt;
+TargetReceipt supplies verified target data without promoting it to current.
+Author request39faa856/v1 proposes resolving B only through that existing
+private target association while preserving A ownership and D1-D6 rereads.
+No shared/Go edits are leased or implemented by this checkpoint. Native0
+continues through authoring and peer review; only1481 may issue a later
+conditional attempt after review, spot-check, landing and fresh readiness.
+
 This preparation cut starts at exact accepted
 `15080de3b1205b161faa66f60b8faf93c30f18da`, tree
 `11ec0c51352505930e64236a99b929767e71cc2c`. It composes the maintained

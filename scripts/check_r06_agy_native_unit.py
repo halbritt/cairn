@@ -7,6 +7,7 @@ receipts and authenticated API reads belong to the separate setup entry.
 """
 import argparse
 import copy
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import uuid
 
 import check_r04_native_agy as r04
 import r04_agy_trace as trace
@@ -35,6 +37,11 @@ ROLES = ('api', 'control', 'stager', 'helper', 'observer')
 CONTROLLED_PACKET = Path('/home/halbritt/.cache/cairn301-release-1465/r06-main-images-15080de3-controlled-20261114')
 LINEAGE_SHA256 = '61cedd96993792cdc9d0d6becc3633e33c2a4361752f9b377f2bd3c3b2dc43b5'
 LINEAGE_FINAL_SHA256 = '3a5ebeebde91562fd1bb99856ce661c99cbba739a9fb204877fcba7ab0dbae13'
+AGY_SHA256 = '5df525a2d6908989c57b897723caea66e00d7c4d2e24411f91ad306989574642'
+AGY_SOURCE = Path('/home/halbritt/.cache/cairn301-release-1383/agy-receipt-filetype-20261112') / ('agy-' + AGY_SHA256)
+NATIVE_SCHEMA = 'cairn.r06-agy-native-admission/1'
+LOCAL_PROVIDER = dict(kind='GeminiFixture', host='127.0.0.1', port=0,
+                      api_key='r04-synthetic-unused', NO_PROXY='127.0.0.1,localhost')
 REUSED = (
     'scripts/check_r04_native_agy.py', 'scripts/check_r04_native_opencode.py',
     'scripts/r04_agy_trace.py', 'scripts/r06_agy_current_observation.py',
@@ -131,6 +138,234 @@ def finish_ledger(ledger, outcome):
 def refuse_native():
     # No caller flag, supplied status, schema, or admission file releases this.
     raise Refused(STOP)
+
+
+class PrerequisiteUnavailable(Refused):
+    """Known pre-start prerequisite refusal; no native reservation is consumed."""
+
+
+def strict_object(value, names, label):
+    require(type(value) is dict and set(value) == set(names), 'unknown/incomplete ' + label)
+    return value
+
+
+def admission_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, 'duplicate admission field')
+        result[key] = value
+    return result
+
+
+def admission_pin(value, label):
+    strict_object(value, ('Path', 'SHA256'), label)
+    require(type(value['Path']) is str and type(value['SHA256']) is str
+            and re.fullmatch('[0-9a-f]{64}', value['SHA256']) is not None,
+            'invalid ' + label + ' pin')
+    path = Path(value['Path'])
+    require(path.is_absolute() and str(path) == os.path.normpath(str(path))
+            and path.resolve() == path, 'noncanonical ' + label + ' path')
+    return path
+
+
+def read_admission(path, expected_sha256):
+    """Read one owned immutable selector, without treating it as authentication."""
+    path = Path(path)
+    private_directory(path.parent)
+    admission_pin(dict(Path=str(path), SHA256=expected_sha256), 'admission')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        first = os.fstat(fd)
+        require(stat.S_ISREG(first.st_mode) and first.st_uid == os.getuid()
+                and stat.S_IMODE(first.st_mode) in (0o400, 0o600)
+                and first.st_nlink == 1 and 0 < first.st_size <= 65536,
+                'admission must be one private owned regular file')
+        with os.fdopen(fd, 'rb', closefd=False) as source:
+            raw = source.read(65537)
+        last = os.fstat(fd)
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        require(identity(first) == identity(last) == identity(path.lstat())
+                and len(raw) == first.st_size
+                and hashlib.sha256(raw).hexdigest() == expected_sha256,
+                'admission bytes/identity changed or pin mismatch')
+        return json.loads(raw, object_pairs_hook=admission_pairs,
+                          parse_constant=lambda _: require(False, 'nonfinite admission value'))
+    finally:
+        os.close(fd)
+
+
+def native_source_identity():
+    def git(*args):
+        return subprocess.check_output(['git', '-C', str(ROOT), *args], text=True, timeout=15).strip()
+    require(not git('status', '--porcelain'), 'native driver requires a clean frozen checkout')
+    return dict(source_head=git('rev-parse', 'HEAD'), source_tree=git('rev-parse', 'HEAD^{tree}'))
+
+
+def native_admission_window(selected, now=None):
+    times = []
+    for key in ('issued_at', 'expires_at'):
+        value = selected[key]
+        require(type(value) is str and re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', value) is not None,
+                'strict UTC admission time required')
+        times.append(datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc))
+    current = now if now is not None else datetime.now(timezone.utc)
+    require(current.tzinfo is not None and times[0] <= current < times[1]
+            and 0 < (times[1] - times[0]).total_seconds() <= 900,
+            'expired/not-yet-issued/unbounded native admission')
+
+
+def checked_native_admission(path, expected_sha256, attempt_id, *, now=None):
+    """All selection/expiry/source checks precede application startup/reservation."""
+    require(path is not None and type(expected_sha256) is str and type(attempt_id) is str,
+            'explicit pinned Agy admission and attempt required')
+    require(str(uuid.UUID(attempt_id)) == attempt_id, 'canonical attempt UUID required')
+    selected = read_admission(path, expected_sha256)
+    strict_object(selected, ('schema', 'source_head', 'source_tree', 'manifest', 'index',
+        'build_complete', 'images', 'client', 'provider', 'attempt_id', 'attempt_limit',
+        'issued_at', 'expires_at', 'ledger', 'evidence', 'catalog_root', 'tools'), 'native admission')
+    require(selected['schema'] == NATIVE_SCHEMA and selected['attempt_id'] == attempt_id
+            and type(selected['attempt_limit']) is int and selected['attempt_limit'] == 1,
+            'wrong schema/attempt/limit')
+    require(type(selected['source_head']) is str and type(selected['source_tree']) is str
+            and re.fullmatch('[0-9a-f]{40}', selected['source_head']) is not None
+            and re.fullmatch('[0-9a-f]{40}', selected['source_tree']) is not None,
+            'exact driver source head/tree required')
+    native_admission_window(selected, now)
+    require({key:selected[key] for key in ('source_head', 'source_tree')} == native_source_identity(),
+            'wrong driver source head/tree; image source is separate')
+    require(type(selected['provider']) is dict and selected['provider'] == LOCAL_PROVIDER
+            and type(selected['provider'].get('port')) is int,
+            'only the exact local synthetic GeminiFixture provider is supported')
+    admission_pin(selected['client'], 'held client')
+    require(selected['client'] == dict(Path=str(AGY_SOURCE), SHA256=AGY_SHA256),
+            'wrong held Agy client')
+    checked_pin(AGY_SOURCE, AGY_SHA256)
+    require(stat.S_IMODE(AGY_SOURCE.stat().st_mode) == 0o500, 'held Agy source must remain0500')
+    strict_object(selected['images'], ROLES, 'image roles')
+    for role in ROLES:
+        admission_pin(selected['images'][role], role)
+    packet_paths = [admission_pin(selected[key], key) for key in ('manifest', 'index', 'build_complete')]
+    images, pins, packet = checked_packet(*[item for key, p in zip(
+        ('manifest', 'index', 'build_complete'), packet_paths) for item in (p, selected[key]['SHA256'])])
+    require(selected['images'] == {role:dict(Path=str(images[role]), SHA256=pins['images'][role]['sha256'])
+                                   for role in ROLES}, 'admission image tuple disagrees with sealed packet')
+    strict_object(selected['tools'], ('python3', 'strace', 'unshare', 'ip'), 'native tools')
+    for name, value in selected['tools'].items():
+        actual = Path(sys.executable).resolve() if name == 'python3' else Path(shutil.which(name) or '/absent').resolve()
+        require(admission_pin(value, name) == actual, 'selected normal-host tool path changed: ' + name)
+        tool_pin(actual, value['SHA256'])
+    require(all(type(selected[key]) is str for key in ('evidence', 'catalog_root', 'ledger')),
+            'typed evidence/catalog/ledger paths required')
+    evidence, catalog = (private_directory(selected[key]) for key in ('evidence', 'catalog_root'))
+    require(not list(evidence.iterdir()) and not list(catalog.iterdir()), 'fresh empty native evidence/catalog required')
+    ledger = Path(selected['ledger'])
+    require(ledger.is_absolute() and ledger.resolve() == ledger
+            and ledger.name == attempt_id + '.json', 'ledger must bind the canonical attempt UUID')
+    private_directory(ledger.parent)
+    roots = (evidence, catalog, ledger.parent, Path(path).parent)
+    require(evidence != catalog and not evidence.is_relative_to(catalog) and not catalog.is_relative_to(evidence)
+            and all(not root.is_relative_to(evidence) and not root.is_relative_to(catalog)
+                    for root in roots[2:]), 'admission/ledger/evidence/catalog custody must not overlap')
+    require(not ledger.exists() and not ledger.with_suffix('.terminal.json').exists(), 'native attempt already reserved/consumed')
+    return dict(admission=selected, pin=dict(Path=str(Path(path)), SHA256=expected_sha256),
+                images=images, image_pins=pins, packet=packet)
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+class NativeReservation:
+    """Immutable exclusive consumption marker plus atomic terminal publication."""
+    def __init__(self, approved):
+        snapshot = read_admission(approved['pin']['Path'], approved['pin']['SHA256'])
+        native_admission_window(snapshot)
+        require(snapshot == approved['admission'], 'admission tuple changed after preflight')
+        self.path = Path(approved['admission']['ledger'])
+        private_directory(self.path.parent)
+        self.binding = dict(schema='cairn.r06-agy-native-attempt/1', attempt_id=approved['admission']['attempt_id'],
+            admission=copy.deepcopy(approved['pin']), tuple=copy.deepcopy(snapshot), state='consumed')
+        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            json.dump(self.binding, stream, sort_keys=True)
+            stream.write('\n')
+            stream.flush()
+            os.fchmod(stream.fileno(), 0o400)
+            os.fsync(stream.fileno())
+        sync_directory(self.path.parent)
+
+    def finish(self, outcome):
+        terminal = self.path.with_suffix('.terminal.json')
+        # link(2) publishes complete fsynced bytes exclusively, without replacing
+        # an earlier terminal result. The immutable consumption marker survives.
+        temporary = self.path.parent / ('.' + self.path.name + '.' + str(uuid.uuid4()))
+        try:
+            with temporary.open('x', encoding='utf-8') as stream:
+                json.dump(dict(self.binding, state=outcome['state'], outcome=outcome), stream, sort_keys=True)
+                stream.write('\n')
+                stream.flush()
+                os.fchmod(stream.fileno(), 0o400)
+                os.fsync(stream.fileno())
+            os.link(temporary, terminal, follow_symlinks=False)
+            sync_directory(self.path.parent)
+        finally:
+            temporary.unlink(missing_ok=True)
+            sync_directory(self.path.parent)
+        return terminal
+
+
+def run_native_attempt(approved, preflight, execute):
+    """Injected boundaries keep pre-start75 distinct from a consumed failure."""
+    preflight(approved)
+    reservation = NativeReservation(approved)
+    result = dict(state='failed', application_start_boundary_entered=True)
+    try:
+        result = execute(approved)
+        require(type(result) is dict and result.get('state') == 'passed', 'native unit did not pass')
+        return result
+    except BaseException as error:
+        result = dict(state='failed', application_start_boundary_entered=True, error_type=type(error).__name__)
+        raise
+    finally:
+        reservation.finish(result)
+
+
+def stage_native_client(approved):
+    """Copy, never execute, the selected image inside the NEW owned catalog."""
+    root = private_directory(approved['admission']['catalog_root'])
+    source = Path(approved['admission']['client']['Path'])
+    expected = approved['admission']['client']['SHA256']
+    require(source == AGY_SOURCE and expected == AGY_SHA256, 'wrong held client source')
+    before = source.stat()
+    require(checked_pin(source, expected) and stat.S_IMODE(before.st_mode) == 0o500,
+            'controlled0500 source required')
+    destination = root/'native-agy-client'
+    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o500)
+    try:
+        with os.fdopen(fd, 'wb') as output, source.open('rb') as input_file:
+            shutil.copyfileobj(input_file, output)
+            output.flush()
+            os.fchmod(output.fileno(), 0o500)
+            os.fsync(output.fileno())
+        selected = checked_pin(destination, expected)
+        after = source.stat()
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        require(identity(before) == identity(after) and checked_pin(source, expected), 'held source changed while copying')
+        info = destination.stat()
+        require(destination.resolve().is_relative_to(root) and stat.S_IMODE(info.st_mode) == 0o500
+                and info.st_uid == os.getuid() and info.st_nlink == 1
+                and (info.st_dev, info.st_ino) != (before.st_dev, before.st_ino),
+                'native image must be an owned0500 in-root copy, not an alias')
+        sync_directory(root)
+        return dict(pin=selected, device=info.st_dev, inode=info.st_ino,
+                    source_device=before.st_dev, source_inode=before.st_ino)
+    except BaseException:
+        destination.unlink(missing_ok=True)
+        raise
 
 
 def validate_image_manifest(pins):
