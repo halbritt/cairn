@@ -1042,7 +1042,9 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             shutdown.append(dict(pid=pid,kind=name,result=None,expected_shutdown=True))
         else:
             violations.append('unfinished audited operation')
-            unresolved.append(dict(pid=pid,kind=name if name in ('execve','connect','clone','clone3','exit','exit_group',
+            unresolved.append(dict(pid=pid,name_sha256=hashlib.sha256((name or '').encode()).hexdigest(),
+                leading_whitespace=len(prefix)-len(prefix.lstrip()),unknown_marker=prefix.startswith('???'),
+                resumed_marker=prefix.startswith('<...'),kind=name if name in ('execve','connect','clone','clone3','exit','exit_group',
                 'accept','accept4','wait4','waitid','restart_syscall','socket','socketpair','bind','listen','shutdown',
                 'getsockname','getpeername','kill','tkill','tgkill') else 'other',terminated=pid in reducer.terminal))
     normal_dirs = {str(Path(path).resolve()) for path in normal_path.split(':') if path}
