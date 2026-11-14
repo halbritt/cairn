@@ -200,6 +200,9 @@ func (r *watchCensusRead) loadCatalog(ctx context.Context, pin WatchCensusPin) e
 		expected = append(expected, filepath.Base(selection.Directory))
 	}
 	if r.control != nil {
+		if err := r.loadUnitTarget(); err != nil {
+			return err
+		}
 		if err := r.controlCopies(&expected); err != nil {
 			return err
 		}

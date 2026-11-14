@@ -90,6 +90,7 @@ type WatchUnitCensus struct {
 	RetainedCopies    []WatchBindings
 	DrainRequirements []WatchCensusDrainRequirement
 	HookObservations  []WatchCensusHookObservation
+	target            *unitCensusTarget
 }
 
 type watchCensusRead struct {
@@ -113,6 +114,7 @@ type watchCensusRead struct {
 	control               *unitCensusScope
 	hookSelections        []watchCensusHookSelection
 	associations          map[string]*watchCensusAssociation
+	target                *unitCensusTarget
 }
 
 // InspectWatchUnitCensus performs filesystem and process observations only.
@@ -142,6 +144,9 @@ func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 		return r.report, err
 	}
 	if err := r.members(ctx); err != nil {
+		return r.report, err
+	}
+	if err := r.verifyUnitTarget(); err != nil {
 		return r.report, err
 	}
 	if err := r.inspectHookSelections(ctx); err != nil {

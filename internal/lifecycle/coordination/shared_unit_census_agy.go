@@ -285,6 +285,9 @@ func (r *watchCensusRead) agyProducedLayerFor(ctx context.Context, selected Watc
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := agyLegacyLifecycleRefusal(lifeMembers); err != nil {
+		return nil, nil, err
+	}
 	if node == nil || lifeMembers["binding.json"] != node.Binding || lifeMembers["receipt.json"].Path == "" {
 		return nil, nil, errors.New("Agy producer selects another binding/receipt")
 	}
@@ -884,3 +887,12 @@ func agyTraceFilesTransition(calls []agyTraceCall, threads map[int]bool, install
 // Used by codec controls to pin the exact supplied raw bytes, never normalize
 // or relabel retained observations as a fresh native qualification.
 func agyTraceSHA(raw []byte) string { return fmt.Sprintf("%x", sha256.Sum256(raw)) }
+
+// Retained Python /2 generations do not carry the Go /3 receipt/selection
+// relation. Recognizing that shape does not qualify its native activation.
+func agyLegacyLifecycleRefusal(members map[string]WatchCensusPin) error {
+	if members["binding.json"].Path != "" && members["retained-argv.json"].Path != "" && members["receipt.json"].Path == "" {
+		return errors.New("Agy retained /2 binding/argv/bundle requires separate native observations; Go /3 A-to-B refresh proof is unavailable")
+	}
+	return nil
+}

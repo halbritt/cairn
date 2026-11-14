@@ -88,3 +88,24 @@ TLS/network behavior, combined native D1–D6 qualification and production remai
 unestablished. A future separately admitted fixture's scripted turn must supply
 the current native evidence after this code and the private association piece
 have been accepted together.
+
+## Go target transitions and retained legacy scope
+
+A public unbound transition may now select a literal pinned
+`census.TargetReceipt`. Current and target `/3` receipts are validated separately
+through preflight, capture and D6; exact declared retained copies support the
+public Go `/3 A -> /3 B -> retained /3 A` roundtrip. This data relation does not
+supply native activation, file-read, execution, authenticated retained D2 or
+refresh evidence. Current-observation qualification still requires its complete
+actual native proof under a separate exact admission.
+
+Go `/3` current A-to-B refresh uses `receipt.json` and `selection.json` with the
+actual pinned profiles and emitted launchers. The retained Python `/2` producer
+uses `binding.json`, `retained-argv.json` and the 17-member bundle, with no Go
+receipt. The reader explicitly refuses that legacy shape as Go refresh proof.
+Its missing facts are a distinct pinned legacy binding/argv/bundle-to-native
+observation and refresh relation. No trace or readiness flag is invented to fill
+that gap. Existing non-native bound `/2` control behavior is unchanged; the new
+positive unbound fixture proves only the stated `/3` roundtrip. Ordinary Agy
+memory and full native/current-RC acceptance remain unsupported or open at their
+existing scope.

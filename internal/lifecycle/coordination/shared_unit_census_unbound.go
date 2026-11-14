@@ -222,7 +222,7 @@ func (r *unitCensusDrain) unboundDrainMembers(report WatchUnitCensus) (map[strin
 
 // Reuse the complete census validator; these private facts never enter a plan.
 func (r *unitCensusDrain) observeDrainAssociations(ctx context.Context, swap *watchBindingsSwap) (map[string]WatchCensusMember, map[string]string, error) {
-	scope := &unitCensusScope{current: r.current, retained: r.input.Retained}
+	scope := &unitCensusScope{current: r.current, retained: r.input.Retained, target: r.input.TargetReceipt}
 	var prepared *WatchBindings
 	if swap != nil {
 		if _, _, err := readUnitControlPlan(r.planPath, r.planPin); err != nil {

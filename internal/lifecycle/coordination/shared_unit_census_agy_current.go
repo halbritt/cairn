@@ -210,6 +210,9 @@ func (r *watchCensusRead) agyCurrentA(ctx context.Context, selected WatchCensusA
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := agyLegacyLifecycleRefusal(files); err != nil {
+		return nil, nil, err
+	}
 	association, profiles, err := r.unboundReceipt(files["receipt.json"])
 	if err != nil {
 		return nil, nil, err

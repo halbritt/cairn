@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/halbritt/cairn/internal/lifecycle/value"
@@ -50,6 +49,9 @@ func (c *CLI) unitControlUnboundPreflight(ctx context.Context, p *UnitControlPla
 		credentialPaths[nativeText(cfg.Get("token_file"))] = true
 	}
 	if !hasUnbound {
+		if p.Census != nil && p.Census.TargetReceipt != nil {
+			return errors.New("target receipt requires a selected unbound member")
+		}
 		return nil
 	}
 	if p.Census == nil || len(p.Census.Proposal.Bindings) != 1 || p.Census.Proposal.Bindings[0].Directory != current.Directory || !maps.Equal(p.Census.Proposal.Bindings[0].Pins, current.Pins) {
@@ -66,6 +68,9 @@ func (c *CLI) unitControlUnboundPreflight(ctx context.Context, p *UnitControlPla
 		credentials = append(credentials, info)
 	}
 	paths := []string{p.Census.Catalog.Path}
+	if p.Census.TargetReceipt != nil {
+		paths = append(paths, p.Census.TargetReceipt.Path)
+	}
 	for _, file := range p.Next {
 		paths = append(paths, file.Path)
 	}
@@ -88,15 +93,8 @@ func (c *CLI) unitControlUnboundPreflight(ctx context.Context, p *UnitControlPla
 		return err
 	}
 	if *proof == nil {
-		input := *p.Census
-		input.Proposal.Bindings = []WatchBindings{cloneCensusSelection(current)}
-		input.Proposal.Sessions = slices.Clone(input.Proposal.Sessions)
-		input.Proposal.Callbacks = slices.Clone(input.Proposal.Callbacks)
-		input.Retained = make([]WatchBindings, len(p.Census.Retained))
-		for i, s := range p.Census.Retained {
-			input.Retained[i] = cloneCensusSelection(s)
-		}
-		report, err := c.inspectWatchUnitCensus(ctx, input.Catalog, input.Proposal, &unitCensusScope{current: current, retained: input.Retained})
+		input := cloneUnitControlCensus(p.Census)
+		report, err := c.inspectWatchUnitCensus(ctx, input.Catalog, input.Proposal, &unitCensusScope{current: current, retained: input.Retained, target: input.TargetReceipt})
 		if err != nil && !censusOnlyNeedsD2(err) {
 			return err
 		}
@@ -136,18 +134,27 @@ func (c *CLI) unitControlUnboundPreflight(ctx context.Context, p *UnitControlPla
 		if v.facts["file:"+file.Path] != file.SHA256 {
 			return errors.New("unbound next profile lacks a tracked receipt descriptor")
 		}
-		manifest, err := read.file(member.Binding.Path)
+		bindingPin, memoryPin := member.Binding, member.Memory
+		if target := v.source.initial.target; target != nil {
+			if profile, ok := target.profiles[file.Name]; ok {
+				if file.SHA256 != profile.SHA256 || (file.Path != profile.Path && !v.retainedFile(file.Name, file.Path, file.SHA256)) {
+					return errors.New("target proposal omits or changes an associated coordinator")
+				}
+				bindingPin, memoryPin = target.association.binding, target.memory
+			}
+		}
+		manifest, err := read.file(bindingPin.Path)
 		if err != nil {
 			return err
 		}
 		enabled := manifest.Get("enabled")
-		if read.facts["file:"+member.Binding.Path] != member.Binding.SHA256 || !value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/3") || enabled == nil || enabled.Kind != value.Bool || enabled.Boolean {
+		if read.facts["file:"+bindingPin.Path] != bindingPin.SHA256 || !value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/3") || enabled == nil || enabled.Kind != value.Bool || enabled.Boolean {
 			return errors.New("unbound preflight requires the selected disabled /3 manifest")
 		}
 		matches := 0
 		if coords := manifest.Get("coordination_configs"); coords != nil && coords.Kind == value.Array {
 			for _, desc := range coords.Items {
-				if value.SameText(desc.Get("path"), file.Path) && value.SameText(desc.Get("sha256"), file.SHA256) {
+				if (value.SameText(desc.Get("path"), file.Path) || v.retainedFile(file.Name, file.Path, file.SHA256)) && value.SameText(desc.Get("sha256"), file.SHA256) {
 					matches++
 				}
 			}
@@ -175,7 +182,7 @@ func (c *CLI) unitControlUnboundPreflight(ctx context.Context, p *UnitControlPla
 			return err
 		}
 		memoryDescriptor := manifest.Get("memory_config")
-		if !value.SameText(memoryDescriptor.Get("path"), member.Memory.Path) || !value.SameText(memoryDescriptor.Get("sha256"), member.Memory.SHA256) {
+		if !value.SameText(memoryDescriptor.Get("path"), memoryPin.Path) || !value.SameText(memoryDescriptor.Get("sha256"), memoryPin.SHA256) {
 			return errors.New("unbound preflight memory association changed")
 		}
 		memory, err := read.descriptor(memoryDescriptor)
@@ -207,4 +214,13 @@ func (v *unitControlUnboundPreflight) recheck(ctx context.Context) error {
 	}
 	v.members = members
 	return nil
+}
+
+func (v *unitControlUnboundPreflight) retainedFile(name, path, pin string) bool {
+	for _, copy := range v.source.input.Retained {
+		if filepath.Join(copy.Directory, name) == path && copy.Pins[name] == pin && v.facts["file:"+path] == pin {
+			return true
+		}
+	}
+	return false
 }

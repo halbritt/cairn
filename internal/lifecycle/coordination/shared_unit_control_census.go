@@ -16,14 +16,16 @@ import (
 // Retained names complete immutable copies, not another selected executor.
 // The private swap may add only its own fully validated preparation.
 type UnitControlCensus struct {
-	Catalog  WatchCensusPin
-	Proposal WatchCensusProposal
-	Retained []WatchBindings
+	Catalog       WatchCensusPin
+	Proposal      WatchCensusProposal
+	Retained      []WatchBindings
+	TargetReceipt *WatchCensusPin `json:",omitempty"`
 }
 
 type unitCensusScope struct {
 	current  WatchBindings
 	retained []WatchBindings
+	target   *WatchCensusPin
 }
 type unitCensusDrain struct {
 	cli               *CLI
@@ -37,7 +39,7 @@ type unitCensusDrain struct {
 }
 
 func validateUnitCensusInput(v *value.Value, input *UnitControlCensus) error {
-	if err := unitControlFields(v, "Catalog", "Proposal", "Retained"); err != nil {
+	if err := unitControlFields(v, "Catalog", "Proposal", "Retained", "TargetReceipt"); err != nil {
 		return err
 	}
 	if input == nil {
@@ -48,6 +50,14 @@ func validateUnitCensusInput(v *value.Value, input *UnitControlCensus) error {
 	}
 	if !compatibilityCanonical(input.Catalog.Path) || !censusDigest(input.Catalog.SHA256) {
 		return errors.New("unit census catalog requires canonical pinned bytes")
+	}
+	if target := v.Get("TargetReceipt"); target != nil {
+		if err := unitControlFields(target, "Path", "SHA256"); err != nil {
+			return err
+		}
+		if input.TargetReceipt == nil || !compatibilityCanonical(input.TargetReceipt.Path) || !censusDigest(input.TargetReceipt.SHA256) {
+			return errors.New("unit census target receipt requires canonical pinned bytes")
+		}
 	}
 	p := v.Get("Proposal")
 	if err := unitControlFields(p, "Bindings", "Sessions", "Callbacks"); err != nil {
@@ -89,7 +99,7 @@ func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings,
 	if err := unitCensusExistingLock(current.Directory); err != nil {
 		return nil, unknown, err
 	}
-	scope := &unitCensusScope{current: current, retained: input.Retained}
+	scope := &unitCensusScope{current: current, retained: input.Retained, target: input.TargetReceipt}
 	report, err := c.inspectWatchUnitCensus(ctx, input.Catalog, input.Proposal, scope)
 	if err != nil && !censusOnlyNeedsD2(err) {
 		return nil, report, err
@@ -98,14 +108,7 @@ func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings,
 	for _, callback := range report.Callbacks {
 		callbacks = append(callbacks, censusNativeProcess(callback.Process))
 	}
-	bound := *input
-	bound.Proposal.Bindings = []WatchBindings{cloneCensusSelection(proposed)}
-	bound.Proposal.Sessions = slices.Clone(input.Proposal.Sessions)
-	bound.Proposal.Callbacks = slices.Clone(input.Proposal.Callbacks)
-	bound.Retained = make([]WatchBindings, len(input.Retained))
-	for i, s := range input.Retained {
-		bound.Retained[i] = cloneCensusSelection(s)
-	}
+	bound := cloneUnitControlCensus(input)
 	initial := report
 	initial.Facts = maps.Clone(report.Facts)
 	source := &unitCensusDrain{cli: c, input: bound, current: cloneCensusSelection(current), initial: initial}
@@ -209,8 +212,11 @@ func (r *watchCensusRead) controlCopies(expected *[]string) error {
 				// The complete member/receipt validator still verifies current.
 				// A retained unbound copy may only retain those exact bytes;
 				// it cannot introduce a different profile or association.
-				if pin != s.current.Pins[name] {
-					return errors.New("unit census unbound retained copy must keep exact selected bytes")
+				if pin != s.current.Pins[name] && (r.target == nil || r.target.profiles[name].SHA256 != pin) {
+					if r.target == nil {
+						return errors.New("unit census unbound retained copy must keep exact selected bytes")
+					}
+					return errors.New("unit census unbound retained copy must keep exact selected or target-associated bytes")
 				}
 			} else if err := r.cli.unitControlConfigPair(filepath.Join(s.current.Directory, name), path); err != nil {
 				return err
@@ -240,7 +246,7 @@ func (r *unitCensusDrain) recheck(ctx context.Context, swap *watchBindingsSwap) 
 	prepared := cloneCensusSelection(swap.selected)
 	prepared.Directory = swap.retainedDir
 	copies := append(slices.Clone(r.input.Retained), prepared)
-	report, err := r.cli.inspectWatchUnitCensus(ctx, r.input.Catalog, r.input.Proposal, &unitCensusScope{current: r.current, retained: copies})
+	report, err := r.cli.inspectWatchUnitCensus(ctx, r.input.Catalog, r.input.Proposal, &unitCensusScope{current: r.current, retained: copies, target: r.input.TargetReceipt})
 	r.final = &report
 	if err != nil && !censusOnlyNeedsD2(err) {
 		return fail(err)
