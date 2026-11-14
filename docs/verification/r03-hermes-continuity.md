@@ -133,6 +133,8 @@ ancestry/exit and approved sockaddr. Rejected paths/addresses retain hashes and
 fixed violation codes. A terminated process or verified-gone owned daemon can
 leave a blocking accept/wait, thread creation, or socket metadata operation
 unfinished when strace detaches; these remain explicit shutdown metadata.
+The unavailable `???` syscall marker requires traced thread creation and confirmed
+termination; an unowned marker or unknown successful operation refuses.
 Unfinished exec/connect/bind or process creation, unexplained detach,
 other malformed input, limits, forbidden network targets and missing required
 owned daemon/socket observations still fail. Wire buffers and environment
