@@ -3,9 +3,11 @@ package install
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -218,12 +220,12 @@ func TestAgyLayerForeignSelectedOwnerRetainsOldRecoveryCopy(t *testing.T) {
 		}
 		return nil
 	})
-	if publishErr == nil || result != (AgyLayerSelection{}) || !strings.Contains(publishErr.Error(), "rollback ownership changed") {
+	if publishErr == nil || result != (AgyLayerSelection{}) || !strings.Contains(publishErr.Error(), "publication committed") {
 		t.Fatal("foreign ownership did not retain explicit recovery failure", result, publishErr)
 	}
 	current, statErr := os.Stat(selected)
 	if statErr != nil || !os.SameFile(current, foreignInfo) || !bytes.Equal([]byte(foreign), agyTestBytes(t, selected)) {
-		t.Fatal("rollback overwrote the foreign selected inode", statErr)
+		t.Fatal("publication failure overwrote the foreign selected inode", statErr)
 	}
 	entries, readErr := os.ReadDir(filepath.Dir(selected))
 	if readErr != nil {
@@ -256,8 +258,14 @@ func TestAgyLayerFinalOtherReadInvalidatesBeforePublication(t *testing.T) {
 				}
 				return nil
 			})
-			if err == nil || !strings.Contains(err.Error(), "observation changed") || !bytes.Equal(before, agyTestBytes(t, selected)) || !bytes.Equal([]byte(agyPreparedTest), agyTestBytes(t, other)) {
-				t.Fatal("changed other-layer observation did not refuse before write", err)
+			if err == nil || !strings.Contains(err.Error(), "observation changed") || !bytes.Equal([]byte(agyPreparedTest), agyTestBytes(t, other)) {
+				t.Fatal("changed other-layer observation did not refuse", err)
+			}
+			if boundary == "before:publication" && !bytes.Equal(before, agyTestBytes(t, selected)) {
+				t.Fatal("precommit refusal changed selected bytes")
+			}
+			if boundary == "after:publication" && (bytes.Equal(before, agyTestBytes(t, selected)) || !strings.Contains(err.Error(), "publication committed")) {
+				t.Fatal("postcommit uncertainty rolled back activation", err)
 			}
 		})
 	}
@@ -305,44 +313,75 @@ func TestAgyLayerPreservesCairnLookingUnselectedHookAndAllowsExplicitReplacement
 	}
 }
 
-func TestAgyLayerEveryBoundaryRestoresCompleteOldOrAbsence(t *testing.T) {
-	for _, existing := range []bool{true, false} {
-		for _, point := range []string{"settings-sync", "publication", "readback", "directory-sync"} {
-			for _, side := range []string{"before:", "after:"} {
-				t.Run(map[bool]string{true: "old/", false: "absent/"}[existing]+side+point, func(t *testing.T) {
-					plan, selected, other := agyTestPlan(t, "project", existing)
-					otherBefore := agyTestBytes(t, other)
-					sentinel := errors.New("injected Agy publication interruption")
-					result, err := publishAgyLayer(context.Background(), plan, func(at string) error {
-						if at == side+point {
-							return sentinel
+func TestAgyLayerEveryBoundaryPreservesPrecommitOrCommittedSelection(t *testing.T) {
+	for _, layer := range []string{"account", "project"} {
+		for _, existing := range []bool{true, false} {
+			for _, point := range []string{"settings-sync", "recovery-sync", "publication", "readback", "directory-sync"} {
+				for _, side := range []string{"before:", "after:"} {
+					t.Run(layer+"/"+map[bool]string{true: "old/", false: "absent/"}[existing]+side+point, func(t *testing.T) {
+						plan, selected, other := agyRecoveryTestPlan(t, layer, existing)
+						otherBefore := agyTestBytes(t, other)
+						sentinel := errors.New("injected Agy publication interruption")
+						result, err := publishAgyLayer(context.Background(), plan, func(at string) error {
+							if at == side+point {
+								return sentinel
+							}
+							return nil
+						})
+						if !errors.Is(err, sentinel) || result != (AgyLayerSelection{}) {
+							t.Fatal("interruption did not report uncertainty", result, err)
 						}
-						return nil
+						committed := point == "publication" && side == "after:" || point == "readback" || point == "directory-sync"
+						if committed {
+							actual := agyTestBytes(t, selected)
+							var got, want map[string]json.RawMessage
+							if err := json.Unmarshal(actual, &got); err != nil {
+								t.Fatal(err)
+							}
+							if err := json.Unmarshal([]byte(agyPreparedTest), &want); err != nil {
+								t.Fatal(err)
+							}
+							info, err := os.Stat(selected)
+							mode := os.FileMode(0600)
+							if existing {
+								mode = 0640
+							}
+							if err != nil || info.Mode().Perm() != mode || !bytes.Equal(got["cairn-coordination"], want["cairn-coordination"]) {
+								t.Fatal("commit lost complete new settings/mode", err)
+							}
+							if existing && !bytes.HasPrefix(actual, []byte(agyOldTest[:len(agyOldTest)-2])) {
+								t.Fatal("commit changed unrelated literal bytes")
+							}
+							pin := AgyLayerSettings{plan.RecoveryPath, agyDigest(agyTestBytes(t, plan.RecoveryPath))}
+							before := agyRecoveryTestTree(t, filepath.Dir(plan.AccountHome))
+							recovered, e := RecoverAgyLayer(context.Background(), AgyLayerRecovery{plan.AccountHome, plan.Workspace, layer, pin})
+							if e != nil || recovered.Changed || recovered.SHA256 != agyDigest(actual) || !reflect.DeepEqual(before, agyRecoveryTestTree(t, filepath.Dir(plan.AccountHome))) {
+								t.Fatal("commit did not recover forward exactly", recovered, e)
+							}
+						} else {
+							if existing {
+								info, e := os.Stat(selected)
+								if e != nil || info.Mode().Perm() != 0640 || string(agyTestBytes(t, selected)) != agyOldTest {
+									t.Fatal("precommit lost old bytes/mode", e)
+								}
+							} else if _, e := os.Lstat(selected); !errors.Is(e, os.ErrNotExist) {
+								t.Fatal("precommit created selected hooks", e)
+							}
+							entries, e := os.ReadDir(filepath.Dir(selected))
+							if e != nil {
+								t.Fatal(e)
+							}
+							for _, entry := range entries {
+								if strings.HasPrefix(entry.Name(), ".cairn-agy-") || strings.HasPrefix(entry.Name(), ".cairn-recovery-agy-") {
+									t.Fatal("precommit failure retained owned publication members")
+								}
+							}
+						}
+						if !bytes.Equal(otherBefore, agyTestBytes(t, other)) {
+							t.Fatal("interruption touched other layer")
+						}
 					})
-					if !errors.Is(err, sentinel) || result != (AgyLayerSelection{}) {
-						t.Fatal("interruption did not refuse", result, err)
-					}
-					if existing {
-						info, err := os.Stat(selected)
-						if err != nil || info.Mode().Perm() != 0640 || !bytes.Equal([]byte(agyOldTest), agyTestBytes(t, selected)) {
-							t.Fatal("interruption lost complete old settings/mode", err)
-						}
-					} else if _, err := os.Lstat(selected); !errors.Is(err, os.ErrNotExist) {
-						t.Fatal("interruption published previously absent hooks", err)
-					}
-					if !bytes.Equal(otherBefore, agyTestBytes(t, other)) {
-						t.Fatal("interruption touched other layer")
-					}
-					entries, err := os.ReadDir(filepath.Dir(selected))
-					if err != nil {
-						t.Fatal(err)
-					}
-					for _, entry := range entries {
-						if strings.HasPrefix(entry.Name(), ".cairn-agy-") {
-							t.Fatal("owned temporary/recovery member left after successful rollback")
-						}
-					}
-				})
+				}
 			}
 		}
 	}

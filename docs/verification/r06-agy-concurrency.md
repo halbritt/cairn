@@ -148,3 +148,47 @@ of cleanup or a quiescence barrier. Strict install-3/install-5, legacy writer
 exclusion, immediate old-or-disabled state, power loss, native/installed unit
 and full R06 remain open. Exact composed gates and independent review are still
 required; this section makes no new completed-run claim.
+
+## Commit and durable-intent ordering
+
+The checked publisher now uses its existing recovery record to coordinate
+opposite layers. Preflight may refuse already visible conflicts without a
+write. Before any rename, the publishing path durably writes its own selected
+record and staged bytes, then checks the other layer for a Cairn group or an
+in-progress record. Old selection plus staged new inode means in progress;
+new selection plus recorded old backup, or prior absence, means committed.
+Unknown names, metadata, roots or file correspondence refuse. A precommit
+refusal withdraws only unchanged owned members and syncs that directory.
+
+The selected settings rename is the commit. Postcommit errors and SIGKILL retain
+the complete new selection and its exact old backup/record. The next explicit
+checked recovery validates the new inode/bytes, syncs the parent and rechecks
+without renaming or deleting correspondence. It does not reactivate old settings.
+The existing schema and literal commands are unchanged; no lock, runtime disable,
+semantic command classifier or new authority is introduced.
+
+All eight schedules above remain. Ordered cases first hold both children before
+`recovery-sync`, preserving actual successful-winner/refusal controls. Contended
+cases then hold both at `before:publication` with both records durable before
+releasing them. The original snapshots, record/inode checks, literal bytes,
+exit and child-join assertions remain, and any sampled both-active state is now
+a failure. Both publishers refusing is safe in contended cases. The collector's
+definition of active is unchanged.
+
+Owned process tests cover both sides of all five publication actions on both
+layers with both initial old settings and initial absence: 40 owned SIGKILL
+cases. Precommit cases require old settings/absence; postcommit cases require
+the exact committed NEW inode and forward recovery with retained correspondence.
+Malformed/foreign/pin/backup negatives run on both layers. These required cases
+cannot skip. Exact final-candidate image/compiler/input pins, numeric process
+receipts and results belong to its sealed packet, not the historical results
+above. The previous failures and 20 immediate NEW-active observations remain
+retained with their original interpretation and source identities.
+
+Cooperating-publisher schedules do not close uncooperating legacy Python writers,
+power loss or semantic attribution of opaque/renamed commands. R-07 excludes
+legacy installer activity and applies the existing final D6 duplicate/unknown
+user refusal. Native Agy positive/refresh, whole-unit qualification and production
+admission are separate. This is the bounded implementation of coordinator
+`bfaf5bca-4472-483f-8073-7492b0ec0888` version 1, not a criteria rewrite or an
+independent acceptance claim.

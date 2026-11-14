@@ -160,9 +160,95 @@ func agyRecoveryNew(record agyRecoveryRecord, current agyLayerSnapshot) bool {
 	return current.Present && agyRecoveryFileEqual(current.File, record.NewFile) && agyDigest(current.Raw) == record.NewSHA256
 }
 
-// RecoverAgyLayer restores only the exact pinned correspondence. It leaves the
-// record and displaced new inode as evidence, including after a repeated no-op.
-// It is not a unit quiescence barrier or a claim that NEW was never active.
+func agyRecoveryCommitted(record agyRecoveryRecord, selected, backup agyLayerSnapshot) (bool, error) {
+	if record.Selected.Root != selected.Root || record.Selected.Relative != selected.Relative || !reflect.DeepEqual(record.Selected.Directories, selected.Directories) {
+		return false, errors.New("Agy recovery selected ancestors changed")
+	}
+	old := record.Selected.matches(selected, true) && agyRecoveryNew(record, backup)
+	committed := agyRecoveryNew(record, selected) && (record.Selected.Present && backup.Present && agyRecoveryFileEqual(record.Selected.File, backup.File) && record.Selected.SHA256 == agyDigest(backup.Raw) ||
+		!record.Selected.Present && !backup.Present)
+	if old == committed {
+		return false, errors.New("Agy recovery selected inode, bytes or backup changed or ambiguous")
+	}
+	return committed, nil
+}
+
+// An intent is durable before this paired read. A later competing publisher
+// therefore sees our intent even if it creates its record after this scan.
+func agyOtherPublication(plan AgyLayerPlan, other agyLayerSnapshot) (err error) {
+	if err := other.recheck(); err != nil {
+		return err
+	}
+	if other.Present {
+		conflict, err := agyDispatch(other.Raw)
+		if err != nil || conflict {
+			return errors.Join(err, errors.New("Agy nonselected layer conflict: Cairn dispatch or unknown hooks"))
+		}
+	}
+	path := filepath.Join(other.Root, filepath.Dir(other.Relative))
+	parent, err := openDirectory(path, false)
+	if errors.Is(err, unix.ENOENT) {
+		return other.recheck()
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, parent.Close()) }()
+	id, err := agyDirectoryIdentity(parent)
+	if err != nil || id != other.Directories[path] {
+		return errors.Join(err, errors.New("Agy other recovery directory changed"))
+	}
+	entries, err := parent.ReadDir(-1)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".cairn-recovery-agy-") {
+			if err := agyOtherRecovery(plan, other, entry.Name()); err != nil {
+				return err
+			}
+		}
+	}
+	return other.recheck()
+}
+
+func agyOtherRecovery(plan AgyLayerPlan, other agyLayerSnapshot, name string) error {
+	layer := "account"
+	if plan.Layer == "account" {
+		layer = "project"
+	}
+	recordPath := filepath.Join(other.Root, filepath.Dir(other.Relative), name)
+	if _, _, err := agyRecoveryNames(other, recordPath, ""); err != nil {
+		return err
+	}
+	observed, err := inspectAgyLayer(other.Root, filepath.Join(filepath.Dir(other.Relative), name))
+	if err != nil || !observed.Present {
+		return errors.Join(err, errors.New("Agy other recovery record visibility is unknown"))
+	}
+	record, journal, err := agyLoadRecovery(AgyLayerRecovery{plan.AccountHome, plan.Workspace, layer, AgyLayerSettings{recordPath, agyDigest(observed.Raw)}})
+	if err != nil {
+		return err
+	}
+	backup, err := inspectAgyLayer(other.Root, filepath.Join(filepath.Dir(other.Relative), record.Temporary))
+	if err != nil {
+		return err
+	}
+	committed, err := agyRecoveryCommitted(record, other, backup)
+	if err != nil {
+		return err
+	}
+	if err := errors.Join(journal.recheck(), backup.recheck(), other.recheck()); err != nil {
+		return err
+	}
+	if !committed {
+		return fmt.Errorf("Agy other layer has an in-progress recovery record: %s", recordPath)
+	}
+	return nil
+}
+
+// RecoverAgyLayer validates the exact pinned correspondence and finishes a
+// committed publication forward. The record and backup remain as evidence.
+// Before commit it preserves the old selection and staged new inode.
 func RecoverAgyLayer(ctx context.Context, plan AgyLayerRecovery) (selection AgyLayerSelection, err error) {
 	record, journal, err := agyLoadRecovery(plan)
 	if err != nil {
@@ -172,14 +258,9 @@ func RecoverAgyLayer(ctx context.Context, plan AgyLayerRecovery) (selection AgyL
 	if err != nil {
 		return AgyLayerSelection{}, err
 	}
-	old := record.Selected.matches(selected, true)
-	new := agyRecoveryNew(record, selected)
-	if old {
-		if !agyRecoveryNew(record, backup) {
-			return AgyLayerSelection{}, errors.New("Agy already-restored recovery member changed")
-		}
-	} else if !new || record.Selected.Present && !(backup.Present && agyRecoveryFileEqual(record.Selected.File, backup.File) && record.Selected.SHA256 == agyDigest(backup.Raw)) || !record.Selected.Present && backup.Present {
-		return AgyLayerSelection{}, errors.New("Agy recovery selected inode, bytes or backup changed")
+	committed, err := agyRecoveryCommitted(record, selected, backup)
+	if err != nil {
+		return AgyLayerSelection{}, err
 	}
 	check := func() error {
 		return errors.Join(ctx.Err(), selected.recheck(), other.recheck(), backup.recheck(), journal.recheck())
@@ -188,10 +269,12 @@ func RecoverAgyLayer(ctx context.Context, plan AgyLayerRecovery) (selection AgyL
 		return AgyLayerSelection{}, err
 	}
 	selection = AgyLayerSelection{Path: filepath.Join(selected.Root, selected.Relative), Layer: plan.Layer, Recovery: &plan.Record}
-	if record.Selected.Present {
+	if committed {
+		selection.SHA256 = record.NewSHA256
+	} else if record.Selected.Present {
 		selection.SHA256 = record.Selected.SHA256
 	}
-	if old {
+	if !committed {
 		return selection, nil
 	}
 	parent, err := openDirectory(filepath.Dir(selection.Path), false)
@@ -202,56 +285,13 @@ func RecoverAgyLayer(ctx context.Context, plan AgyLayerRecovery) (selection AgyL
 	if err := check(); err != nil {
 		return AgyLayerSelection{}, err
 	}
-	if record.Selected.Present {
-		err = unix.Renameat2(int(parent.Fd()), record.Temporary, int(parent.Fd()), "hooks.json", unix.RENAME_EXCHANGE)
-	} else {
-		err = unix.Renameat2(int(parent.Fd()), "hooks.json", int(parent.Fd()), record.Temporary, unix.RENAME_NOREPLACE)
-	}
-	if err != nil {
+	if err := parent.Sync(); err != nil {
 		return AgyLayerSelection{}, err
 	}
-	displacedRaw, displacedID, displacedErr := agyReadFile(parent, record.Temporary)
-	displacedPin := agyRecoveryDisplaced{File: displacedID, SHA256: agyDigest(displacedRaw)}
-	restored, observedOther, displaced, err := agyRecoveryCurrent(record)
-	if err == nil && (!record.Selected.matches(restored, true) || !agyRecoveryNew(record, displaced)) {
-		err = errors.New("Agy recovery ownership changed at rename")
+	if err := check(); err != nil {
+		return AgyLayerSelection{}, err
 	}
-	err = errors.Join(err, displacedErr, observedOther.recheck(), journal.recheck(), ctx.Err(), parent.Sync())
-	if err != nil {
-		if displacedErr == nil {
-			err = errors.Join(err, agyUndoRecovery(parent, record, displacedPin))
-		}
-		return AgyLayerSelection{}, fmt.Errorf("Agy recovery refused after rename; retained exact correspondence: %w", err)
-	}
-	selection.Changed = true
 	return selection, nil
-}
-
-// Compensation is conditional on the inode pair still observed after our rename.
-// It never unlinks evidence or overwrites a subsequently published selected file.
-type agyRecoveryDisplaced struct {
-	File   agyFileID
-	SHA256 string
-}
-
-func agyUndoRecovery(parent *os.File, record agyRecoveryRecord, displaced agyRecoveryDisplaced) error {
-	raw, id, err := agyReadFile(parent, record.Temporary)
-	if err != nil || id != displaced.File || agyDigest(raw) != displaced.SHA256 {
-		return errors.Join(err, errors.New("Agy recovery compensation member changed"))
-	}
-	oldRaw, oldID, oldErr := agyReadFile(parent, "hooks.json")
-	if record.Selected.Present {
-		if oldErr != nil || !agyRecoveryFileEqual(oldID, record.Selected.File) || agyDigest(oldRaw) != record.Selected.SHA256 {
-			return errors.Join(oldErr, errors.New("Agy recovery compensation selected ownership changed"))
-		}
-		err = unix.Renameat2(int(parent.Fd()), record.Temporary, int(parent.Fd()), "hooks.json", unix.RENAME_EXCHANGE)
-	} else {
-		if !errors.Is(oldErr, unix.ENOENT) {
-			return errors.Join(oldErr, errors.New("Agy recovery compensation selected path no longer absent"))
-		}
-		err = unix.Renameat2(int(parent.Fd()), record.Temporary, int(parent.Fd()), "hooks.json", unix.RENAME_NOREPLACE)
-	}
-	return errors.Join(err, parent.Sync())
 }
 
 func agyRecoveryBackupUnchanged(parent *os.File, temporary string, old agyLayerSnapshot) error {

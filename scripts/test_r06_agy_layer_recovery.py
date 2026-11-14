@@ -1,4 +1,4 @@
-"""Owned SIGKILL boundaries followed by the actual pinned Go recovery CLI."""
+"""Owned SIGKILL boundaries and exact precommit/forward-commit recovery CLI."""
 import base64
 import hashlib
 import json
@@ -62,6 +62,7 @@ class AgyLayerRecoveryProcessTests(unittest.TestCase):
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
         self.children = []
+        self.recovery_launches = []
         self.addCleanup(self.join_children)
 
     def join_children(self):
@@ -131,7 +132,15 @@ class AgyLayerRecoveryProcessTests(unittest.TestCase):
         for key, value in arguments.items():
             argv.extend(['--' + key.replace('_', '-'), value])
         self.assertEqual(digest(self.stager), self.pins['stager']['sha256'])
-        return subprocess.run(argv, cwd=ROOT, capture_output=True, timeout=20)
+        child = subprocess.Popen(argv, cwd=ROOT, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.children.append(child)
+        self.assertGreater(child.pid, 1)
+        stdout, stderr = child.communicate(timeout=20)
+        self.recovery_launches.append(dict(argv=argv, pid=child.pid, exit=child.returncode,
+                                          stdout=stdout.decode(), stderr=stderr.decode()))
+        self.retain('recovery-launches', self.recovery_launches)
+        return subprocess.CompletedProcess(argv, child.returncode, stdout, stderr)
 
     def publish(self, f):
         argv = [sys.executable, '-I', '-S', '-B', str(BRIDGE), 'publish-agy',
@@ -196,19 +205,27 @@ class AgyLayerRecoveryProcessTests(unittest.TestCase):
                             self.assertEqual(killed, after)
                         else:
                             self.assertEqual(recovered.returncode, 0, recovered.stderr.decode())
-                            self.assertEqual(json.loads(recovered.stdout)['changed'], before_new)
+                            self.assertFalse(json.loads(recovered.stdout)['changed'])
+                            self.assertEqual(killed, after, 'recovery changed selected bytes/inodes or retained correspondence')
                             self.assertEqual(digest(f['record']), pin)
                             stable = self.snapshot(f['root'])
                             repeated = self.recover(f, pin)
                             self.assertEqual(repeated.returncode, 0, repeated.stderr.decode())
                             self.assertFalse(json.loads(repeated.stdout)['changed'])
                             self.assertEqual(self.snapshot(f['root']), stable)
-                        self.assert_old(f)
+                        if should_new:
+                            record = json.loads(f['record'].read_bytes())
+                            self.assertEqual(digest(f['selected']), record['NewSHA256'])
+                            self.assertEqual(f['selected'].stat().st_ino, record['NewFile']['Ino'])
+                            self.assertEqual(f['other'].read_bytes(), f['old'])
+                        else:
+                            self.assert_old(f)
                         self.assertEqual(digest(self.observer), self.pins['observer']['sha256'])
         self.retain('summary', dict(owned_children=40, joined=40, new_active_intervals=20,
-                                   record_missing_before_durable_journal=12, strict_old_or_disabled=False))
+                                   record_missing_before_durable_journal=12, precommit_old=20, postcommit_forward=20,
+                                   commit_point="selected hooks.json rename", required_skips=0))
 
-    def test_actual_publisher_bridge_pin_and_cli_restore_repeat(self):
+    def test_actual_publisher_bridge_pin_and_cli_forward_repeat(self):
         for layer in ['account', 'project']:
             with self.subTest(layer=layer):
                 f = self.fixture(layer, True)
@@ -219,51 +236,52 @@ class AgyLayerRecoveryProcessTests(unittest.TestCase):
                 self.retain(layer, dict(before_recovery=before, after_recovery=after,
                     recovery_exit=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode()))
                 self.assertEqual(result.returncode, 0, result.stderr.decode())
-                self.assertTrue(json.loads(result.stdout)['changed'])
-                self.assert_old(f)
+                self.assertFalse(json.loads(result.stdout)['changed'])
+                self.assertEqual(after, before, 'committed activation must not be rolled back')
+                self.assertEqual(f['other'].read_bytes(), f['old'])
                 repeat = self.recover(f, pin)
                 self.assertEqual(repeat.returncode, 0, repeat.stderr.decode())
                 self.assertFalse(json.loads(repeat.stdout)['changed'])
                 self.assertEqual(self.snapshot(f['root']), after)
 
     def test_actual_cli_refusals_preserve_both_layers_and_evidence(self):
-        for problem in ['pin', 'record-bytes', 'backup-bytes', 'same-inode', 'foreign-inode',
-                        'other-layer', 'missing-record', 'record-hardlink']:
-            with self.subTest(problem=problem):
-                f = self.fixture('project', True)
-                pin = self.publish(f)
-                record = json.loads(f['record'].read_bytes())
-                backup = f['selected'].parent / record['Temporary']
-                if problem == 'pin':
-                    pin = '0' * 64
-                elif problem == 'record-bytes':
-                    f['record'].chmod(0o600)
-                    f['record'].write_bytes(b'{"forged":true}')
-                    f['record'].chmod(0o400)
-                elif problem == 'backup-bytes':
-                    backup.write_bytes(b'{"modified":true}')
-                elif problem == 'same-inode':
-                    f['selected'].write_bytes(b'{"foreign":true}')
-                elif problem == 'foreign-inode':
-                    foreign = f['root'] / 'foreign.json'
-                    foreign.write_bytes(b'{"foreign":true}')
-                    foreign.chmod(0o640)
-                    foreign.replace(f['selected'])
-                elif problem == 'other-layer':
-                    f['other'].write_bytes(b'{"foreign":true}')
-                elif problem == 'missing-record':
-                    f['record'].rename(f['record'].with_suffix('.retained'))
-                elif problem == 'record-hardlink':
-                    os.link(f['record'], f['record'].with_suffix('.alias'))
-                before = self.snapshot(f['root'])
-                result = self.recover(f, pin)
-                after = self.snapshot(f['root'])
-                self.retain(problem, dict(before=before, after=after, exit=result.returncode,
-                    stdout=result.stdout.decode(), stderr=result.stderr.decode()))
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(result.stdout, b'')
-                self.assertEqual(before, after)
-
+        for layer in ['account', 'project']:
+            for problem in ['pin', 'record-bytes', 'backup-bytes', 'same-inode', 'foreign-inode',
+                            'other-layer', 'missing-record', 'record-hardlink']:
+                with self.subTest(layer=layer, problem=problem):
+                    f = self.fixture(layer, True)
+                    pin = self.publish(f)
+                    record = json.loads(f['record'].read_bytes())
+                    backup = f['selected'].parent / record['Temporary']
+                    if problem == 'pin':
+                        pin = '0' * 64
+                    elif problem == 'record-bytes':
+                        f['record'].chmod(0o600)
+                        f['record'].write_bytes(b'{"forged":true}')
+                        f['record'].chmod(0o400)
+                    elif problem == 'backup-bytes':
+                        backup.write_bytes(b'{"modified":true}')
+                    elif problem == 'same-inode':
+                        f['selected'].write_bytes(b'{"foreign":true}')
+                    elif problem == 'foreign-inode':
+                        foreign = f['root'] / 'foreign.json'
+                        foreign.write_bytes(b'{"foreign":true}')
+                        foreign.chmod(0o640)
+                        foreign.replace(f['selected'])
+                    elif problem == 'other-layer':
+                        f['other'].write_bytes(b'{"foreign":true}')
+                    elif problem == 'missing-record':
+                        f['record'].rename(f['record'].with_suffix('.retained'))
+                    elif problem == 'record-hardlink':
+                        os.link(f['record'], f['record'].with_suffix('.alias'))
+                    before = self.snapshot(f['root'])
+                    result = self.recover(f, pin)
+                    after = self.snapshot(f['root'])
+                    self.retain(layer + '-' + problem, dict(before=before, after=after, exit=result.returncode,
+                        stdout=result.stdout.decode(), stderr=result.stderr.decode()))
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, b'')
+                    self.assertEqual(before, after)
 
 if __name__ == '__main__':
     unittest.main()

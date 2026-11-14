@@ -541,6 +541,8 @@ func agyConcurrencyRunCase(t *testing.T, dir, image, pin string, schedule agyCon
 		}
 		if active == 2 {
 			record.TransientDoubleActive = true
+			record.Counterexample = point + ": transient cross-layer both-active"
+			t.Fatal(record.Counterexample)
 		}
 		return view
 	}
@@ -552,16 +554,19 @@ func agyConcurrencyRunCase(t *testing.T, dir, image, pin string, schedule agyCon
 		if peer.current.Initial == nil || !reflect.DeepEqual(initial.Layers, peer.current.Initial.Layers) || !reflect.DeepEqual(initial.Paths, peer.current.Initial.Paths) {
 			t.Fatal("competing helpers did not begin with same recorded layer facts", peer.current)
 		}
-		peer.advance(t, "before:publication")
-		if peer.current.Kind != "boundary" || peer.current.Point != "before:publication" {
+		peer.advance(t, "before:recovery-sync")
+		if peer.current.Kind != "boundary" || peer.current.Point != "before:recovery-sync" {
 			t.Fatal("helper did not reach controlled publication from original facts", peer.current)
 		}
 	}
-	ready := capture("both-before-publication")
+	ready := capture("both-before-recovery-sync")
 	if !reflect.DeepEqual(initial.Layers, ready.Layers) {
 		t.Fatal("initial layer facts changed before either checked publisher released")
 	}
 	if schedule.contended {
+		first.advance(t, "before:publication")
+		second.advance(t, "before:publication")
+		capture("both-durable-intents-before-publication")
 		first.release(t)
 		second.release(t)
 		first.receive(t)

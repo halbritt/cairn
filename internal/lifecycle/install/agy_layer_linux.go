@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"unicode/utf8"
@@ -153,23 +152,15 @@ func publishAgyLayer(ctx context.Context, plan AgyLayerPlan, observe func(string
 	temporaryCreated, recordCreated := false, false
 	var staged agyFileID
 	defer func() {
-		if err != nil && published {
-			rollback := rollbackAgyLayer(parent, temporary, staged, selected)
-			err = errors.Join(err, rollback)
-			result = AgyLayerSelection{}
-			if rollback != nil {
-				err = errors.Join(err, fmt.Errorf("retained Agy recovery member %s", filepath.Join(selected.Root, filepath.Dir(selected.Relative), temporary)))
-				return
+		if published {
+			if err != nil {
+				err = errors.Join(err, fmt.Errorf("Agy publication committed; retained recovery record %s and member %s", filepath.Join(selected.Root, filepath.Dir(selected.Relative), recordName), filepath.Join(selected.Root, filepath.Dir(selected.Relative), temporary)))
 			}
-		}
-		if err == nil && published {
 			return
 		}
 		if temporaryCreated {
 			currentRaw, currentID, e := agyReadFile(parent, temporary)
-			if errors.Is(e, unix.ENOENT) && published && !selected.Present {
-				temporaryCreated = false
-			} else if e != nil || !agyRecoveryFileEqual(currentID, staged) || !bytes.Equal(currentRaw, raw) {
+			if e != nil || currentID != staged || !bytes.Equal(currentRaw, raw) {
 				err = errors.Join(err, e, errors.New("Agy staged recovery member changed; retained correspondence"))
 				return
 			}
@@ -191,6 +182,7 @@ func publishAgyLayer(ctx context.Context, plan AgyLayerPlan, observe func(string
 		if e := unix.Unlinkat(int(parent.Fd()), temporary, 0); e != nil && !errors.Is(e, unix.ENOENT) {
 			err = errors.Join(err, e)
 		}
+		err = errors.Join(err, parent.Sync())
 	}()
 	if err := step("settings-sync", func() error {
 		e := agyWriteTemporary(parent, temporary, raw, mode)
@@ -227,7 +219,7 @@ func publishAgyLayer(ctx context.Context, plan AgyLayerPlan, observe func(string
 		return AgyLayerSelection{}, err
 	}
 	if err := step("publication", func() error {
-		if err := errors.Join(check(), stagedSnapshot.recheck()); err != nil {
+		if err := errors.Join(check(), stagedSnapshot.recheck(), agyOtherPublication(plan, other)); err != nil {
 			return err
 		}
 		flags := uint(unix.RENAME_NOREPLACE)
@@ -266,22 +258,6 @@ func publishAgyLayer(ctx context.Context, plan AgyLayerPlan, observe func(string
 	}
 	result.Changed = true
 	return result, nil
-}
-
-func rollbackAgyLayer(parent *os.File, temporary string, staged agyFileID, old agyLayerSnapshot) error {
-	_, current, err := agyReadFile(parent, "hooks.json")
-	if err != nil || !agyRecoveryFileEqual(current, staged) {
-		return errors.Join(err, errors.New("Agy rollback ownership changed; reconcile selected layer before reuse"))
-	}
-	if err := agyRecoveryBackupUnchanged(parent, temporary, old); err != nil {
-		return err
-	}
-	if old.Present {
-		err = unix.Renameat2(int(parent.Fd()), temporary, int(parent.Fd()), "hooks.json", unix.RENAME_EXCHANGE)
-	} else {
-		err = unix.Unlinkat(int(parent.Fd()), "hooks.json", 0)
-	}
-	return errors.Join(err, parent.Sync())
 }
 
 func agyDigest(raw []byte) string {

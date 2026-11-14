@@ -266,17 +266,25 @@ The reserved Cairn group is detected directly; command-text suspicion outside
 that group cannot establish the identity of an opaque executable or shell
 indirection. That semantic attribution remains unqualified.
 
-Returned-error recovery restores the complete old settings or prior absence
-while the publisher still owns the selected inode. If another writer replaces
-it, the publisher leaves that writer's file alone and retains the complete old
-copy with an explicit reconciliation path. Checked publication now syncs a
-pinned recovery correspondence before rename and retains it with the backup.
-The explicit [`recover-agy-layer` operation](../developer/agy-layer-recovery.md)
-can restore the exact old inode/bytes/mode or prior absence, without selecting
-by newest-file order. A hard kill after rename can still leave NEW active until
-that explicit operation runs. Owned SIGKILL/recovery tests retain this interval;
-they do not establish strict old-or-disabled behavior or full install-5/R-06
-qualification. Supported unit quiescence and transition disposition remain open.
+The selected `hooks.json` rename is the commit. Before it, a refusal withdraws
+only the publisher's unchanged staged file and recovery record and leaves the
+old settings or absence. After it, an error or interruption retains the complete
+new selection and exact recovery correspondence for forward reconciliation;
+it does not restore an old backup over a committed activation. Foreign selected
+inodes remain untouched. The explicit
+[`recover-agy-layer` operation](../developer/agy-layer-recovery.md) validates the
+selected record/pin, new inode and old backup (or prior absence), syncs the
+parent and rechecks the same correspondence. It retains the record and backup.
+
+A checked publisher makes its own recovery record durable before its final
+paired-layer check. Another publisher's in-progress record blocks its rename;
+retained completed records are distinguished by actual old/new file
+correspondence. Unknown records refuse. This uses the existing record format,
+not a new lock. The [bounded concurrency and interruption tests](../verification/r06-agy-concurrency.md#commit-and-durable-intent-ordering)
+remain separate from independent acceptance, native Agy refresh and full R-06.
+Legacy Python writers, power loss and opaque-command attribution remain explicit
+limits. R-07 must exclude legacy installer activity and retain final D6
+readback refusal for duplicate dispatch or unknown unit users.
 
 The retained `/2` installer and rollback operation remain unchanged; they do
 not gain this paired-layer guarantee. Default rendering below remains
