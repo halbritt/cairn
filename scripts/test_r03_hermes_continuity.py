@@ -358,7 +358,7 @@ class EvidencePrivacy(unittest.TestCase):
         for path in self.root.iterdir(): self.assert_private(canary,path.read_text())
 
     def test_daemon_shutdown_waits_and_detach_keep_metadata(self):
-        for pending in ('accept4(5, NULL, NULL, SOCK_CLOEXEC','wait4(-1, NULL, 0, NULL'):
+        for pending in ('accept4(5, NULL, NULL, SOCK_CLOEXEC','wait4(-1, NULL, 0, NULL','exit_group(0'):
             reducer = continuity.TraceReducer()
             reducer.feed('100 '+pending+' <unfinished ...>')
             reducer.feed('100 <detached ...>')
@@ -382,6 +382,15 @@ class EvidencePrivacy(unittest.TestCase):
         result = continuity.audit_syscalls(set(),{'/owned/socket'},reducer=continuity.TraceReducer(),owned_daemons={100:'/owned/api'})
         self.assertIn('missing owned daemon execution',result['violations'])
         self.assertIn('missing owned socket connection',result['violations'])
+
+    def test_unknown_symlink_to_pinned_executable_is_refused(self):
+        target=self.root/'pinned'; target.write_bytes(b'pinned'); target.chmod(0o500)
+        alias=self.root/'unselected'; alias.symlink_to(target)
+        pins={str(target):continuity.digest(target)}
+        reducer=continuity.TraceReducer(scratch=self.root,exec_pins=pins)
+        reducer.feed('100 execve('+json.dumps(str(alias))+', ["alias"], 0x0) = 0')
+        result=continuity.audit_syscalls(set(pins),set(),reducer=reducer,exec_pins=pins)
+        self.assertEqual(result['violations'],['unapproved or changed executable'])
 
 
 if __name__ == '__main__':

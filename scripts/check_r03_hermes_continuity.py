@@ -863,7 +863,11 @@ def mechanism_exec_pins(plan):
     for name,row in json.loads(manifest.read_bytes())['files'].items():
         if Path(name).parent == Path('usr/lib/postgresql/18/bin'):
             pins[str(Path(plan['pg_root'])/name)] = row['sha256']
-    return {str(Path(path).resolve()): value for path,value in pins.items()}
+    for alias in ('/bin/sh',shutil.which('sh')):
+        resolved = str(Path(alias).resolve())
+        require(resolved in pins, 'R03_PINS: undeclared shell anchor')
+        pins[alias] = pins[resolved]
+    return pins
 
 
 def probe_sha256(python):
@@ -889,8 +893,8 @@ class TraceReducer:
         candidate = Path(path)
         try:
             resolved = candidate.resolve()
-            owned = self.scratch is not None and resolved.is_relative_to(Path(self.scratch))
-            if str(resolved) not in self.exec_pins and not owned: return None
+            owned = self.scratch is not None and candidate.is_relative_to(Path(self.scratch))
+            if str(candidate) not in self.exec_pins and not owned: return None
             if owned and candidate != resolved: return None
             info = resolved.stat()
             if not stat.S_ISREG(info.st_mode): return None
@@ -1025,13 +1029,16 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
     owned_daemons = owned_daemons or {}
     def daemon_gone(pid):
         return ancestor(pid,owned_daemons) is not None and not Path('/proc',str(pid)).exists()
-    shutdown = []
+    shutdown, unresolved = [], []
     for pid, prefix in reducer.pending.items():
         match = re.match(r'(\w+)\(',prefix)
         name = match[1] if match else None
-        if name in ('accept','accept4','wait4','waitid','restart_syscall') and (pid in reducer.terminal or daemon_gone(pid)):
+        if name in ('accept','accept4','wait4','waitid','restart_syscall','exit','exit_group') and (pid in reducer.terminal or daemon_gone(pid)):
             shutdown.append(dict(pid=pid,kind=name,result=None,expected_shutdown=True))
-        else: violations.append('unfinished audited operation')
+        else:
+            violations.append('unfinished audited operation')
+            unresolved.append(dict(pid=pid,kind=name if name in ('execve','connect','clone','clone3','exit','exit_group',
+                'accept','accept4','wait4','waitid','restart_syscall') else 'other',terminated=pid in reducer.terminal))
     normal_dirs = {str(Path(path).resolve()) for path in normal_path.split(':') if path}
     tool_names = {Path(path).name for path in allowed_exec} | {'sh'}
     executions, connections, probes, workflow, processes = [], [], [], [], []
@@ -1048,9 +1055,9 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
                 and identity is not None and identity['uid'] == os.getuid() and identity['mode'] == 0o500
                 and identity['links'] == 1 and identity['private_parent']
                 and identity['sha256'] == probe_sha256(python_path))
-            known_path = negative or anchor or str(Path(path).resolve()) in allowed_exec
+            known_path = negative or anchor or path in allowed_exec
             pinned = (negative or anchor or exec_pins is None or identity is not None and
-                      identity['sha256'] == exec_pins.get(str(Path(path).resolve())))
+                      identity['sha256'] == exec_pins.get(path))
             if not known_path or not pinned: violations.append('unapproved or changed executable')
             if known_path: safe.update(path=path, argument_count=row['argument_count'], executable_validated=bool(pinned))
             else: safe['path_sha256'] = hashlib.sha256(path.encode()).hexdigest()
@@ -1093,6 +1100,7 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
                        and row.get('sockaddr',{}).get('path') == path for row in connections):
                 violations.append('missing owned socket connection')
     result = dict(execve=executions, connect=connections, processes=processes,expected_shutdown=shutdown,
+        unfinished=unresolved,
         declared_negative_or_anchor_probes=probes, authenticated_workflow_reads=workflow,
         violations=violations, raw_trace_retained=False, raw_argv_retained=False,
         input_bytes=reducer.bytes, rows=len(reducer.rows))
@@ -1129,7 +1137,7 @@ def host_suite(plan_path, native=False):
     pg_bin = Path(plan['pg_root'])/'usr/lib/postgresql/18/bin'
     cluster = host = None
     cleanup = {}; phases = []; session = None; previous_history = None
-    allowed_exec = {str(Path(path).resolve()) for path in plan['bindings']['native_tools']}
+    allowed_exec = set(mechanism_exec_pins(plan))
     allowed_exec.update(str(path.resolve()) for path in images.iterdir() if path.is_file())
     allowed_exec.update(str(path.resolve()) for path in pg_bin.iterdir() if path.is_file())
     python = str(native_root/'venv/bin/python')
