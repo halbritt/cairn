@@ -21,7 +21,16 @@ func retryClass(operation string, properties map[string]bool) (string, bool) {
 	if _, defined := retryClasses[spec.RetryClass]; !defined {
 		return "", false
 	}
-	if (spec.RetryClass == "request-id") != properties["request_id"] {
+	writeKey := properties["request_id"]
+	// This read addresses an existing poll by its request ID; it neither
+	// creates a request nor replays the poll. Other request-ID checks remain.
+	if operation == "session-inbox-poll-status" {
+		if spec.RetryClass != "read" || !writeKey {
+			return "", false
+		}
+		writeKey = false
+	}
+	if (spec.RetryClass == "request-id") != writeKey {
 		return "", false
 	}
 	return spec.RetryClass, true

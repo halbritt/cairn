@@ -14,3 +14,11 @@ func (c *Client) SessionInboxAttemptStatus(ctx context.Context, session core.Age
 	err := c.Call(ctx, "session-inbox-attempt-status", core.SessionInboxAttemptQuery{Session: session, AttemptID: attemptID}, &out)
 	return out, err
 }
+
+// SessionInboxPollStatus reads a durable poll, including an explicit empty
+// result. It does not claim work or settle a native attempt.
+func (c *Client) SessionInboxPollStatus(ctx context.Context, session core.AgentSessionRef, requestID string) (core.SessionInboxPoll, error) {
+	var out core.SessionInboxPoll
+	err := c.Call(ctx, "session-inbox-poll-status", core.SessionInboxPollQuery{Session: session, RequestID: requestID}, &out)
+	return out, err
+}

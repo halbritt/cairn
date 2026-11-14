@@ -22,13 +22,59 @@ func (r *watchDrainRead) historicalAttempt(ctx context.Context, session watchDra
 	if !retained {
 		return nil
 	}
-	if local == nil || local.Kind != value.Object || !value.Truth(local.Get("attempt_id")) {
+	policyOnly := nativeNone(local)
+	var identity *value.Value
+	if policyOnly {
+		policy := session.state.Get("inbox_result_policy")
+		if !exactReceiptObject(policy, "claim_request_id", "version") || !canonicalUUIDValue(policy.Get("claim_request_id")) ||
+			policy.Get("version") == nil || policy.Get("version").Kind != value.Int || policy.Get("version").Integer != "1" {
+			return errors.New("D2 exact retained attempt identity is unknown: invalid result policy")
+		}
+		identity = policy.Get("claim_request_id")
+		poll, err := r.readView(ctx, session.config, "session-inbox-poll-status", nativeMap("session", session.ref, "request_id", identity), nil)
+		if err != nil && nativeCode(err) != "NOT_FOUND" {
+			return err
+		}
+		if err == nil {
+			if !exactReceiptObject(poll, "request_id", "session", "attempt_id") || !nativeEqual(poll.Get("request_id"), identity) ||
+				!exactReceiptObject(poll.Get("session"), "agent_id", "execution_id") || !canonicalUUIDValue(poll.Get("session").Get("execution_id")) ||
+				!nativeEqual(poll.Get("session").Get("agent_id"), session.ref.Get("agent_id")) {
+				return errors.New("D2 historical poll/session correspondence is unknown")
+			}
+			if nativeNone(poll.Get("attempt_id")) {
+				for _, key := range AttemptKeys {
+					if key != "inbox_result_policy" && !nativeNone(session.state.Get(key)) {
+						return errors.New("D2 empty poll has unrelated retained attempt fields")
+					}
+				}
+				if r.settled == nil {
+					r.settled = map[*value.Value]*value.Value{}
+				}
+				r.settled[session.state] = poll
+				return nil
+			}
+			if !nativeEqual(poll.Get("attempt_id"), identity) {
+				return errors.New("D2 poll opened another attempt")
+			}
+		}
+	} else if local.Kind != value.Object || !value.Truth(local.Get("attempt_id")) {
 		return errors.New("D2 exact retained attempt identity is unknown")
+	} else {
+		identity = local.Get("attempt_id")
 	}
 	remote, err := r.readView(ctx, session.config, "session-inbox-attempt-status", nativeMap(
-		"session", session.ref, "attempt_id", local.Get("attempt_id")), nil)
+		"session", session.ref, "attempt_id", identity), nil)
 	if err != nil {
 		return err
+	}
+	if policyOnly {
+		if remote == nil || remote.Kind != value.Object || !nativeEqual(remote.Get("attempt_id"), identity) ||
+			!exactReceiptObject(remote.Get("session"), "agent_id", "execution_id") || !canonicalUUIDValue(remote.Get("session").Get("execution_id")) {
+			return errors.New("D2 historical attempt/session correspondence is unknown")
+		}
+		// Comparison view only: no session file is changed, and every retained
+		// intent/close/retry/cleanup check below still uses the original state.
+		local = nativeMap("attempt_id", identity, "session", remote.Get("session"), "delivery", remote.Get("delivery"))
 	}
 	if remote == nil || remote.Kind != value.Object || !nativeEqual(remote.Get("attempt_id"), local.Get("attempt_id")) ||
 		!nativeEqual(remote.Get("session"), local.Get("session")) || !nativeEqual(remote.Get("session").Get("agent_id"), session.ref.Get("agent_id")) {

@@ -87,6 +87,24 @@ publication. A changed or unobservable fact invalidates the receipt. This adds
 no API authority, settlement, grant/journal mutation, owner exception or lock;
 the existing final-read-to-rename interval remains non-atomic.
 
+When `inbox_attempt` is absent or null, a retained result policy can locate a
+durable poll. It must contain exactly `claim_request_id` (a canonical UUID
+string) and integer `version: 1`. The read-only `session-inbox-poll-status`
+operation authenticates the current owning session, repository and destination;
+its result retains the execution that made the poll. An explicit null
+`attempt_id` proves only that this request opened no attempt. Every other
+retained attempt field must be absent or null, and all other drain, journal,
+activation-grant and final-read checks still apply. Inspection never clears the
+policy or treats it as evidence that an attempt finished.
+
+If that poll opened the exact claim ID, or the poll lookup returns `NOT_FOUND`,
+the reader checks that ID with `session-inbox-attempt-status`. The latter also
+covers attempt admissions that do not create a poll. The actual historical
+attempt must pass the existing terminal session, delivery, journal, completion,
+reply and cleanup correspondence checks. Authentication, stale-session and
+transport errors do not fall through. A malformed present `inbox_attempt`
+continues to refuse; the policy fallback is limited to absent or null attempts.
+
 ## Focused validation
 
 Use a clean committed checkout and a new evidence directory:
@@ -122,10 +140,16 @@ census does not classify an unverified historical field as active or delete it.
 
 `scripts/check_r06_census_d2.py` uses the existing disposable API/PostgreSQL
 fixtures to complete and close real matching deliveries while retaining their
-policy and journal fields. Its seven cases cover combined success, mismatched
+policy and journal fields. Its cases cover combined success, mismatched
 policy claim, absent journal, unknown attempt, wrong session and final policy
-or actual claim invalidation. Standalone inspection remains not ready in every
-case. Source's existing `completion_scope` is observed for the valid retained
+or actual claim invalidation. Additional cases run Source's actual
+`NativeSession.admit_inbox` and `recover` against the owned API to retain an
+empty-poll policy, including its original execution after session resume.
+Unknown and foreign poll IDs, unrelated retained fields and final policy/claim
+changes refuse. Explicitly derived policy-only inputs also check real terminal
+and unfinished attempts; these are disposable fixture controls, not native
+qualification. Standalone inspection remains not ready in every case.
+Source's existing `completion_scope` is observed for the valid retained
 policy and used for the actual completion; Source has no census/drain-result
 counterpart, so the fixture does not invent one. Unit tests separately check
 named read-only requirements, identity/pin/field refusal, unrelated blockers and

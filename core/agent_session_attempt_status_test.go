@@ -8,6 +8,116 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestSessionInboxPollStatusEmptyAndHistoricalExecution(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	a := f.register(nativeAgent{Binding: "empty-poll-status"})
+	ref := sessionRef(a)
+	id := uuid.NewString()
+	claim, err := f.receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: id, Session: ref}, f.dest)
+	if err != nil || claim.Attempt != nil {
+		t.Fatalf("empty poll: %+v %v", claim, err)
+	}
+	want := SessionInboxPoll{RequestID: id, Session: ref}
+	before := attemptStatusState(t, f.receiver, ref.AgentID, uuid.NewString(), uuid.NewString())
+	got, err := f.receiver.SessionInboxPollStatus(ctx, SessionInboxPollQuery{Session: ref, RequestID: id}, f.dest)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("empty poll read: got %+v, want %+v: %v", got, want, err)
+	}
+	if after := attemptStatusState(t, f.receiver, ref.AgentID, uuid.NewString(), uuid.NewString()); after != before {
+		t.Fatal("poll inspection mutated session/poll state")
+	}
+	resumed := f.register(nativeAgent{Binding: "empty-poll-status"})
+	got, err = f.receiver.SessionInboxPollStatus(ctx, SessionInboxPollQuery{Session: sessionRef(resumed), RequestID: id}, f.dest)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("historical empty poll execution changed: %+v %v", got, err)
+	}
+	_, err = f.receiver.SessionInboxPollStatus(ctx, SessionInboxPollQuery{Session: ref, RequestID: id}, f.dest)
+	requireCode(t, err, "STALE_SESSION")
+}
+
+func TestSessionInboxPollStatusOpenedAndForeignRefusals(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	a, _, claim := f.claimed(nativeAgent{Binding: "poll-opened"}, "request", "turn-one", true)
+	ref, id := sessionRef(a), claim.Attempt.ID
+	before := attemptStatusState(t, f.receiver, ref.AgentID, id, claim.Attempt.Delivery.DeliveryID)
+	got, err := f.receiver.SessionInboxPollStatus(ctx, SessionInboxPollQuery{Session: ref, RequestID: id}, f.dest)
+	if err != nil || got.RequestID != id || got.Session != ref || got.AttemptID == nil || *got.AttemptID != id {
+		t.Fatalf("opened poll: %+v %v", got, err)
+	}
+	other := f.register(nativeAgent{Binding: "other-poll-agent"})
+	foreign := testStore(t, Channel{Principal: "foreign-" + f.repo, Repo: f.repo})
+	wrongRepo := testStore(t, Channel{Principal: f.receiver.channel.Principal, Repo: uuid.NewString()})
+	instrumented := testStore(t, Channel{Principal: f.receiver.channel.Principal, Repo: f.repo, Instrumented: true})
+	for _, tc := range []struct {
+		name     string
+		store    *Store
+		ref      AgentSessionRef
+		id, code string
+	}{
+		{"foreign-owner", foreign, ref, id, "NOT_FOUND"},
+		{"other-agent", f.receiver, sessionRef(other), id, "NOT_FOUND"},
+		{"wrong-repo", wrongRepo, ref, id, "NOT_FOUND"},
+		{"session-view", f.view(ref), ref, id, "INVALID_REQUEST"},
+		{"instrumented", instrumented, ref, id, "INVALID_REQUEST"},
+		{"missing", f.receiver, ref, uuid.NewString(), "NOT_FOUND"},
+		{"invalid", f.receiver, ref, "not-a-uuid", "INVALID_REQUEST"},
+		{"zero", f.receiver, ref, uuid.Nil.String(), "INVALID_REQUEST"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.store.SessionInboxPollStatus(ctx, SessionInboxPollQuery{Session: tc.ref, RequestID: tc.id}, f.dest)
+			requireCode(t, err, tc.code)
+			if !reflect.DeepEqual(got, SessionInboxPoll{}) {
+				t.Fatalf("refusal disclosed poll: %+v", got)
+			}
+		})
+	}
+	if after := attemptStatusState(t, f.receiver, ref.AgentID, id, claim.Attempt.Delivery.DeliveryID); after != before {
+		t.Fatal("poll reads modified attempt/session/delivery")
+	}
+}
+
+func TestSessionInboxPollStatusSessionBoundaries(t *testing.T) {
+	for _, boundary := range []string{"stopped", "restore", "local-only"} {
+		t.Run(boundary, func(t *testing.T) {
+			ctx := context.Background()
+			f := newNativeFixture(t)
+			dest := f.dest
+			if boundary == "local-only" {
+				dest = Destination{Name: "local", AllowLocal: true}
+			}
+			a := f.register(nativeAgent{Binding: "poll-boundary", Dest: &dest})
+			ref, id := sessionRef(a), uuid.NewString()
+			if claim, err := f.receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: id, Session: ref}, dest); err != nil || claim.Attempt != nil {
+				t.Fatalf("empty poll: %+v %v", claim, err)
+			}
+			code := "STALE_SESSION"
+			switch boundary {
+			case "stopped":
+				if _, err := f.receiver.LeaveAgent(ctx, ref, dest); err != nil {
+					t.Fatal(err)
+				}
+			case "restore":
+				if _, err := f.operator().FenceRestore(ctx, RestoreFenceRequest{RequestID: uuid.NewString(), Reason: "disposable poll status boundary"}); err != nil {
+					t.Fatal(err)
+				}
+			case "local-only":
+				code = "NOT_FOUND"
+				if got, err := f.receiver.SessionInboxPollStatus(ctx, SessionInboxPollQuery{Session: ref, RequestID: id}, dest); err != nil || got.RequestID != id {
+					t.Fatalf("local poll unavailable to local destination: %+v %v", got, err)
+				}
+			}
+			before := attemptStatusState(t, f.receiver, ref.AgentID, uuid.NewString(), uuid.NewString())
+			got, err := f.receiver.SessionInboxPollStatus(ctx, SessionInboxPollQuery{Session: ref, RequestID: id}, f.dest)
+			requireCode(t, err, code)
+			if !reflect.DeepEqual(got, SessionInboxPoll{}) || attemptStatusState(t, f.receiver, ref.AgentID, uuid.NewString(), uuid.NewString()) != before {
+				t.Fatal("refused poll read disclosed or changed retained state")
+			}
+		})
+	}
+}
+
 func TestSessionInboxAttemptStatusActiveAndHistoricalExecution(t *testing.T) {
 	ctx := context.Background()
 	f := newNativeFixture(t)

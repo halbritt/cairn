@@ -47,7 +47,7 @@ func TestR06RealAPIConsumer(t *testing.T) {
 		Error string
 	}
 	var calls []call
-	allowed := map[string]bool{"wake-attempts": true, "event-watch": true, "session-inbox-control": true, "session-inbox-attempt-status": true}
+	allowed := map[string]bool{"wake-attempts": true, "event-watch": true, "session-inbox-control": true, "session-inbox-attempt-status": true, "session-inbox-poll-status": true}
 	runner := journal.RunnerFunc(func(ctx context.Context, argv []string, input string) (journal.Result, error) {
 		if len(argv) == 0 || !allowed[argv[len(argv)-1]] {
 			return journal.Result{}, fmt.Errorf("inspector attempted non-read command: %v", argv)

@@ -17,7 +17,7 @@ from check_r06_status_consumer import Fixture, ROOT, sha, snapshot, uid, write
 from disposable_host import OwnedCluster, pg_bindir, require, run_envelope
 
 
-READS = ('wake-attempts', 'event-watch', 'session-inbox-control', 'session-inbox-attempt-status')
+READS = ('wake-attempts', 'event-watch', 'session-inbox-control', 'session-inbox-attempt-status', 'session-inbox-poll-status')
 
 
 def forward_api(path, argv):

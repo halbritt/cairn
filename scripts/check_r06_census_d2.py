@@ -19,7 +19,11 @@ from disposable_host import OwnedCluster, pg_bindir, require
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ('matched-policy', 'mismatched-claim', 'no-journal', 'unknown-attempt',
-         'wrong-session', 'final-policy-change', 'final-claim')
+         'wrong-session', 'final-policy-change', 'final-claim',
+         'policy-only-terminal', 'policy-only-unfinished',
+         'source-empty-poll', 'source-empty-historical', 'source-empty-unknown',
+         'source-empty-foreign', 'source-empty-retained',
+         'source-empty-final-policy', 'source-empty-final-claim')
 
 
 def source_policy():
@@ -48,7 +52,7 @@ class PolicyOwner(status.Fixture):
         return super().call(role, operation, body, session=session, expected=expected)
 
 
-def retain(fixture, path, source):
+def policy_owner(fixture, path, source):
     owner = PolicyOwner.__new__(PolicyOwner)
     owner.root = fixture.evidence / ('owner-' + path.stem)
     owner.root.mkdir(mode=0o700)
@@ -57,7 +61,39 @@ def retain(fixture, path, source):
     owner.state = json.loads(path.read_text())
     owner.agent = owner.state['agent']
     owner.session = owner.ref(owner.agent)
-    owner.retained(settle=True, close=True)
+    return owner
+
+
+def retain(fixture, path, source, *, settled=True):
+    owner = policy_owner(fixture, path, source)
+    owner.retained(settle=settled, close=settled)
+    return owner
+
+
+def empty_poll(fixture, path, source):
+    """The actual Source admission/recover writer, calling the owned API.
+
+    No local attempt keys are cleared to manufacture the policy-only state.
+    The returned null is a durable poll observation, never a terminal attempt.
+    """
+    owner = policy_owner(fixture, path, source)
+    config = dict(cairn=str(fixture.images['api']), socket=str(fixture.host.socket),
+                  token_file=str(fixture.host.token('worker')), repo=fixture.host.repo,
+                  state_dir=str(path.parent))
+    before = copy.deepcopy(owner.state)
+    require(not any(owner.state.get(k) is not None for k in source._native_session.ATTEMPT_KEYS),
+            'empty-poll writer requires the unmodified idle fixture')
+    require(source.native_session(config, owner.state, path).admit_inbox() is None,
+            'Source empty admission unexpectedly opened an attempt')
+    policy = owner.state['inbox_result_policy']
+    require(set(policy) == {'claim_request_id', 'version'} and policy['version'] == 1 and
+            not any(owner.state.get(k) is not None for k in source._native_session.ATTEMPT_KEYS
+                    if k != 'inbox_result_policy'), 'Source did not retain exactly its empty-poll policy')
+    poll = owner.call('worker', 'session-inbox-poll-status',
+                      dict(session=owner.session, request_id=policy['claim_request_id']))
+    require(poll == dict(request_id=policy['claim_request_id'], session=owner.session, attempt_id=None),
+            'authenticated poll does not match actual Source admission')
+    census.write(owner.root / 'actual-source-empty-poll.json', dict(before=before, after=owner.state, poll=poll))
     return owner
 
 
@@ -129,17 +165,26 @@ def invoke(f, operation, label, *, error=None, actor_path=None, claim=False):
     return parsed
 
 
-def run(evidence):
+def run(evidence, images_path=None):
     scratch = Path(tempfile.mkdtemp(prefix='r06-census-d2-', dir=Path.home() / '.cache'))
     census.write(evidence / 'scratch.json', dict(path=str(scratch)))
-    images = control.build(scratch)
-    helper = scratch / 'tools/helper'
-    control.command(['go', 'test', '-race', '-buildvcs=false', '-c', '-o', helper,
-                     './internal/lifecycle/coordination'], scratch / 'tools/build-helper')
-    helper.chmod(0o500)
-    images['helper'] = helper
-    control.command(['go', 'version', '-m', helper], scratch / 'tools/helper-modules')
-    census.write(evidence / 'images-before-use.json', {k:dict(path=str(v), sha256=census.sha(v)) for k,v in images.items()})
+    if images_path:
+        from check_r06_native_unit import checked_images
+        pinned, manifest = checked_images(images_path)
+        require('observer' in pinned, 'composed D2 fixture requires the coordination observer image')
+        images = dict(api=pinned['api'], control=pinned['control'], helper=pinned['observer'])
+        census.write(evidence / 'composed-images.json', dict(manifest_path=str(images_path),
+            manifest_sha256=census.sha(images_path), manifest=manifest, consumer_role='observer'))
+    else:
+        images = control.build(scratch)
+        helper = scratch / 'tools/helper'
+        control.command(['go', 'test', '-race', '-buildvcs=false', '-c', '-o', helper,
+                         './internal/lifecycle/coordination'], scratch / 'tools/build-helper')
+        helper.chmod(0o500)
+        images['helper'] = helper
+        control.command(['go', 'version', '-m', helper], scratch / 'tools/helper-modules')
+    before_images = {k:dict(path=str(v), sha256=census.sha(v)) for k,v in images.items()}
+    census.write(evidence / 'images-before-use.json', before_images)
     census.write(evidence / 'source-before-use.json', {str(x.relative_to(ROOT)):census.sha(x) for x in
         [Path(__file__), *sorted((ROOT / 'internal/lifecycle/coordination').glob('shared_unit*.go')),
          *(ROOT / 'scripts' / n for n in ('check_r06_status_consumer.py', 'check_r06_census_control.py',
@@ -161,10 +206,36 @@ def run(evidence):
                 client.chmod(0o500)
                 f.catalog['Clients'][0]['SHA256'] = census.sha(client)
                 path = Path(f.proposal['Sessions'][0])
-                owner = retain(f, Path(f.proposal['Sessions'][1]) if name == 'wrong-session' else path, source)
+                foreign_path = Path(f.proposal['Sessions'][1])
+                if name.startswith('source-empty-'):
+                    owner = empty_poll(f, foreign_path if name == 'source-empty-foreign' else path, source)
+                else:
+                    owner = retain(f, foreign_path if name == 'wrong-session' else path, source,
+                                   settled=name != 'policy-only-unfinished')
                 state = json.loads(path.read_text())
                 if name == 'wrong-session':
                     state.update({k:v for k,v in owner.state.items() if k.startswith('inbox_')})
+                elif name == 'source-empty-foreign':
+                    state['inbox_result_policy'] = copy.deepcopy(owner.state['inbox_result_policy'])
+                elif name == 'source-empty-historical':
+                    selected = [json.loads(p.read_text()) for p in
+                                Path(f.selection['Directory']).glob('*.json')]
+                    bindings = [cfg['binding'] for cfg in selected if
+                                source.state_path(cfg, state['agent']['native_session_id']) == path]
+                    require(len(bindings) == 1, 'historical empty poll requires its exact fixture binding')
+                    state['agent'] = owner.call('worker', 'agent-register', dict(request_id=control.uid(),
+                        binding=bindings[0], native_session_id=state['agent']['native_session_id'],
+                        metadata=state['agent']['metadata']))
+                    require(status.Fixture.ref(state['agent']) != owner.session,
+                            'empty-poll historical control did not advance execution')
+                elif name == 'source-empty-unknown':
+                    state['inbox_result_policy']['claim_request_id'] = control.uid()
+                elif name == 'source-empty-retained':
+                    state['inbox_completion'] = control.uid()
+                elif name in ('policy-only-terminal', 'policy-only-unfinished'):
+                    # Explicitly derived unit input; the attempt and journal are
+                    # real fixture records. This is not a native qualification.
+                    state.pop('inbox_attempt')
                 elif name == 'mismatched-claim':
                     state['inbox_result_policy']['claim_request_id'] = control.uid()
                 elif name == 'unknown-attempt':
@@ -179,17 +250,17 @@ def run(evidence):
                 require(not standalone['Census']['FixtureReady'] and standalone['Census']['DrainRequirements']
                         and 'authenticated drain correspondence' in standalone['Error'], 'standalone census waived retained requirements')
                 census.write(f.evidence / 'standalone-requirements.json', standalone)
-                if name == 'matched-policy':
+                if name in ('matched-policy', 'policy-only-terminal', 'source-empty-poll', 'source-empty-historical'):
                     invoke(f, 'inspect', 'inspect')
                     invoke(f, 'switch', 'switch')
-                elif name == 'final-policy-change':
+                elif name in ('final-policy-change', 'source-empty-final-policy'):
                     transport = json.loads(f.transport.read_text())
                     transport['mutation'] = dict(path=str(path), field='inbox_result_policy',
                         value=dict(claim_request_id=control.uid(), version=1), event_count=3)
                     census.write(f.transport, transport)
                     invoke(f, 'switch', 'negative', error='D6 drain receipt invalidated', actor_path=str(path))
                     require(f.transport.with_name('actor.json').exists(), 'final-read mutation was not exercised')
-                elif name == 'final-claim':
+                elif name in ('final-claim', 'source-empty-final-claim'):
                     note = f.host.agent('sender', 'create', dict(request_id=control.uid(), draft=dict(kind='note',
                         body='D2 join final claim', scope=dict(repo=f.host.repo, task_id='*', run_id='*'),
                         claim_type='self', sensitivity='shareable')))
@@ -206,8 +277,16 @@ def run(evidence):
                     invoke(f, 'switch', 'negative', error='D6 drain receipt invalidated', claim=True)
                 else:
                     error = {'mismatched-claim':'D2 retained result policy does not match', 'no-journal':'D3',
-                             'unknown-attempt':'session-inbox-attempt-status', 'wrong-session':'session-inbox-attempt-status'}[name]
+                             'unknown-attempt':'session-inbox-attempt-status', 'wrong-session':'session-inbox-attempt-status',
+                             'policy-only-unfinished':'D4 native inbox hold is not closed',
+                             'source-empty-unknown':'session-inbox-attempt-status',
+                             'source-empty-foreign':'session-inbox-attempt-status',
+                             'source-empty-retained':'D2 empty poll has unrelated retained attempt fields'}[name]
                     invoke(f, 'switch', 'negative', error=error)
+                if name.startswith('source-empty-') or name == 'policy-only-terminal':
+                    counts = json.loads(f.transport.with_name('read-counts.json').read_text())
+                    require(counts.get('session-inbox-poll-status', 0) > 0,
+                            'public consumer did not authenticate the retained policy locator')
                 outcomes.append(dict(case=name, status='PASS'))
                 print(json.dumps(outcomes[-1]), flush=True)
             finally:
@@ -222,16 +301,19 @@ def run(evidence):
         census.write(evidence / 'cleanup.json', dict(pid=pid, group=group, stopped=stopped, group_signals=False))
         require(stopped, 'owned PG cleanup unresolved')
     census.write(evidence / 'outcomes.json', outcomes)
+    require(all(census.sha(v) == before_images[k]['sha256'] for k, v in images.items()),
+            'fixture images changed during use')
     print(f'R06 census D2 join: {len(outcomes)} passed, 0 failed, 0 skipped', flush=True)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path)
+    parser.add_argument('--images', type=Path, help='existing composed HOST manifest; observer is the census helper')
     parser.add_argument('--forward-api', type=Path)
     args, extra = parser.parse_known_args()
     if args.forward_api:
         raise SystemExit(forward(args.forward_api, extra))
     require(args.evidence is not None and not extra, '--evidence required')
     args.evidence.mkdir(mode=0o700, parents=True, exist_ok=False)
-    run(args.evidence)
+    run(args.evidence, args.images)

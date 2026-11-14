@@ -17,6 +17,29 @@ import (
 	"github.com/halbritt/cairn/localapi"
 )
 
+func TestSessionInboxPollStatusTypedClient(t *testing.T) {
+	ctx := context.Background()
+	client, _, _, _ := authenticatedHost(t, "agent", "hosted", nil)
+	var agent core.AgentInstance
+	if err := client.Call(ctx, "agent-register", core.RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "empty-poll-read", NativeSessionID: "empty-poll-read", Metadata: core.AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, &agent); err != nil {
+		t.Fatal(err)
+	}
+	ref := core.AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+	id := uuid.NewString()
+	var claim core.SessionInboxResult
+	if err := client.Call(ctx, "session-inbox-claim", core.SessionInboxClaim{RequestID: id, Session: ref}, &claim); err != nil || claim.Attempt != nil {
+		t.Fatalf("empty poll: %+v %v", claim, err)
+	}
+	got, err := client.SessionInboxPollStatus(ctx, ref, id)
+	if err != nil || got.RequestID != id || got.Session != ref || got.AttemptID != nil {
+		t.Fatalf("poll status lost empty identity: %+v %v", got, err)
+	}
+	raw, err := json.Marshal(got)
+	if err != nil || !bytes.Contains(raw, []byte(`"attempt_id":null`)) {
+		t.Fatalf("empty poll not explicit null: %s %v", raw, err)
+	}
+}
+
 func TestSessionInboxAttemptStatusTypedClient(t *testing.T) {
 	ctx := context.Background()
 	requests := make(chan []byte, 4)

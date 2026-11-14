@@ -63,4 +63,10 @@ func TestRetryClassRejectsRequestIDMismatch(t *testing.T) {
 	if _, ok := retryClass("version", map[string]bool{"request_id": true}); ok {
 		t.Fatal("read operation with request_id property should fail retry verification")
 	}
+	if class, ok := retryClass("session-inbox-poll-status", map[string]bool{"request_id": true}); !ok || class != "read" {
+		t.Fatalf("existing poll locator classified as a write: %q %v", class, ok)
+	}
+	if _, ok := retryClass("session-inbox-poll-status", map[string]bool{}); ok {
+		t.Fatal("poll status without its request locator should fail retry verification")
+	}
 }

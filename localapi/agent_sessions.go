@@ -28,6 +28,7 @@ var agentSessionOperations = []OperationSpec{
 	bindDestination(OperationSpec{Name: "session-delivery-observe", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "idempotent"}, (*core.Store).ObserveSessionDelivery),
 	bindDestination(OperationSpec{Name: "session-inbox-control", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).SessionInboxControl),
 	bindDestination(OperationSpec{Name: "session-inbox-attempt-status", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).SessionInboxAttemptStatus),
+	bindDestination(OperationSpec{Name: "session-inbox-poll-status", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).SessionInboxPollStatus),
 	bindDestination(OperationSpec{Name: "session-tool-capture", SourceFile: "agent_sessions.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).CaptureSessionTools),
 	bindDestination(OperationSpec{Name: "session-tool-stop", SourceFile: "agent_sessions.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).ReportSessionToolStop),
 	bindOperation(OperationSpec{Name: "agent-register", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "request-id"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req core.RegisterAgentRequest) (core.AgentInstance, error) {
