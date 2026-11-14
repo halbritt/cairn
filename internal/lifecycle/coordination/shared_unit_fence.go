@@ -669,11 +669,11 @@ func selectedFenceDatabase(ctx context.Context, db *pgx.Conn, scope SelectedUnit
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 	rollbackErr := tx.Rollback(cleanup)
 	cancel()
+	if rollbackErr != nil {
+		return nil, errors.Join(readErr, selectedFenceUnknown("readonly database observation did not close"))
+	}
 	if readErr != nil {
 		return nil, readErr
-	}
-	if rollbackErr != nil {
-		return nil, selectedFenceUnknown("readonly database observation did not close")
 	}
 	return facts, nil
 }
