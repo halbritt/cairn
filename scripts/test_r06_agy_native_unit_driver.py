@@ -1,0 +1,338 @@
+"""Preparation boundaries; no actual Agy/native/API/provider invocation."""
+import contextlib
+import copy
+import importlib
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import check_r06_agy_native_unit as driver
+
+
+class AgyPreparationTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='cairn-agy-prep-test-', dir=Path.home() / '.cache')
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+
+    def pins(self):
+        return dict(python_sha256=driver.tool_pin(Path(sys.executable).resolve())['SHA256'],
+                    strace_sha256=driver.tool_pin(Path(shutil.which('strace')).resolve())['SHA256'])
+
+    def test_import_never_launches_a_process(self):
+        with patch('subprocess.Popen', side_effect=AssertionError('process on import')), \
+                patch.object(driver.r04, 'AgySession', side_effect=AssertionError('Agy on import')):
+            importlib.reload(driver)
+
+    def test_native_entry_refuses_before_any_process_or_file(self):
+        with patch.object(driver.r04, 'TracedProcess', side_effect=AssertionError('trace launch')), \
+                patch.object(driver.r04, 'AgySession', side_effect=AssertionError('native launch')):
+            with contextlib.redirect_stderr(io.StringIO()) as diagnostic:
+                self.assertEqual(driver.main(['--native-unit']), 2)
+        self.assertIn('target resource closure', diagnostic.getvalue())
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_entry_requires_explicit_tool_pins(self):
+        with patch.object(driver.r04, 'TracedProcess', side_effect=AssertionError('trace launch')):
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(driver.main(['--prepare-stubbed', '--evidence', str(self.root)]), 2)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_modes_cannot_be_combined(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                driver.main(['--native-unit', '--prepare-stubbed'])
+
+    def test_pin_mismatch_cannot_consume_ledger_or_launch(self):
+        pins = self.pins()
+        pins['python_sha256'] = '0' * 64
+        with patch.object(driver.r04, 'TracedProcess', side_effect=AssertionError('trace launch')):
+            with self.assertRaisesRegex(driver.Refused, 'pin mismatch'):
+                driver.prepare_stubbed(self.root, **pins)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_symlink_and_writable_input_refused(self):
+        original = self.root / 'original'
+        original.write_bytes(b'pin')
+        link = self.root / 'link'
+        link.symlink_to(original)
+        with self.assertRaises(ValueError):
+            driver.checked_pin(link)
+        original.chmod(0o666)
+        with self.assertRaises(ValueError):
+            driver.checked_pin(original)
+
+    def test_evidence_requires_owned_0700_directory(self):
+        self.root.chmod(0o755)
+        with self.assertRaisesRegex(driver.Refused, '0700'):
+            driver.prepare_stubbed(self.root, **self.pins())
+
+    def test_output_custody_refuses_preexisting_bytes(self):
+        selected = self.root / 'keep'
+        selected.write_bytes(b'do not overwrite')
+        with self.assertRaisesRegex(driver.Refused, 'fresh empty'):
+            driver.prepare_stubbed(self.root, **self.pins())
+        self.assertEqual(selected.read_bytes(), b'do not overwrite')
+
+    def test_ledger_is_one_shot_and_keeps_first_result(self):
+        path = self.root / 'stub-ledger.json'
+        ledger = driver.reserve_ledger(path, {})
+        driver.finish_ledger(ledger, dict(state='failed', kind='PREPARATION_STUBBED'))
+        saved = path.read_bytes()
+        with self.assertRaises(FileExistsError):
+            driver.reserve_ledger(path, {})
+        self.assertEqual(path.read_bytes(), saved)
+
+    def test_launch_failure_remains_consumed_without_native_fallback(self):
+        with patch.object(driver.r04, 'TracedProcess', side_effect=RuntimeError('retained fixture failure')), \
+                patch.object(driver.r04, 'AgySession', side_effect=AssertionError('native fallback')):
+            with self.assertRaisesRegex(RuntimeError, 'retained fixture failure'):
+                driver.prepare_stubbed(self.root, **self.pins())
+        ledger = json.loads((self.root / 'stub-ledger.json').read_bytes())
+        self.assertEqual(ledger['state'], 'failed')
+        self.assertEqual(ledger['native_runs'], 0)
+        with self.assertRaisesRegex(driver.Refused, 'fresh empty'):
+            driver.prepare_stubbed(self.root, **self.pins())
+
+    def test_real_stub_trace_has_live_generation_eof_zero_join_and_no_native_claim(self):
+        with patch.object(driver.r04, 'AgySession', side_effect=AssertionError('actual native launch')):
+            result = driver.prepare_stubbed(self.root, **self.pins())
+        self.assertEqual(result['state'], 'passed')
+        self.assertEqual(result['parsed_execs'], 1)
+        self.assertEqual(result['stdin_bytes'], len(driver.INPUT))
+        self.assertEqual(result['interval']['Start'], 0)
+        self.assertEqual(result['interval']['End'], Path(result['interval']['Trace']['Path']).stat().st_size)
+        self.assertEqual(result['callbacks'], 0)
+        self.assertFalse(result['NativePASS'])
+        self.assertFalse(result['native_client_executed'])
+        self.assertFalse(result['complete_unit_qualified'])
+        self.assertEqual(result['refresh'], 'unobserved')
+        self.assertEqual(result['native_runs'], 0)
+        self.assertTrue(all(pid > 1 and not Path(f'/proc/{pid}').exists() for pid in result['owned_pids']))
+        self.assertTrue(all(path.stat().st_mode & 0o077 == 0 for path in self.root.iterdir()))
+        generation = json.loads(Path(result['generation']['Path']).read_bytes())
+        self.assertEqual(generation['Before'], generation['After'])
+        with self.assertRaisesRegex(driver.Refused, 'fresh empty'):
+            driver.prepare_stubbed(self.root, **self.pins())
+
+
+class AuthenticatedPreparationBoundaries(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='cairn-agy-auth-test-', dir=Path.home()/'.cache')
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+
+    def test_authenticated_entry_requires_sealed_packet_before_pg_or_native(self):
+        with patch.object(driver, 'pg_bindir', side_effect=AssertionError('PG before packet')), \
+                patch.object(driver.r04, 'AgySession', side_effect=AssertionError('native entry')):
+            with contextlib.redirect_stderr(io.StringIO()) as error:
+                code = driver.main(['--prepare-authenticated', '--evidence', str(self.root)])
+        self.assertEqual(code, 2)
+        self.assertIn('INPUT_NOT_READY', error.getvalue())
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_unknown_input_preserves_consumed_ledger(self):
+        ledger = self.root/'preparation-ledger.json'
+        handle = driver.reserve_ledger(ledger, {}, kind='AUTHENTICATED_PREPARATION')
+        driver.finish_ledger(handle, dict(state='passed', native_runs=0))
+        saved = ledger.read_bytes()
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                driver.main(['--prepare-authenticated', '--unknown-admission'])
+        self.assertEqual(ledger.read_bytes(), saved)
+
+    def test_native_refusal_preserves_existing_auth_ledger(self):
+        ledger = self.root/'preparation-ledger.json'
+        ledger.write_bytes(b'consumed preparation; native_runs=0\n')
+        saved = ledger.read_bytes()
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(driver.main(['--native-unit', '--evidence', str(self.root)]), 2)
+        self.assertEqual(ledger.read_bytes(), saved)
+
+    def manifest(self):
+        return dict(schema='cairn.r06-unit-images/1', source_head=driver.BASE, source_tree=driver.BASE_TREE,
+                    images={role:dict(path='/unit/'+role, sha256=str(i)*64)
+                            for i, role in enumerate(driver.ROLES, start=1)})
+
+    def test_images_must_name_exact1508_tree(self):
+        pins = self.manifest()
+        pins['source_tree'] = '71302f4fe158e7d59fa3d5b077df2447af03ad54'
+        with self.assertRaisesRegex(driver.Refused, 'exact1508'):
+            driver.validate_image_manifest(pins)
+
+    def test_five_roles_cannot_alias_helper_observer(self):
+        pins = self.manifest()
+        pins['images']['observer'] = dict(pins['images']['helper'])
+        with self.assertRaisesRegex(driver.Refused, 'alias'):
+            driver.validate_image_manifest(pins)
+
+    def packet_paths(self, manifest_name):
+        paths = [self.root/manifest_name, self.root/'index.json', self.root/'build-complete.json']
+        for path in paths:
+            path.write_text('{}\n')
+            path.chmod(0o600)
+        return [item for path in paths for item in (path, driver.roundtrip.sha(path))]
+
+    def test_pending_manifest_is_not_consumable(self):
+        with self.assertRaisesRegex(driver.Refused, 'final packet filenames'):
+            driver.checked_packet(*self.packet_paths('images-host.pending.json'))
+
+    def test_unsealed_index_is_not_consumable(self):
+        with self.assertRaisesRegex(driver.Refused, 'sealed index'):
+            driver.checked_packet(*self.packet_paths('images-host.json'))
+
+    def test_privacy_snapshot_never_hashes_credentials_aliases_or_api_home(self):
+        credential = self.root/'worker.token'
+        credential.write_bytes(b'unit-only credential')
+        alias = self.root/'alias'
+        os.link(credential, alias)
+        api_home = self.root/'api-home'
+        api_home.mkdir(mode=0o700)
+        (api_home/'identities.json').write_bytes(b'private identity input')
+        normal = self.root/'profile.json'
+        normal.write_bytes(b'{"inbox_recall_binding":null}\n')
+        original = driver.roundtrip.sha
+        def privacy_guard(path):
+            path = Path(path)
+            self.assertFalse(path.is_relative_to(api_home))
+            self.assertFalse(os.path.samefile(path, credential))
+            return original(path)
+        with patch.object(driver.roundtrip, 'sha', side_effect=privacy_guard):
+            rows = driver.roundtrip.snapshot_root(self.root, credential, api_home=api_home)
+        for path in (credential, alias, api_home/'identities.json'):
+            self.assertFalse(rows[str(path)]['content_read'])
+            self.assertNotIn('sha256', rows[str(path)])
+        self.assertIn('sha256', rows[str(normal)])
+
+    def test_null_profile_pin_must_match_actual_bytes(self):
+        path = self.root/'profile.json'
+        path.write_text('{"inbox_recall_binding":null}\n')
+        pin = dict(Path=str(path), SHA256=driver.roundtrip.sha(path))
+        fixture = {role+label:pin for role in ('Memory', 'Config') for label in ('A', 'B')}
+        self.assertEqual(len(driver.null_profiles(fixture)), 4)
+        path.write_text('{"inbox_recall_binding":"invented"}\n')
+        with self.assertRaisesRegex(driver.Refused, 'pin changed'):
+            driver.null_profiles(fixture)
+
+
+class SealedRecipeCompatibilityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.packet = Path(os.environ['CAIRN_R06_AGY_CONTROLLED_PACKET'])
+        cls.pins = json.loads((cls.packet/'images-host.json').read_bytes())
+        cls.candidate = json.loads((cls.packet/'candidate.json').read_bytes())
+        driver.checked_pin(cls.packet/'images-host.json',
+            'e132531f982044e89546e67242f0ae28d7b0d3db05e8fee4f21c8f428feca068')
+        driver.checked_pin(cls.packet/'candidate.json',
+            '4e14e15f0f0aaa8a43cbdaf36bd396355f42dfdfd748584443b5570b0bb60397')
+
+    def recipe(self, role='helper'):
+        return copy.deepcopy(self.candidate['roles'][role]), self.pins['images'][role]
+
+    def test_actual_sealed_recipes_all_five_roles(self):
+        for role in driver.ROLES:
+            with self.subTest(role=role):
+                record, image = self.recipe(role)
+                driver.validate_build_recipe(role, record, image, self.pins)
+
+    def test_real_flags_permit_option_order(self):
+        for role in ('helper', 'observer'):
+            record, image = self.recipe(role)
+            argv = record['build']['inner_argv']
+            record['build']['inner_argv'] = [argv[0], 'test', '-c', '-o', image['path'],
+                                            '-buildvcs=false', '-race', argv[-1]]
+            driver.validate_build_recipe(role, record, image, self.pins)
+
+    def test_missing_compile_refuses_execution_only_test(self):
+        record, image = self.recipe()
+        record['build']['inner_argv'].remove('-c')
+        with self.assertRaises(driver.Refused):
+            driver.validate_build_recipe('helper', record, image, self.pins)
+
+    def test_missing_race_refused(self):
+        record, image = self.recipe()
+        record['build']['inner_argv'].remove('-race')
+        with self.assertRaises(driver.Refused):
+            driver.validate_build_recipe('helper', record, image, self.pins)
+
+    def test_missing_vcs_refused(self):
+        record, image = self.recipe()
+        record['build']['inner_argv'].remove('-buildvcs=false')
+        with self.assertRaises(driver.Refused):
+            driver.validate_build_recipe('helper', record, image, self.pins)
+
+    def test_wrong_output_refused(self):
+        record, image = self.recipe()
+        argv = record['build']['inner_argv']
+        argv[argv.index('-o')+1] = '/wrong/output'
+        with self.assertRaises(driver.Refused):
+            driver.validate_build_recipe('helper', record, image, self.pins)
+
+    def test_wrong_package_refused(self):
+        record, image = self.recipe()
+        record['build']['inner_argv'][-1] = './internal/lifecycle/coordination'
+        with self.assertRaises(driver.Refused):
+            driver.validate_build_recipe('helper', record, image, self.pins)
+
+    def test_duplicate_output_refused(self):
+        record, image = self.recipe()
+        record['build']['inner_argv'][2:2] = ['-o', image['path']]
+        with self.assertRaises(driver.Refused):
+            driver.validate_build_recipe('helper', record, image, self.pins)
+
+    def test_duplicate_required_flag_refused(self):
+        record, image = self.recipe()
+        record['build']['inner_argv'].insert(2, '-race')
+        with self.assertRaises(driver.Refused):
+            driver.validate_build_recipe('helper', record, image, self.pins)
+
+    def test_unapproved_go_identity_refused(self):
+        record, image = self.recipe()
+        record['build']['inner_argv'][0] = '/bin/sh'
+        with self.assertRaises(driver.Refused):
+            driver.validate_build_recipe('helper', record, image, self.pins)
+
+    def test_unknown_build_flag_refused(self):
+        record, image = self.recipe()
+        record['build']['inner_argv'].insert(2, '-run=all')
+        with self.assertRaises(driver.Refused):
+            driver.validate_build_recipe('helper', record, image, self.pins)
+
+    def test_actual_role_alias_refused(self):
+        pins = copy.deepcopy(self.pins)
+        pins['images']['observer'] = dict(pins['images']['helper'])
+        with self.assertRaises(driver.Refused):
+            driver.validate_image_manifest(pins)
+
+    def test_controlled_regular_file_still_refuses_0664(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()/'.cache') as directory:
+            path = Path(directory)/'artifact'
+            path.write_bytes(b'unit-only data')
+            path.chmod(0o664)
+            with self.assertRaises(ValueError):
+                driver.checked_pin(path)
+
+    def test_complete_controlled_packet_preflight(self):
+        driver.checked_packet(self.packet/'images-host.json',
+            'e132531f982044e89546e67242f0ae28d7b0d3db05e8fee4f21c8f428feca068',
+            self.packet/'index.json', 'f169590e02f41ba1b9e6578713a7f030a24d0a1f21432bf2a2c118bc200bbeaa',
+            self.packet/'build-complete.json', 'ddfcf61f4e63f44378e5009f16b510fa2436914d270dc807dcd865201a55745f')
+
+
+def load_tests(loader, standard, pattern):
+    # Normal discovery keeps the standing portable controls. This explicit
+    # fixture input adds real sealed-recipe controls, with no skipped tests.
+    if os.environ.get('CAIRN_R06_AGY_CONTROLLED_PACKET'):
+        return standard
+    return unittest.TestSuite(loader.loadTestsFromTestCase(case) for case in
+        (AgyPreparationTests, AuthenticatedPreparationBoundaries))
+
+
+if __name__ == '__main__':
+    unittest.main()
