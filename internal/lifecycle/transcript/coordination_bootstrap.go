@@ -8,7 +8,8 @@ import (
 )
 
 // RunCoordinationBootstrap retains the ordinary concrete reader and authenticated
-// host. No serialized result or scope grants permission to publish a selection.
+// host. Effectful operations capture a real lifecycle-only fence in this
+// process. No serialized result or scope substitutes for that receipt.
 func RunCoordinationBootstrap(ctx context.Context, args []string, out, diagnostic io.Writer) int {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

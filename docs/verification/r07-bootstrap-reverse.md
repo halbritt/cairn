@@ -1,195 +1,191 @@
-# R07 bootstrap and retained Python reverse: source gap and fixture
+# R07 bootstrap exchange and retained reverse
 
-The original installed layout has **no supported operator bootstrap or bootstrap
-reverse entrypoint** on source `8631c6f12b8b484d608d959683ed5a6767a2db66`, tree
-`771aa3be71d205ab3db7f3b330f2e7c9183328c2`. The nine-file engineering candidate
-adds a separate authenticated **read-only** mixed-layout inspection producer,
-a metadata planner and owned regression fixtures. It deliberately
-does not add an apply command, accept a serialized drain receipt, or turn an
-inventory into admission. Native qualification, production mutation and remote
-commands are outside this fixture.
+`cairn-lifecycle unit-bootstrap` now has an effectful operator path for a
+pre-staged complete watcher selection. It captures the landed selected-unit
+fence, reads authenticated D1–D5 facts for both selections, takes the actual
+watcher flock, rechecks D6 and exchanges the two directories atomically. Reverse
+moves the original directory itself back, preserving original config and opaque
+archive inodes, bytes, modes and owners. Rename changes directory ctime.
 
-The starting observations are the accepted read-only inventory
-`6c560c91-c5c1-4af7-9313-12d93599c1af/v1`, report SHA-256
-`4db796b61102022514f2a6824c959e02ace52fb889fa094f8f109f94b65d3217`, index
-`9735a920a150facb15b2f2af79c668b79e5e4e1afd566aae543977f724832d41`.
-Those are historical observations, not current owner or writer coverage. The
-fixture does not contact those hosts or reuse any installed data.
+This is source engineering and disposable-fixture verification. It does not
+admit a production operation, refresh a native client, establish installed
+runtime/ABI adoption, or complete R07. The existing current-/3 `unit-control`
+consumer is unchanged. A selected-file S04R staging utility supplies the actual
+API launcher flags; starting or changing a managed API remains an admitted
+operator step.
 
-## Why a Python swap cannot currently be admitted
+## Operator commands and selection data
 
-| Boundary | Current source and consequence |
-| --- | --- |
-| Original mixed directory | [readWatchBindings](../../internal/lifecycle/coordination/shared_unit.go) accepts pinned JSON basenames and `.watch.lock` only. The 17 non-JSON archives prevent even the local part of drain capture. Renaming them away first would mutate the original before the required drain. |
-| Private drain receipt | [RunUnitControl](../../internal/lifecycle/coordination/shared_unit_control.go) validates current/next selections before capturing authenticated D1–D5. Its `inspect` output contains evidence, not the process-local `WatchDrainReceipt`. |
-| D6 | [recheckPrepared](../../internal/lifecycle/coordination/shared_unit_drain.go) is private and compares freshly observed facts. Python cannot reuse a JSON `inspected` flag or earlier fingerprints as that receipt. The read/rename interval is not atomic even for the existing checked operation. |
-| Genuine unbound retained /2 | [unboundReceipt and unboundMemory](../../internal/lifecycle/coordination/shared_unit_census_unbound.go) require a verified disabled /3 association. [loadUnitTarget](../../internal/lifecycle/coordination/shared_unit_control_target.go) explicitly separates retained /2 binding and literal argv from a /3 target receipt. |
-| Universe and account hooks | [Census](../../internal/lifecycle/coordination/shared_unit_census.go) retains the disposable-fixture scope boundary. The catalog root must be owned `0700`; nonselected account/workspace hook layers still need actual closure. A new subtree cannot cover unchanged issued paths outside it. |
-| Identity | `unitControlPairIdentity` fixes binding, state directory, harness, repository, socket, token selector, config home and affected memory state. Copying profiles into a new subtree does not authorize moving those identities. |
-| Complete writer fence | A joined fixture child, a quiet snapshot and a selection bitmap do not identify and fence all installed service/restart/native writers. No currently selected source contract supplies that complete stopped boundary for this original layout. |
-| Semantic reverse | [S04R contracts](../semantic-python-closure.md) bind exact immutable payload/control generations and a separate private home. Their accepted runtime selection is not established by lifecycle /2 binding bytes, inventory or the inert file fixture. |
-
-These gaps were reported before any shared helper, Go, schema, SDK or Store
-edit. The existing Go checks remain unchanged. A successful bound `/2` profile
-data roundtrip through the Go control command is narrower than native retained
-Python qualification or a full Go `/3` target roundtrip.
-
-## Implemented first finite cut
-
-`cairn-lifecycle unit-bootstrap inspect --plan ABSOLUTE_JSON --sha256 SHA256`
-uses the ordinary concrete `NewCoordinationCLI` profile and authenticated host.
-Its new source lives in
-[shared_unit_bootstrap.go](../../internal/lifecycle/coordination/shared_unit_bootstrap.go),
-with a [transcript wrapper](../../internal/lifecycle/transcript/coordination_bootstrap.go)
-and a thin private CLI dispatch branch. Existing Go3 control/census/receipt
-loaders remain unchanged.
-
-The strict `cairn.unit-bootstrap/1` plan selects an owned `0700` observation
-root, the original `current.directory` and active JSON `current.pins`, an
-explicit `archives` array, the actual `watch_lock`, `credential_selectors` and
-`callbacks`. Opaque and lock descriptors require exactly `name`, `type`, `uid`,
-`gid`, `mode`, `device` and `inode`. Unknown fields, serialized facts, scope,
-stopped/completion flags, duplicate keys, unsafe paths, aliases and unknown
-members refuse. Root/membership select observations; they confer no authority.
-
-The producer accepts supported **disabled bound /2 and /3 profile associations**
-through the existing `disabledBinding` reader. It does not normalize /2 into /3.
-Unbound retained /2 associations explicitly refuse: literal argv/bundle inventory
-does not supply the private association required by the current Go3 census.
-The real fixture uses eight distinct synthetic Codex bound-/2 profiles with
-the eight familiar filenames. This is not the installed host's native roster.
-
-A private process-local receipt comes only from fresh file, state, session,
-journal, authoritative terminal-status, grant-currentness, API pagination,
-kernel flock and callback observations. Final reread checks the pinned plan,
-original metadata, issued profiles/references, same watch-lock inode and D1–D5
-facts. No JSON result can be supplied back as that receipt. Archive and
-credential bodies remain unread by inspection; retained state locks are observed
-as metadata/kernel locks under their existing source modes, never opened as
-data or chmodded to satisfy a content reader.
-
-The public result distinguishes `inspected` and `rechecked` from `published`
-(always false), `owner_fence` (unknown) and `reverse` (unsupported). Missing or
-changed facts refuse. Session stop/capture status, joined callback identities
-and existing flock observations are available maintained facts. A complete
-service/restart/native-writer fence is still missing. `unit-bootstrap switch`
-and `reverse` explicitly refuse before reading a plan or making API calls.
-The final reread is bounded read-only evidence, not an atomic snapshot or a
-complete writer-set proof.
-
-## Remaining operator boundary
-
-Root's lease amendment permits the separate read-only producer above. Any
-additional files or effectful boundary still need contract review. The remaining
-operator boundary must keep these facts in one control process:
-
-1. Read the exhaustive original JSON selection and approved opaque archive
-   metadata, including aliases, owner, mode and the actual lock inode. Validate
-   genuine bound/unbound retained `/2` associations without normalizing them to
-   `/3`, inventing receipts or altering the current Go loader.
-2. Capture actual authenticated D1–D5 over that same original selection. Bind
-   state, sessions, authoritative terminal correspondence, journals, lock owners,
-   callback joins and complete pagination. Unknown or missing coverage refuses.
-3. Establish an independently supported service/restart fence and complete
-   observable stopped/joined writer boundary. An input Boolean or caller-selected
-   scope cannot establish it. If no such contract exists, remain unsupported.
-4. Reread applicable D6 and exact original layout/lock/issued references at the
-   swap. Refuse new/live/racing owners, lock changes, unknown members or changed
-   receipts before modifying originals. Preserve the documented final-read race
-   limit rather than claiming a cross-process transaction.
-5. At a separately admitted stopped boundary, reverse to the exact original
-   retained `/2` binding, literal argv, complete raw layout and exact accepted
-   S04R payload/control/home selection. An automatic failure rollback is not
-   this operation. Missing factual closure remains explicitly unsupported.
-
-This is a proposal, not a new API or permission. No common RC image rebuild or
-production remediation is performed by this slice.
-
-## Layout and preservation rules
-
-The metadata planner never opens config, credential, alias, lock or historical
-archive contents. It reports the three fixture topologies independently:
-
-| Topology | Observed shape represented by new synthetic files |
-| --- | --- |
-| Proximal | Eight binding JSON files, one existing `.watch.lock`, all 17 named `.before-*` archives. Original JSON files are `0600`; proposed/checked retained data copies are `0400`. |
-| Archon | `codex-archon.json` and its existing lock. |
-| Talos | `opencode-one.json`, `0755` initialization directories and no observed lock. Absence is not proof of no watcher; lock initialization requires a separate admitted identity. |
-
-Fixture copies of `0750` home and `0775` `.local`/`.local/share` produce a
-remediation **plan**, with no chmod of those observed paths. Unknown/missing
-members, symlinks and known credential inode aliases stay visible in the report.
-Their contents are neither read nor hashed. Historical 17-versus-19 count
-disagreement is not resolved by constructing a 17-member fixture.
-
-The raw filesystem primitive allocates its own new home, joins a child it
-created, parks the complete original directory, publishes separate `0400`
-synthetic profile copies using a hardlink to the **same** lock, then separately
-restores the original directory. It checks all eight issued-reference byte
-strings and original member inodes, modes, owners and mtimes. It does not copy
-or recreate an equivalent lock. Same-filesystem rename/link do **not** preserve
-original ctime or parent timestamps. The two ordinary renames have an observable
-gap; this primitive is not an atomic publication implementation. Faults retain
-the original at the last observed path and do not invoke automatic rollback.
-Adding the retained hardlink increases the lock's link count and changes its
-ctime; retaining its inode does not preserve every stat field.
-
-The primitive does not capture an authenticated drain or establish a complete
-writer fence. Consequently its positive preservation result is never reported
-as a supported operator bootstrap. Checked generation reverse, raw bootstrap
-reverse and S04R runtime reverse are separate evidence obligations.
-
-## Run and interpret validation
-
-Use the normal host HOME, tools, authentication and services. Only application
-fixture state is disposable. Source worktrees belong under the maintained
-`git-wt` cache, never `/tmp`.
+The ordinary private frontend uses the concrete coordination profile and
+FileHost. It accepts exactly an operation, a private pinned plan and its hash:
 
 ```sh
-mise run test:unit -- test_r07_bootstrap_reverse -v
-mise run test:unit -- ./internal/lifecycle/coordination ./internal/lifecycle/transcript ./cmd/cairn-lifecycle -run 'Test(UnitBootstrap|CoordinationBootstrap|PrivateBootstrap|UnitControl|AgyTargetRoundtripLegacyScope|SharedWatchUnitPin)' -count=1 -race -v
-mise run host:exec --timeout 12m --weight 1 -- python3 -B scripts/check_r07_bootstrap_reverse.py --evidence "$HOME/.cache/r07-bootstrap-new-evidence"
-mise run check
-mise run host:exec --timeout 5m --weight 1 -- python3 -B scripts/verify_docs.py --tier 1,2,3,4
+cairn-lifecycle unit-bootstrap inspect --plan "$R07_PLAN" --sha256 "$R07_PLAN_SHA256"
+cairn-lifecycle unit-bootstrap switch --plan "$R07_TRANSITION_PLAN" --sha256 "$R07_TRANSITION_SHA256"
+cairn-lifecycle unit-bootstrap reverse --plan "$R07_TRANSITION_PLAN" --sha256 "$R07_TRANSITION_SHA256"
+cairn-lifecycle unit-bootstrap rollback --plan "$R07_TRANSITION_PLAN" --sha256 "$R07_TRANSITION_SHA256"
 ```
 
-The evidence destination must be new. The explicit integration command builds
-two private fixture images, starts an `OwnedCluster` and uses the maintained
-`DisposableHost` through the existing status/control fixture. It is not a final
-five-role common RC build. The actual control consumer uses authenticated
-read-only endpoints. Separately recorded fixture actors create and settle
-synthetic obligations; the control consumer never settles them itself.
-Use `--bootstrap-only` with that integration command to check a later bootstrap
-source change without repeating independent layout, inert S04R or checked-control
-fixtures. Its summary labels those groups not run; retain their earlier receipts
-separately rather than counting them as fresh passes.
+These are supported source interfaces, not authorization to run against an
+installation. The same immutable transition plan selects both directions.
+`reverse` expects the forward exchange to have happened. `rollback` recognizes
+exact original/forward directory identities: it restores the original after a
+published exchange, or confirms the unchanged original after an unpublished
+failure. An unknown third placement refuses. It never retries the switch as a
+recovery shortcut.
 
-The integration cases cover read-only inspection, original archival/unknown
-membership refusal, replayed facts refusal, unbound missing-receipt refusal,
-live callback refusal, joined callback acceptance, checked bound `/2` data
-switch/reverse and changed-lock refusal. A second instance introduces a real
-owning hold after capture: D6 refuses before exchange and retains the complete
-unpublished preparation with the same lock inode. Protected database/state
-snapshots distinguish the actor's mutation from the consumer's reads.
+The historical `cairn.unit-bootstrap/1` plan remains read-only. An effectful
+`cairn.unit-bootstrap/2` plan names the original directory/pins, exact opaque
+archive and watcher-lock metadata, credential **selectors**, callback identities,
+per-member associations and a transition. The transition selects another
+private pinned `/2` plan, both directory device/inode/owner/mode identities, and
+an exact `SelectedUnitFenceScope`. Nested keys are literal and case-sensitive;
+unknown fields, duplicate keys and invalid Unicode refuse. No JSON field carries
+a fence or drain receipt.
 
-The separate bootstrap cases produce a real authenticated read-only receipt for
-eight supported bound-/2 members plus all 17 opaque archives, then exercise
-closed switch/reverse, replay, unknown member, changed lock, unbound-/2,
-credential-alias and live/joined callback cases. Another fresh instance acquires
-a real owning hold between capture and final reread and must invalidate the
-private receipt. The old Go3 command still rejects the archival layout. Raw
-before/after protected snapshots and actor correspondence are retained.
+Prepare the disabled `/3` generation through the maintained
+`scripts/stage_lifecycle_compatibility.py` and `cairn-stage-lifecycle` publisher.
+A separate private sibling contains only exact immutable `0400` copies of its
+selected coordination profiles and the watcher lock. The original and target
+must contain the same binding names. Their binding/account/state/socket/repo/
+credential identities, including memory state, must correspond. The `/3`
+compatibility receipt, complete source closure, selected binary, profiles and
+manifest are read and verified as selection data.
 
-The S04R file test uses inert synthetic interpreter/model/native files with the
-existing `seal_inputs`, `publish_payload`, `render_python_controls`,
-`verify_generation` and `private_home` contracts. It never executes those files,
-imports ORT or runs rank/stream/embed. Exact accepted S04R selection, runtime,
-destination ABI and host home closure remain unknown.
+Both directories must be beneath one owned `0700` root with safe, no-follow
+ancestry. Each state directory's ancestors are checked before walking it.
+Existing `0700` and explicitly observed legacy `0755` directories are supported
+inside that private root; the scoped config reader walks actual descriptors
+without following links and uses the ordinary stable-FD reader/JSON decoder.
+The shared compatibility reader's `0700` immediate-parent rule is unchanged.
+Unsafe installed HOME/ancestor modes still require the separately admitted
+operator remediation; a private fixture is not installed readiness.
 
-Raw command exits, source/tool pins, selected read responses, process wait
-receipts, PostgreSQL stop and scratch-removal receipts are private evidence.
-Fixture token files and credential selectors are not retained or content
-hashed. Parent environment equality is checked without printing its values.
-Failed runs remain failed evidence; a corrected fixture uses a fresh evidence
-directory. Passing tests confirm the stated source gap and bounded mechanics;
-they do not grant R07 admission, release old holds or start an observation clock.
+An existing lock must be the same actual inode in both selections, linked during
+off-path preparation. Its exact exclusive flock is identified through
+`/proc/self/fdinfo`; other owners, waiters and ambiguous inode observations
+refuse. No original lock is created or repaired by observing it. A talos-shaped
+original with an explicitly observed absent lock can use the prepared target's
+new private lock. Reverse restores the original absence and directory mode;
+it does not silently initialize the retained generation.
+
+## Bound and unbound retained Python /2
+
+Every original member selects an actual disabled `/2` manifest and its literal
+`retained-argv.json`. Bound profiles must name that manifest; unbound profiles
+must remain unbound. The memory/coordinator profiles must select the exact
+current member and agree on shared selectors, accounts and state. The reader
+verifies the original engine/bridge, all 17 named lifecycle bundle members and
+the bundle digest. Literal memory and coordination vectors must select their
+own source entrypoint and exact profile, including `hook --config` where the
+source requires it. No `/2` observation becomes a `/3` compatibility receipt.
+
+The original config/manifests and Python bundle are never rewritten or
+normalized. The complete original directory, including all 17 proximal opaque
+`.before-*` members, is retained during the forward exchange. Archive bodies
+and credential contents are not opened by the metadata reader. Returned facts
+and association labels are retained observations, not permission to replay the
+process-local receipts.
+
+## Stopped boundary, D6 and D7
+
+The public operation captures `CaptureSelectedUnitFence(ctx, scope, nil)` in
+its own process and invokes `Recheck` on that same opaque receipt. Database and
+system-ID selections must be empty: `database_coverage` is `not-selected`.
+The [landed fence contract](r07-selected-unit-fence.md) retains
+`external_coverage=selected-units-only` and `outside_scope=unknown`. It observes
+selected stopped/masked definitions, cgroups and process identities; it does
+not issue stop/mask/start/restart operations.
+
+Authenticated drain reads are performed independently for both complete
+selections before and while holding the watcher flock. Immediately before
+exchange, both pinned plans, layouts, statuses, local state and associations
+are reread, the selected-unit fence is rechecked, and actual directory identities
+are checked again. The final read/action interval is not atomic with external
+activity. Neither a quiet sample nor masks observed at two instants prove a
+host-wide future-writer barrier.
+
+Linux `RENAME_EXCHANGE` publishes the pair, followed by parent fsync and complete
+D7 readback of both resulting selections. Results keep `published` separate
+from errors and report active/retained paths. A post-publication sync or readback
+failure leaves both selections available and requires exact reconciliation with
+a fresh `reverse`/`rollback` invocation. A killed process's receipt cannot be
+reused in a new process.
+
+Lifecycle fencing performs no database connection or semantic writer query.
+The explicit operator `pg_stat_activity`/`cairn.semantic_job` read and remaining
+writer/restart graph are separate obligations in the R07 execution packet.
+Their absence never becomes semantic coverage of this lifecycle receipt.
+
+## S04R selected-file reverse staging
+
+The same script has an explicit operator staging mode:
+
+```sh
+python3 -B scripts/check_r07_bootstrap_reverse.py --semantic-reverse-selection "$R07_SEMANTIC_REVERSE_SELECTION" --sha256 "$R07_SEMANTIC_REVERSE_SHA256" --publication-dir "$R07_NEW_PRIVATE_PUBLICATIONS"
+python3 -B scripts/semantic_python_closure.py verify --publication "$R07_NEW_PRIVATE_PUBLICATIONS/payload.json"
+python3 -B scripts/semantic_python_closure.py verify --publication "$R07_NEW_PRIVATE_PUBLICATIONS/controls.json"
+```
+
+The private pinned selection has schema
+`cairn.r07-semantic-reverse-selection/1` and exactly: `payload` (path/hash of the
+selected payload-reference JSON), `source_payload`, `original_config`
+(path/hash), `stage`, `home`, and `expected_control`. It verifies the selected
+source payload, copies it through the maintained immutable generation publisher,
+then renders/verifies controls with `semantic_python_closure.py`. An existing
+mismatched generation refuses rather than being repaired. Ordinary pending
+publication failures use the maintained cleanup; a killed unpublished pending
+generation is not selectable. A control-address mismatch leaves any immutable
+staged artifacts unselected and changes no API configuration.
+
+Owner source `63dffa76/v1` selects accepted payload
+`c6c1bd58dccd51ae1b06c0213c94ef9f87206a80951fc198ff0674654b0c7221`,
+original venv config hash
+`7eacb9935ee06d946bcdcb29b6ef1767d22880c64c01c05dd980381105991aed`,
+and the prepared production control
+`05dd3ac9c7cd5f8552ecde0b2c4d97502997870ce8e87b1a1168968e98fbdb69`.
+The separately owned empty `0700` HOME remains outside the immutable stage.
+The pre-cutover live `semantic/worker-embeddings` launcher is not the accepted
+S04R reverse. The stream launcher entry uses the descriptor's corrected
+`73c0e89a6f1c310bfde2cb26080c2f3b67bac288b07f6310ef5e7c18a5870503`.
+
+Output supplies exact `cairn serve` `--embedding-command`, `--semantic-command`
+and `--semantic-stream-command` flags for the verified zero-argument launchers.
+It does not invent an API JSON selector or rewrite a managed service definition.
+The operator keeps the reviewed API's other arguments/credentials and applies
+these flags only at its admitted stopped boundary. Staging executes no retained
+interpreter or model. Production path qualification, loaded-byte/ABI checks,
+model/effects evidence and actual API startup/readback remain R07 obligations.
+
+## Local verification
+
+All test commands use mise and maintained host process ownership. The fixture
+uses normal host HOME/CODEX_HOME/tools, disposable application CAIRN_HOME/state,
+and a fresh PostgreSQL cluster. It stages actual `/3` material through the
+maintained publisher and exercises the real FileHost/authenticated API transport.
+Only systemd/cgroup observations are fixture data captured by the landed private
+producer. No installed systemd or native client qualification is claimed.
+
+```sh
+mise run test:unit -- ./internal/lifecycle/coordination ./internal/lifecycle/transcript ./cmd/cairn-lifecycle -run 'Bootstrap' -count=1 -race -v
+mise run test:unit -- scripts/test_r07_bootstrap_reverse.py
+mise run host:exec -- --timeout 12m --weight 2 -- python3 -B scripts/check_r07_bootstrap_reverse.py --effects-only --evidence "$R07_NEW_PRIVATE_EVIDENCE"
+mise run check
+mise run host:exec -- python3 -B scripts/verify_docs.py --tier 1,2,3,4
+```
+
+The focused effect fixture covers proximal eight-member/17-archive, archon
+one-member/existing-lock and talos one-member/absent-lock/0755 shapes, each with
+bound and unbound `/2` originals and a complete `/3` forward generation. It also
+injects a separate actual owning API claim at D6 and joins SIGKILL consumers
+before and after publication, recovering with fresh receipts. Protected store/
+state snapshots and original member metadata are compared; child and PostgreSQL
+cleanup are recorded. Source-fault unit tests cover copied/zero/foreign/drifted
+fences, changed archives/bundles, writable targets, held locks, ancestor aliases,
+strict selection fields and failures around exchange/fsync.
+
+Final command results and precise counts belong to the frozen candidate's
+selected raw receipts. Earlier failures are retained separately; none are
+converted into runtime qualification. No production transition, common release
+image build, model/provider attempt, admission or observation-clock start is
+performed by this slice.

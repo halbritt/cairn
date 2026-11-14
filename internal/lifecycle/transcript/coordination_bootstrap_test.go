@@ -10,7 +10,7 @@ import (
 )
 
 func TestCoordinationBootstrapUsesConcreteReaderAndStructuredRefusal(t *testing.T) {
-	for _, args := range [][]string{nil, {"switch", "--plan", "/not-opened", "--sha256", "not-opened"}, {"reverse", "--plan", "/not-opened", "--sha256", "not-opened"}} {
+	for _, args := range [][]string{nil, {"switch", "--plan", "/not-opened", "--sha256", "not-opened"}, {"reverse", "--plan", "/not-opened", "--sha256", "not-opened"}, {"rollback", "--plan", "/not-opened", "--sha256", "not-opened"}} {
 		var out, diagnostic bytes.Buffer
 		code := RunCoordinationBootstrap(context.Background(), args, &out, &diagnostic)
 		var result coordination.UnitBootstrapResult

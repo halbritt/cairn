@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -206,6 +207,86 @@ class SemanticContractTests(BootstrapFixture):
         changed['provenance']['fixture'] = 'different selection'
         with self.assertRaisesRegex(bootstrap.semantic.ClosureError, 'refusing repair'):
             bootstrap.semantic.verify_generation(payload['path'], changed)
+
+
+class SemanticReverseStageTests(BootstrapFixture):
+    def test_operator_cli_publishes_file_verifier_references_and_rejects_wrong_pin(self):
+        payload, _, _, _ = bootstrap.semantic_file_fixture(self.root / 'original')
+        stage, home, references = (self.root / name for name in ('relocated', 'private-home', 'publications'))
+        for path in (stage, home, references):
+            path.mkdir(mode=0o700)
+        original = self.root / 'original/original-pyvenv.cfg'
+        staged = bootstrap.stage_semantic_reverse(payload, original, stage, home)
+        payload_reference = self.root / 'payload.json'
+        payload_reference.write_text(json.dumps(payload))
+        plan = self.root / 'operator-selection.json'
+        plan.write_text(json.dumps(dict(schema='cairn.r07-semantic-reverse-selection/1',
+            payload=dict(path=str(payload_reference), sha256=bootstrap.control.sha(payload_reference.read_bytes())),
+            source_payload=payload['path'], original_config=dict(path=str(original), sha256=bootstrap.control.sha(original.read_bytes())),
+            stage=str(stage), home=str(home), expected_control=staged['controls']['address'])))
+        command = [sys.executable, '-B', str(bootstrap.ROOT / 'scripts/check_r07_bootstrap_reverse.py'),
+                   '--semantic-reverse-selection', str(plan), '--sha256', bootstrap.control.sha(plan.read_bytes()),
+                   '--publication-dir', str(references)]
+        result = bootstrap.subprocess.run(command, capture_output=True, text=True, timeout=15)
+        self.assertEqual((result.returncode, result.stderr), (0, ''))
+        selected = json.loads(result.stdout)
+        for path in selected['publications'].values():
+            check = bootstrap.subprocess.run([sys.executable, '-B', str(bootstrap.ROOT / 'scripts/semantic_python_closure.py'),
+                'verify', '--publication', path], capture_output=True, text=True, timeout=15)
+            self.assertEqual((check.returncode, check.stderr), (0, ''))
+            self.assertEqual(json.loads(check.stdout)['runtime_qualification'], 'unobserved')
+        command[command.index('--sha256') + 1] = '0' * 64
+        refused = bootstrap.subprocess.run(command, capture_output=True, text=True, timeout=15)
+        self.assertEqual(refused.returncode, 1)
+        self.assertEqual(refused.stderr, '')
+        self.assertIn('pin changed', json.loads(refused.stdout)['error'])
+
+    def test_real_selected_file_copy_and_exact_serve_selectors_without_execution(self):
+        payload, _, _, _ = bootstrap.semantic_file_fixture(self.root / 'original')
+        destination, home = self.root / 'relocated', self.root / 'private-home'
+        destination.mkdir(mode=0o700)
+        home.mkdir(mode=0o700)
+        references = self.root / 'publications'
+        references.mkdir(mode=0o700)
+        config = self.root / 'original/original-pyvenv.cfg'
+        before = dict(os.environ)
+        with patch.object(bootstrap.subprocess, 'Popen', side_effect=AssertionError('retained execution forbidden')):
+            result = bootstrap.stage_semantic_reverse(payload, config, destination, home, publications=references)
+        self.assertEqual(result['payload']['address'], payload['address'])
+        self.assertEqual(result['service_actions'], 0)
+        self.assertEqual(result['model_executions'], 0)
+        flags = result['serve_selector_flags']
+        self.assertEqual(flags[::2], ['--embedding-command', '--semantic-command', '--semantic-stream-command'])
+        self.assertTrue(all(Path(path).is_file() for path in flags[1::2]))
+        self.assertEqual(os.environ, before)
+        self.assertEqual(list(home.iterdir()), [])
+        for path in result['publications'].values():
+            reference = json.loads(Path(path).read_bytes())
+            bootstrap.semantic.verify_generation(reference['path'], reference['descriptor'])
+            self.assertEqual(Path(path).stat().st_mode & 0o777, 0o600)
+
+    def test_control_mismatch_never_changes_an_api_selector(self):
+        payload, _, _, _ = bootstrap.semantic_file_fixture(self.root / 'original')
+        destination, home = self.root / 'relocated', self.root / 'private-home'
+        destination.mkdir(mode=0o700)
+        home.mkdir(mode=0o700)
+        selection = self.root / 'api-selector'
+        selection.write_bytes(b'original literal API selection\n')
+        before = selection.read_bytes(), selection.stat().st_ino
+        with self.assertRaisesRegex(HostRefusal, 'control differs'):
+            bootstrap.stage_semantic_reverse(payload, self.root / 'original/original-pyvenv.cfg',
+                                             destination, home, expected_control='0' * 64)
+        self.assertEqual((selection.read_bytes(), selection.stat().st_ino), before)
+
+    def test_nonempty_or_aliased_home_is_refused(self):
+        payload, _, _, _ = bootstrap.semantic_file_fixture(self.root / 'original')
+        destination, home = self.root / 'relocated', self.root / 'private-home'
+        destination.mkdir(mode=0o700)
+        home.mkdir(mode=0o700)
+        (home / 'unexpected').write_text('fixture')
+        with self.assertRaisesRegex(HostRefusal, 'initially be empty'):
+            bootstrap.stage_semantic_reverse(payload, self.root / 'original/original-pyvenv.cfg', destination, home)
+        self.assertEqual(list(destination.iterdir()), [])
 
 
 if __name__ == '__main__':

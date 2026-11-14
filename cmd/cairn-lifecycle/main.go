@@ -1,6 +1,7 @@
 // cairn-lifecycle is the private receipt-selected activation and coordination
 // image. It exposes no store or public command dispatcher and has no flag that
 // enables cairn's separately disabled public lifecycle registration.
+// Operator bootstrap uses a fresh selected-unit fence; it opens no database.
 package main
 
 import (

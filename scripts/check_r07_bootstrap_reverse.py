@@ -8,6 +8,8 @@ separately from that unsupported operator operation. Run through mise host:exec.
 """
 
 import argparse
+import io
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -16,9 +18,11 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
 
 import check_r06_unit_control as control
-from disposable_host import OwnedCluster, pg_bindir, require, run_sql, stop_process
+from disposable_host import HostRefusal, OwnedCluster, pairs_unique, pg_bindir, private_dir, require, run_sql, stop_process, write_private
 import semantic_python_closure as semantic
 
 
@@ -46,6 +50,104 @@ GAPS = {
     'semantic_selection': 'scripts/semantic_python_closure.py:verify_generation',
     'semantic_home': 'scripts/semantic_python_closure.py:private_home',
 }
+
+
+def stage_semantic_reverse(payload, original_config, stage, home, *, expected_control=None, publications=None):
+    """Publish selected S-04R files through the maintained immutable publisher.
+
+    Does not execute the retained interpreter/model or change an API service.
+    The operator keeps the existing API's other arguments and credentials.
+    """
+    source = semantic.verify_generation(payload['path'], payload['descriptor'])
+    descriptor = payload['descriptor']
+    require(payload['address'] == semantic.digest(semantic.canonical(descriptor)),
+            'semantic reverse payload address mismatch')
+    stage, home = Path(stage), Path(home)
+    semantic.private_home(home, stage)
+    require(not list(home.iterdir()), 'semantic reverse HOME must initially be empty')
+    if publications is not None:
+        publications = semantic.absolute(publications)
+        private_dir(publications)
+        require(not list(publications.iterdir()), 'new empty publication-reference directory required')
+        for protected in (source, stage, home):
+            require(publications != protected and not publications.is_relative_to(protected)
+                    and not protected.is_relative_to(publications), 'publication-reference directory overlaps selected generation/HOME')
+
+    def copy_members(pending):
+        for name, item in sorted(descriptor['entries'].items()):
+            if name == '.':
+                continue
+            path = pending / name
+            if item['type'] == 'directory':
+                path.mkdir(mode=0o700)
+            elif item['type'] == 'symlink':
+                path.symlink_to(item['target'])
+            else:
+                with path.open('xb') as stream:
+                    observed = semantic.regular(source / name, stream)
+                    stream.flush()
+                    os.fchmod(stream.fileno(), item['mode'])
+                    os.fsync(stream.fileno())
+                require(observed == item, 'selected semantic source changed while copying')
+        semantic.verify_generation(source, descriptor)
+
+    with semantic.stage_root(stage, (source,)) as root:
+        target = semantic.publish_generation(root / 'payloads', descriptor, copy_members)
+    relocated = dict(address=target.name, path=str(target), descriptor=descriptor)
+    controls = semantic.render_python_controls(stage, relocated, original_config, home)
+    if expected_control is not None:
+        require(controls['address'] == expected_control,
+                'relocated semantic control differs from selected descriptor; no API changed')
+    semantic.verify_generation(controls['path'], controls['descriptor'])
+    references = {}
+    if publications is not None:
+        for role, selected in (('payload', relocated), ('controls', controls)):
+            path = publications / (role + '.json')
+            write_private(path, json.dumps(selected, sort_keys=True) + '\n')
+            references[role] = str(path)
+    # These are the actual cairn serve selectors. They are a command tail, not
+    # a made-up JSON configuration consumed by the API.
+    flags = ['--embedding-command', controls['launchers']['embed'],
+             '--semantic-command', controls['launchers']['rank'],
+             '--semantic-stream-command', controls['launchers']['stream']]
+    return dict(schema='cairn.r07-semantic-reverse-stage/1',
+                payload=dict(path=relocated['path'], address=relocated['address']),
+                controls={key: controls[key] for key in ('path', 'address', 'payload_address', 'launchers')},
+                home=str(home), serve_selector_flags=flags,
+                publications=references,
+                qualification='selected-file integrity only; runtime/ABI/effects unqualified',
+                service_actions=0, model_executions=0)
+
+
+def read_selected_json(path, pin):
+    path = semantic.absolute(path)
+    content = io.BytesIO()
+    observed = semantic.regular(path, content)
+    require(observed['sha256'] == pin, 'selected JSON pin changed')
+    return json.loads(content.getvalue(), object_pairs_hook=pairs_unique)
+
+
+def operator_semantic_reverse(plan_path, plan_sha, publications=None):
+    plan = read_selected_json(plan_path, plan_sha)
+    require(isinstance(plan, dict), 'semantic reverse selection must be an object')
+    require(set(plan) == {'schema', 'payload', 'source_payload', 'original_config',
+                         'stage', 'home', 'expected_control'}, 'unknown semantic reverse selection field')
+    require(plan['schema'] == 'cairn.r07-semantic-reverse-selection/1', 'unknown semantic reverse schema')
+    for key in ('payload', 'original_config'):
+        require(isinstance(plan[key], dict) and set(plan[key]) == {'path', 'sha256'}
+                and all(isinstance(value, str) for value in plan[key].values()),
+                'semantic reverse requires exact path/hash descriptors')
+    require(all(isinstance(plan[key], str) for key in ('source_payload', 'stage', 'home', 'expected_control')),
+            'semantic reverse requires literal path/control selections')
+    payload = read_selected_json(plan['payload']['path'], plan['payload']['sha256'])
+    payload['path'] = plan['source_payload']
+    original = semantic.absolute(plan['original_config']['path'])
+    require(semantic.regular(original)['sha256'] == plan['original_config']['sha256'],
+            'original selected venv configuration changed')
+    require(len(plan['expected_control']) == 64 and
+            all(c in '0123456789abcdef' for c in plan['expected_control']), 'explicit control address required')
+    return stage_semantic_reverse(payload, original, plan['stage'], plan['home'],
+                                  expected_control=plan['expected_control'], publications=publications)
 
 
 def metadata(path):
@@ -400,6 +502,185 @@ def bootstrap_invoke(f, image, plan, label, *, operation='inspect', expected=0):
     return result
 
 
+def fixture_effect_plan(f, images, host, *, unbound=False):
+    """Prepare actual retained /2 and maintained /3 generations off-path."""
+    import stage_lifecycle_compatibility as installer
+    spec = importlib.util.spec_from_file_location('r07_retained_bundle', ROOT / 'integrations/lifecycle/lifecycle_bundle.py')
+    bundle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bundle)
+    source = f.root / 'retained-python'
+    bundle.stage_runtime(ROOT / 'integrations/lifecycle', source)
+    descriptor = bundle.bundle_descriptor(source)
+    names = PROXIMAL if host == 'proximal' else ('codex-archon',) if host == 'archon' else ('opencode-one',)
+    base = json.loads(f.coord.read_bytes())
+    memory = json.loads((f.root / 'memory.json').read_bytes())
+    for path in f.active.iterdir():
+        path.unlink()
+    profiles, associations = [], {}
+    binding = f.root / 'binding.json'
+    memory['config_home'] = str(f.root / ('account-' + names[0]))
+    if unbound:
+        memory.pop('inbox_recall_binding', None)
+    control.write(f.root / 'memory.json', memory)
+    for i, name in enumerate(names):
+        config = dict(base, binding=f.binding if i == 0 else 'r07-' + name,
+                      state_dir=str(f.state_dir if i == 0 else f.root / ('state-' + name)),
+                      config_home=str(f.root / ('account-' + name)))
+        if unbound:
+            config.pop('inbox_recall_binding', None)
+        for directory in (Path(config['state_dir']), Path(config['config_home'])):
+            directory.mkdir(mode=0o700, exist_ok=True)
+        path = f.coord if i == 0 else f.root / ('coordination-' + name + '.json')
+        control.write(path, config)
+        profiles.append((name, path, config))
+        control.write(f.active / (name + '.json'), config)
+    def pin(path):
+        return dict(path=str(path), sha256=control.sha(path.read_bytes()))
+    manifest = dict(schema='cairn.inbox-recall-binding/2', enabled=False,
+                    memory_config=pin(f.root / 'memory.json'),
+                    coordination_configs=[pin(path) for _, path, _ in profiles],
+                    engine=dict(**pin(source / 'memory.py'), bundle=descriptor),
+                    bridge=dict(**pin(source / 'inbox_recall.py'), bundle=descriptor))
+    control.write(binding, manifest)
+    for name, path, _ in profiles:
+        argv = f.root / ('argv-' + name) / 'retained-argv.json'
+        argv.parent.mkdir(mode=0o700)
+        control.write(argv, dict(memory=[str(Path(sys.executable).resolve()), '-I', '-B', str(source / 'memory.py'), '--config', str(f.root / 'memory.json')],
+                                coordination=[str(Path(sys.executable).resolve()), '-I', '-B', str(source / 'coordination.py'), 'hook', '--config', str(path)]))
+        associations[name + '.json'] = dict(binding=dict(Path=str(binding), SHA256=pin(binding)['sha256']),
+                                             argv=dict(Path=str(argv), SHA256=pin(argv)['sha256']))
+    if host != 'talos':
+        control.write(f.active / '.watch.lock', {})
+    else:
+        f.active.chmod(0o755)
+    for name in ARCHIVES if host == 'proximal' else ():
+        control.write(f.active / name, {'opaque': 'retained original; never a profile'})
+
+    stage = f.root / 'forward'
+    stage.mkdir(mode=0o700)
+    identity = str(uuid.uuid4())
+    generation = stage / 'generations' / ('selection-' + identity)
+    inputs = f.root / 'forward-inputs'
+    inputs.mkdir(mode=0o700)
+    selected_sources = f.root / 'forward-sources'
+    selected_sources.mkdir(mode=0o700)
+    for name in (*bundle.MODULE_FILES, 'lifecycle_compatibility.py'):
+        # The maintained publisher requires private fixture inputs. The git
+        # worktree stays in place; no host HOME/tool environment is replaced.
+        target_source = selected_sources / name
+        target_source.write_bytes((ROOT / 'integrations/lifecycle' / name).read_bytes())
+        target_source.chmod(0o600)
+    for role, config in [('memory', memory), *[(name, config) for name, _, config in profiles]]:
+        control.write(inputs / (role + '.json'), dict(config, inbox_recall_binding=str(generation / 'binding.json')))
+    installation = dict(id=identity, enabled=False,
+        sources={name: pin(selected_sources / name) for name in (*bundle.MODULE_FILES, 'lifecycle_compatibility.py')},
+        source_revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+        binary=pin(images['control']), memory_config=pin(inputs / 'memory.json'),
+        coordination_configs=[pin(inputs / (name + '.json')) for name, _, _ in profiles],
+        aliases={}, python=str(Path(sys.executable).resolve()), shell='/bin/sh')
+    installer.stage(images['stager'], stage, installation)
+    prepared = f.active.with_name('prepared-bindings')
+    prepared.mkdir(mode=0o700)
+    if host == 'talos':
+        control.write(prepared / '.watch.lock', {})
+    else:
+        os.link(f.active / '.watch.lock', prepared / '.watch.lock')
+    target_associations = {}
+    for i, (name, _, _) in enumerate(profiles):
+        target = prepared / (name + '.json')
+        target.write_bytes((generation / ('coordination-' + str(i) + '.json')).read_bytes())
+        target.chmod(0o400)
+        target_associations[target.name] = dict(
+            binding=dict(Path=str(generation / 'binding.json'), SHA256=pin(generation / 'binding.json')['sha256']),
+            argv=dict(Path='', SHA256=''), receipt=dict(Path=str(generation / 'receipt.json'), SHA256=pin(generation / 'receipt.json')['sha256']))
+
+    def member(path, *, directory=False):
+        row = metadata(path)
+        return dict(name=path.name, type='directory' if directory else 'regular',
+                    **{key: row[key] for key in ('uid', 'gid', 'mode', 'device', 'inode')})
+    def plan(directory, archive_names, selected_associations):
+        return dict(schema='cairn.unit-bootstrap/2', root=str(f.root),
+                    current=dict(directory=str(directory), pins={name + '.json': pin(directory / (name + '.json'))['sha256'] for name in names}),
+                    archives=[member(directory / name) for name in archive_names],
+                    watch_lock=member(directory / '.watch.lock') if (directory / '.watch.lock').exists() else
+                        dict(name='.watch.lock', type='absent', uid=0, gid=0, mode=0, device=0, inode=0),
+                    credential_selectors=[str(f.host.token('worker'))], callbacks=[], associations=selected_associations)
+    target = plan(prepared, (), target_associations)
+    target_path = f.root / 'target-bootstrap-plan.json'
+    control.write(target_path, target)
+    original = plan(f.active, ARCHIVES if host == 'proximal' else (), associations)
+    # The Go unit fixture replaces only this scope selection with its own
+    # privately captured systemd/cgroup observation receipt. Production CLI
+    # has no such replacement or environment path.
+    original['transition'] = dict(target=dict(Path=str(target_path), SHA256=pin(target_path)['sha256']),
+        original_identity=member(f.active, directory=True), target_identity=member(prepared, directory=True),
+        fence=dict(UID=os.getuid(), Units=[], Executables=[], CommandSHA256=[], Database='', DatabaseSystemID='', Window=30_000_000_000))
+    path = f.root / 'effect-bootstrap-plan.json'
+    control.write(path, original)
+    return path, pin(path)['sha256']
+
+
+def effectful_cases(cluster, images, root, host, *, unbound=False, race=False, kill_phase=None):
+    f = control.Fixture(cluster, images['api'], root, 'r07_effect_' + host + ('_unbound' if unbound else '') + ('_race' if race else '') + ('_kill_' + kill_phase.split(':')[0] if kill_phase else ''))
+    try:
+        f.retained(resume=True)
+        actor = control.pending_claim(f, images['api']) if race else None
+        calls = control.transport(f, images['api'])
+        plan, pin = fixture_effect_plan(f, images, host, unbound=unbound)
+        before = f.snapshot()
+        original_metadata = {p.name: preserved_metadata(p) for p in f.active.iterdir()}
+        control.write(f.root / 'protected-before.json', before)
+        result_path = f.root / 'effect-result.json'
+        spec = f.root / 'effect-test.json'
+        selected = dict(Plan=str(plan), Pin=pin, Result=str(result_path))
+        if race:
+            selected.update(ActorArgv=actor['argv'], ActorBody=actor['body'], Refuse=True)
+            control.write(f.root / 'actor-invocation.json', dict(argv=actor['argv'], body=actor['body']))
+        marker = f.root / 'kill-phase-marker'
+        if kill_phase:
+            selected.update(HoldPhase=kill_phase, Marker=str(marker))
+        control.write(spec, selected)
+        temporary = f.root / 'test-temporary'
+        temporary.mkdir(mode=0o700)
+        env = dict(f.host.env, CAIRN_BOOTSTRAP_EFFECT_PLAN=str(spec), TMPDIR=str(temporary))
+        if kill_phase:
+            with (f.root / 'killed.stdout').open('w') as out, (f.root / 'killed.stderr').open('w') as err:
+                child = subprocess.Popen([str(images['tests']), '-test.run=^TestUnitBootstrapOwnedTransition$', '-test.v', '-test.timeout=90s'], env=env, stdout=out, stderr=err)
+                try:
+                    deadline = time.monotonic() + 30
+                    while not marker.exists():
+                        require(child.poll() is None and time.monotonic() < deadline,
+                                'owned child did not reach selected interruption boundary')
+                        time.sleep(0.01)
+                    child.kill()
+                    require(child.wait(timeout=5) == -9, 'owned killed consumer was not joined')
+                    control.write(f.root / 'killed-child.json', dict(pid=child.pid, exit=child.returncode, phase=kill_phase))
+                finally:
+                    stop_process(child, timeout=5, label='owned bootstrap interrupted consumer')
+            selected = dict(Plan=str(plan), Pin=control.sha(plan.read_bytes()), Result=str(result_path),
+                            Recover=True, ExpectPublished=kill_phase == 'after:exchange')
+            control.write(spec, selected)
+        control.command([images['tests'], '-test.run=^TestUnitBootstrapOwnedTransition$', '-test.v', '-test.timeout=90s'],
+                        f.root / 'effect-run', env=env, timeout=100)
+        result = json.loads(result_path.read_bytes())
+        require({p.name: preserved_metadata(p) for p in f.active.iterdir()} == original_metadata,
+                'source transition/recovery changed original config/opaque metadata')
+        after = f.snapshot()
+        control.write(f.root / 'protected-after.json', after)
+        if race:
+            require(not result['published'] and before != after and (f.root / 'actor-result.json').is_file(),
+                    'actual separate owning actor/refusal was not observed')
+        else:
+            require(before == after, 'effectful filesystem consumer mutated protected API/state')
+        rows = [json.loads(line) for line in calls.read_text().splitlines()]
+        require(rows and all(row['operation'] in control.READS for row in rows), 'bootstrap attempted a non-read API operation')
+        return dict(host_shape=host, retained2='unbound' if unbound else 'bound', race=race, interruption=kill_phase, result=result,
+                    authenticated_read_calls=len(rows), operations=sorted({row['operation'] for row in rows}),
+                    systemd='private observation fixture only; no installed service qualification')
+    finally:
+        f.host.close()
+
+
 def bootstrap_cases(cluster, images, root, *, race=False):
     f = control.Fixture(cluster, images['api'], root, 'r07_bootstrap_race' if race else 'r07_bootstrap_read')
     child = None
@@ -427,7 +708,7 @@ def bootstrap_cases(cluster, images, root, *, race=False):
         if not race:
             for operation in ('switch', 'reverse'):
                 refused = bootstrap_invoke(f, images['control'], plan, 'bootstrap-' + operation, operation=operation, expected=1)
-                require('mutation unavailable' in refused['error'] and not refused['inspected'], 'missing writer fence became effectful')
+                require('/2 transition selection' in refused['error'] and not refused['inspected'], 'read-only plan became effectful')
                 outcomes.append(dict(case=operation + '-closed', result='PASS'))
             replay = dict(plan, facts=result['facts'], stopped=True)
             refused = bootstrap_invoke(f, images['control'], replay, 'bootstrap-replay', expected=1)
@@ -517,7 +798,7 @@ def source_pins():
                 application_images='two private fixture images, not a common RC build')
 
 
-def run(evidence, *, bootstrap_only=False):
+def run(evidence, *, bootstrap_only=False, effects_only=False):
     require(not evidence.exists(), 'evidence destination must be NEW')
     evidence.mkdir(mode=0o700, parents=True)
     scratch = Path(tempfile.mkdtemp(prefix='r07-bootstrap-', dir=Path.home() / '.cache'))
@@ -529,7 +810,7 @@ def run(evidence, *, bootstrap_only=False):
     try:
         with ProcessReceipts(evidence) as observer:
             control.write(evidence / 'source-pins.json', source_pins())
-            if not bootstrap_only:
+            if not bootstrap_only and not effects_only:
                 for host in ('proximal', 'archon', 'talos'):
                     home, names, archives = make_layout(scratch, host, observed_modes=True)
                     control.write(evidence / (host + '-plan.json'), layout_plan(home, names, archives))
@@ -542,22 +823,51 @@ def run(evidence, *, bootstrap_only=False):
                     private_home=str(home), result='inert selected-file contract only',
                     accepted_s04r_exact_selection='unknown', runtime_qualification='not run'))
             images = control.build(scratch)
-            cluster = OwnedCluster.start(scratch / 'pg', pg_bin=pg_bindir().resolve())
+            if effects_only:
+                images['stager'] = scratch / 'tools/stager'
+                images['tests'] = scratch / 'tools/bootstrap-tests'
+                control.command(['go', 'build', '-buildvcs=false', '-o', images['stager'], './cmd/cairn-stage-lifecycle'], scratch / 'tools/build-stager')
+                control.command(['go', 'test', '-race', '-c', '-o', images['tests'], './internal/lifecycle/coordination'], scratch / 'tools/build-bootstrap-tests')
+                for name in ('stager', 'tests'):
+                    images[name].chmod(0o500)
+                control.write(evidence / 'effect-tool-pins.json', {name: control.sha(path.read_bytes()) for name, path in images.items()})
+            pg = pg_bindir().resolve()
+            control.write(evidence / 'postgres-tool-pins.json', {name: dict(path=str(pg / name), sha256=control.sha((pg / name).read_bytes())) for name in ('initdb', 'pg_ctl', 'postgres', 'psql')})
+            control.command([pg / 'postgres', '--version'], evidence / 'postgres-version')
+            cluster = OwnedCluster.start(scratch / 'pg', pg_bin=pg)
             result = dict(cases=[], status='not-run-focused-bootstrap-check')
             race = dict(status='not-run-focused-bootstrap-check')
-            if not bootstrap_only:
+            if not bootstrap_only and not effects_only:
                 result = authenticated_cases(cluster, images, scratch / 'authenticated')
                 race = authenticated_d6_race(cluster, images, scratch / 'd6-race')
-            bootstrap = bootstrap_cases(cluster, images, scratch / 'bootstrap-read')
-            bootstrap_race = bootstrap_cases(cluster, images, scratch / 'bootstrap-race', race=True)
+            effects = []
+            if effects_only:
+                cases = []
+                for host in ('archon', 'talos', 'proximal'):
+                    for unbound in (False, True):
+                        case = 'effect-' + host + ('-unbound' if unbound else '-bound')
+                        effects.append(effectful_cases(cluster, images, scratch / case, host, unbound=unbound))
+                        cases.append(case)
+                case = 'effect-archon-race'
+                effects.append(effectful_cases(cluster, images, scratch / case, 'archon', race=True))
+                cases.append(case)
+                for phase in ('before:exchange', 'after:exchange'):
+                    case = 'effect-kill-' + phase.split(':')[0]
+                    effects.append(effectful_cases(cluster, images, scratch / case, 'archon', kill_phase=phase))
+                    cases.append(case)
+                bootstrap = bootstrap_race = dict(status='not repeated in effect-only fixture')
+            else:
+                bootstrap = bootstrap_cases(cluster, images, scratch / 'bootstrap-read')
+                bootstrap_race = bootstrap_cases(cluster, images, scratch / 'bootstrap-race', race=True)
+                cases = ('bootstrap-read', 'bootstrap-race') if bootstrap_only else ('authenticated', 'd6-race', 'bootstrap-read', 'bootstrap-race')
             # Retain selected command/status evidence, not tokens or selectors.
-            shutil.copytree(scratch / 'tools', evidence / 'tools')
-            cases = ('bootstrap-read', 'bootstrap-race') if bootstrap_only else ('authenticated', 'd6-race', 'bootstrap-read', 'bootstrap-race')
+            shutil.copytree(scratch / 'tools', evidence / 'tools',
+                            ignore=shutil.ignore_patterns('api', 'control', 'stager', 'bootstrap-tests'))
             for case in cases:
                 destination = evidence / case
                 destination.mkdir(mode=0o700)
                 for path in sorted((scratch / case).iterdir()):
-                    if path.is_file() and (path.suffix in ('.stdout', '.stderr') or path.name.endswith(('.argv.json', '.exit.json', '-plan.json')) or path.name in ('read-calls.jsonl', 'read-counts.json', 'protected-before.json', 'protected-after.json', 'actor-before.json', 'actor-after.json', 'actor-result.json')):
+                    if path.is_file() and (path.suffix in ('.stdout', '.stderr') or path.name.endswith(('.argv.json', '.exit.json', '-plan.json')) or path.name in ('read-calls.jsonl', 'read-counts.json', 'protected-before.json', 'protected-after.json', 'actor-before.json', 'actor-after.json', 'actor-result.json', 'effect-result.json')):
                         shutil.copyfile(path, destination / path.name)
             pg_pids = {int((cluster.root / 'data/postmaster.pid').read_text().splitlines()[0])}
             pg_pids.update(int(pid) for pid in run_sql(cluster.dsn('postgres'),
@@ -570,12 +880,24 @@ def run(evidence, *, bootstrap_only=False):
             require(os.environ == environment, 'fixture changed parent environment; values withheld')
             control.write(evidence / 'postgres-cleanup.json', dict(owned_pids=sorted(pg_pids), all_absent=True))
             control.write(evidence / 'summary.json', dict(schema='cairn.r07-bootstrap-rehearsal/1',
-                result='SOURCE_GAP_CONFIRMED', operator_bootstrap='unsupported',
-                operator_bootstrap_reverse='unsupported', checked_bound2_control=result, new_owner_d6=race,
+                result='EFFECTFUL_SOURCE_FIXTURE_PASS' if effects_only else 'SOURCE_GAP_CONFIRMED',
+                operator_bootstrap='tested with fixture fence producer' if effects_only else 'unsupported without actual stopped fence',
+                operator_bootstrap_reverse='tested with exact original directory' if effects_only else 'not exercised', checked_bound2_control=result, new_owner_d6=race,
+                effectful_transitions=effects,
                 bootstrap_read_only=bootstrap, bootstrap_read_only_race=bootstrap_race,
                 native_calls=0, production_actions=0, remote_commands=0,
                 source_gaps=GAPS))
     finally:
+        # Preserve bounded command/fixture receipts even when a setup or
+        # assertion fails; never copy tokens, whole homes or API credentials.
+        for directory in (scratch / 'tools', *sorted(scratch.glob('effect-*'))):
+            if not directory.is_dir():
+                continue
+            destination = evidence / ('failure-' + directory.name)
+            destination.mkdir(mode=0o700, exist_ok=True)
+            for path in directory.iterdir():
+                if path.is_file() and (path.suffix in ('.stdout', '.stderr') or path.name.endswith(('.argv.json', '.exit.json', '-plan.json')) or path.name in ('read-calls.jsonl', 'read-counts.json', 'protected-before.json', 'protected-after.json', 'effect-result.json')):
+                    shutil.copyfile(path, destination / path.name)
         if cluster is not None:
             require(cluster.stop(), 'owned PostgreSQL stop is unresolved; retain scratch')
         remove_owned_scratch(scratch)
@@ -587,12 +909,30 @@ def run(evidence, *, bootstrap_only=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--evidence', type=Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--evidence', type=Path)
+    mode.add_argument('--semantic-reverse-selection', type=Path,
+                      help='operator staging only; immutable files and exact serve selectors, no execution')
+    parser.add_argument('--sha256', help='exact semantic reverse selection pin')
+    parser.add_argument('--publication-dir', type=Path,
+                        help='new empty owned0700 directory for payload/control file-verifier references')
     parser.add_argument('--bootstrap-only', action='store_true', help='focus new bootstrap cases; do not repeat the independent checked-control fixtures')
+    parser.add_argument('--effects-only', action='store_true', help='focused real API/PG exchange and exact retained2 reverse, with systemd observation fixtures')
     args = parser.parse_args()
-    result = run(args.evidence.absolute(), bootstrap_only=args.bootstrap_only)
+    if args.semantic_reverse_selection is not None:
+        try:
+            result = operator_semantic_reverse(args.semantic_reverse_selection, args.sha256, args.publication_dir)
+        except (HostRefusal, semantic.ClosureError, OSError, ValueError) as error:
+            print(json.dumps(dict(schema='cairn.r07-semantic-reverse-stage/1', error=str(error),
+                                  service_actions=0, model_executions=0)))
+            return 1
+    else:
+        require(args.sha256 is None, '--sha256 requires --semantic-reverse-selection')
+        require(args.publication_dir is None, '--publication-dir requires --semantic-reverse-selection')
+        require(not (args.effects_only and args.bootstrap_only), 'choose one focused fixture')
+        result = run(args.evidence.absolute(), bootstrap_only=args.bootstrap_only, effects_only=args.effects_only)
     print(json.dumps(result, sort_keys=True))
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())
