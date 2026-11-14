@@ -9,6 +9,9 @@ import shutil
 import subprocess
 import sys
 import threading
+import hashlib
+import shlex
+from types import SimpleNamespace
 from pathlib import Path
 import tempfile
 import unittest
@@ -85,6 +88,14 @@ class ContinuityBoundary(unittest.TestCase):
 
 
 class MechanismGuards(unittest.TestCase):
+    def test_lifecycle_diagnostics_keep_fixed_lines_without_adjacent_private_text(self):
+        expected = 'Cairn lifecycle diagnostic: phase=handle error_class=KeyError'
+        raw = ('private credential bearer\n' + expected + '\n'
+               'Cairn lifecycle diagnostic: phase=private error_class=KeyError\n'
+               + expected + ' token=private\nTraceback private argv\n').encode()
+        self.assertEqual(continuity.lifecycle_diagnostics(raw), [expected])
+        self.assertEqual(continuity.lifecycle_diagnostics(b'private\xff'), [])
+
     def admission_case(self):
         # Data-only validator controls. These never reach a native dispatcher
         # or manufacture a real Cairn admission/registration.
@@ -388,6 +399,7 @@ class EvidencePrivacy(unittest.TestCase):
         reducer=continuity.TraceReducer(); reducer.feed('100 <detached ...> malformed')
         self.assertIn('trace_parse_error',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
 
+
     def test_unknown_symlink_to_pinned_executable_is_refused(self):
         target=self.root/'pinned'; target.write_bytes(b'pinned'); target.chmod(0o500)
         alias=self.root/'unselected'; alias.symlink_to(target)
@@ -408,6 +420,253 @@ class EvidencePrivacy(unittest.TestCase):
                 self.assertEqual(bool(result['violations']),not terminated)
         reducer=continuity.TraceReducer();reducer.feed('101 ???() = 0');reducer.feed('101 +++ exited with 0 +++')
         self.assertIn('trace_parse_error',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
+
+
+class FaultCorrection(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='r03-fault-', dir=Path.home()/'.cache')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def selection(self):
+        release = self.root/'release'
+        generation = release/'generations/selection-owned'; generation.mkdir(parents=True, mode=0o700)
+        for name in ('receipt.json','manifest.json','memory.json'):
+            (generation/name).write_text('{}')
+        image_sha = hashlib.sha256(b'reviewed control bytes').hexdigest()
+        binary = release/'bin'/image_sha/'cairn'; binary.parent.mkdir(parents=True,mode=0o700)
+        binary.write_bytes(b'reviewed control bytes'); binary.chmod(0o500)
+        selection = dict(binary=dict(path=str(binary),sha256=image_sha), engine_config=str(generation/'memory.json'),
+            receipt=dict(path=str(generation/'receipt.json'),sha256=continuity.digest(generation/'receipt.json')),
+            lifecycle_selection=dict(path=str(generation/'manifest.json'),sha256=continuity.digest(generation/'manifest.json')),
+            commands={})
+        for event in ('SessionStart','UserPromptSubmit','PostToolUse','PostToolUseFailure','PreCompact','SessionEnd'):
+            capture = event in ('PreCompact','SessionEnd')
+            vector = [str(binary),'memory-capture' if capture else 'memory',
+                '--receipt',selection['receipt']['path'],'--receipt-sha256',selection['receipt']['sha256'],
+                '--role','memory','--entrypoint','manifest.json','--config',selection['engine_config'],
+                '--hook-timeout','150' if capture else '13','--launch-root',str(release/'launch'),'--shell','/bin/sh']
+            raw = ('#!/bin/sh\nexec '+shlex.join(vector)+' -- "$@"\n').encode()
+            launcher = release/'launch'/hashlib.sha256(raw).hexdigest()/'inbox'
+            launcher.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+            if not launcher.exists():
+                launcher.write_bytes(raw); launcher.chmod(0o500)
+            else:
+                self.assertEqual(launcher.read_bytes(),raw)
+            selection['commands'][event] = [str(launcher)]
+        return selection,image_sha
+
+    def test_selected_control_and_two_exact_launchers_are_admitted(self):
+        selection,sha = self.selection()
+        pins = continuity.selected_command_pins(selection,sha)
+        self.assertEqual(len(pins),3)
+        self.assertEqual(pins[selection['binary']['path']],sha)
+
+    def test_changed_control_foreign_target_and_changed_role_flags_refuse(self):
+        for mode in ('bytes','foreign','role','timeout'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory(dir=self.root) as name:
+                prior = self.root; self.root = Path(name)
+                try:
+                    selected,sha = self.selection()
+                    if mode == 'bytes':
+                        p=Path(selected['binary']['path']);p.chmod(0o700);p.write_bytes(b'changed');p.chmod(0o500)
+                    elif mode == 'foreign':
+                        p=self.root/'foreign';p.write_bytes(b'reviewed control bytes');p.chmod(0o500)
+                        selected['binary']['path']=str(p)
+                    else:
+                        p=Path(selected['commands']['SessionEnd'][0]);p.chmod(0o700)
+                        p.write_text(p.read_text().replace('--role memory','--role coordination') if mode=='role'
+                                     else p.read_text().replace('--hook-timeout 150','--hook-timeout 13'))
+                        p.chmod(0o500)
+                    with self.assertRaises(continuity.PrerequisiteError): continuity.selected_command_pins(selected,sha)
+                finally: self.root=prior
+
+    def test_callback_failure_keeps_exit_and_source_diagnostic_without_streams(self):
+        canary=secrets.token_hex(24);command=['/selected/hook']
+        observer=continuity.NativeAudit(self.root,dict(exact_argv=[command]))
+        frame=SimpleNamespace(f_code=SimpleNamespace(co_name='run_engine',co_filename='/owned/plugins/cairn/__init__.py'),
+            f_locals=dict(command=command,payload=dict(hook_event_name='SessionEnd'),timeout=150))
+        observer.profile(frame,'call',None)
+        line='Cairn lifecycle diagnostic: phase=handle error_class=HookError'
+        observer.profile(frame,'return',SimpleNamespace(returncode=1,stdout=canary,stderr=line+'\n'+canary))
+        observer.flush();row=json.loads((self.root/'calls.json').read_bytes())[0]
+        self.assertEqual(row['exit'],1);self.assertEqual(row['diagnostics'],[line]);self.assertEqual(row['timeout'],150)
+        self.assertNotIn(canary,(self.root/'calls.json').read_text())
+        self.assertNotIn('stderr',row);self.assertEqual(row['stderr_bytes'],len((line+'\n'+canary).encode()))
+
+    def test_fixed_exception_requires_the_complete_source_stream(self):
+        raw=('Cairn lifecycle diagnostic: phase=handle error_class=HookError\n'
+             'Cairn lifecycle: memory selection did not return the required schema; use native tools or an explicit handoff.\n')
+        self.assertEqual(continuity.selected_failure(raw)['error_class'],'HookError')
+        self.assertIsNone(continuity.selected_failure(raw+'private adjacent material'))
+
+    def test_origin_requires_all_source_pins_and_preserves_cairn_priority(self):
+        client=self.root/'client.py';client.write_text('pinned client')
+        cairn=self.root/'cairn.py';cairn.write_text('pinned Cairn')
+        hp={str(client):continuity.digest(client)};cp={str(cairn):continuity.digest(cairn)}
+        def origin(paths):return continuity.classify_origin(paths,'/pinned/python','interpreter-sha',hp,cp)
+        self.assertEqual(origin([str(client)])['component'],'hermes')
+        self.assertEqual(origin([str(client),str(cairn)])['component'],'cairn')
+        self.assertEqual(origin(['/unknown/source.py',str(client)])['component'],'unknown')
+        cairn.write_text('changed');self.assertEqual(origin([str(client),str(cairn)])['component'],'unknown')
+
+    def test_only_proven_hermes_refused_network_is_non_failing(self):
+        class Observer(continuity.NativeAudit):
+            def origin(self):return dict(component=self.spec['component'],source_sha256='pinned-source',executable_sha256='pinned-python')
+        for component in ('hermes','cairn','unknown'):
+            with self.subTest(component=component):
+                observer=Observer(self.root,dict(component=component,provider_url=continuity.PROVIDER_URL,api_socket='/owned/socket'))
+                canary=secrets.token_hex(24)
+                with self.assertRaises(continuity.PrerequisiteError):observer.audit('socket.getaddrinfo',(canary,443))
+                self.assertEqual(bool(observer.violations),component!='hermes')
+                self.assertEqual(len(observer.refused_attempts),int(component=='hermes'))
+                self.assertNotIn(canary,(self.root/'audit.json').read_text())
+        observer=Observer(self.root,dict(component='hermes',provider_url=continuity.PROVIDER_URL,api_socket='/owned/socket'))
+        with self.assertRaises(continuity.PrerequisiteError):observer.audit('socket.connect',(None,'/unknown/socket'))
+        self.assertTrue(observer.violations)
+
+    def test_successful_external_socket_is_always_a_violation(self):
+        reducer=continuity.TraceReducer()
+        reducer.feed('100 connect(3, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("203.0.113.1")}, 16) = 0')
+        result=continuity.audit_syscalls(set(),set(),reducer=reducer)
+        self.assertEqual(result['violations'],['unapproved socket target'])
+
+    def test_watchdog_exact_vector_is_distinct_from_python_fallback(self):
+        python=str(Path(sys.executable).resolve());script=self.root/'mcp_stdio_watchdog.py';script.write_text('pinned watchdog')
+        command=continuity.watchdog_command(python,str(script),100,['/selected/api','mcp','--repo','fixture'])
+        for changed in (False,True):
+            reducer=continuity.TraceReducer(exec_pins={python:continuity.digest(python)},
+                selected_python_scripts={str(script):continuity.digest(script)})
+            actual=command if not changed else [*command[:-1],'foreign']
+            reducer.feed('100 clone(child_stack=NULL) = 101')
+            reducer.feed('101 execve('+json.dumps(python)+', '+json.dumps(actual)+', 0x0) = 0')
+            result=continuity.audit_syscalls({python},set(),{100:'A'},python_path=python,reducer=reducer,
+                exec_pins={python:continuity.digest(python)},selected_python_commands={100:[continuity.argv_digest(command)]})
+            self.assertEqual(bool(result['violations']),changed)
+
+    def test_unparsed_metadata_stays_a_violation_without_retaining_arguments(self):
+        canary=secrets.token_hex(24);reducer=continuity.TraceReducer()
+        # prctl is now supported explicitly; a genuinely unknown operation
+        # continues to fail while exposing its safe kernel name only.
+        reducer.feed('100 fixture_unknown_call('+json.dumps(canary)+') = 0')
+        result=continuity.audit_syscalls(set(),set(),reducer=reducer)
+        self.assertIn('unparsed_syscall:fixture_unknown_call',result['violations'])
+        self.assertEqual(result['unparsed_syscalls'][0]['name'],'fixture_unknown_call')
+        self.assertEqual(result['unparsed_syscalls'][0]['syscall_name_sha256'],hashlib.sha256(b'fixture_unknown_call').hexdigest())
+        self.assertNotIn(canary,json.dumps(result))
+
+    def test_pidfd_signal_zero_probe_requires_pinned_origin_and_nonzero_refuses(self):
+        image=self.root/'control';image.write_bytes(b'pinned control');image.chmod(0o500)
+        pins={str(image):continuity.digest(image)}
+        for signal,known in (('0',True),('SIGTERM',True),('0',False)):
+            with self.subTest(signal=signal,known=known):
+                reducer=continuity.TraceReducer(exec_pins=pins)
+                reducer.feed('100 execve('+json.dumps(str(image))+', ["control"], 0x0) = 0')
+                reducer.feed('100 clone3({flags=CLONE_THREAD}, 88) = 101')
+                reducer.feed('101 pidfd_send_signal(9, '+signal+', NULL, 0) = 0')
+                result=continuity.audit_syscalls(set(pins) if known else set(),set(),reducer=reducer,exec_pins=pins)
+                self.assertEqual(bool(result['violations']),signal!='0' or not known)
+                if signal=='0' and known:
+                    probe=result['declared_negative_or_anchor_probes'][0]
+                    self.assertTrue(probe['signal_zero_probe']);self.assertEqual(probe['origin']['sha256'],pins[str(image)])
+
+    def test_metadata_probe_stays_bound_to_fixture_model_and_credential(self):
+        with continuity.ScriptedChat(self.root/'requests.json') as transport:
+            port=transport.server.server_address[1]
+            for name,key,expected in ((continuity.MODEL,'r03-fixture-only',404),
+                                      ('foreign','r03-fixture-only',400),(continuity.MODEL,'foreign',400)):
+                conn=http.client.HTTPConnection('127.0.0.1',port,timeout=5)
+                conn.request('POST','/api/show',json.dumps(dict(name=name)),
+                             {'Authorization':'Bearer '+key,'Content-Type':'application/json'})
+                response=conn.getresponse();self.assertEqual(response.status,expected);response.read();conn.close()
+            self.assertEqual(len(transport.violations),2)
+            self.assertEqual(transport.requests[0]['purpose'],'metadata_probe')
+
+    def test_later_pinned_exec_cannot_qualify_an_earlier_unknown_pidfd_probe(self):
+        image=self.root/'control';image.write_bytes(b'pinned control');image.chmod(0o500)
+        pins={str(image):continuity.digest(image)}
+        reducer=continuity.TraceReducer(exec_pins=pins)
+        reducer.feed('100 pidfd_send_signal(9, 0, NULL, 0) = 0')
+        reducer.feed('100 execve('+json.dumps(str(image))+', ["control"], 0x0) = 0')
+        result=continuity.audit_syscalls(set(pins),set(),reducer=reducer,exec_pins=pins)
+        self.assertIn('unapproved pidfd signal',result['violations'])
+
+
+
+
+class F78Completion(unittest.TestCase):
+    selection = FaultCorrection.selection
+
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory(prefix='r03-f78-',dir=Path.home()/'.cache')
+        self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
+
+    def test_canonical_selector_abi_is_shared_and_dialogue_topics_are_deterministic(self):
+        script=self.root/'selector';script.write_text(continuity.fixture_selector_source(sys.executable))
+        (self.root/'selection.json').write_text(json.dumps(continuity.fixture_selection('proof')))
+        results=[]
+        for text in ('first dialogue','second dialogue','first dialogue'):
+            done=subprocess.run([sys.executable,'-B',str(script)],input=json.dumps(dict(messages=[dict(role='user',text=text)])),
+                text=True,capture_output=True,check=True)
+            row=json.loads(done.stdout);self.assertFalse(row['is_error']);self.assertEqual(row['type'],'result')
+            self.assertNotIn('result',row);results.append(row['structured_output']['memories'][0]['title'])
+        self.assertEqual(results[0],results[2]);self.assertNotEqual(results[0],results[1])
+
+    def test_a_and_staged_b_binary_are_in_all_three_pin_sets(self):
+        allowed=set();actor={};trace={};snapshots=[]
+        for phase in ('A','B'):
+            prior=self.root;self.root=prior/phase;self.root.mkdir(mode=0o700)
+            try:
+                selection,sha=self.selection()
+                snapshot=continuity.register_selected(selection,sha,allowed,actor,trace);snapshots.append(snapshot)
+                for old in snapshots:
+                    path=old['binary']['path'];self.assertIn(path,allowed)
+                    self.assertEqual(actor[path],sha);self.assertEqual(trace[path],sha)
+            finally:self.root=prior
+
+    def test_netlink_kernel_probe_requires_pinned_native_origin_and_zero_groups(self):
+        python=str(Path(sys.executable).resolve());pins={python:continuity.digest(python)}
+        for owner,pid,groups,external in ((True,0,0,False),(False,0,0,False),(True,12,0,False),(True,0,1,False),(True,0,0,True)):
+            with self.subTest(owner=owner,pid=pid,groups=groups,external=external):
+                reducer=continuity.TraceReducer(exec_pins=pins)
+                reducer.feed('100 execve('+json.dumps(python)+', ["python"], 0x0) = 0')
+                reducer.feed('100 bind(3, {sa_family=AF_NETLINK, nl_pid='+str(pid)+', nl_groups='+format(groups,'08x')+'}, 12) = 0')
+                if owner and pid==0 and groups==0:
+                    reducer.feed('100 getsockname(3, {sa_family=AF_NETLINK, nl_pid=100, nl_groups=00000000}, [12]) = 0')
+                if external:reducer.feed('100 connect(4, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("203.0.113.1")}, 16) = 0')
+                result=continuity.audit_syscalls(set(pins),set(),{100:'A'} if owner else {},reducer=reducer,exec_pins=pins,python_path=python)
+                self.assertEqual(bool(result['violations']),not owner or pid!=0 or groups!=0 or external)
+
+    def test_named_process_calls_keep_no_arguments_and_require_pinned_origin(self):
+        image=self.root/'control';image.write_bytes(b'pinned process');image.chmod(0o500);pins={str(image):continuity.digest(image)}
+        canary=secrets.token_hex(24)
+        for known in (True,False):
+            reducer=continuity.TraceReducer(exec_pins=pins)
+            reducer.feed('100 execve('+json.dumps(str(image))+', ["control"], 0x0) = 0')
+            reducer.feed('100 arch_prctl(ARCH_SET_FS, 0x123456) = 0')
+            reducer.feed('100 prctl(PR_SET_NAME, '+json.dumps(canary)+', 0, 0, 0) = 0')
+            reducer.feed('100 waitpid(-1, NULL, WNOHANG) = 0')
+            result=continuity.audit_syscalls(set(pins) if known else set(),set(),reducer=reducer,exec_pins=pins)
+            self.assertEqual(bool(result['violations']),not known);self.assertNotIn(canary,json.dumps(result))
+            self.assertEqual({v['kind'] for v in result['processes']},{'arch_prctl','prctl','waitpid'})
+        reducer=continuity.TraceReducer();reducer.feed('100 prctl(PR_SET_PTRACER, 42) = 0')
+        self.assertIn('trace_parse_error',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
+
+    def test_uname_only_admits_the_pinned_minus_p_vector(self):
+        executable=str(Path(shutil.which('uname')).resolve())
+        observer=continuity.NativeAudit(self.root,dict(exec_pins={executable:continuity.digest(executable)},
+            exact_argv=[['uname','-p']],git_executable='/unselected/git'))
+        observer.audit('subprocess.Popen',('uname',['uname','-p'],None,None))
+        with self.assertRaises(continuity.PrerequisiteError):
+            observer.audit('subprocess.Popen',('uname',['uname','-a'],None,None))
+
+    def test_named_model_list_probe_is_404_but_foreign_route_refuses(self):
+        with continuity.ScriptedChat(self.root/'requests.json') as transport:
+            for path,expected in (('/v1/models',404),('/unselected',400)):
+                conn=http.client.HTTPConnection('127.0.0.1',transport.server.server_address[1],timeout=5)
+                conn.request('GET',path,headers={'Authorization':'Bearer r03-fixture-only'})
+                response=conn.getresponse();self.assertEqual(response.status,expected);response.read();conn.close()
+            self.assertEqual(len(transport.violations),1)
 
 
 if __name__ == '__main__':

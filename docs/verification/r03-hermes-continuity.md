@@ -12,14 +12,18 @@ maintained mise/host:exec, preserving normal HOME, PATH, tools and authenticatio
 There is no namespace sandbox, remapped filesystem, replacement HOME, socket
 forward, shared-fixture-view extension or change to the old wrapper.
 
-The actual Hermes client remains unadmitted. Code, guards and owned non-native
-API/PG preparation are authorized; imports/construction/chat/finalization and
-model use require Root's separately reviewed exact native admission. Setup uses
+The first separately admitted native attempt failed during A; B and retained /2
+never started. Its consumed ledger and clean failure checkout remain held.
+The current correction starts from accepted `b8dd9f97fc1988f192e83c77f496c795978171f7`
+and changes only this checker, its tests and this document under Root
+`9dffb2b3-faa9-4131-87c5-c01cd26f8164/v1`. It authorizes local diagnosis and
+preparation. Further imports/construction/chat/finalization and model use require
+Root's new exact native admission after independent delta review. Setup uses
 an explicitly labelled stub of the client-process boundary. It creates no fake
 CLI, callback, registration, auth record or native transcript and cannot close
 AC4 or R06. Old constructor request `554d8e55` is deprecated and must not run.
 
-## Implemented native sequence, not yet executed
+## Implemented sequence requiring a new native admission
 
 1. One genuine A CLI generates the native session ID. Its real provider and five
    registration handles are inspected. A real baseline chat and memory-manager
@@ -211,7 +215,132 @@ mise run host:exec -- --timeout 8m --weight 2 -- python3 -B \
 `mechanism-plan` emits a fresh direct-host plan and admission template from the
 frozen code and explicit retained runtime/PG/Root image inputs. Older sandbox
 plans are refused. The later native command requires that plan and the actual
-separately admitted native request context. Root owns the same 1415 delta
-re-review and any later exact native admission; the author does not land/push
+separately admitted native request context. Root commissions the designated
+independent delta reviewer and owns integration and any later exact native
+admission; the author does not land/push
 or launch a reviewer. All old cuts, runtime assets and failures
 remain retained. The packet separates code/setup proof from native acceptance.
+
+## Local diagnosis after the failed native attempt
+
+The local `hook-diagnostic` phase reuses the maintained disposable API/PG and
+installed-selection mechanism without importing a native client. Its first
+replay uses the retained SessionEnd payload unchanged, the reviewed control image
+and a reconstructed effective configuration. Replacing only the recorded scratch
+and generation paths must reproduce the original configuration hash. Removed
+paths are never recreated or redirected. Since the original payload's `cwd` was
+removed, that literal replay reports Source's fixed `HookError` for an unavailable
+working directory. A subsequent replay can explicitly map only `cwd` to the new
+owned project; its receipt retains both payloads and the path correspondence.
+
+```sh
+mise run host:exec -- --timeout 8m --weight 2 -- python3 -B \
+  scripts/check_r03_hermes_continuity.py --phase hook-diagnostic \
+  --plan PLAN --replay-calls RETAINED_A_CALLS
+```
+
+`--replay-cwd` requests the explicit subsequent path mapping. A diagnostic process
+exit means the diagnostic finished; the receipt's selected hook exit is the hook
+result. The replay with the mapped directory reproduced the original callback's
+174-byte stderr hash and `phase=handle error_class=HookError`. Its complete fixed
+Source exception is `memory selection did not return the required schema` in
+`internal/lifecycle/memoryclient/capture.go`. The fixture selector emitted an
+extra `result` envelope. The checker now emits the real selector ABI's top-level
+`structured_output`; the Go and retained Python product implementations do not
+change. Hook receipts retain before/after disposable Store counts.
+
+Each selected native callback retains its numeric exit and exact fixed-vocabulary
+Source diagnostic lines. Adjacent error messages, streams, argv and credentials
+remain unretained. Two complete fixed Source failures have explicit local
+diagnostic classifications; unknown error text is never copied as a fallback.
+
+Selected Go admission verifies both generated shell scripts, the eight literal
+flags, role, H13/H150 values, receipt hashes and the content-addressed control
+image bytes. It adds only those exact selected paths and hashes to the process
+audit. The callback script hash and the Go target hash remain separate facts.
+Changed images, foreign targets and changed roles/flags still refuse.
+
+Hermes's pinned stdio MCP watchdog has a separate exact command contract: held
+Python, pinned watchdog Source, this owned client's PID and the selected MCP
+vector. Its whole command digest is checked independently of ordinary Python
+fallback detection. This grants no general interpreter or descendant exemption.
+
+Refused network attempts become non-failing observations only when the executable
+and relevant source frames establish pinned Hermes provenance. A Cairn source
+frame takes priority; unknown or changed source, unknown destinations and
+successful unapproved connections remain violations. DNS/socket operations are
+still refused before sending. Native call journals retain component provenance
+and destination class without hostnames, headers or raw argv.
+
+The old reducer discarded the original unsupported syscall identity and unknown
+socket family. Those facts cannot be recovered from the sealed metadata and are
+reported unavailable. They are not retrospectively accepted. New unsupported
+syscalls retain bounded PID/result/name-hash metadata while continuing to fail;
+parse errors are never ignored. The packet itemizes all eight native and seven
+syscall observations, distinguishing proved facts from unavailable provenance.
+Green non-native setup and these guards do not prove the repaired native case.
+
+A fresh local capture reproduced an unsupported syscall with the name hash for
+`pidfd_send_signal`, result 0, in a thread of the selected control image. Its
+decoder now requires the literal descriptor/signal/NULL/zero-flags shape. Only
+a successful signal-zero probe from an independently pinned executable is
+non-failing; nonzero signals, unknown provenance and malformed shapes refuse.
+This new local observation does not identify the discarded old syscall by fiat.
+
+Pinned Hermes `agent/model_metadata.py` also sends authenticated `/api/show`
+metadata probes for the configured model to the same local provider. The fixture
+records those exact-model/key requests and returns 404 to identify itself as an
+OpenAI endpoint. Wrong models, wrong credentials and other routes still fail.
+Metadata probes are reported separately from chat-completion requests.
+
+## f78 fixture completion gates
+
+Root `898fd694-7b8a-46ca-b6ff-76afe74e7d6d/v1` applies supervisor
+`f78abb4e-3ed2-4839-9a6c-fb14f70e65ec/v1` in the same child. The earlier sealed
+`9180fd4d` packet remains a partial result. Its unavailable historical fields
+are retained; they do not add a human approval gate to the specified repairs.
+
+The fixture writes `model.context_length=128000` and
+`agent.environment_probe=False` to its disposable profile. The first prevents
+model-capability fallback discovery; the second uses Hermes's supported switch
+to disable unrelated Python/pip startup probes. The installed `uname` bytes are
+pinned and only the exact `uname -p` command is admitted. No general tool or
+interpreter allowance is introduced. `/api/show` and `/v1/models` metadata probes
+have explicit local 404 behavior; chat authentication/model checks remain strict.
+
+`selection.json` itself now contains canonical top-level `type`, `is_error` and
+`structured_output` fields, consumed by the same scripted selector for replay,
+Go, retained /2 and later native phases. Synthetic topic names use a deterministic
+dialogue suffix so separate native turns select distinct memories; duplicate
+dialogue does not acquire a new topic merely because the selector was retried.
+
+Full `mechanism-setup` retains the stubbed native-process boundary and additionally
+invokes real Go `memory-capture` and retained Python /2 `SessionEnd` hooks. Each
+must exit 0 and add exactly one `memory_record` and one `capture_observation`,
+without a recall. `capture-proofs.json` keeps both actual exits, fixed Source
+diagnostics, stream hashes and before/after counts. Therefore setup's terminal
+counts are three memories (seed plus two actual captures), two captures, zero
+recalls and zero coordination/session effects. These direct local hooks do not
+stand in for genuine native CLI emission. The old local setup packets retain
+their original seed-only counts unchanged.
+
+`selection-pin-snapshots.json` proves A and staged B update allowed executable,
+actor pin and trace pin sets before policy publication. `fixture-policy.json`
+records the effective context/probe settings and pinned `uname`, excluding
+credential values.
+
+The trace decoder recognizes AF_NETLINK explicitly. Only a zero-group kernel
+route bind with `nl_pid=0` from a pinned native Python process is admitted;
+matching descriptor observations require that prior bind. Unknown owners,
+nonzero groups/targets, Cairn external attempts and successful external INET
+connections still refuse. Named `arch_prctl` and `prctl` support is limited to
+specified process-local operations with pinned provenance; unsupported operations
+still fail. `waitpid` is decoded without retaining status buffers. Unknown calls
+emit `unparsed_syscall:<safe_kernel_name>` plus bounded metadata, never arguments.
+The former new `prctl` unknown-call guard now uses a truly unknown syscall;
+separate positive and malformed/unsafe `prctl` controls preserve the refusal.
+The original 30 test classes and bodies remain unchanged.
+
+The six-criterion mapping, both actual capture proofs and current local gates
+must accompany the complete candidate. Root commissions agent-1415's independent
+delta review and owns later integration and a new exact native admission.

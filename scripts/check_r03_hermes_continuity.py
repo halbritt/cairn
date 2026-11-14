@@ -11,6 +11,7 @@ import atexit
 import base64
 import hashlib
 import http.server
+import ipaddress
 import json
 import os
 import re
@@ -300,16 +301,37 @@ class ScriptedChat:
             def log_message(self, *args):
                 pass
 
+            def do_GET(self):
+                authorized = self.headers.get('Authorization') == 'Bearer r03-fixture-only'
+                with owner.lock:
+                    owner.requests.append(dict(path=self.path, body=None, phase=owner.phase,
+                        authorization_expected=authorized, purpose='metadata_probe'))
+                    write_json(owner.output, owner.requests)
+                if self.path == '/v1/models' and authorized:
+                    self.send_error(404, 'No model-list endpoint')
+                else:
+                    owner.violations.append('unexpected metadata route or credential')
+                    self.send_error(400, 'Unexpected metadata route or credential')
+
             def do_POST(self):
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 0 < length <= 2_000_000:
                     owner.violations.append('invalid request size'); self.send_error(400); return
                 body = json.loads(self.rfile.read(length))
+                probe = (self.path == '/api/show' and body == {'name': MODEL}
+                         and self.headers.get('Authorization') == 'Bearer r03-fixture-only')
                 row = dict(path=self.path, body=body, phase=owner.phase,
-                           authorization_expected=self.headers.get('Authorization') == 'Bearer r03-fixture-only')
+                           authorization_expected=self.headers.get('Authorization') == 'Bearer r03-fixture-only',
+                           purpose='metadata_probe' if probe else
+                               'chat_completion' if self.path == '/v1/chat/completions' else 'unselected_route')
                 with owner.lock:
                     owner.requests.append(row)
                     write_json(owner.output, owner.requests)
+                if probe:
+                    # Pinned model_metadata.py probes the same configured local
+                    # endpoint for Ollama capabilities. This fixture is OpenAI.
+                    self.send_error(404, 'No Ollama metadata endpoint')
+                    return
                 if (self.path != '/v1/chat/completions' or body.get('model') != MODEL
                         or self.headers.get('Authorization') != 'Bearer r03-fixture-only'):
                     owner.violations.append('unexpected route/model/credential: ' + self.path)
@@ -406,10 +428,11 @@ def make_mechanism_plan(args):
     source = source_pins()
     require(not source['status'], 'R03_PLAN: commit and freeze before pinning')
     tools = {}
-    for name in ('strace', 'git', 'env', 'sh', 'locale'):
+    for name in ('strace', 'git', 'env', 'sh', 'locale', 'uname'):
         path = shutil.which(name)
         require(path is not None, 'R03_TOOL: missing normal host tool: ' + name)
         tools[str(Path(path).resolve())] = digest(path)
+        if name == 'uname': tools[str(Path(path))] = digest(path)
     admission_cli = '/home/halbritt/.local/bin/cairn'
     tools[admission_cli] = digest(admission_cli)
     libraries = {}
@@ -469,7 +492,7 @@ def require_host_view(plan):
         require(digest(Path(plan['image_directory'])/name) == expected, 'R03_IMAGES: changed image: ' + name)
 
 
-def run_mechanism_host(plan_path, mode, admission_context=None):
+def run_mechanism_host(plan_path, mode, admission_context=None, replay_calls=None, replay_cwd=False):
     plan = json.loads(Path(plan_path).read_bytes())
     require(plan['schema'] == 'cairn.r03-hermes-native-plan/2' and plan['bindings']['execution_mode'] == 'direct-host',
             'R03_HOST: obsolete execution plan refused')
@@ -485,17 +508,23 @@ def run_mechanism_host(plan_path, mode, admission_context=None):
         except (PrerequisiteError, KeyError, ValueError, OSError) as error:
             raise AdmissionRefusal('R03_ADMISSION: ' + str(error)) from error
     verify_inputs(Path(plan['native_root']), Path(plan['manifest']))
-    run_dir = Path(plan['output']) / ('native-run' if mode == 'native' else 'setup-run'); run_dir.mkdir(mode=0o700)
+    require(replay_calls is None or mode == 'hook-diagnostic', 'R03_DIAGNOSTIC: local hook phase required')
+    run_dir = Path(plan['output']) / (mode + '-run' if mode != 'setup' else 'setup-run'); run_dir.mkdir(mode=0o700)
     scratch = Path(tempfile.mkdtemp(prefix='cairn-r03h-'))
     runtime = dict(plan, run_dir=str(run_dir), scratch_root=str(scratch),
-                   admission_context=str(admission_context) if admission_context else None)
+                   admission_context=str(admission_context) if admission_context else None,
+                   replay_calls=str(replay_calls) if replay_calls else None, replay_cwd=replay_cwd)
     write_json(run_dir/'runtime-plan.json',runtime)
     # Observe network/process identities without recording credential-bearing
     # send/receive buffers. Synthetic model bodies and hook stdin have their
     # own selected journals; workflow authentication wire bytes are never read.
     trace_calls = 'process,socket,socketpair,connect,bind,listen,accept,accept4,getsockname,getpeername,shutdown'
     descriptor, writer = os.pipe()
-    reducer, stop = TraceReducer(scratch=scratch, exec_pins=mechanism_exec_pins(plan)), threading.Event()
+    held_files = json.loads(Path(plan['manifest']).read_bytes())['files']
+    watchdog = str(Path(plan['native_root'])/'hermes/tools/mcp_stdio_watchdog.py')
+    watchdog_sha = held_files['hermes/tools/mcp_stdio_watchdog.py']['sha256']
+    reducer, stop = TraceReducer(scratch=scratch, exec_pins=mechanism_exec_pins(plan),
+        selected_python_scripts={watchdog:watchdog_sha}), threading.Event()
     require(all((identity := reducer.identity(path)) is not None and identity['sha256'] == expected
                 for path,expected in reducer.exec_pins.items()),
             'R03_PINS: executable changed before launch')
@@ -539,11 +568,120 @@ def run_mechanism_host(plan_path, mode, admission_context=None):
         provider_url=policy['provider_url'],python_path=policy['python_path'],scratch_root=scratch,
         normal_path=plan['normal_path'],admission_socket=plan['bindings']['admission_socket'],
         admission_pids=policy['admission_pids'],exec_pins=policy['exec_pins'],
-        owned_daemons={int(pid):path for pid,path in policy['owned_daemons'].items()})
+        owned_daemons={int(pid):path for pid,path in policy['owned_daemons'].items()},
+        selected_python_commands={int(pid):rows for pid,rows in policy['selected_python_commands'].items()},
+        component_images={sha:role for role,sha in plan['bindings']['images'].items()})
     write_json(run_dir/'syscall-audit.json',syscall)
     require(not syscall['violations'], 'R03_AUDIT: unapproved or incomplete process/network observation; STOP')
     require(process.returncode==0 and not timed_out,'R03_MECHANISM: direct-host '+mode+' failed; STOP; metadata retained')
-    print(json.dumps(dict(status='NATIVE_FIXTURE_PASSED' if mode=='native' else 'DIRECT_HOST_SETUP_ONLY_PASSED',native=mode=='native',ac4_closed=False,output=str(run_dir))))
+    print(json.dumps(dict(status='NATIVE_FIXTURE_PASSED' if mode=='native' else
+        'HOOK_DIAGNOSTIC_COMPLETED' if mode=='hook-diagnostic' else 'DIRECT_HOST_SETUP_ONLY_PASSED',native=mode=='native',ac4_closed=False,output=str(run_dir))))
+
+
+def lifecycle_diagnostics(stderr):
+    """Select Source's fixed diagnostic vocabulary; never retain adjacent text."""
+    raw = stderr.decode('utf-8', errors='replace') if isinstance(stderr, bytes) else stderr
+    pattern = (r'Cairn lifecycle diagnostic: phase=(?:configuration|input|activation|handle|compatibility_preflight) '
+               r'error_class=(?:UnexpectedError|HookError|RequiredContextRefused|CompatibilityPreflightError|BlockingIOError|OSError|ValueError|KeyError|TypeError)')
+    return [line for line in raw.splitlines() if re.fullmatch(pattern, line)]
+
+
+def selected_failure(stderr):
+    """Identify complete, fixed Source failures without retaining arbitrary text."""
+    raw = stderr.decode('utf-8', errors='replace') if isinstance(stderr, bytes) else stderr
+    messages = {
+        'host working directory is unavailable': 'internal/lifecycle/admission/admission.go:345',
+        'memory selection did not return the required schema': 'internal/lifecycle/memoryclient/capture.go:162',
+    }
+    for message, source in messages.items():
+        expected = ('Cairn lifecycle diagnostic: phase=handle error_class=HookError\n'
+                    'Cairn lifecycle: ' + message + '; use native tools or an explicit handoff.\n')
+        if raw == expected:
+            return dict(error_class='HookError', message=message, source=source)
+    return None
+
+
+def selected_command_pins(selection, control_sha256):
+    """Bind selected shell bytes, all eight flags, and their exact Go target."""
+    binary = selection['binary']
+    binary_path = Path(binary['path']); binary_info = binary_path.lstat()
+    release = Path(selection['engine_config']).parents[2]
+    require(binary_path == release/'bin'/control_sha256/'cairn' and binary_path == binary_path.resolve()
+            and stat.S_ISREG(binary_info.st_mode) and binary_info.st_uid == os.getuid()
+            and binary_info.st_nlink == 1 and stat.S_IMODE(binary_info.st_mode) == 0o500,
+            'R03_SELECTION: foreign selected target')
+    require(digest(binary['path']) == binary['sha256'] == control_sha256,
+            'R03_SELECTION: selected control bytes differ')
+    pins = {binary['path']: control_sha256}
+    events = {'SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure', 'PreCompact', 'SessionEnd'}
+    require(set(selection['commands']) == events, 'R03_SELECTION: event contract differs')
+    for item in ('receipt', 'lifecycle_selection'):
+        require(digest(selection[item]['path']) == selection[item]['sha256'], 'R03_SELECTION: changed selected receipt')
+    launch_root = Path(binary['path']).parents[2] / 'launch'
+    for event, argv in selection['commands'].items():
+        require(len(argv) == 1, 'R03_SELECTION: selected launcher vector differs')
+        capture = event in ('PreCompact', 'SessionEnd')
+        vector = [binary['path'], 'memory-capture' if capture else 'memory',
+            '--receipt', selection['receipt']['path'], '--receipt-sha256', selection['receipt']['sha256'],
+            '--role', 'memory', '--entrypoint', 'manifest.json', '--config', selection['engine_config'],
+            '--hook-timeout', '150' if capture else '13', '--launch-root', str(launch_root), '--shell', '/bin/sh']
+        raw = ('#!/bin/sh\nexec ' + shlex.join(vector) + ' -- "$@"\n').encode()
+        launcher = Path(argv[0]); info = launcher.lstat()
+        require(launcher == launcher.resolve() and stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+                and info.st_nlink == 1 and info.st_mode & 0o111 and not info.st_mode & 0o077
+                and launcher.parent.name == hashlib.sha256(raw).hexdigest() and launcher.read_bytes() == raw,
+                'R03_SELECTION: selected launcher bytes or role/flags differ')
+        pins[str(launcher)] = hashlib.sha256(raw).hexdigest()
+    return pins
+
+
+def watchdog_command(python, script, owner_pid, mcp_argv):
+    require(owner_pid > 1, 'R03_MCP: invalid watchdog owner')
+    return [python, script, '--ppid', str(owner_pid), '--', *mcp_argv]
+
+
+def register_selected(selection, control_sha256, allowed_exec, exec_pins, trace_exec_pins):
+    pins = selected_command_pins(selection, control_sha256)
+    allowed_exec.update(pins); exec_pins.update(pins); trace_exec_pins.update(pins)
+    return dict(binary=selection['binary'], allowed=selection['binary']['path'] in allowed_exec,
+        exec_sha256=exec_pins[selection['binary']['path']], trace_sha256=trace_exec_pins[selection['binary']['path']])
+
+
+def fixture_selection(label):
+    return dict(type='result', is_error=False, structured_output=dict(checkpoint=None, workstream=None,
+        memories=[dict(record_id=None, kind='decision', title='Synthetic phase '+label,
+                       body='Selected continuity phase '+label+' retention.')]))
+
+
+def fixture_selector_source(python):
+    return ('#!'+python+'\nimport json,pathlib,sys,hashlib\np=pathlib.Path(__file__).parent\n'
+        'raw=sys.stdin.read()\nrequest=json.loads(raw)\n'
+        'with (p/"selector-calls.jsonl").open("a") as f: f.write(json.dumps(dict(argv_sha256=hashlib.sha256(json.dumps(sys.argv[1:]).encode()).hexdigest(),stdin=raw))+"\\n")\n'
+        'result=json.loads((p/"selection.json").read_text())\n'
+        'suffix=hashlib.sha256(json.dumps(request.get("messages",[]),sort_keys=True).encode()).hexdigest()[:12]\n'
+        'for note in result["structured_output"]["memories"]: note["title"]+=" "+suffix\n'
+        'print(json.dumps(result))\n')
+
+
+def classify_origin(paths, executable, executable_sha256, held_sources, cairn_sources, framework_sources=None):
+    """A held interpreter alone never identifies the component making a call."""
+    pins = {**(framework_sources or {}), **held_sources, **cairn_sources}
+    for path in paths:
+        if path == '<string>' or path in ('<frozen importlib._bootstrap>', '<frozen importlib._bootstrap_external>'):
+            continue
+        expected = pins.get(path)
+        if expected is None: return dict(component='unknown', reason='unlisted_source_frame')
+        if not Path(path).is_file() or digest(path) != expected:
+            return dict(component='unknown', reason='source_pin_mismatch')
+    for component, pins in (('cairn', cairn_sources), ('hermes', held_sources)):
+        for path in paths:
+            expected = pins.get(path)
+            if expected is not None:
+                if not Path(path).is_file() or digest(path) != expected:
+                    return dict(component='unknown', reason='source_pin_mismatch')
+                return dict(component=component, source=path, source_sha256=expected,
+                    executable=executable, executable_sha256=executable_sha256, pid=os.getpid())
+    return dict(component='unknown', reason='no_pinned_component_source')
 
 
 class NativeAudit:
@@ -556,6 +694,32 @@ class NativeAudit:
     def __init__(self, output, spec):
         self.output, self.spec = Path(output), spec
         self.events, self.calls, self.violations, self.frames = [], [], [], {}
+        self.refused_attempts = []
+
+    def origin(self):
+        paths = []
+        frame = sys._getframe(2)
+        while frame is not None and len(paths) < 64:
+            paths.append(frame.f_code.co_filename); frame = frame.f_back
+        if frame is not None: return dict(component='unknown', reason='source_stack_limit')
+        executable = str(Path(sys.executable).resolve()); expected = self.spec.get('exec_pins', {}).get(executable)
+        if expected != digest(executable): return dict(component='unknown', reason='executable_pin_mismatch')
+        if any(Path(path).is_relative_to(Path(self.spec.get('home', '/unselected'))/'plugins'/name)
+               and path not in self.spec.get('cairn_source_pins', {})
+               for path in paths for name in ('cairn', 'cairn-controls')):
+            return dict(component='unknown', reason='unlisted_cairn_source')
+        return classify_origin(paths, executable, expected,
+            self.spec.get('held_source_pins', {}), self.spec.get('cairn_source_pins', {}),
+            self.spec.get('framework_source_pins', {}))
+
+    def refused_network(self, kind, destination_class):
+        row = dict(kind=kind, destination_class=destination_class, refused_before_send=True, origin=self.origin())
+        if row['origin']['component'] == 'hermes' and destination_class in ('external_dns','external_inet','unselected_loopback'):
+            self.refused_attempts.append(row)
+            self.flush()
+            raise PrerequisiteError('R03_NETWORK: refused pinned Hermes attempt')
+        self.events.append(row)
+        self.reject('R03_NETWORK: non-Hermes or unknown external attempt')
 
     def reject(self, message):
         self.violations.append(message)
@@ -568,11 +732,18 @@ class NativeAudit:
             target = urlsplit(self.spec['provider_url'])
             allowed = ((isinstance(address, tuple) and address[:2] == ('127.0.0.1', target.port))
                        or (isinstance(address, str) and address == self.spec['api_socket']))
-            if not allowed: self.reject('R03_NETWORK: unexpected connection')
+            if not allowed:
+                destination_class = 'unknown_socket'
+                if isinstance(address, tuple) and len(address) >= 2 and isinstance(address[1], int) and 0 < address[1] <= 65535:
+                    try:
+                        ip = ipaddress.ip_address(address[0])
+                        destination_class = 'unselected_loopback' if ip.is_loopback else 'external_inet'
+                    except ValueError: pass
+                self.refused_network(event, destination_class)
             self.events.append(dict(kind=event, address=str(address)))
         elif event == 'socket.getaddrinfo':
             if args[0] not in ('127.0.0.1', 'localhost'):
-                self.reject('R03_NETWORK: external DNS refused')
+                self.refused_network(event, 'external_dns')
             self.events.append(dict(kind=event, host=str(args[0])))
         elif event in ('subprocess.Popen', 'os.exec'):
             executable, argv = str(args[0]), args[1]
@@ -614,6 +785,7 @@ class NativeAudit:
                 row = self.frames.pop(id(frame))
                 if result is not None:
                     row['exit'] = result.returncode
+                    row['diagnostics'] = lifecycle_diagnostics(result.stderr)
                     for name, value in (('stdout',result.stdout),('stderr',result.stderr)):
                         raw = value.encode() if isinstance(value,str) else value
                         row[name+'_sha256'] = hashlib.sha256(raw).hexdigest()
@@ -644,7 +816,8 @@ class NativeAudit:
 
     def flush(self):
         write_json(self.output / 'calls.json', self.calls)
-        write_json(self.output / 'audit.json', dict(events=self.events, violations=self.violations))
+        write_json(self.output / 'audit.json', dict(events=self.events, violations=self.violations,
+            refused_attempts=self.refused_attempts))
 
 
 def native_worker(spec_path):
@@ -664,6 +837,11 @@ def native_worker(spec_path):
         prior = json.loads((ledger/(grant['event_id']+'.json')).read_bytes())
         require(prior['bindings']==plan['bindings'], 'R03_ADMISSION: continuation differs from the one native attempt')
     output, home = Path(spec['output']), Path(spec['home'])
+    if spec.get('watchdog_script'):
+        require(all(digest(path) == expected for path,expected in spec['watchdog_source_pins'].items()),
+                'R03_MCP: watchdog Source changed before import')
+        spec['exact_argv'].append(watchdog_command(str(Path(plan['native_root'])/'venv/bin/python'),
+            spec['watchdog_script'], os.getpid(), spec['mcp_argv']))
     os.environ['HERMES_HOME'] = str(home)
     os.environ['TERMINAL_CWD'] = spec['project']
     audit = NativeAudit(output, spec); audit.install()
@@ -803,8 +981,9 @@ def retain_evidence(root, destination):
         'transport-requests.json', 'stored-bodies.txt',
         'capture_observation.jsonl', 'recall_observation.jsonl',
         'result.json', 'cleanup.json', 'admission-readback.json',
-        'selector-calls.jsonl',
+        'selector-calls.jsonl', 'hook-diagnostic.json',
     }
+    selected.update({'capture-proofs.json','selection-pin-snapshots.json','fixture-policy.json'})
     phase_receipts = {'spec.json', 'ready.json', 'continue.json', 'result.json',
                       'calls.json', 'audit.json', 'admission-readback.json',
                       'baseline-before-B.json', 'refresh-refusal.json'}
@@ -881,10 +1060,12 @@ class TraceReducer:
     """Bounded in-memory strace input. No raw line, argv or error is an artifact."""
     max_line, max_bytes, max_rows = 1024*1024, 128*1024*1024, 50000
 
-    def __init__(self, scratch=None, exec_pins=None):
+    def __init__(self, scratch=None, exec_pins=None, selected_python_scripts=None):
         self.scratch, self.exec_pins = scratch, exec_pins or {}
         self.rows, self.pending, self.errors = [], {}, []
         self.identities, self.terminal = {}, set()
+        self.selected_python_scripts = selected_python_scripts or {}
+        self.unparsed = []
         self.bytes = 0
         for path in self.exec_pins: self.identity(path)
 
@@ -968,6 +1149,10 @@ class TraceReducer:
                 if '\\x' in vector[2]: argv = [v.encode('latin1').decode('utf-8') for v in argv]
                 row.update(path=path, identity=self.identity(path), argument_count=len(argv),
                     selector_argument=bool(self.scratch and str(Path(self.scratch)/'selector') in argv))
+                if len(argv) > 1 and argv[1] in self.selected_python_scripts:
+                    script = Path(argv[1])
+                    if script.is_file() and digest(script) == self.selected_python_scripts[argv[1]]:
+                        row['selected_python_argv_sha256'] = argv_digest(argv)
             elif name == 'execveat':
                 self.refuse('unapproved_execveat'); return
             elif name in ('clone', 'clone3', 'fork', 'vfork'):
@@ -978,17 +1163,41 @@ class TraceReducer:
                 if not signal_call: raise ValueError()
                 targets = [int(value) for value in signal_call.groups()[:2] if value is not None]
                 row.update(targets=targets,signal=signal_call[3])
+            elif name == 'pidfd_send_signal':
+                signal_call = re.fullmatch(r'(-?\d+), (0|SIG[A-Z0-9]+), NULL, 0', args)
+                if not signal_call: raise ValueError()
+                row.update(pidfd=int(signal_call[1]), signal=signal_call[2])
+            elif name in ('arch_prctl','prctl'):
+                operation = args.split(',',1)[0]
+                allowed = ({'ARCH_SET_FS','ARCH_GET_FS','ARCH_GET_CPUID'} if name=='arch_prctl' else
+                    {'PR_GET_DUMPABLE','PR_GET_NAME','PR_GET_PDEATHSIG','PR_GET_SECCOMP','PR_GET_NO_NEW_PRIVS',
+                     'PR_SET_NAME','PR_SET_PDEATHSIG','PR_SET_NO_NEW_PRIVS','PR_CAPBSET_READ'})
+                if operation not in allowed: raise ValueError()
+                row['operation'] = operation
+            elif name == 'waitpid':
+                wait = re.fullmatch(r'(-?\d+), (?:NULL|0x[0-9a-f]+|\[.*\]), (?:0|W[A-Z0-9_]+(?:\|W[A-Z0-9_]+)*)',args)
+                if not wait: raise ValueError()
+                row['wait_target'] = int(wait[1])
             elif name in ('connect','bind','accept','accept4','getsockname','getpeername'):
+                descriptor = re.match(r'(\d+), ',args)
+                if descriptor: row['fd'] = int(descriptor[1])
                 quoted = r'"(?:[^"\\]|\\.)*"'
                 unix = re.search(r'sa_family=AF_UNIX, sun_path=('+quoted+')', args)
                 inet = re.search(r'sa_family=AF_INET, sin_port=htons\((\d+)\), sin_addr=inet_addr\(('+quoted+r')\)', args)
+                netlink = re.search(r'sa_family=AF_NETLINK, nl_pid=(\d+), nl_groups=(0x[0-9a-fA-F]+|[0-9a-fA-F]+)',args)
                 if unix: row['sockaddr'] = dict(family='AF_UNIX', path=self.string(unix[1]))
                 elif inet: row['sockaddr'] = dict(family='AF_INET', port=int(inet[1]), address=self.string(inet[2]))
+                elif netlink: row['sockaddr'] = dict(family='AF_NETLINK', nl_pid=int(netlink[1]), nl_groups=int(netlink[2],16))
                 elif name in ('connect', 'bind'): row['sockaddr'] = dict(family='unknown')
             elif name not in ('socket','socketpair','listen','shutdown','wait4','waitid','exit','exit_group',
                               'setsid','setpgid','getpgid','getsid','getpgrp','restart_syscall',
                               'getpid','getppid','gettid','pidfd_open'):
-                self.refuse('unparsed_syscall'); return
+                safe_name = name if re.fullmatch(r'[a-z][a-z0-9_]{0,63}',name,re.ASCII) else 'unknown'
+                if len(self.unparsed) < self.max_rows:
+                    self.unparsed.append(dict(pid=pid, result=row['result'], errno=error, name=safe_name,
+                        syscall_name_sha256=hashlib.sha256(name.encode()).hexdigest(), classification='unsupported_named_syscall'))
+                else: self.refuse('trace_limit')
+                self.refuse('unparsed_syscall:'+safe_name); return
             self.rows.append(row)
         except (ValueError, TypeError, KeyError, SyntaxError, UnicodeError, RecursionError):
             self.refuse('trace_parse_error')
@@ -1016,13 +1225,16 @@ class TraceReducer:
 
 def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None,
                    provider_url=PROVIDER_URL, python_path=None, scratch_root=None, normal_path='',
-                   admission_socket=None, admission_pids=(), reducer=None, exec_pins=None, owned_daemons=None):
+                   admission_socket=None, admission_pids=(), reducer=None, exec_pins=None, owned_daemons=None,
+                   selected_python_commands=None, component_images=None):
     if reducer is None:
         reducer = TraceReducer()
         with Path(trace_path).open('rb') as stream:
             for line in stream: reducer.feed(line.rstrip(b'\n'))
     violations = list(reducer.errors)
     parents = {row['child']:row['pid'] for row in reducer.rows if 'child' in row}
+    active_executables = {}
+    netlink_bindings = set()
     def ancestor(pid, candidates):
         seen = set()
         while pid not in seen:
@@ -1039,7 +1251,7 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
     for pid, prefix in reducer.pending.items():
         match = re.match(r'(\w+)\(',prefix)
         name = match[1] if match else None
-        harmless = name in ('accept','accept4','wait4','waitid','exit','exit_group',
+        harmless = name in ('accept','accept4','wait4','waitid','waitpid','exit','exit_group',
             'socket','socketpair','listen','shutdown','getsockname','getpeername',
             'getpid','getppid','gettid','getsid','getpgid','getpgrp')
         thread_creation = name in ('clone','clone3') and re.search(r'\bCLONE_THREAD\b',prefix) is not None
@@ -1058,7 +1270,10 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
     executions, connections, probes, workflow, processes = [], [], [], [], []
     for row in reducer.rows:
         pid, kind = row['pid'], row['kind']
-        safe = {key:value for key,value in row.items() if key in ('pid','kind','result','errno','child','thread','signal','targets')}
+        if 'child' in row and pid in active_executables:
+            active_executables[row['child']] = active_executables[pid]
+        if kind == 'execve' and row['result']==0: active_executables[pid] = row
+        safe = {key:value for key,value in row.items() if key in ('pid','kind','result','errno','child','thread','signal','targets','pidfd','operation','wait_target','fd')}
         if kind == 'execve':
             path = row['path']
             negative = (Path(path).name in tool_names and str(Path(path).parent.resolve()) in normal_dirs
@@ -1079,7 +1294,27 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             executions.append(safe)
             owner = ancestor(pid, phase_roots or {})
             if owner is not None and phase_roots[owner] in ('A','B') and path == python_path and pid != owner:
-                if not row['selector_argument']: violations.append('Source Python fallback in Go phase')
+                selected_python = row.get('selected_python_argv_sha256') in (selected_python_commands or {}).get(owner, [])
+                if not row['selector_argument'] and not selected_python: violations.append('Source Python fallback in Go phase')
+        elif kind == 'pidfd_send_signal':
+            origin = active_executables.get(pid, {})
+            identity = origin.get('identity')
+            pinned = (origin.get('path') in allowed_exec and identity is not None
+                and identity['sha256'] == (exec_pins or {}).get(origin.get('path')))
+            harmless = row['signal']=='0' and row['pidfd']>=0 and row['result']==0 and pinned
+            if not harmless: violations.append('unapproved pidfd signal')
+            safe['signal_zero_probe'] = harmless
+            if pinned: safe['origin'] = dict(path=origin['path'],sha256=identity['sha256'])
+            else: safe['origin'] = dict(component='unknown')
+            processes.append(safe)
+            if harmless: probes.append(safe)
+        elif kind in ('arch_prctl','prctl'):
+            origin = active_executables.get(pid, {}); identity = origin.get('identity')
+            pinned = (origin.get('path') in allowed_exec and identity is not None
+                and identity['sha256'] == (exec_pins or {}).get(origin.get('path')))
+            if not pinned: violations.append('unapproved process-local syscall origin')
+            safe['process_local'] = pinned
+            processes.append(safe)
         elif kind == 'unavailable-exit':
             if pid not in reducer.terminal: violations.append('unconfirmed unavailable exit')
             processes.append(safe)
@@ -1088,6 +1323,14 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             processes.append(safe)
         elif 'sockaddr' in row:
             address = row['sockaddr']; family = address['family']
+            origin = active_executables.get(pid, {}); identity = origin.get('identity')
+            if (origin.get('path') in allowed_exec and identity is not None
+                    and identity['sha256'] == (exec_pins or {}).get(origin.get('path'))):
+                role = (component_images or {}).get(identity['sha256'])
+                safe['origin'] = dict(executable=origin['path'],executable_sha256=identity['sha256'],
+                    component='cairn' if role else 'unknown',role=role,
+                    native_phase_owner=ancestor(pid, phase_roots or {}))
+            else: safe['origin'] = dict(component='unknown')
             absent_nss = family == 'AF_UNIX' and address['path'] == '/var/run/nscd/socket' and row.get('errno') == 'ENOENT'
             workflow_read = (family == 'AF_UNIX' and address['path'] == admission_socket
                              and ancestor(pid,set(admission_pids)) is not None)
@@ -1099,7 +1342,15 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             # outbound admissions. Every connect/bind is checked independently.
             local_observation = (kind in ('accept','accept4','getsockname','getpeername')
                 and family == 'AF_INET' and address['address'] == '127.0.0.1' and 0 < address['port'] <= 65535)
-            if not (owned or absent_nss or workflow_read or local_ephemeral or local_observation):
+            owner = ancestor(pid,phase_roots or {})
+            kernel_route_probe = (kind=='bind' and family=='AF_NETLINK' and address['nl_pid']==0
+                and address['nl_groups']==0 and owner is not None and origin.get('path')==python_path
+                and identity is not None and identity['sha256']==(exec_pins or {}).get(python_path))
+            if kernel_route_probe and row['result']==0: netlink_bindings.add((owner,row.get('fd')))
+            kernel_observation = (kind=='getsockname' and family=='AF_NETLINK' and address['nl_groups']==0
+                and owner is not None and (owner,row.get('fd')) in netlink_bindings)
+            if kernel_route_probe or kernel_observation: safe['kernel_route_probe'] = True
+            if not (owned or absent_nss or workflow_read or local_ephemeral or local_observation or kernel_route_probe or kernel_observation):
                 violations.append('unapproved socket target')
                 safe['sockaddr_sha256'] = hashlib.sha256(json.dumps(address,sort_keys=True).encode()).hexdigest()
             else: safe['sockaddr'] = address
@@ -1118,6 +1369,7 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
                 violations.append('missing owned socket connection')
     result = dict(execve=executions, connect=connections, processes=processes,expected_shutdown=shutdown,
         unfinished=unresolved,
+        unparsed_syscalls=reducer.unparsed,
         declared_negative_or_anchor_probes=probes, authenticated_workflow_reads=workflow,
         violations=violations, raw_trace_retained=False, raw_argv_retained=False,
         input_bytes=reducer.bytes, rows=len(reducer.rows))
@@ -1161,7 +1413,20 @@ def host_suite(plan_path, native=False):
     allowed_exec.add(str(Path(python).resolve()))
     allowed_unix = set()
     trace_exec_pins = mechanism_exec_pins(plan)
+    selected_exec_pins = {}
+    selected_pin_snapshots = {}
     phase_roots = {}
+    selected_python_commands = {}
+    held_files = json.loads(Path(plan['manifest']).read_bytes())['files']
+    watchdog = str(native_root/'hermes/tools/mcp_stdio_watchdog.py')
+    watchdog_sources = {str(native_root/name): held_files[name]['sha256'] for name in
+        ('hermes/tools/mcp_stdio_watchdog.py', 'hermes/tools/mcp_tool.py')}
+    require(all(digest(path) == expected for path,expected in watchdog_sources.items()), 'R03_MCP: watchdog Source changed')
+    held_source_pins = {str(native_root/name):row['sha256'] for name,row in held_files.items()
+        if name.startswith('hermes/') and name.endswith('.py')}
+    framework_source_pins = {str(native_root/name):row['sha256'] for name,row in held_files.items()
+        if not name.startswith('hermes/') and name.endswith('.py')}
+    framework_source_pins[str(Path(__file__).resolve())] = plan['bindings']['checker_sha256']
     try:
         grant = authenticated_admission(plan['admission_context'],plan['bindings'],journal=root/'admission-readback.json') if native else None
         cluster = disposable_host.OwnedCluster.start(root / 'cluster', pg_bin=pg_bin)
@@ -1180,11 +1445,7 @@ def host_suite(plan_path, native=False):
             args=('--repo', host.repo, '--kind', 'decision', '--shareable', '--request-id', str(uuid.uuid4()), '--stdin'))
         write_json(root / 'seed.json', seed)
         selector = root / 'selector'
-        selector.write_text('#!'+python+'\n' +
-            'import json,pathlib,sys\np=pathlib.Path(__file__).parent\n'
-            'import hashlib\n'
-            'with (p/"selector-calls.jsonl").open("a") as f: f.write(json.dumps(dict(argv_sha256=hashlib.sha256(json.dumps(sys.argv[1:]).encode()).hexdigest(),stdin=sys.stdin.read()))+"\\n")\n'
-            'print(json.dumps(json.loads((p/"selection.json").read_text())))\n')
+        selector.write_text(fixture_selector_source(python))
         selector.chmod(0o500); allowed_exec.add(str(selector)); trace_exec_pins[str(selector)] = digest(selector)
         installed.SOURCE_REVISION = IMAGE_SOURCE
         f = installed.HermesInstalledFixture(root / 'project', images/'control',
@@ -1197,7 +1458,8 @@ def host_suite(plan_path, native=False):
         f.publish_configuration(enabled=False)
         home = f.account
         write_json(home / 'config.yaml', dict(model=dict(default=MODEL, provider='custom', base_url=provider_url,
-                api_key='r03-fixture-only'), fallback_model=[], fallback_providers=[],
+                api_key='r03-fixture-only', context_length=128000), agent=dict(environment_probe=False),
+                fallback_model=[], fallback_providers=[],
                 auxiliary=auxiliary_routes(native_root,provider_url), memory=dict(memory_enabled=True), plugins=dict(enabled=[])))
         skill = root / 'fixture-skill.md'; skill.write_text('Synthetic retained continuity fixture.\n')
         native_config = dict(executable=str(images/'api'), socket=str(host.socket),
@@ -1220,24 +1482,75 @@ def host_suite(plan_path, native=False):
                                lifecycle_selection=f.selected, stager=str(images/'stager'))
             return json.loads((home / 'cairn-lifecycle.json').read_bytes())
         selected_a = install_go()
+        selected_pin_snapshots['A'] = register_selected(selected_a,plan['bindings']['images']['control'],
+            allowed_exec,selected_exec_pins,trace_exec_pins)
         credential_sha = digest(home / 'config.yaml')
         write_json(root / 'credential-selectors.json', dict(path=str(home / 'config.yaml'), sha256=credential_sha,
                     provider='custom', model=MODEL, base_url=provider_url, key_sha256=hashlib.sha256(b'r03-fixture-only').hexdigest()))
+        configured = json.loads((home/'config.yaml').read_bytes())
+        write_json(root/'fixture-policy.json',dict(context_length=configured['model']['context_length'],
+            environment_probe=configured['agent']['environment_probe'],fallback_model=configured['fallback_model'],
+            fallback_providers=configured['fallback_providers'],uname=str(Path(shutil.which('uname')).resolve()),
+            uname_sha256=digest(shutil.which('uname'))))
         selected_b = None
         def stage_b():
             nonlocal selected_b
             f.publish_configuration(enabled=False)
             selected_b = install_go()
+            selected_pin_snapshots['B'] = register_selected(selected_b,plan['bindings']['images']['control'],
+                allowed_exec,selected_exec_pins,trace_exec_pins)
+            write_json(root/'selection-pin-snapshots.json',selected_pin_snapshots)
             require(selected_b != selected_a, 'R03_SELECTION: B did not create a distinct checked selection')
             write_json(root / 'selection-B.json', selected_b)
         write_json(root / 'selection-A.json', selected_a)
 
+        if plan.get('replay_calls'):
+            require(not native, 'R03_DIAGNOSTIC: native client forbidden')
+            prior = Path(plan['replay_calls'])
+            retained_calls = json.loads(prior.read_bytes())
+            original = next(row for row in retained_calls if row['payload']['hook_event_name'] == 'SessionEnd')
+            old_selection = json.loads((prior.parent.parent / 'selection-A.json').read_bytes())
+            old_host = json.loads((prior.parent.parent / 'host-view.json').read_bytes())
+            old_fs = json.loads((prior.parent.parent / 'filesystem-before-cleanup.json').read_bytes())
+            config = Path(selected_a['engine_config']).read_bytes()
+            correspondence = {str(root): old_host['scratch'],
+                Path(selected_a['engine_config']).parent.name: Path(old_selection['engine_config']).parent.name}
+            normalized = config
+            for current, previous in correspondence.items():
+                normalized = normalized.replace(current.encode(), previous.encode())
+            expected = old_fs[str(Path(old_selection['engine_config']).relative_to(old_host['scratch']))]['sha256']
+            require(hashlib.sha256(normalized).hexdigest() == expected,
+                    'R03_DIAGNOSTIC: reconstructed effective config differs beyond declared nonce/path correspondence')
+            require(digest(selected_a['binary']['path']) == plan['bindings']['images']['control'],
+                    'R03_DIAGNOSTIC: selected control image differs')
+            write_json(root / 'selection.json', fixture_selection('A'))
+            payload = dict(original['payload'])
+            if plan.get('replay_cwd'):
+                require(payload['cwd'] == str(Path(old_host['scratch']) / 'project'),
+                        'R03_DIAGNOSTIC: unexpected original working directory')
+                payload['cwd'] = str(f.root)
+            before = {name:host.count(name) for name in ('memory_record','capture_observation','recall_observation')}
+            process = subprocess.run(selected_a['commands']['SessionEnd'], input=json.dumps(payload),
+                cwd=f.root, text=True, capture_output=True, timeout=150)
+            write_json(root / 'hook-diagnostic.json', dict(native=False, client_imported=False,
+                original_calls_sha256=digest(prior), literal_input=original['payload'], effective_input=payload,
+                input_sha256=hashlib.sha256(json.dumps(payload).encode()).hexdigest(),
+                original_command=original['argv'], reconstructed_command=selected_a['commands']['SessionEnd'],
+                correspondence=correspondence, effective_config_original_sha256=expected,
+                effective_config_reconstructed_sha256=hashlib.sha256(config).hexdigest(),
+                effective_config_normalized_sha256=hashlib.sha256(normalized).hexdigest(),
+                control_sha256=digest(selected_a['binary']['path']), exit=process.returncode,
+                diagnostics=lifecycle_diagnostics(process.stderr), selected_failure=selected_failure(process.stderr),
+                before=before, after={name:host.count(name) for name in before},
+                stdout_bytes=len(process.stdout.encode()), stderr_bytes=len(process.stderr.encode()),
+                stdout_sha256=hashlib.sha256(process.stdout.encode()).hexdigest(),
+                stderr_sha256=hashlib.sha256(process.stderr.encode()).hexdigest(), raw_streams_retained=False))
+            return
+
         def run_phase(label, selection, transition=None):
             nonlocal session, previous_history
             phase = root / label; phase.mkdir(mode=0o700)
-            write_json(root / 'selection.json', dict(result=dict(structured_output=dict(checkpoint=None, workstream=None,
-                memories=[dict(record_id=None, kind='decision', title='Synthetic phase ' + label,
-                               body='Selected continuity phase ' + label + ' retention.')]))))
+            write_json(root / 'selection.json', fixture_selection(label))
             before = {table: host.count(table) for table in ('memory_record', 'capture_observation', 'recall_observation')}
             if not native:
                 # A stub of the process boundary ONLY. No fake CLI, callback,
@@ -1253,9 +1566,15 @@ def host_suite(plan_path, native=False):
             git_executable = str(Path(shutil.which('git')).resolve())
             mcp = json.loads((home/'config.yaml').read_bytes())['mcp_servers']['cairn']
             exact_argv = [[mcp['command'], *mcp['args']]]
-            actor_exec = {str(Path(python).resolve()), str((images/'api').resolve()), git_executable}
+            uname = str(Path(shutil.which('uname')).resolve())
+            require(digest(uname)==plan['bindings']['native_tools'][uname], 'R03_TOOL: uname changed')
+            exact_argv.extend([['uname','-p'],[uname,'-p']])
+            actor_exec = {str(Path(python).resolve()), str((images/'api').resolve()), git_executable, uname}
             exec_pins = {path: digest(path) for path in actor_exec}
+            exec_pins.update(selected_exec_pins)
             for config in (selection, selected_a, selected_b or {}):
+                if 'commands' in config:
+                    exec_pins.update(selected_command_pins(config,plan['bindings']['images']['control']))
                 for argv in config.get('commands', {}).values():
                     exec_pins[str(Path(argv[0]).resolve())] = digest(argv[0]); allowed_exec.add(str(Path(argv[0]).resolve()))
                     exact_argv.append(argv)
@@ -1266,7 +1585,10 @@ def host_suite(plan_path, native=False):
                 output=str(phase), session=session, previous_history=previous_history,
                 stage_b=transition is not None, api_socket=str(host.socket),
                 exec_pins=exec_pins, exact_argv=exact_argv, git_executable=git_executable,
-                provider_url=provider_url, plan=str(plan_path), credential_selector_sha256=credential_sha)
+                provider_url=provider_url, plan=str(plan_path), credential_selector_sha256=credential_sha,
+                watchdog_script=watchdog, watchdog_source_pins=watchdog_sources, mcp_argv=exact_argv[0],
+                held_source_pins=held_source_pins, cairn_source_pins=legacy_members,
+                framework_source_pins=framework_source_pins)
             trace_exec_pins.update(exec_pins)
             write_json(phase / 'spec.json', spec)
             argv = host_private_call(plan,'native_worker',phase/'spec.json')
@@ -1274,6 +1596,7 @@ def host_suite(plan_path, native=False):
                 stdout=(phase / 'stdout').open('wb'), stderr=(phase / 'stderr').open('wb'), start_new_session=True)
             require(process.pid > 1, 'R03_PROCESS: invalid owned CLI PID')
             phase_roots[process.pid] = label
+            selected_python_commands[process.pid] = [argv_digest(watchdog_command(python, watchdog, process.pid, exact_argv[0]))]
             try:
                 deadline = time.monotonic() + 60
                 while not (phase / 'ready.json').exists():
@@ -1341,12 +1664,37 @@ def host_suite(plan_path, native=False):
             require(all(digest(path) == sha for path, sha in legacy_members.items()), 'R03_REVERSE: retained Python code changed')
             require(digest(home / 'config.yaml') == credential_sha, 'R03_REVERSE: credential selectors changed')
             transport.phase = 'retained2'; run_phase('retained2', legacy)
+        capture_proofs = []
+        if not native:
+            # Real memory engines are separate from the stubbed client boundary.
+            for label, command in (('go', selected_b['commands']['SessionEnd']),
+                    ('retained2', [python,legacy['script'],'--config',legacy['engine_config']])):
+                write_json(root/'selection.json',fixture_selection('local-'+label))
+                payload = dict(hook_event_name='SessionEnd',session_id='local-'+label+'-'+str(uuid.uuid4()),
+                    cwd=str(f.root),messages=[dict(role='user',text='Synthetic local capture proof '+label+'.'),
+                        dict(role='assistant',text='Synthetic local response '+label+'.')])
+                before = {table:host.count(table) for table in ('memory_record','capture_observation','recall_observation')}
+                result = subprocess.run(command,input=json.dumps(payload),cwd=f.root,text=True,
+                    capture_output=True,timeout=150)
+                after = {table:host.count(table) for table in before}
+                row = dict(label=label,native=False,client_imported=False,command=command,payload=payload,
+                    exit=result.returncode,diagnostics=lifecycle_diagnostics(result.stderr),
+                    selected_failure=selected_failure(result.stderr),before=before,after=after,
+                    stdout_sha256=hashlib.sha256(result.stdout.encode()).hexdigest(),stdout_bytes=len(result.stdout.encode()),
+                    stderr_sha256=hashlib.sha256(result.stderr.encode()).hexdigest(),stderr_bytes=len(result.stderr.encode()),
+                    raw_streams_retained=False)
+                capture_proofs.append(row);write_json(root/'capture-proofs.json',capture_proofs)
+                require(result.returncode==0,'R03_CAPTURE_PROOF: actual '+label+' hook failed; selected diagnostic retained')
+                require(after['memory_record']==before['memory_record']+1
+                    and after['capture_observation']==before['capture_observation']+1
+                    and after['recall_observation']==before['recall_observation'],
+                    'R03_CAPTURE_PROOF: actual '+label+' capture effects differ')
         require(not transport.violations, 'R03_TRANSPORT: unexpected auxiliary/main/finalizer request')
         counts = {table: host.count(table) for table in ('memory_record', 'capture_observation', 'recall_observation',
                                                        'agent_session_attempt', 'agent_delivery')}
         require(counts['agent_session_attempt'] == counts['agent_delivery'] == 0,
                 'R03_EFFECTS: unexpected coordination/auth registration effects')
-        require(counts['memory_record'] == (5 if native else 1), 'R03_EFFECTS: total Store effects mismatch')
+        require(counts['memory_record'] == (5 if native else 3), 'R03_EFFECTS: total Store effects mismatch')
         bodies = host.sql('SELECT body FROM cairn.record_version')
         require('Synthetic continuity prompt' not in bodies, 'R03_PRIVACY: raw native dialogue stored')
         (root / 'stored-bodies.txt').write_text(bodies)
@@ -1354,7 +1702,7 @@ def host_suite(plan_path, native=False):
             (root / (table + '.jsonl')).write_text(host.sql('SELECT row_to_json(t) FROM cairn.' + table + ' t'))
         require(native or ('cli' not in sys.modules and 'run_agent' not in sys.modules), 'R03_SETUP: native client imported')
         write_json(root / 'result.json', dict(status='NATIVE_MECHANISM_PASSED' if native else 'SETUP_STUB_ONLY_PASSED',
-            native=native, ac4_closed=False, session=session, phases=phases, counts=counts,
+            native=native, ac4_closed=False, session=session, phases=phases, counts=counts,capture_proofs=capture_proofs,
             credential_selector_sha256=credential_sha, source=plan['bindings'],
             shared_unit='Unknown/shared watcher/config/binding users remain for R06; no independence claim.'))
     finally:
@@ -1371,7 +1719,8 @@ def host_suite(plan_path, native=False):
             owned_daemons = {owned[name]:owned[name+'_executable'] for name in ('api','postgres')}
         write_json(run_dir/'trace-policy.json', dict(allowed_exec=sorted(allowed_exec),allowed_unix=sorted(allowed_unix),
             phase_roots=phase_roots,provider_url=provider_url,python_path=python,admission_pids=admission_pids,
-            exec_pins=trace_exec_pins,owned_daemons=owned_daemons,raw_argv_retained=False))
+            exec_pins=trace_exec_pins,owned_daemons=owned_daemons,raw_argv_retained=False,
+            selected_python_commands=selected_python_commands))
         require(os.environ['HOME']==plan['normal_home'] and os.environ['PATH']==plan['normal_path'],
                 'R03_HOST: normal agent identity/environment changed')
         try: retain_evidence(root,run_dir/'retained')
@@ -1394,7 +1743,7 @@ def native_readback_request(native_root, manifest, home, baseline):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--phase', choices=('prepare', 'session-api', 'native', 'mechanism-plan',
-        'mechanism-setup'), default='prepare')
+        'mechanism-setup', 'hook-diagnostic'), default='prepare')
     parser.add_argument('--native-root', type=Path)
     parser.add_argument('--manifest', type=Path)
     parser.add_argument('--evidence-root', type=Path)
@@ -1406,7 +1755,10 @@ def main(argv=None):
     parser.add_argument('--plan', type=Path)
     parser.add_argument('--spec', type=Path)
     parser.add_argument('--admission-context', type=Path)
+    parser.add_argument('--replay-calls', type=Path)
+    parser.add_argument('--replay-cwd', action='store_true')
     args = parser.parse_args(argv)
+    require(not args.replay_cwd or args.phase == 'hook-diagnostic', 'R03_DIAGNOSTIC: cwd mapping requires local hook phase')
     # This branch deliberately precedes path inspection, imports and state
     # creation. Selecting a fixture phase cannot grant native admission.
     if args.phase == 'native':
@@ -1427,6 +1779,10 @@ def main(argv=None):
     if args.phase == 'mechanism-setup':
         require(args.plan is not None, 'R03_PLAN: missing plan')
         run_mechanism_host(args.plan, 'setup')
+        return 0
+    if args.phase == 'hook-diagnostic':
+        require(args.plan is not None and args.replay_calls is not None, 'R03_DIAGNOSTIC: plan and retained calls required')
+        run_mechanism_host(args.plan, 'hook-diagnostic', replay_calls=args.replay_calls, replay_cwd=args.replay_cwd)
         return 0
     if args.phase == 'session-api':
         require(all((args.home, args.native_root, args.report, args.manifest)),
