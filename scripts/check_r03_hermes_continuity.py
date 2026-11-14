@@ -291,6 +291,30 @@ def authenticated_admission(context_path, bindings, journal=None):
     return receipt
 
 
+# Held Hermes 9904fd41, agent/model_metadata.py:1046-1079,1360-1367.
+# Exact local GET probes only; /api/show POST keeps its prior model/key guard.
+METADATA_GET_PATHS = frozenset(('/api/v1/models', '/api/tags', '/v1/props',
+    '/props', '/version', '/v1/models', '/models'))
+
+
+def local_provider_origin(url, provider_url):
+    try:
+        target, request = urlsplit(provider_url), urlsplit(url)
+        return (target.scheme == request.scheme == 'http'
+            and target.hostname == request.hostname == '127.0.0.1'
+            and target.port is not None and request.port == target.port
+            and request.username is None and request.password is None)
+    except (TypeError, ValueError):
+        return False
+
+
+def local_metadata_get(method, url, provider_url):
+    """Match the admitted origin and literal path, never a URL prefix."""
+    if method != 'GET' or not local_provider_origin(url, provider_url): return False
+    request = urlsplit(url)
+    return '?' not in url and '#' not in url and request.path in METADATA_GET_PATHS
+
+
 class ScriptedChat:
     """A real local chat-completions transport, including SDK SSE streaming."""
     def __init__(self, output, port=0):
@@ -304,14 +328,23 @@ class ScriptedChat:
             def do_GET(self):
                 authorized = self.headers.get('Authorization') == 'Bearer r03-fixture-only'
                 with owner.lock:
-                    owner.requests.append(dict(path=self.path, body=None, phase=owner.phase,
+                    owner.requests.append(dict(method='GET', path=self.path if self.path in METADATA_GET_PATHS else '<unselected>',
+                        body=None, phase=owner.phase, auth_present='Authorization' in self.headers,
                         authorization_expected=authorized, purpose='metadata_probe'))
                     write_json(owner.output, owner.requests)
-                if self.path == '/v1/models' and authorized:
+                if self.path in METADATA_GET_PATHS:
                     self.send_error(404, 'No model-list endpoint')
                 else:
                     owner.violations.append('unexpected metadata route or credential')
                     self.send_error(400, 'Unexpected metadata route or credential')
+
+            def do_unsupported(self):
+                owner.violations.append('unexpected provider method')
+                self.send_error(400, 'Unexpected provider method')
+
+            def __getattr__(self, name):
+                if name.startswith('do_'): return self.do_unsupported
+                raise AttributeError(name)
 
             def do_POST(self):
                 length = int(self.headers.get('Content-Length', '0'))
@@ -320,7 +353,7 @@ class ScriptedChat:
                 body = json.loads(self.rfile.read(length))
                 probe = (self.path == '/api/show' and body == {'name': MODEL}
                          and self.headers.get('Authorization') == 'Bearer r03-fixture-only')
-                row = dict(path=self.path, body=body, phase=owner.phase,
+                row = dict(method='POST', path=self.path, body=body, phase=owner.phase,
                            authorization_expected=self.headers.get('Authorization') == 'Bearer r03-fixture-only',
                            purpose='metadata_probe' if probe else
                                'chat_completion' if self.path == '/v1/chat/completions' else 'unselected_route')
@@ -518,7 +551,7 @@ def run_mechanism_host(plan_path, mode, admission_context=None, replay_calls=Non
     # Observe network/process identities without recording credential-bearing
     # send/receive buffers. Synthetic model bodies and hook stdin have their
     # own selected journals; workflow authentication wire bytes are never read.
-    trace_calls = 'process,socket,socketpair,connect,bind,listen,accept,accept4,getsockname,getpeername,shutdown'
+    trace_calls = 'process,socket,socketpair,connect,bind,listen,accept,accept4,getsockname,getpeername,shutdown,close,close_range,dup,dup2,dup3,fcntl'
     descriptor, writer = os.pipe()
     held_files = json.loads(Path(plan['manifest']).read_bytes())['files']
     watchdog = str(Path(plan['native_root'])/'hermes/tools/mcp_stdio_watchdog.py')
@@ -712,8 +745,11 @@ class NativeAudit:
             self.spec.get('held_source_pins', {}), self.spec.get('cairn_source_pins', {}),
             self.spec.get('framework_source_pins', {}))
 
-    def refused_network(self, kind, destination_class):
+    def refused_network(self, kind, destination_class, diagnostic=None):
         row = dict(kind=kind, destination_class=destination_class, refused_before_send=True, origin=self.origin())
+        if diagnostic is not None:
+            row['socket_diagnostic'] = diagnostic
+            row['origin'] = {key:value for key,value in row['origin'].items() if key not in ('source','executable')}
         if row['origin']['component'] == 'hermes' and destination_class in ('external_dns','external_inet','unselected_loopback'):
             self.refused_attempts.append(row)
             self.flush()
@@ -739,7 +775,23 @@ class NativeAudit:
                         ip = ipaddress.ip_address(address[0])
                         destination_class = 'unselected_loopback' if ip.is_loopback else 'external_inet'
                     except ValueError: pass
-                self.refused_network(event, destination_class)
+                sock = args[0]
+                family, descriptor, fd = 'unknown', {}, None
+                if isinstance(sock, socket.socket):
+                    family = {socket.AF_INET:'AF_INET', socket.AF_INET6:'AF_INET6', socket.AF_UNIX:'AF_UNIX',
+                        socket.AF_NETLINK:'AF_NETLINK'}.get(sock.family, 'unknown')
+                    descriptor['socket_type'] = {socket.SOCK_STREAM:'SOCK_STREAM', socket.SOCK_DGRAM:'SOCK_DGRAM',
+                        socket.SOCK_RAW:'SOCK_RAW', socket.SOCK_SEQPACKET:'SOCK_SEQPACKET'}.get(sock.type & 15, 'unknown')
+                    fd = sock.fileno()
+                typed = dict(family=family)
+                if isinstance(address, tuple) and len(address) >= 2:
+                    typed.update(address=address[0], port=address[1])
+                elif isinstance(address, str): typed.update(family='AF_UNIX', path=address)
+                executable = str(Path(sys.executable).resolve())
+                byte_hash = self.spec.get('exec_pins', {}).get(executable)
+                if byte_hash is not None and digest(executable) != byte_hash: byte_hash = None
+                self.refused_network(event, destination_class, socket_diagnostic('connect', typed,
+                    dict(descriptor, scratch=self.spec.get('project')), fd, byte_hash))
             self.events.append(dict(kind=event, address=str(address)))
         elif event == 'socket.getaddrinfo':
             if args[0] not in ('127.0.0.1', 'localhost'):
@@ -769,7 +821,8 @@ class NativeAudit:
                 exact = exact or read_command
             if not exact:
                 self.reject('R03_EXEC: executable arguments outside the owned fixture contract')
-            row.update(executable=resolved, argv_sha256=argv_digest(actual), argv_validated=True)
+            row.update(executable=resolved, argv_sha256=argv_digest(actual), argv_validated=True,
+                executable_byte_sha256=self.spec['exec_pins'][resolved], executable_provenance='verified_exec_pin')
 
     def profile(self, frame, event, result):
         filename, name = frame.f_code.co_filename, frame.f_code.co_name
@@ -801,7 +854,9 @@ class NativeAudit:
             self.events.append(row)
             request = frame.f_locals.get('request')
             if '/httpx/' in filename and name == 'send' and request is not None:
-                if str(request.url).startswith(self.spec['provider_url'] + '/'):
+                if local_metadata_get(request.method, str(request.url), self.spec['provider_url']):
+                    pass  # Exact loopback GET metadata has no credential prerequisite.
+                elif local_provider_origin(str(request.url), self.spec['provider_url']):
                     if request.headers.get('authorization') != 'Bearer r03-fixture-only':
                         self.reject('R03_PROVIDER: wrong credential selector before provider request')
             if name.startswith(('_try_payment_fallback', '_try_configured_fallback', '_try_main_fallback')):
@@ -959,11 +1014,24 @@ def auxiliary_routes(native_root, provider_url):
         if not isinstance(node, ast.Dict): continue
         for key, value in zip(node.keys, node.values):
             if isinstance(key, ast.Constant) and key.value == 'auxiliary' and isinstance(value, ast.Dict):
-                return {key.value: dict(provider='custom', model=MODEL, base_url=provider_url,
+                routes = {key.value: dict(provider='custom', model=MODEL, base_url=provider_url,
                     api_key='r03-fixture-only', fallback_chain=[], timeout=10)
                     for key, item in zip(value.keys, value.values)
                     if isinstance(key, ast.Constant) and isinstance(item, ast.Dict)}
+                require('title_generation' in routes, 'R03_INTERFACE: held title-generation route unavailable')
+                routes['title_generation']['enabled'] = False
+                return routes
     raise PrerequisiteError('R03_INTERFACE: held auxiliary routing defaults unavailable')
+
+
+def fixture_configuration(native_root, provider_url):
+    # Held tirith config gives this existing environment flag precedence.
+    require(os.environ.get('TIRITH_ENABLED', '').lower() not in ('1','true','yes'),
+        'R03_POLICY: host tirith override defeats fixture disable')
+    return dict(model=dict(default=MODEL, provider='custom', base_url=provider_url,
+            api_key='r03-fixture-only', context_length=128000), agent=dict(environment_probe=False),
+        security=dict(tirith_enabled=False), fallback_model=[], fallback_providers=[],
+        auxiliary=auxiliary_routes(native_root, provider_url), memory=dict(memory_enabled=True), plugins=dict(enabled=[]))
 
 
 def retain_evidence(root, destination):
@@ -1056,6 +1124,106 @@ def probe_sha256(python):
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+SOCKET_FAMILIES = frozenset(('AF_UNIX', 'AF_INET', 'AF_INET6', 'AF_NETLINK'))
+SOCKET_TYPES = frozenset(('SOCK_STREAM', 'SOCK_DGRAM', 'SOCK_RAW', 'SOCK_SEQPACKET'))
+
+
+def socket_diagnostic(operation, address, descriptor, fd, executable_sha256=None):
+    """Bounded classification only. Never retain a destination or a path hash."""
+    family = address.get('family', 'unknown')
+    family = family if family in SOCKET_FAMILIES else 'unknown'
+    category, port_class = 'other', 'unknown'
+    if family in ('AF_INET', 'AF_INET6'):
+        try:
+            category = 'loopback' if ipaddress.ip_address(address.get('address')).is_loopback else 'other'
+        except ValueError:
+            pass
+        port = address.get('port')
+        if type(port) is int and 0 <= port <= 65535:
+            if port == 0: port_class = 'zero'
+            elif operation in ('connect', 'bind'): port_class = 'fixed'
+            else: port_class = descriptor.get('bound_port_class', 'unknown')
+    elif family == 'AF_UNIX':
+        category = 'unix_elsewhere'
+        path, scratch = address.get('path'), descriptor.get('scratch')
+        if isinstance(path, str) and scratch and Path(path).is_absolute() and '..' not in Path(path).parts:
+            if Path(path).is_relative_to(Path(scratch)): category = 'unix_inside_owned_scratch'
+    elif family == 'AF_NETLINK': category = 'netlink'
+    kind = descriptor.get('socket_type', 'unknown')
+    byte_hash = executable_sha256 if isinstance(executable_sha256, str) and re.fullmatch(r'[0-9a-f]{64}', executable_sha256) else None
+    return dict(operation=operation if operation in ('socket', 'socketpair', 'bind', 'connect', 'listen',
+            'accept', 'accept4', 'getsockname', 'getpeername', 'shutdown') else 'unknown',
+        address_family=family, socket_type=kind if kind in SOCKET_TYPES else 'unknown',
+        address_category=category, port_class=port_class, fd=fd if type(fd) is int and fd >= 0 else None,
+        executable_byte_sha256=byte_hash, executable_provenance='verified_exec_pin' if byte_hash else 'unknown')
+
+
+class SocketDescriptors:
+    """Temporal descriptor facts; unknown inheritance and exec discard knowledge."""
+    max_tables, max_fds = 4096, 256
+
+    def __init__(self):
+        self.tables, self.overflow = {}, False
+        self.executed, self.unknown_sharing = set(), set()
+
+    def observe(self, row):
+        if self.overflow: return {}
+        pid, kind = row['pid'], row['kind']
+        new_pids = {pid} | ({row['child']} if 'child' in row else set())
+        if len(self.tables) + len(new_pids - self.tables.keys()) > self.max_tables:
+            self.overflow = True; self.tables.clear(); return {}
+        child_seen = row.get('child') in self.tables
+        table = self.tables.setdefault(pid, {})
+        fd, result = row.get('fd'), row.get('result')
+        descriptor = dict(table.get(fd, {})) if pid not in self.unknown_sharing else {}
+        if kind == 'execve' and result == 0:
+            self.executed.add(pid); self.unknown_sharing.discard(pid)
+            self.tables[pid] = {}  # CLOEXEC/inherited descriptors are not guessed.
+        elif 'child' in row:
+            child, relation = row['child'], row.get('files_relation')
+            if child_seen and child in self.executed:
+                # A child exec may complete before the parent's resumed clone.
+                # Keep its post-exec facts; never replace them with the parent.
+                if relation != 'copied': table.clear()
+            elif relation == 'shared' and pid not in self.unknown_sharing:
+                if child_seen: table.clear()
+                self.tables[child] = table
+            elif relation == 'copied' and pid not in self.unknown_sharing:
+                if not child_seen: self.tables[child] = dict(table)
+            else:
+                table.clear(); self.tables[child] = {}
+                self.unknown_sharing.update((pid, child))
+        elif pid in self.unknown_sharing:
+            if kind in ('exit', 'exit_group') or kind == 'signal' and row.get('terminated'):
+                self.tables.pop(pid, None); self.unknown_sharing.discard(pid); self.executed.discard(pid)
+        elif result is None and kind in ('dup2', 'dup3', 'fcntl', 'close_range'):
+            table.clear()  # An unresolved descriptor mutation cannot preserve facts.
+        elif kind == 'socket' and result is not None and result >= 0:
+            table[result] = dict(socket_type=row.get('socket_type', 'unknown'))
+        elif kind == 'socketpair' and result == 0:
+            for number in row['fds']: table[number] = dict(socket_type=row.get('socket_type', 'unknown'))
+        elif kind in ('dup', 'dup2', 'dup3', 'fcntl') and row.get('duplicates_fd') and result is not None and result >= 0:
+            if fd in table: table[result] = dict(table[fd])
+            else: table.pop(result, None)
+        elif kind == 'close':
+            table.pop(fd, None)  # Even EINTR leaves no reliable descriptor fact.
+        elif kind == 'close_range' and result == 0:
+            # Conservative invalidation also covers CLOEXEC/UNSHARE.
+            for number in list(table):
+                if row['first_fd'] <= number <= row['last_fd']: table.pop(number)
+        elif kind in ('accept', 'accept4') and result is not None and result >= 0:
+            table[result] = descriptor
+        elif kind == 'bind' and result == 0 and fd is not None:
+            address = row.get('sockaddr', {}); port = address.get('port')
+            table[fd] = dict(descriptor, bound_port_class='ephemeral' if port == 0 else 'fixed' if type(port) is int else 'unknown',
+                route_binding=address.get('family')=='AF_NETLINK' and address.get('nl_pid')==0 and address.get('nl_groups')==0)
+        elif kind in ('exit', 'exit_group') or kind == 'signal' and row.get('terminated'):
+            self.tables.pop(pid, None); self.executed.discard(pid)
+        if len(table) > self.max_fds:
+            self.overflow = True; self.tables.clear()
+        return descriptor
+
+
 class TraceReducer:
     """Bounded in-memory strace input. No raw line, argv or error is an artifact."""
     max_line, max_bytes, max_rows = 1024*1024, 128*1024*1024, 50000
@@ -1067,6 +1235,8 @@ class TraceReducer:
         self.selected_python_scripts = selected_python_scripts or {}
         self.unparsed = []
         self.bytes = 0
+        self.socket_descriptors = SocketDescriptors()
+        self.filtered_unknown_fd_closes = 0
         for path in self.exec_pins: self.identity(path)
 
     def identity(self, path):
@@ -1098,6 +1268,18 @@ class TraceReducer:
         if '\\x' in token: value = value.encode('latin1').decode('utf-8')
         return value
 
+    def keep(self, row):
+        # Full frozen-file verification closes tens of thousands of regular
+        # files. Only a witnessed exec with no socket fact qualifies a close
+        # for reduction. Unknown-child closes and relevant closes stay.
+        sockets = self.socket_descriptors
+        irrelevant_close = (row['kind'] == 'close' and row['pid'] in sockets.executed
+            and row.get('fd') not in sockets.tables.get(row['pid'], {}))
+        sockets.observe(row)
+        if sockets.overflow: self.refuse('socket descriptor limit')
+        if irrelevant_close: self.filtered_unknown_fd_closes += 1
+        else: self.rows.append(row)
+
     def feed(self, line):
         self.bytes += len(line)
         if self.bytes > self.max_bytes or len(line) > self.max_line or len(self.rows) >= self.max_rows:
@@ -1118,7 +1300,7 @@ class TraceReducer:
                 if prefix.strip():
                     if pid in self.pending: raise ValueError()
                     self.pending[pid] = prefix
-                self.rows.append(dict(pid=pid,kind='detached',result=None)); return
+                self.keep(dict(pid=pid,kind='detached',result=None)); return
             if '<unfinished ...>' in call:
                 if pid in self.pending or len(self.pending) >= 4096: raise ValueError()
                 self.pending[pid] = call.split('<unfinished ...>')[0]; return
@@ -1126,18 +1308,18 @@ class TraceReducer:
                 status = re.fullmatch(r'\+\+\+ exited with (\d+) \+\+\+', call)
                 if not status: raise ValueError()
                 self.terminal.add(pid)
-                self.rows.append(dict(pid=pid, kind='exit', result=int(status[1]))); return
+                self.keep(dict(pid=pid, kind='exit', result=int(status[1]))); return
             if call.startswith(('--- ', '+++ killed by ')):
                 signal_name = re.match(r'(?:--- |\+\+\+ killed by )(SIG[A-Z0-9]+)', call)
                 if not signal_name: raise ValueError()
                 if call.startswith('+++ killed by '): self.terminal.add(pid)
-                self.rows.append(dict(pid=pid, kind='signal', signal=signal_name[1])); return
+                self.keep(dict(pid=pid, kind='signal', signal=signal_name[1], terminated=call.startswith('+++ killed by '))); return
             if re.fullmatch(r'\?\?\?\(\s*\)\s*=\s*\?',call):
-                self.rows.append(dict(pid=pid,kind='unavailable-exit',result=None)); return
-            parsed = re.fullmatch(r'(\w+)\((.*)\)\s+=\s+(-?\d+|\?)(?: ([A-Z][A-Z0-9_]+))?.*', call)
+                self.keep(dict(pid=pid,kind='unavailable-exit',result=None)); return
+            parsed = re.fullmatch(r'(\w+)\((.*)\)\s+=\s+(-?(?:0x[0-9a-fA-F]+|\d+)|\?)(?=\s|$)(?: ([A-Z][A-Z0-9_]+))?.*', call)
             if not parsed: raise ValueError()
             name, args, result, error = parsed.groups(); args = args.strip()
-            row = dict(pid=pid, kind=name, result=int(result) if result != '?' else None)
+            row = dict(pid=pid, kind=name, result=int(result, 16 if '0x' in result else 10) if result != '?' else None)
             if error: row['errno'] = error
             if name == 'execve':
                 vector = re.fullmatch(r'("(?:[^"\\]|\\.)*"), (\[.*\]), (?:0x[0-9a-f]+|NULL)(?: /\* \d+ vars \*/)?', args)
@@ -1157,7 +1339,10 @@ class TraceReducer:
                 self.refuse('unapproved_execveat'); return
             elif name in ('clone', 'clone3', 'fork', 'vfork'):
                 if row['result'] and row['result'] > 1:
-                    row.update(child=row['result'],thread=re.search(r'\bCLONE_THREAD\b',args) is not None)
+                    row.update(child=row['result'],thread=re.search(r'\bCLONE_THREAD\b',args) is not None,
+                        files_relation='copied' if name in ('fork','vfork') else
+                            'shared' if re.search(r'\bCLONE_FILES\b',args) else
+                            'copied' if 'flags=' in args else 'unknown')
             elif name in ('kill','tkill','tgkill'):
                 signal_call = re.fullmatch(r'(-?\d+), (?:(-?\d+), )?(SIG[A-Z0-9]+|0)',args)
                 if not signal_call: raise ValueError()
@@ -1178,17 +1363,49 @@ class TraceReducer:
                 wait = re.fullmatch(r'(-?\d+), (?:NULL|0x[0-9a-f]+|\[.*\]), (?:0|W[A-Z0-9_]+(?:\|W[A-Z0-9_]+)*)',args)
                 if not wait: raise ValueError()
                 row['wait_target'] = int(wait[1])
-            elif name in ('connect','bind','accept','accept4','getsockname','getpeername'):
+            elif name in ('socket', 'socketpair'):
+                match = re.fullmatch(r'(AF_[A-Z0-9_]+), (SOCK_[A-Z0-9_]+)((?:\|SOCK_[A-Z0-9_]+)*), ([A-Za-z0-9_]+)(?:, \[(\d+), (\d+)\])?', args)
+                if not match or (name == 'socketpair' and not match[5]): raise ValueError()
+                row.update(socket_family=match[1] if match[1] in SOCKET_FAMILIES else 'unknown',
+                    socket_type=match[2] if match[2] in SOCKET_TYPES else 'unknown')
+                if name == 'socketpair': row['fds'] = [int(match[5]), int(match[6])]
+            elif name in ('close', 'dup', 'dup2', 'dup3', 'fcntl', 'close_range'):
+                descriptor = re.match(r'(\d+)(?:, |$)', args)
+                if not descriptor: raise ValueError()
+                row['fd'] = int(descriptor[1])
+                if name == 'close' and not re.fullmatch(r'\d+', args): raise ValueError()
+                if name == 'dup' and not re.fullmatch(r'\d+', args): raise ValueError()
+                if name in ('dup2','dup3') and not re.fullmatch(r'\d+, \d+(?:, (?:0|O_CLOEXEC))?',args): raise ValueError()
+                if name in ('dup2','dup3') and row['result'] is not None and row['result'] >= 0:
+                    if row['result'] != int(args.split(', ')[1]): raise ValueError()
+                if name in ('dup', 'dup2', 'dup3'): row['duplicates_fd'] = True
+                if name == 'fcntl':
+                    match = re.fullmatch(r'\d+, (F_[A-Z0-9_]+)(?:, .*)?', args)
+                    if not match: raise ValueError()
+                    row['duplicates_fd'] = match[1] in ('F_DUPFD','F_DUPFD_CLOEXEC')
+                if name == 'close_range':
+                    match = re.fullmatch(r'(\d+), (\d+), (?:0|CLOSE_RANGE_[A-Z_]+(?:\|CLOSE_RANGE_[A-Z_]+)*)',args)
+                    if not match: raise ValueError()
+                    row.update(first_fd=int(match[1]), last_fd=int(match[2]))
+            elif name in ('connect','bind','accept','accept4','getsockname','getpeername','listen','shutdown'):
                 descriptor = re.match(r'(\d+), ',args)
                 if descriptor: row['fd'] = int(descriptor[1])
                 quoted = r'"(?:[^"\\]|\\.)*"'
                 unix = re.search(r'sa_family=AF_UNIX, sun_path=('+quoted+')', args)
                 inet = re.search(r'sa_family=AF_INET, sin_port=htons\((\d+)\), sin_addr=inet_addr\(('+quoted+r')\)', args)
+                inet6 = re.search(r'sa_family=AF_INET6, sin6_port=htons\((\d+)\).*?inet_pton\(AF_INET6, ('+quoted+r'),',args)
                 netlink = re.search(r'sa_family=AF_NETLINK, nl_pid=(\d+), nl_groups=(0x[0-9a-fA-F]+|[0-9a-fA-F]+)',args)
                 if unix: row['sockaddr'] = dict(family='AF_UNIX', path=self.string(unix[1]))
                 elif inet: row['sockaddr'] = dict(family='AF_INET', port=int(inet[1]), address=self.string(inet[2]))
+                elif inet6:
+                    scopes = re.findall(r'\bsin6_scope_id=(\d+)(?=\s*[,}])', args)
+                    scope = int(scopes[0]) if len(scopes) == 1 and int(scopes[0]) <= 0xffffffff else None
+                    row['sockaddr'] = dict(family='AF_INET6', port=int(inet6[1]),
+                        address=self.string(inet6[2]), scope_id=scope)
                 elif netlink: row['sockaddr'] = dict(family='AF_NETLINK', nl_pid=int(netlink[1]), nl_groups=int(netlink[2],16))
-                elif name in ('connect', 'bind'): row['sockaddr'] = dict(family='unknown')
+                elif name in ('connect', 'bind'):
+                    family = re.search(r'sa_family=(AF_[A-Z0-9_]+)', args)
+                    row['sockaddr'] = dict(family=family[1] if family and family[1] in SOCKET_FAMILIES else 'unknown')
             elif name not in ('socket','socketpair','listen','shutdown','wait4','waitid','exit','exit_group',
                               'setsid','setpgid','getpgid','getsid','getpgrp','restart_syscall',
                               'getpid','getppid','gettid','pidfd_open'):
@@ -1198,7 +1415,7 @@ class TraceReducer:
                         syscall_name_sha256=hashlib.sha256(name.encode()).hexdigest(), classification='unsupported_named_syscall'))
                 else: self.refuse('trace_limit')
                 self.refuse('unparsed_syscall:'+safe_name); return
-            self.rows.append(row)
+            self.keep(row)
         except (ValueError, TypeError, KeyError, SyntaxError, UnicodeError, RecursionError):
             self.refuse('trace_parse_error')
         # Raw input and argv exist only inside this call, never in self.rows.
@@ -1235,6 +1452,7 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
     parents = {row['child']:row['pid'] for row in reducer.rows if 'child' in row}
     active_executables = {}
     netlink_bindings = set()
+    descriptors = SocketDescriptors()
     def ancestor(pid, candidates):
         seen = set()
         while pid not in seen:
@@ -1270,9 +1488,11 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
     executions, connections, probes, workflow, processes = [], [], [], [], []
     for row in reducer.rows:
         pid, kind = row['pid'], row['kind']
-        if 'child' in row and pid in active_executables:
+        descriptor = descriptors.observe(row)
+        if 'child' in row and pid in active_executables and row['child'] not in active_executables:
             active_executables[row['child']] = active_executables[pid]
         if kind == 'execve' and row['result']==0: active_executables[pid] = row
+        if kind in ('exit','exit_group') or kind == 'signal' and row.get('terminated'): active_executables.pop(pid, None)
         safe = {key:value for key,value in row.items() if key in ('pid','kind','result','errno','child','thread','signal','targets','pidfd','operation','wait_target','fd')}
         if kind == 'execve':
             path = row['path']
@@ -1324,35 +1544,47 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
         elif 'sockaddr' in row:
             address = row['sockaddr']; family = address['family']
             origin = active_executables.get(pid, {}); identity = origin.get('identity')
-            if (origin.get('path') in allowed_exec and identity is not None
-                    and identity['sha256'] == (exec_pins or {}).get(origin.get('path'))):
+            pinned_origin = (origin.get('path') in allowed_exec and identity is not None
+                and identity['sha256'] == (exec_pins or {}).get(origin.get('path')))
+            if pinned_origin:
                 role = (component_images or {}).get(identity['sha256'])
                 safe['origin'] = dict(executable=origin['path'],executable_sha256=identity['sha256'],
                     component='cairn' if role else 'unknown',role=role,
                     native_phase_owner=ancestor(pid, phase_roots or {}))
             else: safe['origin'] = dict(component='unknown')
-            absent_nss = family == 'AF_UNIX' and address['path'] == '/var/run/nscd/socket' and row.get('errno') == 'ENOENT'
-            workflow_read = (family == 'AF_UNIX' and address['path'] == admission_socket
+            absent_nss = family == 'AF_UNIX' and address.get('path') == '/var/run/nscd/socket' and row.get('errno') == 'ENOENT'
+            workflow_read = (family == 'AF_UNIX' and address.get('path') == admission_socket
                              and ancestor(pid,set(admission_pids)) is not None)
-            owned = (family == 'AF_UNIX' and address['path'] in allowed_unix or
-                     family == 'AF_INET' and address['address'] == '127.0.0.1' and address['port'] == target.port)
+            owned = (family == 'AF_UNIX' and address.get('path') in allowed_unix or
+                     family == 'AF_INET' and address.get('address') == '127.0.0.1' and address.get('port') == target.port)
             # Unnamed ephemeral bind (port 0) is allowed only on loopback.
-            local_ephemeral = kind == 'bind' and family == 'AF_INET' and address['address'] == '127.0.0.1' and address['port'] == 0
-            # Local/accepted socket names are endpoint observations, not new
-            # outbound admissions. Every connect/bind is checked independently.
+            ipv4_loopback = family == 'AF_INET' and address.get('address') == '127.0.0.1'
+            # Owner-proxy e04: psutil supports_ipv6's exact local capability
+            # probe, from a pinned owned executable, is prospectively admitted.
+            ipv6_loopback = (family == 'AF_INET6' and address.get('address') == '::1'
+                and address.get('scope_id') == 0 and pinned_origin)
+            local_ephemeral = kind == 'bind' and (ipv4_loopback or ipv6_loopback) and address.get('port') == 0
+            # Endpoint observations grant no outbound IPv6 connect capability.
             local_observation = (kind in ('accept','accept4','getsockname','getpeername')
-                and family == 'AF_INET' and address['address'] == '127.0.0.1' and 0 < address['port'] <= 65535)
+                and (ipv4_loopback or ipv6_loopback) and type(address.get('port')) is int
+                and 0 < address['port'] <= 65535)
             owner = ancestor(pid,phase_roots or {})
-            kernel_route_probe = (kind=='bind' and family=='AF_NETLINK' and address['nl_pid']==0
-                and address['nl_groups']==0 and owner is not None and origin.get('path')==python_path
+            kernel_route_probe = (kind=='bind' and family=='AF_NETLINK' and address.get('nl_pid')==0
+                and address.get('nl_groups')==0 and owner is not None and origin.get('path')==python_path
                 and identity is not None and identity['sha256']==(exec_pins or {}).get(python_path))
             if kernel_route_probe and row['result']==0: netlink_bindings.add((owner,row.get('fd')))
-            kernel_observation = (kind=='getsockname' and family=='AF_NETLINK' and address['nl_groups']==0
-                and owner is not None and (owner,row.get('fd')) in netlink_bindings)
+            kernel_observation = (kind=='getsockname' and family=='AF_NETLINK' and address.get('nl_groups')==0
+                and owner is not None and (owner,row.get('fd')) in netlink_bindings
+                and descriptor.get('route_binding') is True)
             if kernel_route_probe or kernel_observation: safe['kernel_route_probe'] = True
             if not (owned or absent_nss or workflow_read or local_ephemeral or local_observation or kernel_route_probe or kernel_observation):
                 violations.append('unapproved socket target')
-                safe['sockaddr_sha256'] = hashlib.sha256(json.dumps(address,sort_keys=True).encode()).hexdigest()
+                safe['socket_diagnostic'] = socket_diagnostic(kind, address,
+                    dict(descriptor, scratch=str(scratch_root) if scratch_root else None), row.get('fd'),
+                    identity['sha256'] if origin.get('path') in allowed_exec and identity is not None
+                        and identity['sha256'] == (exec_pins or {}).get(origin.get('path')) else None)
+                safe['origin'] = {key:value for key,value in safe['origin'].items()
+                    if key not in ('executable','executable_sha256')}
             else: safe['sockaddr'] = address
             connections.append(safe)
             if absent_nss: probes.append(safe)
@@ -1367,12 +1599,14 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
             if not any(row['kind'] == 'connect' and row['result'] == 0
                        and row.get('sockaddr',{}).get('path') == path for row in connections):
                 violations.append('missing owned socket connection')
+    if descriptors.overflow: violations.append('socket descriptor limit')
     result = dict(execve=executions, connect=connections, processes=processes,expected_shutdown=shutdown,
         unfinished=unresolved,
         unparsed_syscalls=reducer.unparsed,
         declared_negative_or_anchor_probes=probes, authenticated_workflow_reads=workflow,
         violations=violations, raw_trace_retained=False, raw_argv_retained=False,
-        input_bytes=reducer.bytes, rows=len(reducer.rows))
+        input_bytes=reducer.bytes, rows=len(reducer.rows),
+        filtered_unknown_fd_closes=reducer.filtered_unknown_fd_closes)
     reducer.rows.clear(); reducer.pending.clear()
     return result
 
@@ -1457,10 +1691,7 @@ def host_suite(plan_path, native=False):
                         semantic_fallback=False, capture_observations=True, recall_observations=True)
         f.publish_configuration(enabled=False)
         home = f.account
-        write_json(home / 'config.yaml', dict(model=dict(default=MODEL, provider='custom', base_url=provider_url,
-                api_key='r03-fixture-only', context_length=128000), agent=dict(environment_probe=False),
-                fallback_model=[], fallback_providers=[],
-                auxiliary=auxiliary_routes(native_root,provider_url), memory=dict(memory_enabled=True), plugins=dict(enabled=[])))
+        write_json(home / 'config.yaml', fixture_configuration(native_root, provider_url))
         skill = root / 'fixture-skill.md'; skill.write_text('Synthetic retained continuity fixture.\n')
         native_config = dict(executable=str(images/'api'), socket=str(host.socket),
                              token_file=str(host.token('worker')), repo=host.repo)
@@ -1488,9 +1719,14 @@ def host_suite(plan_path, native=False):
         write_json(root / 'credential-selectors.json', dict(path=str(home / 'config.yaml'), sha256=credential_sha,
                     provider='custom', model=MODEL, base_url=provider_url, key_sha256=hashlib.sha256(b'r03-fixture-only').hexdigest()))
         configured = json.loads((home/'config.yaml').read_bytes())
+        require(configured['auxiliary']['title_generation']['enabled'] is False
+            and configured['security']['tirith_enabled'] is False,
+            'R03_POLICY: installed fixture changed background-task disables')
         write_json(root/'fixture-policy.json',dict(context_length=configured['model']['context_length'],
             environment_probe=configured['agent']['environment_probe'],fallback_model=configured['fallback_model'],
-            fallback_providers=configured['fallback_providers'],uname=str(Path(shutil.which('uname')).resolve()),
+            fallback_providers=configured['fallback_providers'],
+            title_generation_enabled=configured['auxiliary']['title_generation']['enabled'],
+            tirith_enabled=configured['security']['tirith_enabled'],uname=str(Path(shutil.which('uname')).resolve()),
             uname_sha256=digest(shutil.which('uname'))))
         selected_b = None
         def stage_b():

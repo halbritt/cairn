@@ -344,3 +344,133 @@ The original 30 test classes and bodies remain unchanged.
 The six-criterion mapping, both actual capture proofs and current local gates
 must accompany the complete candidate. Root commissions agent-1415's independent
 delta review and owns later integration and a new exact native admission.
+
+
+## Exact metadata GET policy and prospective socket diagnostics
+
+This fixture repair applies to held Hermes `9904fd411587729dcdf7440cfb830e96e9830597`
+(package `0.20.5`). It does not replay either consumed native case or classify
+the earlier hash-only bind. A later native case still needs independent delta
+review, integration and a new exact Root admission.
+
+The metadata producer is held `agent/model_metadata.py`, SHA256
+`293f3e04953e068e845f85cd5dfdaef21a8372361febe2e384e44def243ab366`.
+Its `detect_local_server_type` normalizes the configured URL, strips the trailing
+`/v1`, builds headers with `_auth_headers` (690–695), and issues the following
+literal GETs. `_lmstudio_server_root` (779) derives the same root for this fixture.
+
+| Paths | Producer and request lines | Credential source |
+| --- | --- | --- |
+| `/api/v1/models`, `/api/tags` | `detect_local_server_type`:1046,1056 | `_auth_headers(api_key)` via HTTPX client headers:1030–1043 |
+| `/v1/props`, `/props`, `/version` | `detect_local_server_type`:1069,1071,1079 | Same client; `/props` follows a non-200 `/v1/props` response |
+| `/v1/models`, `/models` | `fetch_endpoint_model_metadata`:1281–1292,1357–1367 | Candidate URLs are normalized `/v1` and its root, each plus `/models`; empty API key produces empty requests headers |
+
+The authenticated startup chain is `agent_init.py:2942` →
+`query_ollama_num_ctx`:1898 → `detect_local_server_type`. Startup passes the agent's
+key explicitly. The no-key accounting chain is `aux_accounting.py:116` →
+`usage_pricing.estimate_usage_cost`:1445 → `get_pricing_entry`:1261 →
+`fetch_endpoint_model_metadata`:1298/1363. The accounting caller omits `api_key`,
+whose default is `None`. `image_routing.py:345` is another conditional no-key
+caller of the detector. These are inspected static caller chains, not a recovered
+historical stack or header. The selected ten-row source map binds each old GET
+row to its producer line, URL construction and complete file digest. The old
+`authorization_expected=False` field alone does not prove header absence.
+
+`ScriptedChat` now returns 404 for exactly these seven GET paths at its owned
+loopback listener regardless of Authorization presence or value. It records
+method, literal selected path and `auth_present` as a boolean, never the header.
+`NativeAudit.profile` applies the same exact-origin/method/path exception before
+credential enforcement. The origin is the admitted `http://127.0.0.1:<port>`,
+with no URL credentials, query or fragment; this is not a URL-prefix capability.
+Unknown paths or methods still fail. Chat and POST requests still require the
+exact fixture selector. The previous `/api/show` POST additionally requires the
+exact fixture model and retains its 404 behavior. Model/fallback/non-loopback
+refusals and pinned tirith DNS refusal remain in force.
+
+Future rejected socket operations retain a bounded `socket_diagnostic` object:
+
+| Field | Values and evidence |
+| --- | --- |
+| `operation`, `fd` | Fixed operation vocabulary; observed descriptor or explicit unknown |
+| `address_family`, `socket_type` | Finite family/type vocabulary; type comes from observed socket creation, socketpair, accept or descriptor lineage |
+| `address_category` | `loopback`, `unix_inside_owned_scratch` (lexical absolute path without traversal), `unix_elsewhere`, `netlink`, `other` |
+| `port_class` | `zero` for literal port 0; `fixed` for a nonzero connect/bind argument; `ephemeral` only after an observed successful bind-to-zero on that descriptor; otherwise `unknown` |
+| `executable_byte_sha256`, `executable_provenance` | Actual byte digest checked against exec pins, or `null`/`unknown`; no destination identity |
+
+No rejected raw sockaddr, destination IP/port/path, address fingerprint, payload,
+credentials, raw trace or argv enters that object. Refusal strings and collections
+remain intact; structured facts do not approve a class. Missing/malformed inputs
+remain unknown or refused. `NativeAudit`'s legacy `executable_sha256` is a path
+string digest. Its new explicitly named byte-digest field follows successful
+pin validation; it does not reinterpret that legacy field.
+
+Descriptor knowledge follows observed socket creation, dup/dup2/dup3/fcntl,
+close/close_range, fork and `CLONE_FILES`. Hexadecimal fcntl results are decoded
+without treating their leading zero as the result. Unknown sharing, unresolved descriptor mutations and exec discard
+knowledge; successful reuse replaces it. Tables are bounded (4096 tables,
+256 socket descriptors each), and overflow refuses. Socket diagnostics do not
+borrow a later exec or a stale fd. Netlink getsockname qualification additionally
+requires the still-current descriptor binding. This preserves the existing
+zero-group, pinned-owner netlink rule without pre-approving new observations.
+
+The held-source bind/listen inventory covers conditional OAuth/CIMD reservations
+and callback HTTPServer (`tools/mcp_oauth.py`:212,263,987,999,1372), tool RPC
+(`tools/code_execution_tool.py`:1402,1407,1409), browser debug port selection
+(`hermes_cli/browser_connect.py`:241), configured email source binding
+(`plugins/platforms/email/adapter.py`:157), and AnyIO listener creation
+(`anyio/_core/_sockets.py`:340–341,445). HTTPcore `SyncBackend.connect_tcp`:207
+uses `socket.create_connection` with a source address only if `local_address`
+was supplied. These are static, conditional callers: stdio-only MCP, plain-text
+scripted responses, and absent OAuth/browser/email requests do not establish
+that any such listener ran. Signature/vector `bind` methods and the separate
+sandbox proxy are excluded. The selected map pins every listed file and records
+these reachability limits. No site is attributed to the old unclassifiable bind.
+
+Local validation preserves every prior 49 test AST body (including the original
+30), adds metadata/auth/method/foreign-origin/non-disclosure and descriptor/
+provenance/privacy tests, and runs a fresh maintained plan/full import-STUB setup
+with both real local Go and retained `/2` captures. Synthetic 404s and parser
+fixtures do not establish future native callback, history, provider or Store
+acceptance. Exact receipts, source correspondence and selected cleanup evidence
+belong to the frozen candidate packet; no native run is part of these checks.
+
+Ordinary file closes during frozen-input verification are reduced before the
+row budget only after a witnessed exec and when that fd has no socket fact.
+Relevant socket closes and closes from children whose birth is still unresolved
+are retained. A separate counter reports this reduction; the existing 50,000-row,
+128 MiB and parser/refusal bounds do not increase. A 65,000-file-close regression
+checks both the limit and continued retention of the socket-close/refusal facts.
+
+
+## Owner-proxy IPv6 and background-task supplement
+
+The later owner-proxy supplement supplies a narrow prospective exception to the
+earlier no-class-preapproval rule. Held `psutil/_common.py:441–448`,
+`supports_ipv6`, creates an IPv6 stream socket and binds `::1` with port 0. Its
+SHA256 is `1bbce9fd97e6f5439a0d385f28401f527c5a9d978d9d062593d7ef6fe215fc75`.
+The reducer now also extracts a numeric `sin6_scope_id`. The only new bind
+allowance is a pinned owned executable's `AF_INET6`, literal `::1`, port 0,
+scope 0. Scope-zero positive-port loopback accept/name observations are its
+IPv6 counterpart; they grant no outbound IPv6 connect permission. Missing,
+non-numeric, nonzero or out-of-range scope, wildcard/external addresses,
+non-ephemeral binds and unknown executable origins still refuse with structured
+private diagnostics. No old raw sockaddr is recovered and Run2 remains failed.
+
+The disposable configuration explicitly sets
+`auxiliary.title_generation.enabled=False` and `security.tirith_enabled=False`.
+Held `agent/title_generator.py:170–180,370,403` honors the title flag before
+calling the model. `agent/auxiliary_client.py:8815` and
+`agent/aux_accounting.py:116` explain the no-key accounting path to metadata.
+Held `tools/tirith_security.py:69–86` reads the security flag, with the existing
+`TIRITH_ENABLED` environment override taking precedence. The fixture refuses a
+conflicting true host override; it does not change the host environment.
+The privacy-safe fixture-policy receipt reads both disabled values back from
+the actual materialized configuration. Other auxiliary routes remain pinned
+to the declared local model/selector with empty fallbacks.
+
+Exact-strace-line and negative scope/address/port/origin tests are local parser
+fixtures, not a real IPv6/native probe. All preceding GET/auth/chat, descriptor,
+privacy, lifecycle and original test bodies remain protected. Fresh full
+import-STUB setup and dual local engine captures are required on the revised
+head, followed by exact review, integration and landed readiness. Only Root's
+separate new JSON admission can start a future native Run3.

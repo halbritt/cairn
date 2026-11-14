@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 
 import check_r03_hermes_continuity as continuity
@@ -667,6 +668,317 @@ class F78Completion(unittest.TestCase):
                 conn.request('GET',path,headers={'Authorization':'Bearer r03-fixture-only'})
                 response=conn.getresponse();self.assertEqual(response.status,expected);response.read();conn.close()
             self.assertEqual(len(transport.violations),1)
+
+
+class ProbeAuditRepair(unittest.TestCase):
+    setUp = ContinuityBoundary.setUp
+    def test_exact_metadata_gets_with_and_without_authorization(self):
+        with continuity.ScriptedChat(self.root/'requests.json') as transport:
+            for path in continuity.METADATA_GET_PATHS:
+                for key in (None, '', 'Bearer r03-fixture-only', 'Bearer private-canary'):
+                    conn=http.client.HTTPConnection('127.0.0.1',transport.server.server_address[1],timeout=5)
+                    conn.request('GET',path,headers={} if key is None else {'Authorization':key})
+                    response=conn.getresponse();self.assertEqual(response.status,404);response.read();conn.close()
+            self.assertEqual(transport.violations,[])
+            self.assertEqual(len(transport.requests),28)
+            self.assertNotIn('private-canary',json.dumps(transport.requests))
+            self.assertTrue(all(row['method']=='GET' and isinstance(row['auth_present'],bool) for row in transport.requests))
+
+    def test_metadata_url_exception_does_not_admit_foreign_method_path_origin(self):
+        base='http://127.0.0.1:12345/v1'
+        for path in continuity.METADATA_GET_PATHS:
+            self.assertTrue(continuity.local_metadata_get('GET','http://127.0.0.1:12345'+path,base))
+        for method,url in [('POST','http://127.0.0.1:12345/models'),('HEAD','http://127.0.0.1:12345/models'),
+            ('GET','http://127.0.0.1:12345/models?secret=canary'),('GET','http://127.0.0.1:12345/model'),
+            ('GET','http://127.0.0.1:12346/models'),('GET','http://localhost:12345/models'),
+            ('GET','http://private-host:12345/models'),('GET','http://user:password@127.0.0.1:12345/models')]:
+            self.assertFalse(continuity.local_metadata_get(method,url,base))
+
+
+    def test_profile_honors_exact_get_exception_before_credential_enforcement(self):
+        observer=continuity.NativeAudit(self.root,dict(provider_url='http://127.0.0.1:12345/v1'))
+        for path in continuity.METADATA_GET_PATHS:
+            frame=SimpleNamespace(f_code=SimpleNamespace(co_filename='/fixture/httpx/client.py',co_name='send'),
+                f_locals={'request':SimpleNamespace(method='GET',url='http://127.0.0.1:12345'+path,headers={})})
+            observer.profile(frame,'call',None)
+        self.assertEqual(observer.violations,[])
+        for method,path in [('POST','/v1/chat/completions'),('POST','/api/show'),('GET','/v1/unselected')]:
+            frame=SimpleNamespace(f_code=SimpleNamespace(co_filename='/fixture/httpx/client.py',co_name='send'),
+                f_locals={'request':SimpleNamespace(method=method,url='http://127.0.0.1:12345'+path,
+                    headers={'authorization':'private-header-canary'})})
+            with self.assertRaises(continuity.PrerequisiteError): observer.profile(frame,'call',None)
+        self.assertEqual(len(observer.violations),3)
+        self.assertNotIn('private-header-canary',(self.root/'audit.json').read_text())
+
+    def test_unknown_methods_and_get_query_routes_are_not_metadata_exceptions(self):
+        with continuity.ScriptedChat(self.root/'requests.json') as transport:
+            for method,path in [('HEAD','/models'),('DELETE','/models'),('GET','/models?'),('GET','/models#private-canary')]:
+                conn=http.client.HTTPConnection('127.0.0.1',transport.server.server_address[1],timeout=5)
+                conn.request(method,path);response=conn.getresponse();self.assertEqual(response.status,400);response.read();conn.close()
+            self.assertEqual(len(transport.violations),4)
+            self.assertNotIn('private-canary',(self.root/'requests.json').read_text())
+        for url in ['http://127.0.0.1:12345/models?', 'http://127.0.0.1:12345/models#',
+                    'http://127.0.0.1:invalid/models', 'http://[malformed/models']:
+            self.assertFalse(continuity.local_metadata_get('GET',url,'http://127.0.0.1:12345/v1'))
+
+
+class SocketDiagnosticRepair(unittest.TestCase):
+    setUp = ContinuityBoundary.setUp
+
+    def reduce(self, lines, known=True):
+        image=self.root/'image'
+        if not image.exists(): image.write_bytes(b'owned executable bytes');image.chmod(0o500)
+        pins={str(image):continuity.digest(image)}
+        reducer=continuity.TraceReducer(exec_pins=pins)
+        if known: reducer.feed('100 execve('+json.dumps(str(image))+', ["image"], 0x0) = 0')
+        for line in lines: reducer.feed(line)
+        result=continuity.audit_syscalls(set(pins),set(),reducer=reducer,exec_pins=pins,scratch_root=self.root,
+            phase_roots={100:'A'},python_path=str(image))
+        return result,pins
+
+    def test_refused_socket_is_typed_without_destination_or_path_identity(self):
+        canary='private-destination-canary'
+        result,pins=self.reduce(['100 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC, IPPROTO_TCP) = 6',
+            '100 connect(6, {sa_family=AF_INET, sin_port=htons(54321), sin_addr=inet_addr("192.0.2.7")}, 16) = -1 ECONNREFUSED',
+            '100 socket(AF_UNIX, SOCK_STREAM, 0) = 7',
+            '100 bind(7, {sa_family=AF_UNIX, sun_path="/private/'+canary+'"}, 110) = -1 EACCES'])
+        self.assertEqual(result['violations'],['unapproved socket target']*2)
+        first,second=[row['socket_diagnostic'] for row in result['connect']]
+        self.assertTrue(all('executable' not in row['origin'] for row in result['connect']))
+        self.assertEqual(first,dict(operation='connect',address_family='AF_INET',socket_type='SOCK_STREAM',
+            address_category='other',port_class='fixed',fd=6,executable_byte_sha256=next(iter(pins.values())),executable_provenance='verified_exec_pin'))
+        self.assertEqual(second['address_category'],'unix_elsewhere')
+        raw=json.dumps(result);self.assertNotIn(canary,raw);self.assertNotIn('192.0.2.7',raw);self.assertNotIn('54321',raw)
+
+    def test_fd_close_reuse_dup_and_non_socket_replacement_never_borrow_type(self):
+        result,_=self.reduce(['100 socket(AF_INET, SOCK_STREAM, 0) = 6','100 dup(6) = 9',
+            '100 close(6) = 0','100 socket(AF_INET, SOCK_DGRAM, 0) = 6',
+            '100 bind(6, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0',
+            '100 bind(9, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0',
+            '100 dup2(77, 9) = 9','100 bind(9, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0'])
+        self.assertEqual([x['socket_diagnostic']['socket_type'] for x in result['connect']],['SOCK_DGRAM','SOCK_STREAM','unknown'])
+
+    def test_shared_files_and_copied_fork_have_distinct_close_effects(self):
+        for clone,expected in [('clone(child_stack=NULL, flags=CLONE_VM|CLONE_FILES|CLONE_THREAD)', 'unknown'),
+                               ('fork()', 'SOCK_STREAM'),('clone3(0x1234, 88)','unknown')]:
+            result,_=self.reduce(['100 socket(AF_INET, SOCK_STREAM, 0) = 6','100 '+clone+' = 101','101 close(6) = 0',
+                '100 bind(6, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0'])
+            self.assertEqual(result['connect'][0]['socket_diagnostic']['socket_type'],expected)
+
+    def test_exec_close_range_and_failed_dup_leave_no_stale_or_future_origin(self):
+        image=self.root/'image'
+        result,pins=self.reduce(['100 socket(AF_INET, SOCK_STREAM, 0) = 6','100 dup3(6, 9, O_CLOEXEC) = 9',
+            '100 fcntl(9, F_DUPFD_CLOEXEC, 10) = 10','100 dup2(77, 9) = -1 EBADF',
+            '100 bind(9, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0',
+            '100 close_range(3, 4294967295, 0) = 0',
+            '100 bind(10, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0',
+            '100 execve('+json.dumps(str(image))+', ["image"], 0x0) = 0',
+            '100 bind(9, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0'])
+        self.assertEqual([x['socket_diagnostic']['socket_type'] for x in result['connect']],['SOCK_STREAM','unknown','unknown'])
+        result,_=self.reduce(['100 bind(6, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0',
+            '100 execve('+json.dumps(str(image))+', ["image"], 0x0) = 0'],known=False)
+        self.assertIsNone(result['connect'][0]['socket_diagnostic']['executable_byte_sha256'])
+
+    def test_netlink_class_stays_refused_and_closed_route_binding_cannot_requalify(self):
+        result,_=self.reduce(['100 socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE) = 6',
+            '100 bind(6, {sa_family=AF_NETLINK, nl_pid=1, nl_groups=0x0}, 12) = 0'])
+        self.assertEqual(result['violations'],['unapproved socket target'])
+        self.assertEqual(result['connect'][0]['socket_diagnostic']['address_category'],'netlink')
+        result,_=self.reduce(['100 socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE) = 6',
+            '100 bind(6, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=0x0}, 12) = 0',
+            '100 close(6) = 0','100 socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE) = 6',
+            '100 getsockname(6, {sa_family=AF_NETLINK, nl_pid=100, nl_groups=0x0}, [12]) = 0'])
+        self.assertEqual(result['violations'],['unapproved socket target'])
+
+    def test_ipv6_unknown_family_and_malformed_descriptor_stay_refused_private(self):
+        result,_=self.reduce(['100 socket(AF_INET6, SOCK_DGRAM, IPPROTO_IP) = 6',
+            '100 bind(6, {sa_family=AF_INET6, sin6_port=htons(0), inet_pton(AF_INET6, "::", &sin6_addr)}, 28) = 0',
+            '100 bind(7, {sa_family=AF_PRIVATE, secret="private-canary"}, 16) = 0'])
+        self.assertEqual(result['violations'],['unapproved socket target']*2)
+        self.assertEqual(result['connect'][0]['socket_diagnostic']['port_class'],'zero')
+        self.assertEqual(result['connect'][1]['socket_diagnostic']['address_family'],'unknown')
+        self.assertNotIn('private-canary',json.dumps(result))
+        reducer=continuity.TraceReducer();reducer.feed('100 dup2(3, 4) = 8')
+        self.assertIn('trace_parse_error',reducer.errors)
+
+    def test_native_python_refusal_keeps_only_typed_facts_and_real_byte_pin(self):
+        class Observer(continuity.NativeAudit):
+            def origin(self): return dict(component='hermes')
+        import socket
+        python=str(Path(sys.executable).resolve());pin=continuity.digest(python)
+        observer=Observer(self.root,dict(provider_url='http://127.0.0.1:12345/v1',api_socket='/owned/socket',exec_pins={python:pin}))
+        with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as sock:
+            with self.assertRaises(continuity.PrerequisiteError): observer.audit('socket.connect',(sock,('192.0.2.9',54321)))
+        row=observer.refused_attempts[0]['socket_diagnostic']
+        self.assertEqual(row['executable_byte_sha256'],pin);self.assertEqual(row['socket_type'],'SOCK_STREAM')
+        self.assertNotIn('192.0.2.9',json.dumps(observer.refused_attempts));self.assertNotIn('54321',json.dumps(observer.refused_attempts))
+
+    def test_descriptor_limits_refuse_instead_of_guessing(self):
+        descriptors=continuity.SocketDescriptors();descriptors.max_fds=1
+        descriptors.observe(dict(pid=100,kind='socket',socket_type='SOCK_STREAM',result=6))
+        descriptors.observe(dict(pid=100,kind='socket',socket_type='SOCK_DGRAM',result=7))
+        self.assertTrue(descriptors.overflow);self.assertEqual(descriptors.tables,{})
+        descriptors=continuity.SocketDescriptors();descriptors.max_tables=1
+        descriptors.observe(dict(pid=100,kind='fork',result=101,child=101,files_relation='copied'))
+        self.assertTrue(descriptors.overflow);self.assertEqual(descriptors.tables,{})
+
+
+    def test_categories_and_ephemeral_port_require_actual_bind_descriptor_lineage(self):
+        path=self.root/'socket'
+        result,_=self.reduce(['100 socket(AF_INET, SOCK_STREAM, 0) = 6',
+            '100 bind(6, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("192.0.2.1")}, 16) = 0',
+            '100 getsockname(6, {sa_family=AF_INET, sin_port=htons(60123), sin_addr=inet_addr("192.0.2.1")}, [16]) = 0',
+            '100 close(6) = 0',
+            '100 getsockname(6, {sa_family=AF_INET, sin_port=htons(60123), sin_addr=inet_addr("192.0.2.1")}, [16]) = 0',
+            '100 bind(8, {sa_family=AF_UNIX, sun_path='+json.dumps(str(path))+'}, 110) = 0',
+            '100 bind(9, {sa_family=AF_UNIX, sun_path=@"private-abstract-canary"}, 110) = 0'])
+        rows=[x['socket_diagnostic'] for x in result['connect']]
+        self.assertEqual([x['port_class'] for x in rows[:3]],['zero','ephemeral','unknown'])
+        self.assertEqual(rows[3]['address_category'],'unix_inside_owned_scratch')
+        self.assertEqual(rows[4]['address_family'],'AF_UNIX')
+        self.assertEqual(result['violations'],['unapproved socket target']*5)
+        raw=json.dumps(result);self.assertNotIn('60123',raw);self.assertNotIn(str(path),raw)
+        self.assertNotIn('private-abstract-canary',raw);self.assertNotIn('sockaddr_sha256',raw)
+
+
+    def test_resumed_clone_cannot_replace_child_exec_or_descriptor_facts(self):
+        child=self.root/'child';child.write_bytes(b'child bytes');child.chmod(0o500)
+        parent=self.root/'parent';parent.write_bytes(b'parent bytes');parent.chmod(0o500)
+        pins={str(x):continuity.digest(x) for x in (parent,child)}
+        reducer=continuity.TraceReducer(exec_pins=pins)
+        for row in ['100 execve('+json.dumps(str(parent))+', ["parent"], 0x0) = 0',
+            '100 clone3({flags=CLONE_VM|CLONE_VFORK}, 88 <unfinished ...>',
+            '101 execve('+json.dumps(str(child))+', ["child"], 0x0) = 0',
+            '101 socket(AF_INET, SOCK_DGRAM, 0) = 6',
+            '100 <... clone3 resumed>) = 101',
+            '101 bind(6, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0']:
+            reducer.feed(row)
+        result=continuity.audit_syscalls(set(pins),set(),reducer=reducer,exec_pins=pins)
+        diagnostic=result['connect'][0]['socket_diagnostic']
+        self.assertEqual(diagnostic['socket_type'],'SOCK_DGRAM')
+        self.assertEqual(diagnostic['executable_byte_sha256'],pins[str(child)])
+        self.assertEqual(result['violations'],['unapproved socket target'])
+
+
+    def test_hexadecimal_fcntl_results_are_not_misreported_as_decimal_zero(self):
+        reducer=continuity.TraceReducer()
+        reducer.feed('100 fcntl(6, F_GETFL) = 0x8000 (flags O_RDONLY|O_LARGEFILE)')
+        self.assertEqual(reducer.rows[0]['result'],32768)
+        reducer.feed('100 fcntl(6, F_GETFD) = 0xZZ-private-canary')
+        self.assertEqual(reducer.errors,['trace_parse_error'])
+        self.assertNotIn('private-canary',json.dumps(reducer.rows))
+
+
+    def test_unknown_descriptor_mutation_result_discards_previous_type(self):
+        for kind in ('dup2','dup3','fcntl','close_range'):
+            descriptors=continuity.SocketDescriptors()
+            descriptors.observe(dict(pid=100,kind='socket',socket_type='SOCK_STREAM',result=6))
+            descriptors.observe(dict(pid=100,kind=kind,fd=6,result=None))
+            self.assertEqual(descriptors.observe(dict(pid=100,kind='bind',fd=6,result=-1)),{})
+
+
+    def test_file_close_flood_keeps_socket_closes_and_the_existing_row_cap(self):
+        image=self.root/'image';image.write_bytes(b'owned image');image.chmod(0o500)
+        pins={str(image):continuity.digest(image)};reducer=continuity.TraceReducer(exec_pins=pins)
+        reducer.feed('100 execve('+json.dumps(str(image))+', ["image"], 0x0) = 0')
+        for _ in range(65000): reducer.feed('100 close(8) = 0')
+        reducer.feed('100 socket(AF_INET, SOCK_STREAM, 0) = 6');reducer.feed('100 close(6) = 0')
+        reducer.feed('100 bind(6, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0')
+        self.assertEqual(reducer.max_rows,50000);self.assertEqual(reducer.errors,[])
+        self.assertEqual(reducer.filtered_unknown_fd_closes,65000)
+        self.assertTrue(any(row['kind']=='close' and row['fd']==6 for row in reducer.rows))
+        result=continuity.audit_syscalls(set(pins),set(),reducer=reducer,exec_pins=pins)
+        self.assertEqual(result['connect'][0]['socket_diagnostic']['socket_type'],'unknown')
+        self.assertEqual(result['violations'],['unapproved socket target'])
+
+    def test_close_before_resumed_fork_is_never_filtered_or_backfilled(self):
+        result,_=self.reduce(['100 socket(AF_INET, SOCK_STREAM, 0) = 6','100 fork( <unfinished ...>',
+            '101 close(6) = 0','100 <... fork resumed>) = 101',
+            '101 bind(6, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0'])
+        self.assertEqual(result['filtered_unknown_fd_closes'],0)
+        self.assertEqual(result['connect'][0]['socket_diagnostic']['socket_type'],'unknown')
+
+
+    def test_killed_pid_reuse_does_not_inherit_exec_attestation_for_close_filter(self):
+        result,_=self.reduce(['101 execve('+json.dumps(str(self.root/'image'))+', ["image"], 0x0) = 0',
+            '101 +++ killed by SIGKILL +++','100 socket(AF_INET, SOCK_STREAM, 0) = 6',
+            '100 fork( <unfinished ...>','101 close(6) = 0','100 <... fork resumed>) = 101',
+            '101 bind(6, {sa_family=AF_INET, sin_port=htons(3), sin_addr=inet_addr("192.0.2.1")}, 16) = 0'])
+        self.assertEqual(result['filtered_unknown_fd_closes'],0)
+        self.assertEqual(result['connect'][0]['socket_diagnostic']['socket_type'],'unknown')
+
+
+class OwnerSupplement(unittest.TestCase):
+    setUp = ContinuityBoundary.setUp
+    reduce = SocketDiagnosticRepair.reduce
+
+    @staticmethod
+    def ipv6(operation='bind', address='::1', port=0, scope='0'):
+        return ('100 '+operation+'(6, {sa_family=AF_INET6, sin6_port=htons('+str(port)+'), '
+            'sin6_flowinfo=htonl(0), inet_pton(AF_INET6, '+json.dumps(address)+', &sin6_addr), '
+            'sin6_scope_id='+scope+'}, 28) = 0')
+
+    def test_exact_held_psutil_ipv6_line_parses_and_admits_only_the_owned_probe(self):
+        line=self.ipv6()
+        result,_=self.reduce(['100 socket(AF_INET6, SOCK_STREAM|SOCK_CLOEXEC, IPPROTO_IP) = 6',line])
+        self.assertEqual(result['violations'],[])
+        self.assertEqual(result['connect'][0]['sockaddr'],dict(family='AF_INET6',port=0,address='::1',scope_id=0))
+        result,_=self.reduce([line],known=False)
+        self.assertEqual(result['violations'],['unapproved socket target'])
+
+    def test_ipv6_scope_port_address_and_outbound_negatives_stay_refused(self):
+        for operation,address,port,scope in [('bind','::',0,'0'),('bind','2001:db8::1',0,'0'),
+            ('bind','::1',12345,'0'),('bind','::1',0,'1'),('bind','::1',0,'0x0'),
+            ('bind','::1',0,'4294967296'),('bind','::1',0,'if_nametoindex("private-interface")'),
+            ('connect','::1',12345,'0')]:
+            with self.subTest(operation=operation,address=address,port=port,scope=scope):
+                result,_=self.reduce([self.ipv6(operation,address,port,scope)])
+                self.assertEqual(result['violations'],['unapproved socket target'])
+                self.assertNotIn('private-interface',json.dumps(result))
+                self.assertNotIn('2001:db8::1',json.dumps(result))
+                self.assertIn('socket_diagnostic',result['connect'][0])
+
+    def test_ipv6_scope_zero_endpoint_observations_do_not_grant_other_sockets(self):
+        for operation in ('accept','accept4','getsockname','getpeername'):
+            result,_=self.reduce([self.ipv6(operation,port=54321)])
+            self.assertEqual(result['violations'],[])
+            for scope in ('1','0x0'):
+                result,_=self.reduce([self.ipv6(operation,port=54321,scope=scope)])
+                self.assertEqual(result['violations'],['unapproved socket target'])
+        result,_=self.reduce([self.ipv6('getsockname',port=0)])
+        self.assertEqual(result['violations'],['unapproved socket target'])
+
+    def test_absent_ipv6_scope_is_unknown_and_not_silently_zero(self):
+        line=self.ipv6().replace(', sin6_scope_id=0','')
+        result,_=self.reduce([line]);self.assertEqual(result['violations'],['unapproved socket target'])
+        self.assertEqual(result['connect'][0]['socket_diagnostic']['address_family'],'AF_INET6')
+
+    def defaults(self, auxiliary=None):
+        root=self.root/'runtime';p=root/'hermes/hermes_cli/config_defaults.py';p.parent.mkdir(parents=True,exist_ok=True)
+        p.write_text('DEFAULTS = '+repr(dict(auxiliary=auxiliary if auxiliary is not None else
+            dict(title_generation={},compression={},vision={}))))
+        return root
+
+    def test_actual_fixture_producer_disables_background_tasks_and_preserves_routes(self):
+        with mock.patch.dict(os.environ,{'TIRITH_ENABLED':'false'}):
+            cfg=continuity.fixture_configuration(self.defaults(),'http://127.0.0.1:12345/v1')
+        self.assertIs(cfg['auxiliary']['title_generation']['enabled'],False)
+        self.assertIs(cfg['security']['tirith_enabled'],False)
+        self.assertIs(cfg['agent']['environment_probe'],False);self.assertEqual(cfg['model']['context_length'],128000)
+        self.assertEqual(cfg['fallback_model'],[]);self.assertEqual(cfg['fallback_providers'],[])
+        for name,row in cfg['auxiliary'].items():
+            self.assertEqual(row['provider'],'custom');self.assertEqual(row['model'],continuity.MODEL)
+            self.assertEqual(row['base_url'],'http://127.0.0.1:12345/v1');self.assertEqual(row['fallback_chain'],[])
+        self.assertNotIn('enabled',cfg['auxiliary']['compression'])
+
+    def test_missing_title_route_or_normal_host_override_fails_before_execution(self):
+        with mock.patch.dict(os.environ,{'TIRITH_ENABLED':'false'}):
+            with self.assertRaisesRegex(continuity.PrerequisiteError,'title-generation route unavailable'):
+                continuity.fixture_configuration(self.defaults(dict(vision={})),'http://127.0.0.1:12345/v1')
+        for flag in ('true','TRUE','1','yes'):
+            with mock.patch.dict(os.environ,{'TIRITH_ENABLED':flag}):
+                with self.assertRaisesRegex(continuity.PrerequisiteError,'host tirith override'):
+                    continuity.fixture_configuration('/unread/missing/runtime','http://127.0.0.1:12345/v1')
 
 
 if __name__ == '__main__':
