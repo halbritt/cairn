@@ -930,6 +930,7 @@ class TraceReducer:
             if call.startswith('<... ') and ' resumed>' in call:
                 call = self.pending.pop(pid) + call.split(' resumed>', 1)[1]
             if '<detached ...>' in call:
+                if not call.endswith('<detached ...>'): raise ValueError()
                 prefix = call.split('<detached ...>')[0]
                 if prefix.strip():
                     if pid in self.pending: raise ValueError()
@@ -1033,12 +1034,17 @@ def audit_syscalls(allowed_exec, allowed_unix, phase_roots=None, trace_path=None
     for pid, prefix in reducer.pending.items():
         match = re.match(r'(\w+)\(',prefix)
         name = match[1] if match else None
-        if name in ('accept','accept4','wait4','waitid','restart_syscall','exit','exit_group') and (pid in reducer.terminal or daemon_gone(pid)):
+        harmless = name in ('accept','accept4','wait4','waitid','restart_syscall','exit','exit_group',
+            'socket','socketpair','listen','shutdown','getsockname','getpeername',
+            'getpid','getppid','gettid','getsid','getpgid','getpgrp')
+        thread_creation = name in ('clone','clone3') and re.search(r'\bCLONE_THREAD\b',prefix) is not None
+        if (harmless or thread_creation) and (pid in reducer.terminal or daemon_gone(pid)):
             shutdown.append(dict(pid=pid,kind=name,result=None,expected_shutdown=True))
         else:
             violations.append('unfinished audited operation')
             unresolved.append(dict(pid=pid,kind=name if name in ('execve','connect','clone','clone3','exit','exit_group',
-                'accept','accept4','wait4','waitid','restart_syscall') else 'other',terminated=pid in reducer.terminal))
+                'accept','accept4','wait4','waitid','restart_syscall','socket','socketpair','bind','listen','shutdown',
+                'getsockname','getpeername','kill','tkill','tgkill') else 'other',terminated=pid in reducer.terminal))
     normal_dirs = {str(Path(path).resolve()) for path in normal_path.split(':') if path}
     tool_names = {Path(path).name for path in allowed_exec} | {'sh'}
     executions, connections, probes, workflow, processes = [], [], [], [], []

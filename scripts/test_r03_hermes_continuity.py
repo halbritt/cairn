@@ -358,7 +358,8 @@ class EvidencePrivacy(unittest.TestCase):
         for path in self.root.iterdir(): self.assert_private(canary,path.read_text())
 
     def test_daemon_shutdown_waits_and_detach_keep_metadata(self):
-        for pending in ('accept4(5, NULL, NULL, SOCK_CLOEXEC','wait4(-1, NULL, 0, NULL','exit_group(0'):
+        for pending in ('accept4(5, NULL, NULL, SOCK_CLOEXEC','wait4(-1, NULL, 0, NULL','exit_group(0',
+                        'socket(AF_INET, SOCK_STREAM, 0','clone3({flags=CLONE_VM|CLONE_THREAD}, 88'):
             reducer = continuity.TraceReducer()
             reducer.feed('100 '+pending+' <unfinished ...>')
             reducer.feed('100 <detached ...>')
@@ -373,7 +374,9 @@ class EvidencePrivacy(unittest.TestCase):
 
     def test_consequential_unfinished_and_unowned_detach_still_refuse(self):
         for call in ('execve("/selected", ["private"], 0x0',
-                     'connect(3, {sa_family=AF_UNIX, sun_path="/unknown"}, 110'):
+                     'connect(3, {sa_family=AF_UNIX, sun_path="/unknown"}, 110',
+                     'bind(3, {sa_family=AF_UNIX, sun_path="/unknown"}, 110',
+                     'clone3({flags=CLONE_VM}, 88'):
             reducer = continuity.TraceReducer()
             reducer.feed('100 '+call+' <unfinished ...>'); reducer.feed('100 +++ exited with 0 +++')
             self.assertIn('unfinished audited operation',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
@@ -382,6 +385,8 @@ class EvidencePrivacy(unittest.TestCase):
         result = continuity.audit_syscalls(set(),{'/owned/socket'},reducer=continuity.TraceReducer(),owned_daemons={100:'/owned/api'})
         self.assertIn('missing owned daemon execution',result['violations'])
         self.assertIn('missing owned socket connection',result['violations'])
+        reducer=continuity.TraceReducer(); reducer.feed('100 <detached ...> malformed')
+        self.assertIn('trace_parse_error',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
 
     def test_unknown_symlink_to_pinned_executable_is_refused(self):
         target=self.root/'pinned'; target.write_bytes(b'pinned'); target.chmod(0o500)
