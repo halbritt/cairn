@@ -344,13 +344,172 @@ def authenticated_d6_race(cluster, images, root):
         f.host.close()
 
 
+def mixed_bound2_profiles(f):
+    """Eight distinct synthetic Codex profiles, not the live host's hook roster."""
+    base = json.loads((f.active / 'one.json').read_bytes())
+    (f.active / 'one.json').unlink()
+    descriptors = []
+    f.pins = {}
+    for i, name in enumerate(PROXIMAL):
+        config = dict(base, binding=f.binding if i == 0 else 'r07-' + name,
+                      state_dir=str(f.state_dir if i == 0 else f.root / ('state-' + name)),
+                      config_home=str(f.root / ('account-' + name)))
+        for directory in (Path(config['state_dir']), Path(config['config_home'])):
+            directory.mkdir(mode=0o700, exist_ok=True)
+        path = f.coord if i == 0 else f.root / ('coordination-' + name + '.json')
+        control.write(path, config)
+        descriptors.append(dict(path=str(path), sha256=control.sha(path.read_bytes())))
+        active = f.active / (name + '.json')
+        control.write(active, config)
+        f.pins[active.name] = control.sha(active.read_bytes())
+    memory = f.root / 'memory.json'
+    control.write(f.root / 'binding.json', dict(schema='cairn.inbox-recall-binding/2', enabled=False,
+        memory_config=dict(path=str(memory), sha256=control.sha(memory.read_bytes())),
+        coordination_configs=descriptors))
+    (f.active / '.watch.lock').write_bytes(b'')
+    (f.active / '.watch.lock').chmod(0o600)
+    for name in ARCHIVES:
+        control.write(f.active / name, {'opaque': 'synthetic metadata-only archive'})
+
+
+def bootstrap_input(f):
+    def member(path):
+        row = metadata(path)
+        require(row['kind'] == stat.S_IFREG, 'fixture member must be regular')
+        return dict(name=path.name, type='regular', **{key: row[key] for key in ('uid', 'gid', 'mode', 'device', 'inode')})
+    return dict(schema='cairn.unit-bootstrap/1', root=str(f.root.parent),
+        current=dict(directory=str(f.active), pins=dict(f.pins)),
+        archives=[member(f.active / name) for name in ARCHIVES],
+        watch_lock=member(f.active / '.watch.lock'),
+        credential_selectors=[str(f.host.token('worker'))], callbacks=[])
+
+
+def bootstrap_invoke(f, image, plan, label, *, operation='inspect', expected=0):
+    path = f.root / (label + '-plan.json')
+    control.write(path, plan)
+    completed = control.command([image, 'unit-bootstrap', operation, '--plan', path,
+        '--sha256', control.sha(path.read_bytes())], f.root / label, env=f.host.env, expected=expected)
+    result = json.loads(completed.stdout)
+    require(result['schema'] == 'cairn.unit-bootstrap-result/1' and not result['published']
+            and result['owner_fence'] == 'unknown' and result['reverse'] == 'unsupported',
+            label + ': bootstrap fabricated a consequential contract')
+    if expected == 0:
+        require(result['inspected'] and result['rechecked'] and not result.get('error'), label + ': private read-only receipt failed')
+    else:
+        require(result.get('error') and not result['rechecked'], label + ': missing explicit refusal')
+    return result
+
+
+def bootstrap_cases(cluster, images, root, *, race=False):
+    f = control.Fixture(cluster, images['api'], root, 'r07_bootstrap_race' if race else 'r07_bootstrap_read')
+    child = None
+    try:
+        f.retained(resume=True)
+        claim = control.pending_claim(f, images['api']) if race else None
+        calls = control.transport(f, images['api'], claim=claim)
+        mixed_bound2_profiles(f)
+        plan = bootstrap_input(f)
+        before = f.snapshot()
+        control.write(f.root / 'protected-before.json', before)
+        before_members = {p.name: preserved_metadata(p) for p in f.active.iterdir()}
+        outcomes = []
+        result = bootstrap_invoke(f, images['control'], plan, 'bootstrap-eight17-race' if race else 'bootstrap-eight17', expected=1 if race else 0)
+        if race:
+            require(result['inspected'] and 'D6 bootstrap drain invalidated' in result['error'], 'new owning hold escaped bootstrap final reread')
+            require(before == json.loads((f.root / 'actor-before.json').read_text()), 'bootstrap capture mutated protected state before actor')
+            require(f.snapshot() == json.loads((f.root / 'actor-after.json').read_text()), 'bootstrap reread mutated state after actor')
+        else:
+            require(len(result['associations']) == 8 and set(result['associations'].values()) == {'cairn.inbox-recall-binding/2:disabled-bound'}, 'eight genuine bound2 associations were not inspected')
+            require(not any(key.startswith('file:') and ('.before-' in key or key == 'file:' + str(f.host.token('worker'))) for key in result['facts']), 'bootstrap read opaque archive or credential contents')
+            require(f.snapshot() == before, 'bootstrap inspection mutated protected state')
+        require({p.name: preserved_metadata(p) for p in f.active.iterdir()} == before_members, 'bootstrap reader changed original member metadata')
+        outcomes.append(dict(case='eight17-real-auth-race' if race else 'eight17-real-auth', result='PASS', error=result.get('error')))
+        if not race:
+            for operation in ('switch', 'reverse'):
+                refused = bootstrap_invoke(f, images['control'], plan, 'bootstrap-' + operation, operation=operation, expected=1)
+                require('mutation unavailable' in refused['error'] and not refused['inspected'], 'missing writer fence became effectful')
+                outcomes.append(dict(case=operation + '-closed', result='PASS'))
+            replay = dict(plan, facts=result['facts'], stopped=True)
+            refused = bootstrap_invoke(f, images['control'], replay, 'bootstrap-replay', expected=1)
+            require('serialized receipts' in refused['error'], 'replayed facts became private receipt')
+            outcomes.append(dict(case='bootstrap-replay', result='PASS'))
+            control.write(f.active / 'unknown', {})
+            refused = bootstrap_invoke(f, images['control'], plan, 'bootstrap-unknown', expected=1)
+            require('membership changed' in refused['error'], 'unknown member accepted')
+            (f.active / 'unknown').unlink()
+            outcomes.append(dict(case='bootstrap-unknown', result='PASS'))
+            original_lock = f.active / '.watch.lock'
+            parked_lock = f.root / 'original-lock'
+            original_lock.rename(parked_lock)
+            original_lock.write_bytes(b'')
+            original_lock.chmod(0o600)
+            refused = bootstrap_invoke(f, images['control'], plan, 'bootstrap-lock-change', expected=1)
+            require('metadata changed' in refused['error'], 'different lock inode accepted')
+            original_lock.unlink()
+            parked_lock.rename(original_lock)
+            outcomes.append(dict(case='bootstrap-lock-change', result='PASS'))
+            selected = f.active / 'hermes-one.json'
+            original = selected.read_bytes()
+            unbound = json.loads(original)
+            unbound.pop('inbox_recall_binding')
+            control.write(selected, unbound)
+            unbound_plan = dict(plan, current=dict(plan['current'], pins=dict(plan['current']['pins'])))
+            unbound_plan['current']['pins'][selected.name] = control.sha(selected.read_bytes())
+            refused = bootstrap_invoke(f, images['control'], unbound_plan, 'bootstrap-unbound2', expected=1)
+            require('unbound retained /2 association unsupported' in refused['error'], 'unbound2 normalized to Go3')
+            selected.write_bytes(original)
+            outcomes.append(dict(case='bootstrap-unbound2', result='PASS'))
+            archive = f.active / ARCHIVES[0]
+            parked_archive = f.root / 'opaque-original'
+            archive.rename(parked_archive)
+            os.link(f.host.token('worker'), archive)
+            refused = bootstrap_invoke(f, images['control'], plan, 'bootstrap-credential-alias', expected=1)
+            require('alias' in refused['error'], 'credential inode alias accepted')
+            archive.unlink()
+            parked_archive.rename(archive)
+            outcomes.append(dict(case='bootstrap-credential-alias', result='PASS'))
+            child = subprocess.Popen([sys.executable, '-I', '-S', '-B', '-c', 'import sys;sys.stdin.buffer.read()'], stdin=subprocess.PIPE)
+            live_plan = dict(plan, callbacks=[process_ref(child)])
+            refused = bootstrap_invoke(f, images['control'], live_plan, 'bootstrap-live-callback', expected=1)
+            require('callback process has not been joined' in refused['error'], 'live callback accepted')
+            child.stdin.close()
+            require(child.wait(timeout=5) == 0, 'bootstrap fixture callback join failed')
+            bootstrap_invoke(f, images['control'], live_plan, 'bootstrap-joined-callback')
+            outcomes.extend([dict(case='bootstrap-live-callback', result='PASS'), dict(case='bootstrap-joined-callback', result='PASS')])
+            # The separate checked Go3 command must retain its old refusal.
+            checked = dict(schema='cairn.unit-control/1', current=plan['current'],
+                next=[dict(name=name, path=str(f.active / name), sha256=pin) for name, pin in f.pins.items()],
+                retained=str(f.root / 'not-created'), callbacks=[])
+            refused = control.invoke(f, images['control'], 'inspect', checked, 'go3-still-refuses', expected=1)
+            require(refused['error'] == 'watch config-dir membership changed', 'new bootstrap changed Go3 guard')
+            outcomes.append(dict(case='go3-still-refuses', result='PASS'))
+        after = f.snapshot()
+        control.write(f.root / 'protected-after.json', after)
+        if not race:
+            require(after == before, 'bootstrap refusals changed protected store/state')
+        rows = [json.loads(line) for line in calls.read_text().splitlines()]
+        require(rows and all(row['operation'] in control.READS for row in rows), 'bootstrap consumer attempted non-read API operation')
+        return dict(cases=outcomes, authenticated_read_calls=len(rows), members=8, archives=17,
+                    association_scope='synthetic eight Codex bound2 profiles; not installed native roster',
+                    complete_writer_fence='unknown', operator_bootstrap='unsupported')
+    finally:
+        if child is not None:
+            stop_process(child, timeout=5, label='bootstrap own callback')
+        f.host.close()
+
+
 def source_pins():
     files = {ref.split(':')[0] for ref in GAPS.values()}
     files.update(('go.mod', 'go.sum', 'scripts/disposable_host.py',
                   'scripts/check_r06_unit_control.py', 'scripts/check_r06_status_consumer.py',
                   'scripts/check_r06_lifecycle_offline_restore.py',
                   'scripts/check_r07_bootstrap_reverse.py', 'scripts/test_r07_bootstrap_reverse.py',
-                  'docs/verification/r07-bootstrap-reverse.md'))
+                  'docs/verification/r07-bootstrap-reverse.md',
+                  'internal/lifecycle/coordination/shared_unit_bootstrap.go',
+                  'internal/lifecycle/coordination/shared_unit_bootstrap_test.go',
+                  'internal/lifecycle/transcript/coordination_bootstrap.go',
+                  'internal/lifecycle/transcript/coordination_bootstrap_test.go',
+                  'cmd/cairn-lifecycle/bootstrap_test.go', 'cmd/cairn-lifecycle/main.go'))
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD', 'HEAD^{tree}'], cwd=ROOT, text=True).splitlines()
     return dict(head=revision[0], tree=revision[1],
                 source={name: control.sha((ROOT / name).read_bytes()) for name in sorted(files)},
@@ -358,7 +517,7 @@ def source_pins():
                 application_images='two private fixture images, not a common RC build')
 
 
-def run(evidence):
+def run(evidence, *, bootstrap_only=False):
     require(not evidence.exists(), 'evidence destination must be NEW')
     evidence.mkdir(mode=0o700, parents=True)
     scratch = Path(tempfile.mkdtemp(prefix='r07-bootstrap-', dir=Path.home() / '.cache'))
@@ -370,24 +529,31 @@ def run(evidence):
     try:
         with ProcessReceipts(evidence) as observer:
             control.write(evidence / 'source-pins.json', source_pins())
-            for host in ('proximal', 'archon', 'talos'):
-                home, names, archives = make_layout(scratch, host, observed_modes=True)
-                control.write(evidence / (host + '-plan.json'), layout_plan(home, names, archives))
-            primitive_root = scratch / 'primitive'
-            primitive_root.mkdir(mode=0o700)
-            control.write(evidence / 'filesystem-primitive.json', raw_filesystem_rehearsal(primitive_root))
-            payload, controls, home, stage = semantic_file_fixture(scratch / 'semantic')
-            control.write(evidence / 'semantic-file-contract.json', dict(
-                payload_address=payload['address'], control_address=controls['address'],
-                private_home=str(home), result='inert selected-file contract only',
-                accepted_s04r_exact_selection='unknown', runtime_qualification='not run'))
+            if not bootstrap_only:
+                for host in ('proximal', 'archon', 'talos'):
+                    home, names, archives = make_layout(scratch, host, observed_modes=True)
+                    control.write(evidence / (host + '-plan.json'), layout_plan(home, names, archives))
+                primitive_root = scratch / 'primitive'
+                primitive_root.mkdir(mode=0o700)
+                control.write(evidence / 'filesystem-primitive.json', raw_filesystem_rehearsal(primitive_root))
+                payload, controls, home, stage = semantic_file_fixture(scratch / 'semantic')
+                control.write(evidence / 'semantic-file-contract.json', dict(
+                    payload_address=payload['address'], control_address=controls['address'],
+                    private_home=str(home), result='inert selected-file contract only',
+                    accepted_s04r_exact_selection='unknown', runtime_qualification='not run'))
             images = control.build(scratch)
             cluster = OwnedCluster.start(scratch / 'pg', pg_bin=pg_bindir().resolve())
-            result = authenticated_cases(cluster, images, scratch / 'authenticated')
-            race = authenticated_d6_race(cluster, images, scratch / 'd6-race')
+            result = dict(cases=[], status='not-run-focused-bootstrap-check')
+            race = dict(status='not-run-focused-bootstrap-check')
+            if not bootstrap_only:
+                result = authenticated_cases(cluster, images, scratch / 'authenticated')
+                race = authenticated_d6_race(cluster, images, scratch / 'd6-race')
+            bootstrap = bootstrap_cases(cluster, images, scratch / 'bootstrap-read')
+            bootstrap_race = bootstrap_cases(cluster, images, scratch / 'bootstrap-race', race=True)
             # Retain selected command/status evidence, not tokens or selectors.
             shutil.copytree(scratch / 'tools', evidence / 'tools')
-            for case in ('authenticated', 'd6-race'):
+            cases = ('bootstrap-read', 'bootstrap-race') if bootstrap_only else ('authenticated', 'd6-race', 'bootstrap-read', 'bootstrap-race')
+            for case in cases:
                 destination = evidence / case
                 destination.mkdir(mode=0o700)
                 for path in sorted((scratch / case).iterdir()):
@@ -406,6 +572,7 @@ def run(evidence):
             control.write(evidence / 'summary.json', dict(schema='cairn.r07-bootstrap-rehearsal/1',
                 result='SOURCE_GAP_CONFIRMED', operator_bootstrap='unsupported',
                 operator_bootstrap_reverse='unsupported', checked_bound2_control=result, new_owner_d6=race,
+                bootstrap_read_only=bootstrap, bootstrap_read_only_race=bootstrap_race,
                 native_calls=0, production_actions=0, remote_commands=0,
                 source_gaps=GAPS))
     finally:
@@ -421,8 +588,9 @@ def run(evidence):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path, required=True)
+    parser.add_argument('--bootstrap-only', action='store_true', help='focus new bootstrap cases; do not repeat the independent checked-control fixtures')
     args = parser.parse_args()
-    result = run(args.evidence.absolute())
+    result = run(args.evidence.absolute(), bootstrap_only=args.bootstrap_only)
     print(json.dumps(result, sort_keys=True))
 
 

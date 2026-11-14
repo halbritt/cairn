@@ -2,8 +2,9 @@
 
 The original installed layout has **no supported operator bootstrap or bootstrap
 reverse entrypoint** on source `8631c6f12b8b484d608d959683ed5a6767a2db66`, tree
-`771aa3be71d205ab3db7f3b330f2e7c9183328c2`. The three-file engineering slice
-provides a metadata planner and an owned regression fixture. It deliberately
+`771aa3be71d205ab3db7f3b330f2e7c9183328c2`. The nine-file engineering candidate
+adds a separate authenticated **read-only** mixed-layout inspection producer,
+a metadata planner and owned regression fixtures. It deliberately
 does not add an apply command, accept a serialized drain receipt, or turn an
 inventory into admission. Native qualification, production mutation and remote
 commands are outside this fixture.
@@ -33,11 +34,54 @@ edit. The existing Go checks remain unchanged. A successful bound `/2` profile
 data roundtrip through the Go control command is narrower than native retained
 Python qualification or a full Go `/3` target roundtrip.
 
-## Proposed separate operator boundary
+## Implemented first finite cut
 
-Root must arbitrate a separate source contract before implementation outside the
-three-file lease. The smallest useful boundary would keep these facts in one
-control process:
+`cairn-lifecycle unit-bootstrap inspect --plan ABSOLUTE_JSON --sha256 SHA256`
+uses the ordinary concrete `NewCoordinationCLI` profile and authenticated host.
+Its new source lives in
+[shared_unit_bootstrap.go](../../internal/lifecycle/coordination/shared_unit_bootstrap.go),
+with a [transcript wrapper](../../internal/lifecycle/transcript/coordination_bootstrap.go)
+and a thin private CLI dispatch branch. Existing Go3 control/census/receipt
+loaders remain unchanged.
+
+The strict `cairn.unit-bootstrap/1` plan selects an owned `0700` observation
+root, the original `current.directory` and active JSON `current.pins`, an
+explicit `archives` array, the actual `watch_lock`, `credential_selectors` and
+`callbacks`. Opaque and lock descriptors require exactly `name`, `type`, `uid`,
+`gid`, `mode`, `device` and `inode`. Unknown fields, serialized facts, scope,
+stopped/completion flags, duplicate keys, unsafe paths, aliases and unknown
+members refuse. Root/membership select observations; they confer no authority.
+
+The producer accepts supported **disabled bound /2 and /3 profile associations**
+through the existing `disabledBinding` reader. It does not normalize /2 into /3.
+Unbound retained /2 associations explicitly refuse: literal argv/bundle inventory
+does not supply the private association required by the current Go3 census.
+The real fixture uses eight distinct synthetic Codex bound-/2 profiles with
+the eight familiar filenames. This is not the installed host's native roster.
+
+A private process-local receipt comes only from fresh file, state, session,
+journal, authoritative terminal-status, grant-currentness, API pagination,
+kernel flock and callback observations. Final reread checks the pinned plan,
+original metadata, issued profiles/references, same watch-lock inode and D1–D5
+facts. No JSON result can be supplied back as that receipt. Archive and
+credential bodies remain unread by inspection; retained state locks are observed
+as metadata/kernel locks under their existing source modes, never opened as
+data or chmodded to satisfy a content reader.
+
+The public result distinguishes `inspected` and `rechecked` from `published`
+(always false), `owner_fence` (unknown) and `reverse` (unsupported). Missing or
+changed facts refuse. Session stop/capture status, joined callback identities
+and existing flock observations are available maintained facts. A complete
+service/restart/native-writer fence is still missing. `unit-bootstrap switch`
+and `reverse` explicitly refuse before reading a plan or making API calls.
+The final reread is bounded read-only evidence, not an atomic snapshot or a
+complete writer-set proof.
+
+## Remaining operator boundary
+
+Root's lease amendment permits the separate read-only producer above. Any
+additional files or effectful boundary still need contract review. The remaining
+operator boundary must keep these facts in one control process:
 
 1. Read the exhaustive original JSON selection and approved opaque archive
    metadata, including aliases, owner, mode and the actual lock inode. Validate
@@ -103,6 +147,7 @@ fixture state is disposable. Source worktrees belong under the maintained
 
 ```sh
 mise run test:unit -- test_r07_bootstrap_reverse -v
+mise run test:unit -- ./internal/lifecycle/coordination ./internal/lifecycle/transcript ./cmd/cairn-lifecycle -run 'Test(UnitBootstrap|CoordinationBootstrap|PrivateBootstrap|UnitControl|AgyTargetRoundtripLegacyScope|SharedWatchUnitPin)' -count=1 -race -v
 mise run host:exec --timeout 12m --weight 1 -- python3 -B scripts/check_r07_bootstrap_reverse.py --evidence "$HOME/.cache/r07-bootstrap-new-evidence"
 mise run check
 mise run host:exec --timeout 5m --weight 1 -- python3 -B scripts/verify_docs.py --tier 1,2,3,4
@@ -114,6 +159,10 @@ two private fixture images, starts an `OwnedCluster` and uses the maintained
 five-role common RC build. The actual control consumer uses authenticated
 read-only endpoints. Separately recorded fixture actors create and settle
 synthetic obligations; the control consumer never settles them itself.
+Use `--bootstrap-only` with that integration command to check a later bootstrap
+source change without repeating independent layout, inert S04R or checked-control
+fixtures. Its summary labels those groups not run; retain their earlier receipts
+separately rather than counting them as fresh passes.
 
 The integration cases cover read-only inspection, original archival/unknown
 membership refusal, replayed facts refusal, unbound missing-receipt refusal,
@@ -122,6 +171,14 @@ switch/reverse and changed-lock refusal. A second instance introduces a real
 owning hold after capture: D6 refuses before exchange and retains the complete
 unpublished preparation with the same lock inode. Protected database/state
 snapshots distinguish the actor's mutation from the consumer's reads.
+
+The separate bootstrap cases produce a real authenticated read-only receipt for
+eight supported bound-/2 members plus all 17 opaque archives, then exercise
+closed switch/reverse, replay, unknown member, changed lock, unbound-/2,
+credential-alias and live/joined callback cases. Another fresh instance acquires
+a real owning hold between capture and final reread and must invalidate the
+private receipt. The old Go3 command still rejects the archival layout. Raw
+before/after protected snapshots and actor correspondence are retained.
 
 The S04R file test uses inert synthetic interpreter/model/native files with the
 existing `seal_inputs`, `publish_payload`, `render_python_controls`,
