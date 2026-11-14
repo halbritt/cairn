@@ -108,6 +108,13 @@ func (r *watchCensusRead) inspectAgyHooks(ctx context.Context, selected WatchCen
 	if err != nil {
 		return nil, err
 	}
+	var version struct{ Schema string }
+	if err := json.Unmarshal(raw, &version); err != nil {
+		return nil, err
+	}
+	if version.Schema == "cairn.watch-agy-readback/2" {
+		return r.inspectAgyCurrent(ctx, selected, raw, commands, observations)
+	}
 	var readback WatchCensusAgyReadback
 	if err := hookDecode(raw, &readback); err != nil {
 		return nil, err
@@ -244,6 +251,13 @@ func (r *watchCensusRead) agyGeneration(ctx context.Context, pin WatchCensusPin)
 }
 
 func (r *watchCensusRead) agyProducedLayer(ctx context.Context, selected WatchCensusAgyHooks, layer WatchCensusAgyLayer) ([]agyCensusCommand, []byte, error) {
+	return r.agyProducedLayerFor(ctx, selected, layer, r.nodes[selected.Config.Path], true)
+}
+
+// Historical A bytes are verified with the same producer reader, without
+// comparing their old settings to the currently installed B file. Its caller
+// separately verifies the existing unbound receipt and exact raw file reads.
+func (r *watchCensusRead) agyProducedLayerFor(ctx context.Context, selected WatchCensusAgyHooks, layer WatchCensusAgyLayer, node *WatchCensusMember, installedNow bool) ([]agyCensusCommand, []byte, error) {
 	members, err := r.agyGeneration(ctx, layer.Generation)
 	if err != nil {
 		return nil, nil, err
@@ -271,12 +285,11 @@ func (r *watchCensusRead) agyProducedLayer(ctx context.Context, selected WatchCe
 	if err != nil {
 		return nil, nil, err
 	}
-	node := r.nodes[selected.Config.Path]
-	if lifeMembers["binding.json"] != node.Binding || lifeMembers["receipt.json"].Path == "" {
+	if node == nil || lifeMembers["binding.json"] != node.Binding || lifeMembers["receipt.json"].Path == "" {
 		return nil, nil, errors.New("Agy producer selects another binding/receipt")
 	}
 	receiptPin := lifeMembers["receipt.json"]
-	if !slices.Contains(r.catalog.UnboundReceipts, receiptPin) {
+	if installedNow && !slices.Contains(r.catalog.UnboundReceipts, receiptPin) {
 		return nil, nil, errors.New("Agy producer receipt is not the selected unbound association")
 	}
 	receipt, err := r.jsonFile(receiptPin.Path)
@@ -311,12 +324,14 @@ func (r *watchCensusRead) agyProducedLayer(ctx context.Context, selected WatchCe
 	if err != nil {
 		return nil, nil, err
 	}
-	actual, err := r.pin(layer.Installed, false)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !bytes.Equal(settings, actual) {
-		return nil, nil, errors.New("Agy installed layer differs from selected settings")
+	if installedNow {
+		actual, err := r.pin(layer.Installed, false)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !bytes.Equal(settings, actual) {
+			return nil, nil, errors.New("Agy installed layer differs from selected settings")
+		}
 	}
 	previous, err := r.pin(members["previous-settings.json"], false)
 	if err != nil {
@@ -759,10 +774,17 @@ func agyTraceIO(call agyTraceCall) ([]byte, int, error) {
 }
 
 func agyTraceFiles(calls []agyTraceCall, threads map[int]bool, installed map[string][]byte) error {
+	return agyTraceFilesTransition(calls, threads, installed, nil, 0)
+}
+
+// The current reader permits exact A bytes only before its observed first B
+// execution. Historical callers retain the original single-byte-selection rule.
+func agyTraceFilesTransition(calls []agyTraceCall, threads map[int]bool, installed, prior map[string][]byte, boundary int) error {
 	type read struct {
-		path string
-		raw  []byte
-		eof  bool
+		path  string
+		raw   []byte
+		eof   bool
+		start int
 	}
 	opened := map[string]*read{}
 	seen := map[string]int{}
@@ -787,10 +809,14 @@ func agyTraceFiles(calls []agyTraceCall, threads map[int]bool, installed map[str
 			if end < 0 {
 				return errors.New("missing Agy open result")
 			}
+			old := prior[path]
+			if call.start >= boundary {
+				old = nil
+			}
 			if expected == nil && strings.HasPrefix(call.body[end+3:], "-1 ENOENT ") {
 				continue
 			}
-			if expected == nil {
+			if expected == nil && old == nil {
 				return errors.New("native Agy read a declared absent layer")
 			}
 			fd, err := strconv.Atoi(call.body[end+3:])
@@ -801,7 +827,7 @@ func agyTraceFiles(calls []agyTraceCall, threads map[int]bool, installed map[str
 			if opened[key] != nil {
 				return errors.New("overlapping Agy hook file descriptor")
 			}
-			opened[key] = &read{path: path}
+			opened[key] = &read{path: path, start: call.start}
 		}
 		if call.name == "read" {
 			fdEnd := strings.Index(call.body, ",")
@@ -833,10 +859,14 @@ func agyTraceFiles(calls []agyTraceCall, threads map[int]bool, installed map[str
 			if selected == nil {
 				continue
 			}
-			if !strings.HasSuffix(call.body, " = 0") || !selected.eof || !bytes.Equal(selected.raw, installed[selected.path]) {
+			currentBytes := bytes.Equal(selected.raw, installed[selected.path])
+			priorBytes := selected.start < boundary && prior[selected.path] != nil && bytes.Equal(selected.raw, prior[selected.path])
+			if !strings.HasSuffix(call.body, " = 0") || !selected.eof || !currentBytes && !priorBytes {
 				return errors.New("Agy native hook bytes/EOF/close disagree")
 			}
-			seen[selected.path]++
+			if currentBytes {
+				seen[selected.path]++
+			}
 			delete(opened, key)
 		}
 	}

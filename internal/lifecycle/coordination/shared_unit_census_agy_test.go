@@ -215,6 +215,21 @@ func TestAgyTraceStrictFrames(t *testing.T) {
 	}
 }
 
+func TestAgyTraceHistoricalDescriptorKeepsCurrentFieldsUnavailable(t *testing.T) {
+	// Version 1 retains its historical/preparation shape. This is a synthetic
+	// unit record, not a current or native readiness constructor.
+	var old WatchCensusAgyReadback
+	if err := hookDecode([]byte(`{"Schema":"cairn.watch-agy-readback/1","Harness":"agy","EvidenceKind":"code-preparation"}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	for _, extra := range []string{`"Before":{}`, `"Generation":{}`, `"Authorized":true`} {
+		raw := []byte(`{"Schema":"cairn.watch-agy-readback/1","Harness":"agy","EvidenceKind":"code-preparation",` + extra + `}`)
+		if err := hookDecode(raw, &old); err == nil {
+			t.Fatal("current or authority field leaked into historical descriptor")
+		}
+	}
+}
+
 // Optional real retained bytes test decoding only. The extractor records the
 // original whole-trace pin and exact byte offsets; no current native claim.
 func TestAgyRetainedFrameCodec(t *testing.T) {
