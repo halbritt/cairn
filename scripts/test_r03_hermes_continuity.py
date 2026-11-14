@@ -376,7 +376,7 @@ class EvidencePrivacy(unittest.TestCase):
         for call in ('execve("/selected", ["private"], 0x0',
                      'connect(3, {sa_family=AF_UNIX, sun_path="/unknown"}, 110',
                      'bind(3, {sa_family=AF_UNIX, sun_path="/unknown"}, 110',
-                     'clone3({flags=CLONE_VM}, 88'):
+                     'clone3({flags=CLONE_VM}, 88','restart_syscall(0x0'):
             reducer = continuity.TraceReducer()
             reducer.feed('100 '+call+' <unfinished ...>'); reducer.feed('100 +++ exited with 0 +++')
             self.assertIn('unfinished audited operation',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
@@ -396,6 +396,18 @@ class EvidencePrivacy(unittest.TestCase):
         reducer.feed('100 execve('+json.dumps(str(alias))+', ["alias"], 0x0) = 0')
         result=continuity.audit_syscalls(set(pins),set(),reducer=reducer,exec_pins=pins)
         self.assertEqual(result['violations'],['unapproved or changed executable'])
+
+    def test_strace_unknown_exit_requires_thread_creation_and_termination(self):
+        for marker in ('???( <unfinished ...>','???() = ?','<... ??? resumed>) = ?'):
+            for threaded,terminated in ((True,True),(False,True),(True,False)):
+                reducer=continuity.TraceReducer()
+                reducer.feed('100 clone3({flags='+('CLONE_THREAD' if threaded else 'CLONE_VM')+'}, 88) = 101')
+                reducer.feed('101 '+marker)
+                if terminated: reducer.feed('101 +++ exited with 0 +++')
+                result=continuity.audit_syscalls(set(),set(),reducer=reducer)
+                self.assertEqual(bool(result['violations']),not(threaded and terminated))
+        reducer=continuity.TraceReducer();reducer.feed('101 ???() = 0');reducer.feed('101 +++ exited with 0 +++')
+        self.assertIn('trace_parse_error',continuity.audit_syscalls(set(),set(),reducer=reducer)['violations'])
 
 
 if __name__ == '__main__':
