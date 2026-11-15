@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -442,6 +443,297 @@ func TestUnitBootstrapParentDescriptorRaceRefusesBeforeRename(t *testing.T) {
 		if err != nil || string(raw) != name {
 			t.Fatal("unrelated parked canary was exchanged")
 		}
+	}
+}
+
+func TestUnitBootstrapFinalFenceRefusesAfterOperandPreparation(t *testing.T) {
+	for _, operation := range []string{"switch", "reverse"} {
+		for _, drift := range []string{"reactivation", "generation"} {
+			t.Run(operation+"/"+drift, func(t *testing.T) {
+				f, p, path, pin, ff := bootstrapEffectFixture(t)
+				if operation == "reverse" {
+					var forward UnitBootstrapResult
+					if err := f.cli.bootstrapMutation(context.Background(), path, pin, "switch", &forward, ff.capture(), nil); err != nil {
+						t.Fatal(err)
+					}
+				}
+				before := bootstrapTreeMetadata(t, p.Current.Directory)
+				injected := false
+				var result UnitBootstrapResult
+				err := f.cli.bootstrapMutation(context.Background(), path, pin, operation, &result, ff.capture(), func(phase string) error {
+					if phase == "before:commit" {
+						injected = true
+						if drift == "reactivation" {
+							ff.units["selected.service"]["ActiveState"] = "active"
+							ff.units["selected.service"]["SubState"] = "running"
+						} else {
+							ff.units["selected.service"]["StateChangeTimestampMonotonic"] = "101"
+						}
+					}
+					return nil
+				})
+				if !injected || err == nil || result.Published || !reflect.DeepEqual(before, bootstrapTreeMetadata(t, p.Current.Directory)) {
+					t.Fatalf("late %s was not refused before %s namespace exchange: injected=%v published=%v err=%v", drift, operation, injected, result.Published, err)
+				}
+			})
+		}
+	}
+}
+
+func bootstrapExternalMemoryFixture(t *testing.T) (*grantCurrentnessFixture, *UnitBootstrapPlan, string, string, *selectedFenceFixture) {
+	t.Helper()
+	f, p, _, _, ff := bootstrapEffectFixture(t)
+	parent := filepath.Join(privateCurrentnessDirectory(t), ".hermes", "cairn")
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(parent, "state")
+	if err := os.Rename(f.memory, directory); err != nil {
+		t.Fatal(err)
+	}
+	f.memory = directory
+	memoryPath := filepath.Join(f.root, "memory.json")
+	raw, err := os.ReadFile(memoryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory, err := value.DecodeBytes(raw, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory.Set("state_dir", value.Text(directory))
+	sha := writePrivateFile(t, memoryPath, mustCurrentnessJSON(t, memory), 0600)
+	association := p.Associations["one.json"]
+	raw, err = os.ReadFile(association.Binding.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := value.DecodeBytes(raw, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Get("memory_config").Set("sha256", value.Text(sha))
+	association.Binding.SHA256 = writePrivateFile(t, association.Binding.Path, mustCurrentnessJSON(t, manifest), 0600)
+	p.Associations["one.json"] = association
+	identity, err := bootstrapDirectory(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.ExternalStates = []BootstrapExternalState{{Member: "one.json", Role: "memory", Directory: directory, Identity: identity}}
+	target := bootstrapTargetPlan(t, p)
+	rewriteBootstrapTargetProfiles(t, target, func(isMemory bool, profile map[string]any) {
+		if isMemory {
+			profile["state_dir"] = directory
+		}
+	})
+	target.ExternalStates = slices.Clone(p.ExternalStates)
+	raw, err = json.Marshal(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Transition.Target.SHA256 = writePrivateFile(t, p.Transition.Target.Path, raw, 0600)
+	path, pin := writeBootstrapPlan(t, f.root, p)
+	return f, p, path, pin, ff
+}
+
+func TestUnitBootstrapDeclaredExternalStateRoundTrip(t *testing.T) {
+	f, p, path, pin, ff := bootstrapExternalMemoryFixture(t)
+	before := bootstrapTreeMetadata(t, f.memory)
+	identity := p.ExternalStates[0].Identity
+	for _, operation := range []string{"switch", "reverse"} {
+		var result UnitBootstrapResult
+		if err := f.cli.bootstrapMutation(context.Background(), path, pin, operation, &result, ff.capture(), nil); err != nil {
+			t.Fatal(operation, err)
+		}
+		if !result.Published || !reflect.DeepEqual(before, bootstrapTreeMetadata(t, f.memory)) {
+			t.Fatal("external state was changed or transition not published", operation)
+		}
+		if err := bootstrapIdentityAt(f.memory, identity); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestUnitBootstrapExternalStateRefusals(t *testing.T) {
+	for _, change := range []string{"undeclared", "duplicate", "profile", "role", "identity", "foreign-identity", "0755", "0775", "special-mode", "symlink", "unsafe-parent", "root-overlap", "account-overlap", "binary-overlap", "other-state-overlap", "unsettled-grant", "target-identity"} {
+		t.Run(change, func(t *testing.T) {
+			f, p, _, _, ff := bootstrapExternalMemoryFixture(t)
+			directory := p.ExternalStates[0].Directory
+			switch change {
+			case "undeclared":
+				p.ExternalStates = nil
+			case "duplicate":
+				p.ExternalStates = append(p.ExternalStates, p.ExternalStates[0])
+			case "profile":
+				p.ExternalStates[0].Member = "unselected.json"
+			case "role":
+				p.ExternalStates[0].Role = "unknown"
+			case "identity", "target-identity":
+				p.ExternalStates[0].Identity.Inode++
+			case "foreign-identity":
+				p.ExternalStates[0].Identity.UID++
+			case "root-overlap":
+				p.ExternalStates[0].Directory = f.root
+				p.ExternalStates[0].Identity, _ = bootstrapDirectory(f.root)
+			case "0755", "0775", "special-mode":
+				mode := os.FileMode(0755)
+				if change == "0775" {
+					mode = 0775
+				} else if change == "special-mode" {
+					mode = 0700 | os.ModeSticky
+				}
+				if err := os.Chmod(directory, mode); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink":
+				if err := os.Rename(directory, directory+"-retained"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(directory+"-retained", directory); err != nil {
+					t.Fatal(err)
+				}
+			case "unsafe-parent":
+				if err := os.Chmod(filepath.Dir(directory), 0775); err != nil {
+					t.Fatal(err)
+				}
+			case "account-overlap", "binary-overlap", "other-state-overlap":
+				read := &bootstrapRead{plan: p, drain: &watchDrainRead{facts: map[string]string{}}, accounts: map[string]bool{}, binaryDirs: map[string]bool{}}
+				affected := []bootstrapAffectedState{{"one.json", "memory", directory}}
+				if change == "account-overlap" {
+					read.accounts[filepath.Dir(directory)] = true
+				} else if change == "binary-overlap" {
+					read.binaryDirs[filepath.Join(directory, "bin")] = true
+				} else {
+					affected = append(affected, bootstrapAffectedState{"two.json", "memory", directory})
+				}
+				if err := read.selectStateRoots(affected); err == nil {
+					t.Fatal("overlapping selected resource accepted")
+				}
+				return
+			case "unsettled-grant":
+				writePrivateFile(t, filepath.Join(directory, "unknown.json"), []byte(`{"inbox_activation":{"unmatched":true}}`), 0600)
+			}
+			if change != "target-identity" {
+				target := bootstrapTargetPlan(t, p)
+				target.ExternalStates = slices.Clone(p.ExternalStates)
+				raw, err := json.Marshal(target)
+				if err != nil {
+					t.Fatal(err)
+				}
+				p.Transition.Target.SHA256 = writePrivateFile(t, p.Transition.Target.Path, raw, 0600)
+			}
+			path, pin := writeBootstrapPlan(t, f.root, p)
+			before := bootstrapTreeMetadata(t, p.Current.Directory)
+			var result UnitBootstrapResult
+			if err := f.cli.bootstrapMutation(context.Background(), path, pin, "switch", &result, ff.capture(), nil); err == nil || result.Published {
+				t.Fatal("invalid external state acquired publication", change, err)
+			}
+			if !reflect.DeepEqual(before, bootstrapTreeMetadata(t, p.Current.Directory)) {
+				t.Fatal("refusal changed the active namespace")
+			}
+		})
+	}
+}
+
+func TestUnitBootstrapExternalStateLiteralFields(t *testing.T) {
+	f, p, _, _, _ := bootstrapExternalMemoryFixture(t)
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []string{"member-case", "authority-flag", "identity-alias", "schema1"} {
+		t.Run(change, func(t *testing.T) {
+			bad := raw
+			switch change {
+			case "member-case":
+				bad = bytes.Replace(bad, []byte(`"member":`), []byte(`"Member":`), 1)
+			case "authority-flag":
+				bad = bytes.Replace(bad, []byte(`"external_states":[{`), []byte(`"external_states":[{"trusted":true,`), 1)
+			case "identity-alias":
+				bad = bytes.Replace(bad, []byte(`"identity":{"name":`), []byte(`"identity":{"Name":`), 1)
+			case "schema1":
+				bad = bytes.Replace(bad, []byte(`"schema":"cairn.unit-bootstrap/2"`), []byte(`"schema":"cairn.unit-bootstrap/1"`), 1)
+			}
+			selected := filepath.Join(f.root, "invalid-"+change+".json")
+			pin := writePrivateFile(t, selected, bad, 0600)
+			if _, _, err := readUnitBootstrapPlan(selected, pin); err == nil {
+				t.Fatal("nonliteral external state declaration accepted", change)
+			}
+		})
+	}
+}
+
+func TestUnitBootstrapExternalStateReplacementAtCommit(t *testing.T) {
+	for _, operation := range []string{"switch", "reverse"} {
+		t.Run(operation, func(t *testing.T) {
+			f, p, path, pin, ff := bootstrapExternalMemoryFixture(t)
+			if operation == "reverse" {
+				var forward UnitBootstrapResult
+				if err := f.cli.bootstrapMutation(context.Background(), path, pin, "switch", &forward, ff.capture(), nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := bootstrapTreeMetadata(t, p.Current.Directory)
+			var result UnitBootstrapResult
+			err := f.cli.bootstrapMutation(context.Background(), path, pin, operation, &result, ff.capture(), func(phase string) error {
+				if phase == "before:commit" {
+					if err := os.Rename(f.memory, f.memory+"-original"); err != nil {
+						return err
+					}
+					return os.Mkdir(f.memory, 0700)
+				}
+				return nil
+			})
+			if err == nil || result.Published || !strings.Contains(err.Error(), "external state directory identity") || !reflect.DeepEqual(before, bootstrapTreeMetadata(t, p.Current.Directory)) {
+				t.Fatal("replacement after preparation acquired namespace exchange", operation, err)
+			}
+		})
+	}
+}
+
+func TestUnitBootstrapFinalRefusalRetainsEarlierLegacyDisable(t *testing.T) {
+	for _, operation := range []string{"switch", "reverse"} {
+		t.Run(operation, func(t *testing.T) {
+			f, p, path, pin, ff, original, identity := bootstrapEnabledOriginal(t)
+			if operation == "reverse" {
+				var forward UnitBootstrapResult
+				if err := f.cli.bootstrapMutation(context.Background(), path, pin, "switch", &forward, ff.capture(), nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := bootstrapTreeMetadata(t, p.Current.Directory)
+			manifest := p.Associations["one.json"].Binding.Path
+			var atCommit []byte
+			var result UnitBootstrapResult
+			err := f.cli.bootstrapMutation(context.Background(), path, pin, operation, &result, ff.capture(), func(phase string) error {
+				if phase == "before:commit" {
+					var err error
+					atCommit, err = os.ReadFile(manifest)
+					ff.units["selected.service"]["InvocationID"] = strings.Repeat("b", 32)
+					return err
+				}
+				return nil
+			})
+			if err == nil || result.Published || len(atCommit) == 0 || !reflect.DeepEqual(before, bootstrapTreeMetadata(t, p.Current.Directory)) {
+				t.Fatal("late refusal exchanged the original namespace", operation, err)
+			}
+			after, err := os.ReadFile(manifest)
+			if err != nil || !bytes.Equal(after, atCommit) || bytes.Equal(after, original) {
+				t.Fatal("late refusal automatically undid prior legacy disable", err)
+			}
+			if result.Reconciliation == "" {
+				t.Fatal("prior recovery effects were not reported")
+			}
+			ff.units["selected.service"]["InvocationID"] = ""
+			var rollback UnitBootstrapResult
+			if err := f.cli.bootstrapMutation(context.Background(), path, pin, "rollback", &rollback, ff.capture(), nil); err != nil {
+				t.Fatal("fresh stopped-boundary rollback", err)
+			}
+			assertBootstrapRawOriginal(t, p, original, identity)
+		})
 	}
 }
 

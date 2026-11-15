@@ -646,6 +646,101 @@ def production_roster(host):
     return [('opencode-one', 'opencode', None, False, 'opencode')]
 
 
+def production_state_paths(f, host):
+    coordinator = {name: f.root / 'coordination/state' / name for name, *_ in production_roster(host)}
+    memory = {}
+    parents = {'codex': 'codex-hooks', 'claude-one': 'claude-hooks',
+               'claude-two': 'claude-harm-hooks', 'opencode': 'opencode-hooks'}
+    for *_, group in production_roster(host):
+        if group == 'hermes':
+            memory[group] = f.production_home / '.hermes/cairn/state'
+        elif host == 'archon':
+            # Actual unbound memory selection remains an operator input. This
+            # path is the explicitly synthetic inactive memory fixture only.
+            memory[group] = f.root / 'memory'
+        else:
+            memory[group] = f.root / parents.get(group, 'inactive-memory-' + group) / 'state'
+    return coordinator, memory
+
+
+def prepare_production_state_layout(f, host):
+    """Record installed directory shapes, then prepare only disposable state."""
+    require(f.root == f.production_home / '.local/share/cairn' and f.production_home != Path.home(),
+            'production shape requires a separate owned fixture home')
+    prefixes = [f.production_home / suffix for suffix in ('.local', '.local/share', '.local/bin')]
+    for path in prefixes:
+        mode = 0o775 if host == 'talos' or host == 'proximal' and path.name != 'bin' else 0o755
+        path.mkdir(mode=mode, exist_ok=True)
+        path.chmod(mode)
+    coordination = f.root / 'coordination'
+    coordination.mkdir(mode=0o755 if host == 'talos' else 0o700)
+    f.active.rmdir()
+    f.active = coordination / 'bindings'
+    f.active.mkdir(mode=0o755 if host == 'talos' else 0o700)
+    coordinator, memory = production_state_paths(f, host)
+    parent = coordination / 'state'
+    if host != 'talos':
+        parent.mkdir(mode=0o775 if host == 'proximal' else 0o755)
+        parent.chmod(0o775 if host == 'proximal' else 0o755)
+        primary = coordinator['codex-one' if host == 'proximal' else 'codex-archon']
+        f.state_dir.rename(primary)
+        f.state_dir = primary
+        f.state_path = primary / f.state_path.name
+        for path in coordinator.values():
+            path.mkdir(mode=0o700, exist_ok=True)
+    for group, directory in memory.items():
+        if group == 'hermes':
+            (f.production_home / '.hermes').mkdir(mode=0o700)
+        directory.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if group == 'hermes':
+            directory.parent.chmod(0o755)
+        if host == 'talos':
+            directory.parent.chmod(0o755)
+        else:
+            directory.mkdir(mode=0o700, exist_ok=True)
+    candidates = [*prefixes, parent, *coordinator.values(), *memory.values(), *(path.parent for path in memory.values())]
+    before = {str(path): metadata(path) if path.exists() else dict(absent=True) for path in candidates}
+    actions = []
+    for path in prefixes:
+        if stat.S_IMODE(path.stat().st_mode) != 0o755:
+            prior = metadata(path)
+            path.chmod(0o755)
+            actions.append(dict(path=str(path), before=prior, prepared=metadata(path)))
+    for path in [parent, *[directory.parent for directory in memory.values() if directory.is_relative_to(f.root)]]:
+        if path.exists() and stat.S_IMODE(path.stat().st_mode) == 0o700:
+            continue
+        prior = metadata(path) if path.exists() else dict(absent=True)
+        if path.exists():
+            path.chmod(0o700)
+        else:
+            path.mkdir(mode=0o700)
+        actions.append(dict(path=str(path), before=prior, prepared=metadata(path)))
+    result = dict(host=host, before=before, actions=actions,
+                  claim='disposable state shapes and reversible preparation; no production observation or mutation',
+                  archon_memory='synthetic inactive input; actual selected unbound memory remains PENDING' if host == 'archon' else 'declared fixture role paths',
+                  fixture_control_state=str(f.state_dir))
+    control.write(f.root / 'production-layout.json', result)
+    return result
+
+
+def reverse_production_state_layout(f):
+    restored = []
+    for action in reversed(f.production_layout['actions']):
+        path, prior = Path(action['path']), action['before']
+        if prior.get('absent'):
+            path.rmdir()
+            require(not path.exists(), 'fixture created state parent was not removed after reverse')
+        else:
+            path.chmod(prior['mode'])
+            now = metadata(path)
+            require(all(now[key] == prior[key] for key in ('device', 'inode', 'uid', 'gid', 'mode')),
+                    'fixture layout reverse lost original directory identity/mode')
+        restored.append(dict(path=str(path), restored=prior))
+    result = dict(restored=restored, after_all_bootstrap_readers_joined=True, production_actions=0)
+    control.write(f.root / 'production-layout-reverse.json', result)
+    return result
+
+
 def production_effect_plan(f, images, host):
     """Actual raw /2 inputs and Go-published /3 groups, inside an owned fixture.
 
@@ -658,6 +753,7 @@ def production_effect_plan(f, images, host):
     bundle = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bundle)
     roster = production_roster(host)
+    coordinator_states, memory_states = production_state_paths(f, host)
     home = f.production_home
     require(f.root == home / '.local/share/cairn', 'production fixture must use actual private Cairn path shape')
     base = json.loads(f.coord.read_bytes())
@@ -678,7 +774,7 @@ def production_effect_plan(f, images, host):
     forward_client.write_bytes(images['api'].read_bytes())
     forward_client.chmod(0o500)
     legacy_parent = home / '.local/bin'
-    legacy_parent.mkdir(mode=0o755)
+    legacy_parent.mkdir(mode=0o755, exist_ok=True)
     legacy_client = legacy_parent / 'cairn'
     legacy_client.write_bytes(images['api'].read_bytes())
     legacy_client.chmod(0o755)
@@ -708,7 +804,7 @@ def production_effect_plan(f, images, host):
         control.write(f.active / name, {'opaque': 'original metadata-only archive; never a hook profile'})
     primary = 'codex-one' if host == 'proximal' else 'codex-archon' if host == 'archon' else None
     for name, harness, account, bound, group in roster:
-        state = f.state_dir if name == primary else f.root / ('state-' + name)
+        state = coordinator_states[name]
         if not (host == 'talos' and name == 'opencode-one'):
             state.mkdir(mode=0o700, exist_ok=True)
         profile = dict(base, harness=harness, cairn=str(legacy_client),
@@ -738,8 +834,9 @@ def production_effect_plan(f, images, host):
     for group, selected in groups.items():
         original_dir, bound = selected['directory'], selected['bound']
         old_memory = original_dir / 'memory.json'
-        memory_state = f.root / 'memory' if group == 'codex' else f.root / ('memory-' + group)
-        memory_state.mkdir(mode=0o700, exist_ok=True)
+        memory_state = memory_states[group]
+        if host != 'talos':
+            memory_state.mkdir(mode=0o700, exist_ok=True)
         memory = dict(harness=selected['harness'], cairn=str(legacy_client), socket=base['socket'],
                       token_file=base['token_file'], repo=base['repo'], state_dir=str(memory_state),
                       recall_mode='agent_tools', context_bytes=9500)
@@ -797,7 +894,10 @@ def production_effect_plan(f, images, host):
             archives=[member(directory / name) for name in archives],
             watch_lock=member(directory / '.watch.lock') if (directory / '.watch.lock').exists() else
                 dict(name='.watch.lock', type='absent', uid=0, gid=0, mode=0, device=0, inode=0),
-            credential_selectors=[str(f.host.token('worker'))], callbacks=[], associations=associations)
+            credential_selectors=[str(f.host.token('worker'))], callbacks=[], associations=associations,
+            **(dict(external_states=[dict(member='hermes-one.json', role='memory',
+                directory=str(memory_states['hermes']), identity=member(memory_states['hermes'], True))])
+                if host == 'proximal' else {}))
     target = plan(prepared, (), target_associations)
     target_path = f.root / 'target-bootstrap-plan.json'
     control.write(target_path, target)
@@ -809,6 +909,7 @@ def production_effect_plan(f, images, host):
     control.write(path, original)
     production_material.update(original_current=original['current'], target_current=target['current'],
         target_plan=to_go(target_path), original_plan=to_go(path),
+        layout=f.production_layout,
         target_unbound_receipts=[group['target_receipt'] for group in production_material['groups'] if not group['bound']],
         account_identities={str(home / account): metadata(home / account) for _, _, account, *_ in roster if account},
         state_paths={name: configs[name]['state_dir'] for name, *_ in roster})
@@ -832,6 +933,7 @@ def production_shape_fixture(cluster, images, root, host):
     f = control.Fixture(cluster, images['api'], home / '.local/share/cairn', 'r07_production_' + host + '_' + uuid.uuid4().hex[:8])
     try:
         f.production_home = home
+        f.production_layout = prepare_production_state_layout(f, host)
         f.retained(resume=True)
         control.transport(f, images['api'])
         path, pin = fixture_effect_plan(f, images, host, production_shape=True)
@@ -1126,10 +1228,13 @@ def production_shape_cases(cluster, images, root, host, *, kill_phase=None):
                       client_image_bytes=material['client_image']['bytes'], hook_image_bytes=material['hook_image']['bytes'],
                       systemd='privately captured observation fixture; no installed service qualification')
         control.write(root / 'production-result.json', result)
+        result['layout_reverse'] = reverse_production_state_layout(f)
+        control.write(root / 'production-result.json', result)
         # Retain selected receipts only; no credentials or raw original profiles.
         for name in ('production-material.json', 'effect-bootstrap-plan.json', 'target-bootstrap-plan.json',
                      'production-effect.argv.json', 'production-effect.stdout', 'production-effect.stderr',
-                     'production-effect.exit.json', 'production-effect-result.json', 'production-refusals.json', 'read-counts.json'):
+                     'production-effect.exit.json', 'production-effect-result.json', 'production-refusals.json', 'read-counts.json',
+                     'production-layout.json', 'production-layout-reverse.json'):
             path = f.root / name
             if path.exists():
                 shutil.copyfile(path, root / name)

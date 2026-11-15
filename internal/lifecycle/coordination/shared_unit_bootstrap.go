@@ -46,7 +46,15 @@ type UnitBootstrapPlan struct {
 	CredentialSelectors []string                                `json:"credential_selectors"`
 	Callbacks           json.RawMessage                         `json:"callbacks"`
 	Associations        map[string]BootstrapRetainedAssociation `json:"associations,omitempty"`
+	ExternalStates      []BootstrapExternalState                `json:"external_states,omitempty"`
 	Transition          *BootstrapTransition                    `json:"transition,omitempty"`
+}
+
+type BootstrapExternalState struct {
+	Member    string          `json:"member"`
+	Role      string          `json:"role"`
+	Directory string          `json:"directory"`
+	Identity  BootstrapMember `json:"identity"`
 }
 
 // Retained associations select the original /2 manifest and literal commands.
@@ -171,9 +179,13 @@ func readUnitBootstrapPlan(path, pin string) (*UnitBootstrapPlan, []*value.Value
 	if err := bootstrapExtensionKeys(tree); err != nil {
 		return nil, nil, err
 	}
-	if !(exactReceiptObject(tree, "schema", "root", "current", "archives", "watch_lock", "credential_selectors", "callbacks") ||
-		exactReceiptObject(tree, "schema", "root", "current", "archives", "watch_lock", "credential_selectors", "callbacks", "associations") ||
-		exactReceiptObject(tree, "schema", "root", "current", "archives", "watch_lock", "credential_selectors", "callbacks", "associations", "transition")) ||
+	fields := []string{"schema", "root", "current", "archives", "watch_lock", "credential_selectors", "callbacks"}
+	for _, optional := range []string{"associations", "external_states", "transition"} {
+		if tree.Get(optional) != nil {
+			fields = append(fields, optional)
+		}
+	}
+	if !exactReceiptObject(tree, fields...) ||
 		!exactReceiptObject(tree.Get("current"), "directory", "pins") {
 		return nil, nil, errors.New("bootstrap unknown or nonliteral plan field; serialized receipts are not accepted")
 	}
@@ -214,6 +226,9 @@ func readUnitBootstrapPlan(path, pin string) (*UnitBootstrapPlan, []*value.Value
 			}
 		}
 	}
+	if _, err := bootstrapStateDeclarations(&p); err != nil {
+		return nil, nil, err
+	}
 	callbacks := tree.Get("callbacks")
 	if callbacks == nil || callbacks.Kind != value.Array || len(callbacks.Items) > 256 {
 		return nil, nil, errors.New("D5 bootstrap callback census is unknown")
@@ -232,8 +247,19 @@ func readUnitBootstrapPlan(path, pin string) (*UnitBootstrapPlan, []*value.Value
 }
 
 func bootstrapExtensionKeys(tree *value.Value) error {
-	if value.SameText(tree.Get("schema"), "cairn.unit-bootstrap/1") && (tree.Get("associations") != nil || tree.Get("transition") != nil) {
+	if value.SameText(tree.Get("schema"), "cairn.unit-bootstrap/1") && (tree.Get("associations") != nil || tree.Get("transition") != nil || tree.Get("external_states") != nil) {
 		return errors.New("bootstrap /1 does not accept transition metadata")
+	}
+	if external := tree.Get("external_states"); external != nil {
+		if external.Kind != value.Array || len(external.Items) > 64 {
+			return errors.New("bootstrap external state declarations must be bounded and literal")
+		}
+		for _, state := range external.Items {
+			if !exactReceiptObject(state, "member", "role", "directory", "identity") ||
+				!exactReceiptObject(state.Get("identity"), "name", "type", "uid", "gid", "mode", "device", "inode") {
+				return errors.New("bootstrap external state requires an exact profile and directory identity")
+			}
+		}
 	}
 	if associations := tree.Get("associations"); associations != nil {
 		if associations.Kind != value.Object || len(associations.Members) > 32 {
@@ -307,12 +333,18 @@ type bootstrapRead struct {
 	paths           *watchCensusRead
 	accounts        map[string]bool
 	legacy          map[string]bootstrapLegacyObservation
+	externalStates  map[string]BootstrapExternalState
+	binaryDirs      map[string]bool
 }
 
 func (b *bootstrapRead) reference(path string) error {
 	if !compatibilityCanonical(path) || !censusWithin(b.plan.Root, path) {
 		return errors.New("bootstrap reference is outside the observed private root")
 	}
+	return b.ownedReference(path)
+}
+
+func (b *bootstrapRead) ownedReference(path string) error {
 	if err := b.paths.safePath(path, false); err != nil {
 		return err
 	}
@@ -437,6 +469,13 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 	names, _ := watchBindingNames(b.plan.Current.Pins)
 	states, memories := map[string]bool{}, map[string]bool{}
 	identities := map[string]bool{}
+	var affected []bootstrapAffectedState
+	b.binaryDirs = map[string]bool{}
+	if b.plan.Transition != nil {
+		for _, pin := range b.plan.Transition.Fence.Executables {
+			b.binaryDirs[filepath.Dir(pin.Path)] = true
+		}
+	}
 	for _, name := range names {
 		path := filepath.Join(b.plan.Current.Directory, name)
 		config, err := b.config(path)
@@ -474,15 +513,14 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 				return nil, err
 			}
 		}
-		for _, directory := range []string{nativeText(config.Get("state_dir")), nativeText(memory.Get("state_dir"))} {
-			if !compatibilityCanonical(directory) || !censusWithin(b.plan.Root, directory) {
-				return nil, errors.New("bootstrap affected state directory is outside observed root")
-			}
-			if err := b.guardState(directory); err != nil {
-				return nil, err
-			}
-		}
+		affected = append(affected,
+			bootstrapAffectedState{name, "coordination", nativeText(config.Get("state_dir"))},
+			bootstrapAffectedState{name, "memory", nativeText(memory.Get("state_dir"))})
 		binary := nativeText(config.Get("cairn"))
+		b.binaryDirs[filepath.Dir(binary)] = true
+		if selected := nativeText(manifest.Get("binary").Get("path")); selected != "" {
+			b.binaryDirs[filepath.Dir(selected)] = true
+		}
 		if originalLegacy {
 			if err := b.legacyExecutable(binary); err != nil {
 				return nil, err
@@ -515,6 +553,21 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 			mode = strings.Replace(mode, ":disabled-", ":enabled-", 1)
 		}
 		associations[name] = nativeText(manifest.Get("schema")) + mode
+	}
+	if err := b.selectStateRoots(affected); err != nil {
+		return nil, err
+	}
+	for directory := range states {
+		if err := b.guardState(directory); err != nil {
+			return nil, err
+		}
+	}
+	for directory := range memories {
+		if !states[directory] {
+			if err := b.guardState(directory); err != nil {
+				return nil, err
+			}
+		}
 	}
 	for directory := range states {
 		files, err := r.tree(directory)
@@ -935,6 +988,107 @@ func (b *bootstrapRead) retainedRuntime(manifest *value.Value, argvPin WatchCens
 		if tail[1] != expected {
 			return errors.New("bootstrap retained argv selects foreign profile")
 		}
+		if b.binaryDirs != nil {
+			b.binaryDirs[filepath.Dir(literal[0])] = true
+		}
+	}
+	return nil
+}
+
+type bootstrapAffectedState struct{ member, role, directory string }
+
+func bootstrapStateDeclarations(p *UnitBootstrapPlan) (map[string]BootstrapExternalState, error) {
+	declared := map[string]BootstrapExternalState{}
+	paths := map[string]bool{}
+	for _, root := range p.ExternalStates {
+		key := root.Member + ":" + root.Role
+		if p.Schema != "cairn.unit-bootstrap/2" || p.Current.Pins[root.Member] == "" ||
+			(root.Role != "coordination" && root.Role != "memory") || !compatibilityCanonical(root.Directory) ||
+			paths[root.Directory] || declared[key].Directory != "" || censusOverlap(root.Directory, p.Root) ||
+			root.Identity.Name != filepath.Base(root.Directory) || root.Identity.Type != "directory" ||
+			root.Identity.UID != uint32(os.Getuid()) || root.Identity.Mode != 0700 {
+			return nil, errors.New("bootstrap external state declaration is duplicated, overlapping or not profile-bound private state")
+		}
+		declared[key], paths[root.Directory] = root, true
+	}
+	return declared, nil
+}
+
+func bootstrapExternalStateAt(root BootstrapExternalState, observe func(string, syscall.Stat_t) error) error {
+	fd, err := bootstrapLegacyOpenObserved(root.Directory, observe)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+	var st syscall.Stat_t
+	if err := syscall.Fstat(fd, &st); err != nil {
+		return err
+	}
+	actual := BootstrapMember{Name: filepath.Base(root.Directory), Type: "directory", UID: st.Uid, GID: st.Gid,
+		Mode: st.Mode & 07777, Device: uint64(st.Dev), Inode: st.Ino}
+	if st.Mode&syscall.S_IFMT != syscall.S_IFDIR || actual != root.Identity {
+		return errors.New("bootstrap external state directory identity or private mode changed")
+	}
+	return nil
+}
+
+func (b *bootstrapRead) externalStateIdentity(root BootstrapExternalState) error {
+	err := bootstrapExternalStateAt(root, func(path string, st syscall.Stat_t) error {
+		key := "external-state-ancestor:" + root.Directory + ":" + path
+		fingerprint := fmt.Sprintf("%d:%d:%d:%d:%d", st.Dev, st.Ino, st.Mode, st.Uid, st.Gid)
+		if previous := b.drain.facts[key]; previous != "" && previous != fingerprint {
+			return errors.New("bootstrap external state ancestry changed during observation")
+		}
+		b.drain.facts[key] = fingerprint
+		return nil
+	})
+	if err == nil {
+		b.drain.facts["external-state:"+root.Directory] = fmt.Sprintf("%v", root.Identity)
+	}
+	return err
+}
+
+func (b *bootstrapRead) selectStateRoots(affected []bootstrapAffectedState) error {
+	declared, err := bootstrapStateDeclarations(b.plan)
+	if err != nil {
+		return err
+	}
+	b.externalStates = map[string]BootstrapExternalState{}
+	used := map[string]bool{}
+	for _, state := range affected {
+		if !compatibilityCanonical(state.directory) {
+			return errors.New("bootstrap affected state directory must be canonical")
+		}
+		if censusWithin(b.plan.Root, state.directory) {
+			continue
+		}
+		key := state.member + ":" + state.role
+		root, ok := declared[key]
+		if !ok || root.Directory != state.directory || used[key] {
+			return errors.New("bootstrap external state is not declared for this exact profile")
+		}
+		for _, other := range affected {
+			if (other.member != state.member || other.role != state.role) && censusOverlap(root.Directory, other.directory) {
+				return errors.New("bootstrap external state overlaps another affected state profile")
+			}
+		}
+		for home := range b.accounts {
+			if censusOverlap(root.Directory, home) {
+				return errors.New("bootstrap external state overlaps an account directory")
+			}
+		}
+		for directory := range b.binaryDirs {
+			if censusOverlap(root.Directory, directory) {
+				return errors.New("bootstrap external state overlaps a pinned binary directory")
+			}
+		}
+		if err := b.externalStateIdentity(root); err != nil {
+			return err
+		}
+		used[key], b.externalStates[root.Directory] = true, root
+	}
+	if len(used) != len(declared) {
+		return errors.New("bootstrap external state declaration does not select an affected profile")
 	}
 	return nil
 }
@@ -943,7 +1097,8 @@ func (b *bootstrapRead) guardState(directory string) error {
 	// Validate ancestors before WalkDir: walking only the leaf can otherwise
 	// traverse an intermediate symlink or writable parent before checking it.
 	parent := filepath.Dir(directory)
-	if err := b.paths.safePath(parent, true); err != nil {
+	_, external := b.externalStates[directory]
+	if err := b.paths.safePath(parent, !external); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(directory); err == nil {
@@ -982,6 +1137,9 @@ func (b *bootstrapRead) guardState(directory string) error {
 			}
 			b.drain.facts["bootstrap-state-lock:"+path] = fmt.Sprintf("%d:%d:%d:%d:%d:%d", st.Dev, st.Ino, st.Uid, st.Gid, st.Mode, st.Ctim.Nano())
 			return nil
+		}
+		if external {
+			return b.ownedReference(path)
 		}
 		return b.reference(path)
 	})
@@ -1064,6 +1222,11 @@ func (c *CLI) readBootstrapSelectionPhase(ctx context.Context, p *UnitBootstrapP
 	initial := maps.Clone(r.facts)
 	for account := range b.accounts {
 		if err := b.accountIdentity(account); err != nil {
+			return nil, nil, err
+		}
+	}
+	for _, root := range b.externalStates {
+		if err := b.externalStateIdentity(root); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -1205,6 +1368,14 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 	if len(p.Current.Pins) != len(target.Current.Pins) {
 		return errors.New("bootstrap transition must retain every selected binding name")
 	}
+	originalStates, err := bootstrapStateDeclarations(p)
+	if err != nil {
+		return err
+	}
+	targetStates, err := bootstrapStateDeclarations(target)
+	if err != nil || !maps.Equal(originalStates, targetStates) {
+		return errors.Join(err, errors.New("bootstrap transition changed an external state profile or directory identity"))
+	}
 	if len(target.Archives) != 0 || target.WatchLock.Type != "regular" {
 		return errors.New("bootstrap forward target must contain only immutable configs and its actual watcher lock")
 	}
@@ -1309,6 +1480,9 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 	tx, err := newBootstrapLegacyTransaction(originalPlan, path, operation)
 	if err != nil {
 		return err
+	}
+	if tx.prepared && len(tx.journal.Entries) > 0 {
+		result.Reconciliation = "retained legacy recovery data; preserve current manifests and re-establish stopped boundary before fresh rollback"
 	}
 	if operation == "switch" && tx.prepared {
 		for _, entry := range tx.journal.Entries {
@@ -1513,10 +1687,25 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 				return errors.New("bootstrap opened directory entry identity changed")
 			}
 		}
-		result.Rechecked = true
-		if e := unix.Renameat2(int(fd.Fd()), filepath.Base(active), int(fd.Fd()), filepath.Base(retained), unix.RENAME_EXCHANGE); e != nil {
+		renameFD, activeName, retainedName := int(fd.Fd()), filepath.Base(active), filepath.Base(retained)
+		if observe != nil {
+			if err := observe("before:commit"); err != nil {
+				return err
+			}
+		}
+		for _, root := range originalPlan.ExternalStates {
+			if err := bootstrapExternalStateAt(root, nil); err != nil {
+				return err
+			}
+		}
+		if err := fence.Recheck(ctx, t.Fence); err != nil {
+			return err
+		}
+		if e := unix.Renameat2(renameFD, activeName, renameFD, retainedName, unix.RENAME_EXCHANGE); e != nil {
+			result.Rechecked = true
 			return e
 		}
+		result.Rechecked = true
 		result.Published = true
 		result.Active = active
 		result.Retained = retained

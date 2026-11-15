@@ -70,6 +70,63 @@ state retain the generic private-parent rules. No HOME chmod is performed.
 Any installed writable ancestry needs its separately admitted narrow remediation;
 fixture-owned `0775` refusals and `0755` preparation do not establish readiness.
 
+The optional `/2` plan field `external_states` selects affected state resources,
+not authority. Each array entry has exactly `member`, `role`, `directory`, and
+`identity`. `member` is one selected coordinator JSON name; `role` is exactly
+`coordination` or `memory`; `directory` is the actual canonical absolute
+`state_dir`. `identity` has the same literal `name,type,uid,gid,mode,device,inode`
+fields as other directory identities, with type `directory`, this UID, and mode
+`0700` (decimal `448`). Both plans must select identical declarations and
+directory identities. `/1` plans cannot use this field.
+
+An external state root must be declared for exactly one member's role profile.
+It cannot equal, contain, or lie inside the private plan root, an account home,
+a pinned binary directory, or another affected state root. Every component is
+opened without following symlinks; ancestors must be root/user-owned with no
+group/other write, retaining the existing sticky-root exception. The leaf must
+actually be the pinned, user-owned `0700` directory without special bits. An
+unselected, duplicated, overlapping, replaced, foreign, indirect, or writable
+resource refuses. This exception applies only to state-file inspection beneath
+that verified root. Other profile/source/image/credential references retain
+their existing rules.
+
+For a declared external root, its parent uses the safe ancestor rule rather
+than an immediate-parent `0700` requirement. The state-directory walk still
+requires every visited directory to be `0700`; content pins, credential-alias
+exclusion, lock ownership, grants, sessions and authenticated D1–D6 reads are
+unchanged. External directory/ancestor identities are freshly checked around
+the API observation and again during commit preparation and reverse. Existing
+Hermes `~/.hermes/cairn/state` can therefore remain `0700` under its owned
+`0755` parent, without moving state or changing HOME.
+
+The runtime contracts permit that layout. Go coordination
+[`ValidateConfig`](../../internal/lifecycle/coordination/cli.go) requires an
+absolute `state_dir`; [`NewFileHost`](../../internal/lifecycle/coordination/file_host.go)
+derives session paths from it and
+[`AcquireSessionLock`](../../internal/lifecycle/coordination/locks.go) creates
+its parent with `0700`. Go memory activation
+[`DecideActivation`](../../internal/lifecycle/ledger/activation.go) checks an
+absolute, owner-controlled directory without a plan-root containment rule.
+Python coordination [`validate_config`](../../integrations/lifecycle/coordination.py)
+also requires an absolute selector; Python memory
+[`hook`](../../integrations/lifecycle/memory.py) creates its selected state
+directory with `0700`. Neither runtime requires the existing external parent
+to be private or the state to lie inside this bootstrap plan root. Their
+runtime code and the generic compatibility reader are unchanged.
+
+The disposable production-shape fixture records directory preparation and its
+reverse explicitly. Proximal's Cairn-owned `coordination/state` starts `0775`
+and archon's starts `0755`; their required prepared mode is `0700`, not `0755`.
+Talos starts without that parent or coordinator leaf and without the OpenCode
+memory state leaf; its `opencode-hooks` parent starts `0755`. Preparation creates
+only the missing owned `0700` parent and changes the required private parent to
+`0700`; reverse restores its exact original mode or absence after consumers
+join. Original talos coordination/bindings `0755` remains supported and is not
+normalized away. Shared `.local`/share/PATH ancestor preparation and reverses
+are separately recorded. HOME is never chmodded. The archon inactive memory
+fixture is explicitly synthetic until the actual unbound memory selection is
+known; fixture material does not establish an installed selector.
+
 An existing lock must be the same actual inode in both selections, linked during
 off-path preparation. Its exact exclusive flock is identified through
 `/proc/self/fdinfo`; other owners, waiters and ambiguous inode observations
@@ -175,10 +232,36 @@ A metadata-only pass checks both full layouts before opening the existing
 watcher lock. Authenticated drain reads then observe both complete selections
 while holding that exact flock. Immediately before
 exchange, both pinned plans, layouts, statuses, local state and associations
-are reread, the selected-unit fence is rechecked, and actual directory identities
-are checked again. The final read/action interval is not atomic with external
+are reread and actual directory identities are checked again. After all
+callbacks, descriptor opens, state/operand checks and rename-argument
+preparation, the same receipt performs a fresh same-scope `Recheck` immediately
+before `Renameat2(RENAME_EXCHANGE)`, in both directions. No work intervenes
+between the successful final recheck and the syscall. The final read/action
+interval is not atomic with external
 activity. Neither a quiet sample nor masks observed at two instants prove a
 host-wide future-writer barrier.
+
+A final recheck refusal performs zero namespace exchange and leaves the active
+directory identity intact. Earlier raw-manifest disable and recovery-journal
+effects can already exist; `published=false` does not mean zero earlier effects.
+The result retains that reconciliation state and never automatically re-enables
+hooks after writer reactivation. Re-establish the stopped boundary, then use
+the documented fresh `rollback` and verify exact raw originals. Deterministic
+tests inject late activation and generation changes after operand preparation
+in both directions, including prior enabled-manifest effects and recovery.
+
+Per-host fence inputs must preserve the API/relay transport used by D4. Do not
+select generic `/usr/bin/python3*` executables or the PATH binary currently
+serving proximal `cairn-api` or archon `cairn-relay`. Select exact retained
+watch/hook command identities and complete stopped-writer coverage, or propose
+dedicated private per-generation transport images before bootstrap. Those
+transport moves remain unselected operator actions. Talos' zero-unit proposal
+depends on the separately reviewed F4 fence change, nonempty executable
+selection and actual manager/transient/process checks. Stop and disable every
+selected activation trigger, retain previous enablement for reverse, and refuse
+any reactivation/generation drift. Bind the actual composed fence/head, fresh
+FINAL5 and final-image fixture/full11 receipts before R07 selection; older
+native evidence remains labelled with its original `886262cf` head.
 
 Linux `RENAME_EXCHANGE` publishes the pair, followed by parent fsync and complete
 D7 readback of both resulting selections. Results keep `published` separate

@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import check_r07_bootstrap_reverse as bootstrap
 from disposable_host import HostRefusal
@@ -294,6 +295,45 @@ if __name__ == '__main__':
 
 
 class ProductionShapeTests(BootstrapFixture):
+    def test_real_state_shapes_and_layout_reverse_without_home_changes(self):
+        for host in ('proximal', 'archon', 'talos'):
+            with self.subTest(host=host):
+                home = self.root / host
+                home.mkdir(mode=0o700 if host == 'archon' else 0o750)
+                for suffix in ('.local', '.local/share', '.local/share/cairn'):
+                    (home / suffix).mkdir(mode=0o700)
+                root = home / '.local/share/cairn'
+                active, state = root / 'bindings', root / 'state'
+                active.mkdir(mode=0o700)
+                state.mkdir(mode=0o700)
+                f = SimpleNamespace(root=root, production_home=home, active=active,
+                                    state_dir=state, state_path=state / 'session.json')
+                mode = stat.S_IMODE(home.stat().st_mode)
+                f.production_layout = bootstrap.prepare_production_state_layout(f, host)
+                coordinator, memory = bootstrap.production_state_paths(f, host)
+                parent = root / 'coordination/state'
+                prior = f.production_layout['before'][str(parent)]
+                self.assertEqual(stat.S_IMODE(parent.stat().st_mode), 0o700)
+                if host == 'talos':
+                    self.assertTrue(prior['absent'])
+                    self.assertFalse(coordinator['opencode-one'].exists())
+                    self.assertFalse(memory['opencode'].exists())
+                    self.assertEqual(stat.S_IMODE(memory['opencode'].parent.stat().st_mode), 0o700)
+                else:
+                    self.assertEqual(prior['mode'], 0o775 if host == 'proximal' else 0o755)
+                if host == 'proximal':
+                    external = memory['hermes']
+                    self.assertFalse(external.is_relative_to(root))
+                    self.assertEqual(stat.S_IMODE(external.stat().st_mode), 0o700)
+                    self.assertEqual(stat.S_IMODE(external.parent.stat().st_mode), 0o755)
+                    self.assertEqual(stat.S_IMODE(external.parent.parent.stat().st_mode), 0o700)
+                result = bootstrap.reverse_production_state_layout(f)
+                self.assertTrue(result['after_all_bootstrap_readers_joined'])
+                self.assertEqual(stat.S_IMODE(home.stat().st_mode), mode)
+                self.assertEqual(parent.exists(), host != 'talos')
+                if parent.exists():
+                    self.assertEqual(stat.S_IMODE(parent.stat().st_mode), prior['mode'])
+
     def test_owned_consumer_refuses_missing_matching_test_receipt(self):
         # Exit zero without matching/non-skipped test output is not coverage.
         class Host:
