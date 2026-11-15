@@ -291,6 +291,7 @@ type bootstrapRead struct {
 	drain       *watchDrainRead
 	credentials map[string]os.FileInfo
 	paths       *watchCensusRead
+	accounts    map[string]bool
 }
 
 func (b *bootstrapRead) reference(path string) error {
@@ -441,22 +442,15 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 		if !censusWithin(b.plan.Root, nativeText(config.Get("socket"))) {
 			return nil, errors.New("bootstrap API socket is outside observed private root")
 		}
-		if home := nativeText(config.Get("config_home")); home != "" {
-			if !censusWithin(b.plan.Root, home) {
-				return nil, errors.New("bootstrap configuration home is outside observed private root")
-			}
-			if err := b.paths.safePath(home, true); err != nil {
-				return nil, err
-			}
-		}
-		for _, ref := range []string{nativeText(config.Get("cairn"))} {
-			if err := b.reference(ref); err != nil {
-				return nil, err
-			}
-		}
 		manifest, memory, err := b.association(name, config)
 		if err != nil {
 			return nil, err
+		}
+		originalLegacy := b.plan.Schema == "cairn.unit-bootstrap/2" && value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/2")
+		if home := nativeText(config.Get("config_home")); home != "" {
+			if err := b.accountIdentity(home); err != nil {
+				return nil, err
+			}
 		}
 		for _, directory := range []string{nativeText(config.Get("state_dir")), nativeText(memory.Get("state_dir"))} {
 			if !compatibilityCanonical(directory) || !censusWithin(b.plan.Root, directory) {
@@ -467,11 +461,20 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 			}
 		}
 		binary := nativeText(config.Get("cairn"))
-		digest, err := compatibilityOpenedBinary(binary, uint32(os.Getuid()))
-		if err != nil {
-			return nil, err
+		if originalLegacy {
+			if err := b.legacyExecutable(binary); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := b.reference(binary); err != nil {
+				return nil, err
+			}
+			digest, err := compatibilityOpenedBinary(binary, uint32(os.Getuid()))
+			if err != nil {
+				return nil, err
+			}
+			r.facts["executable:"+binary] = digest
 		}
-		r.facts["executable:"+binary] = digest
 		r.configs = append(r.configs, config)
 		r.configPaths[config] = path
 		r.memories[config] = memory
@@ -651,12 +654,12 @@ func (b *bootstrapRead) association(name string, config *value.Value) (*value.Va
 	var memory *value.Value
 	matched := 0
 	selectedProfilePath := ""
-	homes := map[string]bool{}
+	var coordinators []*value.Value
 	for i, desc := range append([]*value.Value{manifest.Get("memory_config")}, coords.Items...) {
 		if !exactReceiptObject(desc, "path", "sha256") {
 			return nil, nil, errors.New("bootstrap retained profile descriptor unknown")
 		}
-		profile, err := b.pinned(WatchCensusPin{Path: nativeText(desc.Get("path")), SHA256: nativeText(desc.Get("sha256"))})
+		profile, err := b.legacyProfile(WatchCensusPin{Path: nativeText(desc.Get("path")), SHA256: nativeText(desc.Get("sha256"))})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -672,18 +675,20 @@ func (b *bootstrapRead) association(name string, config *value.Value) (*value.Va
 			return nil, nil, errors.New("bootstrap retained bound/unbound profiles differ")
 		}
 		if i > 0 {
-			home := nativeText(profile.Get("config_home"))
-			if homes[home] || home == "" || nativeText(profile.Get("state_dir")) == nativeText(memory.Get("state_dir")) {
+			coordinators = append(coordinators, profile)
+			if nativeText(profile.Get("state_dir")) == nativeText(memory.Get("state_dir")) {
 				return nil, nil, errors.New("bootstrap retained state/account identity ambiguous")
 			}
-			homes[home] = true
 			if nativeEqual(profile, config) {
 				matched++
 				selectedProfilePath = nativeText(desc.Get("path"))
 			}
 		}
 	}
-	if matched != 1 || !homes[nativeText(memory.Get("config_home"))] {
+	if err := bootstrapLegacyProfileHomes(coordinators); err != nil {
+		return nil, nil, err
+	}
+	if matched != 1 {
 		return nil, nil, errors.New("bootstrap retained profile does not select this exact current config")
 	}
 	if err := b.retainedRuntime(manifest, selected.Argv, selectedProfilePath); err != nil {
@@ -693,8 +698,8 @@ func (b *bootstrapRead) association(name string, config *value.Value) (*value.Va
 }
 
 func (b *bootstrapRead) current3(config, manifest *value.Value, selected BootstrapRetainedAssociation) (*value.Value, error) {
-	if selected.Receipt == nil || selected.Argv != (WatchCensusPin{}) || nativeText(config.Get("inbox_recall_binding")) != selected.Binding.Path {
-		return nil, errors.New("bootstrap current3 requires its actual bound compatibility selection")
+	if selected.Receipt == nil || selected.Argv != (WatchCensusPin{}) {
+		return nil, errors.New("bootstrap current3 requires its actual compatibility selection")
 	}
 	receipt, err := b.pinned(*selected.Receipt)
 	if err != nil {
@@ -714,6 +719,7 @@ func (b *bootstrapRead) current3(config, manifest *value.Value, selected Bootstr
 		return nil, errors.New("bootstrap current3 profile coverage unknown")
 	}
 	configPath := ""
+	var memory *value.Value
 	for i, desc := range append([]*value.Value{manifest.Get("memory_config")}, coords.Items...) {
 		if !exactReceiptObject(desc, "path", "sha256") {
 			return nil, errors.New("bootstrap current3 profile descriptor unknown")
@@ -721,6 +727,9 @@ func (b *bootstrapRead) current3(config, manifest *value.Value, selected Bootstr
 		profile, err := b.pinned(WatchCensusPin{Path: nativeText(desc.Get("path")), SHA256: nativeText(desc.Get("sha256"))})
 		if err != nil {
 			return nil, err
+		}
+		if i == 0 {
+			memory = profile
 		}
 		if i > 0 && nativeEqual(profile, config) {
 			if configPath != "" {
@@ -753,6 +762,15 @@ func (b *bootstrapRead) current3(config, manifest *value.Value, selected Bootstr
 	compat := &CompatibilityContext{Role: "coordination", Entrypoint: "coordination.py", ConfigPath: configPath, HookTimeout: 15, LaunchRoot: filepath.Dir(selected.Receipt.Path), Shell: "/bin/sh", Receipt: receipt, Profile: b.drain.cli.profile()}
 	if err := compat.VerifyReceipt(b.drain.cli.profile()); err != nil {
 		return nil, err
+	}
+	if nativeNone(config.Get("inbox_recall_binding")) {
+		if err := compat.UnboundProfiles(b.drain.cli.profile()); err != nil {
+			return nil, err
+		}
+		return memory, nil
+	}
+	if nativeText(config.Get("inbox_recall_binding")) != selected.Binding.Path {
+		return nil, errors.New("bootstrap current3 bound profile selects another manifest")
 	}
 	return b.drain.disabledBinding(config)
 }
@@ -946,6 +964,11 @@ func (c *CLI) readBootstrapSelection(ctx context.Context, p *UnitBootstrapPlan, 
 		}
 	}
 	initial := maps.Clone(r.facts)
+	for account := range b.accounts {
+		if err := b.accountIdentity(account); err != nil {
+			return nil, nil, err
+		}
+	}
 	if err := b.layout(); err != nil {
 		return nil, nil, err
 	}
