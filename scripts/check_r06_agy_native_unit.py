@@ -1780,9 +1780,9 @@ def scale_selection_facts(root,selection,credential_paths):
             'scale profile changed during read')
         require(hashlib.sha256(raw).hexdigest()==selection['Pins'][name],'scale profile pin changed')
         config=json.loads(raw,object_pairs_hook=admission_pairs)
-        require(type(config) is dict and 'inbox_recall_binding' in config and
+        require(type(config) is dict and
             type(config.get('harness')) is str and config['harness'],'scale profile shape is incomplete')
-        binding=config['inbox_recall_binding']
+        binding=config.get('inbox_recall_binding')
         require(binding is None or type(binding) is str and binding,'scale profile binding type differs')
         profiles.append(dict(pin=dict(Path=str(path),SHA256=selection['Pins'][name]),
             harness=config['harness'],unbound=binding is None,config_home=config.get('config_home')))
@@ -1811,15 +1811,16 @@ def unit_scale_input_facts(root,selection,memories,credential_paths):
     for name,pin in sorted(selection['Pins'].items()):
         require(Path(name).name==name and name.endswith('.json'),'unit scale member name differs')
         config,actual=fixture_source_json(directory/name,root,credential_paths,dict(Path=str(directory/name),SHA256=pin))
-        require('inbox_recall_binding' in config and (config['inbox_recall_binding'] is None or
-            type(config['inbox_recall_binding']) is str and config['inbox_recall_binding']),
+        require(type(config) is dict,'unit scale profile shape is incomplete')
+        binding=config.get('inbox_recall_binding')
+        require(binding is None or type(binding) is str and binding,
             'unit scale binding selector differs')
-        if config['inbox_recall_binding'] is not None:
+        if binding is not None:
             require(config.get('harness') in ('codex','claude') and config.get('native_delivery') is True,
                 'unit scale bound profile must retain supported harness and native_delivery=true')
             require(not list(Path(home(config)).iterdir()),'unit scale requires an empty bound account without native readback')
         account=home(config);require(account not in homes,'unit scale coordinator homes are not distinct')
-        homes.add(account);profiles.append(dict(pin=actual,config_home=account,unbound=config['inbox_recall_binding'] is None))
+        homes.add(account);profiles.append(dict(pin=actual,config_home=account,unbound=binding is None))
     unbound=sum(row['unbound'] for row in profiles)
     require(unbound==3 and len(profiles)-unbound==8,'unit scale requires eight bound PLUS three unbound')
     require(type(memories) is list and len(memories)==9,'unit scale memory group inventory differs')

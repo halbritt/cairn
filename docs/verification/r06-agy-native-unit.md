@@ -271,7 +271,11 @@ enforcement is recorded separately and remains port-based; this audit does not e
 ## Validation, custody and remaining scope
 
 `scale_selection_facts` observes the actual pinned JSON selection inventory:
-eight profiles, including exactly three null/unbound profiles. Credential
+eight total profiles, including exactly three unbound profiles with an absent
+or JSON `null` binding selector. Empty strings, booleans, numbers, arrays and
+objects remain invalid selectors; a bound selector must be a nonempty string.
+Reading these inputs preserves the producer's omitted keys and original pins.
+Credential
 inode aliases, symlinks, changed pins and omitted or extra JSON members refuse.
 This input observation always reports `NativePASS=false` and
 `complete_unit_qualified=false`. It does not establish genuine producer
@@ -347,7 +351,8 @@ remain unrun in that phase. Overall C qualification stays open.
 
 The corrected unit-control qualification is explicitly
 `UNIT_CONTROL_SCALE_FIXTURE_SHAPE`: **eight bound coordinator bindings plus
-three unbound profiles, eleven total**. It uses the maintained R02/R04
+three unbound profiles, eleven total**. An absent binding selector and JSON
+`null` both mean unbound, as in the underlying Go contract. It uses the maintained R02/R04
 producer with a three-coordinator unbound receipt group and eight bound
 groups. Every coordination and memory profile declares a private owned 0700
 `config_home` inside `catalog.Root`. These are observed synthetic fixture

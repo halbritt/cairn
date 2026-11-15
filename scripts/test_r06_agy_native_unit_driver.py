@@ -510,6 +510,27 @@ class ScaleSelectionTests(unittest.TestCase):
         self.assertEqual(len(facts['profiles']),8)
         self.assertFalse(facts['NativePASS']);self.assertFalse(facts['complete_unit_qualified'])
 
+    def test_omitted_unbound_selectors_equal_null_without_rewriting_inputs(self):
+        for i in range(3):
+            path=self.directory/f'member-{i}.json';config=json.loads(path.read_bytes())
+            config.pop('inbox_recall_binding');path.chmod(0o600)
+            path.write_text(json.dumps(config));path.chmod(0o400)
+            self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+        before=copy.deepcopy(self.selection);raw={p:p.read_bytes() for p in self.directory.iterdir()}
+        facts=self.facts()
+        self.assertEqual(facts['unbound_count'],3);self.assertEqual(facts['binding_count'],8)
+        self.assertEqual(self.selection,before);self.assertEqual(raw,{p:p.read_bytes() for p in raw})
+        self.assertTrue(all('inbox_recall_binding' not in json.loads(raw[self.directory/f'member-{i}.json']) for i in range(3)))
+        self.assertFalse(facts['NativePASS']);self.assertFalse(facts['complete_unit_qualified'])
+
+    def test_invalid_binding_types_and_empty_string_still_refuse(self):
+        path=self.directory/'member-0.json'
+        for binding in (False,True,0,1,'',[],{},['bound'],{'path':'bound'}):
+            path.chmod(0o600);path.write_text(json.dumps(dict(harness='unit-only',inbox_recall_binding=binding)))
+            path.chmod(0o400);self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+            with self.subTest(binding=binding),self.assertRaisesRegex(driver.Refused,'binding type'):
+                self.facts()
+
     def test_omitted_or_extra_selected_member_refuses(self):
         omitted=copy.deepcopy(self.selection)
         self.selection['Pins'].pop('member-7.json')
@@ -566,6 +587,25 @@ class UnitScaleShapeTests(unittest.TestCase):
         self.assertEqual(facts['kind'],'UNIT_CONTROL_SCALE_FIXTURE_SHAPE')
         self.assertEqual(len(facts['memories']),9);self.assertFalse(facts['NativePASS'])
         self.assertFalse(facts['complete_unit_qualified'])
+
+    def test_omitted_unbound_selectors_preserve_eleven_member_shape_and_pins(self):
+        for i in range(3):
+            path=self.directory/f'coord-{i:02}.json';config=json.loads(path.read_bytes());config.pop('inbox_recall_binding')
+            path.chmod(0o600);path.write_text(json.dumps(config));path.chmod(0o400)
+            self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+        before=copy.deepcopy(self.selection);raw={p:p.read_bytes() for p in self.directory.iterdir()}
+        facts=self.facts()
+        self.assertEqual((facts['bound_count'],facts['unbound_count'],facts['binding_count']),(8,3,11))
+        self.assertEqual(self.selection,before);self.assertEqual(raw,{p:p.read_bytes() for p in raw})
+        self.assertFalse(facts['NativePASS']);self.assertFalse(facts['complete_unit_qualified'])
+
+    def test_invalid_binding_types_and_empty_string_still_refuse(self):
+        path=self.directory/'coord-00.json';original=json.loads(path.read_bytes())
+        for binding in (False,True,0,1,'',[],{},['bound'],{'path':'bound'}):
+            path.chmod(0o600);path.write_text(json.dumps(dict(original,inbox_recall_binding=binding)))
+            path.chmod(0o400);self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+            with self.subTest(binding=binding),self.assertRaisesRegex(driver.Refused,'binding selector'):
+                self.facts()
 
     def test_eight_total_or_extra_or_omitted_member_is_not_full_scale(self):
         original=copy.deepcopy(self.selection)
@@ -647,13 +687,14 @@ class SourceAdapterTests(unittest.TestCase):
         with self.assertRaises(driver.Refused):driver.production_fixture_plan(self.root)
         with self.assertRaises(driver.Refused):driver.production_fixture_plan(self.root/('long'*35))
 
-    def material(self):
+    def material(self,*,omit_unbound=False):
         directory=self.root/'bindings';directory.mkdir(mode=0o700)
         token=self.root/'unit.token';token.write_bytes(b'UNIT credential; never read');token.chmod(0o400)
         selection=dict(directory=str(directory),pins={});groups=[]
         for i in range(8):
             name=f'member-{i}.json';path=directory/name
             value=dict(harness='unit-only',inbox_recall_binding=None if i<3 else 'UNIT-bound')
+            if omit_unbound and i<3:value.pop('inbox_recall_binding')
             if i>=3:value['config_home']=str(self.root/f'account-{i}')
             driver.write_json(path,value);selection['pins'][name]=driver.checked_pin(path)['SHA256']
             groups.append(dict(name=f'unit-{i}',bound=i>=3,members=[name],
@@ -678,6 +719,18 @@ class SourceAdapterTests(unittest.TestCase):
         self.assertFalse(observed['NativePASS']);self.assertFalse(observed['complete_unit_qualified'])
         with self.assertRaisesRegex(driver.Refused,'config_home'):driver.require_scale_census_inputs(observed)
         self.assertEqual(before,{p:driver.checked_pin(p) for p in before})
+
+    def test_omitted_key_material_observation_preserves_pins_and_missing_home_refusal(self):
+        args=self.material(omit_unbound=True)
+        paths=list((self.root/'bindings').iterdir())+[self.root/'production-material.json',args[1],self.root/'target.json']
+        before={p:p.read_bytes() for p in paths};pins={p:driver.checked_pin(p) for p in paths}
+        observed=driver.production_material_inputs(*args)
+        self.assertEqual((observed['facts']['binding_count'],observed['facts']['unbound_count']),(8,3))
+        self.assertEqual(len(observed['target_unbound_receipts']),3)
+        self.assertEqual(len(observed['census_boundaries']),3)
+        with self.assertRaisesRegex(driver.Refused,'config_home'):driver.require_scale_census_inputs(observed)
+        self.assertEqual(before,{p:p.read_bytes() for p in paths});self.assertEqual(pins,{p:driver.checked_pin(p) for p in paths})
+        self.assertFalse(observed['NativePASS']);self.assertFalse(observed['complete_unit_qualified'])
 
     def test_material_mismatched_plan_or_unbound_members_refuses(self):
         args=self.material()
