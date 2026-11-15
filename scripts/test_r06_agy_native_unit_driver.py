@@ -23,6 +23,188 @@ from unittest.mock import patch
 import check_r06_agy_native_unit as driver
 
 
+class ClientDirectoryProbeTests(unittest.TestCase):
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-probe-audit-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup);self.root=Path(temporary.name)
+        self.directory=self.root/'client';self.directory.mkdir(mode=0o700)
+        self.image=self.directory/'native-agy';self.image.write_bytes(b'UNIT-only owned client');self.image.chmod(0o500)
+        self.capture=dict(Process=dict(PID=200),Client=driver.checked_pin(self.image),ClientArgv=[str(self.image)])
+
+    def raw(self,events):
+        path=json.dumps(str(self.image))
+        return (f'200 execve({path}, [{path}], 0x0 /* UNIT */) = 0\n'+events+
+                '200 +++ exited with 0 +++\n').encode()
+
+    def updater_raw(self,events='',*,argv=None,parent_events='',exit_code=0):
+        path=str(self.image)
+        argv=argv or [path,'--bg-updater','--app_data_dir=antigravity-cli','--gemini_dir=.gemini']
+        return self.raw(parent_events+'200 fork() = 201\n'+
+            f'201 execve({json.dumps(path)}, {json.dumps(argv)}, 0x0 /* UNIT */) = 0\n'+events+
+            (f'201 +++ exited with {exit_code} +++\n' if exit_code is not None else ''))
+
+    def scope(self,raw,*,kernel=True,disabled=True,final=True):
+        calls,_=driver.kernel_calls(raw)
+        return driver.client_execution_scope(raw,calls,self.capture,
+            kernel_enforced=kernel,updater_disabled=disabled,final=final)
+
+    def file_audit(self,raw):
+        owner=SimpleNamespace(network_policy=dict(tcp_ports=[]),_kernel_updater_disabled=True)
+        with patch.object(driver,'verified_kernel_policy',return_value=True):
+            return driver.audit_client_directory(raw,self.capture,self.root,self.root,final=True,enforcement=owner)
+
+    def test_exact_updater_requires_kernel_and_disabled_updater_and_final_zero_join(self):
+        self.assertEqual(self.scope(self.updater_raw())['updater'],201)
+        for change in (dict(kernel=False),dict(disabled=False)):
+            with self.subTest(change=change),self.assertRaises(driver.Refused):self.scope(self.updater_raw(),**change)
+        for code in (1,None):
+            with self.subTest(exit=code),self.assertRaises(driver.Refused):self.scope(self.updater_raw(exit_code=code))
+        self.assertEqual(self.scope(self.updater_raw(exit_code=None),final=False)['updater'],201)
+
+    def test_altered_reordered_extra_updater_argv_and_path_refuse(self):
+        path=str(self.image)
+        for argv in ([path,'--bg-updater'],[path,'--bg-updater','--app_data_dir=other','--gemini_dir=.gemini'],
+                [path,'--bg-updater','--gemini_dir=.gemini','--app_data_dir=antigravity-cli'],
+                [path,'--bg-updater','--app_data_dir=antigravity-cli','--gemini_dir=.gemini','extra']):
+            with self.subTest(argv=argv),self.assertRaises(driver.Refused):self.scope(self.updater_raw(argv=argv))
+        raw=self.updater_raw().replace(('execve('+json.dumps(path)).encode(),('execve('+json.dumps(path+'-other')).encode())
+        with self.assertRaises(driver.Refused):self.scope(raw)
+
+    def test_callback_parent_second_updater_recursive_or_second_exec_refuse(self):
+        path=json.dumps(str(self.image));argv=json.dumps([str(self.image),'--bg-updater','--app_data_dir=antigravity-cli','--gemini_dir=.gemini'])
+        for events in (
+                f'200 fork() = 202\n202 execve({path}, {argv}, 0x0) = 0\n202 +++ exited with 0 +++\n',
+                f'201 fork() = 202\n202 execve({path}, {argv}, 0x0) = 0\n202 +++ exited with 0 +++\n',
+                '201 execve("/bin/true", ["/bin/true"], 0x0) = 0\n'):
+            with self.subTest(events=events),self.assertRaises(driver.Refused):self.scope(self.updater_raw(events))
+        raw=self.raw(f'200 fork() = 202\n202 fork() = 201\n201 execve({path}, {argv}, 0x0) = 0\n'
+            '201 +++ exited with 0 +++\n202 +++ exited with 0 +++\n')
+        with self.assertRaises(driver.Refused):self.scope(raw)
+
+    def test_updater_descendant_nonzero_or_unjoined_and_second_version_refuse(self):
+        path=json.dumps(str(self.image));version=json.dumps([str(self.image),'--version'])
+        for tail in ('','202 +++ exited with 1 +++\n'):
+            raw=self.updater_raw(f'201 fork() = 202\n202 execve({path}, {version}, 0x0) = 0\n'+tail)
+            with self.assertRaises(driver.Refused):self.scope(raw)
+        raw=self.updater_raw(f'201 fork() = 202\n202 execve({path}, {version}, 0x0) = 0\n202 +++ exited with 0 +++\n'
+            f'201 fork() = 203\n203 execve({path}, {version}, 0x0) = 0\n203 +++ exited with 0 +++\n')
+        with self.assertRaises(driver.Refused):self.scope(raw)
+
+    def test_zero_byte_probe_write_through_dup_or_fork_alias_refuses(self):
+        probe=json.dumps(str(self.directory/'.update_test123'))
+        for events in ('200 dup(5) = 6\n200 write(6, "x", 1) = 1\n',
+                '200 fork() = 201\n201 write(5, "x", 1) = 1\n201 +++ exited with 0 +++\n'):
+            raw=self.raw(f'200 openat(AT_FDCWD, {probe}, O_RDWR|O_CREAT|O_EXCL, 0600) = 5\n'+events+
+                f'200 close(5) = 0\n200 unlink({probe}) = 0\n')
+            with self.subTest(events=events),self.assertRaises(driver.Refused):self.file_audit(raw)
+
+    def test_persistent_nonmatching_rename_link_and_unresolved_dirfd_refuse(self):
+        probe=json.dumps(str(self.directory/'.update_test123'));image=json.dumps(str(self.image))
+        for events in (
+                f'200 openat(AT_FDCWD, {probe}, O_RDWR|O_CREAT|O_EXCL, 0600) = 5\n200 close(5) = 0\n',
+                f'200 openat(AT_FDCWD, {json.dumps(str(self.directory/"other"))}, O_RDWR|O_CREAT|O_EXCL, 0600) = 5\n',
+                f'200 rename({probe}, {image}) = 0\n',f'200 link({image}, "/outside") = 0\n',
+                '200 openat(99, ".update_test123", O_RDWR|O_CREAT|O_EXCL, 0600) = 5\n'):
+            with self.subTest(events=events),self.assertRaises(driver.Refused):self.file_audit(self.raw(events))
+
+    def test_failed_absence_probes_are_updater_only_and_exact_names_flags_errno(self):
+        for name in ('.new','.new.tar.gz'):
+            path=json.dumps(str(self.directory/name))
+            for flag in ('0','AT_REMOVEDIR'):
+                events=f'201 unlinkat(AT_FDCWD, {path}, {flag}) = -1 ENOENT (No such file or directory)\n'
+                report=self.file_audit(self.updater_raw(events))
+                self.assertEqual(report['failed_absence_probes'][0]['label'],'FAILED_ABSENCE_PROBE')
+                self.assertFalse(report['failed_absence_probes'][0]['mutation'])
+            for result in ('0','-1 EACCES (Permission denied)'):
+                with self.assertRaises(driver.Refused):self.file_audit(self.updater_raw(
+                    f'201 unlinkat(AT_FDCWD, {path}, 0) = {result}\n'))
+            for events in (f'201 unlink({path}) = -1 ENOENT (No such file or directory)\n',
+                    f'201 unlinkat(AT_FDCWD, {path}, AT_SYMLINK_NOFOLLOW) = -1 ENOENT (No such file or directory)\n',
+                    f'201 openat(AT_FDCWD, {path}, O_RDONLY) = -1 ENOENT (No such file or directory)\n',
+                    f'200 unlinkat(AT_FDCWD, {path}, 0) = -1 ENOENT (No such file or directory)\n',
+                    f'201 openat(AT_FDCWD, {path}, O_CREAT|O_EXCL|O_WRONLY, 0600) = 5\n'):
+                with self.subTest(events=events),self.assertRaises(driver.Refused):self.file_audit(self.updater_raw(events))
+        with self.assertRaises(driver.Refused):self.file_audit(self.updater_raw(
+            f'201 unlinkat(AT_FDCWD, {json.dumps(str(self.directory/"third"))}, 0) = -1 ENOENT (No such file or directory)\n'))
+
+    def test_resolved_owned_dirfd_absence_probe_and_unresolved_fd(self):
+        directory=json.dumps(str(self.directory))
+        events=f'201 openat(AT_FDCWD, {directory}, O_RDONLY|O_DIRECTORY) = 5\n'
+        events+='201 unlinkat(5, ".new", 0) = -1 ENOENT (No such file or directory)\n201 close(5) = 0\n'
+        self.assertEqual(len(self.file_audit(self.updater_raw(events))['failed_absence_probes']),1)
+        with self.assertRaises(driver.Refused):self.file_audit(self.updater_raw(
+            '201 unlinkat(99, ".new", 0) = -1 ENOENT (No such file or directory)\n'))
+
+    def test_owner_mode_and_binary_metadata_mutation_operations_refuse(self):
+        for operation in (f'chown({json.dumps(str(self.image))}, 1234, 1234)',
+                f'chmod({json.dumps(str(self.image))}, 0700)',
+                f'utimensat(AT_FDCWD, {json.dumps(str(self.image))}, NULL, 0)'):
+            with self.subTest(operation=operation),self.assertRaises(driver.Refused):
+                self.file_audit(self.raw('200 '+operation+' = 0\n'))
+
+    def test_actual_binary_mode_or_inode_replacement_refuses_and_still_joins(self):
+        for action in ('mode','inode'):
+            with self.subTest(action=action),tempfile.TemporaryDirectory(prefix='cairn-binary-guard-',dir=Path.home()/'.cache') as temporary:
+                root=Path(temporary);directory=root/'client';directory.mkdir(mode=0o700)
+                image=directory/'native-agy';shutil.copyfile(sys.executable,image);image.chmod(0o500)
+                child=driver.OwnedKernelTrace([str(image),'-I','-S','-B','-c','import sys;sys.stdin.buffer.read()'],root)
+                if action=='mode':image.chmod(0o700)
+                else:
+                    image.rename(root/'original-image');shutil.copyfile(sys.executable,image);image.chmod(0o500)
+                with self.assertRaisesRegex(driver.Refused,'identity'):child.verify_client()
+                child.process.communicate(b'',timeout=10)
+                with self.assertRaisesRegex(driver.Refused,'identity'):child.close()
+                self.assertTrue(child.cleanup['all_absent']);self.assertEqual(child.cleanup['forced_signals'],[])
+
+    def test_zero_byte_probe_from_a_causal_child_has_one_complete_lifecycle(self):
+        probe=json.dumps(str(self.directory/'.update_test123'))
+        raw=self.raw('200 fork() = 201\n'
+            f'201 openat(AT_FDCWD, {probe}, O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 5\n'
+            f'201 close(5) = 0\n201 unlink({probe}) = 0\n201 +++ exited with 0 +++\n')
+        result=driver.audit_client_directory(raw,self.capture,self.root,self.root,final=True)
+        self.assertFalse(result['NativePASS']);self.assertEqual(len(result['probes']),1)
+        self.assertEqual(result['probes'][0]['path'],str(self.directory/'.update_test123'))
+        self.assertEqual(result['probes'][0]['written_bytes'],0)
+
+    def test_zero_byte_probe_removal_keeps_the_owned_client_identity(self):
+        with tempfile.TemporaryDirectory(prefix='cairn-client-probe-',dir=Path.home()/'.cache') as temporary:
+            root=Path(temporary);directory=root/'client';directory.mkdir(mode=0o700)
+            image=directory/'native-agy';shutil.copyfile(sys.executable,image);image.chmod(0o500)
+            code=('import os,sys;from pathlib import Path;sys.stdin.buffer.read(1);'
+                  'p=Path(sys.executable).parent/".update_test123";'
+                  'fd=os.open(p,os.O_RDWR|os.O_CREAT|os.O_EXCL,0o600);os.close(fd);p.unlink()')
+            child=driver.OwnedKernelTrace([str(image),'-I','-S','-B','-c',code],root)
+            try:child.process.communicate(b'x',timeout=15)
+            finally:child.close()
+            self.assertEqual(child.cleanup['exit'],0)
+            self.assertTrue(child.cleanup['all_absent']);self.assertEqual(child.cleanup['forced_signals'],[])
+            self.assertEqual(sorted(p.name for p in directory.iterdir()),['native-agy'])
+            self.assertEqual(driver.checked_pin(image)['SHA256'],driver.tool_pin(Path(sys.executable).resolve())['SHA256'])
+
+    def test_real_standin_executes_exact_updater_version_and_failed_absence_syscalls(self):
+        with tempfile.TemporaryDirectory(prefix='cairn-standin-parity-',dir=Path.home()/'.cache') as temporary:
+            root=Path(temporary)
+            approved=dict(rehearsal=dict(catalog_root=str(root)),
+                tools=dict(python3=driver.tool_pin(Path(sys.executable).resolve())))
+            client=driver.stage_scripted_client(approved)
+            code=('import subprocess,sys;sys.stdin.buffer.read(1);'
+                  'p=subprocess.run([sys.executable,"--bg-updater","--app_data_dir=antigravity-cli","--gemini_dir=.gemini"],'
+                  'capture_output=True,timeout=15);assert p.returncode==0,p.stderr')
+            env=dict(os.environ,AGY_CLI_DISABLE_AUTO_UPDATE='1')
+            child=driver.OwnedKernelTrace([client['pin']['Path'],'-I','-S','-B','-c',code],root,env=env)
+            try:child.process.communicate(b'x',timeout=20)
+            finally:child.close()
+            self.assertEqual(child.cleanup['exit'],0)
+            self.assertTrue(child.cleanup['all_absent']);self.assertFalse(child.cleanup['forced_signals'])
+            self.assertEqual(len(child.client_file_audit['probes']),1)
+            rows=child.client_file_audit['failed_absence_probes']
+            self.assertEqual({(r['name'],r['flags'],r['mutation']) for r in rows},
+                {(name,flag,False) for name in ('.new','.new.tar.gz') for flag in ('0','AT_REMOVEDIR')})
+            audit=driver.audit_host_connections(child.trace.read_bytes(),child.generation,root,
+                ports=set(),unix_paths=[],enforcement=child)
+            self.assertIsNotNone(audit['updater_pid']);self.assertIsNotNone(audit['version_pid'])
+
+
 class HostConnectAuditTests(unittest.TestCase):
     """Synthetic refusal corpus plus one real owned multigeneration client."""
     def setUp(self):
@@ -278,7 +460,8 @@ print(json.dumps(code))
         child.pidfd,child.pid,child.generation=12345,200,self.capture
         child.image=self.capture['Client'];child.client_parent=None
         info=self.image.lstat()
-        child.image_identity=(info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,info.st_size)
+        child.image_identity=(info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,info.st_size,
+                              info.st_mtime_ns,info.st_ctime_ns)
         changed=copy.deepcopy(self.capture);changed['Process']['Start']='2'
         with patch.object(driver.collector,'capture_owned_generation',return_value=changed):
             with self.assertRaisesRegex(driver.Refused,'generation changed'):child.capture_generation()
@@ -851,6 +1034,13 @@ for action,name in request:
     elif action=='replace':
         temporary=path.with_name('actor-replacement');temporary.write_bytes(path.read_bytes())
         os.replace(temporary,path)
+    elif action=='probe':
+        probe=path/'.update_test123'
+        fd=os.open(probe,os.O_CREAT|os.O_EXCL|os.O_RDWR,0o600);os.close(fd);probe.unlink()
+    elif action=='vendor-config':
+        temporary=path/'config.json.11111111-1111-4111-8111-111111111111.tmp'
+        temporary.write_bytes(b'owned nonnative vendor configuration\\n')
+        os.replace(temporary,path/'config.json')
 print('joined owned stand-in')
 '''
     def setUp(self):
@@ -869,7 +1059,7 @@ print('joined owned stand-in')
         for path in [self.root/'kernel.trace',self.root/'kernel.stderr',internal/'data']:path.write_bytes(b'initial bytes\n')
         self.fixture=SimpleNamespace(root=self.root,home=home,account=account,work=work,
             unit=dict(Credential=str(token),ConfigRoot=str(config)),host=SimpleNamespace(home=api))
-        self.session=SimpleNamespace(child=SimpleNamespace(trace=self.root/'kernel.trace'))
+        self.session=SimpleNamespace(child=SimpleNamespace(trace=self.root/'kernel.trace',verify_client=lambda:None))
 
     def actor(self,actions):
         result=subprocess.run([sys.executable,'-I','-S','-B','-c',self.ACTOR],
@@ -878,6 +1068,48 @@ print('joined owned stand-in')
         self.assertIn('joined owned stand-in',result.stdout)
 
     def snapshot(self):return driver.live_root_snapshot(self.fixture,self.session)
+
+    def test_removed_zero_byte_client_probe_preserves_live_protected_snapshot(self):
+        directory=self.root/'client';directory.mkdir(mode=0o700)
+        image=directory/'native-agy';image.write_bytes(b'owned stand-in image');image.chmod(0o500)
+        before=self.snapshot();self.actor([('probe',directory)]);after=self.snapshot()
+        driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
+        self.assertEqual(before['rows'][str(image)],after['rows'][str(image)])
+
+    def test_only_characterized_vendor_config_churn_is_mutable(self):
+        before=self.snapshot();self.actor([('vendor-config',self.fixture.account)]);after=self.snapshot()
+        driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
+        self.assertIn(str(self.fixture.account/'config.json'),after['vendor_files'])
+        hooks=self.fixture.account/'hooks.json'
+        self.assertEqual(before['rows'][str(hooks)],after['rows'][str(hooks)])
+        for name in ('another.json','config.json.not-a-uuid.tmp','.cairn-unknown'):
+            before=self.snapshot();(self.fixture.account/name).write_bytes(b'protected unexpected file')
+            after=self.snapshot()
+            with self.assertRaisesRegex(driver.Refused,'protected'):
+                driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
+            (self.fixture.account/name).unlink()
+
+    def test_vendor_config_symlink_and_credential_hardlink_refuse_without_content_read(self):
+        target=self.fixture.account/'mcp_config.json'
+        target.symlink_to(self.fixture.unit['Credential'])
+        with self.assertRaisesRegex(driver.Refused,'unsafe mutable vendor'):self.snapshot()
+        target.unlink();os.link(self.fixture.unit['Credential'],target)
+        with self.assertRaisesRegex(driver.Refused,'unsafe mutable vendor'):self.snapshot()
+
+    def test_client_directory_inode_mode_and_persistent_entry_stay_protected(self):
+        directory=self.root/'client';directory.mkdir(mode=0o700)
+        (directory/'native-agy').write_bytes(b'owned unit image')
+        for name in ('.update_test123','other'):
+            (directory/name).write_bytes(b'')
+            with self.assertRaisesRegex(driver.Refused,'client directory'):self.snapshot()
+            (directory/name).unlink()
+        before=self.snapshot();directory.rename(self.root/'old-client');directory.mkdir(mode=0o700)
+        (directory/'native-agy').write_bytes(b'owned unit image')
+        with self.assertRaisesRegex(driver.Refused,'protected'):
+            driver.assert_live_preserved(before,self.snapshot(),Path(self.fixture.unit['ConfigRoot']))
+        directory.chmod(0o500)
+        with self.assertRaisesRegex(driver.Refused,'client directory'):self.snapshot()
+        directory.chmod(0o700)
 
     def test_concurrent_append_and_only_explicit_client_internal_churn_are_allowed(self):
         before=self.snapshot()
@@ -1760,7 +1992,7 @@ class RetainedCollectorCodecTests(unittest.TestCase):
 def load_tests(loader, standard, pattern):
     # Normal discovery keeps the standing portable controls. This explicit
     # fixture input adds real sealed-recipe controls, with no skipped tests.
-    cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests,
+    cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests,ClientDirectoryProbeTests,
         NativeDriverBoundaries,NativeStateSchemaTests,LivePreservationTests,TraceBoundaryTests,
         RehearsalTerminalTests,ScaleSelectionTests,SourceAdapterTests,UnitScaleShapeTests]
     if os.environ.get('CAIRN_R06_REHEARSAL_SELECTION'):

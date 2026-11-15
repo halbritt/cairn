@@ -43,9 +43,16 @@ The client is Root1383's frozen Agy1.5.7 image, SHA256
 `/home/halbritt/.cache/cairn301-release-1383/agy-receipt-filetype-20261112/`.
 The driver copies its bytes to `catalog_root/client/native-agy`, an owned 0500 regular
 file with a distinct inode, inside an owned 0700 client directory. The native
-child receives `AGY_CLI_DISABLE_AUTO_UPDATE=1`. A background updater or second
-session exec is rejected; only an exact child `[client, "--version"]` with one
-exec and an observed zero exit is permitted.
+child receives `AGY_CLI_DISABLE_AUTO_UPDATE=1`. The vendor still starts an
+updater with that setting. At most one exact child
+`[client, "--bg-updater", "--app_data_dir=antigravity-cli", "--gemini_dir=.gemini"]`
+is permitted, created by the captured root leader or its kernel-derived threads,
+with the same pinned image and verified kernel restrictions. The updater PID
+executes once. At most one exact `[client, "--version"]` child is permitted,
+including the updater's query. Intermediate prefixes may observe them in flight;
+every observed exit must be zero and the complete updater tree must join zero
+before the final audit. Repeated, recursive, reordered or additional client
+execs, another parent, forced shutdown and missing enforcement refuse.
 
 The provider tuple is exactly local `GeminiFixture`, host `127.0.0.1`, port 0,
 synthetic key `r04-synthetic-unused`, and `NO_PROXY=127.0.0.1,localhost`.
@@ -136,6 +143,44 @@ mutation and a real disposable-API `remember` write independently during
 forward and reverse control. Each must refuse qualification and retain the
 actual command and database snapshots. The selected fault and phase are
 recorded in the separate nonnative rehearsal selection.
+
+The client directory retains device, inode, owner, mode 0700, link count, size
+and the exact `native-agy` inventory. Only its mtime and ctime are excluded from
+identity and protected-row comparisons. The binary retains its own times and
+complete identity and digest. A separate audit follows causal cwd and descriptor
+inheritance, duplication and close-on-exec across the whole traced tree.
+It permits only an exclusive `O_CREAT|O_EXCL` `.update_test<digits>` creation,
+zero written bytes and successful removal. A probe must be gone at each boundary.
+Writes through descriptor aliases, persistent or other names, rename-over,
+links, metadata changes and unresolved paths or descriptors refuse.
+
+The only other client-directory exception is `unlinkat` on immediate children
+`.new` or `.new.tar.gz`, flags `0` or `AT_REMOVEDIR`, from the approved updater
+tree after its verified exec, completing with exact
+`-1 ENOENT (No such file or directory)`. Each records `FAILED_ABSENCE_PROBE`, its
+PID, flags, result and `mutation=false`. A successful deletion, other errno,
+bare `unlink`, another name, open/create/write, rename or link refuses. Per-phase
+and final audit receipts retain raw byte offsets and hashes.
+
+Only characterized vendor files in `native-home/.gemini/config` may churn:
+`.migrated`, `mcp_config.json`, `config.json`, canonical UUID temporary files
+for `config.json`, and `projects/<uuid>.json` with its UUID temporary files.
+Those files must be owned regular single-link files with no symlink or credential
+alias. The config and projects directories retain identity and permissions;
+entry-size and time changes alone do not qualify a protected-state change.
+Every other path, including Cairn `hooks.json`, `.cairn-*` and layer files,
+retains the existing protection. This is not a whole-home or whole-config exception.
+
+The scripted client is a distinctly nonnative, cache-built ELF embedding the
+normal pinned CPython runtime. Its C source is embedded in this driver; build
+receipts pin compiler components, config, included headers, libpython, argv,
+source and output. Live boundary observations also pin executable runtime file
+mappings. Embedding preserves the root PID and literal updater/version exec
+argv; no trace or argv translation supplies parity. It executes the observed
+probe, updater, version, failed-absence and config-churn operations. The five Go
+images remain separately selected and unchanged. This fixture is not Agy and
+cannot satisfy native admission or establish vendor behavior beyond the finite
+characterization observations.
 
 The parent and owned API/control children retain the normal host runtime
 options. The fixture does not set `GORACE=atexit_sleep_ms=0` or disable race

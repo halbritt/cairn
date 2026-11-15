@@ -25,6 +25,7 @@ import socketserver
 import stat
 import subprocess
 import sys
+import sysconfig
 import tarfile
 import tempfile
 import threading
@@ -70,6 +71,8 @@ STUB = (
 )
 INPUT = b'CAIRN_NON_NATIVE_PREPARATION_INPUT\n'
 SCRIPTED_CLIENT = r'''"""NONNATIVE stream-json rehearsal client; never Agy or a native PASS."""
+import ctypes
+import errno
 import http.client
 import json
 import os
@@ -77,6 +80,7 @@ from pathlib import Path
 import shlex
 import subprocess
 import sys
+import subprocess
 import threading
 import urllib.parse
 import uuid
@@ -91,11 +95,39 @@ history.parent.mkdir(mode=0o700, parents=True)
 history.touch(mode=0o600)
 contents = []
 
+def install_probe():
+    probe=Path(plan['client']).parent/'.update_test123'
+    fd=os.open(probe,os.O_RDWR|os.O_CREAT|os.O_EXCL|os.O_CLOEXEC,0o600);os.close(fd)
+    libc=ctypes.CDLL(None,use_errno=True)
+    if libc.unlinkat(-100,os.fsencode(probe),0)!=0:raise OSError(ctypes.get_errno(),'probe removal')
+
+install_probe()
+updater=subprocess.run([plan['client'],'--bg-updater','--app_data_dir=antigravity-cli','--gemini_dir=.gemini'],
+    capture_output=True,timeout=15)
+if updater.returncode!=0:raise ValueError('NONNATIVE exact updater failed: '+updater.stderr.decode())
+
+vendor_config=Path(plan['home'])/'.gemini/config'
+projects=vendor_config/'projects';projects.mkdir(mode=0o700,exist_ok=True)
+project_id=str(uuid.uuid4())
+for name in ('mcp_config.json','.migrated'):
+    path=vendor_config/name
+    if path.exists():raise ValueError('unexpected preexisting vendor fixture file')
+    path.write_text('{}\n');path.chmod(0o600)
+
+def vendor_turn_churn():
+    for destination in (vendor_config/'config.json',projects/(project_id+'.json')):
+        temporary=destination.with_name(destination.name+'.'+str(uuid.uuid4())+'.tmp')
+        with temporary.open('x') as stream:stream.write('{"NONNATIVE_vendor_churn":true}\n')
+        temporary.chmod(0o600);os.replace(temporary,destination)
+
+vendor_turn_churn()
+
 def churn(message):
     internal = Path(plan['internal'])
     with (internal / 'rehearsal-data').open('ab') as stream:
         stream.write(b'owned concurrent client-internal churn\n')
     os.write(2, b'NONNATIVE rehearsal background stderr append\n')
+    vendor_turn_churn()
     if message.get('target'):
         target = Path(message['target'])
         mode = target.stat().st_mode & 0o777 if target.exists() else 0o600
@@ -164,6 +196,7 @@ for raw in sys.stdin.buffer:
     with history.open('a') as stream:
         stream.write(json.dumps(dict(rehearsal=True, user=prompt)) + '\n')
     hook('Stop')
+    vendor_turn_churn()
     if len(contents) == 1:
         replace_client(plan.get('fault'))
     emit(dict(event='result', result=dict(conversation_id=conversation, rehearsal=True)))
@@ -334,10 +367,21 @@ def confined_exec(arguments):
     os.execve(argv[0],argv,dict(os.environ))
 
 
+CLIENT_FILE_SYSCALLS = (
+    'open,openat2,creat,execveat,unlink,unlinkat,rename,renameat,renameat2,link,linkat,symlink,symlinkat,'
+    'mkdir,mkdirat,rmdir,chdir,fchdir,dup,dup2,dup3,fcntl,close_range,writev,pwrite64,pwritev,pwritev2,'
+    'truncate,ftruncate,fallocate,chmod,fchmod,fchmodat,fchmodat2,chown,fchown,lchown,fchownat,'
+    'utime,utimes,futimesat,utimensat,mknod,mknodat,mmap,copy_file_range,sendfile,splice,tee,vmsplice,'
+    'pipe,pipe2,socket,socketpair,accept,accept4,eventfd,eventfd2,epoll_create,epoll_create1,'
+    'signalfd,signalfd4,timerfd_create,inotify_init,inotify_init1,memfd_create,pidfd_open,pidfd_getfd,'
+    'unshare,setns,chroot,pivot_root'
+)
+
+
 class OwnedKernelTrace:
     """Owned traced process; the held Agy image requires consumed admission."""
     SYSCALLS = ('execve,openat,fstat,connect,read,write,close,clone,clone3,fork,vfork,'
-                'readlink,wait4,waitid,exit,exit_group')
+                'readlink,wait4,waitid,exit,exit_group,'+CLIENT_FILE_SYSCALLS)
     STRING_LIMIT = 2048
 
     @classmethod
@@ -350,13 +394,16 @@ class OwnedKernelTrace:
 
     def __init__(self, argv, root, *, work=None, env=None, admission=None, ports=()):
         self.root = private_directory(root)
+        self.work=Path(work) if work is not None else self.root
+        self._kernel_updater_disabled=type(env) is dict and env.get('AGY_CLI_DISABLE_AUTO_UPDATE')=='1'
         require(type(argv) is list and argv and all(type(a) is str and '\0' not in a for a in argv),
                 'literal fixture argv required')
         self.image = checked_pin(argv[0])
         info=Path(argv[0]).lstat()
-        self.image_identity=(info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,info.st_size)
+        self.image_identity=(info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,info.st_size,
+                             info.st_mtime_ns,info.st_ctime_ns)
         self.client_parent=Path(argv[0]).parent if Path(argv[0])==self.root/'client/native-agy' else None
-        self.client_parent_identity=policy_identity(self.client_parent) if self.client_parent else None
+        self.client_parent_identity=client_directory_identity(self.client_parent) if self.client_parent else None
         if self.image['SHA256'] == AGY_SHA256:
             require(admission is not None, 'native image requires consumed pinned admission')
             selected=admission['admission']
@@ -440,21 +487,32 @@ class OwnedKernelTrace:
     def verify_client(self):
         def identity():
             info=Path(self.image['Path']).lstat()
-            return (info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,info.st_size)
+            return (info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,info.st_size,
+                    info.st_mtime_ns,info.st_ctime_ns)
         require(identity()==self.image_identity,'client image identity/mode/size changed')
         if self.client_parent:
             require(self.client_parent.resolve()==self.client_parent and
                 self.client_parent.stat().st_uid==os.getuid() and
                 stat.S_IMODE(self.client_parent.stat().st_mode)==0o700 and
                 sorted(path.name for path in self.client_parent.iterdir())==['native-agy'] and
-                policy_identity(self.client_parent)==self.client_parent_identity,
+                client_directory_identity(self.client_parent)==self.client_parent_identity,
                 'client directory identity or exact single-entry inventory changed')
         require(checked_pin(self.image['Path'])==self.image,'client image changed')
         require(identity()==self.image_identity,'client image changed during pin check')
         if self.client_parent:
-            require(policy_identity(self.client_parent)==self.client_parent_identity and
+            require(client_directory_identity(self.client_parent)==self.client_parent_identity and
                 sorted(path.name for path in self.client_parent.iterdir())==['native-agy'],
                 'client directory changed during pin check')
+            if hasattr(self,'_kernel_capture'):
+                self.client_file_audit=audit_client_directory(self.trace.read_bytes(),self._kernel_capture,
+                    self.root,self.work,final=self.closed,enforcement=self)
+        if hasattr(self,'_scripted_runtime_pins'):
+            for path,pin in self._scripted_runtime_pins.items():require(tool_pin(path)==pin,'stand-in runtime image changed')
+            if not self.closed:
+                for path,pin in executable_mappings(self.pid).items():
+                    require(path not in self._scripted_runtime_pins or self._scripted_runtime_pins[path]==pin,
+                        'stand-in mapped runtime changed')
+                    self._scripted_runtime_pins[path]=pin
 
     def verify_confinement(self):
         require(verified_kernel_policy(self,self.trace.read_bytes(),self.generation,self.root,
@@ -600,6 +658,246 @@ def policy_identity(path):
             info.st_size,info.st_mtime_ns,info.st_ctime_ns)
 
 
+def client_directory_identity(path):
+    return policy_identity(path)[:-2]
+
+
+def syscall_arguments(body):
+    selected=re.fullmatch(r'\w+\((.*)\)\s+=\s+(.*)',body)
+    require(selected is not None,'unresolved client-directory syscall framing')
+    text=selected[1];arguments=[];stack=[];quoted=False;escaped=False;start=0
+    for index,char in enumerate(text):
+        if quoted:
+            if escaped:escaped=False
+            elif char=='\\':escaped=True
+            elif char=='"':quoted=False
+        elif char=='"':quoted=True
+        elif char in '([{':stack.append(char)
+        elif char in ')]}':
+            require(stack and '([{'.index(stack.pop())==')]}'.index(char),'unresolved syscall nesting')
+        elif char==',' and not stack:
+            arguments.append(text[start:index].strip());start=index+1
+    require(not quoted and not stack,'partial client-directory syscall arguments')
+    arguments.append(text[start:].strip())
+    return arguments,selected[2]
+
+
+def client_execution_scope(raw,calls,capture,*,kernel_enforced,updater_disabled,final):
+    leader=capture['Process']['PID'];client=capture['Client']['Path']
+    parents={};known={leader};births={leader:-1}
+    for row in calls:
+        if row['name'] not in ('clone','clone3','fork','vfork'):continue
+        result=row['body'].rsplit(' = ',1)[-1]
+        if result.startswith('-1 '):continue
+        require(result.isdigit() and int(result)>1 and int(result) not in known and row['pid'] in known,
+            'unresolved client execution ancestry')
+        parents[int(result)]=row['pid'];known.add(int(result))
+        births[int(result)]=row['start']
+    require(not any(row['name']=='execveat' for row in calls),'unselected client execveat')
+    executions=list(r04.successful_execs(trace.exec_lines(raw.decode('ascii'),start_offset=0)))
+    threads=kernel_threads(calls,leader);updater=None;version=None
+    for execution in executions:
+        pid=int(execution['pid']);argv=execution['argv'];path=execution['path']
+        require(not argv or argv[0]!=client or path==client,'client argv/image path differs')
+        if '--bg-updater' in argv:
+            require(path==client and argv==[client,'--bg-updater','--app_data_dir=antigravity-cli','--gemini_dir=.gemini']
+                and pid!=leader and updater is None and parents.get(pid) in threads
+                and kernel_enforced and updater_disabled and checked_pin(client)==capture['Client'],
+                'unapproved updater argv/image/parent/count/kernel policy')
+            updater=pid
+        elif path==client and pid!=leader:
+            require(argv==[client,'--version'] and version is None,'nested client must be exact single --version')
+            version=pid
+    selected={pid for pid in (updater,version) if pid is not None}
+    for pid in selected:
+        require(len([row for row in calls if row['pid']==pid and row['name']=='execve'])==1,
+            'updater/version child execs again')
+    updater_tree={updater} if updater is not None else set()
+    updater_start=next((row['start'] for row in calls if row['pid']==updater and row['name']=='execve'),None)
+    while True:
+        new={pid for pid,parent in parents.items() if parent in updater_tree}-updater_tree
+        if not new:break
+        require(all(births[pid]>updater_start for pid in new),'updater descendant predates approved exec')
+        updater_tree.update(new)
+    must_join=updater_tree|({version} if version is not None else set())
+    terminals={row['pid']:row['body'] for row in calls if row['name']=='exit' and row['body'].startswith('+++')}
+    for pid in must_join:
+        require(pid not in terminals or terminals[pid]=='+++ exited with 0 +++','updater/version descendant nonzero exit')
+        require(not final or pid in terminals,'unjoined updater/version descendant')
+    return dict(updater=updater,version=version,updater_tree=updater_tree,updater_start=updater_start,parents=parents)
+
+
+def audit_client_directory(raw,capture,root,work,*,final=False,enforcement=None):
+    """Follow causal cwd/FD aliases; only complete zero-byte probes may mutate client/."""
+    root,work=Path(root),Path(work);directory=root/'client';image=directory/'native-agy'
+    leader=capture['Process']['PID']
+    require(leader>1 and capture['Client']['Path']==str(image),'wrong client-directory capture')
+    calls,pending=kernel_calls(raw)
+    kernel_enforced=verified_kernel_policy(enforcement,raw,capture,root,
+        enforcement.network_policy['tcp_ports']) if enforcement is not None else False
+    execution_scope=client_execution_scope(raw,calls,capture,kernel_enforced=kernel_enforced,
+        updater_disabled=getattr(enforcement,'_kernel_updater_disabled',False),final=final)
+    paths={'unlink','unlinkat','rename','renameat','renameat2','link','linkat','symlink','symlinkat',
+        'mkdir','mkdirat','rmdir','truncate','chmod','fchmodat','fchmodat2','chown','lchown','fchownat',
+        'utime','utimes','futimesat','utimensat','mknod','mknodat'}
+    opens={'open','openat','openat2','creat'}
+    writes={'write','writev','pwrite64','pwritev','pwritev2','copy_file_range','sendfile','splice','tee','vmsplice'}
+    fd_mutators={'ftruncate','fallocate','fchmod','fchown'}
+    creators={'socket','accept','accept4','eventfd','eventfd2','epoll_create','epoll_create1',
+        'signalfd','signalfd4','timerfd_create','inotify_init','inotify_init1','memfd_create','pidfd_open'}
+    relevant=paths|opens|writes|fd_mutators|creators|{'chdir','fchdir','dup','dup2','dup3','fcntl',
+        'close','close_range','pipe','pipe2','socketpair','pidfd_getfd','execve','execveat',
+        'clone','clone3','fork','vfork','mmap','unshare','setns','chroot','pivot_root'}
+    require(not final or not pending,'incomplete final client-directory coverage')
+    require(not any(row['name'] in paths|opens|writes|fd_mutators for row in pending),
+            'unfinished client-directory mutation coverage')
+    cwd={leader:dict(path=work)};executables={leader:image}
+    fds={leader:{0:dict(path=None,cloexec=False),1:dict(path=None,cloexec=False),
+        2:dict(path=root/'kernel.stderr',cloexec=False)}}
+    probes=[];active={};exited=set();absence_probes=[]
+    def related(path):return path==directory or path.is_relative_to(directory) or directory.is_relative_to(path)
+    def descriptor(pid,value):
+        require(re.fullmatch(r'\d+',value) is not None,'unresolved client-directory FD')
+        selected=fds[pid].get(int(value))
+        require(selected is not None,'unresolved client-directory FD relation')
+        return selected
+    def pathname(pid,value,base='AT_FDCWD'):
+        require(re.fullmatch(r'"(?:\\.|[^"\\])*"',value) is not None,'unresolved client-directory path')
+        text=trace_string(value)
+        if os.path.isabs(text):path=Path(os.path.normpath(text))
+        else:
+            parent=cwd[pid]['path'] if base=='AT_FDCWD' else descriptor(pid,base)['path']
+            require(parent is not None,'non-file directory descriptor')
+            path=Path(os.path.normpath(str(parent/text)))
+        alias=re.fullmatch(r'/proc/(self|thread-self|[0-9]+)/(exe|cwd|fd/[0-9]+)(?:/(.*))?',str(path))
+        if alias:
+            owner=pid if alias[1] in ('self','thread-self') else int(alias[1])
+            require(owner in cwd,'unresolved foreign proc path alias')
+            if alias[2]=='exe':target=executables[owner]
+            elif alias[2]=='cwd':target=cwd[owner]['path']
+            else:target=descriptor(owner,alias[2].split('/')[1])['path']
+            require(target is not None,'unresolved nonfile proc/FD alias')
+            path=Path(os.path.normpath(str(target/(alias[3] or ''))))
+        require(not str(path).startswith('/dev/fd/'),'unresolved device FD path alias')
+        return path
+    def reject_mutation(path):require(not related(path),'unexpected client-directory mutation')
+    for row in calls:
+        pid,name=row['pid'],row['name']
+        require(pid in cwd and pid not in exited,'unattributed/reused client-directory PID')
+        if name=='exit' and row['body'].startswith('+++'):
+            exited.add(pid);continue
+        if name not in relevant:continue
+        args,result=syscall_arguments(row['body'])
+        number=re.match(r'^(-?\d+)(?:\s|$)',result)
+        returned=int(number[1]) if number else None
+        if name in ('clone','clone3','fork','vfork'):
+            if returned is not None and returned>0:
+                require('CLONE_NEW' not in row['body'],'unresolved changed filesystem namespace')
+                require(returned not in cwd,'reused client-directory descendant')
+                cwd[returned]=cwd[pid] if 'CLONE_FS' in row['body'] else dict(cwd[pid])
+                fds[returned]=fds[pid] if 'CLONE_FILES' in row['body'] else {fd:dict(value) for fd,value in fds[pid].items()}
+                executables[returned]=executables[pid]
+            continue
+        if name in ('execve','execveat'):
+            if result=='0':
+                executables[pid]=pathname(pid,args[0]) if name=='execve' else pathname(pid,args[1],args[0])
+                fds[pid]={fd:dict(value) for fd,value in fds[pid].items() if not value['cloexec']}
+            continue
+        if name in opens:
+            index=1 if name in ('openat','openat2') else 0
+            path=pathname(pid,args[index],args[0] if index else 'AT_FDCWD')
+            flags=args[index+1] if name!='creat' else 'O_CREAT|O_WRONLY|O_TRUNC'
+            mutation=any(flag in flags for flag in ('O_CREAT','O_TRUNC','O_TMPFILE','O_WRONLY','O_RDWR'))
+            if related(path) and mutation:
+                require(path.parent==directory and re.fullmatch(r'\.update_test[0-9]+',path.name)
+                    and 'O_CREAT' in flags and 'O_EXCL' in flags and not any(flag in flags for flag in ('O_TRUNC','O_TMPFILE'))
+                    and returned is not None and returned>=0 and path not in active,
+                    'unexpected client-directory create/open')
+                probe=dict(path=str(path),created=row['start'],creator_pid=pid,written_bytes=0,removed=None)
+                probes.append(probe);active[path]=probe
+            require(path.parent!=directory or path.name not in ('.new','.new.tar.gz'),
+                'open/create of failed-absence name rejected')
+            if returned is not None and returned>=0:fds[pid][returned]=dict(path=path,cloexec='O_CLOEXEC' in flags)
+        elif name in writes|fd_mutators:
+            index=2 if name in ('copy_file_range','splice') else 1 if name=='tee' else 0
+            path=descriptor(pid,args[index])['path']
+            if path is not None and related(path):
+                require(name in writes and returned==0 and path in active,
+                    'write or metadata change in client directory')
+        elif name in ('unlink','unlinkat'):
+            index=1 if name=='unlinkat' else 0
+            path=pathname(pid,args[index],args[0] if index else 'AT_FDCWD')
+            if related(path):
+                if path.parent==directory and path.name in ('.new','.new.tar.gz'):
+                    require(name=='unlinkat' and args[2] in ('0','AT_REMOVEDIR')
+                        and result=='-1 ENOENT (No such file or directory)'
+                        and pid in execution_scope['updater_tree'] and row['start']>execution_scope['updater_start'],
+                        'unapproved failed-absence probe')
+                    absence_probes.append(dict(label='FAILED_ABSENCE_PROBE',pid=pid,name=path.name,
+                        path=str(path),flags=args[2],result=result,mutation=False,start=row['start'],end=row['end']))
+                else:
+                    require(path in active and result=='0','unexpected/persistent client-directory unlink')
+                    active.pop(path)['removed']=row['end']
+        elif name in ('rename','renameat','renameat2','link','linkat'):
+            if name in ('rename','link'):old,new=pathname(pid,args[0]),pathname(pid,args[1])
+            else:old,new=pathname(pid,args[1],args[0]),pathname(pid,args[3],args[2])
+            reject_mutation(old);reject_mutation(new)
+            if name.startswith('rename') and result=='0':
+                for table in fds.values():
+                    for value in table.values():
+                        if value['path'] is not None and value['path'].is_relative_to(old):value['path']=new/value['path'].relative_to(old)
+                for value in cwd.values():
+                    if value['path'].is_relative_to(old):value['path']=new/value['path'].relative_to(old)
+        elif name in ('symlink','symlinkat'):
+            link=pathname(pid,args[1]) if name=='symlink' else pathname(pid,args[2],args[1])
+            text=trace_string(args[0])
+            target=Path(os.path.normpath(text if os.path.isabs(text) else str(link.parent/text)))
+            reject_mutation(target);reject_mutation(link)
+        elif name in paths:
+            at=name.endswith('at') or name=='fchmodat2'
+            reject_mutation(pathname(pid,args[1] if at else args[0],args[0] if at else 'AT_FDCWD'))
+        elif name=='mmap':
+            if 'PROT_WRITE' in args[2] and 'MAP_SHARED' in args[3] and not ('MAP_ANONYMOUS' in args[3] and args[4]=='-1'):
+                path=descriptor(pid,args[4])['path']
+                if path is not None:reject_mutation(path)
+        elif name=='chdir':
+            path=pathname(pid,args[0])
+            if result=='0':cwd[pid]['path']=path
+        elif name=='fchdir':
+            path=descriptor(pid,args[0])['path'];require(path is not None,'unresolved fchdir target')
+            if result=='0':cwd[pid]['path']=path
+        elif name=='close':
+            if result=='0':fds[pid].pop(int(args[0]),None)
+        elif name in ('dup','dup2','dup3') or (name=='fcntl' and args[1] in ('F_DUPFD','F_DUPFD_CLOEXEC')):
+            source=descriptor(pid,args[0])
+            if returned is not None and returned>=0:fds[pid][returned]=dict(source,cloexec='CLOEXEC' in row['body'])
+        elif name=='fcntl' and args[1]=='F_SETFD':
+            source=descriptor(pid,args[0])
+            if result=='0':source['cloexec']='FD_CLOEXEC' in args[2]
+        elif name=='close_range':
+            require(re.fullmatch(r'\d+',args[0]) and (args[1]=='~0U' or re.fullmatch(r'\d+',args[1])),
+                'unresolved FD close range')
+            if result=='0':
+                fds[pid]={fd:dict(value) for fd,value in fds[pid].items()} if 'CLOSE_RANGE_UNSHARE' in args[2] else fds[pid]
+                low,high=int(args[0]),2**32-1 if args[1]=='~0U' else int(args[1])
+                for fd in list(fds[pid]):
+                    if low<=fd<=high:
+                        if 'CLOSE_RANGE_CLOEXEC' in args[2]:fds[pid][fd]['cloexec']=True
+                        else:del fds[pid][fd]
+        elif name in ('pipe','pipe2','socketpair') and result=='0':
+            pair=re.fullmatch(r'\[(\d+), (\d+)\]',args[3] if name=='socketpair' else args[0])
+            require(pair is not None,'unresolved pipe/socket pair descriptors')
+            for fd in pair.groups():fds[pid][int(fd)]=dict(path=None,cloexec='CLOEXEC' in row['body'])
+        elif name in creators and returned is not None and returned>=0:
+            fds[pid][returned]=dict(path=None,cloexec='CLOEXEC' in row['body'])
+        elif name=='pidfd_getfd':require(returned is not None and returned<0,'unresolved imported descriptor')
+        elif name in ('unshare','setns','chroot','pivot_root'):
+            require(result.startswith('-1 '),'unresolved changed filesystem namespace/root')
+    require(not active,'persistent client-directory probe')
+    return dict(NativePASS=False,probes=probes,failed_absence_probes=absence_probes,traced_pids=sorted(cwd),
+        raw_sha256=hashlib.sha256(raw).hexdigest(),scope='Client-directory mutations only; not currentness or network acceptance')
+
+
 def verified_kernel_policy(owner,raw,capture,root,ports):
     if owner is None:return False
     # This is the owning tracer's retained observation, never a wire boolean or
@@ -694,14 +992,8 @@ def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True,
             terminating.add(row['pid'])
     exited = set(deaths)
     require(not final or exited == owned, 'descendant interval does not include all exits')
-    for execution in executions:
-        require('--bg-updater' not in execution['argv'],'background updater execution rejected')
-        if execution['path'] != capture['Client']['Path'] or int(execution['pid']) == leader:continue
-        pid=int(execution['pid'])
-        require(execution['argv']==[capture['Client']['Path'],'--version']
-                and len([row for row in calls if row['pid']==pid and row['name']=='execve'])==1
-                and any(row['pid']==pid and row['body']=='+++ exited with 0 +++' for row in calls),
-                'nested client must be exact joined non-session --version; updater/session rejected')
+    execution_scope=client_execution_scope(raw,calls,capture,kernel_enforced=kernel_enforced,
+        updater_disabled=getattr(enforcement,'_kernel_updater_disabled',False),final=final)
     quoted = r'"(?:\\.|[^"\\])*"'
     connections = []
     for row in calls:
@@ -741,6 +1033,7 @@ def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True,
         root_pid=leader,traced_pids=sorted(owned),parents=parents,interval=dict(Start=0,End=len(raw)),
         raw_sha256=hashlib.sha256(raw).hexdigest(),all_observed_descendants_exited=exited==owned,
         kernel_enforced=kernel_enforced,
+        updater_pid=execution_scope['updater'],version_pid=execution_scope['version'],
         kernel_policy=enforcement._kernel_policy_pin if kernel_enforced else None,
         pending_nonconnect=[dict(pid=r['pid'],name=r['name'],start=r['start']) for r in pending],
         ExternalCoverage='Observed connect(2) attempts only in this raw interval for the selected exec and kernel-derived descendants. Includes failed attempts. '+
@@ -1361,16 +1654,96 @@ def open_stream_session(argv,fixture,env,provider_url,*,admission=None):
     return session
 
 
+SCRIPTED_UPDATER = r'''import ctypes,errno,os,subprocess,sys
+from pathlib import Path
+client=Path(sys.argv[1]);directory=client.parent
+probe=directory/'.update_test456'
+fd=os.open(probe,os.O_RDWR|os.O_CREAT|os.O_EXCL|os.O_CLOEXEC,0o600);os.close(fd)
+libc=ctypes.CDLL(None,use_errno=True)
+assert libc.unlinkat(-100,os.fsencode(probe),0)==0
+version=subprocess.run([str(client),'--version'],capture_output=True,timeout=10)
+assert version.returncode==0
+for name in ('.new','.new.tar.gz'):
+    for flag in (0,0x200):
+        ctypes.set_errno(0)
+        result=libc.unlinkat(-100,os.fsencode(directory/name),flag)
+        assert result==-1 and ctypes.get_errno()==errno.ENOENT
+'''
+
+
 def stage_scripted_client(approved):
-    """Own Python copy and explicit script pins, never the held Agy client."""
+    """Embed the pinned normal CPython runtime so literal vendor child argv really executes."""
     root=Path(approved['rehearsal']['catalog_root'])
     directory=root/'client';directory.mkdir(mode=0o700)
-    source=Path(sys.executable).resolve();image=directory/'native-agy'
-    shutil.copyfile(source,image);image.chmod(0o500);directory.chmod(0o700)
-    require(checked_pin(image)['SHA256']==approved['tools']['python3']['SHA256']
-            and checked_pin(image)['SHA256']!=AGY_SHA256,'rehearsal requires the pinned nonnative interpreter')
+    require(tool_pin(Path(sys.executable).resolve())==approved['tools']['python3'],
+            'rehearsal interpreter changed')
+    build=root/'scripted-build';build.mkdir(mode=0o700)
+    source=build/'client.c';image=directory/'native-agy'
+    source.write_text('#include <Python.h>\n#include <stdio.h>\n#include <string.h>\n'
+        'int main(int argc,char **argv) {\n'
+        ' if(argc==2 && !strcmp(argv[1],"--version")) {puts("NONNATIVE fixture version");return 0;}\n'
+        ' if(argc==4 && !strcmp(argv[1],"--bg-updater") && '
+        '!strcmp(argv[2],"--app_data_dir=antigravity-cli") && !strcmp(argv[3],"--gemini_dir=.gemini")) {\n'
+        '  char *run[]={argv[0],"-I","-S","-B","-c",'+json.dumps(SCRIPTED_UPDATER)+',argv[0],NULL};\n'
+        '  return Py_BytesMain(7,run);\n }\n return Py_BytesMain(argc,argv);\n}\n')
+    source.chmod(0o400)
+    config=Path(sys.executable).with_name(Path(sys.executable).name+'-config').resolve()
+    compiler=Path(shutil.which('cc') or '/absent').resolve()
+    library=(Path(sysconfig.get_config_var('LIBDIR'))/sysconfig.get_config_var('LDLIBRARY')).resolve()
+    tools={name:tool_pin(path) for name,path in dict(config=config,compiler=compiler,libpython=library).items()}
+    flags=[];queries=[]
+    for option in ('--cflags','--ldflags'):
+        process=subprocess.run([str(config),'--embed',option],capture_output=True,text=True,timeout=10)
+        queries.append(dict(argv=process.args,exit=process.returncode,stdout=process.stdout,stderr=process.stderr))
+        require(process.returncode==0,'pinned CPython build flags unavailable')
+        flags.append(shlex.split(process.stdout))
+    for name in ('cc1','as','collect2','ld'):
+        query=subprocess.run([str(compiler),'-print-prog-name='+name],capture_output=True,text=True,timeout=10)
+        queries.append(dict(argv=query.args,exit=query.returncode,stdout=query.stdout,stderr=query.stderr))
+        require(query.returncode==0 and query.stdout.strip(),'stand-in compiler component unavailable')
+        selected=Path(query.stdout.strip())
+        if not selected.is_absolute():selected=Path(shutil.which(str(selected)) or '/absent')
+        tools[name]=tool_pin(selected.resolve())
+    dependencies=build/'headers.d'
+    header_scan=subprocess.run([str(compiler),*flags[0],'-M','-MF',str(dependencies),str(source)],
+        capture_output=True,text=True,timeout=15)
+    queries.append(dict(argv=header_scan.args,exit=header_scan.returncode,stdout=header_scan.stdout,stderr=header_scan.stderr))
+    require(header_scan.returncode==0,'stand-in header scan failed')
+    header_text=dependencies.read_text().replace('\\\n',' ')
+    require(':' in header_text,'stand-in header scan receipt missing')
+    headers_before={str(Path(path).resolve()):tool_pin(Path(path).resolve())
+        for path in shlex.split(header_text.split(':',1)[1])}
+    argv=[str(compiler),*flags[0],'-MD','-MF',str(dependencies),str(source),'-o',str(image),*flags[1]]
+    process=subprocess.run(argv,capture_output=True,text=True,timeout=30)
+    receipt=dict(kind='SCRIPTED_NONNATIVE',argv=argv,exit=process.returncode,stdout=process.stdout,
+        stderr=process.stderr,queries=queries,source=checked_pin(source),tools=tools,NativePASS=False)
+    roundtrip.write(build/'build.json',receipt)
+    require(process.returncode==0,'nonnative embedded interpreter build failed')
+    dependency_text=dependencies.read_text().replace('\\\n',' ')
+    require(':' in dependency_text,'stand-in header dependency receipt missing')
+    headers={str(Path(path).resolve()):tool_pin(Path(path).resolve())
+        for path in shlex.split(dependency_text.split(':',1)[1])}
+    require(headers==headers_before,'stand-in headers changed during compilation')
+    require(str(Path('/usr/include/python'+str(sys.version_info.major)+'.'+str(sys.version_info.minor))/'Python.h') in headers,
+        'stand-in build did not attest the selected CPython headers')
+    receipt.update(headers=headers,dependency_file=checked_pin(dependencies),joined=True)
+    roundtrip.write(build/'build.json',receipt)
+    image.chmod(0o500);directory.chmod(0o700)
+    require(all(tool_pin(pin['Path'])==pin for pin in tools.values()),'stand-in build tools changed')
+    require(checked_pin(image)['SHA256']!=AGY_SHA256,'stand-in must never select actual Agy')
     script=root/'scripted-client.py';script.write_text(SCRIPTED_CLIENT);script.chmod(0o400)
-    return dict(pin=checked_pin(image),script=checked_pin(script),kind='SCRIPTED_NONNATIVE',actual_Agy=0)
+    return dict(pin=checked_pin(image),script=checked_pin(script),build=checked_pin(build/'build.json'),
+        kind='SCRIPTED_NONNATIVE',actual_Agy=0)
+
+
+def executable_mappings(pid):
+    selected={}
+    for line in Path(f'/proc/{pid}/maps').read_text().splitlines():
+        parts=line.split(None,5)
+        if len(parts)==6 and 'x' in parts[1] and parts[5].startswith('/'):
+            path=Path(parts[5]);selected[str(path)]=tool_pin(path)
+    require(selected,'stand-in executable mapping receipt empty')
+    return selected
 
 
 def open_scripted_session(approved,fixture,client,provider_url):
@@ -1385,7 +1758,12 @@ def open_scripted_session(approved,fixture,client,provider_url):
         client=client['pin']['Path'],fault=approved.get('rehearsal_fault')))
     client['plan']=checked_pin(plan)
     argv=[client['pin']['Path'],'-I','-S','-B',client['script']['Path'],str(plan)]
-    return open_stream_session(argv,fixture,env,provider_url)
+    session=open_stream_session(argv,fixture,env,provider_url)
+    approved['_opening_scripted_session']=session
+    session.child._scripted_runtime_pins=executable_mappings(session.child.pid)
+    client['runtime_initial']=roundtrip.write(fixture.root/'scripted-runtime-initial.json',
+        dict(kind='SCRIPTED_NONNATIVE',pid=session.child.pid,images=session.child._scripted_runtime_pins))
+    return session
 
 
 def complete_trace_boundary(session,*,timeout=5):
@@ -1404,12 +1782,25 @@ def complete_trace_boundary(session,*,timeout=5):
     return r04.wait_for(ready,'complete unchanged-dialect live boundary snapshot',timeout=timeout)
 
 
+def client_config_file(path,account):
+    try:parts=path.relative_to(account).parts
+    except ValueError:return False
+    canonical_uuid=r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+    if len(parts)==1:
+        return parts[0] in ('.migrated','mcp_config.json','config.json') or bool(
+            re.fullmatch(r'config\.json\.'+canonical_uuid+r'\.tmp',parts[0]))
+    return len(parts)==2 and parts[0]=='projects' and bool(re.fullmatch(
+        canonical_uuid+r'\.json(?:\.'+canonical_uuid+r'\.tmp)?',parts[1]))
+
+
 def live_root_snapshot(fixture,session):
-    """Protect the whole unit, except two appends and one explicit client subtree."""
+    """Keep Cairn state protected across the characterized, narrowly selected client churn."""
+    session.child.verify_client()
     root=fixture.root;internal=fixture.home/'.gemini/antigravity-cli'
+    account=fixture.home/'.gemini/config';vendor_directories={account,account/'projects'}
     credential=Path(fixture.unit['Credential']);secret=credential.lstat()
     append_paths={session.child.trace,root/'kernel.stderr'}
-    rows={};appends={}
+    rows={};appends={};vendor_files={}
     def read_regular(path,expected,*,append=False):
         require(path.resolve()==path,'live snapshot path traverses a symlink')
         fd=os.open(path,os.O_RDONLY|os.O_CLOEXEC|os.O_NOFOLLOW|os.O_NONBLOCK)
@@ -1429,9 +1820,28 @@ def live_root_snapshot(fixture,session):
                 (*fields,'st_size','st_mtime_ns','st_ctime_ns')),'protected file changed during snapshot')
             return digest
     def visit(path):
-        info=path.lstat()
+        try:info=path.lstat()
+        except FileNotFoundError:
+            require(client_config_file(path,account),'protected snapshot path disappeared')
+            return
         row=dict(mode=info.st_mode,uid=info.st_uid,gid=info.st_gid,device=info.st_dev,
             inode=info.st_ino,bytes=info.st_size,links=info.st_nlink,mtime=info.st_mtime_ns,ctime=info.st_ctime_ns)
+        if path==root/'client':
+            require(stat.S_ISDIR(info.st_mode) and path.resolve()==path and info.st_uid==os.getuid()
+                    and stat.S_IMODE(info.st_mode)==0o700
+                    and sorted(entry.name for entry in path.iterdir())==['native-agy'],
+                    'client directory identity or exact single-entry inventory changed')
+            row.pop('mtime');row.pop('ctime')
+        if client_config_file(path,account):
+            require(stat.S_ISREG(info.st_mode) and path.resolve()==path and info.st_uid==os.getuid()
+                    and info.st_nlink==1 and not os.path.samestat(info,secret),
+                    'unsafe mutable vendor config ownership/type/credential alias')
+            vendor_files[str(path)]=dict(row,content_read=False)
+            return
+        if path in vendor_directories:
+            require(stat.S_ISDIR(info.st_mode) and path.resolve()==path and info.st_uid==os.getuid()
+                    and stat.S_IMODE(info.st_mode)==0o700,'unsafe vendor config directory')
+            for key in ('mtime','ctime','bytes'):row.pop(key)
         if path==internal:
             require(stat.S_ISDIR(info.st_mode) and not path.is_symlink() and path.resolve()==path
                     and info.st_uid==os.getuid() and not info.st_mode&0o022,'unsafe mutable client subtree')
@@ -1464,7 +1874,7 @@ def live_root_snapshot(fixture,session):
             for child in sorted(path.iterdir()):visit(child)
     visit(root)
     require(set(appends)=={str(path) for path in append_paths},'live append inventory differs')
-    return dict(rows=rows,appends=appends,client_internal=str(internal))
+    return dict(rows=rows,appends=appends,client_internal=str(internal),vendor_files=vendor_files)
 
 
 def assert_live_preserved(before,after,config_root):
@@ -2129,6 +2539,8 @@ def run_session_sequence(approved,fixture,session,client,provider,evidence):
     before,history=collect_native_phase(session,fixture,'A',start,root/'phase-A.trace')
     audit_a=audit_host_connections(Path(before['Trace']['Path']).read_bytes(),before_capture,root,
         ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False,enforcement=session.child)
+    file_a=roundtrip.write(evidence/'client-directory-A.json',audit_client_directory(
+        Path(before['Trace']['Path']).read_bytes(),before_capture,root,fixture.work,enforcement=session.child))
     fixture.stage_live_b()
     require(session.child.capture_generation()==before_capture,'staging B changed native generation')
     fixture.publish('B')
@@ -2141,6 +2553,8 @@ def run_session_sequence(approved,fixture,session,client,provider,evidence):
     require(before_capture==after_capture and history_b==history,'same native generation/history not preserved')
     audit_b=audit_host_connections(Path(after['Trace']['Path']).read_bytes(),after_capture,root,
         ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False,enforcement=session.child)
+    file_b=roundtrip.write(evidence/'client-directory-B.json',audit_client_directory(
+        Path(after['Trace']['Path']).read_bytes(),after_capture,root,fixture.work,enforcement=session.child))
     states,readback,generation=capture_native_catalogs(fixture,session,before_capture,before,after_capture,after,client)
     forward=unit_control_plan(fixture);forward['census']['Proposal']['Sessions']=[p['Path'] for p in states]
     public_forward=live_unit_control(approved,fixture,session,client,forward,evidence,'native-A-to-B')
@@ -2168,13 +2582,20 @@ def run_session_sequence(approved,fixture,session,client,provider,evidence):
     require(full[:after['End']]==Path(after['Trace']['Path']).read_bytes(),'sealed B interval changed or hid restored A')
     final_audit=audit_host_connections(full,before_capture,root,ports={provider.server.server_port},
         unix_paths=[fixture.bridge.path],final=True,enforcement=session.child)
+    file_final=roundtrip.write(evidence/'client-directory-final.json',audit_client_directory(
+        full,before_capture,root,fixture.work,final=True,enforcement=session.child))
+    if client.get('kind')=='SCRIPTED_NONNATIVE':
+        client['runtime_final']=roundtrip.write(root/'scripted-runtime-final.json',
+            dict(kind='SCRIPTED_NONNATIVE',images=session.child._scripted_runtime_pins,
+                 scope='Executable file mappings observed at live boundaries; pinned files rechecked after join'))
     require(all(checked_pin(ROOT/name)==pin for name,pin in source_pins.items()),'maintained source changed during run')
     roundtrip.write(evidence/'provider-requests.json',provider.requests)
     roundtrip.write(evidence/'native-cleanup.json',session.child.cleanup)
     return dict(native_session=session.identity,client=client,
         generation=generation,readback=readback,Before=before,After=after,RestoredA=restored,
         public_forward=public_forward,public_reverse=public_reverse,results=results,
-        audit=dict(A=audit_a,B=audit_b,full=final_audit),scope='one owned Agy Go3 A/B/restored-A interval; not global refresh or legacy Python2 reverse')
+        audit=dict(A=audit_a,B=audit_b,full=final_audit),client_directory_audit=dict(A=file_a,B=file_b,full=file_final),
+        scope='one owned Agy Go3 A/B/restored-A interval; not global refresh or legacy Python2 reverse')
 
 
 def execute_native(approved):
@@ -2213,6 +2634,7 @@ def execute_owned_case(approved,*,rehearsal):
         fixture.publish('A')
         provider=r04.GeminiFixture()
         session=(open_scripted_session if rehearsal else open_native_session)(approved,fixture,client,provider.url)
+        approved.pop('_opening_scripted_session',None)
         approved['case_id']=selected['attempt_id']
         facts=run_session_sequence(approved,fixture,session,client,provider,evidence)
         result.update(state='passed',NativePASS=not rehearsal,**facts)
@@ -2222,6 +2644,7 @@ def execute_owned_case(approved,*,rehearsal):
             result.update(RehearsalPASS=True,scope='NONNATIVE complete maintained sequence with scripted client; never native qualification')
     finally:
         errors=[];failure=sys.exc_info()[1];active_error=failure is not None
+        if session is None:session=approved.pop('_opening_scripted_session',None)
         if active_error:result.update(error_type=type(failure).__name__,error=str(failure))
         for name,owner in [('native',session),('provider',provider),('fixture',fixture)]:
             if owner is not None:
@@ -2255,7 +2678,7 @@ def execute_owned_case(approved,*,rehearsal):
                         'driver source changed during native case')
                 require(checked_pin(AGY_SOURCE,AGY_SHA256) and stat.S_IMODE(AGY_SOURCE.stat().st_mode)==0o500,'held client changed')
             elif session is not None:
-                require(all(checked_pin(client[key]['Path'])==client[key] for key in ('pin','script','plan')),
+                require(all(checked_pin(client[key]['Path'])==client[key] for key in ('pin','script','plan','build','runtime_initial')),
                         'scripted rehearsal client inputs changed')
             require(approved['preflight']['parent']==dict(HOME=os.environ['HOME'],CODEX_HOME=os.environ.get('CODEX_HOME')),
                     'parent HOME/CODEX_HOME changed')
