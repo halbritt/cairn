@@ -32,6 +32,9 @@ pins, optional complete command-line hashes, optional database name/system ident
 and an observation window of at most 30 seconds. Capture copies and normalizes
 the selection. It binds actual machine, boot, process generation, tool, unit,
 cgroup, process and any selected database observations to that selection.
+An empty explicit unit list is valid, as on the audited talos installation;
+at least one executable pin is still required. Manager/transient-unit and
+process observations run even when the explicit unit list is empty.
 
 The receipt has private origin and scope. A zero value, copied handle,
 serialized status, `stopped=true`, `complete`, `Inspected` or returned facts
@@ -47,6 +50,22 @@ and enforces the deadline. A failed recheck permanently invalidates that
 receipt. Returning to an earlier state cannot revive it; a new capture is
 required for a new stopped window.
 
+Joint follow-on `773027de-a857-4cc8-b330-36998a7a4d63` version 1 keeps both
+receipt APIs above unchanged. In the composed bootstrap contract, the caller
+performs its final same-scope `Recheck` after callbacks, descriptor opens and
+operand/member identity checks, directly before `Renameat2(RENAME_EXCHANGE)`.
+The caller implementation and forward/reverse late-activation tests live in
+`shared_unit_bootstrap.go` and its tests, under agent-1467's disjoint lease.
+The fence never substitutes a cached successful observation for this read.
+
+A refused final recheck means no namespace exchange and the original directory
+remains active. It does not imply transaction-wide absence of earlier effects:
+the forward legacy path may already have disabled `/2` manifests and written
+its recovery journal. As corrected by `64fb86c3-ffd0-4417-aec7-daf2abbe787c`
+version 1, preserve those effects and the reconciliation evidence. Re-establish
+the stopped boundary before a fresh documented rollback restores raw originals;
+do not automatically re-enable hooks after a fence failure.
+
 ## Observations and refusals
 
 The production path uses the installed root-owned `/usr/bin/systemctl`, pins
@@ -55,26 +74,51 @@ current UID's local user-manager bus. It enumerates `cairn-wake-*` units as
 well as the declared units and their reported activation triggers. New
 transient membership, missing properties and unreadable manager state refuse.
 
-Selected services must be inactive/dead with `MainPID=0`, `Restart=no`, a
-masked or runtime-masked unit file, and no pending daemon reload. Reported
-activation triggers must also be inactive/dead and masked. Effective unit
-properties, fragment/drop-in identities, invocation and state-generation
-metadata remain pinned. A manager-reported `/dev/null` masked definition is
-recorded as that mask; it does not attest to an earlier unmasked definition.
+Selected units must be loaded or masked, inactive/dead, with
+`NeedDaemonReload=no` and an enabled, disabled, static, masked, masked-runtime
+or indirect unit-file state. Services require `MainPID=0`. An administratively
+stopped service can retain `Restart=on-failure`; the reader does not require a
+mask or `Restart=no`. Every recursively reachable `Triggers`/`TriggeredBy` unit
+must meet the stopped contract. The operator procedure still stops and disables
+activation triggers, saving their earlier enablement for reverse.
 
-Cgroup coverage requires an actual readable, canonical cgroup-v2 directory.
-Every observed subtree must have `populated 0` and an empty `cgroup.procs`;
-directory identities and contents are retained as fingerprints. Missing paths,
-files, permissions or population fields are unknown, never empty. In particular,
-an inactive unit whose manager has removed its cgroup is currently unsupported.
-Supporting that case requires a separate explicit manager absence contract;
-this implementation does not infer one.
+All returned properties, including restart policy, unit-file state,
+`InvocationID` and `StateChangeTimestampMonotonic`, remain exactly pinned across
+capture's first/last observations and both observations of every recheck.
+Missing required properties, reactivation or generation/property drift refuse.
+The retained refusal substring "unit or activation trigger is not stopped and
+masked" is a driver compatibility string, not an additional masking requirement.
+
+Effective fragment/drop-in identities remain pinned. A masked definition can be
+the manager's literal `/dev/null`, or an absolute symlink whose two `lstat` and
+`readlink` observations agree on device, inode, owner, group, mode and exact
+`/dev/null` target. The device is not opened as a regular unit file. Replacing
+the symlink with another `/dev/null` symlink changes the pinned identity and
+refuses. Neither form attests to an earlier unmasked definition.
+
+For an inactive/dead service with `MainPID=0`, an explicitly present empty
+`ControlGroup` is recorded as `manager-reported-empty`: systemd normally removes
+the stopped service's cgroup. A nonempty group still requires an actual readable,
+canonical cgroup-v2 directory. Every observed subtree must have `populated 0`
+and an empty `cgroup.procs`; directory identities and contents remain pinned.
+Missing properties, paths, files, permissions or population fields are unknown.
 
 The local `/proc` reader considers the selected UID's executable path/inode
 identities and optional whole-command hashes. It rereads generation, UID and command
-metadata around each selected process observation. A matching process, zombie,
-permission error, disappearing process during inspection or changed generation
-refuses. Private command bytes are compared in process memory and are not
+metadata around each selected process observation. Only the caller PID with a
+start generation verified against actual `/proc` is excluded as self; matching
+the numeric PID alone is insufficient. Other selected processes still refuse.
+
+An executable permission denial permits exclusion only if readable command
+bytes, `comm` and cgroup all remain identical across two reads and none could
+match a selected command digest, executable/argv0 name, 15-byte Linux comm
+prefix, selected unit or `cairn-wake-*` cgroup. UID, generation, state and the
+executable's permission-denied status are rechecked too. Any unreadability,
+change or possible match refuses. An unrelated Z/X process can be excluded
+only with stable nonmatching comm/cgroup, UID and generation. A selected or
+ambiguous zombie refuses. ENOENT/ESRCH means absent only when `lstat` confirms
+that the PID directory no longer exists; permission and other errors never do.
+Private command bytes are compared in process memory and are not
 returned as evidence. Other executable identities and other hosts remain outside
 the declared coverage. This does not qualify mapped shared-library bytes or
 resolve the separate ABI/runtime-adoption holds.
@@ -92,7 +136,7 @@ transaction refuses without being rolled back. The caller must not use this
 connection concurrently. Observation cleanup has its own bounded rollback
 context, including when the read context expires.
 The reader starts a read-only transaction and verifies actual cluster,
-database, role and `public.semantic_job` identities. It requires superuser or
+database, role and `cairn.semantic_job` identities. It requires superuser or
 `pg_read_all_stats` visibility and refuses every other backend in that database,
 including idle connections. It does not identify authenticated writers from
 `application_name`, query text, a quiet queue or a caller principal flag.
@@ -127,17 +171,26 @@ qualification or observation-clock start follows from a successful receipt.
 ## Focused verification
 
 [The tests](../../internal/lifecycle/coordination/shared_unit_fence_test.go)
-exercise a closed selected-set fixture and negative active/restartable/trigger,
+exercise a closed selected-set fixture and negative active/changed-policy/trigger,
 new transient, definition, cgroup, UID, generation, permission, replay and final
 reread cases. Lifecycle-only cases prove database readers are never called,
 unselected coverage is explicit, partial selections refuse, and scope/lifecycle
 drift still invalidates. Systemd responses and the fixture cgroup tree are unit inputs;
 they do not qualify the installed host's manager or cgroups.
 
+Audit-derived cases from `c9cb91d8-dea9-4ba0-bf35-0635a7b41067` version 1
+cover the proximal/archon stopped-property shapes and talos's empty unit list.
+Additional cases cover mask inode replacement, recursive trigger activation,
+InvocationID/generation changes on each pass, two-read permission exclusions,
+unrelated/selected zombies and confirmed PID disappearance. These are bounded
+fixtures, not fresh remote-host qualification.
+
 The owned-child test reads an actual child PID, then closes its input, waits
 for its exit and checks `/proc` absence. The PostgreSQL test uses an existing
 maintained disposable-cluster fixture, an actual authenticated Unix connection,
 a live uncommitted writer, restricted stats visibility and read-only checks.
+It creates `cairn.semantic_job` using the maintained schema's table definition
+and proves that a decoy `public.semantic_job` does not supply Cairn identity.
 It skips explicitly without the disposable test DSN; that skip is not database
 coverage. The test never selects an operational database.
 
@@ -154,3 +207,18 @@ counts, skips, child cleanup and database outcomes separately from synthetic
 systemd proof. `mise run check` and documentation tiers 1–4 remain separate
 engineering gates. Final common Go images belong to Release after the last
 composed Go change lands.
+
+The proximal read-only evidence step is explicitly gated and otherwise reports
+NOT RUN. It selects actual own-generation, available audited-class non-dumpable
+and unrelated zombie processes, and already-inactive installed service
+properties/definitions. Each unavailable class reports NOT RUN separately.
+It issues no service/process mutation and does not claim full Capture success
+while other wake workers remain active:
+
+```sh
+CAIRN_SELECTED_FENCE_LIVE_READONLY=1 mise run test:unit -- \
+  ./internal/lifecycle/coordination -run '^TestSelectedUnitFenceProximalReadOnly$' -count=1 -v
+```
+
+Standing suites do not depend on proximal's live state. Remote candidate upload
+or execution on archon/talos remains a separately admitted R07 preflight.

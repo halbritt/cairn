@@ -110,7 +110,7 @@ func CaptureSelectedUnitFence(ctx context.Context, scope SelectedUnitFenceScope,
 }
 
 func selectedFenceScope(scope SelectedUnitFenceScope) (SelectedUnitFenceScope, error) {
-	if scope.UID != uint32(os.Getuid()) || os.Getuid() != os.Geteuid() || len(scope.Units) == 0 || len(scope.Units) > 128 ||
+	if scope.UID != uint32(os.Getuid()) || os.Getuid() != os.Geteuid() || len(scope.Units) > 128 ||
 		len(scope.Executables) == 0 || len(scope.Executables) > 128 || len(scope.CommandSHA256) > 128 ||
 		(scope.Database == "") != (scope.DatabaseSystemID == "") ||
 		scope.Database != "" && (!utf8.ValidString(scope.Database) || len(scope.Database) > 63 || strings.ContainsRune(scope.Database, 0) ||
@@ -314,26 +314,66 @@ func selectedFenceParseProperties(raw string) (map[string]string, error) {
 }
 
 func selectedFenceStoppedUnit(name string, properties map[string]string) error {
-	for _, key := range []string{"Id", "LoadState", "ActiveState", "SubState", "UnitFileState", "FragmentPath", "DropInPaths", "Triggers", "TriggeredBy", "NeedDaemonReload", "StateChangeTimestampMonotonic"} {
+	for _, key := range []string{"Id", "LoadState", "ActiveState", "SubState", "UnitFileState", "FragmentPath", "DropInPaths", "Triggers", "TriggeredBy", "NeedDaemonReload", "StateChangeTimestampMonotonic", "InvocationID"} {
 		if _, ok := properties[key]; !ok {
 			return selectedFenceUnknown("unit property coverage unknown")
 		}
 	}
 	if properties["Id"] != name || properties["ActiveState"] != "inactive" || properties["SubState"] != "dead" ||
 		(properties["LoadState"] != "loaded" && properties["LoadState"] != "masked") ||
-		(properties["UnitFileState"] != "masked" && properties["UnitFileState"] != "masked-runtime") || properties["NeedDaemonReload"] != "no" {
+		!slices.Contains([]string{"enabled", "disabled", "static", "masked", "masked-runtime", "indirect"}, properties["UnitFileState"]) || properties["NeedDaemonReload"] != "no" {
 		return selectedFenceUnknown("unit or activation trigger is not stopped and masked")
 	}
 	if _, err := strconv.ParseUint(properties["StateChangeTimestampMonotonic"], 10, 64); err != nil {
 		return selectedFenceUnknown("unit generation unknown")
 	}
-	if strings.HasSuffix(name, ".service") && (properties["MainPID"] != "0" || properties["Restart"] != "no" || properties["ControlGroup"] == "") {
-		return selectedFenceUnknown("service PID, restart policy or cgroup coverage unknown")
+	if strings.HasSuffix(name, ".service") {
+		for _, key := range []string{"MainPID", "ControlGroup", "Restart"} {
+			if _, ok := properties[key]; !ok {
+				return selectedFenceUnknown("service property coverage unknown")
+			}
+		}
+		if _, ok := properties["ExecStart"]; !ok && properties["LoadState"] == "loaded" {
+			return selectedFenceUnknown("loaded service command coverage unknown")
+		}
+		if properties["MainPID"] != "0" {
+			return selectedFenceUnknown("service PID is not stopped")
+		}
 	}
 	if strings.HasSuffix(name, ".scope") || strings.HasSuffix(name, ".target") {
 		return selectedFenceUnknown("selected unit type has no supported stopped contract")
 	}
 	return nil
+}
+
+func selectedFenceDefinition(fragment, loadState string) (string, error) {
+	if loadState != "masked" {
+		return selectedFenceFile(fragment)
+	}
+	if fragment == "/dev/null" {
+		return "manager-reported-mask:/dev/null", nil
+	}
+	if !filepath.IsAbs(fragment) || filepath.Clean(fragment) != fragment {
+		return "", selectedFenceUnknown("masked definition path unknown")
+	}
+	before, err := os.Lstat(fragment)
+	if err != nil || before.Mode()&os.ModeSymlink == 0 {
+		return "", selectedFenceUnknown("masked definition is not a symlink")
+	}
+	target, err := os.Readlink(fragment)
+	if err != nil || target != "/dev/null" {
+		return "", selectedFenceUnknown("masked definition target unknown")
+	}
+	after, err := os.Lstat(fragment)
+	again, linkErr := os.Readlink(fragment)
+	if err != nil || linkErr != nil || !os.SameFile(before, after) || before.Mode() != after.Mode() || again != target {
+		return "", selectedFenceUnknown("masked definition changed during read")
+	}
+	a, b := before.Sys().(*syscall.Stat_t), after.Sys().(*syscall.Stat_t)
+	if a.Uid != b.Uid || a.Gid != b.Gid {
+		return "", selectedFenceUnknown("masked definition ownership changed")
+	}
+	return selectedFenceHash([]any{b.Dev, b.Ino, b.Uid, b.Gid, after.Mode(), target}), nil
 }
 
 func selectedFenceUnitList(raw string) ([]string, error) {
@@ -429,7 +469,10 @@ type selectedFenceProcScan struct {
 	uid         uint32
 	executables []selectedFenceExecutable
 	commands    []string
+	units       []string
+	selfStart   uint64
 	read        func(string) ([]byte, error)
+	readlink    func(string) (string, error)
 }
 
 func selectedFenceUID(raw []byte) ([4]uint32, error) {
@@ -458,58 +501,187 @@ func selectedFenceUID(raw []byte) ([4]uint32, error) {
 	return result, nil
 }
 
+func (s selectedFenceProcScan) possibleMatch(fields map[string][]byte) bool {
+	if command, ok := fields["cmdline"]; ok {
+		sum := sha256.Sum256(command)
+		if slices.Contains(s.commands, hex.EncodeToString(sum[:])) {
+			return true
+		}
+		argv0, _, _ := bytes.Cut(command, []byte{0})
+		for _, selected := range s.executables {
+			if string(argv0) == selected.path || filepath.Base(string(argv0)) == filepath.Base(selected.path) {
+				return true
+			}
+		}
+	}
+	comm := strings.TrimSuffix(string(fields["comm"]), "\n")
+	for _, selected := range s.executables {
+		name := filepath.Base(selected.path)
+		if comm == name[:min(15, len(name))] {
+			return true
+		}
+	}
+	group := strings.ReplaceAll(string(fields["cgroup"]), `\x2d`, "-")
+	if strings.Contains(group, "cairn-wake-") {
+		return true
+	}
+	for _, unit := range s.units {
+		if strings.Contains(group, unit) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s selectedFenceProcScan) process(pid int) (bool, error) {
 	base := filepath.Join(s.root, strconv.Itoa(pid))
+	unknown := func(err error, phase string) (bool, error) {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH) {
+			if _, statErr := os.Lstat(base); errors.Is(statErr, os.ErrNotExist) {
+				return false, nil
+			}
+		}
+		return false, selectedFenceUnknown(phase)
+	}
 	raw, err := s.read(filepath.Join(base, "status"))
 	if err != nil {
-		return false, selectedFenceUnknown("process UID unreadable")
+		return unknown(err, "process UID unreadable")
 	}
 	uids, err := selectedFenceUID(raw)
 	if err != nil {
 		return false, err
 	}
-	if !slices.Contains(uids[:], s.uid) {
+	if !slices.Contains(uids[:], s.uid) && pid != os.Getpid() {
 		again, readErr := s.read(filepath.Join(base, "status"))
+		if readErr != nil {
+			return unknown(readErr, "process UID unreadable during exclusion")
+		}
 		lastUID, parseErr := selectedFenceUID(again)
-		if readErr != nil || parseErr != nil || uids != lastUID {
+		if parseErr != nil || uids != lastUID {
 			return false, selectedFenceUnknown("process UID changed during exclusion")
 		}
 		return false, nil
 	}
 	first, err := readProcessStatAt(s.root, pid)
-	if err != nil || first.state == "Z" || first.state == "X" {
-		return false, selectedFenceUnknown("process not joined or generation unknown")
-	}
-	exe, err := os.Readlink(filepath.Join(base, "exe"))
 	if err != nil {
-		return false, selectedFenceUnknown("process executable unreadable")
+		return unknown(err, "process generation unknown")
 	}
-	info, err := os.Stat(filepath.Join(base, "exe"))
-	if err != nil {
-		return false, selectedFenceUnknown("process image identity unreadable")
+	if pid == os.Getpid() {
+		last, err := readProcessStatAt(s.root, pid)
+		if err != nil {
+			return unknown(err, "caller generation unreadable")
+		}
+		again, err := s.read(filepath.Join(base, "status"))
+		if err != nil {
+			return unknown(err, "caller UID unreadable")
+		}
+		lastUID, parseErr := selectedFenceUID(again)
+		if s.selfStart == 0 || first.start != s.selfStart || last.start != s.selfStart ||
+			first.state == "Z" || first.state == "X" || last.state == "Z" || last.state == "X" || parseErr != nil || uids != lastUID || !slices.Contains(uids[:], s.uid) {
+			return false, selectedFenceUnknown("caller generation or UID changed")
+		}
+		return false, nil
 	}
-	identity := info.Sys().(*syscall.Stat_t)
-	command, err := s.read(filepath.Join(base, "cmdline"))
-	if err != nil || len(command) == 0 {
-		return false, selectedFenceUnknown("process command identity unreadable")
+	readlink := s.readlink
+	if readlink == nil {
+		readlink = os.Readlink
 	}
-	last, err := readProcessStatAt(s.root, pid)
+	zombie := first.state == "Z" || first.state == "X"
+	var exe string
+	var identity *syscall.Stat_t
+	denied := false
+	fields := []string{"cmdline"}
+	if zombie {
+		fields = []string{"comm", "cgroup"}
+	} else {
+		exe, err = readlink(filepath.Join(base, "exe"))
+		denied = errors.Is(err, os.ErrPermission)
+		if err != nil && !denied {
+			return unknown(err, "process executable unreadable")
+		}
+		if denied {
+			fields = []string{"cmdline", "comm", "cgroup"}
+		} else {
+			info, err := os.Stat(filepath.Join(base, "exe"))
+			if err != nil {
+				return unknown(err, "process image identity unreadable")
+			}
+			identity = info.Sys().(*syscall.Stat_t)
+		}
+	}
+	observed := map[string][]byte{}
+	for _, name := range fields {
+		raw, err := s.read(filepath.Join(base, name))
+		if err != nil {
+			return unknown(err, "process exclusion facts unreadable")
+		}
+		if len(bytes.TrimSpace(raw)) == 0 {
+			return false, selectedFenceUnknown("process exclusion facts empty")
+		}
+		observed[name] = raw
+	}
+	for _, name := range fields {
+		raw, err := s.read(filepath.Join(base, name))
+		if err != nil {
+			return unknown(err, "process exclusion reread unavailable")
+		}
+		if !bytes.Equal(raw, observed[name]) {
+			return false, selectedFenceUnknown("process exclusion facts changed")
+		}
+	}
+	if !zombie {
+		again, err := readlink(filepath.Join(base, "exe"))
+		if denied {
+			if !errors.Is(err, os.ErrPermission) {
+				return unknown(err, "process executable accessibility changed")
+			}
+		} else {
+			if err != nil {
+				return unknown(err, "process executable reread unavailable")
+			}
+			info, err := os.Stat(filepath.Join(base, "exe"))
+			if err != nil {
+				return unknown(err, "process image reread unavailable")
+			}
+			last := info.Sys().(*syscall.Stat_t)
+			if exe != again || identity.Dev != last.Dev || identity.Ino != last.Ino {
+				return false, selectedFenceUnknown("process executable changed")
+			}
+		}
+	}
 	lastUIDRaw, uidErr := s.read(filepath.Join(base, "status"))
+	if uidErr != nil {
+		return unknown(uidErr, "process UID reread unavailable")
+	}
 	lastUID, parseErr := selectedFenceUID(lastUIDRaw)
-	lastCommand, commandErr := s.read(filepath.Join(base, "cmdline"))
-	if err != nil || uidErr != nil || parseErr != nil || commandErr != nil || first.start != last.start || first.state != last.state || uids != lastUID || !bytes.Equal(command, lastCommand) {
-		return false, selectedFenceUnknown("process generation, UID or command changed during read")
+	last, err := readProcessStatAt(s.root, pid)
+	if err != nil {
+		return unknown(err, "process generation reread unavailable")
+	}
+	if parseErr != nil || first.start != last.start || first.state != last.state || uids != lastUID {
+		return false, selectedFenceUnknown("process generation or UID changed during read")
+	}
+	if zombie || denied {
+		if s.possibleMatch(observed) {
+			return false, selectedFenceUnknown("unreadable executable or zombie may be selected")
+		}
+		return false, nil
 	}
 	for _, selected := range s.executables {
 		if strings.TrimSuffix(exe, " (deleted)") == selected.path || identity.Dev == selected.device && identity.Ino == selected.inode {
 			return true, nil
 		}
 	}
-	sum := sha256.Sum256(command)
+	sum := sha256.Sum256(observed["cmdline"])
 	return slices.Contains(s.commands, hex.EncodeToString(sum[:])), nil
 }
 
 func (s selectedFenceProcScan) empty(ctx context.Context) error {
+	self, err := readProcessStatAt("/proc", os.Getpid())
+	if err != nil || self.start == 0 {
+		return selectedFenceUnknown("caller generation unavailable")
+	}
+	s.selfStart = self.start
 	entries, err := os.ReadDir(s.root)
 	if err != nil || len(entries) > 65536 {
 		return selectedFenceUnknown("process enumeration unavailable")
@@ -585,6 +757,7 @@ func (h *selectedFenceHost) observe(ctx context.Context, scope SelectedUnitFence
 			return nil, selectedFenceUnknown("unit/trigger membership unknown")
 		}
 		seen[name] = true
+		scan.units = append(scan.units, name)
 		raw, err := h.query(ctx, "show", "--all", "--property="+strings.Join(selectedFenceProperties, ","), name)
 		if err != nil {
 			return nil, err
@@ -597,14 +770,9 @@ func (h *selectedFenceHost) observe(ctx context.Context, scope SelectedUnitFence
 			return nil, err
 		}
 		facts["unit:"+name] = selectedFenceHash(properties)
-		fragment := properties["FragmentPath"]
-		if fragment == "/dev/null" && properties["LoadState"] == "masked" {
-			facts["definition:"+name] = "manager-reported-mask:/dev/null"
-		} else {
-			facts["definition:"+name], err = selectedFenceFile(fragment)
-			if err != nil {
-				return nil, err
-			}
+		facts["definition:"+name], err = selectedFenceDefinition(properties["FragmentPath"], properties["LoadState"])
+		if err != nil {
+			return nil, err
 		}
 		for _, dropin := range strings.Fields(properties["DropInPaths"]) {
 			facts["dropin:"+name+":"+selectedFenceHash(dropin)], err = selectedFenceFile(dropin)
@@ -613,9 +781,13 @@ func (h *selectedFenceHost) observe(ctx context.Context, scope SelectedUnitFence
 			}
 		}
 		if strings.HasSuffix(name, ".service") {
-			facts["cgroup:"+name], err = selectedFenceGroup(h.cgroupRoot, properties["ControlGroup"])
-			if err != nil {
-				return nil, err
+			if properties["ControlGroup"] == "" {
+				facts["cgroup:"+name] = "manager-reported-empty"
+			} else {
+				facts["cgroup:"+name], err = selectedFenceGroup(h.cgroupRoot, properties["ControlGroup"])
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 		queue = append(queue, strings.Fields(properties["TriggeredBy"])...)
@@ -672,7 +844,7 @@ func selectedFenceDatabase(ctx context.Context, db *pgx.Conn, scope SelectedUnit
 		}
 		var database, systemID, databaseOID, user, session, relationOID, readonly string
 		var local bool
-		if err := tx.QueryRow(ctx, `SELECT current_database(), (SELECT system_identifier::text FROM pg_control_system()), (SELECT oid::text FROM pg_database WHERE datname=current_database()), current_user, session_user, to_regclass('public.semantic_job')::oid::text, current_setting('transaction_read_only'), inet_server_addr() IS NULL`).Scan(&database, &systemID, &databaseOID, &user, &session, &relationOID, &readonly, &local); err != nil || !local || readonly != "on" || database != scope.Database || systemID != scope.DatabaseSystemID || relationOID == "" {
+		if err := tx.QueryRow(ctx, `SELECT current_database(), (SELECT system_identifier::text FROM pg_control_system()), (SELECT oid::text FROM pg_database WHERE datname=current_database()), current_user, session_user, to_regclass('cairn.semantic_job')::oid::text, current_setting('transaction_read_only'), inet_server_addr() IS NULL`).Scan(&database, &systemID, &databaseOID, &user, &session, &relationOID, &readonly, &local); err != nil || !local || readonly != "on" || database != scope.Database || systemID != scope.DatabaseSystemID || relationOID == "" {
 			return nil, selectedFenceUnknown("actual database selection or semantic_job identity unknown")
 		}
 		var backends int64
