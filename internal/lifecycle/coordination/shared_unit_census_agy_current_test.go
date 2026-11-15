@@ -84,6 +84,90 @@ func (f agyCurrentUnit) check() error {
 	return agyCurrentPair(f.before, f.after, f.observed, f.generation, f.aSettings, f.bSettings, f.aCommands, f.bCommands, f.account, f.installed)
 }
 
+func TestAgyCurrentEmpiricalNativeWrites(t *testing.T) {
+	metadata := []byte(`{"conversationId":"u","workspacePaths":["/unit-current/project"]}`)
+	for _, tc := range []struct {
+		name, call string
+		refuse     bool
+	}{
+		{"truncated-ELF", `write(63, "\x7fELF"..., 16863523) = 16863523`, false},
+		{"builtin-Markdown", `write(24, "# Lifecycle Hooks: conversationId hookEventName"..., 15551) = 15551`, false},
+		{"unrelated-wire-JSON", `write(24, "{\"wire\":1}"..., 9000) = 9000`, false},
+		{"conversation-metadata", fmt.Sprintf("write(24, %q, %d) = %d", metadata, len(metadata), len(metadata)), false},
+		{"truncated-hook", `write(29, "{\"conversationId\":\"unit\""..., 9000) = 9000`, true},
+		{"invalid-hook-JSON", `write(29, "{\"conversationId\":", 18) = 18`, true},
+		{"missing-workspace", `write(29, "{\"conversationId\":\"u\",\"hookEventName\":\"Stop\"}", 45) = 45`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newAgyCurrentUnit()
+			f.before = append(f.before, []byte("200 "+tc.call+"\n")...)
+			f.observed.Before.End = len(f.before)
+			if err := f.check(); (err != nil) != tc.refuse {
+				t.Fatalf("refuse=%v, got %v", tc.refuse, err)
+			}
+		})
+	}
+}
+
+func TestAgyCurrentBuiltinProbeScope(t *testing.T) {
+	for _, tc := range []struct {
+		path, result string
+		refuse       bool
+	}{
+		{"/unit-current/antigravity-cli/builtin/plugins/swarm/hooks.json", "-1 ENOENT (No such file or directory)", false},
+		{"/unit-current/antigravity-cli/builtin/plugins/swarm/hooks.json", "8", true},
+		{"/unit-current/antigravity-cli/builtin/plugins/swarm/hooks.json", "-1 EACCES (Permission denied)", true},
+		{"/foreign/antigravity-cli/builtin/plugins/swarm/hooks.json", "-1 ENOENT (No such file or directory)", true},
+		{"/unit-current/antigravity-cli/builtin/plugins/swarm/nested/hooks.json", "-1 ENOENT (No such file or directory)", true},
+		{"/unit-current/antigravity-cli/builtin/plugins/../hooks.json", "-1 ENOENT (No such file or directory)", true},
+	} {
+		t.Run(tc.path+tc.result, func(t *testing.T) {
+			f := newAgyCurrentUnit()
+			f.before = append(f.before, []byte(fmt.Sprintf("200 openat(AT_FDCWD, %q, O_RDONLY|O_CLOEXEC) = %s\n", tc.path, tc.result))...)
+			f.observed.Before.End = len(f.before)
+			if err := f.check(); (err != nil) != tc.refuse {
+				t.Fatalf("refuse=%v, got %v", tc.refuse, err)
+			}
+		})
+	}
+}
+
+func TestAgyCurrentExactNonSessionVersion(t *testing.T) {
+	for _, name := range []string{"joined", "updater", "second-session", "failed-exit", "missing-exit", "extra-arg", "second-exec", "post-exit"} {
+		t.Run(name, func(t *testing.T) {
+			f := newAgyCurrentUnit()
+			var tail bytes.Buffer
+			fmt.Fprintln(&tail, "200 clone(child_stack=NULL, flags=SIGCHLD) = 201")
+			argv := []string{f.observed.Client.Path, "--version"}
+			switch name {
+			case "updater":
+				argv[1] = "--bg-updater"
+			case "second-session":
+				argv[1] = "--new-project"
+			case "extra-arg":
+				argv = append(argv, "--new-project")
+			}
+			agyUnitExec(&tail, 201, f.observed.Client.Path, argv)
+			if name == "second-exec" {
+				agyUnitExec(&tail, 201, f.observed.Client.Path, argv)
+			}
+			if name == "failed-exit" {
+				fmt.Fprintln(&tail, "201 +++ exited with 1 +++")
+			} else if name != "missing-exit" {
+				fmt.Fprintln(&tail, "201 +++ exited with 0 +++")
+			}
+			if name == "post-exit" {
+				fmt.Fprintln(&tail, "201 close(0) = 0")
+			}
+			f.before = append(f.before, tail.Bytes()...)
+			f.observed.Before.End = len(f.before)
+			if err := f.check(); (err == nil) != (name == "joined") {
+				t.Fatal("non-session exact version bound", err)
+			}
+		})
+	}
+}
+
 func TestAgyCurrentUnitNativeInputLiveOnly(t *testing.T) {
 	f := newAgyCurrentUnit()
 	if err := f.check(); err != nil {

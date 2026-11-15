@@ -13,6 +13,7 @@ import stat
 
 
 ROOT = Path(__file__).resolve().parents[1]
+TRACE_LIMIT = 256*1024*1024
 _spec = importlib.util.spec_from_file_location(
     'r06_existing_unix_peer_transport', ROOT/'integrations/lifecycle/unix_peer_transport.py')
 _process = importlib.util.module_from_spec(_spec)
@@ -80,11 +81,11 @@ def write_generation_pair(destination,before,after):
 def trace_interval(path,start,end,callbacks):
     """Pin exact complete raw bytes; offsets and references are only locators."""
     path=Path(path)
-    if path.lstat().st_size>256*1024*1024:
+    if path.lstat().st_size>TRACE_LIMIT:
         raise ValueError('raw trace exceeds 256 MiB')
     selected=pin(path)
     raw=path.read_bytes()
-    if not 0<=start<end==len(raw)<=256*1024*1024 or raw[end-1:]!=b'\n' or start and raw[start-1:start]!=b'\n':
+    if not 0<=start<end==len(raw)<=TRACE_LIMIT or raw[end-1:]!=b'\n' or start and raw[start-1:start]!=b'\n':
         raise ValueError('complete line-aligned raw interval required')
     if hashlib.sha256(raw).hexdigest()!=selected['SHA256']:
         raise ValueError('trace changed during collection')

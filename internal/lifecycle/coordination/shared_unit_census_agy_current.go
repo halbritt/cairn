@@ -469,11 +469,11 @@ func agyCurrentPhase(raw []byte, phase WatchCensusAgyCurrentPhase, capture agyGe
 			}
 		}
 		if call.name == "write" && threads[call.pid] {
-			body, _, e := agyTraceIO(call)
+			body, e := agyNativeHookWrite(call)
 			if e != nil {
 				return e
 			}
-			if bytes.Contains(body, []byte("conversationId")) && bytes.Contains(body, []byte("hookEventName")) {
+			if body != nil {
 				nativeWrites[call.start] = body
 			}
 		}
@@ -482,7 +482,7 @@ func agyCurrentPhase(raw []byte, phase WatchCensusAgyCurrentPhase, capture agyGe
 		}
 		path, argv, e := agyExec(call)
 		if call.pid == capture.Process.PID {
-			if e != nil || path != capture.Client.Path || !slices.Equal(argv, capture.ClientArgv) {
+			if clientSeen || e != nil || path != capture.Client.Path || !slices.Equal(argv, capture.ClientArgv) {
 				return errors.New("foreign Agy client exec/argv")
 			}
 			clientSeen = true
@@ -496,8 +496,14 @@ func agyCurrentPhase(raw []byte, phase WatchCensusAgyCurrentPhase, capture agyGe
 		if e != nil {
 			return e
 		}
+		if slices.Contains(argv, "--bg-updater") {
+			return errors.New("Agy background updater execution is forbidden")
+		}
 		if path == capture.Client.Path && call.pid != capture.Process.PID {
-			return errors.New("foreign nested Agy client generation")
+			if !slices.Equal(argv, []string{capture.Client.Path, "--version"}) || !agyVersionJoined(calls, call) {
+				return errors.New("foreign nested Agy client generation or unjoined version")
+			}
+			continue
 		}
 		if path == selected.Launcher.Path {
 			if boundary < 0 {
@@ -621,6 +627,30 @@ func agyCurrentPhase(raw []byte, phase WatchCensusAgyCurrentPhase, capture agyGe
 		}
 	}
 	return nil
+}
+
+func agyVersionJoined(calls []agyTraceCall, execution agyTraceCall) bool {
+	execs, exits := 0, 0
+	dead := false
+	for _, call := range calls {
+		if call.pid != execution.pid {
+			continue
+		}
+		if dead {
+			return false
+		}
+		if call.name == "execve" {
+			execs++
+		}
+		if call.name == "exit" {
+			if call.start <= execution.start || call.body != "+++ exited with 0 +++" {
+				return false
+			}
+			exits++
+			dead = true
+		}
+	}
+	return execs == 1 && exits == 1
 }
 
 func agyCurrentFrame(raw []byte, event, session, workspace string) error {

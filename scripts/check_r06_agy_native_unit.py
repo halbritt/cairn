@@ -6,8 +6,11 @@ Preparation and finite nonnative checks never confer native admission.
 import argparse
 import ast
 import copy
+import ctypes
+import errno
 from datetime import datetime, timezone
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -134,12 +137,113 @@ class PrerequisiteUnavailable(Refused):
     """Known pre-start prerequisite refusal; no native reservation is consumed."""
 
 
+class KernelCall(ctypes.Structure):
+    _fields_=[('code',ctypes.c_ushort),('jt',ctypes.c_ubyte),('jf',ctypes.c_ubyte),('k',ctypes.c_uint32)]
+
+
+def network_filter():
+    # linux/{seccomp,filter,bpf_common,audit}.h and asm/unistd_64.h. Reject
+    # alternate ABIs and io_uring's socket operations as well as inet datagrams.
+    rows=[('load',4),('eq',0xc000003e,'nr','deny'),('label','nr'),('load',0),
+        ('set',0x40000000,'deny','calls'),('label','calls'),('eq',41,'socket','pair'),
+        ('label','pair'),('eq',53,'socket','ring0'),('label','ring0'),('eq',425,'deny','ring1'),
+        ('label','ring1'),('eq',426,'deny','ring2'),('label','ring2'),('eq',427,'deny','allow'),
+        ('label','socket'),('load',16),('eq',socket.AF_UNIX,'allow','inet'),
+        ('label','inet'),('eq',socket.AF_INET,'type','inet6'),
+        ('label','inet6'),('eq',socket.AF_INET6,'type','deny'),('label','type'),('load',24),
+        ('and',0xffffffff ^ (socket.SOCK_CLOEXEC|socket.SOCK_NONBLOCK)),
+        ('eq',socket.SOCK_STREAM,'protocol','deny'),('label','protocol'),('load',32),
+        ('eq',0,'allow','tcp'),('label','tcp'),('eq',socket.IPPROTO_TCP,'allow','deny'),
+        ('label','deny'),('ret',0x00050000|errno.EACCES),('label','allow'),('ret',0x7fff0000)]
+    labels={};position=0
+    for row in rows:
+        if row[0]=='label':labels[row[1]]=position
+        else:position+=1
+    program=[]
+    for row in rows:
+        if row[0]=='label':continue
+        if row[0] in ('eq','set'):
+            jumps=[labels[label]-len(program)-1 for label in row[2:]]
+            require(all(0<=jump<=255 for jump in jumps),'invalid forward seccomp branch')
+            program.append((0x15 if row[0]=='eq' else 0x45,*jumps,int(row[1])))
+        else:program.append(({'load':0x20,'and':0x54,'ret':0x06}[row[0]],0,0,int(row[1])))
+    return program
+
+
+def install_network_policy(policy):
+    strict_object(policy,('schema','tcp_ports'),'network policy')
+    require(policy['schema']=='cairn.r06-kernel-network/1' and type(policy['tcp_ports']) is list
+        and len(policy['tcp_ports'])<=16 and policy['tcp_ports']==sorted(set(policy['tcp_ports']))
+        and all(type(port) is int and 1024<port<65536 for port in policy['tcp_ports']),'invalid network policy ports')
+    require(os.uname().machine=='x86_64' and ctypes.sizeof(ctypes.c_void_p)==8,
+            'unsupported seccomp syscall architecture')
+    # The bootstrap has just execed; no untrusted code or threads have run.
+    # Popen closes other FDs; reject any network socket retained as stdio too.
+    for entry in list(Path('/proc/self/fd').iterdir()):
+        try:
+            info=entry.stat();target=os.readlink(entry)
+        except FileNotFoundError:continue
+        require(target!='anon_inode:[io_uring]','inherited io_uring descriptor')
+        if stat.S_ISSOCK(info.st_mode):
+            view=socket.socket(fileno=os.dup(int(entry.name)))
+            try:require(view.family==socket.AF_UNIX,'inherited network descriptor')
+            finally:view.close()
+    libc=ctypes.CDLL(None,use_errno=True);libc.syscall.restype=ctypes.c_long
+    def call(number,*arguments):
+        result=libc.syscall(number,*arguments)
+        if result<0:raise OSError(ctypes.get_errno(),os.strerror(ctypes.get_errno()))
+        return result
+    abi=call(444,None,0,1)
+    require(abi>=4,'Landlock ABI4 network restriction required')
+    require(libc.prctl(38,1,0,0,0)==0,'PR_SET_NO_NEW_PRIVS failed')
+    class Ruleset(ctypes.Structure):_fields_=[('fs',ctypes.c_uint64),('net',ctypes.c_uint64)]
+    class Port(ctypes.Structure):_fields_=[('access',ctypes.c_uint64),('port',ctypes.c_uint64)]
+    attributes=Ruleset(0,2);fd=call(444,ctypes.byref(attributes),ctypes.sizeof(attributes),0)
+    try:
+        for port in policy['tcp_ports']:
+            rule=Port(2,port);call(445,fd,2,ctypes.byref(rule),0)
+        call(446,fd,0)
+    finally:os.close(fd)
+    program=network_filter();instructions=(KernelCall*len(program))(*(KernelCall(*row) for row in program))
+    class Filter(ctypes.Structure):_fields_=[('length',ctypes.c_ushort),('instructions',ctypes.POINTER(KernelCall))]
+    selected=Filter(len(program),instructions);call(317,1,0,ctypes.byref(selected))
+    require(libc.prctl(39,0,0,0,0)==1 and libc.prctl(21,0,0,0,0)==2,'kernel filter readback failed')
+    return dict(policy,landlock_abi=abi,handled_access_fs=0,handled_access_net=2,
+        no_new_privs=1,seccomp_mode=2,architecture='x86_64',uid=os.getuid(),
+        bpf_sha256=hashlib.sha256(bytes(instructions)).hexdigest(),
+        scope='Inherited TCP connect PORT allowlist; Landlock does not filter IP addresses. Inet non-stream, other socket domains and io_uring are refused. Address coverage requires the separate descendant connect audit.')
+
+
+def confined_exec(arguments):
+    require(len(arguments)>=4 and arguments[2]=='--','network bootstrap arguments required')
+    policy=json.loads(arguments[0],object_pairs_hook=admission_pairs);receipt=Path(arguments[1])
+    require(receipt.is_absolute() and receipt.parent==receipt.parent.resolve(),'private policy receipt path required')
+    private_directory(receipt.parent)
+    # Exclusive creation also refuses a prewritten or symlinked policy receipt.
+    with receipt.open('x',encoding='utf-8') as output:
+        selected=install_network_policy(policy)
+        json.dump(selected,output,sort_keys=True);output.write('\n');output.flush();os.fsync(output.fileno())
+    receipt.chmod(0o400)
+    argv=arguments[3:]
+    require(Path(argv[0]).is_absolute(),'absolute confined executable required')
+    os.execve(argv[0],argv,dict(os.environ))
+
+
 class OwnedKernelTrace:
     """Owned traced process; the held Agy image requires consumed admission."""
     SYSCALLS = ('execve,openat,fstat,connect,read,write,close,clone,clone3,fork,vfork,'
                 'readlink,wait4,waitid,exit,exit_group')
+    STRING_LIMIT = 2048
 
-    def __init__(self, argv, root, *, work=None, env=None, admission=None):
+    @classmethod
+    def command(cls, destination, argv):
+        tracer = shutil.which('strace')
+        require(tracer is not None, 'strace prerequisite')
+        tool_pin(Path(tracer).resolve())
+        return [str(Path(tracer).resolve()), '-f', '-xx', '-s', str(cls.STRING_LIMIT),
+                '-e', 'trace='+cls.SYSCALLS, '-e', 'abbrev=!fstat', '-o', str(destination), *argv]
+
+    def __init__(self, argv, root, *, work=None, env=None, admission=None, ports=()):
         self.root = private_directory(root)
         require(type(argv) is list and argv and all(type(a) is str and '\0' not in a for a in argv),
                 'literal fixture argv required')
@@ -153,21 +257,26 @@ class OwnedKernelTrace:
             require(marker.get('schema')=='cairn.r06-agy-native-attempt/1'
                     and marker.get('tuple')==selected and marker.get('state')=='consumed'
                     and self.root==Path(selected['catalog_root'])
-                    and Path(argv[0])==self.root/'native-agy', 'native reservation/image/root disagree')
+                    and Path(argv[0])==self.root/'client/native-agy', 'native reservation/image/root disagree')
+            require(type(env) is dict and env.get('AGY_CLI_DISABLE_AUTO_UPDATE')=='1'
+                    and stat.S_IMODE(Path(argv[0]).parent.stat().st_mode)==0o500,
+                    'native updater disable/read-only client directory required')
+            require(type(ports) in (tuple,list,set) and len(ports)==1
+                    and env.get('GOOGLE_GEMINI_BASE_URL')=='http://127.0.0.1:'+str(next(iter(ports))),
+                    'native kernel port must be the actual local provider port')
         require(Path(argv[0]).is_relative_to(self.root), 'fixture image must be owned in-root')
         require(stat.S_IMODE(Path(argv[0]).lstat().st_mode) == 0o500, 'controlled0500 fixture image required')
         require(hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'), 'pidfd prerequisite')
-        tracer = shutil.which('strace')
-        require(tracer is not None, 'strace prerequisite')
-        tool_pin(Path(tracer).resolve())
         self.trace = self.root/'kernel.trace'
         self.trace.touch(mode=0o600, exist_ok=False)
         self.stderr = (self.root/'kernel.stderr').open('xb')
         os.fchmod(self.stderr.fileno(),0o600)
         try:
-            self.process = subprocess.Popen([str(Path(tracer).resolve()), '-f', '-xx',
-                '-s', '262144', '-e', 'trace='+self.SYSCALLS, '-e', 'abbrev=!fstat',
-                '-o', str(self.trace), *argv], cwd=work or self.root, env=dict(os.environ) if env is None else env,
+            self.network_policy=dict(schema='cairn.r06-kernel-network/1',tcp_ports=sorted(ports))
+            command=[sys.executable,'-B',str(Path(__file__).resolve()),'--confined-exec',
+                json.dumps(self.network_policy),str(self.root/'kernel-policy.json'),'--',*self.command(self.trace,argv)]
+            self.process = subprocess.Popen(command,
+                cwd=work or self.root, env=dict(os.environ) if env is None else env,
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr,
                 start_new_session=True,umask=0o077)
         except BaseException:
@@ -176,6 +285,8 @@ class OwnedKernelTrace:
         self.pidfd, self.generation, self.closed = None, None, False
         try:
             def identify():
+                if self.process.poll() is not None:
+                    raise Refused('owned tracee exited before capture: '+(self.root/'kernel.stderr').read_text()[:8192])
                 for path in Path('/proc').iterdir():
                     if not path.name.isdigit():
                         continue
@@ -190,6 +301,26 @@ class OwnedKernelTrace:
             self.native_pid = self.pid
             self.pidfd = os.pidfd_open(self.pid)
             self.generation = collector.capture_owned_generation(self.pid)
+            self.policy=json.loads((self.root/'kernel-policy.json').read_bytes())
+            require({key:self.policy[key] for key in self.network_policy}==self.network_policy
+                and self.policy['uid']==os.getuid() and self.policy['no_new_privs']==1
+                and self.policy['seccomp_mode']==2 and self.policy['landlock_abi']>=4,
+                'missing/forged kernel policy receipt')
+            for selected_pid in (self.process.pid,self.pid):
+                status=Path(f'/proc/{selected_pid}/status').read_text()
+                require(re.search(r'^NoNewPrivs:\s+1$',status,re.M) and re.search(r'^Seccomp:\s+2$',status,re.M),
+                        'tracer/tracee lacks inherited kernel restriction')
+            policy_path=self.root/'kernel-policy.json'
+            policy_info=policy_path.lstat()
+            require(stat.S_ISREG(policy_info.st_mode) and policy_info.st_uid==os.getuid()
+                    and stat.S_IMODE(policy_info.st_mode)==0o400 and policy_info.st_nlink==1,
+                    'owned immutable kernel policy receipt required')
+            self._kernel_capture=copy.deepcopy(self.generation)
+            self._kernel_policy_pin=checked_pin(policy_path)
+            self._kernel_policy_identity=policy_identity(policy_path)
+            self._kernel_installer=checked_pin(Path(__file__).resolve())
+            info=self.trace.lstat()
+            self._kernel_trace_identity=(info.st_dev,info.st_ino,info.st_uid,info.st_nlink)
             require(self.generation['Client'] == self.image and self.generation['ClientArgv'] == argv,
                     'fixture identity/argv mismatch')
         except BaseException:
@@ -206,7 +337,7 @@ class OwnedKernelTrace:
         # Retain exactly what strace has emitted, including a partial last
         # record. The strict consumer decides whether that prefix is closed.
         raw = self.trace.read_bytes()
-        require(raw and len(raw) <= 256*1024*1024, 'empty/oversized kernel trace')
+        require(raw and len(raw) <= collector.TRACE_LIMIT, 'empty/oversized kernel trace')
         path = self.root/name
         path.write_bytes(raw)
         path.chmod(0o400)
@@ -288,7 +419,7 @@ class OwnedKernelTrace:
 
 def kernel_calls(raw, *, collecting=False):
     """Read the selected strace dialect; preserve original byte locators."""
-    require(type(raw) is bytes and 0 < len(raw) <= 256*1024*1024 and raw.endswith(b'\n'),
+    require(type(raw) is bytes and 0 < len(raw) <= collector.TRACE_LIMIT and raw.endswith(b'\n'),
             'partial/empty/oversized trace')
     allowed = set(OwnedKernelTrace.SYSCALLS.split(','))
     calls, pending, position = [], {}, 0
@@ -333,15 +464,54 @@ def trace_string(quoted):
         raise Refused('invalid trace address string') from error
 
 
-def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True):
+def policy_identity(path):
+    info=Path(path).lstat()
+    return (info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,
+            info.st_size,info.st_mtime_ns,info.st_ctime_ns)
+
+
+def verified_kernel_policy(owner,raw,capture,root,ports):
+    if owner is None:return False
+    # This is the owning tracer's retained observation, never a wire boolean or
+    # caller JSON assertion. Its capture and exact raw prefix must still match.
+    require(type(owner) is OwnedKernelTrace and owner.root==root
+            and owner._kernel_capture==capture,'kernel policy is not bound to this actual capture/root')
+    path=root/'kernel-policy.json'
+    require(checked_pin(path)==owner._kernel_policy_pin
+            and policy_identity(path)==owner._kernel_policy_identity
+            and checked_pin(Path(__file__).resolve())==owner._kernel_installer,
+            'stale or altered kernel policy/installer binding')
+    info=owner.trace.lstat()
+    require(stat.S_ISREG(info.st_mode) and
+        (info.st_dev,info.st_ino,info.st_uid,info.st_nlink)==owner._kernel_trace_identity,
+        'kernel trace file identity differs')
+    with owner.trace.open('rb') as stream:
+        require(stream.read(len(raw))==raw,'kernel policy raw capture prefix differs')
+    policy=json.loads(path.read_bytes())
+    require(policy['schema']=='cairn.r06-kernel-network/1' and policy['landlock_abi']>=4
+            and policy['handled_access_fs']==0 and policy['handled_access_net']==2
+            and policy['seccomp_mode']==2 and policy['no_new_privs']==1
+            and policy['architecture']=='x86_64' and policy['uid']==os.getuid()
+            and policy['tcp_ports']==ports,'kernel policy does not enforce this exact selected port set')
+    instructions=(KernelCall*len(network_filter()))(*(KernelCall(*row) for row in network_filter()))
+    require(policy['bpf_sha256']==hashlib.sha256(bytes(instructions)).hexdigest(),'kernel filter program differs')
+    return True
+
+
+def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True, enforcement=None):
     """Finite connect(2) audit; neither egress enforcement nor currentness."""
     root = private_directory(root)
     require(Path(capture['Client']['Path']).is_relative_to(root)
             and checked_pin(capture['Client']['Path']) == capture['Client']
             and capture['ClientArgv'] and capture['ClientArgv'][0] == capture['Client']['Path'],
             'selected root image/argv pin differs')
-    require(type(ports) in (set, list, tuple) and all(type(p) is int and 0 < p < 65536 for p in ports),
+    require(type(ports) in (set, list, tuple) and len(ports)==len(set(ports))
+            and (type(ports) is set or list(ports)==sorted(ports))
+            and all(type(p) is int and 1024 < p < 65536 for p in ports),
             'explicit owned loopback ports required')
+    ports=sorted(ports)
+    calls,pending=kernel_calls(raw)
+    kernel_enforced=verified_kernel_policy(enforcement,raw,capture,root,ports)
     sockets = set()
     for selected in unix_paths:
         path = Path(selected)
@@ -351,7 +521,6 @@ def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True)
         require(stat.S_ISSOCK(info.st_mode) and info.st_uid == os.getuid()
                 and info.st_mode & 0o077 == 0, 'owned private Unix socket required')
         sockets.add(str(path))
-    calls, pending = kernel_calls(raw)
     leader = capture['Process']['PID']
     require(type(leader) is int and leader > 1, 'selected root PID required')
     births, parents = {leader:-1}, {}
@@ -389,6 +558,14 @@ def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True)
             deaths[row['pid']] = row['start']
     exited = set(deaths)
     require(not final or exited == owned, 'descendant interval does not include all exits')
+    for execution in executions:
+        require('--bg-updater' not in execution['argv'],'background updater execution rejected')
+        if execution['path'] != capture['Client']['Path'] or int(execution['pid']) == leader:continue
+        pid=int(execution['pid'])
+        require(execution['argv']==[capture['Client']['Path'],'--version']
+                and len([row for row in calls if row['pid']==pid and row['name']=='execve'])==1
+                and any(row['pid']==pid and row['body']=='+++ exited with 0 +++' for row in calls),
+                'nested client must be exact joined non-session --version; updater/session rejected')
     quoted = r'"(?:\\.|[^"\\])*"'
     connections = []
     for row in calls:
@@ -405,13 +582,16 @@ def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True)
         if inet or inet6:
             selected = inet or inet6
             host, port = trace_string(selected[2]), int(selected[1])
-            require(host == ('127.0.0.1' if inet else '::1') and port in ports
-                    and size == (16 if inet else 28), 'external/unselected loopback connect attempt')
+            require(size==(16 if inet else 28) and 0<=port<65536
+                    and ipaddress.ip_address(host).version==(4 if inet else 6),'invalid inet sockaddr size/address')
+            selected_destination=host==('127.0.0.1' if inet else '::1') and port in ports
+            kernel_denied=not selected_destination and port not in ports and kernel_enforced and result=='-1 EACCES (Permission denied)'
+            require(selected_destination or kernel_denied,'external/unselected loopback connect attempt')
             destination = dict(family='AF_INET' if inet else 'AF_INET6',host=host,port=port)
         elif unix:
             path = trace_string(unix[1])
             # R04's sole outside-root allowance is a raw failed nscd lookup,
-            # exactly sockaddr length110 and ENOENT. No DNS/proxy allowance.
+            # exactly sockaddr length110 and ENOENT.
             missing_nscd = path == '/var/run/nscd/socket' and size == 110 and result == '-1 ENOENT (No such file or directory)'
             require(missing_nscd or path in sockets and 2+len(path.encode()) <= size <= 110,
                     'foreign/unknown Unix connect attempt')
@@ -419,12 +599,17 @@ def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True)
         else:
             raise Refused('unknown/truncated connect address family')
         connections.append(dict(pid=row['pid'],start=row['start'],end=row['end'],
-                                result=result,destination=destination))
+                                result=result,destination=destination,
+                                kernel_denied=bool((inet or inet6) and kernel_denied)))
     return dict(schema='cairn.r06-host-connect-audit/1',connections=connections,
         root_pid=leader,traced_pids=sorted(owned),parents=parents,interval=dict(Start=0,End=len(raw)),
         raw_sha256=hashlib.sha256(raw).hexdigest(),all_observed_descendants_exited=exited==owned,
+        kernel_enforced=kernel_enforced,
+        kernel_policy=enforcement._kernel_policy_pin if kernel_enforced else None,
         pending_nonconnect=[dict(pid=r['pid'],name=r['name'],start=r['start']) for r in pending],
-        ExternalCoverage='Observed connect(2) attempts only in this raw interval for the selected exec and kernel-derived descendants. Includes failed attempts. No kernel egress enforcement, sendto/sendmsg/unconnected UDP, inherited/preconnected descriptors, tracer/controller traffic, future interval or global coverage.',
+        ExternalCoverage='Observed connect(2) attempts only in this raw interval for the selected exec and kernel-derived descendants. Includes failed attempts. '+
+            ('Capture-bound kernel policy verified; TCP restriction is port-only, not an IP firewall. ' if kernel_enforced else 'No kernel egress enforcement. ')+
+            'This audit excludes sendto/sendmsg/unconnected UDP, inherited/preconnected descriptors, tracer/controller traffic, future interval and global coverage.',
         currentness='this audit alone does not satisfy Go currentness; readback/2 separately verifies the sole native stdin wait',
         NativePASS=False)
 
@@ -710,10 +895,28 @@ def run_native_attempt(approved, preflight, execute):
         require(type(result) is dict and result.get('state') == 'passed', 'native unit did not pass')
         return result
     except BaseException as error:
-        result = dict(state='failed', application_start_boundary_entered=True, error_type=type(error).__name__)
+        failure=dict(error_type=type(error).__name__,error=str(error))
+        result=dict(state='failed',NativePASS=False,application_start_boundary_entered=True,
+                    archive_state='pending-after-terminal',**failure)
+        evidence=approved.get('admission',{}).get('evidence')
+        if evidence:
+            existing=Path(evidence)/'native-result.json'
+            if existing.exists():
+                result=dict(json.loads(existing.read_bytes()),state='failed',NativePASS=False,
+                            application_start_boundary_entered=True,archive_state='pending-after-terminal')
+                for key,field in failure.items():result.setdefault(key,field)
+                if any(result[key]!=field for key,field in failure.items()):result['finalization_error']=failure
+
         raise
     finally:
-        reservation.finish(result)
+        evidence=approved.get('admission',{}).get('evidence')
+        try:
+            if evidence:roundtrip.write(Path(evidence)/'native-result.json',result)
+        except BaseException as error:
+            result=dict(result,state='failed',NativePASS=False,result_write_error=type(error).__name__)
+            raise
+        finally:
+            reservation.finish(result)
 
 
 def stage_native_client(approved):
@@ -725,7 +928,9 @@ def stage_native_client(approved):
     before = source.stat()
     require(checked_pin(source, expected) and stat.S_IMODE(before.st_mode) == 0o500,
             'controlled0500 source required')
-    destination = root/'native-agy'
+    parent = root/'client'
+    parent.mkdir(mode=0o700)
+    destination = parent/'native-agy'
     fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o500)
     try:
         with os.fdopen(fd, 'wb') as output, source.open('rb') as input_file:
@@ -742,11 +947,15 @@ def stage_native_client(approved):
                 and info.st_uid == os.getuid() and info.st_nlink == 1
                 and (info.st_dev, info.st_ino) != (before.st_dev, before.st_ino),
                 'native image must be an owned0500 in-root copy, not an alias')
+        parent.chmod(0o500)
+        sync_directory(parent)
         sync_directory(root)
         return dict(pin=selected, device=info.st_dev, inode=info.st_ino,
                     source_device=before.st_dev, source_inode=before.st_ino)
     except BaseException:
+        parent.chmod(0o700)
         destination.unlink(missing_ok=True)
+        parent.rmdir()
         raise
 
 
@@ -898,7 +1107,7 @@ def native_child_environment(fixture,provider_url):
     env={key:os.environ[key] for key in ('PATH','CODEX_HOME') if key in os.environ}
     env.update(LANG='C.UTF-8',TERM='dumb',HOME=str(fixture.home),
         ANTIGRAVITY_CLI_CONFIG_DIR=str(fixture.f.account),GEMINI_API_KEY=LOCAL_PROVIDER['api_key'],
-        GOOGLE_GEMINI_BASE_URL=provider_url,NO_PROXY=LOCAL_PROVIDER['NO_PROXY'])
+        GOOGLE_GEMINI_BASE_URL=provider_url,NO_PROXY=LOCAL_PROVIDER['NO_PROXY'],AGY_CLI_DISABLE_AUTO_UPDATE='1')
     return env,settings
 
 
@@ -909,7 +1118,8 @@ def open_native_session(approved,fixture,client,provider_url):
         '--input-format','stream-json','--output-format','stream-json','--print-timeout','30s','--print','']
     session=object.__new__(r04.AgySession)
     session.output,session.work=fixture.root,fixture.work
-    session.child=OwnedKernelTrace(argv,fixture.root,work=fixture.work,env=env,admission=approved)
+    session.child=OwnedKernelTrace(argv,fixture.root,work=fixture.work,env=env,admission=approved,
+        ports=(int(provider_url.rsplit(':',1)[1]),))
     session.selector=session.log=None
     session.buffer,session.events=bytearray(),[];session.closed=False
     try:
@@ -935,14 +1145,23 @@ def kernel_io(row):
 
 
 def kernel_hook_frame(row):
-    # Use the maintained classifier: arbitrary files/wire chunks are not hook
-    # frames. A selected hook still needs complete exact bytes, not a prefix.
-    selected=trace.hook_writes(str(row['pid'])+' '+row['body']+'\n',[row['pid']])
-    if not selected:return None
-    require(len(selected)==1,'ambiguous native hook write')
-    _,data=kernel_io(row)
-    payload=json.loads(data)
-    require(payload==selected[0]['payload'],'native hook classifier/bytes disagree')
+    match=re.match(r'write\(\d+, ("(?:\\.|[^"\\])*")',row['body'])
+    if not match:return None
+    prefix=ast.literal_eval(match[1]).encode('latin1')
+    if not prefix.startswith(b'{'):return None
+    purported=any(key in prefix for key in (b'"conversationId"',b'"hookEventName"'))
+    try:
+        _,data=kernel_io(row)
+        payload=json.loads(data)
+    except ValueError:
+        if purported:raise
+        return None
+    if type(payload) is not dict or 'hookEventName' not in payload:return None
+    require(type(payload) is dict and type(payload.get('conversationId')) is str and payload['conversationId']
+            and type(payload.get('hookEventName')) is str and payload['hookEventName']
+            and type(payload.get('workspacePaths')) is list and payload['workspacePaths']
+            and all(type(path) is str and path for path in payload['workspacePaths']),
+            'invalid purported native hook frame')
     return data,payload
 
 
@@ -968,6 +1187,7 @@ def collect_native_phase(session,fixture,label,start,destination):
     """Seal exact complete bytes; locators never substitute for Go readback."""
     expected=fixture.generations[label]
     def finished():
+        require(session.child.trace.stat().st_size<=collector.TRACE_LIMIT,'raw trace exceeds fixed 256 MiB cap')
         raw=session.child.trace.read_bytes()
         if not raw or not raw.endswith(b'\n'):return None
         calls,pending=kernel_calls(raw,collecting=True)
@@ -1072,6 +1292,93 @@ def capture_native_catalogs(fixture,session,before_capture,before,after_capture,
     return states,readback,generation
 
 
+PLANNED_CALLBACKS = 6
+CLIENT_TRACE_OVERHEAD = 64*1024*1024
+
+
+def trace_budget(callback_bytes):
+    require(type(callback_bytes) is list and len(callback_bytes)==2
+            and all(type(count) is int and count>0 for count in callback_bytes),'two measured genuine callbacks required')
+    projected=max(callback_bytes)*PLANNED_CALLBACKS+CLIENT_TRACE_OVERHEAD
+    require(projected<collector.TRACE_LIMIT,'measured callback budget exceeds fixed 256 MiB cap')
+    return dict(callback_bytes=callback_bytes,planned_callbacks=PLANNED_CALLBACKS,
+        client_overhead=CLIENT_TRACE_OVERHEAD,projected_bytes=projected,cap=collector.TRACE_LIMIT,
+        margin_bytes=collector.TRACE_LIMIT-projected,
+        overhead_basis='Explicit 64 MiB reserve for three-turn client trace traffic; not a new client measurement')
+
+
+def measure_trace_budget(images,evidence):
+    """Execute the genuine Go3 producer's two callbacks, never a native client."""
+    evidence=Path(evidence);evidence.mkdir(mode=0o700)
+    private_directory(evidence)
+    control=checked_pin(images['control'])
+    require(Path(control['Path']).stat().st_size>=24_000_000,'real common control image required, not a small stub')
+    runtime=Path(tempfile.mkdtemp(prefix='r06b-',dir=Path.home()/'.cache'))
+    cluster=fixture=None;measurements=[];pg_pids=[]
+    original_images={role:checked_pin(image) for role,image in images.items()}
+    try:
+        copied=runtime/'control';shutil.copyfile(images['control'],copied);copied.chmod(0o500)
+        require(checked_pin(copied)['SHA256']==control['SHA256'],'budget control copy differs')
+        cluster=OwnedCluster.start(runtime/'pg',pg_bin=pg_bindir())
+        pg_pids=owned_pg_processes(runtime/'pg/data/postmaster.pid')
+        fixture=NativeUnitFixture(runtime/'fixture',dict(images,control=copied),cluster,evidence)
+        native_id='synthetic-budget-'+str(uuid.uuid4())
+        for index,row in enumerate(fixture.generations['A']['rows']):
+            vector=shlex.split(Path(row['argv'][0]).read_text().splitlines()[1])
+            require(vector[0]=='exec' and vector[-1]=='$@','genuine producer launcher required')
+            argv=vector[1:-1]+row['argv'][1:]
+            require(checked_pin(argv[0])['SHA256']==control['SHA256'],'actual callback is not the genuine control image')
+            payload=dict(conversationId=native_id,workspacePaths=[str(fixture.work)],host_pid=os.getpid(),
+                         hookEventName=('PreInvocation','Stop')[index],transcriptPath=str(runtime/'synthetic-history'),
+                         fullyIdle=True,budgetPadding='x'*768)
+            body=(json.dumps(payload,separators=(',',':'))+'\n').encode()
+            require(1024<=len(body)<OwnedKernelTrace.STRING_LIMIT,
+                    'budget frame must cover measured native payloads within the production string bound')
+            env=dict(os.environ,ANTIGRAVITY_CLI_CONFIG_DIR=str(fixture.f.account))
+            owner=OwnedKernelTrace(argv,runtime,work=fixture.work,env=env)
+            try:
+                require(owner.image['SHA256']==control['SHA256'],'callback image changed before capture')
+                stdout,_=owner.process.communicate(body,timeout=30)
+                roundtrip.write(evidence/f'callback-{index}-output.json',dict(argv=argv,exit=owner.process.returncode,
+                    stdout=stdout.decode('utf-8'),kernel_stderr=(runtime/'kernel.stderr').read_text()))
+            finally:
+                owner.close()
+                target=evidence/f'callback-{index}.trace';owner.trace.rename(target);target.chmod(0o400)
+                (runtime/'kernel.stderr').rename(evidence/f'callback-{index}.stderr')
+                (runtime/'kernel-policy.json').rename(evidence/f'callback-{index}-policy.json')
+                roundtrip.write(evidence/f'callback-{index}-cleanup.json',owner.cleanup)
+            require(owner.process.returncode==0,'genuine Go3 callback failed; see output/trace')
+            raw=target.read_bytes();calls,pending=kernel_calls(raw)
+            require(not pending and owner.cleanup['all_absent'] and not owner.cleanup['forced_signals'],
+                    'budget callback did not join cleanly')
+            threads=kernel_threads(calls,owner.pid)
+            inputs=[kernel_io(call)[1] for call in calls if call['pid'] in threads
+                    and call['name']=='read' and re.match(r'read\(0,',call['body'])]
+            require(inputs and inputs[-1]==b'' and b''.join(inputs)==body,'budget callback lacks exact stdin/EOF')
+            measurements.append(dict(event=payload['hookEventName'],bytes=len(raw),trace=checked_pin(target),
+                argv=argv,stdin_sha256=hashlib.sha256(body).hexdigest(),stdin_bytes=len(body),cleanup=owner.cleanup,
+                strace_argv=OwnedKernelTrace.command(owner.trace,argv),policy=owner.policy,
+                image=owner.image,capture=owner.generation,installer=owner._kernel_installer,
+                policy_pin=checked_pin(evidence/f'callback-{index}-policy.json')))
+        require(all(checked_pin(images[role])==pin for role,pin in original_images.items()),'budget original image changed')
+        result=dict(schema='cairn.r06-agy-trace-budget/1',**trace_budget([r['bytes'] for r in measurements]),
+            control=control,control_bytes=Path(control['Path']).stat().st_size,measurements=measurements,
+            native_executions=0,provider_executions=0,string_limit=OwnedKernelTrace.STRING_LIMIT)
+        roundtrip.write(evidence/'trace-budget.json',result)
+        return result
+    finally:
+        try:
+            if fixture is not None:fixture.close()
+        finally:
+            if cluster is not None:
+                stopped=cluster.stop()
+                cleanup=dict(stopped=stopped,pids=pg_pids,
+                    all_absent=all(p>1 and not Path(f'/proc/{p}').exists() for p in pg_pids),group_signals=False)
+                roundtrip.write(evidence/'budget-pg-cleanup.json',cleanup)
+                require(stopped and cleanup['all_absent'],'budget PG cleanup failed')
+            shutil.rmtree(runtime)
+
+
 def native_preflight(approved):
     """Known prerequisites precede reservation and every application startup."""
     try:
@@ -1098,6 +1405,7 @@ def native_preflight(approved):
         native_admission_window(selected)
         approved['preflight']=dict(pg=str(pg),pg_pins=pg_pins,source_pins=source_pins,
             parent=dict(HOME=os.environ['HOME'],CODEX_HOME=os.environ.get('CODEX_HOME')))
+        approved['preflight']['trace_budget']=measure_trace_budget(approved['images'],Path(selected['evidence'])/'trace-budget')
     except (ValueError,OSError,AssertionError,RuntimeError,KeyError,TypeError,subprocess.SubprocessError) as error:
         raise PrerequisiteUnavailable('INPUT_NOT_READY: '+str(error)) from error
 
@@ -1107,7 +1415,8 @@ def execute_native(approved):
     selected=approved['admission'];evidence=Path(selected['evidence']);root=Path(selected['catalog_root'])
     runtime=Path(tempfile.mkdtemp(prefix='r06n-',dir=Path.home()/'.cache'))
     cluster=fixture=provider=session=None
-    result=dict(state='failed',attempt_id=selected['attempt_id'],NativePASS=False)
+    result=dict(state='failed',attempt_id=selected['attempt_id'],NativePASS=False,
+                trace_budget=approved['preflight']['trace_budget'])
     pg=Path(approved['preflight']['pg']);pg_pids=[]
     try:
         roundtrip.write(evidence/'application-start.json',dict(attempt_id=selected['attempt_id'],runtime=str(runtime),
@@ -1130,7 +1439,7 @@ def execute_native(approved):
         start=0;results.append(session.prompt(prompts[0]))
         before,history=collect_native_phase(session,fixture,'A',start,root/'phase-A.trace')
         audit_a=audit_host_connections(Path(before['Trace']['Path']).read_bytes(),before_capture,root,
-            ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False)
+            ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False,enforcement=session.child)
         fixture.stage_live_b()
         require(session.child.capture_generation()==before_capture,'staging B changed native generation')
         fixture.publish('B')
@@ -1141,7 +1450,7 @@ def execute_native(approved):
         after_capture=session.child.capture_generation()
         require(before_capture==after_capture and history_b==history,'same native generation/history not preserved')
         audit_b=audit_host_connections(Path(after['Trace']['Path']).read_bytes(),after_capture,root,
-            ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False)
+            ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False,enforcement=session.child)
         states,readback,generation=capture_native_catalogs(fixture,session,before_capture,before,after_capture,after,client)
         forward=roundtrip.plan(fixture.unit);forward['census']['Proposal']['Sessions']=[p['Path'] for p in states]
         public_forward=roundtrip.invoke(approved['images'],fixture.host,fixture.unit,forward,evidence,'native-A-to-B')
@@ -1167,7 +1476,7 @@ def execute_native(approved):
         full=session.child.trace.read_bytes()
         require(full[:after['End']]==Path(after['Trace']['Path']).read_bytes(),'sealed B interval changed or hid restored A')
         final_audit=audit_host_connections(full,before_capture,root,ports={provider.server.server_port},
-            unix_paths=[fixture.bridge.path],final=True)
+            unix_paths=[fixture.bridge.path],final=True,enforcement=session.child)
         require(all(checked_pin(ROOT/name)==pin for name,pin in source_pins.items()),'maintained source changed during run')
         result.update(state='passed',NativePASS=True,native_session=session.identity,client=client,
             generation=generation,readback=readback,Before=before,After=after,RestoredA=restored,
@@ -1176,7 +1485,8 @@ def execute_native(approved):
         roundtrip.write(evidence/'provider-requests.json',provider.requests)
         roundtrip.write(evidence/'native-cleanup.json',session.child.cleanup)
     finally:
-        errors=[];active_error=sys.exc_info()[0] is not None
+        errors=[];failure=sys.exc_info()[1];active_error=failure is not None
+        if active_error:result.update(error_type=type(failure).__name__,error=str(failure))
         for name,owner in [('native',session),('provider',provider),('fixture',fixture)]:
             if owner is not None:
                 try:owner.close()
@@ -1192,19 +1502,7 @@ def execute_native(approved):
             if hasattr(session.child,'cleanup'):roundtrip.write(evidence/'native-cleanup.json',session.child.cleanup)
             else:errors.append('native cleanup receipt unavailable')
         if fixture is not None:
-            # Stat-only custody for every credential inode alias and API home.
-            try:
-                custody=roundtrip.snapshot_root(root,fixture.unit['Credential'],api_home=root/'api-home')
-                roundtrip.write(evidence/'owned-root-custody.json',custody)
-                archive=evidence/'owned-root-nonprivate.tar.gz'
-                with tarfile.open(archive,'x:gz') as output:
-                    for name,row in custody.items():
-                        if 'sha256' in row:
-                            require(roundtrip.sha(name)==row['sha256'],'asset changed before archive')
-                            require(fixture.host_dsn.encode() not in Path(name).read_bytes(),'raw fixture DSN in native asset')
-                            output.add(name,arcname=str(Path(name).relative_to(root)),recursive=False)
-                archive.chmod(0o400)
-            except BaseException as error:errors.append('custody:'+type(error).__name__)
+            approved['_archive_fixture']=fixture
         try:
             require(all(tool_pin((pg/name).resolve())==pin for name,pin in approved['preflight']['pg_pins'].items()),'PG tool changed')
             assert_images_unchanged(approved['images'],approved['image_pins'])
@@ -1223,9 +1521,33 @@ def execute_native(approved):
         if not errors:
             shutil.rmtree(runtime)
         if errors or active_error:result.update(state='failed',NativePASS=False)
-        roundtrip.write(evidence/'native-result.json',dict(result,cleanup_errors=errors,PG_runtime_removed=not runtime.exists()))
+        result.update(cleanup_errors=errors,PG_runtime_removed=not runtime.exists(),archive_state='pending-after-terminal')
+        roundtrip.write(evidence/'native-result.json',result)
         require(not errors,'owned cleanup unresolved: '+','.join(errors))
     return result
+
+
+def archive_native_after_terminal(approved):
+    fixture=approved.get('_archive_fixture')
+    if fixture is None:return
+    selected=approved['admission'];evidence=Path(selected['evidence']);root=fixture.root
+    require(Path(selected['ledger']).with_suffix('.terminal.json').exists(),'archive requires terminal native outcome')
+    active_error=sys.exc_info()[0] is not None
+    try:
+        custody=roundtrip.snapshot_root(root,fixture.unit['Credential'],api_home=root/'api-home')
+        roundtrip.write(evidence/'owned-root-custody.json',custody)
+        archive=evidence/'owned-root-nonprivate.tar.gz'
+        with tarfile.open(archive,'x:gz') as output:
+            for name,row in custody.items():
+                if 'sha256' in row:
+                    require(roundtrip.sha(name)==row['sha256'],'asset changed before archive')
+                    require(fixture.host_dsn.encode() not in Path(name).read_bytes(),'raw fixture DSN in native asset')
+                    output.add(name,arcname=str(Path(name).relative_to(root)),recursive=False)
+        archive.chmod(0o400)
+        roundtrip.write(evidence/'archive-result.json',dict(state='completed',archive=checked_pin(archive)))
+    except BaseException as error:
+        roundtrip.write(evidence/'archive-result.json',dict(state='failed',error_type=type(error).__name__,error=str(error)))
+        if not active_error:raise
 
 
 def validate_image_manifest(pins, *, source_head=BASE, source_tree=BASE_TREE):
@@ -1282,7 +1604,7 @@ def validate_build_recipe(role, record, image, pins):
             and stat.S_IMODE(info.st_mode) == 0o500, 'original role image identity changed')
 
 
-def checked_packet(manifest, manifest_sha256, index, index_sha256, complete, complete_sha256, *, native=False):
+def checked_packet(manifest, manifest_sha256, index, index_sha256, complete, complete_sha256, *, native=False, measure_only=False):
     """Pins select BUILD-ONLY bytes; they never admit a native client."""
     require(all((manifest, manifest_sha256, index, index_sha256, complete, complete_sha256)),
             'INPUT_NOT_READY: complete sealed image packet and exact pins required')
@@ -1292,7 +1614,7 @@ def checked_packet(manifest, manifest_sha256, index, index_sha256, complete, com
     root = Path(manifest).parent
     private_directory(root)
     pins = json.loads(Path(manifest).read_bytes(),object_pairs_hook=admission_pairs)
-    source_head,source_tree = (pins.get('source_head'),pins.get('source_tree')) if native else (BASE,BASE_TREE)
+    source_head,source_tree = (pins.get('source_head'),pins.get('source_tree')) if native or measure_only else (BASE,BASE_TREE)
     require(type(source_head) is str and re.fullmatch('[0-9a-f]{40}',source_head)
             and type(source_tree) is str and re.fullmatch('[0-9a-f]{40}',source_tree), 'exact image source required')
     require(subprocess.check_output(['git','rev-parse',source_head+'^{tree}'],cwd=ROOT,text=True,timeout=15).strip()==source_tree,
@@ -1369,6 +1691,7 @@ def checked_packet(manifest, manifest_sha256, index, index_sha256, complete, com
                 and all(pins['source_files'].get(name)==r04.digest(ROOT/name) for name in inputs),
                 'native images lack current Go/embedded source behavior')
         return images,pins,selections
+    if measure_only:return images,pins,selections
     require(root == CONTROLLED_PACKET, 'only the selected controlled packet is supported')
     selections['lineage'] = checked_pin(root/'lineage.json', LINEAGE_SHA256)
     selections['lineage_final'] = checked_pin(root/'communication/lineage-final.json', LINEAGE_FINAL_SHA256)
@@ -1795,6 +2118,8 @@ def prepare_target_observation(evidence):
 
 def main(argv=None):
     selected_argv=list(sys.argv[1:] if argv is None else argv)
+    if selected_argv and selected_argv[0]=='--confined-exec':
+        return confined_exec(selected_argv[1:])
     if selected_argv and selected_argv[0]=='--api-bridge-client':
         require(len(selected_argv)>=2,'API bridge socket required')
         return api_bridge_client(Path(selected_argv[1]),selected_argv[2:])
@@ -1803,6 +2128,7 @@ def main(argv=None):
     mode.add_argument('--prepare-stubbed', action='store_true')
     mode.add_argument('--prepare-authenticated', action='store_true')
     mode.add_argument('--prepare-target-observation', action='store_true')
+    mode.add_argument('--measure-trace-budget', action='store_true', help='genuine Go3 callbacks only; no native/provider')
     mode.add_argument('--native-unit', action='store_true', help='one explicitly pinned future disposable Agy case')
     parser.add_argument('--admission',type=Path)
     parser.add_argument('--admission-sha256')
@@ -1818,12 +2144,19 @@ def main(argv=None):
     parser.add_argument('--build-complete-sha256')
     args = parser.parse_args(argv)
     try:
+        if args.measure_trace_budget:
+            require(args.evidence is not None,'explicit private budget evidence required')
+            images,pins,packet=checked_packet(args.images,args.images_sha256,args.packet_index,args.packet_index_sha256,
+                                      args.build_complete,args.build_complete_sha256,measure_only=True)
+            print(json.dumps(measure_trace_budget(images,args.evidence),sort_keys=True))
+            return 0
         if args.native_unit:
             try:
                 approved=checked_native_admission(args.admission,args.admission_sha256,args.attempt_id)
             except (ValueError,OSError,AssertionError,KeyError,TypeError,RuntimeError,subprocess.SubprocessError) as error:
                 raise PrerequisiteUnavailable('INPUT_NOT_READY: '+str(error)) from error
-            result=run_native_attempt(approved,native_preflight,execute_native)
+            try:result=run_native_attempt(approved,native_preflight,execute_native)
+            finally:archive_native_after_terminal(approved)
             print(json.dumps(result,sort_keys=True))
             return 0
         if args.prepare_target_observation:

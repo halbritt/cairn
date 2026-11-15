@@ -28,7 +28,7 @@ or missing fields refuse. Its exact fields are `schema`, `source_head`,
 `provider`, `attempt_id`, `attempt_limit`, `issued_at`, `expires_at`, `ledger`,
 `evidence`, `catalog_root` and `tools`. Pins contain exactly `Path` and `SHA256`.
 The attempt UUID is canonical, its limit is one, and the UTC validity interval
-is at most15 minutes. The source must be the actual clean driver checkout.
+is at most 15 minutes. The source must be the actual clean driver checkout.
 
 The selected sealed packet must contain five distinct original API, control,
 stager, helper and observer images; full source archive; successful real build,
@@ -41,22 +41,32 @@ inputs and aliased roles refuse.
 The client is Root1383's frozen Agy1.5.7 image, SHA256
 `5df525a2d6908989c57b897723caea66e00d7c4d2e24411f91ad306989574642`, under
 `/home/halbritt/.cache/cairn301-release-1383/agy-receipt-filetype-20261112/`.
-The driver copies its bytes to `catalog_root/native-agy`, an owned0500 regular
-file with a distinct inode. It never uses a moving installed client.
+The driver copies its bytes to `catalog_root/client/native-agy`, an owned 0500 regular
+file with a distinct inode, inside an owned 0500 client directory. The native
+child receives `AGY_CLI_DISABLE_AUTO_UPDATE=1`. A background updater or second
+session exec is rejected; only an exact child `[client, "--version"]` with one
+exec and an observed zero exit is permitted.
 
-The provider tuple is exactly local `GeminiFixture`, host `127.0.0.1`, port0,
+The provider tuple is exactly local `GeminiFixture`, host `127.0.0.1`, port 0,
 synthetic key `r04-synthetic-unused`, and `NO_PROXY=127.0.0.1,localhost`.
 Normal-host Python and strace are explicitly pinned. Evidence and catalog
-directories must be fresh, empty, private0700 and disjoint from the admission
+directories must be fresh, empty, private 0700 and disjoint from the admission
 and ledger. The catalog path must fit the owned Unix socket limit. PID-fd
 support, nonroot execution, executable PostgreSQL tools and selected
-source/tools/images are checked before reservation or application startup.
+source/tools/images are checked before reservation or actual native startup.
+A genuine callback size measurement is also a prerequisite before reservation;
+its disposable API/PG and two Go callbacks confer no native admission.
 Known missing prerequisites return75 without consuming an attempt.
 
 An exclusive immutable consumption marker binds the entire admitted tuple.
 After that boundary, any failure consumes the attempt. A complete fsynced
 terminal result is published exclusively without replacing an earlier result
-or consumption marker. There is no automatic retry or fallback route. An
+or consumption marker. A failed result includes the original error and cleanup
+observations. Both `native-result.json` and the atomic native terminal precede
+expensive custody hashing and archival. `archive-result.json` records archival
+separately; a pending or failed archive cannot establish complete custody. An
+archive failure preserves an earlier native failure and its first error. There
+is no automatic retry or fallback route. An
 admission selects already-authorized work; it is not authentication or an
 expansion of the owner's authorization.
 
@@ -94,6 +104,59 @@ restores exact A settings; a third actual turn must use the same native
 generation/history. The local provider's final request must contain all three
 actual prompts. Shutdown must be orderly, zero and joined.
 
+## Kernel network restriction and measured trace budget
+
+The fixture uses the normal host UID, user and mount namespaces, HOME,
+CODEX_HOME, tools and authentication. A fresh Python child bootstrap installs
+`PR_SET_NO_NEW_PRIVS`, Landlock and seccomp before execing strace. Both the
+tracer and native client are observed with NoNewPrivs=1 and Seccomp=2; all
+fork/clone/exec descendants inherit the restrictions. No Python preexec_fn runs
+in the fixture's threaded parent. The local provider listener and the private
+AF_UNIX API bridge remain owned by that parent.
+
+Landlock ABI4 or newer handles CONNECT_TCP only. Its rules permit only the
+actual selected fixture ports, all above 1024, normally the provider's ephemeral
+port. No filesystem or BIND_TCP right is handled. Landlock filters ports,
+not IP addresses: a non-denied external address on an allowed port still fails
+the descendant audit. Missing support or installation failure refuses; there
+is no unrestricted or audit-only fallback.
+
+The x86_64 seccomp program rejects alternate syscall architectures and x32,
+masks SOCK_CLOEXEC/SOCK_NONBLOCK, and permits inet sockets only for SOCK_STREAM
+with protocol 0 or IPPROTO_TCP. Inet datagram/raw/non-TCP stream sockets and
+other socket domains, including AF_PACKET and AF_NETLINK, return EACCES.
+AF_UNIX remains available. io_uring setup/enter/register are refused to close
+its socket-operation route. The exec bootstrap closes ordinary inherited FDs
+and refuses retained network sockets and io_uring descriptors. Failed policy
+validation never execs the target.
+
+`kernel-policy.json` records the actual installed ABI, rights, selected ports,
+BPF digest and kernel readback. Audit acceptance uses the owning tracer's
+retained observation: exact process capture, receipt hash/inode/owner/mode and
+timestamps, unchanged installer, trace-file identity and unchanged raw prefix.
+A decoded caller JSON flag cannot establish enforcement. The receipt selects
+no principal and grants no authority.
+
+Both measurement and production use the same `OwnedKernelTrace.command`:
+single-line `strace -f -xx -s 2048` and the existing selected syscalls, without
+multiline `-e read=` dumps. Every raw reader retains its 268435456-byte cap.
+The nonnative `--measure-trace-budget` entry verifies the sealed five-role
+packet, stages genuine Go /3 material, and runs its PreInvocation and Stop
+callbacks under that restricted child. It uses an explicitly synthetic
+conversation and an actual owned controller PID; the genuine API creates only
+local disposable fixture registrations. No Agy, Gemini fixture or model runs.
+The real common control image must be at least 24 MB. Exact image hash/size,
+producer argv, callback stdin bytes/EOF, zero joins, raw pins, installed policy
+and cleanup observations are recorded. Input frames exceed 1024 bytes, covering
+the measured native payload lengths, while staying below the 2048-byte bound.
+
+The gate requires `max(measured callback bytes) * 6 + 67108864 < 268435456`.
+The 64 MiB client reserve is an explicit allowance for client-only traffic,
+not a new client measurement. The result reports the remaining byte margin. This projection does not replace the live cap, full raw audit or
+exact hook-frame proof. A smaller synthetic binary cannot replace the genuine
+control image. Native preflight remeasures its selected packet before the
+exclusive reservation.
+
 ## Current readback and raw trace contract
 
 Private `agyTraceCallsLive` is called only by `agyCurrentPhase` for
@@ -119,6 +182,13 @@ those exact bytes. AFTER ends before the later restored-A turn; the full final
 trace retains that turn and must contain the sealed AFTER prefix unchanged.
 Extra A callbacks within the B phase refuse.
 
+Native ELF extraction, wire chunks and builtin Markdown are not hook frames.
+Only `{`-prefixed JSON objects with valid conversationId, workspacePaths and
+hookEventName undergo strict complete hook I/O validation. Malformed or
+truncated purported hook JSON refuses. Only failed ENOENT hooks.json probes in
+the selected account's owned builtin-plugin subtree are exempt from layer
+inventory; successful undeclared opens and foreign paths still refuse.
+
 ## Finite descendant connect audit
 
 Normal-host strace includes the selected literal native exec and every observed
@@ -128,18 +198,27 @@ unknown records, partial lines, overlapping calls and unfinished
 connect/exec/creation coverage refuse. The final interval requires every
 observed descendant to exit.
 
-Each observed connect attempt, including failures, must name an explicit owned
+Each non-denied connect attempt must name an explicit owned
 loopback port at exactly `127.0.0.1` or `::1`, or a selected owned private Unix
 socket inside the catalog. The sole outside-root exception is exactly
-`/var/run/nscd/socket`, sockaddr length110, returning `-1 ENOENT`.
-Unknown/truncated addresses, other loopback addresses, proxy/DNS/external
-destinations and foreign Unix sockets refuse. Collection of an in-flight
-prefix does not make a pending connect auditable.
+`/var/run/nscd/socket`, sockaddr length 110, returning `-1 ENOENT`.
+Selected ports must be unique, sorted integers above 1024. Every inet address
+must have its exact sockaddr size (16 for IPv4, 28 for IPv6). With a verified
+capture-bound kernel policy, a valid unselected inet connect returning exactly
+`-1 EACCES (Permission denied)` on a port outside the allowlist is retained with
+`kernel_denied=true`. A selected port always requires the selected loopback
+address, including when its result is EACCES. Without
+that enforcement observation even that result refuses. Every other result,
+including EINPROGRESS, ECONNREFUSED and ENETUNREACH, must target 127.0.0.1 or ::1
+on an explicit selected port. This also covers TCP DNS fallback and literal
+HTTPS attempts without erasing denied calls. Unknown or partial addresses and
+results, wrong sockaddr sizes and foreign Unix sockets refuse. Collection of
+an in-flight prefix does not make a pending connect auditable.
 
 ExternalCoverage covers observed `connect(2)` attempts in that raw interval.
 It excludes sendto/sendmsg, unconnected UDP, inherited/preconnected descriptors,
-tracer/controller traffic, future intervals and global coverage. It is an
-audit, not kernel egress enforcement or proof of Go currentness.
+tracer/controller traffic, future intervals and global coverage. Kernel
+enforcement is recorded separately and remains port-based; this audit does not establish Go currentness or global coverage.
 
 ## Validation, custody and remaining scope
 
@@ -160,7 +239,9 @@ entries retain their own exclusive local ledgers; neither consumes native
 admission or makes a native PASS claim.
 
 Cleanup targets owned PIDs greater than one. Exact pidfds preserve generation
-identity for bounded cleanup; no process-group signals are used. Evidence
+identity for bounded driver cleanup. The driver sends no process-group
+signals; the outer host:exec timeout is a separate cleanup mechanism and this
+claim does not attest its signal scope. Evidence
 records API, client/tracer/descendant and PG joins. Credentials, every inode
 alias and API-home contents are metadata-only in custody snapshots and are
 excluded from hashes and archives. PG data stays outside the catalog.

@@ -691,6 +691,47 @@ func agyQuoted(raw string) (string, error) {
 	return strconv.Unquote(raw)
 }
 
+// Native threads also write extracted executables, builtin Markdown and wire
+// records. Only a purported hook frame requires complete, exact hook bytes.
+func agyNativeHookWrite(call agyTraceCall) ([]byte, error) {
+	quoted := agyTraceString.FindString(call.body)
+	prefix, err := agyQuoted(quoted)
+	if err != nil || !strings.HasPrefix(prefix, "{") {
+		return nil, nil
+	}
+	purported := strings.Contains(prefix, `"conversationId"`) || strings.Contains(prefix, `"hookEventName"`)
+	body, _, err := agyTraceIO(call)
+	if err != nil {
+		if purported {
+			return nil, err
+		}
+		return nil, nil
+	}
+	var payload map[string]json.RawMessage
+	if err := hookDecode(body, &payload); err != nil {
+		if purported {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if _, event := payload["hookEventName"]; !event {
+		return nil, nil // Complete conversation metadata is not a hook frame.
+	}
+	var session, event string
+	var paths []string
+	if json.Unmarshal(payload["conversationId"], &session) != nil || session == "" ||
+		json.Unmarshal(payload["hookEventName"], &event) != nil || event == "" ||
+		json.Unmarshal(payload["workspacePaths"], &paths) != nil || len(paths) == 0 {
+		return nil, errors.New("invalid purported Agy native hook frame")
+	}
+	for _, path := range paths {
+		if path == "" {
+			return nil, errors.New("empty Agy native hook workspace")
+		}
+	}
+	return body, nil
+}
+
 func agyExec(call agyTraceCall) (string, []string, error) {
 	end := strings.LastIndex(call.body, "]")
 	if end < 0 || !strings.HasSuffix(call.body, " = 0") || strings.Contains(call.body[:end], "...") {
@@ -764,11 +805,11 @@ func agyTraceReadback(raw []byte, observed WatchCensusAgyReadback, workspace str
 		if call.start < observed.Start || !threads[call.pid] || call.name != "write" {
 			continue
 		}
-		body, _, err := agyTraceIO(call)
+		body, err := agyNativeHookWrite(call)
 		if err != nil {
 			return err
 		}
-		if !bytes.Contains(body, []byte("conversationId")) || !bytes.Contains(body, []byte("hookEventName")) {
+		if body == nil {
 			continue
 		}
 		var payload map[string]json.RawMessage
@@ -886,16 +927,22 @@ func agyTraceFilesTransition(calls []agyTraceCall, threads map[int]bool, install
 			if err != nil {
 				return err
 			}
+			if strings.Contains(call.body, quoted+"...") {
+				return errors.New("truncated Agy native open path")
+			}
 			if filepath.Base(path) != "hooks.json" {
 				continue
-			}
-			expected, ok := installed[path]
-			if !ok {
-				return errors.New("unknown or wrong-layer Agy native hooks.json read")
 			}
 			end := strings.LastIndex(call.body, " = ")
 			if end < 0 {
 				return errors.New("missing Agy open result")
+			}
+			expected, ok := installed[path]
+			if !ok {
+				if agyAbsentBuiltinHook(path, installed) && call.body[end+3:] == "-1 ENOENT (No such file or directory)" {
+					continue
+				}
+				return errors.New("unknown or wrong-layer Agy native hooks.json read")
 			}
 			old := prior[path]
 			if call.start >= boundary {
@@ -967,6 +1014,24 @@ func agyTraceFilesTransition(calls []agyTraceCall, threads map[int]bool, install
 		}
 	}
 	return nil
+}
+
+func agyAbsentBuiltinHook(path string, installed map[string][]byte) bool {
+	if filepath.Clean(path) != path {
+		return false
+	}
+	for account := range installed {
+		if filepath.Base(filepath.Dir(account)) == ".agents" {
+			continue
+		}
+		root := filepath.Join(filepath.Dir(filepath.Dir(account)), "antigravity-cli", "builtin", "plugins")
+		rel, err := filepath.Rel(root, path)
+		parts := strings.Split(rel, string(filepath.Separator))
+		if err == nil && len(parts) == 2 && parts[0] != "" && parts[0] != ".." && parts[1] == "hooks.json" {
+			return true
+		}
+	}
+	return false
 }
 
 // Used by codec controls to pin the exact supplied raw bytes, never normalize

@@ -43,6 +43,151 @@ class HostConnectAuditTests(unittest.TestCase):
         return driver.audit_host_connections(raw,self.capture,self.root,ports={4321},
             unix_paths=[self.root/'local.sock'],**kw)
 
+    def test_dns_ports_are_not_in_the_explicit_fixture_allowlist(self):
+        for host in ('127.0.0.1','127.0.0.53'):
+            connect=f'connect(8, {{sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("{host}")}}, 16) = -1 EACCES (Permission denied)'
+            with self.assertRaisesRegex(driver.Refused,'external/unselected'):self.audit(self.raw(connect))
+    def test_exact_child_version_requires_zero_join_and_no_second_exec(self):
+        path=json.dumps(str(self.image))
+        for args,status,refuse in [('[%s, "--version"]'%path,'0',False),
+                                  ('[%s, "--bg-updater"]'%path,'0',True),
+                                  ('[%s, "--new-project"]'%path,'0',True),
+                                  ('[%s, "--version"]'%path,'1',True)]:
+            raw=self.raw(f'execve({path}, {args}, 0x0 /* UNIT */) = 0',pid=201,
+                extra='200 fork() = 201\n').replace(b'200 +++',f'201 +++ exited with {status} +++\n200 +++'.encode())
+            if refuse:
+                with self.assertRaises(driver.Refused):self.audit(raw)
+            else:self.audit(raw)
+
+    def test_actual_kernel_tcp_udp_unix_and_descendant_inheritance(self):
+        listener=socket.socket();self.addCleanup(listener.close)
+        listener.bind(('127.0.0.1',0));listener.listen(8);port=listener.getsockname()[1]
+        self.local.listen(8)
+        image=self.root/'python';shutil.copyfile(sys.executable,image);image.chmod(0o500)
+        program=r'''
+import ctypes,errno,json,os,socket,sys
+sys.stdin.buffer.read(1)
+port=int(sys.argv[1]);local=sys.argv[2]
+def probe():
+ for family,address in [(socket.AF_INET,('198.51.100.1',443)),(socket.AF_INET,('127.0.0.1',53)),(socket.AF_INET6,('2001:db8::1',443))]:
+  with socket.socket(family,socket.SOCK_STREAM) as s:
+   try:s.connect(address)
+   except OSError as e:assert e.errno==errno.EACCES,(address,e)
+   else:raise AssertionError('nonallowed TCP connect escaped')
+ for family in (socket.AF_INET,socket.AF_INET6):
+  for kind in (socket.SOCK_DGRAM,socket.SOCK_DGRAM|socket.SOCK_CLOEXEC|socket.SOCK_NONBLOCK,socket.SOCK_RAW):
+   try:s=socket.socket(family,kind)
+   except OSError as e:assert e.errno==errno.EACCES,e
+   else:s.close();raise AssertionError('inet non-stream socket escaped')
+ for family in (socket.AF_INET,socket.AF_INET6):
+  try:s=socket.socket(family,socket.SOCK_STREAM,132)
+  except OSError as e:assert e.errno==errno.EACCES,e
+  else:s.close();raise AssertionError('non-TCP stream protocol escaped')
+ for family in (socket.AF_PACKET,socket.AF_NETLINK):
+  try:s=socket.socket(family,socket.SOCK_RAW)
+  except OSError as e:assert e.errno==errno.EACCES,e
+  else:s.close();raise AssertionError('packet/netlink socket escaped')
+ with socket.create_connection(('127.0.0.1',port),timeout=2):pass
+ with socket.socket(socket.AF_UNIX) as s:s.connect(local)
+ libc=ctypes.CDLL(None,use_errno=True)
+ assert libc.syscall(425,1,0)==-1 and ctypes.get_errno()==errno.EACCES
+ assert libc.syscall(0x40000000|39)==-1 and ctypes.get_errno()==errno.EACCES
+probe()
+child=os.fork()
+if child==0:
+ probe();grandchild=os.fork()
+ if grandchild==0:probe();os._exit(0)
+ assert os.waitpid(grandchild,0)[1]==0;os._exit(0)
+assert os.waitpid(child,0)[1]==0
+print(json.dumps(dict(generations=3,TCP_denied=True,inet_datagrams_denied=True,allowed_TCP=True,AF_UNIX=True,io_uring_denied=True)))
+'''
+        child=driver.OwnedKernelTrace([str(image),'-I','-S','-B','-c',program,str(port),str(self.root/'local.sock')],self.root,ports=(port,))
+        try:stdout,_=child.process.communicate(b'x',timeout=15)
+        finally:child.close()
+        self.assertEqual(child.process.returncode,0,(self.root/'kernel.stderr').read_text())
+        self.assertEqual(json.loads(stdout)['generations'],3)
+        self.assertTrue(child.cleanup['all_absent']);self.assertEqual(child.cleanup['forced_signals'],[])
+        self.assertEqual(child.policy['handled_access_net'],2);self.assertEqual(child.policy['handled_access_fs'],0)
+        self.assertEqual(child.policy['uid'],os.getuid());self.assertIn('PORT',child.policy['scope'])
+        # Kernel denial does not turn an external attempt into audit acceptance.
+        with self.assertRaisesRegex(driver.Refused,'external/unselected'):
+            driver.audit_host_connections(child.trace.read_bytes(),child.generation,self.root,
+                ports={port},unix_paths=[self.root/'local.sock'])
+        def audit(raw=None,capture=None,root=None,ports=None,enforcement=child):
+            return driver.audit_host_connections(child.trace.read_bytes() if raw is None else raw,
+                child.generation if capture is None else capture,self.root if root is None else root,
+                ports={port} if ports is None else ports,unix_paths=[self.root/'local.sock'],enforcement=enforcement)
+        report=audit()
+        denied=[row for row in report['connections'] if row['kernel_denied']]
+        self.assertTrue(report['kernel_enforced']);self.assertEqual(len(denied),9)
+        self.assertTrue(all(row['result']=='-1 EACCES (Permission denied)' for row in denied))
+        self.assertEqual(len([row for row in report['connections'] if not row['kernel_denied']]),6)
+        export=os.environ.get('CAIRN_R06_KERNEL_EVIDENCE')
+        if export:
+            directory=driver.private_directory(export)
+            for source,name in ((child.trace,'kernel.trace'),(self.root/'kernel-policy.json','kernel-policy.json'),
+                                (self.root/'kernel.stderr','kernel.stderr')):
+                shutil.copyfile(source,directory/name);(directory/name).chmod(0o400)
+            driver.write_json(directory/'gate.json',dict(scope='NONNATIVE kernel fixture only; not native readiness',
+                capture=child.generation,cleanup=child.cleanup,audit=report,stdout=json.loads(stdout),policy=child.policy,
+                original_policy_pin=child._kernel_policy_pin,original_policy_identity=child._kernel_policy_identity,
+                installer=child._kernel_installer,raw=driver.checked_pin(directory/'kernel.trace'),
+                native_executions=0,provider_executions=0))
+        for raw in (child.trace.read_bytes().replace(b'Permission denied',b'Operation denied'),
+                    child.trace.read_bytes().replace(b'htons(443)',b'htons(444)')):
+            with self.assertRaisesRegex(driver.Refused,'raw capture prefix'):audit(raw=raw)
+        for proof in ({'kernel_enforced':True,'landlock_abi':8},True):
+            with self.assertRaisesRegex(driver.Refused,'actual capture'):audit(enforcement=proof)
+        wrong=copy.deepcopy(child.generation);wrong['Process']['Start']='stale'
+        with self.assertRaisesRegex(driver.Refused,'actual capture'):audit(capture=wrong)
+        other=self.root/'other';other.mkdir(mode=0o700)
+        with self.assertRaises(driver.Refused):audit(root=other)
+        with self.assertRaisesRegex(driver.Refused,'port set'):audit(ports={port+1 if port<65535 else port-1})
+        receipt=self.root/'kernel-policy.json'
+        receipt.chmod(0o600);policy=json.loads(receipt.read_bytes());policy['seccomp_mode']=0
+        receipt.write_text(json.dumps(policy));receipt.chmod(0o400)
+        with self.assertRaisesRegex(driver.Refused,'altered kernel policy'):audit()
+
+    def test_ports_and_unverified_denial_results_stay_strict(self):
+        body='connect(3, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("198.51.100.1")}, 16) = '
+        for result in ('0','-1 EACCES (Permission denied)','-1 EINPROGRESS (Operation now in progress)',
+                       '-1 ECONNREFUSED (Connection refused)','-1 ENETUNREACH (Network is unreachable)',
+                       '-1 ETIMEDOUT (Connection timed out)','-1 EACCES (Operation denied)'):
+            with self.subTest(result=result),self.assertRaises(driver.Refused):self.audit(self.raw(body+result))
+        allowed='connect(3, {sa_family=AF_INET, sin_port=htons(4321), sin_addr=inet_addr("127.0.0.1")}, 16) = 0'
+        for ports in ({53},{80},{443},{1024},{True},{65536},[4322,4321],[4321,4321]):
+            with self.subTest(ports=ports),self.assertRaisesRegex(driver.Refused,'ports required'):
+                driver.audit_host_connections(self.raw(allowed),self.capture,self.root,ports=ports,unix_paths=[])
+        for malformed in (allowed.replace('16)','28)'),allowed.replace('127.0.0.1','not-an-IP'),
+                          allowed.replace('4321','99999')):
+            with self.assertRaises(ValueError):self.audit(self.raw(malformed))
+        # Classification-only stub; actual installation/capture binding is
+        # exercised separately by the real inherited-kernel fixture above.
+        with patch.object(driver,'verified_kernel_policy',return_value=True):
+            raw=self.raw(body.replace('443','4321')+'-1 EACCES (Permission denied)')
+            with self.assertRaisesRegex(driver.Refused,'external/unselected'):self.audit(raw)
+
+    def test_port_only_kernel_policy_does_not_admit_another_loopback_address(self):
+        listener=socket.socket();self.addCleanup(listener.close)
+        listener.bind(('127.0.0.1',0));listener.listen(1);port=listener.getsockname()[1]
+        image=self.root/'python';shutil.copyfile(sys.executable,image);image.chmod(0o500)
+        program='''import errno,json,socket,sys
+sys.stdin.buffer.read(1)
+with socket.socket() as s:
+ try:s.connect(('127.0.0.2',int(sys.argv[1])));code=0
+ except OSError as e:code=e.errno
+print(json.dumps(code))
+'''
+        child=driver.OwnedKernelTrace([str(image),'-I','-S','-B','-c',program,str(port)],self.root,ports=(port,))
+        try:stdout,_=child.process.communicate(b'x',timeout=10)
+        finally:child.close()
+        self.assertEqual(child.process.returncode,0)
+        import errno
+        self.assertNotEqual(json.loads(stdout),errno.EACCES)
+        with self.assertRaisesRegex(driver.Refused,'external/unselected'):
+            driver.audit_host_connections(child.trace.read_bytes(),child.generation,self.root,ports={port},
+                unix_paths=[],enforcement=child)
+
     def test_literal_ipv4_ipv6_failed_local_and_owned_unix(self):
         forms=[
             'connect(3, {sa_family=AF_INET, sin_port=htons(4321), sin_addr=inet_addr("127.0.0.1")}, 16) = 0',
@@ -62,7 +207,7 @@ class HostConnectAuditTests(unittest.TestCase):
     def test_external_failed_wrong_unix_unknown_family_and_address_refuse(self):
         good='connect(3, {sa_family=AF_INET, sin_port=htons(4321), sin_addr=inet_addr("127.0.0.1")}, 16) = 0'
         forms=[good.replace('127.0.0.1','198.51.100.23').replace('= 0','= -1 ENETUNREACH (Network is unreachable)'),
-            good.replace('127.0.0.1','127.0.0.2'),good.replace('4321','53'),good.replace('16)','4)'),
+            good.replace('127.0.0.1','127.0.0.2'),good.replace('4321','54'),good.replace('16)','4)'),
             'connect(3, {sa_family=AF_UNIX, sun_path="/outside-owned-root.sock"}, 110) = -1 ENOENT (No such file or directory)',
             'connect(3, {sa_family=AF_UNIX, sun_path=@"abstract"}, 10) = 0',
             'connect(3, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, 12) = 0',
@@ -163,7 +308,7 @@ class HostConnectAuditTests(unittest.TestCase):
             'sys.stdin.buffer.read()\n')
         child=None
         try:
-            child=driver.OwnedKernelTrace([str(image),'-I','-S','-B','-c',program],root)
+            child=driver.OwnedKernelTrace([str(image),'-I','-S','-B','-c',program],root,ports=(port,))
             with driver.selectors.DefaultSelector() as selector:
                 selector.register(child.process.stdout,driver.selectors.EVENT_READ)
                 self.assertTrue(selector.select(timeout=15));self.assertEqual(child.process.stdout.readline(),b'AUDIT_READY\n')
@@ -233,6 +378,7 @@ class NativeDriverBoundaries(unittest.TestCase):
             before=dict(os.environ);env,settings=driver.native_child_environment(fixture,'http://127.0.0.1:4321')
             self.assertEqual(dict(os.environ),before)
         self.assertEqual(env['HOME'],str(home));self.assertEqual(env['GEMINI_API_KEY'],'r04-synthetic-unused')
+        self.assertEqual(env['AGY_CLI_DISABLE_AUTO_UPDATE'],'1')
         self.assertEqual(env['PATH'],os.environ['PATH']);self.assertEqual(env.get('CODEX_HOME'),os.environ.get('CODEX_HOME'))
         self.assertTrue(all(key not in env for key in injected if key!='GEMINI_API_KEY'))
         self.assertEqual(json.loads(settings.read_bytes()),dict(modelProvider='gemini'))
@@ -254,12 +400,73 @@ class NativeDriverBoundaries(unittest.TestCase):
     def test_unrelated_truncated_asset_is_not_a_callback_frame(self):
         self.assertIsNone(driver.kernel_hook_frame(dict(pid=200,body='write(24, "<svg"..., 9000) = 9000')))
         truncated='write(29, "{\\\"conversationId\\\":\\\"UNIT\\\""..., 9000) = 9000'
-        with self.assertRaisesRegex(AssertionError,'Truncated native hook'):driver.kernel_hook_frame(dict(pid=200,body=truncated))
+        with self.assertRaisesRegex(driver.Refused,'truncated'):driver.kernel_hook_frame(dict(pid=200,body=truncated))
 
     def test_invalid_packet_shape_returns75_without_reservation(self):
         with patch.object(driver,'checked_native_admission',side_effect=KeyError('missing packet field')), \
                 patch.object(driver,'run_native_attempt',side_effect=AssertionError('reservation')):
             with contextlib.redirect_stderr(io.StringIO()):self.assertEqual(driver.main(['--native-unit']),75)
+
+    def test_hook_classification_ignores_builtin_markdown_but_rejects_invalid_hook(self):
+        for body in (b'\x7fELF',b'# Lifecycle Hooks: "conversationId" "hookEventName"',b'{"wire":1}'):
+            escaped=''.join('\\x%02x'%b for b in body)
+            self.assertIsNone(driver.kernel_hook_frame(dict(pid=200,body=f'write(63, "{escaped}"..., 16863523) = 16863523')))
+        metadata=json.dumps(dict(conversationId='u',workspacePaths=['/owned'])).encode()
+        self.assertIsNone(driver.kernel_hook_frame(dict(pid=200,
+            body=f'write(24, {json.dumps(metadata.decode())}, {len(metadata)}) = {len(metadata)}')))
+        for body in (b'{"conversationId":',b'{"conversationId":"u","hookEventName":"Stop"}',
+                     b'{"conversationId":123,"hookEventName":"Stop","workspacePaths":["/owned"]}'):
+            with self.assertRaises(ValueError):
+                driver.kernel_hook_frame(dict(pid=200,body=f'write(29, {json.dumps(body.decode())}, {len(body)}) = {len(body)}'))
+
+    def test_budget_keeps_fixed_cap_and_reserve_instead_of_shrinking_control(self):
+        report=driver.trace_budget([10*1024*1024,11*1024*1024])
+        self.assertEqual(report['cap'],268435456)
+        self.assertEqual(report['projected_bytes'],11*1024*1024*6+64*1024*1024)
+        self.assertGreater(report['margin_bytes'],0)
+        for values in ([],[1],[1,0],[32*1024*1024,32*1024*1024]):
+            with self.assertRaises(driver.Refused):driver.trace_budget(values)
+
+    def test_kernel_policy_refuses_wrong_arch_and_forged_policy_before_install(self):
+        policy=dict(schema='cairn.r06-kernel-network/1',tcp_ports=[])
+        with patch.object(driver.os,'uname',return_value=SimpleNamespace(machine='aarch64')):
+            with self.assertRaisesRegex(driver.Refused,'architecture'):driver.install_network_policy(policy)
+        for change in ({'disabled':True},{'tcp_ports':[443,443]},{'tcp_ports':[True]},
+                       {'tcp_ports':[0]},{'schema':'fake'}):
+            with self.assertRaises(driver.Refused):driver.install_network_policy(dict(policy,**change))
+
+    def test_failed_install_or_low_abi_never_execs_unrestricted(self):
+        policy=dict(schema='cairn.r06-kernel-network/1',tcp_ports=[])
+        from unittest.mock import Mock
+        system=SimpleNamespace(syscall=Mock(return_value=3),prctl=Mock(side_effect=AssertionError('after ABI refusal')))
+        with patch.object(driver.ctypes,'CDLL',return_value=system):
+            with self.assertRaisesRegex(driver.Refused,'ABI4'):driver.install_network_policy(policy)
+        with patch.object(driver,'install_network_policy',side_effect=OSError('seccomp refused')), \
+                patch.object(driver.os,'execve',side_effect=AssertionError('unrestricted exec')):
+            with self.assertRaisesRegex(OSError,'seccomp refused'):
+                driver.confined_exec([json.dumps(policy),str(self.root/'receipt.json'),'--','/bin/true'])
+
+    def test_bootstrap_refuses_inherited_network_stdio_and_prewritten_receipt(self):
+        policy=json.dumps(dict(schema='cairn.r06-kernel-network/1',tcp_ports=[]))
+        marker=self.root/'unrestricted-exec'
+        argv=[sys.executable,'-B',str(Path(driver.__file__).resolve()),'--confined-exec',policy,
+              str(self.root/'kernel-policy.json'),'--',sys.executable,'-c',
+              'from pathlib import Path;Path('+repr(str(marker))+').write_text("escaped")']
+        with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as inherited:
+            done=subprocess.run(argv,stdin=inherited,capture_output=True,timeout=10)
+        self.assertNotEqual(done.returncode,0);self.assertIn(b'inherited network descriptor',done.stderr)
+        self.assertFalse(marker.exists())
+        receipt=self.root/'kernel-policy.json';receipt.write_text('{"kernel_enforced":true}')
+        done=subprocess.run(argv,input=b'',capture_output=True,timeout=10)
+        self.assertNotEqual(done.returncode,0);self.assertIn(b'FileExistsError',done.stderr)
+        self.assertEqual(receipt.read_text(),'{"kernel_enforced":true}');self.assertFalse(marker.exists())
+
+    def test_raw_cap_rejects_sparse_oversize_before_content_read(self):
+        path=self.root/'oversize.trace'
+        with path.open('wb') as out:out.truncate(268435457)
+        with self.assertRaisesRegex(ValueError,'256 MiB'):
+            driver.collector.trace_interval(path,0,268435457,[])
+
 
 
 class NativeAdmissionTests(unittest.TestCase):
@@ -401,6 +608,39 @@ class NativeAdmissionTests(unittest.TestCase):
             driver.run_native_attempt(approved,prereq,lambda _:self.fail('execute after refusal'))
         self.assertFalse(Path(self.body['ledger']).exists())
 
+    def test_failed_result_and_atomic_terminal_precede_expensive_archive(self):
+        approved=self.select();evidence=Path(self.body['evidence'])
+        approved['_archive_fixture']=SimpleNamespace(root=Path(self.body['catalog_root']),
+            unit={'Credential':'synthetic unconsumed credential path'},host_dsn='synthetic-only')
+        def failed(_):raise ValueError('first actual oversized trace')
+        def interrupted(*args,**kw):
+            terminal=Path(self.body['ledger']).with_suffix('.terminal.json')
+            self.assertEqual(json.loads(terminal.read_bytes())['state'],'failed')
+            self.assertEqual(json.loads((evidence/'native-result.json').read_bytes())['error'],
+                             'first actual oversized trace')
+            raise RuntimeError('expensive archive interrupted')
+        with patch.object(driver.roundtrip,'snapshot_root',side_effect=interrupted):
+            with self.assertRaisesRegex(ValueError,'first actual oversized trace'):
+                try:driver.run_native_attempt(approved,lambda _:None,failed)
+                finally:driver.archive_native_after_terminal(approved)
+        archive=json.loads((evidence/'archive-result.json').read_bytes())
+        self.assertEqual(archive['state'],'failed')
+        self.assertEqual(archive['error_type'],'RuntimeError')
+        self.assertFalse(json.loads((evidence/'native-result.json').read_bytes())['NativePASS'])
+
+    def test_secondary_cleanup_failure_preserves_original_native_error(self):
+        approved=self.select();evidence=Path(self.body['evidence'])
+        def failed(_):
+            driver.roundtrip.write(evidence/'native-result.json',dict(state='failed',NativePASS=False,
+                error_type='ValueError',error='first trace limit',cleanup_errors=['fixture cleanup failed']))
+            raise RuntimeError('secondary cleanup failure')
+        with self.assertRaisesRegex(RuntimeError,'secondary cleanup'):
+            driver.run_native_attempt(approved,lambda _:None,failed)
+        selected=json.loads(Path(self.body['ledger']).with_suffix('.terminal.json').read_bytes())['outcome']
+        self.assertEqual(selected['error'],'first trace limit');self.assertEqual(selected['error_type'],'ValueError')
+        self.assertEqual(selected['finalization_error']['error'],'secondary cleanup failure')
+        self.assertEqual(selected['cleanup_errors'],['fixture cleanup failed'])
+
     def test_expiry_is_rechecked_after_preflight_before_reservation(self):
         approved=self.select()
         def expire(value):value['admission']['expires_at']=value['admission']['issued_at']
@@ -454,6 +694,9 @@ class NativeAdmissionTests(unittest.TestCase):
         self.assertTrue(path.is_relative_to(Path(self.body['catalog_root'])))
         self.assertEqual(path.read_bytes(),self.client.read_bytes());self.assertEqual(info.st_mode&0o777,0o500)
         self.assertNotEqual((info.st_dev,info.st_ino),(source.st_dev,source.st_ino))
+        self.assertEqual(path.parent.stat().st_mode&0o777,0o500)
+        self.assertEqual(path.parent.name,'client')
+        with self.assertRaises(PermissionError):path.rename(path.with_name('replaced'))
         with self.assertRaises(FileExistsError):driver.stage_native_client(approved)
         self.assertEqual(path.read_bytes(),self.client.read_bytes())
 
