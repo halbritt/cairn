@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/halbritt/cairn/internal/jsontext"
+	"github.com/halbritt/cairn/internal/lifecycle/binding"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 	"golang.org/x/sys/unix"
 )
@@ -91,16 +92,26 @@ type bootstrapDrainReceipt struct {
 }
 
 func (c *CLI) RunUnitBootstrap(ctx context.Context, args []string, out io.Writer) int {
+	return c.runUnitBootstrap(ctx, args, out, nil)
+}
+
+// The public entry point is the sole production caller and passes nil. Package
+// tests supply a capability from the existing private fixture producer; no
+// serialized value, argument or environment variable can supply one.
+func (c *CLI) runUnitBootstrap(ctx context.Context, args []string, out io.Writer, fence *SelectedUnitFenceReceipt) int {
 	r := UnitBootstrapResult{Schema: "cairn.unit-bootstrap-result/1", OwnerFence: "unknown", Reverse: "unsupported"}
 	code := 1
 	err := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if len(args) != 5 || args[1] != "--plan" || args[3] != "--sha256" {
 			code = 2
 			return errors.New("usage: cairn-lifecycle unit-bootstrap inspect --plan ABSOLUTE_JSON --sha256 SHA256")
 		}
 		r.Operation = args[0]
 		if args[0] == "switch" || args[0] == "reverse" || args[0] == "rollback" {
-			err := c.bootstrapMutation(ctx, args[2], args[4], args[0], &r, nil, nil)
+			err := c.bootstrapMutation(ctx, args[2], args[4], args[0], &r, fence, nil)
 			if err == nil {
 				code = 0
 			}
@@ -287,11 +298,15 @@ func (r *bootstrapDrainReceipt) recheck(ctx context.Context) error {
 }
 
 type bootstrapRead struct {
-	plan        *UnitBootstrapPlan
-	drain       *watchDrainRead
-	credentials map[string]os.FileInfo
-	paths       *watchCensusRead
-	accounts    map[string]bool
+	files           *unitVerifiedFiles
+	receipts        map[string]*value.Value
+	legacyPreflight bool
+	plan            *UnitBootstrapPlan
+	drain           *watchDrainRead
+	credentials     map[string]os.FileInfo
+	paths           *watchCensusRead
+	accounts        map[string]bool
+	legacy          map[string]bootstrapLegacyObservation
 }
 
 func (b *bootstrapRead) reference(path string) error {
@@ -447,8 +462,15 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 			return nil, err
 		}
 		originalLegacy := b.plan.Schema == "cairn.unit-bootstrap/2" && value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/2")
-		if home := nativeText(config.Get("config_home")); home != "" {
-			if err := b.accountIdentity(home); err != nil {
+		for _, profile := range []*value.Value{config, memory} {
+			home := profile.Get("config_home")
+			if nativeNone(home) {
+				continue
+			}
+			if home.Kind != value.String || !compatibilityCanonical(nativeText(home)) {
+				return nil, errors.New("bootstrap account identity requires a canonical absolute directory")
+			}
+			if err := b.accountIdentity(nativeText(home)); err != nil {
 				return nil, err
 			}
 		}
@@ -469,7 +491,13 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 			if err := b.reference(binary); err != nil {
 				return nil, err
 			}
-			digest, err := compatibilityOpenedBinary(binary, uint32(os.Getuid()))
+			var digest string
+			var err error
+			if b.files != nil {
+				_, digest, err = b.files.Read(binary, -1, true)
+			} else {
+				digest, err = compatibilityOpenedBinary(binary, uint32(os.Getuid()))
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -482,6 +510,9 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 		mode := ":disabled-bound"
 		if nativeNone(config.Get("inbox_recall_binding")) {
 			mode = ":disabled-unbound"
+		}
+		if value.Truth(manifest.Get("enabled")) {
+			mode = strings.Replace(mode, ":disabled-", ":enabled-", 1)
 		}
 		associations[name] = nativeText(manifest.Get("schema")) + mode
 	}
@@ -595,8 +626,20 @@ func (b *bootstrapRead) pinned(pin WatchCensusPin) (*value.Value, error) {
 	if err := b.reference(pin.Path); err != nil {
 		return nil, err
 	}
-	v, err := b.drain.file(pin.Path)
-	if err != nil || b.drain.facts["file:"+pin.Path] != pin.SHA256 {
+	var v *value.Value
+	var err error
+	if b.files == nil {
+		v, err = b.drain.file(pin.Path)
+	} else {
+		var raw []byte
+		var digest string
+		raw, digest, err = b.files.Read(pin.Path, 1048576, false)
+		if err == nil {
+			b.drain.facts["file:"+pin.Path] = digest
+			v, err = b.drain.cli.profile().Decode(SiteSessionRead, raw)
+		}
+	}
+	if err != nil || b.drain.facts["file:"+pin.Path] != pin.SHA256 || v == nil || v.Kind != value.Object {
 		return nil, errors.Join(err, errors.New("bootstrap association pin changed"))
 	}
 	return v, nil
@@ -644,7 +687,7 @@ func (b *bootstrapRead) association(name string, config *value.Value) (*value.Va
 		return manifest, memory, err
 	}
 	if !value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/2") ||
-		manifest.Get("enabled") == nil || manifest.Get("enabled").Kind != value.Bool || manifest.Get("enabled").Boolean {
+		manifest.Get("enabled") == nil || manifest.Get("enabled").Kind != value.Bool || (manifest.Get("enabled").Boolean && (!b.legacyPreflight || bound == "")) {
 		return nil, nil, errors.New("bootstrap retained association must be an actual disabled /2 manifest")
 	}
 	coords := manifest.Get("coordination_configs")
@@ -691,6 +734,11 @@ func (b *bootstrapRead) association(name string, config *value.Value) (*value.Va
 	if matched != 1 {
 		return nil, nil, errors.New("bootstrap retained profile does not select this exact current config")
 	}
+	if bound != "" {
+		if err := binding.ValidateConfigurationProfiles(binding.ConfigurationProfiles{Current: config, Memory: memory, Coordinators: coordinators, ManifestPath: config.Get("inbox_recall_binding").String, Resolve: b.drain.cli.profile().Routes.Filesystem().Resolve}); err != nil {
+			return nil, nil, err
+		}
+	}
 	if err := b.retainedRuntime(manifest, selected.Argv, selectedProfilePath); err != nil {
 		return nil, nil, err
 	}
@@ -731,6 +779,11 @@ func (b *bootstrapRead) current3(config, manifest *value.Value, selected Bootstr
 		if i == 0 {
 			memory = profile
 		}
+		for _, key := range []string{"harness", "cairn", "socket", "token_file", "repo"} {
+			if !nativeEqual(profile.Get(key), config.Get(key)) {
+				return nil, errors.New("bootstrap current3 shared role selectors differ")
+			}
+		}
 		if i > 0 && nativeEqual(profile, config) {
 			if configPath != "" {
 				return nil, errors.New("bootstrap current3 profile ambiguous")
@@ -759,6 +812,24 @@ func (b *bootstrapRead) current3(config, manifest *value.Value, selected Bootstr
 	if err := b.reference(nativeText(binary.Get("path"))); err != nil {
 		return nil, err
 	}
+	// Each actual receipt is verified once in this observation. Every selected
+	// source/profile/image is held and freshly hashed after the API bracket.
+	if cached := b.receipts[selected.Receipt.Path]; cached != nil {
+		return cached, nil
+	}
+	for _, member := range members.Members {
+		name := string(member.Key)
+		if b.files != nil {
+			if _, _, err := b.files.Read(filepath.Join(root, name), 1048576, false); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if b.files != nil {
+		if _, _, err := b.files.Read(nativeText(binary.Get("path")), -1, true); err != nil {
+			return nil, err
+		}
+	}
 	compat := &CompatibilityContext{Role: "coordination", Entrypoint: "coordination.py", ConfigPath: configPath, HookTimeout: 15, LaunchRoot: filepath.Dir(selected.Receipt.Path), Shell: "/bin/sh", Receipt: receipt, Profile: b.drain.cli.profile()}
 	if err := compat.VerifyReceipt(b.drain.cli.profile()); err != nil {
 		return nil, err
@@ -767,12 +838,19 @@ func (b *bootstrapRead) current3(config, manifest *value.Value, selected Bootstr
 		if err := compat.UnboundProfiles(b.drain.cli.profile()); err != nil {
 			return nil, err
 		}
+		if b.receipts != nil {
+			b.receipts[selected.Receipt.Path] = memory
+		}
 		return memory, nil
 	}
 	if nativeText(config.Get("inbox_recall_binding")) != selected.Binding.Path {
 		return nil, errors.New("bootstrap current3 bound profile selects another manifest")
 	}
-	return b.drain.disabledBinding(config)
+	memory, err = b.drain.disabledBinding(config)
+	if err == nil && b.receipts != nil {
+		b.receipts[selected.Receipt.Path] = memory
+	}
+	return memory, err
 }
 
 func (b *bootstrapRead) retainedRuntime(manifest *value.Value, argvPin WatchCensusPin, configPath string) error {
@@ -804,7 +882,13 @@ func (b *bootstrapRead) retainedRuntime(manifest *value.Value, argvPin WatchCens
 			if err := b.reference(path); err != nil {
 				return err
 			}
-			_, actual, err := compatibilityOpened(path, 1048576, uint32(os.Getuid()))
+			var actual string
+			var err error
+			if b.files != nil {
+				_, actual, err = b.files.Read(path, 1048576, false)
+			} else {
+				_, actual, err = compatibilityOpened(path, 1048576, uint32(os.Getuid()))
+			}
 			if err != nil || actual != pin {
 				return errors.Join(err, errors.New("bootstrap retained bundle member changed"))
 			}
@@ -918,6 +1002,12 @@ func (c *CLI) readBootstrapDrain(ctx context.Context, path, pin string) (map[str
 }
 
 func (c *CLI) readBootstrapSelection(ctx context.Context, p *UnitBootstrapPlan, callbacks []*value.Value, owned *LockLease) (map[string]string, map[string]string, error) {
+	return c.readBootstrapSelectionPhase(ctx, p, callbacks, owned, false)
+}
+
+// Enabled original manifests are observable only by the stopped transaction's
+// private preflight. This never mints an inspect/drain receipt for an enabled hook.
+func (c *CLI) readBootstrapSelectionPhase(ctx context.Context, p *UnitBootstrapPlan, callbacks []*value.Value, owned *LockLease, legacyPreflight bool) (facts map[string]string, associations map[string]string, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -926,7 +1016,9 @@ func (c *CLI) readBootstrapSelection(ctx context.Context, p *UnitBootstrapPlan, 
 	}
 	r := &watchDrainRead{cli: c, facts: map[string]string{}, locks: map[string]string{}, tokenPaths: map[string]bool{},
 		memories: map[*value.Value]*value.Value{}, settled: map[*value.Value]*value.Value{}, configPaths: map[*value.Value]string{}}
-	b := &bootstrapRead{plan: p, drain: r, credentials: map[string]os.FileInfo{}, paths: &watchCensusRead{inodes: map[string]string{}}}
+	files := newUnitVerifiedFiles(ctx)
+	defer func() { resultErr = errors.Join(resultErr, files.Close()) }()
+	b := &bootstrapRead{plan: p, drain: r, credentials: map[string]os.FileInfo{}, paths: &watchCensusRead{inodes: map[string]string{}}, files: files, receipts: map[string]*value.Value{}, legacyPreflight: legacyPreflight}
 	for _, selector := range p.CredentialSelectors {
 		if !compatibilityCanonical(selector) || !censusWithin(p.Root, selector) || b.credentials[selector] != nil {
 			return nil, nil, errors.New("bootstrap credential selector is outside root or duplicated")
@@ -962,6 +1054,12 @@ func (c *CLI) readBootstrapSelection(ctx context.Context, p *UnitBootstrapPlan, 
 		if err := r.record(fmt.Sprintf("callback:%d", i), ref); err != nil {
 			return nil, nil, err
 		}
+	}
+	if err := b.legacyRecheck(); err != nil {
+		return nil, nil, err
+	}
+	if err := files.Recheck(); err != nil {
+		return nil, nil, err
 	}
 	initial := maps.Clone(r.facts)
 	for account := range b.accounts {
@@ -1083,6 +1181,7 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 	if p.Schema != "cairn.unit-bootstrap/2" || p.Transition == nil {
 		return errors.New("bootstrap mutation requires a /2 transition selection and fresh lifecycle fence")
 	}
+	originalPlan := p
 	t := p.Transition
 	if t.Fence.Database != "" || t.Fence.DatabaseSystemID != "" || t.Fence.Window <= 0 || t.Fence.Window > 30*time.Second {
 		return errors.New("bootstrap selects lifecycle-only fence; database coverage must be not-selected")
@@ -1191,13 +1290,51 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 	if p.WatchLock.Type != "absent" && target.WatchLock.Type != "absent" && p.WatchLock != target.WatchLock {
 		return errors.New("bootstrap prepared selection split the existing watcher lock")
 	}
-	// Validate both full layouts before opening the existing lock; never create
-	// or repair it as a side effect of observing an original selection.
-	if _, _, err = c.readBootstrapSelection(ctx, p, callbacks, nil); err != nil {
+	// The pre-lock pass observes metadata only. Full file/API observations are
+	// made while holding the exact existing lock, then freshly at D6 and D7.
+	for _, plan := range []*UnitBootstrapPlan{p, target} {
+		r := &watchDrainRead{cli: c, facts: map[string]string{}, locks: map[string]string{}}
+		b := &bootstrapRead{plan: plan, drain: r, credentials: map[string]os.FileInfo{}, paths: &watchCensusRead{inodes: map[string]string{}}}
+		for _, selector := range plan.CredentialSelectors {
+			info, e := os.Lstat(selector)
+			if e != nil {
+				return e
+			}
+			b.credentials[selector] = info
+		}
+		if err := b.layout(); err != nil {
+			return err
+		}
+	}
+	tx, err := newBootstrapLegacyTransaction(originalPlan, path, operation)
+	if err != nil {
 		return err
 	}
-	if _, _, err = c.readBootstrapSelection(ctx, target, targetCallbacks, nil); err != nil {
-		return err
+	if operation == "switch" && tx.prepared {
+		for _, entry := range tx.journal.Entries {
+			applied, _, e := tx.observeEntry(entry)
+			if e != nil {
+				return e
+			}
+			if applied {
+				return errors.New("bootstrap legacy disable is retained; use fresh rollback, never replay forward")
+			}
+		}
+	}
+	readSelection := func(plan *UnitBootstrapPlan, callbacks []*value.Value, owned *LockLease, preflight bool) (map[string]string, map[string]string, error) {
+		if len(plan.Associations) > 0 {
+			for _, association := range plan.Associations {
+				if association.Receipt == nil {
+					effective, e := tx.effectivePlan(plan)
+					if e != nil {
+						return nil, nil, e
+					}
+					return c.readBootstrapSelectionPhase(ctx, effective, callbacks, owned, preflight)
+				}
+				break
+			}
+		}
+		return c.readBootstrapSelection(ctx, plan, callbacks, owned)
 	}
 	file, err := os.OpenFile(lockPath, os.O_RDWR|syscall.O_NOFOLLOW, 0)
 	if err != nil {
@@ -1218,11 +1355,11 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 			return errors.Join(e, se, errors.New("bootstrap opened watcher lock changed"))
 		}
 	}
-	facts, associations, err := c.readBootstrapSelection(ctx, p, callbacks, lease)
+	facts, associations, err := readSelection(p, callbacks, lease, !reverse)
 	if err != nil {
 		return err
 	}
-	other, _, err := c.readBootstrapSelection(ctx, target, targetCallbacks, lease)
+	other, otherAssociations, err := readSelection(target, targetCallbacks, lease, !reverse)
 	if err != nil {
 		return err
 	}
@@ -1231,7 +1368,16 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 	}
 	result.Associations = associations
 	result.Inspected = true
-	if err = bootstrapProfilePairs(c, p, target); err != nil {
+	pairP, pairTarget := p, target
+	if !reverse {
+		pairP, err = tx.effectivePlan(p)
+	} else {
+		pairTarget, err = tx.effectivePlan(target)
+	}
+	if err != nil {
+		return err
+	}
+	if err = bootstrapProfilePairsPhase(c, pairP, pairTarget, !reverse); err != nil {
 		return err
 	}
 	step := func(name string, action func() error) error {
@@ -1251,16 +1397,33 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 		}
 		return nil
 	}
+	legacyObserve := func(phase string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if strings.HasPrefix(phase, "before:") {
+			if err := fence.Recheck(ctx, t.Fence); err != nil {
+				return err
+			}
+			if err := checkPair(); err != nil {
+				return err
+			}
+		}
+		if observe != nil {
+			return observe(phase)
+		}
+		return nil
+	}
 	err = step("exchange", func() error {
 		if err := checkPair(); err != nil {
 			return err
 		}
-		fresh, assoc, err := c.readBootstrapSelection(ctx, p, callbacks, lease)
+		fresh, assoc, err := readSelection(p, callbacks, lease, !reverse)
 		if err != nil || !maps.Equal(facts, fresh) || !maps.Equal(associations, assoc) {
 			return errors.Join(err, errors.New("D6 bootstrap drain invalidated before exchange"))
 		}
-		freshOther, _, err := c.readBootstrapSelection(ctx, target, targetCallbacks, lease)
-		if err != nil || !maps.Equal(other, freshOther) {
+		freshOther, freshOtherAssociations, err := readSelection(target, targetCallbacks, lease, !reverse)
+		if err != nil || !maps.Equal(other, freshOther) || !maps.Equal(otherAssociations, freshOtherAssociations) {
 			return errors.Join(err, errors.New("D6 bootstrap target invalidated before exchange"))
 		}
 		if err := fence.Recheck(ctx, t.Fence); err != nil {
@@ -1270,11 +1433,45 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 			return err
 		}
 		if operation == "rollback" && !reverse {
+			if err := tx.change(true, legacyObserve); err != nil {
+				return err
+			}
+			restored, restoredAssociations, e := readSelection(p, callbacks, lease, true)
+			if e != nil || !tx.sameDrain(fresh, restored, assoc, restoredAssociations, p) {
+				return errors.Join(e, errors.New("bootstrap raw original rollback changed protected facts"))
+			}
 			result.Rechecked = true
 			result.Active = active
-			result.Reverse = "original unchanged"
-			result.Reconciliation = "unpublished transition; exact original selection retained"
+			result.Reverse = "original unchanged; raw original manifests restored"
+			result.Reconciliation = "unpublished transition; exact original selection retained; recovery data preserved"
 			return nil
+		}
+		if !reverse && len(tx.journal.Entries) > 0 {
+			if err := step("legacy-prepare", tx.prepare); err != nil {
+				return err
+			}
+			result.Reverse = "available; raw original manifests retained; use fresh rollback"
+			result.Reconciliation = "legacy disable may be partial; preserve recovery data and use fresh rollback"
+			if err := tx.change(false, legacyObserve); err != nil {
+				return err
+			}
+			// This is a new observation after actual disabled publication. The only
+			// allowed difference is the exactly derived manifest exchange, whose two
+			// raw names and inode identities are verified again by the transaction.
+			disabled, disabledAssociations, e := readSelection(p, callbacks, lease, false)
+			if e != nil || !tx.sameDrain(fresh, disabled, assoc, disabledAssociations, p) {
+				return errors.Join(e, errors.New("D6 bootstrap protected facts changed during legacy disable"))
+			}
+			disabledOther, disabledOtherAssociations, e := readSelection(target, targetCallbacks, lease, false)
+			if e != nil || !maps.Equal(freshOther, disabledOther) || !maps.Equal(freshOtherAssociations, disabledOtherAssociations) {
+				return errors.Join(e, errors.New("D6 bootstrap target changed during legacy disable"))
+			}
+			if err := fence.Recheck(ctx, t.Fence); err != nil {
+				return err
+			}
+			if err := checkPair(); err != nil {
+				return err
+			}
 		}
 		parent, e := os.OpenRoot(filepath.Dir(active))
 		if e != nil {
@@ -1324,7 +1521,7 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 		result.Active = active
 		result.Retained = retained
 		result.Reverse = "available; exact original directory retained"
-		result.Reconciliation = "published; retain both directories and use fresh reverse after any later error"
+		result.Reconciliation = "published; retain both directories/recovery data and use fresh rollback after any later error"
 		return step("parent-sync", fd.Sync)
 	})
 	if err != nil {
@@ -1343,26 +1540,66 @@ func (c *CLI) bootstrapMutation(ctx context.Context, path, pin, operation string
 	// names. Changed pins/state after publication remain a reconciliation error.
 	selectedAfter, retainedAfter := *target, *p
 	selectedAfter.Current.Directory, retainedAfter.Current.Directory = active, retained
-	if _, _, e := c.readBootstrapSelection(ctx, &selectedAfter, targetCallbacks, lease); e != nil {
+	selectedFacts, selectedAssociations, e := readSelection(&selectedAfter, targetCallbacks, lease, false)
+	if e != nil {
 		return e
 	}
-	if _, _, e := c.readBootstrapSelection(ctx, &retainedAfter, callbacks, lease); e != nil {
+	if _, _, e := readSelection(&retainedAfter, callbacks, lease, false); e != nil {
 		return e
 	}
-	result.Reconciliation = "complete; final read/action interval remains outside atomic coverage"
 	if reverse {
+		// Keep original hooks disabled until both exchanged selections have passed
+		// D7 under the same live fence. Raw restore then reuses the retained inode.
+		if err := fence.Recheck(ctx, t.Fence); err != nil {
+			return err
+		}
+		restoreObserve := func(phase string) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if strings.HasPrefix(phase, "before:") {
+				if err := fence.Recheck(ctx, t.Fence); err != nil {
+					return err
+				}
+				if err := bootstrapIdentityAt(active, targetIdentity); err != nil {
+					return err
+				}
+				if err := bootstrapIdentityAt(retained, currentIdentity); err != nil {
+					return err
+				}
+			}
+			if observe != nil {
+				return observe(phase)
+			}
+			return nil
+		}
+		if err := tx.change(true, restoreObserve); err != nil {
+			return err
+		}
+		restored, restoredAssociations, e := readSelection(&selectedAfter, targetCallbacks, lease, true)
+		if e != nil || !tx.sameDrain(selectedFacts, restored, selectedAssociations, restoredAssociations, &selectedAfter) {
+			return errors.Join(e, errors.New("bootstrap raw original reverse changed protected facts"))
+		}
 		result.Reverse = "original restored; forward selection retained"
+		if len(tx.journal.Entries) > 0 {
+			result.Reverse = "original restored; raw original manifests restored; forward selection retained"
+		}
 	}
+	result.Reconciliation = "complete; recovery data preserved; final read/action interval remains outside atomic coverage"
 	return nil
 }
 
 func bootstrapProfilePairs(c *CLI, current, target *UnitBootstrapPlan) error {
+	return bootstrapProfilePairsPhase(c, current, target, false)
+}
+
+func bootstrapProfilePairsPhase(c *CLI, current, target *UnitBootstrapPlan, preflight bool) error {
 	for name := range current.Current.Pins {
 		configs := make([]*value.Value, 0, 2)
 		memories := []string{}
 		for _, p := range []*UnitBootstrapPlan{current, target} {
 			r := &watchDrainRead{cli: c, facts: map[string]string{}, tokenPaths: map[string]bool{}}
-			b := &bootstrapRead{plan: p, drain: r, credentials: map[string]os.FileInfo{}, paths: &watchCensusRead{inodes: map[string]string{}}}
+			b := &bootstrapRead{plan: p, drain: r, credentials: map[string]os.FileInfo{}, paths: &watchCensusRead{inodes: map[string]string{}}, legacyPreflight: preflight}
 			for _, selector := range p.CredentialSelectors {
 				info, err := os.Lstat(selector)
 				if err != nil {

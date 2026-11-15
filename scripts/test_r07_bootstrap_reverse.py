@@ -291,3 +291,22 @@ class SemanticReverseStageTests(BootstrapFixture):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ProductionShapeTests(BootstrapFixture):
+    def test_owned_consumer_refuses_missing_matching_test_receipt(self):
+        # Exit zero without matching/non-skipped test output is not coverage.
+        class Host:
+            env = dict(os.environ)
+        class Fixture:
+            root = self.root
+            host = Host()
+        def no_tests(argv, prefix, **kwargs):
+            import subprocess
+            return subprocess.CompletedProcess(argv, 0, 'testing: warning: no tests to run\nPASS\n', '')
+        selected = self.root / 'selected.json'
+        selected.write_text('{}\n')
+        selected.chmod(0o600)
+        with patch.object(bootstrap.control, 'command', side_effect=no_tests):
+            with self.assertRaisesRegex(HostRefusal, 'did not execute'):
+                bootstrap.owned_effect_consumer(Fixture(), {'tests': Path('/not-executed')}, self.root / 'selected.json', 'a'*64, 'no-match')

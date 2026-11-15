@@ -58,8 +58,17 @@ Existing `0700` and explicitly observed legacy `0755` directories are supported
 inside that private root; the scoped config reader walks actual descriptors
 without following links and uses the ordinary stable-FD reader/JSON decoder.
 The shared compatibility reader's `0700` immediate-parent rule is unchanged.
-Unsafe installed HOME/ancestor modes still require the separately admitted
-operator remediation; a private fixture is not installed readiness.
+The original PATH executable has a separate bootstrap-only reader. Each path
+component is canonical and opened without following symlinks. Ancestors are
+root/user-owned and have no group/other write (the existing sticky-root exception
+applies); the final regular executable is user-owned, executable, singly linked,
+and has no group/other write or special bits. An owned `0755` PATH parent passes;
+`0775`, a foreign owner, replacement or a symlink refuses. Original role-profile
+inputs may be selected outside the private Cairn root only as exact `0600`/`0400`
+pins with that safe ancestry. Target images, credentials, source closures and
+state retain the generic private-parent rules. No HOME chmod is performed.
+Any installed writable ancestry needs its separately admitted narrow remediation;
+fixture-owned `0775` refusals and `0755` preparation do not establish readiness.
 
 An existing lock must be the same actual inode in both selections, linked during
 off-path preparation. Its exact exclusive flock is identified through
@@ -71,21 +80,86 @@ it does not silently initialize the retained generation.
 
 ## Bound and unbound retained Python /2
 
-Every original member selects an actual disabled `/2` manifest and its literal
-`retained-argv.json`. Bound profiles must name that manifest; unbound profiles
-must remain unbound. The memory/coordinator profiles must select the exact
-current member and agree on shared selectors, accounts and state. The reader
-verifies the original engine/bridge, all 17 named lifecycle bundle members and
-the bundle digest. Literal memory and coordination vectors must select their
-own source entrypoint and exact profile, including `hook --config` where the
-source requires it. No `/2` observation becomes a `/3` compatibility receipt.
+Every original member selects its actual `/2` manifest and literal
+`retained-argv.json`. Bound profiles name their real installed manifest. A
+previously unbound profile has no installed binding selector: its separately
+staged, disabled off-path association describes the exact memory/coordinator
+profiles, source bundle and literal commands. It is selection data, never an
+invented installed binding or a `/3` receipt. All selected members remain in the
+plan. No `/2` profile or command is normalized into `/3`.
 
-The original config/manifests and Python bundle are never rewritten or
-normalized. The complete original directory, including all 17 proximal opaque
-`.before-*` members, is retained during the forward exchange. Archive bodies
-and credential contents are not opened by the metadata reader. Returned facts
-and association labels are retained observations, not permission to replay the
-process-local receipts.
+The reader checks the engine/bridge, all 17 named source members and their bundle
+digest. Memory and coordination argv must select the actual source generation,
+role and exact profile (`hook --config` for coordination). Shared bound groups
+retain the existing profile validator: memory home is unnecessary, one
+coordinator may omit its home, and multiple coordinators need distinct explicit
+canonical homes. The source profiles, literal argv and Python files are never
+rewritten. Archives and credential contents are not read.
+
+An enabled installed `/2` manifest needs a real disable before namespace
+publication. After a fresh stopped fence, lock and D1–D6 preflight, the consumer
+prepares `.unit-bootstrap-legacy-<selection digest>` beneath the private root.
+Its owner-only recovery journal binds exact selection paths/pins and original
+file identities. For each enabled bound manifest it derives bytes that change
+only `enabled`, fsyncs the complete preparation, then uses descriptor-bound
+`RENAME_EXCHANGE`. The actual raw original inode moves to the recovery directory;
+it is never replaced by a rewritten copy labelled "original". The complete
+disabled selections are freshly checked before exchanging watcher directories.
+
+Reverse verifies both resulting selections before exchanging each manifest back.
+It restores the original bytes (including `enabled:true`), device/inode, mode,
+owner, size and mtime. Rename ctime is not preserved. A fresh `rollback` reconciles
+partial disable, completed namespace publication or partial raw restoration
+from the actual names, bytes and identities; unknown or modified recovery data
+refuses. An incomplete pre-publication preparation remains retained evidence.
+A later `switch` does not replay an interrupted disable. Keep recovery artifacts
+until separate owner-controlled reconciliation/cleanup; this command deletes no
+retained original.
+
+The journal is not a fence or drain receipt. Every recovery invocation captures
+a new process-local fence and repeats plan, profile, state and authenticated API
+checks. Neither a JSON `disabled`/`stopped` claim nor journal contents skip those
+checks. `published` describes the watcher-directory exchange; a pre-exchange
+error can leave legacy manifests disabled, so `reconciliation` and a fresh
+rollback are required even when `published` is false.
+
+## Account identity and genuine unbound /3
+
+`config_home` is an account-directory identity selector on both sides. Bootstrap
+opens its canonical absolute path without following any symlink component,
+requires safe root/user ancestry and a user-owned directory with no `0022` or
+special bits, and freshly checks its path/device/inode/mode/owner across the
+observation and exchange boundaries. Owned `0755` and `0700` pass, including
+outside `plan.Root`; replacement, foreign ownership, `0775` and symlinks refuse.
+Original/target account identity must correspond. The consumer never reads
+inside, chmods, relocates or copies an account directory or HOME. The private
+Cairn root, state, credential, socket, image and source-closure rules remain.
+
+This selector is compatible with the actual runtimes. Go's existing binding
+predicate ([binding.go](../../internal/lifecycle/binding/binding.go):109–130,
+210–222) resolves coordinator homes, requires distinct explicit homes only for
+shared groups, and checks absolute paths when present. Go admission
+([admission.go](../../internal/lifecycle/admission/admission.go):236–266,
+[wake.go](../../internal/lifecycle/admission/wake.go):29,63) matches the
+originating Codex/Claude account; transcript selection
+([transcript.go](../../internal/lifecycle/transcript/transcript.go):601–614)
+passes the selected home. None requires account mode `0700` or Cairn-root
+containment. Python reverse retains
+[inbox_binding.py](../../integrations/lifecycle/inbox_binding.py):39–51 and
+[hook_admission.py](../../integrations/lifecycle/hook_admission.py):141–145:
+coordinator home is optional for a single profile, memory home is not required,
+and account matching resolves configured/active paths. No runtime code changes
+are part of this bootstrap cut.
+
+A target unbound `/3` branch is selected by its actual publisher-produced
+receipt/manifest and all profile hashes, not merely an absent caller field.
+The existing `CompatibilityContext.UnboundProfiles` verifies schema, binding,
+descriptors and unbound role profiles. The bound branch stays strict. Removing
+a bound field, inserting a binding selector in an unbound active profile, or
+changing the receipt hash/schema/binding refuses. Agy/Hermes/OpenCode retain their
+real harness kinds and absent account homes. An unknown retained activation
+grant still refuses; staging a receipt does not grant native support or session
+visibility.
 
 ## Stopped boundary, D6 and D7
 
@@ -97,8 +171,9 @@ The [landed fence contract](r07-selected-unit-fence.md) retains
 selected stopped/masked definitions, cgroups and process identities; it does
 not issue stop/mask/start/restart operations.
 
-Authenticated drain reads are performed independently for both complete
-selections before and while holding the watcher flock. Immediately before
+A metadata-only pass checks both full layouts before opening the existing
+watcher lock. Authenticated drain reads then observe both complete selections
+while holding that exact flock. Immediately before
 exchange, both pinned plans, layouts, statuses, local state and associations
 are reread, the selected-unit fence is rechecked, and actual directory identities
 are checked again. The final read/action interval is not atomic with external
@@ -109,7 +184,8 @@ Linux `RENAME_EXCHANGE` publishes the pair, followed by parent fsync and complet
 D7 readback of both resulting selections. Results keep `published` separate
 from errors and report active/retained paths. A post-publication sync or readback
 failure leaves both selections available and requires exact reconciliation with
-a fresh `reverse`/`rollback` invocation. A killed process's receipt cannot be
+a fresh `rollback` invocation (or `reverse` when the exact forward placement is
+still present). A killed process's receipt cannot be
 reused in a new process.
 
 Lifecycle fencing performs no database connection or semantic writer query.
@@ -170,19 +246,87 @@ producer. No installed systemd or native client qualification is claimed.
 mise run test:unit -- ./internal/lifecycle/coordination ./internal/lifecycle/transcript ./cmd/cairn-lifecycle -run 'Bootstrap' -count=1 -race -v
 mise run test:unit -- scripts/test_r07_bootstrap_reverse.py
 mise run host:exec -- --timeout 12m --weight 2 -- python3 -B scripts/check_r07_bootstrap_reverse.py --effects-only --evidence "$R07_NEW_PRIVATE_EVIDENCE"
+mise run host:exec -- --timeout 20m --weight 1 -- python3 -B scripts/check_r07_bootstrap_reverse.py --production-shape-only --evidence "$R07_NEW_PRIVATE_PRODUCTION_SHAPE_EVIDENCE"
 mise run check
 mise run host:exec -- python3 -B scripts/verify_docs.py --tier 1,2,3,4
 ```
 
-The focused effect fixture covers proximal eight-member/17-archive, archon
-one-member/existing-lock and talos one-member/absent-lock/0755 shapes, each with
-bound and unbound `/2` originals and a complete `/3` forward generation. It also
+The `--effects-only` regression retains homogeneous bound/unbound cases.
+`--production-shape-only` stages the actual proximal eight-member/17-archive
+shape: one shared three-Codex bound group, two separate Claude bound groups,
+and genuine unbound Agy/Hermes/OpenCode groups. Archon is one unbound Codex;
+talos is one unbound OpenCode with an absent original state/lock and a `0755`
+selected directory. Bound original memory profiles omit home, account selectors
+use their real optional shape and `0755`/`0700` modes, original PATH parents use
+`0755`, retained source members use `0700`, client images retain the full candidate bytes, and
+every `/3` group comes from the
+maintained publisher. No installed HOME or operational input is changed. It also
 injects a separate actual owning API claim at D6 and joins SIGKILL consumers
 before and after publication, recovering with fresh receipts. Protected store/
 state snapshots and original member metadata are compared; child and PostgreSQL
 cleanup are recorded. Source-fault unit tests cover copied/zero/foreign/drifted
 fences, changed archives/bundles, writable targets, held locks, ancestor aliases,
 strict selection fields and failures around exchange/fsync.
+
+The production-shape fixture also checks each real unbound kind, bound-field
+removal/unbound-field insertion, bad receipt hash/schema/binding, unsafe
+PATH/source/share ancestry and exact raw reverse. It joins an actual SIGKILL
+consumer after a partial multi-manifest disable, then uses a fresh rollback.
+All selected coordination/memory state, API tables, account identities and raw
+original manifest bytes/inodes/modes/mtime are compared. The test requires the
+matching non-skipped Go test and its transition receipt; exit zero with no tests
+is rejected.
+
+The route-A workflow proof is labelled exactly
+`SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE`. The public `RunUnitBootstrap` method
+is the sole non-test caller of an unexported full CLI workflow helper and passes
+literal `nil`. Nil captures the unchanged concrete default fence. Package tests
+supply a genuine process-local capability from the existing private fixture
+producer, exercising the same argument parsing, output, exit status and complete
+transition workflow. No argv/environment/config field, exported constructor,
+global hook or serialized value supplies that capability. An AST wiring test
+fails on a second non-test reference/call or a non-nil production argument;
+independent review must also check this capability boundary explicitly.
+
+Each positive switch/reverse runs in a separately launched, joined test process
+with a fresh `30s` workflow context. Receipts record workflow and launch-to-join
+seconds and positive margins independently. The `90s` Go test / `100s` process
+limits are outer cleanup limits, not operation acceptance. Direct library fault
+injection remains separately labelled. The fixture hashes exact full candidate
+API and hook images; it does not substitute padded or smaller clients. Test-only
+API auditing forwards unchanged calls through the concrete FileHost transport.
+
+The candidate's genuine default public command is also tested against the real
+local systemd manager, using owned disposable plans and no service changes. It
+must refuse the active shared Cairn workers before admission or publication;
+the receipt is `DEFAULT_PUBLIC_REFUSAL_ACTIVE_WORKERS`. An actual live owned
+callback supplies a later refusal guard if the manager changes unexpectedly.
+The worker status and owned selections/API/state are compared before and after.
+This refusal is not a default-fence positive. Public read-only inspect timing is
+reported separately.
+
+The first real default-fence positive and manager latency remain
+**UNESTABLISHED until R07**: at each host's admitted stopped boundary, evaluate
+the default fence before any exchange and measure the real operation against
+its unchanged `30s` contract. On refusal, abort with no publication, retain the
+current selection, report the exact refusing condition to the release owner,
+and await a new admitted reconciliation; do not retry, stop shared workers or
+weaken the default guard to force success. The execution packet must carry this
+operator response. Route-A source/workflow proof does not qualify installed
+manager latency or native adoption.
+
+For coordinated fixture reuse, `production_shape_fixture(cluster, images, root,
+host)` yields `(f, original_plan_path, original_plan_sha)` and owns only
+`f.host.close()`/its API process. Caller owns cluster, root and images. It
+initializes the actual `status_consumer.Fixture` before accessing its profiles.
+`production-material.json` exposes exact target `directory`/`pins`, per-group
+Go-produced receipts and all genuine unbound receipt references. These are
+selection inputs for a caller's fresh census, never Go3 native session evidence.
+`images` needs `api`, `control`, `stager`; the library consumer additionally uses
+`tests`, mapped locally to the separately verified same-head packet `observer`
+(coordination `go test -c`) when Root selects that candidate. This is no extra
+native role. A growing Agy trace remains caller-owned: a live selected callback
+must fail bootstrap D5; an unrelated trace is not bootstrap trace qualification.
 
 Final command results and precise counts belong to the frozen candidate's
 selected raw receipts. Earlier failures are retained separately; none are

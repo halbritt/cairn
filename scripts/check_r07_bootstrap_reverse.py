@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""R07 bootstrap gap planner and newly owned filesystem/API regression fixture.
+"""R07 selected-file staging and owned bootstrap workflow verification.
 
-There is no installed-layout apply/reverse entrypoint. The current public Go
-control cannot construct its private drain receipt for the original mixed /2
-layout. A filesystem rehearsal and a checked bound-/2 roundtrip are reported
-separately from that unsupported operator operation. Run through mise host:exec.
+The production-shape gate stages genuine /2-/3 groups and exercises the shared
+CLI workflow with a private fixture fence. The unchanged default host producer
+is tested for active-worker refusal; its first positive remains an admitted R07
+gate. No production/native action is performed. Run tests through mise host:exec.
 """
 
 import argparse
+from contextlib import contextmanager
 import io
 import importlib.util
 import json
@@ -20,6 +21,7 @@ import sys
 import tempfile
 import time
 import uuid
+from types import SimpleNamespace
 
 import check_r06_unit_control as control
 from disposable_host import HostRefusal, OwnedCluster, pairs_unique, pg_bindir, private_dir, require, run_sql, stop_process, write_private
@@ -502,7 +504,13 @@ def bootstrap_invoke(f, image, plan, label, *, operation='inspect', expected=0):
     return result
 
 
-def fixture_effect_plan(f, images, host, *, unbound=False):
+def fixture_effect_plan(f, images, host, *, unbound=False, production_shape=False):
+    if production_shape:
+        return production_effect_plan(f, images, host)
+    return homogeneous_effect_plan(f, images, host, unbound=unbound)
+
+
+def homogeneous_effect_plan(f, images, host, *, unbound=False):
     """Prepare actual retained /2 and maintained /3 generations off-path."""
     import stage_lifecycle_compatibility as installer
     spec = importlib.util.spec_from_file_location('r07_retained_bundle', ROOT / 'integrations/lifecycle/lifecycle_bundle.py')
@@ -571,8 +579,8 @@ def fixture_effect_plan(f, images, host, *, unbound=False):
         target_source.write_bytes((ROOT / 'integrations/lifecycle' / name).read_bytes())
         target_source.chmod(0o600)
     for role, config in [('memory', memory), *[(name, config) for name, _, config in profiles]]:
-        control.write(inputs / (role + '.json'), dict(config, inbox_recall_binding=str(generation / 'binding.json')))
-    installation = dict(id=identity, enabled=False,
+        control.write(inputs / (role + '.json'), dict(config) if unbound else dict(config, inbox_recall_binding=str(generation / 'binding.json')))
+    installation = dict(id=identity, enabled=False, profile_mode='unbound' if unbound else 'bound',
         sources={name: pin(selected_sources / name) for name in (*bundle.MODULE_FILES, 'lifecycle_compatibility.py')},
         source_revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         binary=pin(images['control']), memory_config=pin(inputs / 'memory.json'),
@@ -619,6 +627,519 @@ def fixture_effect_plan(f, images, host, *, unbound=False):
     control.write(path, original)
     return path, pin(path)['sha256']
 
+
+
+def production_roster(host):
+    """Observed member/kind/home/bound grouping, with no default home injected."""
+    if host == 'proximal':
+        return [('agy-one', 'agy', None, False, 'agy'),
+                ('claude-one', 'claude', '.claude', True, 'claude-one'),
+                ('claude-two', 'claude', '.claude-harm', True, 'claude-two'),
+                ('codex-one', 'codex', '.codex', True, 'codex'),
+                ('codex-two', 'codex', '.codex-harm', True, 'codex'),
+                ('codex-three', 'codex', '.codex-3', True, 'codex'),
+                ('hermes-one', 'hermes', None, False, 'hermes'),
+                ('opencode-one', 'opencode', None, False, 'opencode')]
+    if host == 'archon':
+        return [('codex-archon', 'codex', '.codex', False, 'codex')]
+    require(host == 'talos', 'unknown production shape')
+    return [('opencode-one', 'opencode', None, False, 'opencode')]
+
+
+def production_effect_plan(f, images, host):
+    """Actual raw /2 inputs and Go-published /3 groups, inside an owned fixture.
+
+    Unbound /2 association descriptors are explicit OFF-PATH selection data.
+    There is no installed binding selector in any of those original profiles.
+    Source closure validation here is not runtime or native admission.
+    """
+    import stage_lifecycle_compatibility as installer
+    spec = importlib.util.spec_from_file_location('r07_production_bundle', ROOT / 'integrations/lifecycle/lifecycle_bundle.py')
+    bundle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bundle)
+    roster = production_roster(host)
+    home = f.production_home
+    require(f.root == home / '.local/share/cairn', 'production fixture must use actual private Cairn path shape')
+    base = json.loads(f.coord.read_bytes())
+    for path in f.active.iterdir():
+        path.unlink()
+    sources = f.root / 'retained-deployment'
+    sources.mkdir(mode=0o755)
+    source = sources / 'lifecycle'
+    bundle.stage_runtime(ROOT / 'integrations/lifecycle', source)
+    # Match the retained selected hook source's 0700 members and parent.
+    for path in source.iterdir():
+        if path.is_file():
+            path.chmod(0o700)
+    descriptor = bundle.bundle_descriptor(source)
+    private_client = f.root / 'private-client'
+    private_client.mkdir(mode=0o700)
+    forward_client = private_client / 'cairn'
+    forward_client.write_bytes(images['api'].read_bytes())
+    forward_client.chmod(0o500)
+    legacy_parent = home / '.local/bin'
+    legacy_parent.mkdir(mode=0o755)
+    legacy_client = legacy_parent / 'cairn'
+    legacy_client.write_bytes(images['api'].read_bytes())
+    legacy_client.chmod(0o755)
+    api_sha = control.sha(images['api'].read_bytes())
+    require(all(path.stat().st_size == images['api'].stat().st_size and control.sha(path.read_bytes()) == api_sha
+                for path in (legacy_client, forward_client)),
+            'legacy/private clients must retain the exact full-sized candidate API image')
+    source_inputs = f.root / 'forward-sources'
+    source_inputs.mkdir(mode=0o700)
+    for name in (*bundle.MODULE_FILES, 'lifecycle_compatibility.py'):
+        path = source_inputs / name
+        path.write_bytes((ROOT / 'integrations/lifecycle' / name).read_bytes())
+        path.chmod(0o600)
+    pin = lambda path: dict(path=str(path), sha256=control.sha(path.read_bytes()))
+    to_go = lambda path: dict(Path=str(path), SHA256=pin(path)['sha256'])
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    original_associations, target_associations, groups, configs = {}, {}, {}, {}
+    prepared = f.active.with_name('prepared-bindings')
+    prepared.mkdir(mode=0o700)
+    if host != 'talos':
+        control.write(f.active / '.watch.lock', {})
+        os.link(f.active / '.watch.lock', prepared / '.watch.lock')
+    else:
+        f.active.chmod(0o755)
+        control.write(prepared / '.watch.lock', {})
+    for name in ARCHIVES if host == 'proximal' else ():
+        control.write(f.active / name, {'opaque': 'original metadata-only archive; never a hook profile'})
+    primary = 'codex-one' if host == 'proximal' else 'codex-archon' if host == 'archon' else None
+    for name, harness, account, bound, group in roster:
+        state = f.state_dir if name == primary else f.root / ('state-' + name)
+        if not (host == 'talos' and name == 'opencode-one'):
+            state.mkdir(mode=0o700, exist_ok=True)
+        profile = dict(base, harness=harness, cairn=str(legacy_client),
+                       binding=f.binding if name == primary else 'r07-' + name,
+                       state_dir=str(state))
+        profile.pop('config_home', None)
+        profile.pop('inbox_recall_binding', None)
+        if account is not None:
+            account_path = home / account
+            account_path.mkdir(mode=0o700 if account == '.codex-3' else 0o755)
+            profile['config_home'] = str(account_path)
+        original_dir = f.root / ('original-' + group)
+        original_dir.mkdir(mode=0o700, exist_ok=True)
+        binding = original_dir / 'binding.json' if bound else original_dir / 'off-path-association.json'
+        if bound:
+            profile['inbox_recall_binding'] = str(binding)
+        path = original_dir / (name + '.json')
+        control.write(path, profile)
+        control.write(f.active / (name + '.json'), profile)
+        configs[name] = profile
+        groups.setdefault(group, dict(harness=harness, bound=bound, binding=binding, directory=original_dir, profiles=[]))['profiles'].append((name, path))
+    production_material = dict(schema='cairn.r07-production-shape-material/1', host=host,
+                               native_admission=False, runtime_qualification='not claimed',
+                               root=str(f.root), home=str(home), groups=[],
+                               client_image=dict(path=str(images['api']), sha256=api_sha, bytes=images['api'].stat().st_size),
+                               hook_image=dict(path=str(images['control']), sha256=control.sha(images['control'].read_bytes()), bytes=images['control'].stat().st_size))
+    for group, selected in groups.items():
+        original_dir, bound = selected['directory'], selected['bound']
+        old_memory = original_dir / 'memory.json'
+        memory_state = f.root / 'memory' if group == 'codex' else f.root / ('memory-' + group)
+        memory_state.mkdir(mode=0o700, exist_ok=True)
+        memory = dict(harness=selected['harness'], cairn=str(legacy_client), socket=base['socket'],
+                      token_file=base['token_file'], repo=base['repo'], state_dir=str(memory_state),
+                      recall_mode='agent_tools', context_bytes=9500)
+        if bound:
+            memory['inbox_recall_binding'] = str(selected['binding'])
+        # Memory home is absent, as on all three installed bound /2 groups.
+        control.write(old_memory, memory)
+        manifest = dict(schema='cairn.inbox-recall-binding/2', enabled=bound,
+                        memory_config=pin(old_memory), coordination_configs=[pin(path) for _, path in selected['profiles']],
+                        engine=dict(**pin(source / 'memory.py'), bundle=descriptor),
+                        bridge=dict(**pin(source / 'inbox_recall.py'), bundle=descriptor))
+        control.write(selected['binding'], manifest)
+        if not bound:
+            require(not any('inbox_recall_binding' in configs[name] for name, _ in selected['profiles']),
+                    'unbound original cannot acquire an installed binding selector')
+        for name, path in selected['profiles']:
+            argv = original_dir / ('argv-' + name + '.json')
+            control.write(argv, dict(memory=[str(Path(sys.executable).resolve()), '-I', '-B', str(source / 'memory.py'), '--config', str(old_memory)],
+                                    coordination=[str(Path(sys.executable).resolve()), '-I', '-B', str(source / 'coordination.py'), 'hook', '--config', str(path)]))
+            original_associations[name + '.json'] = dict(binding=to_go(selected['binding']), argv=to_go(argv))
+        stage = f.root / ('forward-' + group)
+        stage.mkdir(mode=0o700)
+        identity = str(uuid.uuid4())
+        generation = stage / 'generations' / ('selection-' + identity)
+        inputs = f.root / ('forward-inputs-' + group)
+        inputs.mkdir(mode=0o700)
+        for role, config in [('memory', memory), *[(name, configs[name]) for name, _ in selected['profiles']]]:
+            forward = dict(config, cairn=str(forward_client))
+            if bound:
+                forward['inbox_recall_binding'] = str(generation / 'binding.json')
+            control.write(inputs / (role + '.json'), forward)
+        installation = dict(id=identity, enabled=False, profile_mode='bound' if bound else 'unbound',
+            sources={name: pin(source_inputs / name) for name in (*bundle.MODULE_FILES, 'lifecycle_compatibility.py')},
+            source_revision=revision, binary=pin(images['control']), memory_config=pin(inputs / 'memory.json'),
+            coordination_configs=[pin(inputs / (name + '.json')) for name, _ in selected['profiles']],
+            aliases={}, python=str(Path(sys.executable).resolve()), shell='/bin/sh')
+        installer.stage(images['stager'], stage, installation)
+        for i, (name, _) in enumerate(selected['profiles']):
+            target = prepared / (name + '.json')
+            target.write_bytes((generation / ('coordination-' + str(i) + '.json')).read_bytes())
+            target.chmod(0o400)
+            target_associations[target.name] = dict(binding=to_go(generation / 'binding.json'),
+                argv=dict(Path='', SHA256=''), receipt=to_go(generation / 'receipt.json'))
+        production_material['groups'].append(dict(name=group, kind=selected['harness'], bound=bound,
+            original_binding=to_go(selected['binding']), original_binding_installed=bound, memory_state=str(memory_state),
+            target_binding=to_go(generation / 'binding.json'), target_receipt=to_go(generation / 'receipt.json'),
+            members=[name + '.json' for name, _ in selected['profiles']]))
+    def member(path, directory=False):
+        row = metadata(path)
+        return dict(name=path.name, type='directory' if directory else 'regular',
+                    **{key: row[key] for key in ('uid', 'gid', 'mode', 'device', 'inode')})
+    def plan(directory, archives, associations):
+        return dict(schema='cairn.unit-bootstrap/2', root=str(f.root),
+            current=dict(directory=str(directory), pins={name + '.json': pin(directory / (name + '.json'))['sha256'] for name, *_ in roster}),
+            archives=[member(directory / name) for name in archives],
+            watch_lock=member(directory / '.watch.lock') if (directory / '.watch.lock').exists() else
+                dict(name='.watch.lock', type='absent', uid=0, gid=0, mode=0, device=0, inode=0),
+            credential_selectors=[str(f.host.token('worker'))], callbacks=[], associations=associations)
+    target = plan(prepared, (), target_associations)
+    target_path = f.root / 'target-bootstrap-plan.json'
+    control.write(target_path, target)
+    original = plan(f.active, ARCHIVES if host == 'proximal' else (), original_associations)
+    original['transition'] = dict(target=to_go(target_path), original_identity=member(f.active, True),
+        target_identity=member(prepared, True),
+        fence=dict(UID=os.getuid(), Units=[], Executables=[], CommandSHA256=[], Database='', DatabaseSystemID='', Window=30_000_000_000))
+    path = f.root / 'effect-bootstrap-plan.json'
+    control.write(path, original)
+    production_material.update(original_current=original['current'], target_current=target['current'],
+        target_plan=to_go(target_path), original_plan=to_go(path),
+        target_unbound_receipts=[group['target_receipt'] for group in production_material['groups'] if not group['bound']],
+        account_identities={str(home / account): metadata(home / account) for _, _, account, *_ in roster if account},
+        state_paths={name: configs[name]['state_dir'] for name, *_ in roster})
+    control.write(f.root / 'production-material.json', production_material)
+    return path, pin(path)['sha256']
+
+
+@contextmanager
+def production_shape_fixture(cluster, images, root, host):
+    """Caller owns cluster/images/root; this context owns and joins one API.
+
+    Yields (control.Fixture, original_plan_path, original_plan_sha). Exact /3
+    current/pins and genuine unbound receipt references are in production-material.json;
+    they are selection data for a caller's fresh census, not native session proof.
+    """
+    root.mkdir(mode=0o700)
+    home = root / 'account-home'
+    home.mkdir(mode=0o700 if host == 'archon' else 0o750)
+    (home / '.local').mkdir(mode=0o755)
+    (home / '.local/share').mkdir(mode=0o755)
+    f = control.Fixture(cluster, images['api'], home / '.local/share/cairn', 'r07_production_' + host + '_' + uuid.uuid4().hex[:8])
+    try:
+        f.production_home = home
+        f.retained(resume=True)
+        control.transport(f, images['api'])
+        path, pin = fixture_effect_plan(f, images, host, production_shape=True)
+        yield f, path, pin
+    finally:
+        process = f.host.process
+        code = f.host.close()
+        require(process is not None and process.poll() is not None, 'owned production API exit unresolved')
+        control.write(root / 'fixture-api-cleanup.json', dict(api_pid=process.pid, api_exit=code,
+            api_closed=True, cluster='caller-owned', root='caller-owned', home_environment='unchanged'))
+
+
+def owned_effect_consumer(f, images, plan, pin, label, *, kill_phase=None, refusal=None):
+    """Package-library proof only; the real public host-fence gate is separate."""
+    result_path = f.root / (label + '-result.json')
+    spec = f.root / (label + '-test.json')
+    selected = dict(Plan=str(plan), Pin=pin, Result=str(result_path))
+    if refusal:
+        selected['RefuseContains'] = refusal
+    marker = f.root / (label + '-kill-marker')
+    if kill_phase:
+        selected.update(HoldPhase=kill_phase, Marker=str(marker))
+    control.write(spec, selected)
+    temporary = f.root / 'test-temporary'
+    temporary.mkdir(mode=0o700, exist_ok=True)
+    env = dict(f.host.env, CAIRN_BOOTSTRAP_EFFECT_PLAN=str(spec), TMPDIR=str(temporary))
+    argv = [images['tests'], '-test.run=^TestUnitBootstrapOwnedTransition$', '-test.v', '-test.timeout=90s']
+    if not kill_phase and not refusal:
+        transitions, seconds, launch_seconds, operations = {}, {}, {}, []
+        for operation in ('switch', 'reverse'):
+            child_result = f.root / (label + '-' + operation + '-result.json')
+            selected.update(Operation=operation, Pin=control.sha(plan.read_bytes()), Result=str(child_result))
+            control.write(spec, selected)
+            started = time.monotonic()
+            completed = control.command(argv, f.root / (label + '-' + operation), env=env, timeout=100)
+            elapsed = time.monotonic() - started
+            require('=== RUN   TestUnitBootstrapOwnedTransition' in completed.stdout and
+                    '--- PASS: TestUnitBootstrapOwnedTransition' in completed.stdout and
+                    '--- SKIP:' not in completed.stdout and 'no tests to run' not in completed.stdout,
+                    'owned effect gate did not execute the selected non-skipped test')
+            require(child_result.is_file(), 'shared CLI transition receipt missing')
+            observed = json.loads(child_result.read_bytes())
+            require(observed.get('result') == 'PASS' and observed.get('workflow_proof') == 'SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE'
+                    and observed.get('operation') == operation and observed.get('deadline_seconds') == 30
+                    and observed['transition']['published'] and observed['transition']['rechecked'], 'shared CLI args/output/status proof missing')
+            require(0 < elapsed < 30 and 0 < observed['seconds'][operation] < 30, 'shared CLI30s launch-to-joined-exit margin missing')
+            transitions['forward' if operation == 'switch' else 'reverse'] = observed['transition']
+            seconds[operation] = observed['seconds'][operation]
+            launch_seconds[operation] = elapsed
+            operations.extend(observed['api_read_operations'])
+        result = dict(result='PASS', **transitions, seconds=seconds, deadline_seconds=30,
+            api_read_operations=operations, workflow_proof='SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE',
+            workflow_launch_to_join_seconds=launch_seconds, workflow_margin_seconds={name:30-value for name,value in launch_seconds.items()},
+            library_margin_seconds={name:30-value for name,value in seconds.items()},
+            outer_timeout_seconds=100, default_public_positive='UNESTABLISHED until admitted R07 stopped boundary')
+        control.write(result_path, result)
+        return result
+    if kill_phase:
+        with (f.root / (label + '-killed.stdout')).open('w') as out, (f.root / (label + '-killed.stderr')).open('w') as err:
+            child = subprocess.Popen(list(map(str, argv)), env=env, stdout=out, stderr=err)
+            try:
+                deadline = time.monotonic() + 30
+                while not marker.exists():
+                    require(child.poll() is None and time.monotonic() < deadline, 'owned consumer did not reach interruption boundary')
+                    time.sleep(0.01)
+                child.kill()
+                require(child.wait(timeout=5) == -9, 'owned killed consumer exit unresolved')
+                control.write(f.root / (label + '-killed-child.json'), dict(pid=child.pid, exit=child.returncode, phase=kill_phase))
+            finally:
+                stop_process(child, timeout=5, label='owned bootstrap interrupted consumer')
+        selected = dict(Plan=str(plan), Pin=control.sha(plan.read_bytes()), Result=str(result_path),
+                        Recover=True, ExpectPublished=kill_phase in ('after:exchange', 'before:parent-sync', 'after:parent-sync'))
+        control.write(spec, selected)
+    started = time.monotonic()
+    completed = control.command(argv, f.root / label, env=env, timeout=100)
+    elapsed = time.monotonic() - started
+    require('=== RUN   TestUnitBootstrapOwnedTransition' in completed.stdout and
+            '--- PASS: TestUnitBootstrapOwnedTransition' in completed.stdout and
+            '--- SKIP:' not in completed.stdout and 'no tests to run' not in completed.stdout,
+            'owned effect gate did not execute the selected non-skipped test')
+    require(result_path.is_file(), 'owned transition receipt missing')
+    result = json.loads(result_path.read_bytes())
+    require(result.get('result') == 'PASS', 'owned transition result missing PASS')
+    require(result.get('deadline_seconds') == 30 and result.get('seconds') and
+            all(0 < seconds < 30 for seconds in result['seconds'].values()), 'per-operation library30s receipts missing')
+    result.update(library_margin_seconds={name: 30 - seconds for name, seconds in result['seconds'].items()},
+                  outer_launch_to_join_seconds=elapsed, outer_timeout_seconds=100,
+                  workflow_proof=result.get('workflow_proof', 'DIRECT_LIBRARY_WITH_FIXTURE_FENCE'),
+                  default_public_positive='UNESTABLISHED until admitted R07 stopped boundary')
+    control.write(result_path, result)
+    return result
+
+
+
+def production_shape_refusals(f, images, plan, pin, material):
+    """Exercise the actual8-member producer material before any publication."""
+    outcomes = []
+    selected = json.loads(plan.read_bytes())
+    target_path = Path(selected['transition']['target']['Path'])
+    target_raw = target_path.read_bytes()
+    target_base = json.loads(target_raw)
+    def persist_target(target):
+        control.write(target_path, target)
+        selected['transition']['target']['SHA256'] = control.sha(target_path.read_bytes())
+        control.write(plan, selected)
+        return control.sha(plan.read_bytes())
+    before = f.snapshot()
+    for label, name, field, error in (
+            ('bound-field-removed', 'codex-one.json', None, 'does not select exact active config'),
+            ('unbound-field-present', 'agy-one.json', 'present', 'does not select exact active config')):
+        target = json.loads(target_raw)
+        current = Path(target['current']['directory']) / name
+        raw = current.read_bytes()
+        try:
+            config = json.loads(raw)
+            config.pop('inbox_recall_binding', None)
+            if field:
+                config['inbox_recall_binding'] = target['associations'][name]['binding']['Path']
+            current.chmod(0o600)
+            control.write(current, config)
+            current.chmod(0o400)
+            target['current']['pins'][name] = control.sha(current.read_bytes())
+            result = owned_effect_consumer(f, images, plan, persist_target(target), label, refusal=error)
+            outcomes.append(dict(case=label, error=result['error']))
+        finally:
+            current.chmod(0o600)
+            current.write_bytes(raw)
+            current.chmod(0o400)
+            target_path.write_bytes(target_raw)
+            selected['transition']['target']['SHA256'] = control.sha(target_raw)
+            control.write(plan, selected)
+    for fault in ('receipt-hash', 'receipt-schema', 'receipt-binding'):
+        target = json.loads(target_raw)
+        association = target['associations']['agy-one.json']
+        receipt_path = Path(association['receipt']['Path'])
+        raw = receipt_path.read_bytes()
+        try:
+            if fault == 'receipt-hash':
+                association['receipt']['SHA256'] = '0'*64
+                expected = 'association pin changed'
+            else:
+                receipt = json.loads(raw)
+                if fault == 'receipt-schema':
+                    receipt['schema'] = 'cairn.lifecycle-compatibility/0'
+                    expected = 'receipt'
+                else:
+                    receipt['binding']['path'] = str(f.root / 'foreign-binding.json')
+                    expected = 'receipt selects another binding'
+                receipt_path.chmod(0o600)
+                control.write(receipt_path, receipt)
+                receipt_path.chmod(0o400)
+                association['receipt']['SHA256'] = control.sha(receipt_path.read_bytes())
+            result = owned_effect_consumer(f, images, plan, persist_target(target), fault, refusal=expected)
+            outcomes.append(dict(case=fault, error=result['error']))
+        finally:
+            receipt_path.chmod(0o600)
+            receipt_path.write_bytes(raw)
+            receipt_path.chmod(0o400)
+            target_path.write_bytes(target_raw)
+            selected['transition']['target']['SHA256'] = control.sha(target_raw)
+            control.write(plan, selected)
+    for label, directory, error in (
+            ('legacy-path-parent775', f.production_home / '.local/bin', 'unsafe ancestor'),
+            ('retained-source-parent775', f.root / 'retained-deployment', 'unsafe path')):
+        directory.chmod(0o775)
+        try:
+            result = owned_effect_consumer(f, images, plan, control.sha(plan.read_bytes()), label, refusal=error)
+            outcomes.append(dict(case=label, error=result['error']))
+        finally:
+            directory.chmod(0o755)
+    # The unsafe .local/share ancestor rejects even plan reading through the
+    # real public read-only path. Restore only this newly owned fixture parent.
+    share = f.production_home / '.local/share'
+    share.chmod(0o775)
+    try:
+        completed = control.command([images['control'], 'unit-bootstrap', 'inspect', '--plan', plan,
+            '--sha256', control.sha(plan.read_bytes())], f.root / 'share-ancestor775', env=f.host.env, expected=1)
+        result = json.loads(completed.stdout)
+        require(not result['published'] and 'ancestor' in result['error'], 'unsafe real share ancestry was not refused')
+        outcomes.append(dict(case='share-ancestor775', error=result['error']))
+    finally:
+        share.chmod(0o755)
+    require(before == f.snapshot(), 'production refusals changed protected API/state')
+    require(not list(f.root.glob('.unit-bootstrap-legacy-*')), 'refused preflight created recovery/publication state')
+    control.write(f.root / 'production-refusals.json', outcomes)
+    return outcomes
+
+
+def default_public_refusal(f, images, plan):
+    """Real default producer, owned plans; never stop/mask a shared worker."""
+    worker = 'cairn-wake-worker-01.service'
+    argv = ['/usr/bin/systemctl', '--user', '--no-pager', 'show',
+            '--property=Id,LoadState,ActiveState,SubState,UnitFileState', worker]
+    status = control.command(argv, f.root / 'default-worker-before', env=f.host.env, timeout=20)
+    properties = dict(line.split('=', 1) for line in status.stdout.splitlines() if '=' in line)
+    require(properties.get('Id') == worker and properties.get('ActiveState') == 'active' and
+            properties.get('SubState') == 'running', 'active-worker prerequisite absent; no default public attempt')
+    original = json.loads(plan.read_bytes())
+    target = json.loads(Path(original['transition']['target']['Path']).read_bytes())
+    # A real live owned parent is a later refusal guard if the shared manager
+    # changes unexpectedly. It cannot authorize an exchange.
+    callbacks = [process_ref(SimpleNamespace(pid=os.getpid()))]
+    original['callbacks'] = target['callbacks'] = callbacks
+    target_path = f.root / 'default-refusal-target.json'
+    control.write(target_path, target)
+    original['transition']['target'] = dict(Path=str(target_path), SHA256=control.sha(target_path.read_bytes()))
+    original['transition']['fence'] = dict(UID=os.getuid(), Units=[worker],
+        Executables=[dict(Path=str(images['control']), SHA256=control.sha(images['control'].read_bytes()))],
+        CommandSHA256=[], Database='', DatabaseSystemID='', Window=30_000_000_000)
+    selected = f.root / 'default-refusal-plan.json'
+    control.write(selected, original)
+    directories = (Path(original['current']['directory']), Path(target['current']['directory']))
+    protected = {str(path): preserved_metadata(path) for directory in directories for path in directory.iterdir()}
+    before = f.snapshot()
+    started = time.monotonic()
+    completed = control.command([images['control'], 'unit-bootstrap', 'switch', '--plan', selected,
+        '--sha256', control.sha(selected.read_bytes())], f.root / 'default-public-refusal', env=f.host.env, expected=1, timeout=30)
+    elapsed = time.monotonic() - started
+    result = json.loads(completed.stdout)
+    require(not result['published'] and not result['inspected'] and result['owner_fence'] == 'unknown'
+            and 'unit or activation trigger is not stopped and masked' in result.get('error', ''),
+            'real default producer did not refuse at active-worker fence; no positive is claimed')
+    after_status = control.command(argv, f.root / 'default-worker-after', env=f.host.env, timeout=20)
+    require(after_status.stdout == status.stdout, 'shared worker selected status changed during refusal')
+    require(before == f.snapshot() and protected == {str(path): preserved_metadata(path) for directory in directories for path in directory.iterdir()},
+            'default refusal changed protected API/state/selection')
+    receipt = dict(proof='DEFAULT_PUBLIC_REFUSAL_ACTIVE_WORKERS', result=result,
+                   launch_to_join_seconds=elapsed, shared_worker_properties=properties,
+                   unit_actions=0, outside_owned_root_writes=0, default_positive='UNESTABLISHED until admitted R07 stopped boundary')
+    control.write(f.root / 'default-public-refusal.json', receipt)
+    return receipt
+
+def production_shape_cases(cluster, images, root, host, *, kill_phase=None):
+    with production_shape_fixture(cluster, images, root, host) as (f, plan, pin):
+        material = json.loads((f.root / 'production-material.json').read_bytes())
+        expected_names = PROXIMAL if host == 'proximal' else ('codex-archon',) if host == 'archon' else ('opencode-one',)
+        require(set(material['original_current']['pins']) == {name + '.json' for name in expected_names}, 'production selected membership changed')
+        target_profiles = {name: json.loads((Path(material['target_current']['directory']) / name).read_bytes()) for name in material['target_current']['pins']}
+        require({profile['harness'] for profile in target_profiles.values()} == ({'agy', 'claude', 'codex', 'hermes', 'opencode'} if host == 'proximal' else {'codex'} if host == 'archon' else {'opencode'}), 'real emitted target kinds differ')
+        require(sum(not profile.get('inbox_recall_binding') for profile in target_profiles.values()) == (3 if host == 'proximal' else 1), 'real emitted profiles lost null binding selectors')
+        require(len(material['target_unbound_receipts']) == (3 if host == 'proximal' else 1), 'production genuine unbound coverage changed')
+        def affected_state():
+            result = {}
+            for directory in sorted(set(material['state_paths'].values()) | {group['memory_state'] for group in material['groups']}):
+                path = Path(directory)
+                if not path.exists():
+                    result[directory] = 'absent'
+                    continue
+                selected = {}
+                for child in sorted(path.rglob('*')):
+                    row = preserved_metadata(child)
+                    if child.is_file() and not child.name.endswith(('.lock', '.cuelock')):
+                        row['sha256'] = control.sha(child.read_bytes())
+                    selected[str(child.relative_to(path))] = row
+                result[directory] = selected
+            return result
+        before = f.snapshot()
+        state_before = affected_state()
+        original_metadata = {path.name: preserved_metadata(path) for path in f.active.iterdir()}
+        raw_originals = {group['original_binding']['Path']: (Path(group['original_binding']['Path']).read_bytes(),
+            preserved_metadata(Path(group['original_binding']['Path']))) for group in material['groups']}
+        accounts = {path: metadata(Path(path)) for path in material['account_identities']}
+        home_mode = stat.S_IMODE(f.production_home.stat().st_mode)
+        refusals = production_shape_refusals(f, images, plan, pin, material) if host == 'proximal' and kill_phase is None else []
+        default_refusal = default_public_refusal(f, images, plan) if host == 'proximal' and kill_phase is None else None
+        pin = control.sha(plan.read_bytes())
+        public_started = time.monotonic()
+        target_pin = material['target_plan']
+        public = control.command([images['control'], 'unit-bootstrap', 'inspect', '--plan', target_pin['Path'],
+                                  '--sha256', target_pin['SHA256']], f.root / 'public-inspect', env=f.host.env, timeout=30)
+        public_seconds = time.monotonic() - public_started
+        public_result = json.loads(public.stdout)
+        require(public_seconds < 30 and public_result['inspected'] and public_result['rechecked'] and
+                not public_result['published'], 'public inspect30s failed')
+        result = owned_effect_consumer(f, images, plan, pin, 'production-effect', kill_phase=kill_phase)
+        result['default_public_refusal'] = default_refusal
+        result['public_inspect'] = dict(launch_to_join_seconds=public_seconds, margin_seconds=30-public_seconds,
+                                       qualification='default public read-only inspect; default effectful positive UNESTABLISHED until R07')
+        require(before == f.snapshot() and state_before == affected_state(), 'production-shape consumer changed protected API/all affected state')
+        require(original_metadata == {path.name: preserved_metadata(path) for path in f.active.iterdir()}, 'production-shape raw reverse lost original directory members')
+        for path, (raw, selected) in raw_originals.items():
+            require(Path(path).read_bytes() == raw and preserved_metadata(Path(path)) == selected,
+                    'production-shape reverse lost raw original manifest bytes/inode/metadata')
+        require(accounts == {path: metadata(Path(path)) for path in accounts}, 'account identities changed')
+        require(stat.S_IMODE(f.production_home.stat().st_mode) == home_mode, 'HOME mode changed')
+        operations = result['api_read_operations']
+        require(operations and all(operation in control.READS for operation in operations), 'production-shape consumer made a non-read API operation')
+        result.update(host_shape=host, members=len(material['original_current']['pins']),
+                      unbound=len(material['target_unbound_receipts']), kinds=sorted({group['kind'] for group in material['groups']}),
+                      raw_original_manifest_count=len(raw_originals), raw_reverse='actual exact bytes/inodes/modes/mtime restored',
+                      interruption=kill_phase, refusals=refusals, authenticated_read_calls=len(operations),
+                      client_image_bytes=material['client_image']['bytes'], hook_image_bytes=material['hook_image']['bytes'],
+                      systemd='privately captured observation fixture; no installed service qualification')
+        control.write(root / 'production-result.json', result)
+        # Retain selected receipts only; no credentials or raw original profiles.
+        for name in ('production-material.json', 'effect-bootstrap-plan.json', 'target-bootstrap-plan.json',
+                     'production-effect.argv.json', 'production-effect.stdout', 'production-effect.stderr',
+                     'production-effect.exit.json', 'production-effect-result.json', 'production-refusals.json', 'read-counts.json'):
+            path = f.root / name
+            if path.exists():
+                shutil.copyfile(path, root / name)
+        for path in f.root.glob('production-effect-*'):
+            if path.suffix in ('.stdout', '.stderr') or path.name.endswith(('.argv.json', '.exit.json', '-result.json')):
+                shutil.copyfile(path, root / path.name)
+        for path in f.root.glob('default-*'):
+            if path.suffix in ('.stdout', '.stderr', '.json'):
+                shutil.copyfile(path, root / path.name)
+        return result
 
 def effectful_cases(cluster, images, root, host, *, unbound=False, race=False, kill_phase=None):
     f = control.Fixture(cluster, images['api'], root, 'r07_effect_' + host + ('_unbound' if unbound else '') + ('_race' if race else '') + ('_kill_' + kill_phase.split(':')[0] if kill_phase else ''))
@@ -788,17 +1309,22 @@ def source_pins():
                   'docs/verification/r07-bootstrap-reverse.md',
                   'internal/lifecycle/coordination/shared_unit_bootstrap.go',
                   'internal/lifecycle/coordination/shared_unit_bootstrap_test.go',
+                  'internal/lifecycle/coordination/shared_unit_bootstrap_legacy.go',
+                  'internal/lifecycle/coordination/shared_unit_bootstrap_legacy_test.go',
+                  'internal/lifecycle/coordination/shared_unit_verified_files.go',
+                  'internal/lifecycle/coordination/shared_unit_verified_files_test.go',
                   'internal/lifecycle/transcript/coordination_bootstrap.go',
                   'internal/lifecycle/transcript/coordination_bootstrap_test.go',
                   'cmd/cairn-lifecycle/bootstrap_test.go', 'cmd/cairn-lifecycle/main.go'))
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD', 'HEAD^{tree}'], cwd=ROOT, text=True).splitlines()
     return dict(head=revision[0], tree=revision[1],
+                dirty=subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).splitlines(),
                 source={name: control.sha((ROOT / name).read_bytes()) for name in sorted(files)},
                 python=dict(path=str(Path(sys.executable).resolve()), version=sys.version),
-                application_images='two private fixture images, not a common RC build')
+                application_images='private same-source fixture images, not a common RC build')
 
 
-def run(evidence, *, bootstrap_only=False, effects_only=False):
+def run(evidence, *, bootstrap_only=False, effects_only=False, production_shape_only=False):
     require(not evidence.exists(), 'evidence destination must be NEW')
     evidence.mkdir(mode=0o700, parents=True)
     scratch = Path(tempfile.mkdtemp(prefix='r07-bootstrap-', dir=Path.home() / '.cache'))
@@ -810,7 +1336,7 @@ def run(evidence, *, bootstrap_only=False, effects_only=False):
     try:
         with ProcessReceipts(evidence) as observer:
             control.write(evidence / 'source-pins.json', source_pins())
-            if not bootstrap_only and not effects_only:
+            if not bootstrap_only and not effects_only and not production_shape_only:
                 for host in ('proximal', 'archon', 'talos'):
                     home, names, archives = make_layout(scratch, host, observed_modes=True)
                     control.write(evidence / (host + '-plan.json'), layout_plan(home, names, archives))
@@ -823,7 +1349,7 @@ def run(evidence, *, bootstrap_only=False, effects_only=False):
                     private_home=str(home), result='inert selected-file contract only',
                     accepted_s04r_exact_selection='unknown', runtime_qualification='not run'))
             images = control.build(scratch)
-            if effects_only:
+            if effects_only or production_shape_only:
                 images['stager'] = scratch / 'tools/stager'
                 images['tests'] = scratch / 'tools/bootstrap-tests'
                 control.command(['go', 'build', '-buildvcs=false', '-o', images['stager'], './cmd/cairn-stage-lifecycle'], scratch / 'tools/build-stager')
@@ -837,11 +1363,21 @@ def run(evidence, *, bootstrap_only=False, effects_only=False):
             cluster = OwnedCluster.start(scratch / 'pg', pg_bin=pg)
             result = dict(cases=[], status='not-run-focused-bootstrap-check')
             race = dict(status='not-run-focused-bootstrap-check')
-            if not bootstrap_only and not effects_only:
+            if not bootstrap_only and not effects_only and not production_shape_only:
                 result = authenticated_cases(cluster, images, scratch / 'authenticated')
                 race = authenticated_d6_race(cluster, images, scratch / 'd6-race')
             effects = []
-            if effects_only:
+            if production_shape_only:
+                cases = []
+                for host in ('archon', 'talos', 'proximal'):
+                    case = 'production-' + host[0]
+                    effects.append(production_shape_cases(cluster, images, scratch / case, host))
+                    cases.append(case)
+                case = 'production-kill'
+                effects.append(production_shape_cases(cluster, images, scratch / case, 'proximal', kill_phase='after:legacy-disable-0'))
+                cases.append(case)
+                bootstrap = bootstrap_race = dict(status='not repeated in production-shape library fixture')
+            elif effects_only:
                 cases = []
                 for host in ('archon', 'talos', 'proximal'):
                     for unbound in (False, True):
@@ -867,7 +1403,7 @@ def run(evidence, *, bootstrap_only=False, effects_only=False):
                 destination = evidence / case
                 destination.mkdir(mode=0o700)
                 for path in sorted((scratch / case).iterdir()):
-                    if path.is_file() and (path.suffix in ('.stdout', '.stderr') or path.name.endswith(('.argv.json', '.exit.json', '-plan.json')) or path.name in ('read-calls.jsonl', 'read-counts.json', 'protected-before.json', 'protected-after.json', 'actor-before.json', 'actor-after.json', 'actor-result.json', 'effect-result.json')):
+                    if path.is_file() and (path.suffix in ('.stdout', '.stderr') or path.name.endswith(('.argv.json', '.exit.json', '-plan.json')) or path.name in ('read-calls.jsonl', 'read-counts.json', 'protected-before.json', 'protected-after.json', 'actor-before.json', 'actor-after.json', 'actor-result.json', 'effect-result.json', 'production-result.json', 'fixture-api-cleanup.json', 'production-effect-result.json', 'production-material.json', 'production-refusals.json', 'default-public-refusal.json')):
                         shutil.copyfile(path, destination / path.name)
             pg_pids = {int((cluster.root / 'data/postmaster.pid').read_text().splitlines()[0])}
             pg_pids.update(int(pid) for pid in run_sql(cluster.dsn('postgres'),
@@ -880,9 +1416,9 @@ def run(evidence, *, bootstrap_only=False, effects_only=False):
             require(os.environ == environment, 'fixture changed parent environment; values withheld')
             control.write(evidence / 'postgres-cleanup.json', dict(owned_pids=sorted(pg_pids), all_absent=True))
             control.write(evidence / 'summary.json', dict(schema='cairn.r07-bootstrap-rehearsal/1',
-                result='EFFECTFUL_SOURCE_FIXTURE_PASS' if effects_only else 'SOURCE_GAP_CONFIRMED',
-                operator_bootstrap='tested with fixture fence producer' if effects_only else 'unsupported without actual stopped fence',
-                operator_bootstrap_reverse='tested with exact original directory' if effects_only else 'not exercised', checked_bound2_control=result, new_owner_d6=race,
+                result='SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE' if production_shape_only else 'EFFECTFUL_SOURCE_FIXTURE_PASS' if effects_only else 'SOURCE_GAP_CONFIRMED',
+                operator_bootstrap='shared CLI workflow with private fixture fence; default positive UNESTABLISHED' if effects_only or production_shape_only else 'unsupported without actual stopped fence',
+                operator_bootstrap_reverse='tested library with raw original bytes/inodes' if effects_only or production_shape_only else 'not exercised', checked_bound2_control=result, new_owner_d6=race,
                 effectful_transitions=effects,
                 bootstrap_read_only=bootstrap, bootstrap_read_only_race=bootstrap_race,
                 native_calls=0, production_actions=0, remote_commands=0,
@@ -890,12 +1426,12 @@ def run(evidence, *, bootstrap_only=False, effects_only=False):
     finally:
         # Preserve bounded command/fixture receipts even when a setup or
         # assertion fails; never copy tokens, whole homes or API credentials.
-        for directory in (scratch / 'tools', *sorted(scratch.glob('effect-*'))):
+        for directory in (scratch / 'tools', *sorted(scratch.glob('effect-*')), *sorted(scratch.glob('production-*'))):
             if not directory.is_dir():
                 continue
             destination = evidence / ('failure-' + directory.name)
             destination.mkdir(mode=0o700, exist_ok=True)
-            for path in directory.iterdir():
+            for path in directory.rglob('*'):
                 if path.is_file() and (path.suffix in ('.stdout', '.stderr') or path.name.endswith(('.argv.json', '.exit.json', '-plan.json')) or path.name in ('read-calls.jsonl', 'read-counts.json', 'protected-before.json', 'protected-after.json', 'effect-result.json')):
                     shutil.copyfile(path, destination / path.name)
         if cluster is not None:
@@ -918,6 +1454,7 @@ def main():
                         help='new empty owned0700 directory for payload/control file-verifier references')
     parser.add_argument('--bootstrap-only', action='store_true', help='focus new bootstrap cases; do not repeat the independent checked-control fixtures')
     parser.add_argument('--effects-only', action='store_true', help='focused real API/PG exchange and exact retained2 reverse, with systemd observation fixtures')
+    parser.add_argument('--production-shape-only', action='store_true', help='real8+1+1 shared CLI fixture-fence proof and default active-worker refusal')
     args = parser.parse_args()
     if args.semantic_reverse_selection is not None:
         try:
@@ -930,7 +1467,9 @@ def main():
         require(args.sha256 is None, '--sha256 requires --semantic-reverse-selection')
         require(args.publication_dir is None, '--publication-dir requires --semantic-reverse-selection')
         require(not (args.effects_only and args.bootstrap_only), 'choose one focused fixture')
-        result = run(args.evidence.absolute(), bootstrap_only=args.bootstrap_only, effects_only=args.effects_only)
+        require(sum((args.bootstrap_only, args.effects_only, args.production_shape_only)) <= 1, 'choose one focused fixture')
+        result = run(args.evidence.absolute(), bootstrap_only=args.bootstrap_only, effects_only=args.effects_only,
+                     production_shape_only=args.production_shape_only)
     print(json.dumps(result, sort_keys=True))
 
 

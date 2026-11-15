@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -454,9 +455,11 @@ func TestUnitBootstrapOwnedTransition(t *testing.T) {
 	}
 	var spec struct {
 		Plan, Pin, Result        string
+		Operation                string
 		ActorArgv                []string
 		ActorBody                json.RawMessage
 		Refuse                   bool
+		RefuseContains           string
 		HoldPhase, Marker        string
 		Recover, ExpectPublished bool
 	}
@@ -482,14 +485,76 @@ func TestUnitBootstrapOwnedTransition(t *testing.T) {
 	}
 	spec.Pin = writePrivateFile(t, spec.Plan, raw, 0600)
 	profile := stage2ServicesProfile()
-	cli := &CLI{Profile: profile, Host: NewFileHost(FileHostOptions{Profile: profile}), ProcRoot: "/proc"}
+	host := NewFileHost(FileHostOptions{Profile: profile})
+	concrete := host.Call
+	var reads []string
+	host.Call = func(ctx context.Context, config *value.Value, operation string, body *value.Value, options NativeCallOptions) (*value.Value, error) {
+		switch operation {
+		case "wake-attempts", "event-watch", "session-inbox-control", "session-inbox-attempt-status", "session-inbox-poll-status":
+		default:
+			t.Errorf("bootstrap attempted non-read API operation %s", operation)
+			return nil, fmt.Errorf("unexpected non-read operation %s", operation)
+		}
+		result, err := concrete(ctx, config, operation, body, options)
+		reads = append(reads, operation)
+		return result, err
+	}
+	cli := &CLI{Profile: profile, Host: host, ProcRoot: "/proc"}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
+	timings := map[string]float64{}
+	invoke := func(operation string, result *UnitBootstrapResult, observer func(string) error) error {
+		bounded, stop := context.WithTimeout(ctx, 30*time.Second)
+		defer stop()
+		start := time.Now()
+		var err error
+		if observer != nil {
+			err = cli.bootstrapMutation(bounded, spec.Plan, spec.Pin, operation, result, fence.capture(), observer)
+		} else {
+			var output bytes.Buffer
+			code := cli.runUnitBootstrap(bounded, []string{operation, "--plan", spec.Plan, "--sha256", spec.Pin}, &output, fence.capture())
+			if decodeErr := json.Unmarshal(output.Bytes(), result); decodeErr != nil {
+				t.Fatal(decodeErr)
+			}
+			if code != 0 {
+				if result.Error == "" {
+					t.Fatal("shared CLI failure omitted structured error")
+				}
+				err = errors.New(result.Error)
+			}
+			if code == 0 && result.Error != "" {
+				t.Fatal("shared CLI exit status contradicted structured error")
+			}
+		}
+		timings[operation] = time.Since(start).Seconds()
+		if timings[operation] >= 30 || bounded.Err() != nil {
+			t.Fatalf("unchanged30s bootstrap deadline exceeded: %s %v", operation, err)
+		}
+		return err
+	}
 	before := bootstrapPreservedMetadata(t, p.Current.Directory)
 	var forward, reverse UnitBootstrapResult
 	var observe func(string) error
+	if spec.Operation != "" {
+		if spec.Operation != "switch" && spec.Operation != "reverse" && spec.Operation != "rollback" {
+			t.Fatal("invalid owned operation")
+		}
+		var transition UnitBootstrapResult
+		if err := invoke(spec.Operation, &transition, nil); err != nil {
+			t.Fatal(err)
+		}
+		if spec.Operation != "rollback" && (!transition.Published || !transition.Rechecked || transition.DatabaseCoverage != "not-selected") {
+			t.Fatal("shared CLI operation did not publish")
+		}
+		raw, err := json.Marshal(map[string]any{"result": "PASS", "operation": spec.Operation, "transition": transition, "seconds": timings, "deadline_seconds": 30, "api_read_operations": reads, "workflow_proof": "SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		writePrivateFile(t, spec.Result, raw, 0600)
+		return
+	}
 	if spec.Recover {
-		if err := cli.bootstrapMutation(ctx, spec.Plan, spec.Pin, "rollback", &reverse, fence.capture(), nil); err != nil {
+		if err := invoke("rollback", &reverse, nil); err != nil {
 			t.Fatal(err)
 		}
 		if reverse.Published != spec.ExpectPublished {
@@ -498,7 +563,7 @@ func TestUnitBootstrapOwnedTransition(t *testing.T) {
 		if err := bootstrapIdentityAt(p.Current.Directory, p.Transition.OriginalIdentity); err != nil {
 			t.Fatal(err)
 		}
-		raw, _ := json.Marshal(map[string]any{"result": "PASS", "recovery": reverse, "actual_previous_process": "SIGKILL joined by owned fixture"})
+		raw, _ := json.Marshal(map[string]any{"result": "PASS", "recovery": reverse, "actual_previous_process": "SIGKILL joined by owned fixture", "seconds": timings, "deadline_seconds": 30, "api_read_operations": reads, "workflow_proof": "SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE"})
 		writePrivateFile(t, spec.Result, raw, 0600)
 		return
 	}
@@ -524,7 +589,15 @@ func TestUnitBootstrapOwnedTransition(t *testing.T) {
 			return err
 		}
 	}
-	err = cli.bootstrapMutation(ctx, spec.Plan, spec.Pin, "switch", &forward, fence.capture(), observe)
+	err = invoke("switch", &forward, observe)
+	if spec.RefuseContains != "" {
+		if err == nil || !strings.Contains(err.Error(), spec.RefuseContains) || forward.Published || !reflect.DeepEqual(before, bootstrapPreservedMetadata(t, p.Current.Directory)) {
+			t.Fatalf("production shape refusal lost: %v %+v", err, forward)
+		}
+		raw, _ := json.Marshal(map[string]any{"result": "PASS", "published": false, "error": err.Error(), "seconds": timings, "deadline_seconds": 30, "api_read_operations": reads, "workflow_proof": "SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE"})
+		writePrivateFile(t, spec.Result, raw, 0600)
+		return
+	}
 	if spec.Refuse {
 		if err == nil || !forward.Inspected || forward.Published || !strings.Contains(err.Error(), "D6 bootstrap drain invalidated") || !reflect.DeepEqual(before, bootstrapPreservedMetadata(t, p.Current.Directory)) {
 			t.Fatal("actual owning claim did not invalidate D6", err)
@@ -539,13 +612,13 @@ func TestUnitBootstrapOwnedTransition(t *testing.T) {
 	if !forward.Published || !forward.Rechecked || forward.DatabaseCoverage != "not-selected" {
 		t.Fatal("owned transition did not publish")
 	}
-	if err := cli.bootstrapMutation(ctx, spec.Plan, spec.Pin, "reverse", &reverse, fence.capture(), nil); err != nil {
+	if err := invoke("reverse", &reverse, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !reverse.Published || !reflect.DeepEqual(before, bootstrapPreservedMetadata(t, p.Current.Directory)) {
 		t.Fatal("owned transition did not restore exact original")
 	}
-	raw, err = json.Marshal(map[string]any{"forward": forward, "reverse": reverse, "result": "PASS", "api": "actual authenticated FileHost transport", "systemd": "owned observation fixture only", "runtime_qualification": "not claimed"})
+	raw, err = json.Marshal(map[string]any{"forward": forward, "reverse": reverse, "result": "PASS", "api": "actual authenticated FileHost transport", "systemd": "owned observation fixture only", "runtime_qualification": "not claimed", "seconds": timings, "deadline_seconds": 30, "api_read_operations": reads, "workflow_proof": "SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE"})
 	if err != nil {
 		t.Fatal(err)
 	}
