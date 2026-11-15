@@ -23,7 +23,7 @@ type unitControlUnboundPreflight struct {
 	members map[string]WatchCensusMember
 }
 
-func (c *CLI) unitControlUnboundPreflight(ctx context.Context, p *UnitControlPlan, proof **unitControlUnboundPreflight) error {
+func (c *CLI) unitControlUnboundPreflight(ctx context.Context, p *UnitControlPlan, proof **unitControlUnboundPreflight, passOwner **watchCensusRead) error {
 	current := WatchBindings{Directory: p.Current.Directory, Pins: p.Current.Pins}
 	names, err := watchBindingNames(current.Pins)
 	if err != nil {
@@ -92,22 +92,47 @@ func (c *CLI) unitControlUnboundPreflight(ctx context.Context, p *UnitControlPla
 	if err != nil {
 		return err
 	}
-	if *proof == nil {
+	fresh := *proof == nil
+	if fresh {
 		input := cloneUnitControlCensus(p.Census)
-		report, err := c.inspectWatchUnitCensus(ctx, input.Catalog, input.Proposal, &unitCensusScope{current: current, retained: input.Retained, target: input.TargetReceipt})
+		scope := &unitCensusScope{current: current, retained: input.Retained, target: input.TargetReceipt}
+		var report WatchUnitCensus
+		var pass *watchCensusRead
+		var err error
+		if passOwner != nil {
+			pass, err = c.openWatchUnitCensus(ctx, input.Catalog, input.Proposal, scope)
+			*passOwner = pass
+			report = pass.report
+		} else {
+			report, err = c.inspectWatchUnitCensus(ctx, input.Catalog, input.Proposal, scope)
+		}
 		if err != nil && !censusOnlyNeedsD2(err) {
 			return err
 		}
 		report.Facts = maps.Clone(report.Facts)
-		*proof = &unitControlUnboundPreflight{source: &unitCensusDrain{cli: c, input: input, current: cloneCensusSelection(current), initial: report}, plan: plan}
+		*proof = &unitControlUnboundPreflight{source: &unitCensusDrain{cli: c, input: input, current: cloneCensusSelection(current), initial: report, pass: pass}, plan: plan}
 	} else if !bytes.Equal(plan, (*proof).plan) {
 		return errors.New("unbound preflight plan/census selection changed")
 	}
 	v := *proof
-	if err := v.recheck(ctx); err != nil {
-		return err
+	if fresh {
+		// No status call or selected-file work intervened after the full
+		// inspector. Derive the private association from those actual facts.
+		members, facts, err := v.source.associationFactsFromReport(v.source.initial, nil)
+		if err != nil {
+			return err
+		}
+		v.members, v.facts = members, maps.Clone(facts)
+		v.source.associationFacts = maps.Clone(facts)
+	} else {
+		if err := v.recheck(ctx); err != nil {
+			return err
+		}
 	}
 	read := &watchDrainRead{cli: c, facts: map[string]string{}, tokenPaths: map[string]bool{}, configPaths: map[*value.Value]string{}, censusMembers: v.members}
+	if v.source.pass != nil {
+		read.verified = v.source.pass.local.verified
+	}
 	for key := range v.facts {
 		if strings.HasPrefix(key, "credential-reference:") {
 			read.tokenPaths[strings.TrimPrefix(key, "credential-reference:")] = true

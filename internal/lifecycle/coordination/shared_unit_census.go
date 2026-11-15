@@ -128,6 +128,39 @@ func (c *CLI) InspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 }
 
 func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin, proposed WatchCensusProposal, control *unitCensusScope) (report WatchUnitCensus, err error) {
+	pass, err := c.openWatchUnitCensus(ctx, catalog, proposed, control)
+	defer func() {
+		if closeErr := pass.close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
+	return pass.report, err
+}
+
+// close releases all per-observation file and parse ownership. Report values
+// remain selected evidence; no descriptor or parsed-byte cache crosses D6.
+func (r *watchCensusRead) close() error {
+	if r == nil || r.local == nil || r.local.verified == nil {
+		return nil
+	}
+	r.parsedTraces = nil
+	return r.local.verified.Close()
+}
+
+func (r *watchCensusRead) refresh(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := r.readback(ctx); err != nil {
+		return err
+	}
+	if err := r.inspectHookSelections(ctx); err != nil {
+		return err
+	}
+	return sealWatchCensusReport(&r.report)
+}
+
+func (c *CLI) openWatchUnitCensus(ctx context.Context, catalog WatchCensusPin, proposed WatchCensusProposal, control *unitCensusScope) (read *watchCensusRead, err error) {
 	r := &watchCensusRead{cli: c, nodes: map[string]*WatchCensusMember{}, files: map[string]string{},
 		directories: map[string][]string{}, inodes: map[string]string{}, images: map[string]bool{},
 		nodeBlockers: map[string][]string{}, nodeGrants: map[string][]string{}, sessionRefs: map[string]WatchCensusSession{},
@@ -135,45 +168,47 @@ func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 		callbackRecords:       map[string]watchCensusCallbackRecord{},
 		configPaths:           map[*value.Value]string{}, control: control,
 		report: WatchUnitCensus{ExternalCoverage: "unknown", NativeRefresh: "unobserved", Facts: map[string]string{}}}
-	if c == nil || c.Host == nil || c.profile() == nil {
-		return r.report, &value.ProfileUnavailable{}
-	}
-	verified := newUnitVerifiedFiles(ctx)
 	defer func() {
-		if closeErr := verified.Close(); closeErr != nil {
-			err = errors.Join(err, closeErr)
+		if err != nil && !censusOnlyNeedsD2(err) {
+			if closeErr := r.close(); closeErr != nil {
+				err = errors.Join(err, closeErr)
+			}
 		}
 	}()
+	if c == nil || c.Host == nil || c.profile() == nil {
+		return r, &value.ProfileUnavailable{}
+	}
+	verified := newUnitVerifiedFiles(ctx)
 	r.local = &watchDrainRead{cli: c, verified: verified, facts: r.report.Facts, tokenPaths: map[string]bool{}, locks: map[string]string{}}
 	if err := r.loadCatalog(ctx, catalog); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if err := r.loadHookSelections(); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if err := r.members(ctx); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if err := r.verifyUnitTarget(); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if err := r.inspectHookSelections(ctx); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if err := r.callbacks(ctx); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if err := r.sessions(ctx); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if err := r.closure(proposed); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if err := r.readback(ctx); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if err := r.inspectHookSelections(ctx); err != nil {
-		return r.report, err
+		return r, err
 	}
 	r.report.Scope = r.catalog.Scope
 	if r.catalog.Scope != "disposable-fixture" {
@@ -185,15 +220,15 @@ func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 	r.report.Blockers = slices.Compact(r.report.Blockers)
 	r.report.FixtureReady = len(r.report.Blockers) == 0 && len(r.report.DrainRequirements) == 0
 	if err := sealWatchCensusReport(&r.report); err != nil {
-		return r.report, err
+		return r, err
 	}
 	if len(r.report.Blockers) != 0 {
-		return r.report, errors.New(strings.Join(r.report.Blockers, "; "))
+		return r, errors.New(strings.Join(r.report.Blockers, "; "))
 	}
 	if len(r.report.DrainRequirements) != 0 {
-		return r.report, &watchCensusD2Required{requirements: r.report.DrainRequirements}
+		return r, &watchCensusD2Required{requirements: r.report.DrainRequirements}
 	}
-	return r.report, nil
+	return r, nil
 }
 
 func sealWatchCensusReport(report *WatchUnitCensus) error {

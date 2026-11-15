@@ -101,6 +101,9 @@ func (r *WatchDrainReceipt) recheck(ctx context.Context) error {
 	return r.recheckPrepared(ctx, nil)
 }
 func (r *WatchDrainReceipt) recheckPrepared(ctx context.Context, swap *watchBindingsSwap) error {
+	if r.census != nil {
+		r.census.pending = nil
+	}
 	current, err := r.reader.readWatchDrainCensus(ctx, r.selection, r.callbacks, r.census, swap)
 	if err != nil {
 		return fmt.Errorf("D6 drain receipt invalidated: %w", err)
@@ -109,11 +112,15 @@ func (r *WatchDrainReceipt) recheckPrepared(ctx context.Context, swap *watchBind
 		return errors.New("D6 drain receipt invalidated: D1-D5 facts changed")
 	}
 	r.d2Sessions = current.d2SessionResults()
+	if r.census != nil {
+		r.census.pending = current.finalCensus
+	}
 	return nil
 }
 
 type watchDrainRead struct {
 	verified      *unitVerifiedFiles
+	finalCensus   *unitCensusFinalObservation
 	configPaths   map[*value.Value]string
 	censusMembers map[string]WatchCensusMember
 	cli           *CLI
@@ -145,7 +152,32 @@ func (c *CLI) readWatchDrainCensus(ctx context.Context, selected WatchBindings, 
 		}
 	}()
 	read := &watchDrainRead{cli: c, verified: verified, facts: map[string]string{}, locks: map[string]string{}, tokenPaths: map[string]bool{}, memories: map[*value.Value]*value.Value{}, settled: map[*value.Value]*value.Value{}}
+	var ownedCensusPass *watchCensusRead
+	defer func() {
+		if ownedCensusPass != nil {
+			census.pass, census.passSwap = nil, nil
+			if closeErr := ownedCensusPass.close(); closeErr != nil {
+				read.finalCensus = nil
+				err = errors.Join(err, closeErr)
+			}
+		}
+	}()
 	if census != nil && len(census.associationFacts) != 0 {
+		if census.pass != nil && census.passSwap != swap {
+			return nil, errors.New("D1 census observation belongs to another freshness boundary")
+		}
+		if census.pass == nil {
+			scope, _, err := census.drainObservationScope(swap)
+			if err != nil {
+				return nil, err
+			}
+			pass, err := c.openWatchUnitCensus(ctx, census.input.Catalog, census.input.Proposal, scope)
+			if err != nil && !censusOnlyNeedsD2(err) {
+				return nil, err
+			}
+			census.pass, census.passSwap = pass, swap
+			ownedCensusPass = pass
+		}
 		members, facts, err := census.observeDrainAssociations(ctx, swap)
 		if err != nil {
 			return nil, err
@@ -203,10 +235,15 @@ func (c *CLI) readWatchDrainCensus(ctx context.Context, selected WatchBindings, 
 	if census != nil && len(census.associationFacts) != 0 {
 		_, facts, err := census.observeDrainAssociations(ctx, swap)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("D1 private census association changed during drain read: %w", err)
 		}
 		if !maps.Equal(census.associationFacts, facts) {
 			return nil, errors.New("D1 private census association changed during drain read")
+		}
+		if swap != nil {
+			report := census.pass.report
+			report.Facts = maps.Clone(report.Facts)
+			read.finalCensus = &unitCensusFinalObservation{swap: swap, report: report}
 		}
 	}
 	return read, nil

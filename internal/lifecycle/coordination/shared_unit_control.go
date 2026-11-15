@@ -65,7 +65,13 @@ type UnitControlIdentity struct {
 func (c *CLI) RunUnitControl(ctx context.Context, args []string, out io.Writer) int {
 	r := UnitControlResult{Schema: "cairn.unit-control-result/1"}
 	code := 1
-	err := func() error {
+	err := func() (err error) {
+		var initialPass *watchCensusRead
+		defer func() {
+			if closeErr := initialPass.close(); closeErr != nil {
+				err = errors.Join(err, closeErr)
+			}
+		}()
 		if len(args) != 5 || (args[0] != "inspect" && args[0] != "switch" && args[0] != "reverse") || args[1] != "--plan" || args[3] != "--sha256" {
 			code = 2
 			return errors.New("usage: cairn-lifecycle unit-control inspect|switch|reverse --plan ABSOLUTE_JSON --sha256 SHA256")
@@ -77,7 +83,7 @@ func (c *CLI) RunUnitControl(ctx context.Context, args []string, out io.Writer) 
 		}
 		r.Current = WatchBindings{Directory: p.Current.Directory, Pins: p.Current.Pins}
 		var unbound *unitControlUnboundPreflight
-		if err := c.validateUnitControlSelection(ctx, p, r.Operation, &unbound); err != nil {
+		if err := c.validateUnitControlSelectionObserved(ctx, p, r.Operation, &unbound, &initialPass); err != nil {
 			return err
 		}
 		info, err := os.Stat(p.Current.Directory)
@@ -89,7 +95,11 @@ func (c *CLI) RunUnitControl(ctx context.Context, args []string, out io.Writer) 
 		var receipt *WatchDrainReceipt
 		if p.Census != nil {
 			var report WatchUnitCensus
-			receipt, report, err = c.captureUnitCensusDrain(ctx, r.Current, p.Census)
+			var source *unitCensusDrain
+			if unbound != nil {
+				source = unbound.source
+			}
+			receipt, report, err = c.captureUnitCensusDrainObserved(ctx, r.Current, p.Census, source)
 			r.Census = &report
 		} else {
 			receipt, err = c.CaptureWatchDrain(ctx, r.Current, callbacks)
@@ -106,9 +116,18 @@ func (c *CLI) RunUnitControl(ctx context.Context, args []string, out io.Writer) 
 		if _, _, err := readUnitControlPlan(r.PlanPath, r.PlanSHA256); err != nil {
 			return err
 		}
-		if err := c.validateUnitControlSelection(ctx, p, r.Operation, &unbound); err != nil {
+		if err := c.validateUnitControlSelectionObserved(ctx, p, r.Operation, &unbound, &initialPass); err != nil {
 			return err
 		}
+		// Initial capture and its post-API validation are complete. Final D6
+		// starts with a new full observation and shares no descriptors/parses.
+		if unbound != nil {
+			unbound.source.pass = nil
+		}
+		if err := initialPass.close(); err != nil {
+			return err
+		}
+		initialPass = nil
 		if r.Operation != "inspect" {
 			r.Exchange, err = ExchangeWatchBindings(ctx, receipt, p.Retained, p.Next)
 			if receipt.census != nil {
@@ -299,6 +318,10 @@ func unitControlDirectory(path string) error {
 }
 
 func (c *CLI) validateUnitControlSelection(ctx context.Context, p *UnitControlPlan, operation string, unbound **unitControlUnboundPreflight) error {
+	return c.validateUnitControlSelectionObserved(ctx, p, operation, unbound, nil)
+}
+
+func (c *CLI) validateUnitControlSelectionObserved(ctx context.Context, p *UnitControlPlan, operation string, unbound **unitControlUnboundPreflight, passOwner **watchCensusRead) error {
 	current := WatchBindings{Directory: p.Current.Directory, Pins: p.Current.Pins}
 	if err := unitControlDirectory(current.Directory); err != nil {
 		return err
@@ -315,7 +338,7 @@ func (c *CLI) validateUnitControlSelection(ctx context.Context, p *UnitControlPl
 	if err := readWatchBindings(current); err != nil {
 		return err
 	}
-	if err := c.unitControlUnboundPreflight(ctx, p, unbound); err != nil {
+	if err := c.unitControlUnboundPreflight(ctx, p, unbound, passOwner); err != nil {
 		return err
 	}
 	next, _, err := nextWatchBindingFiles(current, p.Next)

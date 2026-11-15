@@ -2,12 +2,14 @@ package coordination
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/halbritt/cairn/internal/lifecycle/install"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 	"golang.org/x/sys/unix"
 )
@@ -99,5 +101,95 @@ func TestUnitCensusPassReadbackRefusesUnchangedStatBytes(t *testing.T) {
 				t.Fatalf("census readback accepted actual changed bytes: %v", err)
 			}
 		})
+	}
+}
+
+func TestUnitCensusObservationKeepsOneDescriptorOwner(t *testing.T) {
+	f := newCensusFixture(t)
+	profile := stage2ServicesProfile()
+	cli := &CLI{Profile: profile, Host: NewFileHost(FileHostOptions{Profile: profile})}
+	catalog := censusTestJSON(t, filepath.Join(f.root, "catalog.json"), f.catalog)
+	pass, err := cli.openWatchUnitCensus(context.Background(), catalog, f.proposal, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pass.close()
+	entry := pass.local.verified.files[catalog.Path]
+	if entry == nil {
+		t.Fatal("census builder did not retain its actual file descriptor")
+	}
+	before := pass.local.verified.hashReads
+	for range 2 {
+		if err := pass.refresh(context.Background()); err != nil || pass.local.verified.files[catalog.Path] != entry {
+			t.Fatal("refresh replaced the observation's descriptor owner", err)
+		}
+	}
+	if pass.local.verified.hashReads <= before {
+		t.Fatal("reusing an observation omitted fresh byte readback")
+	}
+	if err := pass.close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.file.Stat(); !errors.Is(err, os.ErrClosed) {
+		t.Fatal("closed observation leaked its descriptor", err)
+	}
+	if err := pass.refresh(context.Background()); err == nil {
+		t.Fatal("closed observation was reused across a freshness boundary")
+	}
+}
+
+func TestUnitCensusFinalObservationIsOneShotAndSwapBound(t *testing.T) {
+	f := newCensusFixture(t)
+	ctx := context.Background()
+	current := f.proposal.Bindings[0]
+	writePrivateFile(t, filepath.Join(current.Directory, ".watch.lock"), nil, 0600)
+	profile := stage2ServicesProfile()
+	cli := &CLI{Profile: profile, Host: NewFileHost(FileHostOptions{Profile: profile})}
+	catalog := censusTestJSON(t, filepath.Join(f.root, "catalog.json"), f.catalog)
+	initial, err := cli.inspectWatchUnitCensus(ctx, catalog, f.proposal, &unitCensusScope{current: current})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var next []install.File
+	for name, pin := range current.Pins {
+		next = append(next, install.File{Name: name, Path: filepath.Join(current.Directory, name), SHA256: pin})
+	}
+	retained := filepath.Join(f.catalog.ConfigRoot, "retained")
+	swap, err := openWatchBindingsSwap(ctx, current, retained, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer swap.parent.Close()
+	defer mustRelease(t, swap.lease)
+	if err := swap.prepare(); err != nil {
+		t.Fatal(err)
+	}
+	plan := map[string]any{"schema": "cairn.unit-control/2", "current": map[string]any{"directory": current.Directory, "pins": current.Pins}, "next": next, "retained": retained, "census": map[string]any{"Catalog": catalog, "Proposal": map[string]any{"Bindings": f.proposal.Bindings, "Sessions": f.proposal.Sessions, "Callbacks": []string{}}, "Retained": []WatchBindings{}}}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planPath := filepath.Join(f.root, "plan.json")
+	planPin := writePrivateFile(t, planPath, raw, 0600)
+	prepared := cloneCensusSelection(swap.selected)
+	prepared.Directory = retained
+	final, err := cli.inspectWatchUnitCensus(ctx, catalog, f.proposal, &unitCensusScope{current: current, retained: []WatchBindings{prepared}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &unitCensusDrain{cli: cli, input: cloneUnitControlCensus(&UnitControlCensus{Catalog: catalog, Proposal: f.proposal}), current: current, initial: initial, planPath: planPath, planPin: planPin, pending: &unitCensusFinalObservation{swap: swap, report: final}}
+	if err := source.recheck(ctx, swap); err != nil || source.pending != nil {
+		t.Fatal("exact swap observation was not consumed once", err)
+	}
+	if err := os.WriteFile(catalog.Path, []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.recheck(ctx, swap); err == nil {
+		t.Fatal("standalone second recheck replayed a prior observation")
+	}
+	source.pending = &unitCensusFinalObservation{swap: swap, report: final}
+	otherSwap := *swap
+	if err := source.recheck(ctx, &otherSwap); err == nil || source.pending != nil {
+		t.Fatal("another swap borrowed the handoff or failed to consume it", err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"syscall"
 
@@ -36,6 +37,16 @@ type unitCensusDrain struct {
 	planPath, planPin string
 	drain             *WatchDrainReceipt
 	associationFacts  map[string]string
+	pass              *watchCensusRead
+	passSwap          *watchBindingsSwap
+	pending           *unitCensusFinalObservation
+}
+
+// This handoff belongs only to the exact in-progress private swap, after its
+// post-API byte/currentness readback. It is consumed once, never serialized.
+type unitCensusFinalObservation struct {
+	swap   *watchBindingsSwap
+	report WatchUnitCensus
 }
 
 func validateUnitCensusInput(v *value.Value, input *UnitControlCensus) error {
@@ -91,6 +102,10 @@ func cloneCensusSelection(s WatchBindings) WatchBindings {
 }
 
 func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings, input *UnitControlCensus) (*WatchDrainReceipt, WatchUnitCensus, error) {
+	return c.captureUnitCensusDrainObserved(ctx, current, input, nil)
+}
+
+func (c *CLI) captureUnitCensusDrainObserved(ctx context.Context, current WatchBindings, input *UnitControlCensus, source *unitCensusDrain) (*WatchDrainReceipt, WatchUnitCensus, error) {
 	unknown := WatchUnitCensus{ExternalCoverage: "unknown", NativeRefresh: "unobserved"}
 	proposed := input.Proposal.Bindings[0]
 	if proposed.Directory != current.Directory || !maps.Equal(proposed.Pins, current.Pins) {
@@ -99,8 +114,19 @@ func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings,
 	if err := unitCensusExistingLock(current.Directory); err != nil {
 		return nil, unknown, err
 	}
-	scope := &unitCensusScope{current: current, retained: input.Retained, target: input.TargetReceipt}
-	report, err := c.inspectWatchUnitCensus(ctx, input.Catalog, input.Proposal, scope)
+	var report WatchUnitCensus
+	var err error
+	if source != nil {
+		if source.cli != c || source.pass == nil || source.passSwap != nil ||
+			!reflect.DeepEqual(source.input, cloneUnitControlCensus(input)) ||
+			source.current.Directory != current.Directory || !maps.Equal(source.current.Pins, current.Pins) {
+			return nil, unknown, errors.New("unit census initial observation selection changed")
+		}
+		report = source.initial
+	} else {
+		scope := &unitCensusScope{current: current, retained: input.Retained, target: input.TargetReceipt}
+		report, err = c.inspectWatchUnitCensus(ctx, input.Catalog, input.Proposal, scope)
+	}
 	if err != nil && !censusOnlyNeedsD2(err) {
 		return nil, report, err
 	}
@@ -111,15 +137,20 @@ func (c *CLI) captureUnitCensusDrain(ctx context.Context, current WatchBindings,
 	bound := cloneUnitControlCensus(input)
 	initial := report
 	initial.Facts = maps.Clone(report.Facts)
-	source := &unitCensusDrain{cli: c, input: bound, current: cloneCensusSelection(current), initial: initial}
+	if source == nil {
+		source = &unitCensusDrain{cli: c, input: bound, current: cloneCensusSelection(current), initial: initial}
+	}
 	members, err := source.unboundDrainMembers(report)
 	if err != nil {
 		return nil, report, err
 	}
 	if len(members) != 0 {
-		_, facts, err := source.observeDrainAssociations(ctx, nil)
+		_, facts, err := source.associationFactsFromReport(report, nil)
 		if err != nil {
 			return nil, report, err
+		}
+		if source.associationFacts != nil && !maps.Equal(source.associationFacts, facts) {
+			return nil, report, errors.New("D1 private census association lost or changed")
 		}
 		source.associationFacts = maps.Clone(facts)
 	}
@@ -236,7 +267,12 @@ func (r *watchCensusRead) controlCopies(expected *[]string) error {
 }
 
 func (r *unitCensusDrain) recheck(ctx context.Context, swap *watchBindingsSwap) error {
+	pending := r.pending
+	r.pending = nil
 	fail := func(err error) error { return fmt.Errorf("D6 unit census receipt invalidated: %w", err) }
+	if err := ctx.Err(); err != nil {
+		return fail(err)
+	}
 	if _, _, err := readUnitControlPlan(r.planPath, r.planPin); err != nil {
 		return fail(err)
 	}
@@ -246,7 +282,16 @@ func (r *unitCensusDrain) recheck(ctx context.Context, swap *watchBindingsSwap) 
 	prepared := cloneCensusSelection(swap.selected)
 	prepared.Directory = swap.retainedDir
 	copies := append(slices.Clone(r.input.Retained), prepared)
-	report, err := r.cli.inspectWatchUnitCensus(ctx, r.input.Catalog, r.input.Proposal, &unitCensusScope{current: r.current, retained: copies, target: r.input.TargetReceipt})
+	var report WatchUnitCensus
+	var err error
+	if pending != nil && pending.swap == swap {
+		// recheckPrepared just completed the exact swap's post-API fresh
+		// byte/currentness readback. Consume it once; standalone calls below
+		// always build a complete fresh census.
+		report = pending.report
+	} else {
+		report, err = r.cli.inspectWatchUnitCensus(ctx, r.input.Catalog, r.input.Proposal, &unitCensusScope{current: r.current, retained: copies, target: r.input.TargetReceipt})
+	}
 	r.final = &report
 	if err != nil && !censusOnlyNeedsD2(err) {
 		return fail(err)

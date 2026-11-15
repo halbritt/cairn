@@ -220,8 +220,7 @@ func (r *unitCensusDrain) unboundDrainMembers(report WatchUnitCensus) (map[strin
 	return members, nil
 }
 
-// Reuse the complete census validator; these private facts never enter a plan.
-func (r *unitCensusDrain) observeDrainAssociations(ctx context.Context, swap *watchBindingsSwap) (map[string]WatchCensusMember, map[string]string, error) {
+func (r *unitCensusDrain) drainObservationScope(swap *watchBindingsSwap) (*unitCensusScope, *WatchBindings, error) {
 	scope := &unitCensusScope{current: r.current, retained: r.input.Retained, target: r.input.TargetReceipt}
 	var prepared *WatchBindings
 	if swap != nil {
@@ -236,10 +235,29 @@ func (r *unitCensusDrain) observeDrainAssociations(ctx context.Context, swap *wa
 		prepared = &copy
 		scope.retained = append(slices.Clone(r.input.Retained), copy)
 	}
-	report, err := r.cli.inspectWatchUnitCensus(ctx, r.input.Catalog, r.input.Proposal, scope)
+	return scope, prepared, nil
+}
+
+// Reuse the complete census validator; these private facts never enter a plan.
+func (r *unitCensusDrain) observeDrainAssociations(ctx context.Context, swap *watchBindingsSwap) (map[string]WatchCensusMember, map[string]string, error) {
+	scope, prepared, err := r.drainObservationScope(swap)
+	if err != nil {
+		return nil, nil, err
+	}
+	var report WatchUnitCensus
+	if r.pass != nil && r.passSwap == swap {
+		err = r.pass.refresh(ctx)
+		report = r.pass.report
+	} else {
+		report, err = r.cli.inspectWatchUnitCensus(ctx, r.input.Catalog, r.input.Proposal, scope)
+	}
 	if err != nil && !censusOnlyNeedsD2(err) {
 		return nil, nil, err
 	}
+	return r.associationFactsFromReport(report, prepared)
+}
+
+func (r *unitCensusDrain) associationFactsFromReport(report WatchUnitCensus, prepared *WatchBindings) (map[string]WatchCensusMember, map[string]string, error) {
 	facts := maps.Clone(report.Facts)
 	if prepared != nil {
 		for name := range prepared.Pins {

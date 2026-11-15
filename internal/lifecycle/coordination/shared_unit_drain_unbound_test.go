@@ -12,7 +12,93 @@ import (
 
 	"github.com/halbritt/cairn/internal/lifecycle/install"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
+	"golang.org/x/sys/unix"
 )
+
+// Genuine producer material with the existing finite status double. This
+// checks byte refusal and call ordering, not authenticated/native acceptance.
+func TestR06UnboundDrainSharedMappingBoundariesProcess(t *testing.T) {
+	f := readUnboundDrainFixture(t, "CAIRN_R06_UNBOUND_FIXTURE")
+	for _, member := range []string{"receipt", "binary", "source"} {
+		for _, boundary := range []string{"before-api", "during-api"} {
+			t.Run(member+"/"+boundary, func(t *testing.T) {
+				produced := mustCurrentnessRead(t, f.Receipt.Path)
+				path := f.Receipt.Path
+				if member == "binary" {
+					path = nativeText(produced.Get("binary").Get("path"))
+				}
+				if member == "source" {
+					path = filepath.Join(nativeText(produced.Get("snapshot_root")), "coordination.py")
+				}
+				info, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(path, 0600); err != nil {
+					t.Fatal(err)
+				}
+				writer, err := os.OpenFile(path, os.O_RDWR, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer writer.Close()
+				mapped, err := unix.Mmap(int(writer.Fd()), 0, int(info.Size()), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer unix.Munmap(mapped)
+				original := mapped[0]
+				mapped[0] = original
+				defer func() {
+					mapped[0] = original
+					if err := os.Chmod(path, info.Mode().Perm()); err != nil {
+						t.Error(err)
+					}
+				}()
+				if err := os.Chmod(path, info.Mode().Perm()); err != nil {
+					t.Fatal(err)
+				}
+				cli, calls := unboundDrainReadCLI(t)
+				receipt := f.capture(t, cli)
+				before, err := unitVerifiedPathStat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				mutated := false
+				mutate := func() {
+					mapped[0] = original ^ 1
+					after, err := unitVerifiedPathStat(path)
+					if err != nil || !unitVerifiedSame(before, after) {
+						t.Fatal("shared-store unchanged-stat premise failed", err)
+					}
+					mutated = true
+				}
+				count := *calls
+				if boundary == "before-api" {
+					mutate()
+				} else {
+					call := cli.Host.Call
+					cli.Host.Call = func(ctx context.Context, cfg *value.Value, op string, body *value.Value, opts NativeCallOptions) (*value.Value, error) {
+						if op == "event-watch" && !mutated {
+							mutate()
+						}
+						return call(ctx, cfg, op, body, opts)
+					}
+				}
+				err = receipt.recheck(context.Background())
+				if !mutated || err == nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+					t.Fatal("actual byte mutation was not refused", mutated, err)
+				}
+				if boundary == "before-api" && *calls != count {
+					t.Fatal("byte mutation reached an API call", *calls, count)
+				}
+				if boundary == "during-api" && *calls <= count {
+					t.Fatal("during-API guard did not reach its boundary")
+				}
+			})
+		}
+	}
+}
 
 type unboundDrainFixture struct {
 	Catalog         WatchCensusPin
