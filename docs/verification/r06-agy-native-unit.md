@@ -277,6 +277,68 @@ both public unit-control and unit-bootstrap measurements under their unchanged
 30-second contracts, positive measured margins and owned cleanup. No input
 observation, small synthetic image or omitted member can substitute for them.
 
+The source adapter uses B's actual
+`production_shape_fixture(cluster, images, root, 'proximal')` contextmanager.
+It yields the initialized fixture, original plan path and SHA256. Its API
+cleanup is `f.host.close()`; the caller owns the cluster, root, images, client
+and live trace. `production_fixture_plan` checks a fresh short path without
+creating it. The future fixture socket is
+`root/account-home/.local/share/cairn/api.sock` and must fit the Unix socket
+limit. Entering `production_shape_adapter` requires the complete five-role
+packet through the unchanged `checked_packet(..., native=True)` validation.
+B's local `tests` image is the independently pinned `observer` image; this
+mapping adds no manifest role and never substitutes the control or helper.
+
+`production_material_inputs` reads B's owned `production-material.json` and
+the pinned original/target plans. It preserves literal lowercase
+`original_current`/`target_current` `directory` and `pins`, and uppercase
+plan `Path`/`SHA256` descriptors. Only the selection field names are adapted
+to `Directory`/`Pins`. All eight members, three unbound receipt selections
+and the empty target archive list remain required. Bounded input reads
+exclude credential inode aliases before opening contents. This is selection
+data, never fabricated current A/B, native session, generation or producer
+receipt verification.
+
+There is a known source boundary in the selected production shape: B
+preserves missing `config_home` in the three unbound coordination profiles
+and all memory profiles. The unit census requires account coverage in
+`shared_unit_census_unbound.go` and `shared_unit_census_files.go`.
+The adapter reports the observed coordination omissions as
+`census_boundaries`; `require_scale_census_inputs` refuses those inputs.
+It does not supply homes, change account modes, drop members or relax Go
+checks. An empty Python boundary list still does not qualify a census:
+fresh actual Go producer/census/readback and complete runtime gates remain
+required. Memory/account and catalog-root coverage need their actual Go
+checks. Source inspection establishes this mismatch; it is not a runtime
+failure reproduction.
+
+The bootstrap workflow proof is scoped exactly as
+`SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE`. Each switch and reverse requires
+the matching non-skipped `TestUnitBootstrapOwnedTransition` RUN/PASS output,
+semantic transition receipts, a fresh unchanged 30-second deadline, and
+separate positive library and launch-to-joined-exit margins. The adapter's
+receipt parser checks consistency and keeps `NativePASS=false` and
+`complete_unit_qualified=false`; parsed JSON alone cannot establish execution
+or raw reverse/state preservation. Actual B execution receipts and protected
+state/raw reverse checks must accompany later qualification.
+
+`DEFAULT_PUBLIC_REFUSAL_ACTIVE_WORKERS` is a separate mandatory real public
+negative. No shared worker may be stopped or masked to get a positive here.
+True default-public positive behavior and its actual manager latency remain
+UNESTABLISHED until a separately admitted R07 stopped boundary on each host,
+before any exchange. A fence refusal must abort without changes, be reported,
+and be reconciled before further action. The production caller still uses
+the real default fence; the fixture capability is process-local and cannot
+come from a CLI, environment, configuration or serialized value. A selected
+live callback still refuses D5; an unrelated growing trace does not qualify
+bootstrap trace handling.
+
+Source-adapter checks use only Python and owned unit files. They do not start
+B's contextmanager, an API, PostgreSQL, any Go image or a full case. Candidate
+packet-dependent full 8+3 control/bootstrap, live trace, protected-file and
+database drift cases in both directions, restored A, cleanup and final audit
+remain unrun in that phase. Overall C qualification stays open.
+
 Use `mise run test:unit` for focused Python and Go checks. Run bounded process
 checks and documentation tiers1–4 through `mise run host:exec`; run
 `mise run check`. Retain failures and exact source/image/tool receipts. Refusal

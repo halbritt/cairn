@@ -7,6 +7,7 @@ import argparse
 import ast
 import copy
 import ctypes
+from contextlib import contextmanager
 import errno
 from datetime import datetime, timezone
 import hashlib
@@ -1702,13 +1703,170 @@ def scale_selection_facts(root,selection,credential_paths):
         binding=config['inbox_recall_binding']
         require(binding is None or type(binding) is str and binding,'scale profile binding type differs')
         profiles.append(dict(pin=dict(Path=str(path),SHA256=selection['Pins'][name]),
-            harness=config['harness'],unbound=binding is None))
+            harness=config['harness'],unbound=binding is None,config_home=config.get('config_home')))
     require(names==sorted(path.name for path in directory.iterdir()),'scale directory inventory changed')
     unbound=sum(row['unbound'] for row in profiles)
     require(unbound==3,'scale fixture requires three actual unbound profiles')
     return dict(kind='NONNATIVE_SCALE_INPUT_OBSERVATION',binding_count=len(profiles),unbound_count=unbound,
         profiles=profiles,NativePASS=False,complete_unit_qualified=False,
         remaining_gates='genuine producer/receipt verification, full live trace, real control/bootstrap and cleanup')
+
+
+def bootstrap_fixture_images(images,pins):
+    """Map the validated five-role packet to B's local API, without new roles."""
+    strict_object(images,ROLES,'bootstrap image roles')
+    strict_object(pins['images'],ROLES,'bootstrap pinned image roles')
+    require(all(str(images[role])==pins['images'][role]['path'] for role in ROLES),
+        'bootstrap image path differs from packet')
+    assert_images_unchanged(images,pins)
+    return dict(api=images['api'],control=images['control'],stager=images['stager'],tests=images['observer'])
+
+
+def production_fixture_plan(root):
+    """Plan B's real directory/socket shape; never create a runtime directory."""
+    root=Path(root)
+    require(root.is_absolute() and root.resolve()==root and not root.exists(),
+        'fresh normalized production fixture root required')
+    private_directory(root.parent)
+    fixture=root/'account-home/.local/share/cairn'
+    require(len(os.fsencode(fixture/'api.sock'))<108,'production fixture Unix socket path too long')
+    return dict(root=str(root),fixture_root=str(fixture),api_socket=str(fixture/'api.sock'),
+        api_owner='B contextmanager; f.host.close()',caller_owned=['cluster','images','root','client','live_trace'])
+
+
+def fixture_source_json(path,root,credential_paths,expected=None):
+    """Bounded owned source input, excluding credential inodes before opening."""
+    path=Path(path);root=private_directory(root)
+    require(path.is_absolute() and path.resolve()==path and path.is_relative_to(root),
+        'fixture JSON outside owned root or symlinked')
+    secrets=set()
+    require(type(credential_paths) in (list,tuple) and credential_paths,'fixture credential selectors required')
+    for selector in credential_paths:
+        credential=Path(selector)
+        require(credential.is_absolute() and credential.resolve()==credential and credential.is_relative_to(root),
+            'fixture credential selector outside root')
+        info=credential.lstat();secrets.add((info.st_dev,info.st_ino))
+    before=path.lstat()
+    require((before.st_dev,before.st_ino) not in secrets,'fixture JSON aliases credential inode')
+    require(stat.S_ISREG(before.st_mode) and before.st_uid==os.getuid() and before.st_nlink==1
+        and not before.st_mode&0o022 and before.st_size<=1048576,'unsafe or oversized fixture JSON')
+    fields=('st_dev','st_ino','st_mode','st_uid','st_gid','st_nlink','st_size','st_mtime_ns','st_ctime_ns')
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC|os.O_NONBLOCK)
+    with os.fdopen(fd,'rb') as stream:
+        opened=os.fstat(stream.fileno())
+        require(all(getattr(before,k)==getattr(opened,k) for k in fields),'fixture JSON changed before read')
+        raw=stream.read(1048577);after=os.fstat(stream.fileno())
+    current=path.lstat()
+    require(len(raw)==before.st_size and all(getattr(before,k)==getattr(after,k) for k in fields)
+        and all(getattr(before,k)==getattr(current,k) for k in fields),'fixture JSON changed during read')
+    pin=dict(Path=str(path),SHA256=hashlib.sha256(raw).hexdigest())
+    require(expected is None or pin==expected,'fixture JSON pin differs')
+    return json.loads(raw,object_pairs_hook=admission_pairs),pin
+
+
+def production_material_inputs(fixture,plan,pin,credential_paths):
+    """Adapt actual B selection data, without inventing Go current/session facts."""
+    root=Path(fixture.root)
+    material,material_pin=fixture_source_json(root/'production-material.json',root,credential_paths)
+    require(type(material) is dict and material.get('schema')=='cairn.r07-production-shape-material/1'
+        and material.get('host')=='proximal' and material.get('native_admission') is False
+        and material.get('root')==str(root),'unexpected production material scope')
+    require(material['original_plan']==dict(Path=str(plan),SHA256=pin),'original plan selection differs')
+    original,_=fixture_source_json(plan,root,credential_paths,material['original_plan'])
+    target,_=fixture_source_json(material['target_plan']['Path'],root,credential_paths,material['target_plan'])
+    require(original.get('schema')==target.get('schema')=='cairn.unit-bootstrap/2'
+        and original.get('current')==material['original_current']
+        and original.get('transition',{}).get('target')==material['target_plan']
+        and target.get('current')==material['target_current'] and target.get('archives')==[],
+        'production plan/material selection differs')
+    current=material['target_current'];strict_object(current,('directory','pins'),'B target current')
+    strict_object(material['original_current'],('directory','pins'),'B original current')
+    require(type(material['original_current']['pins']) is dict and
+        set(material['original_current']['pins'])==set(current['pins']),'production original member inventory differs')
+    selection=dict(Directory=current['directory'],Pins=dict(current['pins']))
+    facts=scale_selection_facts(root,selection,credential_paths)
+    groups=material['groups'];require(type(groups) is list and groups,'production groups required')
+    require(all(type(row) is dict and type(row.get('bound')) is bool and type(row.get('members')) is list
+        and row['members'] for row in groups),'production group shape differs')
+    members=[member for row in groups for member in row['members']]
+    require(len(members)==len(set(members))==8 and set(members)==set(current['pins']),
+        'production group member inventory differs')
+    unbound=[row['target_receipt'] for row in groups if not row['bound']]
+    for receipt in unbound:
+        admission_pin(receipt,'production unbound receipt')
+    require(len(unbound)==3 and unbound==material['target_unbound_receipts']
+        and len({row['Path'] for row in unbound})==3
+        and {member for row in groups if not row['bound'] for member in row['members']}==
+            {Path(row['pin']['Path']).name for row in facts['profiles'] if row['unbound']},
+        'production unbound receipt/member selection differs')
+    boundaries=[dict(profile=row['pin'],field='config_home',reason='selected account coverage is unknown')
+        for row in facts['profiles'] if type(row['config_home']) is not str or not row['config_home']]
+    return dict(kind='NONNATIVE_PRODUCTION_SELECTION_INPUTS',material=material_pin,selection=selection,facts=facts,
+        original_plan=material['original_plan'],target_plan=material['target_plan'],
+        target_unbound_receipts=unbound,census_boundaries=boundaries,NativePASS=False,complete_unit_qualified=False)
+
+
+def require_scale_census_inputs(observed):
+    # A source precondition, never a substitute for the fresh real Go census.
+    require(not observed['census_boundaries'],'production unit-census input lacks config_home; preserve inputs and report')
+
+
+@contextmanager
+def production_shape_adapter(cluster,packet,root):
+    """Future packet-dependent runtime entry; caller owns PG/root/client/trace.
+
+    Source-phase tests must not enter this context. B owns only its API join.
+    The real producer/census and complete sequence remain separate open gates.
+    """
+    production_fixture_plan(root)
+    keys=('manifest','index','build_complete')
+    paths=[admission_pin(packet[key],key) for key in keys]
+    images,pins,_=checked_packet(*[item for key,path in zip(keys,paths)
+        for item in (path,packet[key]['SHA256'])],native=True)
+    local=bootstrap_fixture_images(images,pins)
+    import check_r07_bootstrap_reverse as bootstrap
+    with bootstrap.production_shape_fixture(cluster,local,Path(root),'proximal') as (fixture,plan,pin):
+        inputs=production_material_inputs(fixture,plan,pin,[fixture.host.token('worker')])
+        yield fixture,plan,pin,local,inputs
+
+
+def bootstrap_workflow_observation(result,stdout):
+    """Check B receipt consistency; caller must retain the actual execution evidence."""
+    proof='SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE'
+    unavailable='UNESTABLISHED until admitted R07 stopped boundary'
+    require(type(result) is dict and result.get('result')=='PASS' and result.get('workflow_proof')==proof
+        and type(result.get('deadline_seconds')) is int and result['deadline_seconds']==30
+        and result.get('default_public_positive')==unavailable,'bootstrap workflow scope differs')
+    negative=result.get('default_public_refusal')
+    require(type(negative) is dict and negative.get('proof')=='DEFAULT_PUBLIC_REFUSAL_ACTIVE_WORKERS'
+        and type(negative.get('unit_actions')) is int and negative['unit_actions']==0
+        and type(negative.get('outside_owned_root_writes')) is int and negative['outside_owned_root_writes']==0,
+        'default public active-worker refusal missing')
+    refusal=negative.get('result',{})
+    require(refusal.get('published') is False and refusal.get('inspected') is False
+        and refusal.get('owner_fence')=='unknown'
+        and 'unit or activation trigger is not stopped and masked' in refusal.get('error',''),
+        'default public active-worker refusal differs')
+    strict_object(stdout,('switch','reverse'),'bootstrap execution stdout')
+    for operation,transition in (('switch','forward'),('reverse','reverse')):
+        raw=stdout[operation]
+        require(type(raw) is str and re.search(r'^=== RUN   TestUnitBootstrapOwnedTransition$',raw,re.M)
+            and re.search(r'^--- PASS: TestUnitBootstrapOwnedTransition \([^\n]+\)$',raw,re.M)
+            and '--- SKIP:' not in raw and 'no tests to run' not in raw,'selected non-skipped bootstrap test proof missing')
+        require(result.get(transition,{}).get('published') is True
+            and result[transition].get('rechecked') is True,'bootstrap semantic transition missing')
+        for timings,margins in (('seconds','library_margin_seconds'),
+                ('workflow_launch_to_join_seconds','workflow_margin_seconds')):
+            strict_object(result.get(timings),('switch','reverse'),timings)
+            strict_object(result.get(margins),('switch','reverse'),margins)
+            elapsed=result[timings][operation];margin=result[margins][operation]
+            require(type(elapsed) in (int,float) and 0<elapsed<30
+                and type(margin) in (int,float) and margin==30-elapsed,
+                'bootstrap fresh30s positive margin missing')
+    return dict(kind='NONNATIVE_BOOTSTRAP_RECEIPT_OBSERVATION',workflow_proof=proof,
+        default_public_refusal=negative['proof'],default_public_positive=unavailable,
+        NativePASS=False,complete_unit_qualified=False,
+        remaining_gates='actual raw reverse/state evidence, full unit-control/live trace, cleanup, independent review')
 
 
 def trace_budget(callback_bytes):

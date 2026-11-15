@@ -500,6 +500,134 @@ class ScaleSelectionTests(unittest.TestCase):
         with self.assertRaises(driver.Refused):self.facts()
 
 
+class SourceAdapterTests(unittest.TestCase):
+    """Owned unit inputs check adapters only, not genuine producer/runtime proof."""
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-source-adapter-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup);self.root=Path(temporary.name)
+        self.images={};self.pins=dict(images={})
+        for role in driver.ROLES:
+            path=self.root/role;path.write_bytes(('UNIT ONLY '+role).encode());path.chmod(0o500)
+            self.images[role]=path
+            self.pins['images'][role]=dict(path=str(path),sha256=driver.checked_pin(path)['SHA256'])
+
+    def test_observer_is_the_actual_test_role_without_mutating_five_role_packet(self):
+        before=copy.deepcopy(self.pins)
+        selected=driver.bootstrap_fixture_images(self.images,self.pins)
+        self.assertEqual(selected,dict(api=self.images['api'],control=self.images['control'],
+            stager=self.images['stager'],tests=self.images['observer']))
+        self.assertEqual(self.pins,before);self.assertEqual(set(self.images),set(driver.ROLES))
+
+    def test_missing_role_alias_or_changed_image_refuses(self):
+        images=dict(self.images);images.pop('helper')
+        with self.assertRaises(driver.Refused):driver.bootstrap_fixture_images(images,self.pins)
+        images=dict(self.images,observer=self.images['control'])
+        with self.assertRaises(driver.Refused):driver.bootstrap_fixture_images(images,self.pins)
+        self.images['observer'].chmod(0o700);self.images['observer'].write_bytes(b'changed')
+        with self.assertRaises(driver.Refused):driver.bootstrap_fixture_images(self.images,self.pins)
+
+    def test_short_new_root_planning_has_no_filesystem_side_effect(self):
+        path=self.root/'new'
+        plan=driver.production_fixture_plan(path)
+        self.assertFalse(path.exists());self.assertLess(len(os.fsencode(plan['api_socket'])),108)
+        self.assertEqual(plan['api_owner'],'B contextmanager; f.host.close()')
+        self.assertEqual(plan['caller_owned'],['cluster','images','root','client','live_trace'])
+        with self.assertRaises(driver.Refused):driver.production_fixture_plan(self.root)
+        with self.assertRaises(driver.Refused):driver.production_fixture_plan(self.root/('long'*35))
+
+    def material(self):
+        directory=self.root/'bindings';directory.mkdir(mode=0o700)
+        token=self.root/'unit.token';token.write_bytes(b'UNIT credential; never read');token.chmod(0o400)
+        selection=dict(directory=str(directory),pins={});groups=[]
+        for i in range(8):
+            name=f'member-{i}.json';path=directory/name
+            value=dict(harness='unit-only',inbox_recall_binding=None if i<3 else 'UNIT-bound')
+            if i>=3:value['config_home']=str(self.root/f'account-{i}')
+            driver.write_json(path,value);selection['pins'][name]=driver.checked_pin(path)['SHA256']
+            groups.append(dict(name=f'unit-{i}',bound=i>=3,members=[name],
+                target_receipt=dict(Path=str(self.root/f'UNIT-receipt-{i}'),SHA256=str(i)*64)))
+        target=self.root/'target.json';driver.write_json(target,dict(schema='cairn.unit-bootstrap/2',
+            current=selection,archives=[]))
+        original=self.root/'original.json';driver.write_json(original,dict(schema='cairn.unit-bootstrap/2',
+            current=selection,transition=dict(target=driver.checked_pin(target))))
+        material=dict(schema='cairn.r07-production-shape-material/1',host='proximal',native_admission=False,
+            root=str(self.root),original_current=selection,target_current=selection,
+            original_plan=driver.checked_pin(original),target_plan=driver.checked_pin(target),groups=groups,
+            target_unbound_receipts=[row['target_receipt'] for row in groups if not row['bound']])
+        driver.write_json(self.root/'production-material.json',material)
+        return SimpleNamespace(root=self.root),original,driver.checked_pin(original)['SHA256'],[token]
+
+    def test_actual_lowercase_material_adapter_preserves_missing_accounts_and_all_members(self):
+        args=self.material();before={p:driver.checked_pin(p) for p in (self.root/'bindings').iterdir()}
+        observed=driver.production_material_inputs(*args)
+        self.assertEqual(observed['selection']['Directory'],str(self.root/'bindings'))
+        self.assertEqual(observed['facts']['binding_count'],8);self.assertEqual(observed['facts']['unbound_count'],3)
+        self.assertEqual([row['field'] for row in observed['census_boundaries']],['config_home']*3)
+        self.assertFalse(observed['NativePASS']);self.assertFalse(observed['complete_unit_qualified'])
+        with self.assertRaisesRegex(driver.Refused,'config_home'):driver.require_scale_census_inputs(observed)
+        self.assertEqual(before,{p:driver.checked_pin(p) for p in before})
+
+    def test_material_mismatched_plan_or_unbound_members_refuses(self):
+        args=self.material()
+        with self.assertRaises(driver.Refused):driver.production_material_inputs(args[0],args[1],'f'*64,args[3])
+        path=self.root/'production-material.json';value=json.loads(path.read_bytes())
+        value['target_unbound_receipts'].pop();path.chmod(0o600);path.write_text(json.dumps(value));path.chmod(0o400)
+        with self.assertRaisesRegex(driver.Refused,'unbound'):driver.production_material_inputs(*args)
+
+    def test_material_credential_alias_refuses_before_any_content_read(self):
+        args=self.material();path=self.root/'production-material.json';path.unlink();os.link(args[3][0],path)
+        with patch.object(driver.os,'open',side_effect=AssertionError('credential content open')):
+            with self.assertRaisesRegex(driver.Refused,'credential'):driver.production_material_inputs(*args)
+
+    def test_source_adapter_does_not_start_b_factory_to_plan(self):
+        import check_r07_bootstrap_reverse as bootstrap
+        self.assertTrue(callable(bootstrap.production_shape_fixture))
+        self.assertTrue(callable(bootstrap.fixture_effect_plan))
+        with patch.object(bootstrap,'production_shape_fixture',side_effect=AssertionError('B runtime forbidden')):
+            driver.production_fixture_plan(self.root/'uncreated')
+            driver.bootstrap_fixture_images(self.images,self.pins)
+
+    def proof(self):
+        result=dict(result='PASS',workflow_proof='SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE',deadline_seconds=30,
+            forward=dict(published=True,rechecked=True),reverse=dict(published=True,rechecked=True),
+            seconds=dict(switch=1.0,reverse=2.0),workflow_launch_to_join_seconds=dict(switch=2.0,reverse=3.0),
+            workflow_margin_seconds=dict(switch=28.0,reverse=27.0),library_margin_seconds=dict(switch=29.0,reverse=28.0),
+            default_public_positive='UNESTABLISHED until admitted R07 stopped boundary',
+            default_public_refusal=dict(proof='DEFAULT_PUBLIC_REFUSAL_ACTIVE_WORKERS',unit_actions=0,
+                outside_owned_root_writes=0,result=dict(published=False,inspected=False,owner_fence='unknown',
+                error='unit or activation trigger is not stopped and masked')))
+        stdout={op:'=== RUN   TestUnitBootstrapOwnedTransition\n--- PASS: TestUnitBootstrapOwnedTransition (1.00s)\nPASS\n'
+            for op in ('switch','reverse')}
+        return result,stdout
+
+    def test_scoped_receipt_parser_never_claims_default_public_or_native_positive(self):
+        result,stdout=self.proof();observed=driver.bootstrap_workflow_observation(result,stdout)
+        self.assertEqual(observed['workflow_proof'],result['workflow_proof'])
+        self.assertFalse(observed['NativePASS']);self.assertFalse(observed['complete_unit_qualified'])
+        self.assertEqual(observed['default_public_positive'],result['default_public_positive'])
+        self.assertEqual(observed['kind'],'NONNATIVE_BOOTSTRAP_RECEIPT_OBSERVATION')
+
+    def test_wrong_proof_default_refusal_or_skipped_execution_refuses(self):
+        for field,value in (('workflow_proof','DIRECT_LIBRARY_WITH_FIXTURE_FENCE'),
+                            ('default_public_refusal',None),('default_public_positive','PASS')):
+            result,stdout=self.proof();result[field]=value
+            with self.subTest(field=field),self.assertRaises(driver.Refused):
+                driver.bootstrap_workflow_observation(result,stdout)
+        for raw in ('PASS\n','no tests to run\n','--- SKIP: TestUnitBootstrapOwnedTransition\n'):
+            result,stdout=self.proof();stdout['reverse']=raw
+            with self.subTest(raw=raw),self.assertRaises(driver.Refused):
+                driver.bootstrap_workflow_observation(result,stdout)
+
+    def test_each_operation_requires_finite_positive_launch_and_library_margin(self):
+        for field in ('seconds','workflow_launch_to_join_seconds'):
+            for value in (False,0,-1,30,float('inf'),float('nan')):
+                result,stdout=self.proof();result[field]['reverse']=value
+                with self.subTest(field=field,value=value),self.assertRaises(driver.Refused):
+                    driver.bootstrap_workflow_observation(result,stdout)
+        result,stdout=self.proof();result['workflow_margin_seconds']['reverse']=28
+        with self.assertRaises(driver.Refused):driver.bootstrap_workflow_observation(result,stdout)
+
+
 class RehearsalTerminalTests(unittest.TestCase):
     """Failure after the sequence cannot leave a passing atomic outcome."""
     def setUp(self):
@@ -1469,7 +1597,7 @@ def load_tests(loader, standard, pattern):
     # fixture input adds real sealed-recipe controls, with no skipped tests.
     cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests,
         NativeDriverBoundaries,NativeStateSchemaTests,LivePreservationTests,TraceBoundaryTests,
-        RehearsalTerminalTests,ScaleSelectionTests]
+        RehearsalTerminalTests,ScaleSelectionTests,SourceAdapterTests]
     if os.environ.get('CAIRN_R06_REHEARSAL_SELECTION'):
         cases.append(FullSequenceRehearsalTests)
     if os.environ.get('CAIRN_R06_AGY_CONTROLLED_PACKET'):
