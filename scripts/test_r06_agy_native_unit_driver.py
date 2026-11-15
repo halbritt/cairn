@@ -331,6 +331,262 @@ print(json.dumps(code))
 
 
 
+class FullSequenceRehearsalTests(unittest.TestCase):
+    """Explicit selected packet: genuine Go/API/PG, scripted client, no Agy."""
+    def setUp(self):
+        selected=os.environ.get('CAIRN_R06_REHEARSAL_SELECTION')
+        if not selected:self.skipTest('requires explicitly selected sealed rehearsal packet')
+        self.inputs=json.loads(Path(selected).read_text())
+        self.evidence_base=Path(os.environ.get('CAIRN_R06_REHEARSAL_EVIDENCE',str(Path.home()/'.cache')))
+        self.evidence_base.mkdir(mode=0o700,parents=True,exist_ok=True)
+        self.roots=[]
+
+    def fresh(self):
+        root=Path(tempfile.mkdtemp(prefix='rh-',dir=self.evidence_base));self.roots.append(root)
+        with (self.evidence_base/'cases.jsonl').open('a') as stream:
+            stream.write(json.dumps(dict(test=self._testMethodName,evidence=str(root),actual_Agy=0))+'\n')
+        return root
+
+    def tearDown(self):
+        for root in self.roots:
+            receipt=root/'case/rehearsal-result.json'
+            if not receipt.exists():continue
+            pg=json.loads((root/'case/pg-cleanup.json').read_text())
+            native=json.loads((root/'case/native-cleanup.json').read_text())
+            api=json.loads((root/'case/api-cleanup.json').read_text())
+            self.assertTrue(pg['stopped'] and pg['all_absent'] and native['all_absent'] and api['absent'])
+            self.assertFalse(native['forced_signals'])
+            self.assertEqual(json.loads((root/'case/archive-result.json').read_text())['state'],'completed')
+            result=json.loads(receipt.read_text())
+            if not result['PG_runtime_removed']:
+                runtime=Path(json.loads((root/'case/application-start.json').read_text())['runtime'])
+                self.assertEqual(runtime.parent,Path.home()/'.cache');self.assertTrue(runtime.name.startswith('r06r-'))
+                self.assertTrue(all(not Path('/proc',str(pid)).exists() for pid in pg['pids']))
+                shutil.rmtree(runtime)
+                (root/'stopped-runtime-cleanup.json').write_text(json.dumps(dict(removed=True,
+                    scope='Expected negative rehearsal; original failed result/terminal remain unchanged'))+'\n')
+
+    def test_complete_shared_sequence_has_real_public_reverse_restored_history_and_final_audit(self):
+        root=self.fresh();result=driver.prepare_sequence_rehearsal(root,**self.inputs)
+        self.assertTrue(result['RehearsalPASS']);self.assertFalse(result['NativePASS'])
+        self.assertEqual(result['actual_Agy'],0);self.assertEqual(result['actual_native_attempts'],0)
+        self.assertEqual(len(result['results']),3)
+        self.assertTrue(result['audit']['full']['all_observed_descendants_exited'])
+        for key in ('Before','After','RestoredA'):self.assertEqual(len(result[key]['Callbacks']),2)
+        generation=json.loads(Path(result['generation']['Path']).read_text())
+        self.assertEqual(generation['Before'],generation['After'])
+        self.assertNotEqual(result['client']['pin']['SHA256'],driver.AGY_SHA256)
+        for label in ('native-A-to-B','native-B-to-retained-Go3-A'):
+            operation=json.loads((root/'case'/(label+'.exit.json')).read_text())
+            self.assertEqual(operation['exit'],0);self.assertEqual(len(operation['interleaved']),1)
+            preservation=json.loads((root/'case'/(label+'.preservation.json')).read_text())
+            self.assertEqual(preservation['database_before'],preservation['database_after'])
+            self.assertTrue(any(preservation['after']['appends'][p]['bytes']>row['bytes']
+                for p,row in preservation['before']['appends'].items()))
+        state_path=driver.native_state_pins(root/'catalog/coordination-state',result['native_session'])[0]['Path']
+        state=json.loads(Path(state_path).read_text())
+        self.assertEqual(state['registration']['native_session_id'],result['native_session'])
+        self.assertEqual(state['agent']['native_session_id'],result['native_session'])
+        terminal=json.loads((root/'rehearsal-ledger.terminal.json').read_text())
+        self.assertEqual(terminal['kind'],'PREPARATION_REHEARSAL');self.assertFalse(terminal['outcome']['NativePASS'])
+        self.assertFalse(result['cleanup_errors']);self.assertTrue(result['PG_runtime_removed'])
+
+    def test_actual_scripted_rename_of_different_client_is_refused_at_first_boundary(self):
+        root=self.fresh()
+        with self.assertRaises(driver.Refused):driver.prepare_sequence_rehearsal(root,fault='client-rename',**self.inputs)
+        result=json.loads((root/'case/rehearsal-result.json').read_text())
+        self.assertIn('client image identity',result['error']);self.assertFalse(result['NativePASS'])
+        self.assertFalse((root/'case/native-A-to-B.plan.json').exists())
+
+    def test_actual_scripted_sibling_is_refused_at_first_boundary(self):
+        root=self.fresh()
+        with self.assertRaises(driver.Refused):driver.prepare_sequence_rehearsal(root,fault='client-sibling',**self.inputs)
+        result=json.loads((root/'case/rehearsal-result.json').read_text())
+        self.assertIn('client directory',result['error']);self.assertFalse(result['NativePASS'])
+        self.assertFalse((root/'case/native-A-to-B.plan.json').exists())
+
+    def test_protected_changes_during_real_public_switch_are_refused(self):
+        for fault in ('cairn','account','workspace','state'):
+            with self.subTest(fault=fault):
+                root=self.fresh()
+                with self.assertRaises(driver.Refused):driver.prepare_sequence_rehearsal(root,fault=fault,**self.inputs)
+                result=json.loads((root/'case/rehearsal-result.json').read_text())
+                self.assertIn('protected',result['error']);self.assertFalse(result['NativePASS'])
+                operation=json.loads((root/'case/native-A-to-B.exit.json').read_text())
+                self.assertEqual(len(operation['interleaved']),1)
+
+
+class LivePreservationTests(unittest.TestCase):
+    """Concurrent file actors exercise preservation, not native/currentness proof."""
+    ACTOR='''import json,os,sys
+from pathlib import Path
+request=json.loads(sys.stdin.readline())
+for action,name in request:
+    path=Path(name)
+    if action=='append':
+        mode=path.stat().st_mode&0o777;path.chmod(mode|0o200)
+        with path.open('ab') as stream:stream.write(b'fixture concurrent append\\n')
+        path.chmod(mode)
+    elif action=='truncate':path.write_bytes(b'')
+    elif action=='rewrite':path.write_bytes(b'rewritten fixture\\n')
+    elif action=='replace':
+        temporary=path.with_name('actor-replacement');temporary.write_bytes(path.read_bytes())
+        os.replace(temporary,path)
+print('joined owned stand-in')
+'''
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-live-preserve-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup);self.root=Path(temporary.name)
+        home=self.root/'native-home';account=home/'.gemini/config';internal=home/'.gemini/antigravity-cli'
+        account.mkdir(mode=0o700,parents=True);internal.mkdir(mode=0o700)
+        work=self.root/'workspace';work.mkdir(mode=0o700)
+        api=self.root/'api-home';api.mkdir(mode=0o700)
+        config=self.root/'selected-configs';config.mkdir(mode=0o700)
+        state=self.root/'coordination-state';state.mkdir(mode=0o700)
+        token=self.root/'unit.token';token.write_bytes(b'purpose-written UNIT-only credential');token.chmod(0o400)
+        self.protected=[self.root/'coordination.json',account/'hooks.json',work/'fixture-data',
+            state/'fixture-state.json',self.root/'sealed-phase.trace',self.root/'native-readback.json']
+        for path in self.protected:path.write_bytes(b'purpose-written protected fixture\n')
+        for path in [self.root/'kernel.trace',self.root/'kernel.stderr',internal/'data']:path.write_bytes(b'initial bytes\n')
+        self.fixture=SimpleNamespace(root=self.root,home=home,account=account,work=work,
+            unit=dict(Credential=str(token),ConfigRoot=str(config)),host=SimpleNamespace(home=api))
+        self.session=SimpleNamespace(child=SimpleNamespace(trace=self.root/'kernel.trace'))
+
+    def actor(self,actions):
+        result=subprocess.run([sys.executable,'-I','-S','-B','-c',self.ACTOR],
+            input=json.dumps([(action,str(path)) for action,path in actions]),text=True,capture_output=True,timeout=10)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('joined owned stand-in',result.stdout)
+
+    def snapshot(self):return driver.live_root_snapshot(self.fixture,self.session)
+
+    def test_concurrent_append_and_only_explicit_client_internal_churn_are_allowed(self):
+        before=self.snapshot()
+        self.actor([('append',self.root/'kernel.trace'),('append',self.root/'kernel.stderr'),
+            ('append',self.fixture.home/'.gemini/antigravity-cli/data')])
+        after=self.snapshot()
+        driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
+        self.assertEqual(before['rows'],after['rows'])
+        for path,row in before['appends'].items():
+            self.assertGreater(len(after['appends'][path]['bytes']),len(row['bytes']))
+
+    def test_every_cairn_account_workspace_state_and_sealed_file_stays_protected(self):
+        for path in self.protected:
+            with self.subTest(path=path.name):
+                before=self.snapshot();self.actor([('append',path)]);after=self.snapshot()
+                with self.assertRaisesRegex(driver.Refused,'protected'):
+                    driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
+
+    def test_trace_and_stderr_rewrite_truncate_or_inode_replacement_refuse(self):
+        for path in [self.root/'kernel.trace',self.root/'kernel.stderr']:
+            for action in ('truncate','rewrite','replace'):
+                path.write_bytes(b'initial bytes\n')
+                with self.subTest(path=path.name,action=action):
+                    before=self.snapshot();self.actor([(action,path)]);after=self.snapshot()
+                    with self.assertRaisesRegex(driver.Refused,'replaced, truncated or rewritten'):
+                        driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
+
+    def test_client_internal_symlink_and_hardlink_escape_are_refused(self):
+        inside=self.fixture.home/'.gemini/antigravity-cli/escape'
+        inside.symlink_to(self.protected[0])
+        with self.assertRaisesRegex(driver.Refused,'symlink escapes'):self.snapshot()
+        inside.unlink();os.link(self.protected[0],inside)
+        with self.assertRaisesRegex(driver.Refused,'hardlink escape'):self.snapshot()
+
+
+class TraceBoundaryTests(unittest.TestCase):
+    """Purpose-written parser fixtures; no native raw file is edited."""
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-boundary-snapshot-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup);self.path=Path(temporary.name)/'fixture.trace'
+        self.session=SimpleNamespace(child=SimpleNamespace(trace=self.path,pid=200))
+
+    def test_partial_line_waits_for_actual_concurrent_complete_bytes(self):
+        initial=b'200 read(0';suffix=b' <unfinished ...>\n'
+        self.path.write_bytes(initial)
+        def append():
+            with self.path.open('ab') as stream:stream.write(suffix)
+        writer=threading.Timer(.05,append);writer.start();self.addCleanup(writer.join)
+        raw=driver.complete_trace_boundary(self.session,timeout=2)
+        self.assertEqual(raw,initial+suffix);self.assertEqual(len(raw),len(initial+suffix))
+
+    def test_returned_offset_uses_that_snapshot_even_after_file_grows(self):
+        initial=b'200 write(2, "x", 1) = 1\n';extra=b'200 write(2, "y", 1) = 1\n'
+        self.path.write_bytes(initial)
+        raw=driver.complete_trace_boundary(self.session,timeout=1)
+        def append():
+            with self.path.open('ab') as stream:stream.write(extra)
+        writer=threading.Thread(target=append);writer.start();writer.join()
+        self.assertEqual(raw,initial);self.assertEqual(len(raw),len(initial))
+        self.assertGreater(self.path.stat().st_size,len(raw))
+
+    def test_timeout_preserves_partial_bytes_and_nonidle_pending_calls_refuse(self):
+        for raw in (b'200 read(0',b'200 read(4 <unfinished ...>\n',
+                    b'201 read(0 <unfinished ...>\n'):
+            with self.subTest(raw=raw):
+                self.path.write_bytes(raw)
+                with self.assertRaisesRegex(AssertionError,'Timed out'):
+                    driver.complete_trace_boundary(self.session,timeout=.05)
+                self.assertEqual(self.path.read_bytes(),raw)
+
+
+class NativeStateSchemaTests(unittest.TestCase):
+    """Purpose-written redacted schema, not a preserved native case or API mock.
+
+    Go CLI.ensureHookAgentSession (hook_cli.go:484-496) and Python
+    coordination._handle (coordination.py:4017-4024)
+    write registration and the authenticated API's agent as separate members.
+    """
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-state-schema-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup);self.root=Path(temporary.name)
+        self.native='NONNATIVE-schema-fixture-conversation'
+        self.state=dict(schema='cairn.native-session/1',process=dict(pid=123,start='fixture',boot='fixture'),
+            registration=dict(native_session_id=self.native),workspace='/NONNATIVE-fixture',
+            agent=dict(native_session_id=self.native))
+
+    def write_state(self,state):
+        path=self.root/'fixture-state.json'
+        path.write_text(json.dumps(state)+'\n');path.chmod(0o600)
+        return path
+
+    def test_product_nested_identity_is_selected_without_a_top_level_alias(self):
+        path=self.write_state(self.state)
+        self.assertEqual(driver.native_state_pins(self.root,self.native),[driver.checked_pin(path)])
+
+    def test_both_nested_identities_are_required_typed_and_equal_to_the_client(self):
+        for field in ('registration','agent'):
+            for bad in (None,[],{},dict(native_session_id=None),dict(native_session_id=17),
+                        dict(native_session_id=True),dict(native_session_id=''),
+                        dict(native_session_id=' '),dict(native_session_id='foreign-conversation')):
+                state=copy.deepcopy(self.state);state[field]=bad
+                with self.subTest(field=field,bad=bad),self.assertRaises(driver.Refused):
+                    self.write_state(state);driver.native_state_pins(self.root,self.native)
+
+    def test_a_top_level_identity_cannot_mask_missing_or_conflicting_nested_state(self):
+        for nested,outer in ((False,self.native),(True,'foreign'),(True,17),(True,None)):
+            state=copy.deepcopy(self.state) if nested else dict(schema='cairn.native-session/1')
+            state['native_session_id']=outer
+            with self.subTest(nested=nested,outer=outer),self.assertRaises(driver.Refused):
+                self.write_state(state);driver.native_state_pins(self.root,self.native)
+        for state in ([],None,dict(self.state,schema='cairn.native-session/2')):
+            with self.subTest(state=state),self.assertRaises(driver.Refused):
+                self.write_state(state);driver.native_state_pins(self.root,self.native)
+
+    def test_matching_optional_legacy_identity_never_replaces_the_two_nested_ids(self):
+        state=dict(self.state,native_session_id=self.native)
+        path=self.write_state(state)
+        self.assertEqual(driver.native_state_pins(self.root,self.native),[driver.checked_pin(path)])
+
+    def test_missing_or_extra_foreign_state_never_selects_a_conversation(self):
+        with self.assertRaisesRegex(driver.Refused,'exactly one'):
+            driver.native_state_pins(self.root,self.native)
+        self.write_state(self.state)
+        (self.root/'foreign.json').write_text(json.dumps(self.state)+'\n')
+        with self.assertRaisesRegex(driver.Refused,'exactly one'):
+            driver.native_state_pins(self.root,self.native)
+
+
 class NativeDriverBoundaries(unittest.TestCase):
     """CLI/environment/codec controls; never execute Agy or a provider."""
     def setUp(self):
@@ -352,6 +608,18 @@ class NativeDriverBoundaries(unittest.TestCase):
                     '--admission-sha256','a'*64,'--attempt-id',str(uuid.uuid4())])
         self.assertEqual(code,0);self.assertFalse(json.loads(out.getvalue())['NativePASS'])
         self.assertEqual(checked.call_count,1);self.assertEqual(list(self.root.iterdir()),[])
+
+    def test_scripted_mode_or_interpreter_cannot_select_actual_native_execution(self):
+        with patch.object(driver,'checked_native_admission',side_effect=AssertionError('native selection')), \
+                patch.object(driver,'execute_owned_case',side_effect=AssertionError('application execution')):
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(driver.main(['--native-unit','--rehearse-sequence']),2)
+                self.assertEqual(driver.main(['--prepare-stubbed','--rehearse-sequence',
+                    '--admission',str(self.root/'not-an-admission.json')]),2)
+            with self.assertRaisesRegex(driver.Refused,'original held client'):
+                driver.execute_native(dict(admission=dict(client=driver.tool_pin(Path(sys.executable).resolve())),
+                    rehearsal=True))
+        self.assertEqual(list(self.root.iterdir()),[])
 
     def test_expired_or_missing_selection_cannot_reach_reservation(self):
         with patch.object(driver,'checked_native_admission',side_effect=driver.Refused('expired selector')), \
@@ -694,9 +962,9 @@ class NativeAdmissionTests(unittest.TestCase):
         self.assertTrue(path.is_relative_to(Path(self.body['catalog_root'])))
         self.assertEqual(path.read_bytes(),self.client.read_bytes());self.assertEqual(info.st_mode&0o777,0o500)
         self.assertNotEqual((info.st_dev,info.st_ino),(source.st_dev,source.st_ino))
-        self.assertEqual(path.parent.stat().st_mode&0o777,0o500)
+        self.assertEqual(path.parent.stat().st_mode&0o777,0o700)
         self.assertEqual(path.parent.name,'client')
-        with self.assertRaises(PermissionError):path.rename(path.with_name('replaced'))
+        self.assertTrue(os.access(path.parent,os.W_OK))  # 0700 is write-capable; boundary guards detect mutation.
         with self.assertRaises(FileExistsError):driver.stage_native_client(approved)
         self.assertEqual(path.read_bytes(),self.client.read_bytes())
 

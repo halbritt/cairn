@@ -27,6 +27,7 @@ import sys
 import tarfile
 import tempfile
 import threading
+import time
 import uuid
 
 import check_r04_native_agy as r04
@@ -65,6 +66,107 @@ STUB = (
     "sys.stdout.buffer.flush()\n"
 )
 INPUT = b'CAIRN_NON_NATIVE_PREPARATION_INPUT\n'
+SCRIPTED_CLIENT = r'''"""NONNATIVE stream-json rehearsal client; never Agy or a native PASS."""
+import http.client
+import json
+import os
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+import threading
+import urllib.parse
+import uuid
+
+plan = json.loads(Path(sys.argv[1]).read_text())
+endpoint = urllib.parse.urlsplit(plan['provider'])
+if endpoint.scheme != 'http' or endpoint.hostname != '127.0.0.1' or not 1024 < endpoint.port < 65536:
+    raise ValueError('rehearsal provider must be the owned loopback fixture')
+conversation = str(uuid.uuid4())
+history = Path(plan['home']) / 'rehearsal-history' / conversation / 'transcript.jsonl'
+history.parent.mkdir(mode=0o700, parents=True)
+history.touch(mode=0o600)
+contents = []
+
+def churn(message):
+    internal = Path(plan['internal'])
+    with (internal / 'rehearsal-data').open('ab') as stream:
+        stream.write(b'owned concurrent client-internal churn\n')
+    os.write(2, b'NONNATIVE rehearsal background stderr append\n')
+    if message.get('target'):
+        target = Path(message['target'])
+        mode = target.stat().st_mode & 0o777 if target.exists() else 0o600
+        if target.exists(): target.chmod(mode | 0o200)
+        with target.open('ab') as stream:
+            stream.write(b' ')
+        target.chmod(mode)
+    (internal / 'rehearsal-ack').write_text(message['nonce'])
+
+def replace_client(fault):
+    client = Path(plan['client'])
+    if fault == 'client-rename':
+        replacement = client.parent / 'replacement'
+        replacement.write_bytes(b'NONNATIVE deliberately different client\n')
+        replacement.chmod(0o500)
+        os.replace(replacement, client)
+    elif fault == 'client-sibling':
+        (client.parent / '.old').write_bytes(b'NONNATIVE unwanted sibling\n')
+
+def emit(value):
+    sys.stdout.buffer.write((json.dumps(value, separators=(',', ':')) + '\n').encode())
+    sys.stdout.buffer.flush()
+
+def hook(event):
+    payload = dict(conversationId=conversation, workspacePaths=[plan['workspace']],
+                   host_pid=os.getpid(), hookEventName=event,
+                   transcriptPath=str(history), fullyIdle=True)
+    body = (json.dumps(payload, separators=(',', ':')) + '\n').encode()
+    settings = json.loads(Path(plan['hooks']).read_text())['cairn-coordination']
+    rows = settings[event]
+    if len(rows) != 1:
+        raise ValueError('exactly one genuine managed hook required')
+    subprocess.run(shlex.split(rows[0]['command']), input=body, check=True,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+
+idle_stop = threading.Event()
+def idle_background():
+    # Real interleaving makes strace complete its outstanding stdin record.
+    # These are genuine owned writes, not trace edits or synthetic resumes.
+    while not idle_stop.wait(0.05):
+        os.write(2, b'NONNATIVE idle background write\n')
+idle_thread = threading.Thread(target=idle_background, daemon=True)
+idle_thread.start()
+emit(dict(event='init', conversation_id=conversation, init=dict(rehearsal=True)))
+for raw in sys.stdin.buffer:
+    message = json.loads(raw)
+    if message.get('event') == 'rehearsal-churn':
+        threading.Thread(target=churn, args=(message,)).start()
+        continue
+    if message.get('event') != 'user' or message.get('message', {}).get('role') != 'user':
+        raise ValueError('expected stream-json user message')
+    prompt = message['message']['content']
+    hook('PreInvocation')
+    contents.append(dict(role='user', parts=[dict(text=prompt)]))
+    body = json.dumps(dict(contents=contents)).encode()
+    connection = http.client.HTTPConnection('127.0.0.1', endpoint.port, timeout=15)
+    try:
+        connection.request('POST', '/v1beta/models/rehearsal:streamGenerateContent', body,
+                           {'x-goog-api-key': 'r04-synthetic-unused', 'Content-Type': 'application/json'})
+        response = connection.getresponse()
+        reply = response.read()
+        if response.status != 200 or not reply.startswith(b'data: '):
+            raise ValueError('local synthetic fixture did not return its stream')
+    finally:
+        connection.close()
+    with history.open('a') as stream:
+        stream.write(json.dumps(dict(rehearsal=True, user=prompt)) + '\n')
+    hook('Stop')
+    if len(contents) == 1:
+        replace_client(plan.get('fault'))
+    emit(dict(event='result', result=dict(conversation_id=conversation, rehearsal=True)))
+idle_stop.set()
+idle_thread.join()
+'''
 PREPARATION_SCOPE = ('Preparation only; no native admission or execution. '
     'Retained Python /2 reverse remains unsupported.')
 
@@ -249,7 +351,9 @@ class OwnedKernelTrace:
                 'literal fixture argv required')
         self.image = checked_pin(argv[0])
         info=Path(argv[0]).lstat()
-        self.image_identity=(info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink)
+        self.image_identity=(info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,info.st_size)
+        self.client_parent=Path(argv[0]).parent if Path(argv[0])==self.root/'client/native-agy' else None
+        self.client_parent_identity=policy_identity(self.client_parent) if self.client_parent else None
         if self.image['SHA256'] == AGY_SHA256:
             require(admission is not None, 'native image requires consumed pinned admission')
             selected=admission['admission']
@@ -259,13 +363,14 @@ class OwnedKernelTrace:
                     and self.root==Path(selected['catalog_root'])
                     and Path(argv[0])==self.root/'client/native-agy', 'native reservation/image/root disagree')
             require(type(env) is dict and env.get('AGY_CLI_DISABLE_AUTO_UPDATE')=='1'
-                    and stat.S_IMODE(Path(argv[0]).parent.stat().st_mode)==0o500,
-                    'native updater disable/read-only client directory required')
+                    and stat.S_IMODE(Path(argv[0]).parent.stat().st_mode)==0o700,
+                    'native updater disable/owned0700 client directory required')
             require(type(ports) in (tuple,list,set) and len(ports)==1
                     and env.get('GOOGLE_GEMINI_BASE_URL')=='http://127.0.0.1:'+str(next(iter(ports))),
                     'native kernel port must be the actual local provider port')
         require(Path(argv[0]).is_relative_to(self.root), 'fixture image must be owned in-root')
         require(stat.S_IMODE(Path(argv[0]).lstat().st_mode) == 0o500, 'controlled0500 fixture image required')
+        self.verify_client()
         require(hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'), 'pidfd prerequisite')
         self.trace = self.root/'kernel.trace'
         self.trace.touch(mode=0o600, exist_ok=False)
@@ -323,12 +428,37 @@ class OwnedKernelTrace:
             self._kernel_trace_identity=(info.st_dev,info.st_ino,info.st_uid,info.st_nlink)
             require(self.generation['Client'] == self.image and self.generation['ClientArgv'] == argv,
                     'fixture identity/argv mismatch')
+            self.verify_confinement()
         except BaseException:
             self.close()
             raise
 
 
+    def verify_client(self):
+        def identity():
+            info=Path(self.image['Path']).lstat()
+            return (info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,info.st_size)
+        require(identity()==self.image_identity,'client image identity/mode/size changed')
+        if self.client_parent:
+            require(self.client_parent.resolve()==self.client_parent and
+                self.client_parent.stat().st_uid==os.getuid() and
+                stat.S_IMODE(self.client_parent.stat().st_mode)==0o700 and
+                sorted(path.name for path in self.client_parent.iterdir())==['native-agy'] and
+                policy_identity(self.client_parent)==self.client_parent_identity,
+                'client directory identity or exact single-entry inventory changed')
+        require(checked_pin(self.image['Path'])==self.image,'client image changed')
+        require(identity()==self.image_identity,'client image changed during pin check')
+        if self.client_parent:
+            require(policy_identity(self.client_parent)==self.client_parent_identity and
+                sorted(path.name for path in self.client_parent.iterdir())==['native-agy'],
+                'client directory changed during pin check')
+
+    def verify_confinement(self):
+        require(verified_kernel_policy(self,self.trace.read_bytes(),self.generation,self.root,
+            self.network_policy['tcp_ports']),'actual child-bound kernel policy required')
+
     def capture_generation(self):
+        self.verify_client()
         current = collector.capture_owned_generation(self.pid)
         require(current == self.generation, 'owned fixture generation changed')
         return current
@@ -411,10 +541,7 @@ class OwnedKernelTrace:
             group_signals=False, already_gone=gone,
             all_absent=all(pid > 1 and not Path(f'/proc/{pid}').exists() for pid in pids))
         require(self.cleanup['all_absent'], 'traced fixture PID remains after join')
-        require(checked_pin(self.image['Path']) == self.image, 'fixture image changed')
-        info=Path(self.image['Path']).lstat()
-        require((info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink)==self.image_identity,
-                'fixture image identity/mode changed')
+        self.verify_client()
 
 
 def kernel_calls(raw, *, collecting=False):
@@ -678,6 +805,7 @@ class AuthenticatedAPIBridge:
                     require(not any(x in ('--profile','--url') or x.startswith(('--profile=','--url=','--socket=','--token-file='))
                                     for x in argv),'alternate API bridge selector')
                     require(checked_pin(image)==owner.image,'API image changed before bridge call')
+                    started=time.monotonic()
                     process=subprocess.Popen([str(image),*argv],env=host.env,text=True,
                         stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                     require(process.pid>1,'unsafe API CLI PID')
@@ -688,7 +816,8 @@ class AuthenticatedAPIBridge:
                         owner.failures.append('API CLI timeout')
                     response=dict(exit=process.returncode,stdout=out,stderr=err)
                     owner.calls.append(dict(argv=argv,input=request['input'],**response,
-                        pid=process.pid,joined=True,response_substitution=False))
+                        pid=process.pid,joined=True,response_substitution=False,
+                        command_ms=round((time.monotonic()-started)*1000,3)))
                     if owner.after_call is not None:owner.after_call(argv)
                     encoded=json.dumps(response,separators=(',',':')).encode()
                     require(len(encoded)<=2*1024*1024,'API bridge reply exceeds bound')
@@ -889,6 +1018,12 @@ def run_native_attempt(approved, preflight, execute):
     """Injected boundaries keep pre-start75 distinct from a consumed failure."""
     preflight(approved)
     reservation = NativeReservation(approved)
+    return run_reserved_case(approved,execute,reservation,
+        approved.get('admission',{}).get('evidence'),'native-result.json')
+
+
+def run_reserved_case(approved,execute,reservation,evidence,result_name):
+    """Common first-error/result/atomic-terminal boundary for distinct ledgers."""
     result = dict(state='failed', application_start_boundary_entered=True)
     try:
         result = execute(approved)
@@ -898,9 +1033,8 @@ def run_native_attempt(approved, preflight, execute):
         failure=dict(error_type=type(error).__name__,error=str(error))
         result=dict(state='failed',NativePASS=False,application_start_boundary_entered=True,
                     archive_state='pending-after-terminal',**failure)
-        evidence=approved.get('admission',{}).get('evidence')
         if evidence:
-            existing=Path(evidence)/'native-result.json'
+            existing=Path(evidence)/result_name
             if existing.exists():
                 result=dict(json.loads(existing.read_bytes()),state='failed',NativePASS=False,
                             application_start_boundary_entered=True,archive_state='pending-after-terminal')
@@ -909,9 +1043,8 @@ def run_native_attempt(approved, preflight, execute):
 
         raise
     finally:
-        evidence=approved.get('admission',{}).get('evidence')
         try:
-            if evidence:roundtrip.write(Path(evidence)/'native-result.json',result)
+            if evidence:roundtrip.write(Path(evidence)/result_name,result)
         except BaseException as error:
             result=dict(result,state='failed',NativePASS=False,result_write_error=type(error).__name__)
             raise
@@ -947,7 +1080,7 @@ def stage_native_client(approved):
                 and info.st_uid == os.getuid() and info.st_nlink == 1
                 and (info.st_dev, info.st_ino) != (before.st_dev, before.st_ino),
                 'native image must be an owned0500 in-root copy, not an alias')
-        parent.chmod(0o500)
+        parent.chmod(0o700)
         sync_directory(parent)
         sync_directory(root)
         return dict(pin=selected, device=info.st_dev, inode=info.st_ino,
@@ -985,6 +1118,16 @@ class NativeUnitFixture:
             self.host=DisposableHost.start(cluster,binary=images['api'],repo='fixture:agy:native:'+str(uuid.uuid4()),
                 database='agy_'+uuid.uuid4().hex,home=f.root/'api-home',socket_path=f.root/'api.sock',
                 log=evidence/'api.log',roles=('worker',),label='r06_agy_native')
+            # Race instrumentation stays enabled. Its post-main exit sleep is
+            # unnecessary for these joined fixture CLI calls and otherwise
+            # consumes the public control's unchanged 30-second deadline.
+            race_options=self.host.env.get('GORACE','').split()
+            if not any(option.startswith('atexit_sleep_ms=') for option in race_options):
+                race_options.append('atexit_sleep_ms=0')
+            self.host.env=dict(self.host.env,GORACE=' '.join(race_options))
+            roundtrip.write(evidence/'fixture-command-runtime.json',dict(
+                GORACE=self.host.env['GORACE'],scope='Owned API CLI/public-control children only; parent unchanged',
+                race_instrumentation='as-built -race remains active',public_control_deadline_seconds=30))
             self.host_dsn=self.host.dsn
             self.bridge=AuthenticatedAPIBridge(f.root,self.host,images['api'],evidence)
             f.api.chmod(0o700)
@@ -1116,9 +1259,14 @@ def open_native_session(approved,fixture,client,provider_url):
     env,settings=native_child_environment(fixture,provider_url)
     argv=[client['pin']['Path'],'--new-project','--settings',str(settings),'--model',r04.MODEL,
         '--input-format','stream-json','--output-format','stream-json','--print-timeout','30s','--print','']
+    return open_stream_session(argv,fixture,env,provider_url,admission=approved)
+
+
+def open_stream_session(argv,fixture,env,provider_url,*,admission=None):
+    """Shared stream protocol and owning tracer; no client selection occurs here."""
     session=object.__new__(r04.AgySession)
     session.output,session.work=fixture.root,fixture.work
-    session.child=OwnedKernelTrace(argv,fixture.root,work=fixture.work,env=env,admission=approved,
+    session.child=OwnedKernelTrace(argv,fixture.root,work=fixture.work,env=env,admission=admission,
         ports=(int(provider_url.rsplit(':',1)[1]),))
     session.selector=session.log=None
     session.buffer,session.events=bytearray(),[];session.closed=False
@@ -1133,6 +1281,187 @@ def open_native_session(approved,fixture,client,provider_url):
             if session.log is not None:session.log.close()
         raise
     return session
+
+
+def stage_scripted_client(approved):
+    """Own Python copy and explicit script pins, never the held Agy client."""
+    root=Path(approved['rehearsal']['catalog_root'])
+    directory=root/'client';directory.mkdir(mode=0o700)
+    source=Path(sys.executable).resolve();image=directory/'native-agy'
+    shutil.copyfile(source,image);image.chmod(0o500);directory.chmod(0o700)
+    require(checked_pin(image)['SHA256']==approved['tools']['python3']['SHA256']
+            and checked_pin(image)['SHA256']!=AGY_SHA256,'rehearsal requires the pinned nonnative interpreter')
+    script=root/'scripted-client.py';script.write_text(SCRIPTED_CLIENT);script.chmod(0o400)
+    return dict(pin=checked_pin(image),script=checked_pin(script),kind='SCRIPTED_NONNATIVE',actual_Agy=0)
+
+
+def open_scripted_session(approved,fixture,client,provider_url):
+    require(client.get('kind')=='SCRIPTED_NONNATIVE' and client['pin']['SHA256']!=AGY_SHA256,
+            'scripted rehearsal client required')
+    env,_=native_child_environment(fixture,provider_url)
+    internal=fixture.home/'.gemini/antigravity-cli';internal.mkdir(mode=0o700)
+    (internal/'rehearsal-data').touch(mode=0o600)
+    plan=fixture.root/'scripted-client-plan.json'
+    roundtrip.write(plan,dict(kind='SCRIPTED_NONNATIVE',provider=provider_url,home=str(fixture.home),
+        workspace=str(fixture.work),hooks=str(fixture.account/'hooks.json'),internal=str(internal),
+        client=client['pin']['Path'],fault=approved.get('rehearsal_fault')))
+    client['plan']=checked_pin(plan)
+    argv=[client['pin']['Path'],'-I','-S','-B',client['script']['Path'],str(plan)]
+    return open_stream_session(argv,fixture,env,provider_url)
+
+
+def complete_trace_boundary(session,*,timeout=5):
+    """Return one complete, validated byte snapshot; offset is its exact len."""
+    def ready():
+        with session.child.trace.open('rb') as stream:
+            raw=stream.read(collector.TRACE_LIMIT+1)
+        require(0<len(raw)<=collector.TRACE_LIMIT,'empty or oversized boundary trace')
+        if not raw.endswith(b'\n'):return None
+        calls,pending=kernel_calls(raw,collecting=True)
+        threads=kernel_threads(calls,session.child.pid)
+        if not (len(pending)<=1 and all(row['name']=='read' and row['body'].strip()=='read(0'
+                and row['pid'] in threads for row in pending)):return None
+        kernel_calls(raw)
+        return raw
+    return r04.wait_for(ready,'complete unchanged-dialect live boundary snapshot',timeout=timeout)
+
+
+def live_root_snapshot(fixture,session):
+    """Protect the whole unit, except two appends and one explicit client subtree."""
+    root=fixture.root;internal=fixture.home/'.gemini/antigravity-cli'
+    credential=Path(fixture.unit['Credential']);secret=credential.lstat()
+    append_paths={session.child.trace,root/'kernel.stderr'}
+    rows={};appends={}
+    def read_regular(path,expected,*,append=False):
+        require(path.resolve()==path,'live snapshot path traverses a symlink')
+        fd=os.open(path,os.O_RDONLY|os.O_CLOEXEC|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,'rb') as stream:
+            observed=os.fstat(stream.fileno())
+            require(stat.S_ISREG(observed.st_mode) and os.path.samestat(expected,observed)
+                    and not os.path.samestat(observed,secret),'live snapshot file identity/credential alias changed')
+            fields=('st_mode','st_uid','st_gid','st_nlink')
+            require(all(getattr(expected,key)==getattr(observed,key) for key in fields),'live snapshot metadata changed')
+            if append:
+                raw=stream.read(collector.TRACE_LIMIT+1)
+                require(len(raw)<=collector.TRACE_LIMIT,'live append exceeds fixed trace bound')
+                return raw
+            digest=hashlib.file_digest(stream,'sha256').hexdigest()
+            final=os.fstat(stream.fileno())
+            require(all(getattr(expected,key)==getattr(final,key) for key in
+                (*fields,'st_size','st_mtime_ns','st_ctime_ns')),'protected file changed during snapshot')
+            return digest
+    def visit(path):
+        info=path.lstat()
+        row=dict(mode=info.st_mode,uid=info.st_uid,gid=info.st_gid,device=info.st_dev,
+            inode=info.st_ino,bytes=info.st_size,links=info.st_nlink,mtime=info.st_mtime_ns,ctime=info.st_ctime_ns)
+        if path==internal:
+            require(stat.S_ISDIR(info.st_mode) and not path.is_symlink() and path.resolve()==path
+                    and info.st_uid==os.getuid() and not info.st_mode&0o022,'unsafe mutable client subtree')
+            for directory,dirs,files in os.walk(path,followlinks=False):
+                for name in dirs+files:
+                    entry=Path(directory)/name
+                    try:observed=entry.lstat()
+                    except FileNotFoundError:continue  # Only this explicitly mutable subtree may churn.
+                    require(observed.st_uid==os.getuid() and not os.path.samestat(observed,secret),
+                            'client subtree aliases protected ownership or credential')
+                    if stat.S_ISLNK(observed.st_mode):
+                        require(entry.resolve().is_relative_to(internal),'client subtree symlink escapes')
+                    elif stat.S_ISREG(observed.st_mode):
+                        require(observed.st_nlink==1,'client subtree hardlink escape')
+            return
+        if path in append_paths:
+            require(stat.S_ISREG(info.st_mode) and info.st_uid==os.getuid() and info.st_nlink==1,
+                    'live append must be an owned regular single-link file')
+            raw=read_regular(path,info,append=True)
+            appends[str(path)]=dict(identity={k:row[k] for k in ('mode','uid','gid','device','inode','links')},
+                bytes=raw)
+            return
+        private=os.path.samestat(info,secret) or path.is_relative_to(fixture.host.home) or stat.S_IMODE(info.st_mode)==0
+        if private:row['content_read']=False
+        elif stat.S_ISREG(info.st_mode):row['sha256']=read_regular(path,info)
+        elif stat.S_ISLNK(info.st_mode):row['link']=os.readlink(path)
+        rows[str(path)]=row
+        if stat.S_ISDIR(info.st_mode):
+            require(path.resolve()==path,'protected directory traverses a symlink')
+            for child in sorted(path.iterdir()):visit(child)
+    visit(root)
+    require(set(appends)=={str(path) for path in append_paths},'live append inventory differs')
+    return dict(rows=rows,appends=appends,client_internal=str(internal))
+
+
+def assert_live_preserved(before,after,config_root):
+    require(before['client_internal']==after['client_internal'],'mutable client scope changed')
+    require(set(before['appends'])==set(after['appends']),'live append inventory changed')
+    for path,old in before['appends'].items():
+        current=after['appends'][path]
+        require(old['identity']==current['identity'] and current['bytes'].startswith(old['bytes']),
+                'live trace/stderr was replaced, truncated or rewritten: '+path)
+    require(roundtrip.protected(before['rows'],config_root)==roundtrip.protected(after['rows'],config_root),
+            'live transition changed protected profile/source/credential/account/workspace/state data')
+
+
+def assert_public_preserved(before,after,config_root,database_before,database_after):
+    require(database_before==database_after,'public control changed protected API state')
+    assert_live_preserved(before,after,config_root)
+
+
+def live_unit_control(approved,fixture,session,client,body,evidence,label,*,reverse=False):
+    """The public control contract with narrow, explicit live-client mutability."""
+    path=evidence/(label+'.plan.json');selected=roundtrip.write(path,body)
+    before=live_root_snapshot(fixture,session)
+    database_before=roundtrip.api_snapshot(fixture.host.dsn,fixture.host.pg_bin,fixture.root/'state-placeholder')
+    argv=[str(approved['images']['control']),'unit-control','reverse' if reverse else 'switch',
+        '--plan',str(path),'--sha256',selected['SHA256']]
+    interleaved=[]
+    process_started=threading.Event()
+    original=fixture.bridge.after_call
+    def concurrent_background_write(api_argv):
+        if interleaved:return
+        require(process_started.wait(5),'public process did not start for rehearsal barrier')
+        require(api_argv[-1] in roundtrip.READS,'rehearsal barrier requires a genuine public read')
+        interleaved.append(dict(operation=api_argv[-1],control_pid=process.pid))
+        nonce=str(uuid.uuid4())
+        message=dict(event='rehearsal-churn',nonce=nonce)
+        fault=approved.get('rehearsal_fault')
+        if fault:
+            targets=dict(account=fixture.account/'hooks.json',workspace=fixture.work/'protected-fixture',
+                state=next(Path(fixture.f.coord['state_dir']).glob('*.json')),cairn=Path(fixture.f.coord_path))
+            require(fault in targets,'unknown nonnative protected mutation')
+            message['target']=str(targets[fault])
+        session.child.process.stdin.write((json.dumps(message)+'\n').encode());session.child.process.stdin.flush()
+        ack=fixture.home/'.gemini/antigravity-cli/rehearsal-ack'
+        r04.wait_for(lambda:ack.exists() and ack.read_text()==nonce,'owned concurrent stand-in acknowledgment',timeout=10)
+        require(process.poll() is None,'public process exited before concurrent stand-in write')
+    if client.get('kind')=='SCRIPTED_NONNATIVE':
+        require(original is None,'unexpected existing rehearsal API interleaving')
+        fixture.bridge.after_call=concurrent_background_write
+    try:
+        session.child.capture_generation();session.child.verify_confinement()
+        process=subprocess.Popen(argv,env=fixture.host.env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        process_started.set()
+        try:out,err=process.communicate(timeout=150)
+        except subprocess.TimeoutExpired:
+            process.kill();out,err=process.communicate();raise
+    finally:
+        fixture.bridge.after_call=original
+    (evidence/(label+'.stdout')).write_text(out);(evidence/(label+'.stderr')).write_text(err)
+    roundtrip.write(evidence/(label+'.exit.json'),dict(exit=process.returncode,argv=argv,interleaved=interleaved))
+    after=live_root_snapshot(fixture,session)
+    database_after=roundtrip.api_snapshot(fixture.host.dsn,fixture.host.pg_bin,fixture.root/'state-placeholder')
+    def receipt(snapshot):
+        return dict(rows=snapshot['rows'],client_internal=snapshot['client_internal'],
+            appends={p:dict(identity=v['identity'],bytes=len(v['bytes']),sha256=hashlib.sha256(v['bytes']).hexdigest())
+                for p,v in snapshot['appends'].items()})
+    roundtrip.write(evidence/(label+'.preservation.json'),dict(before=receipt(before),after=receipt(after),
+        database_before=database_before,database_after=database_after))
+    assert_public_preserved(before,after,Path(fixture.unit['ConfigRoot']),database_before,database_after)
+    parsed=json.loads(out)
+    require(process.returncode==0 and parsed['inspected'] and parsed['exchange']['Published'],
+            'public live transition failed: '+str(parsed.get('error','unpublished result; see exact stdout receipt')))
+    require(parsed['census']['NativeRefresh']=='unobserved' and parsed['census']['ExternalCoverage']=='unknown',
+            'finite live transition claimed native qualification')
+    if client.get('kind')=='SCRIPTED_NONNATIVE':require(len(interleaved)==1,'real public rehearsal interleaving was not reached')
+    return parsed
 
 
 def kernel_io(row):
@@ -1254,21 +1583,36 @@ def collect_native_phase(session,fixture,label,start,destination):
         kernel_calls(raw)
         return raw,callbacks,histories[0]
     raw,callbacks,history=r04.wait_for(finished,'actual emitted callbacks, stdin EOF, zero exits and idle frame',timeout=35)
+    session.child.capture_generation();session.child.verify_confinement()
     destination.write_bytes(raw);destination.chmod(0o400)
     phase=collector.trace_interval(destination,start,len(raw),callbacks)
     return phase,history
 
 
+def native_state_pins(state_dir,native_session):
+    """Select the one product-written conversation state without synthesizing it."""
+    require(type(native_session) is str and native_session.strip(),'nonempty client conversation required')
+    paths=sorted(Path(state_dir).glob('*.json'))
+    require(len(paths)==1,'expected exactly one actual native state')
+    path=paths[0];selected=checked_pin(path)
+    value=json.loads(path.read_bytes())
+    require(type(value) is dict and value.get('schema')=='cairn.native-session/1','unknown actual native state')
+    if 'native_session_id' in value:
+        require(type(value['native_session_id']) is str and value['native_session_id']==native_session,
+                'legacy outer native identity conflicts with the client')
+    for field in ('registration','agent'):
+        nested=value.get(field)
+        require(type(nested) is dict and type(nested.get('native_session_id')) is str
+                and nested['native_session_id'].strip(),'missing or malformed '+field+' native identity')
+        require(nested['native_session_id']==native_session,'actual native state identity differs')
+    require(checked_pin(path)==selected,'native state changed during identity read')
+    return [selected]
+
+
 def capture_native_catalogs(fixture,session,before_capture,before,after_capture,after,client):
     root=fixture.root
     generation=collector.write_generation_pair(root/'native-generation.json',before_capture,after_capture)
-    states=[]
-    for path in sorted(Path(fixture.f.coord['state_dir']).glob('*.json')):
-        value=json.loads(path.read_bytes())
-        require(value.get('schema')=='cairn.native-session/1','unknown actual native state')
-        require(value.get('native_session_id')==session.identity,'actual native state identity differs')
-        states.append(checked_pin(path))
-    require(len(states)==1,'expected exactly one actual native state')
+    states=native_state_pins(fixture.f.coord['state_dir'],session.identity)
     readback=roundtrip.write(root/'native-readback.json',dict(Schema='cairn.watch-agy-readback/2',Harness='agy',
         EvidenceKind='current-observation',NativeSession=session.identity,Workspace=str(fixture.work),
         Client=client['pin'],ClientArgv=after_capture['ClientArgv'],Generation=generation,
@@ -1410,80 +1754,108 @@ def native_preflight(approved):
         raise PrerequisiteUnavailable('INPUT_NOT_READY: '+str(error)) from error
 
 
+def run_session_sequence(approved,fixture,session,client,provider,evidence):
+    """One maintained A/B/public/reverse/restored-A sequence for both clients."""
+    root=fixture.root
+    source_pins=approved['preflight']['source_pins']
+    before_capture=session.child.generation
+    prompts=['R06-owned-A-'+approved['case_id'],'R06-owned-B-'+approved['case_id'],
+             'R06-owned-restored-A-'+approved['case_id']]
+    results=[]
+    # No script-generated callback/state/session is permitted here: each
+    # prompt goes through the actual stream-json client and local provider.
+    start=0;results.append(session.prompt(prompts[0]))
+    before,history=collect_native_phase(session,fixture,'A',start,root/'phase-A.trace')
+    audit_a=audit_host_connections(Path(before['Trace']['Path']).read_bytes(),before_capture,root,
+        ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False,enforcement=session.child)
+    fixture.stage_live_b()
+    require(session.child.capture_generation()==before_capture,'staging B changed native generation')
+    fixture.publish('B')
+    boundary_b=complete_trace_boundary(session)
+    start=len(boundary_b)
+    results.append(session.prompt(prompts[1]))
+    after,history_b=collect_native_phase(session,fixture,'B',start,root/'phase-B.trace')
+    require(Path(after['Trace']['Path']).read_bytes().startswith(boundary_b),'B boundary raw prefix changed')
+    after_capture=session.child.capture_generation()
+    require(before_capture==after_capture and history_b==history,'same native generation/history not preserved')
+    audit_b=audit_host_connections(Path(after['Trace']['Path']).read_bytes(),after_capture,root,
+        ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False,enforcement=session.child)
+    states,readback,generation=capture_native_catalogs(fixture,session,before_capture,before,after_capture,after,client)
+    forward=roundtrip.plan(fixture.unit);forward['census']['Proposal']['Sessions']=[p['Path'] for p in states]
+    public_forward=live_unit_control(approved,fixture,session,client,forward,evidence,'native-A-to-B')
+    reverse=roundtrip.plan(fixture.unit,reverse=True);reverse['census']['Proposal']['Sessions']=[p['Path'] for p in states]
+    public_reverse=live_unit_control(approved,fixture,session,client,reverse,evidence,
+        'native-B-to-retained-Go3-A',reverse=True)
+    locks=[Path(fixture.unit['SelectionA']['Directory'])/'.watch.lock',
+        Path(fixture.unit['ConfigRoot'])/'retained-A/.watch.lock',Path(fixture.unit['ConfigRoot'])/'retained-B/.watch.lock']
+    require(all(os.path.samefile(locks[0],path) for path in locks),'watch lock identity split')
+    fixture.publish('A')
+    boundary_a=complete_trace_boundary(session)
+    start=len(boundary_a)
+    results.append(session.prompt(prompts[2]))
+    restored,history_a=collect_native_phase(session,fixture,'A',start,root/'phase-restored-A.trace')
+    require(Path(restored['Trace']['Path']).read_bytes().startswith(boundary_a),'restored A boundary raw prefix changed')
+    require(history_a==history and session.child.capture_generation()==before_capture,'restored A changed native generation/history')
+    require(not provider.failures and len(provider.requests)>=3,'local synthetic provider failed or missing turns')
+    texts=[text for request in provider.requests for text in r04.provider_texts(request)]
+    require(all(any(prompt in text for text in texts) for prompt in prompts),'provider did not observe every actual turn')
+    require(all(prompt in json.dumps(provider.requests[-1]) for prompt in prompts),'native conversation history did not persist')
+    session.close()
+    require(session.child.cleanup['exit']==0 and not session.child.cleanup['forced_signals'],
+            'actual client required forced/nonzero shutdown')
+    full=session.child.trace.read_bytes()
+    require(full[:after['End']]==Path(after['Trace']['Path']).read_bytes(),'sealed B interval changed or hid restored A')
+    final_audit=audit_host_connections(full,before_capture,root,ports={provider.server.server_port},
+        unix_paths=[fixture.bridge.path],final=True,enforcement=session.child)
+    require(all(checked_pin(ROOT/name)==pin for name,pin in source_pins.items()),'maintained source changed during run')
+    roundtrip.write(evidence/'provider-requests.json',provider.requests)
+    roundtrip.write(evidence/'native-cleanup.json',session.child.cleanup)
+    return dict(native_session=session.identity,client=client,
+        generation=generation,readback=readback,Before=before,After=after,RestoredA=restored,
+        public_forward=public_forward,public_reverse=public_reverse,results=results,
+        audit=dict(A=audit_a,B=audit_b,full=final_audit),scope='one owned Agy Go3 A/B/restored-A interval; not global refresh or legacy Python2 reverse')
+
+
 def execute_native(approved):
     """One future admitted A/B/restored-A run; authoring never calls this."""
-    selected=approved['admission'];evidence=Path(selected['evidence']);root=Path(selected['catalog_root'])
-    runtime=Path(tempfile.mkdtemp(prefix='r06n-',dir=Path.home()/'.cache'))
+    require(approved['admission']['client']==dict(Path=str(AGY_SOURCE),SHA256=AGY_SHA256),
+            'actual native execution requires the original held client')
+    return execute_owned_case(approved,rehearsal=False)
+
+
+def execute_rehearsal(approved):
+    require('rehearsal' in approved and 'admission' not in approved,'separate nonnative rehearsal selection required')
+    return execute_owned_case(approved,rehearsal=True)
+
+
+def execute_owned_case(approved,*,rehearsal):
+    selected=approved['rehearsal' if rehearsal else 'admission']
+    if not rehearsal:
+        require(selected['client']==dict(Path=str(AGY_SOURCE),SHA256=AGY_SHA256),
+                'actual native execution requires the original held client')
+    evidence=Path(selected['evidence']);root=Path(selected['catalog_root'])
+    runtime=Path(tempfile.mkdtemp(prefix='r06r-' if rehearsal else 'r06n-',dir=Path.home()/'.cache'))
     cluster=fixture=provider=session=None
     result=dict(state='failed',attempt_id=selected['attempt_id'],NativePASS=False,
                 trace_budget=approved['preflight']['trace_budget'])
+    if rehearsal:result.update(kind='PREPARATION_REHEARSAL',RehearsalPASS=False,actual_Agy=0,actual_native_attempts=0)
     pg=Path(approved['preflight']['pg']);pg_pids=[]
     try:
         roundtrip.write(evidence/'application-start.json',dict(attempt_id=selected['attempt_id'],runtime=str(runtime),
-            admission=approved['pin'],scope='one actual disposable Agy; no automatic retry'))
+            admission=approved.get('pin'),scope='NONNATIVE scripted rehearsal' if rehearsal else 'one actual disposable Agy; no automatic retry'))
         private_directory(root);require(not list(root.iterdir()),'catalog root became nonempty');root.rmdir()
         cluster=OwnedCluster.start(runtime/'pg',pg_bin=pg)
         pg_pids=owned_pg_processes(runtime/'pg/data/postmaster.pid')
         fixture=NativeUnitFixture(root,approved['images'],cluster,evidence)
-        client=stage_native_client(approved)
+        client=stage_scripted_client(approved) if rehearsal else stage_native_client(approved)
         fixture.publish('A')
         provider=r04.GeminiFixture()
-        session=open_native_session(approved,fixture,client,provider.url)
-        before_capture=session.child.generation
-        prompts=['R06-owned-A-'+selected['attempt_id'],'R06-owned-B-'+selected['attempt_id'],
-                 'R06-owned-restored-A-'+selected['attempt_id']]
-        source_pins=approved['preflight']['source_pins']
-        results=[]
-        # No script-generated callback/state/session is permitted here: each
-        # prompt goes through the actual stream-json client and local provider.
-        start=0;results.append(session.prompt(prompts[0]))
-        before,history=collect_native_phase(session,fixture,'A',start,root/'phase-A.trace')
-        audit_a=audit_host_connections(Path(before['Trace']['Path']).read_bytes(),before_capture,root,
-            ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False,enforcement=session.child)
-        fixture.stage_live_b()
-        require(session.child.capture_generation()==before_capture,'staging B changed native generation')
-        fixture.publish('B')
-        start=session.child.trace.stat().st_size
-        require(start>0 and session.child.trace.read_bytes().endswith(b'\n'),'B boundary is not a complete raw line')
-        results.append(session.prompt(prompts[1]))
-        after,history_b=collect_native_phase(session,fixture,'B',start,root/'phase-B.trace')
-        after_capture=session.child.capture_generation()
-        require(before_capture==after_capture and history_b==history,'same native generation/history not preserved')
-        audit_b=audit_host_connections(Path(after['Trace']['Path']).read_bytes(),after_capture,root,
-            ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False,enforcement=session.child)
-        states,readback,generation=capture_native_catalogs(fixture,session,before_capture,before,after_capture,after,client)
-        forward=roundtrip.plan(fixture.unit);forward['census']['Proposal']['Sessions']=[p['Path'] for p in states]
-        public_forward=roundtrip.invoke(approved['images'],fixture.host,fixture.unit,forward,evidence,'native-A-to-B')
-        reverse=roundtrip.plan(fixture.unit,reverse=True);reverse['census']['Proposal']['Sessions']=[p['Path'] for p in states]
-        public_reverse=roundtrip.invoke(approved['images'],fixture.host,fixture.unit,reverse,evidence,
-            'native-B-to-retained-Go3-A',reverse=True)
-        locks=[Path(fixture.unit['SelectionA']['Directory'])/'.watch.lock',
-            Path(fixture.unit['ConfigRoot'])/'retained-A/.watch.lock',Path(fixture.unit['ConfigRoot'])/'retained-B/.watch.lock']
-        require(all(os.path.samefile(locks[0],path) for path in locks),'watch lock identity split')
-        fixture.publish('A')
-        start=session.child.trace.stat().st_size
-        require(session.child.trace.read_bytes().endswith(b'\n'),'restored A boundary is not a complete raw line')
-        results.append(session.prompt(prompts[2]))
-        restored,history_a=collect_native_phase(session,fixture,'A',start,root/'phase-restored-A.trace')
-        require(history_a==history and session.child.capture_generation()==before_capture,'restored A changed native generation/history')
-        require(not provider.failures and len(provider.requests)>=3,'local synthetic provider failed or missing turns')
-        texts=[text for request in provider.requests for text in r04.provider_texts(request)]
-        require(all(any(prompt in text for text in texts) for prompt in prompts),'provider did not observe every actual turn')
-        require(all(prompt in json.dumps(provider.requests[-1]) for prompt in prompts),'native conversation history did not persist')
-        session.close()
-        require(session.child.cleanup['exit']==0 and not session.child.cleanup['forced_signals'],
-                'actual client required forced/nonzero shutdown')
-        full=session.child.trace.read_bytes()
-        require(full[:after['End']]==Path(after['Trace']['Path']).read_bytes(),'sealed B interval changed or hid restored A')
-        final_audit=audit_host_connections(full,before_capture,root,ports={provider.server.server_port},
-            unix_paths=[fixture.bridge.path],final=True,enforcement=session.child)
-        require(all(checked_pin(ROOT/name)==pin for name,pin in source_pins.items()),'maintained source changed during run')
-        result.update(state='passed',NativePASS=True,native_session=session.identity,client=client,
-            generation=generation,readback=readback,Before=before,After=after,RestoredA=restored,
-            public_forward=public_forward,public_reverse=public_reverse,results=results,
-            audit=dict(A=audit_a,B=audit_b,full=final_audit),scope='one owned Agy Go3 A/B/restored-A interval; not global refresh or legacy Python2 reverse')
-        roundtrip.write(evidence/'provider-requests.json',provider.requests)
-        roundtrip.write(evidence/'native-cleanup.json',session.child.cleanup)
+        session=(open_scripted_session if rehearsal else open_native_session)(approved,fixture,client,provider.url)
+        approved['case_id']=selected['attempt_id']
+        facts=run_session_sequence(approved,fixture,session,client,provider,evidence)
+        result.update(state='passed',NativePASS=not rehearsal,**facts)
+        if rehearsal:
+            result.update(RehearsalPASS=True,scope='NONNATIVE complete maintained sequence with scripted client; never native qualification')
     finally:
         errors=[];failure=sys.exc_info()[1];active_error=failure is not None
         if active_error:result.update(error_type=type(failure).__name__,error=str(failure))
@@ -1510,11 +1882,17 @@ def execute_native(approved):
             for role in ROLES:
                 validate_build_recipe(role,candidate['roles'][role],approved['image_pins']['images'][role],approved['image_pins'])
             require(all(checked_pin(pin['Path'])==pin for pin in approved['packet'].values()),'image packet changed')
-            verify_tool_provenance(Path(selected['manifest']['Path']).parent)
+            verify_tool_provenance(Path(approved['packet']['manifest']['Path']).parent)
             for pin in selected['tools'].values():tool_pin(pin['Path'],pin['SHA256'])
-            require({key:selected[key] for key in ('source_head','source_tree')}==native_source_identity(),
-                    'driver source changed during native case')
-            require(checked_pin(AGY_SOURCE,AGY_SHA256) and stat.S_IMODE(AGY_SOURCE.stat().st_mode)==0o500,'held client changed')
+            require(all(checked_pin(ROOT/name)==pin for name,pin in approved['preflight']['source_pins'].items()),
+                    'maintained source changed during case')
+            if not rehearsal:
+                require({key:selected[key] for key in ('source_head','source_tree')}==native_source_identity(),
+                        'driver source changed during native case')
+                require(checked_pin(AGY_SOURCE,AGY_SHA256) and stat.S_IMODE(AGY_SOURCE.stat().st_mode)==0o500,'held client changed')
+            elif session is not None:
+                require(all(checked_pin(client[key]['Path'])==client[key] for key in ('pin','script','plan')),
+                        'scripted rehearsal client inputs changed')
             require(approved['preflight']['parent']==dict(HOME=os.environ['HOME'],CODEX_HOME=os.environ.get('CODEX_HOME')),
                     'parent HOME/CODEX_HOME changed')
         except BaseException as error:errors.append('final-pins:'+type(error).__name__)
@@ -1522,15 +1900,21 @@ def execute_native(approved):
             shutil.rmtree(runtime)
         if errors or active_error:result.update(state='failed',NativePASS=False)
         result.update(cleanup_errors=errors,PG_runtime_removed=not runtime.exists(),archive_state='pending-after-terminal')
-        roundtrip.write(evidence/'native-result.json',result)
+        roundtrip.write(evidence/('rehearsal-result.json' if rehearsal else 'native-result.json'),result)
         require(not errors,'owned cleanup unresolved: '+','.join(errors))
     return result
 
 
 def archive_native_after_terminal(approved):
+    if approved.get('_archive_fixture') is None:return
+    return archive_case_after_terminal(approved,approved['admission'])
+
+
+def archive_case_after_terminal(approved,selected):
+    """Custody after the already-published outcome, shared without native admission."""
     fixture=approved.get('_archive_fixture')
     if fixture is None:return
-    selected=approved['admission'];evidence=Path(selected['evidence']);root=fixture.root
+    evidence=Path(selected['evidence']);root=fixture.root
     require(Path(selected['ledger']).with_suffix('.terminal.json').exists(),'archive requires terminal native outcome')
     active_error=sys.exc_info()[0] is not None
     try:
@@ -1981,6 +2365,59 @@ def prepare_authenticated(evidence, *, manifest, manifest_sha256, index, index_s
     return result
 
 
+class RehearsalReservation:
+    """Local preparation marker, never a native schema, selector or budget."""
+    finish=NativeReservation.finish
+
+    def __init__(self,approved):
+        self.path=Path(approved['rehearsal']['ledger'])
+        ledger=reserve_ledger(self.path,approved['rehearsal_pins'],kind='PREPARATION_REHEARSAL')
+        ledger.close()
+        self.binding=json.loads(self.path.read_bytes())
+        self.binding.update(actual_Agy=0,actual_native_attempts=0,NativePASS=False)
+
+
+def prepare_sequence_rehearsal(evidence,*,python_sha256,strace_sha256,manifest,
+        manifest_sha256,index,index_sha256,complete,complete_sha256,fault=None):
+    """Full maintained sequence using the scripted protocol, never held Agy."""
+    evidence=private_directory(evidence)
+    require(fault in (None,'client-rename','client-sibling','account','workspace','state','cairn'),
+            'unknown nonnative rehearsal fault')
+    require(not list(evidence.iterdir()),'fresh empty rehearsal evidence required')
+    tools=dict(python3=tool_pin(Path(sys.executable).resolve(),python_sha256),
+        strace=tool_pin(Path(shutil.which('strace') or '/absent').resolve(),strace_sha256))
+    images,pins,packet=checked_packet(manifest,manifest_sha256,index,index_sha256,
+        complete,complete_sha256,native=True)
+    pg=pg_bindir()
+    pg_pins={name:tool_pin((pg/name).resolve()) for name in ('initdb','pg_ctl','postgres','createdb','psql')}
+    source_pins={name:checked_pin(ROOT/name) for name in (*REUSED,
+        'scripts/check_r06_agy_native_unit.py','scripts/test_r06_agy_native_unit_driver.py',
+        'docs/verification/r06-agy-native-unit.md')}
+    root=evidence/'catalog';root.mkdir(mode=0o700)
+    require(len(os.fsencode(root/'api-bridge.sock'))<108,'rehearsal root too long for Unix transport')
+    outputs=evidence/'case';outputs.mkdir(mode=0o700)
+    selection=dict(catalog_root=str(root),evidence=str(outputs),ledger=str(evidence/'rehearsal-ledger.json'),
+        attempt_id='NONNATIVE-scripted-rehearsal',tools=tools)
+    selected_pins=dict(kind='PREPARATION_REHEARSAL',NativePASS=False,actual_Agy=0,
+        actual_native_attempts=0,images=packet,image_source_head=pins['source_head'],
+        driver_sources=source_pins,tools=tools)
+    roundtrip.write(evidence/'rehearsal-selection.json',selected_pins)
+    approved=dict(rehearsal=selection,rehearsal_pins=selected_pins,rehearsal_fault=fault,images=images,image_pins=pins,
+        packet=packet,tools=tools,preflight=dict(pg=str(pg),pg_pins=pg_pins,source_pins=source_pins,
+            parent=dict(HOME=os.environ['HOME'],CODEX_HOME=os.environ.get('CODEX_HOME'))))
+    # Same real-new-control pressure guard, with separately reported API/PG effects.
+    approved['preflight']['trace_budget']=measure_trace_budget(images,evidence/'trace-budget')
+    reservation=RehearsalReservation(approved)
+    try:
+        result=run_reserved_case(approved,execute_rehearsal,reservation,str(outputs),'rehearsal-result.json')
+        require(result.get('NativePASS') is False and result.get('actual_Agy')==0
+                and result.get('actual_native_attempts')==0 and result.get('RehearsalPASS') is True,
+                'rehearsal cannot establish native PASS')
+        return result
+    finally:
+        archive_case_after_terminal(approved,selection)
+
+
 def prepare_stubbed(evidence, *, python_sha256, strace_sha256):
     evidence = private_directory(evidence)
     python = Path(sys.executable).resolve()
@@ -2136,6 +2573,8 @@ def main(argv=None):
     parser.add_argument('--evidence', type=Path)
     parser.add_argument('--python-sha256')
     parser.add_argument('--strace-sha256')
+    parser.add_argument('--rehearse-sequence',action='store_true',
+        help='with --prepare-stubbed only: scripted complete sequence, never native PASS')
     parser.add_argument('--images', type=Path)
     parser.add_argument('--images-sha256')
     parser.add_argument('--packet-index', type=Path)
@@ -2144,6 +2583,9 @@ def main(argv=None):
     parser.add_argument('--build-complete-sha256')
     args = parser.parse_args(argv)
     try:
+        require(not args.rehearse_sequence or (args.prepare_stubbed
+            and not any((args.admission,args.admission_sha256,args.attempt_id))),
+            'sequence rehearsal is stub-only and cannot use native admission')
         if args.measure_trace_budget:
             require(args.evidence is not None,'explicit private budget evidence required')
             images,pins,packet=checked_packet(args.images,args.images_sha256,args.packet_index,args.packet_index_sha256,
@@ -2173,8 +2615,14 @@ def main(argv=None):
             return 0
         require(args.evidence is not None and args.python_sha256 and args.strace_sha256,
                 'explicit private evidence and exact Python/strace pins required')
-        result = prepare_stubbed(args.evidence, python_sha256=args.python_sha256,
-                                 strace_sha256=args.strace_sha256)
+        if args.rehearse_sequence:
+            result=prepare_sequence_rehearsal(args.evidence,python_sha256=args.python_sha256,
+                strace_sha256=args.strace_sha256,manifest=args.images,manifest_sha256=args.images_sha256,
+                index=args.packet_index,index_sha256=args.packet_index_sha256,
+                complete=args.build_complete,complete_sha256=args.build_complete_sha256)
+        else:
+            result = prepare_stubbed(args.evidence, python_sha256=args.python_sha256,
+                                     strace_sha256=args.strace_sha256)
         print(json.dumps(result, sort_keys=True))
         return 0
     except PrerequisiteUnavailable as error:
