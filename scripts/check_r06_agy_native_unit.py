@@ -681,11 +681,17 @@ def audit_host_connections(raw, capture, root, *, ports, unix_paths, final=True,
     root_execs = [row for row in calls if row['pid'] == leader and row['name'] == 'execve']
     require(len(root_execs) == 1 and all(row['start'] >= root_execs[0]['start'] for row in calls),
             'records precede selected root exec')
-    deaths = {}
+    deaths,terminating = {},set()
     for row in calls:
         require(row['pid'] not in deaths, 'record after PID exit/reuse')
-        if row['name'] == 'exit':
+        terminal=row['name']=='exit' and row['body'].startswith('+++')
+        require(row['pid'] not in terminating or terminal,'record after nonreturning exit syscall')
+        if terminal:
             deaths[row['pid']] = row['start']
+        elif row['name'] in ('exit','exit_group'):
+            require(re.fullmatch(r'exit(?:_group)?\(-?\d+\)\s+= \?',row['body']),
+                'unclassifiable nonreturning exit syscall')
+            terminating.add(row['pid'])
     exited = set(deaths)
     require(not final or exited == owned, 'descendant interval does not include all exits')
     for execution in executions:

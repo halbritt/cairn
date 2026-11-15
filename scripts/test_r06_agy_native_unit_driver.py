@@ -60,6 +60,34 @@ class HostConnectAuditTests(unittest.TestCase):
                 with self.assertRaises(driver.Refused):self.audit(raw)
             else:self.audit(raw)
 
+    def test_exit_syscall_then_terminal_is_one_observed_death(self):
+        raw=self.raw('exit_group(0) = ?',extra='200 clone(child_stack=NULL, flags=CLONE_VM|CLONE_THREAD) = 201\n'
+            '201 exit(0) = ?\n201 +++ exited with 0 +++\n')
+        observed=self.audit(raw)
+        self.assertTrue(observed['all_observed_descendants_exited'])
+        self.assertEqual(observed['traced_pids'],[200,201])
+
+    def test_exit_boundaries_still_refuse_missing_duplicate_or_later_records(self):
+        for tail in ('201 exit(0) = ?\n',
+                     '201 exit(0) = ?\n201 close(3) = 0\n201 +++ exited with 0 +++\n',
+                     '201 +++ exited with 0 +++\n201 close(3) = 0\n',
+                     '201 +++ exited with 0 +++\n201 +++ exited with 0 +++\n'):
+            raw=self.raw('exit_group(0) = ?',extra='200 clone(child_stack=NULL, flags=CLONE_VM|CLONE_THREAD) = 201\n'+tail)
+            with self.subTest(tail=tail),self.assertRaises(driver.Refused):self.audit(raw)
+
+    def test_real_owned_thread_exit_syscall_and_terminal_audit_after_join(self):
+        image=self.root/'thread-python';shutil.copyfile(sys.executable,image);image.chmod(0o500)
+        code='import sys,threading;sys.stdin.buffer.read(1);t=threading.Thread(target=lambda:None);t.start();t.join()'
+        child=driver.OwnedKernelTrace([str(image),'-I','-S','-B','-c',code],self.root)
+        try:child.process.communicate(b'x',timeout=15)
+        finally:child.close()
+        self.assertEqual(child.process.returncode,0);self.assertTrue(child.cleanup['all_absent'])
+        self.assertFalse(child.cleanup['forced_signals'])
+        raw=child.trace.read_bytes();self.assertRegex(raw,rb'exit\(0\)\s+= \?')
+        observed=driver.audit_host_connections(raw,child.generation,self.root,ports=set(),
+            unix_paths=[self.root/'local.sock'],enforcement=child)
+        self.assertTrue(observed['all_observed_descendants_exited']);self.assertTrue(observed['kernel_enforced'])
+
     def test_actual_kernel_tcp_udp_unix_and_descendant_inheritance(self):
         listener=socket.socket();self.addCleanup(listener.close)
         listener.bind(('127.0.0.1',0));listener.listen(8);port=listener.getsockname()[1]

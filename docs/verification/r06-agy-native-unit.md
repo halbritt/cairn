@@ -260,6 +260,10 @@ results, wrong sockaddr sizes and foreign Unix sockets refuse. Collection of
 an in-flight prefix does not make a pending connect auditable.
 
 ExternalCoverage covers observed `connect(2)` attempts in that raw interval.
+An `exit` or `exit_group` syscall marks its PID as terminating. Only its
+terminal marker may follow; that marker establishes the observed death.
+The final audit requires a terminal marker for every observed PID and
+refuses missing or duplicate markers, PID reuse and later records.
 It excludes sendto/sendmsg, unconnected UDP, inherited/preconnected descriptors,
 tracer/controller traffic, future intervals and global coverage. Kernel
 enforcement is recorded separately and remains port-based; this audit does not establish Go currentness or global coverage.
