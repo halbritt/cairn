@@ -169,11 +169,11 @@ func (r *watchCensusRead) inspectAgyHooks(ctx context.Context, selected WatchCen
 	if _, err := r.pin(readback.Client, true); err != nil {
 		return nil, err
 	}
-	trace, err := r.agyTrace(readback.Trace)
+	trace, err := r.agyParsedTrace(readback.Trace, readback.End)
 	if err != nil {
 		return nil, err
 	}
-	if err := agyTraceReadback(trace, readback, selected.Workspace, installed, commands); err != nil {
+	if err := agyParsedReadback(trace, readback, selected.Workspace, installed, commands); err != nil {
 		return nil, err
 	}
 	// A retained interval does not observe current activation, refresh or D1-D7.
@@ -544,7 +544,18 @@ func (r *watchCensusRead) agyTrace(pin WatchCensusPin) ([]byte, error) {
 	if err := r.safePath(pin.Path, false); err != nil {
 		return nil, err
 	}
-	raw, digest, err := compatibilityOpened(pin.Path, 256<<20, uint32(os.Getuid()))
+	var raw []byte
+	var digest string
+	var err error
+	if r.local.verified != nil {
+		entry, readErr := r.local.verified.read(pin.Path, 256<<20, false)
+		if readErr != nil {
+			return nil, errors.Join(readErr, r.local.verified.Close())
+		}
+		raw, digest = entry.raw, entry.digest
+	} else {
+		raw, digest, err = compatibilityOpened(pin.Path, 256<<20, uint32(os.Getuid()))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -572,21 +583,88 @@ var agyTraceFlags = regexp.MustCompile(`\bflags=([^,})\s]+)`)
 
 // Only the documented strace -f -xx dialect is accepted. Unit codec inputs
 // are synthetic bytes; successful decoding never makes them native evidence.
-func agyTraceCalls(raw []byte) ([]agyTraceCall, error) {
-	calls, pending, err := agyTraceDecode(raw)
+type agyTraceParseKey struct {
+	pin WatchCensusPin
+	end int
+}
+
+type agyParsedTrace struct {
+	raw            string
+	calls          []agyTraceCall
+	pending        map[int]agyTraceCall
+	err            error
+	unknownCurrent bool
+	live           map[int]agyTraceResult
+}
+
+type agyTraceResult struct {
+	calls []agyTraceCall
+	err   error
+}
+
+// Parsed results belong to one verified census observation. Every lookup still
+// checks the file/ancestor binding; the observation's readback hashes all bytes.
+func (r *watchCensusRead) agyParsedTrace(pin WatchCensusPin, end int) (*agyParsedTrace, error) {
+	raw, err := r.agyTrace(pin)
 	if err != nil {
 		return nil, err
 	}
-	if len(pending) != 0 {
-		return nil, errors.New("incomplete Agy trace syscall coverage")
+	if end == -1 {
+		end = len(raw)
 	}
-	return calls, nil
+	if end < 0 || end > len(raw) {
+		return nil, errors.New("invalid Agy trace interval")
+	}
+	key := agyTraceParseKey{pin, end}
+	// Standalone readers without a descriptor owner remain fresh on every call.
+	if r.local.verified != nil {
+		if parsed := r.parsedTraces[key]; parsed != nil {
+			return parsed, parsed.err
+		}
+	}
+	parsed := agyParseTrace(raw[:end])
+	r.traceParses++
+	if r.local.verified != nil {
+		if r.parsedTraces == nil {
+			r.parsedTraces = map[agyTraceParseKey]*agyParsedTrace{}
+		}
+		r.parsedTraces[key] = parsed
+	}
+	return parsed, parsed.err
 }
 
-// Only current readback/2 calls this decoder after matching the live process
-// generation. Callback EOF/exit and Boolean fullyIdle remain phase checks.
+func (p *agyParsedTrace) completeCalls() ([]agyTraceCall, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	if len(p.pending) != 0 {
+		return nil, errors.New("incomplete Agy trace syscall coverage")
+	}
+	return p.calls, nil
+}
+
+func agyTraceCalls(raw []byte) ([]agyTraceCall, error) {
+	return agyParseTrace(raw).completeCalls()
+}
+
 func agyTraceCallsLive(raw []byte, nativePID int) ([]agyTraceCall, error) {
-	calls, pending, err := agyTraceDecode(raw)
+	return agyParseTrace(raw).liveCalls(nativePID)
+}
+
+func (p *agyParsedTrace) liveCalls(nativePID int) ([]agyTraceCall, error) {
+	if result, ok := p.live[nativePID]; ok {
+		return result.calls, result.err
+	}
+	calls, err := p.liveCallsUncached(nativePID)
+	if p.live == nil {
+		p.live = map[int]agyTraceResult{}
+	}
+	p.live[nativePID] = agyTraceResult{calls, err}
+	return calls, err
+}
+
+func (p *agyParsedTrace) liveCallsUncached(nativePID int) ([]agyTraceCall, error) {
+	calls, pending, err := slices.Clone(p.calls), p.pending, p.err
 	if err != nil {
 		return nil, err
 	}
@@ -631,57 +709,116 @@ func agyTraceCallsLive(raw []byte, nativePID int) ([]agyTraceCall, error) {
 }
 
 func agyTraceDecode(raw []byte) ([]agyTraceCall, map[int]agyTraceCall, error) {
-	pending := map[int]agyTraceCall{}
-	var out []agyTraceCall
-	position := 0
-	for _, line := range bytes.SplitAfter(raw, []byte{'\n'}) {
+	p := agyParseTrace(raw)
+	if p.err != nil {
+		return nil, nil, p.err
+	}
+	return p.calls, p.pending, nil
+}
+
+// The scanner recognizes the same ASCII PID/whitespace/word grammar as the
+// former regexp decoder. One immutable string owns all normal call views;
+// only split unfinished/resumed bodies need a new concatenation.
+func agyParseTrace(raw []byte) *agyParsedTrace {
+	p := &agyParsedTrace{raw: string(raw), pending: map[int]agyTraceCall{}}
+	for position := 0; position < len(p.raw); {
 		start := position
-		position += len(line)
-		if len(line) == 0 {
-			continue
+		length := strings.IndexByte(p.raw[position:], '\n')
+		if length < 0 {
+			p.err = errors.New("partial Agy trace line")
+			return p
 		}
-		if line[len(line)-1] != '\n' {
-			return nil, nil, errors.New("partial Agy trace line")
+		line := p.raw[position : position+length]
+		position += length + 1
+		pid, body, err := agyTracePrefix(line)
+		if err != nil {
+			p.err = err
+			return p
 		}
-		parts := agyTraceLine.FindStringSubmatch(strings.TrimSuffix(string(line), "\n"))
-		if parts == nil {
-			return nil, nil, errors.New("unsupported Agy trace prefix")
+		resumed, tail := agyTraceResumed(body)
+		normal := agyTraceWord(body)
+		if normal == "" && resumed == "" && !strings.HasPrefix(body, "+++ exited with ") && !strings.HasPrefix(body, "+++ killed by ") && !strings.HasPrefix(body, "--- SIG") {
+			p.unknownCurrent = true
 		}
-		pid, err := strconv.Atoi(parts[1])
-		if err != nil || pid <= 1 {
-			return nil, nil, errors.New("invalid Agy trace PID")
-		}
-		body := parts[2]
-		if resumed := agyTraceResume.FindStringSubmatch(body); resumed != nil {
-			old, ok := pending[pid]
-			if !ok || old.name != resumed[1] {
-				return nil, nil, errors.New("Agy resumed syscall lacks its original prefix")
+		if resumed != "" {
+			old, ok := p.pending[pid]
+			if !ok || old.name != resumed {
+				p.err = errors.New("Agy resumed syscall lacks its original prefix")
+				return p
 			}
-			delete(pending, pid)
-			body = old.body + resumed[2]
+			delete(p.pending, pid)
+			body = old.body + tail
 			start = old.start
-		} else if _, overlaps := pending[pid]; overlaps && agyTraceName.MatchString(body) {
-			return nil, nil, errors.New("overlapping unfinished Agy syscall")
+		} else if _, overlaps := p.pending[pid]; overlaps && normal != "" {
+			p.err = errors.New("overlapping unfinished Agy syscall")
+			return p
 		}
-		name := agyTraceName.FindStringSubmatch(body)
-		if name == nil {
+		name := agyTraceWord(body)
+		if name == "" {
 			if strings.HasPrefix(body, "+++ exited with ") || strings.HasPrefix(body, "+++ killed by ") {
-				out = append(out, agyTraceCall{pid, start, "exit", body})
+				p.calls = append(p.calls, agyTraceCall{pid, start, "exit", body})
 			}
 			continue
 		}
-		call := agyTraceCall{pid, start, name[1], body}
+		call := agyTraceCall{pid, start, name, body}
 		if strings.HasSuffix(body, "<unfinished ...>") {
-			if _, ok := pending[pid]; ok {
-				return nil, nil, errors.New("overlapping unfinished Agy syscall")
+			if _, ok := p.pending[pid]; ok {
+				p.err = errors.New("overlapping unfinished Agy syscall")
+				return p
 			}
 			call.body = strings.TrimSuffix(body, " <unfinished ...>")
-			pending[pid] = call
+			p.pending[pid] = call
 			continue
 		}
-		out = append(out, call)
+		p.calls = append(p.calls, call)
 	}
-	return out, pending, nil
+	return p
+}
+
+func agyTracePrefix(line string) (int, string, error) {
+	i := 0
+	for i < len(line) && line[i] >= '0' && line[i] <= '9' {
+		i++
+	}
+	if i == 0 || i == len(line) || !agyTraceSpace(line[i]) {
+		return 0, "", errors.New("unsupported Agy trace prefix")
+	}
+	pid, err := strconv.Atoi(line[:i])
+	if err != nil || pid <= 1 {
+		return 0, "", errors.New("invalid Agy trace PID")
+	}
+	for i < len(line) && agyTraceSpace(line[i]) {
+		i++
+	}
+	return pid, line[i:], nil
+}
+
+func agyTraceSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' }
+func agyTraceWordByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+}
+func agyTraceWord(body string) string {
+	i := 0
+	for i < len(body) && agyTraceWordByte(body[i]) {
+		i++
+	}
+	if i > 0 && i < len(body) && body[i] == '(' {
+		return body[:i]
+	}
+	return ""
+}
+func agyTraceResumed(body string) (string, string) {
+	if !strings.HasPrefix(body, "<... ") {
+		return "", ""
+	}
+	i := 5
+	for i < len(body) && agyTraceWordByte(body[i]) {
+		i++
+	}
+	if i > 5 && strings.HasPrefix(body[i:], " resumed>") {
+		return body[5:i], body[i+9:]
+	}
+	return "", ""
 }
 
 func agyQuoted(raw string) (string, error) {
@@ -753,11 +890,19 @@ func agyExec(call agyTraceCall) (string, []string, error) {
 }
 
 func agyTraceReadback(raw []byte, observed WatchCensusAgyReadback, workspace string, installed map[string][]byte, commands []agyCensusCommand) error {
+	if observed.End < 0 || observed.End > len(raw) {
+		return errors.New("invalid Agy trace interval")
+	}
+	return agyParsedReadback(agyParseTrace(raw[:observed.End]), observed, workspace, installed, commands)
+}
+
+func agyParsedReadback(parsed *agyParsedTrace, observed WatchCensusAgyReadback, workspace string, installed map[string][]byte, commands []agyCensusCommand) error {
+	raw := parsed.raw
 	if observed.Start < 0 || observed.End <= observed.Start || observed.End > len(raw) ||
 		observed.Start > 0 && raw[observed.Start-1] != '\n' || raw[observed.End-1] != '\n' {
 		return errors.New("invalid Agy trace interval")
 	}
-	calls, err := agyTraceCalls(raw[:observed.End])
+	calls, err := parsed.completeCalls()
 	if err != nil {
 		return err
 	}

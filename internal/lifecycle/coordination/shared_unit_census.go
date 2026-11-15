@@ -115,6 +115,8 @@ type watchCensusRead struct {
 	hookSelections        []watchCensusHookSelection
 	associations          map[string]*watchCensusAssociation
 	target                *unitCensusTarget
+	parsedTraces          map[agyTraceParseKey]*agyParsedTrace
+	traceParses           int
 }
 
 // InspectWatchUnitCensus performs filesystem and process observations only.

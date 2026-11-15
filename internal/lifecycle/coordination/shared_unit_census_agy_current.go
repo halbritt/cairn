@@ -331,15 +331,15 @@ func (r *watchCensusRead) inspectAgyCurrent(ctx context.Context, selected WatchC
 			return nil, err
 		}
 	}
-	before, err := r.agyTrace(readback.Before.Trace)
+	before, err := r.agyParsedTrace(readback.Before.Trace, -1)
 	if err != nil {
 		return nil, err
 	}
-	after, err := r.agyTrace(readback.After.Trace)
+	after, err := r.agyParsedTrace(readback.After.Trace, -1)
 	if err != nil {
 		return nil, err
 	}
-	if err := agyCurrentPair(before, after, readback, generation, aSettings, bSettings, aCommands, bCommands, selected.Account, active.Installed.Path); err != nil {
+	if err := agyCurrentParsedPair(before, after, readback, generation, aSettings, bSettings, aCommands, bCommands, selected.Account, active.Installed.Path); err != nil {
 		return nil, err
 	}
 	// These are per-point non-atomic facts, not a global future refresh promise.
@@ -353,6 +353,10 @@ func (r *watchCensusRead) inspectAgyCurrent(ctx context.Context, selected WatchC
 }
 
 func agyCurrentPair(before, after []byte, observed WatchCensusAgyCurrentReadback, generation agyGenerationRecord, aSettings, bSettings []byte, aCommands, bCommands []agyCensusCommand, account, installedPath string) error {
+	return agyCurrentParsedPair(agyParseTrace(before), agyParseTrace(after), observed, generation, aSettings, bSettings, aCommands, bCommands, account, installedPath)
+}
+
+func agyCurrentParsedPair(before, after *agyParsedTrace, observed WatchCensusAgyCurrentReadback, generation agyGenerationRecord, aSettings, bSettings []byte, aCommands, bCommands []agyCensusCommand, account, installedPath string) error {
 	a, b := generation.Before.Process, generation.After.Process
 	for _, process := range []WatchCensusProcess{a, b} {
 		start, err := strconv.ParseUint(process.Start, 10, 64)
@@ -370,12 +374,12 @@ func agyCurrentPair(before, after []byte, observed WatchCensusAgyCurrentReadback
 	if a.PID == b.PID && !slices.Equal(generation.Before.ClientArgv, generation.After.ClientArgv) {
 		return errors.New("Agy same generation changed client argv")
 	}
-	beforeFiles, err := agyCurrentBefore(before, observed.Before, generation.Before, observed, aSettings, aCommands, account)
+	beforeFiles, err := agyCurrentParsedBefore(before, observed.Before, generation.Before, observed, aSettings, aCommands, account)
 	if err != nil {
 		return err
 	}
 	if a.PID != b.PID {
-		calls, err := agyTraceCalls(before)
+		calls, err := before.completeCalls()
 		if err != nil {
 			return err
 		}
@@ -399,17 +403,21 @@ func agyCurrentPair(before, after []byte, observed WatchCensusAgyCurrentReadback
 		return errors.New("unknown current Agy installed layer")
 	}
 	installed[installedPath] = bSettings
-	return agyCurrentPhase(after, observed.After, generation.After, observed, observed.B, observed.A,
+	return agyCurrentParsedPhase(after, observed.After, generation.After, observed, observed.B, observed.A,
 		bCommands, aCommands, installed, beforeFiles)
 }
 
 func agyCurrentBefore(raw []byte, phase WatchCensusAgyCurrentPhase, capture agyGenerationCapture, observed WatchCensusAgyCurrentReadback, settings []byte, commands []agyCensusCommand, account string) (map[string][]byte, error) {
+	return agyCurrentParsedBefore(agyParseTrace(raw), phase, capture, observed, settings, commands, account)
+}
+
+func agyCurrentParsedBefore(parsed *agyParsedTrace, phase WatchCensusAgyCurrentPhase, capture agyGenerationCapture, observed WatchCensusAgyCurrentReadback, settings []byte, commands []agyCensusCommand, account string) (map[string][]byte, error) {
 	paths := []string{filepath.Join(account, "hooks.json"), filepath.Join(observed.Workspace, ".agents", "hooks.json")}
 	var result map[string][]byte
 	for _, path := range paths {
 		installed := map[string][]byte{paths[0]: nil, paths[1]: nil}
 		installed[path] = settings
-		if err := agyCurrentPhase(raw, phase, capture, observed, observed.A, WatchCensusAgyCurrentSelection{}, commands, nil, installed, nil); err == nil {
+		if err := agyCurrentParsedPhase(parsed, phase, capture, observed, observed.A, WatchCensusAgyCurrentSelection{}, commands, nil, installed, nil); err == nil {
 			if result != nil {
 				return nil, errors.New("ambiguous Agy before layer")
 			}
@@ -423,22 +431,19 @@ func agyCurrentBefore(raw []byte, phase WatchCensusAgyCurrentPhase, capture agyG
 }
 
 func agyCurrentPhase(raw []byte, phase WatchCensusAgyCurrentPhase, capture agyGenerationCapture, observed WatchCensusAgyCurrentReadback, selected, prior WatchCensusAgyCurrentSelection, commands, priorCommands []agyCensusCommand, installed, priorFiles map[string][]byte) error {
+	return agyCurrentParsedPhase(agyParseTrace(raw), phase, capture, observed, selected, prior, commands, priorCommands, installed, priorFiles)
+}
+
+func agyCurrentParsedPhase(parsed *agyParsedTrace, phase WatchCensusAgyCurrentPhase, capture agyGenerationCapture, observed WatchCensusAgyCurrentReadback, selected, prior WatchCensusAgyCurrentSelection, commands, priorCommands []agyCensusCommand, installed, priorFiles map[string][]byte) error {
+	raw := parsed.raw
 	if phase.Start < 0 || phase.End != len(raw) || phase.End <= phase.Start || raw[phase.End-1] != '\n' || phase.Start > 0 && raw[phase.Start-1] != '\n' || len(phase.Callbacks) != 2 || len(commands) != 2 {
 		return errors.New("incomplete Agy current interval or callback references")
 	}
-	calls, err := agyTraceCallsLive(raw, capture.Process.PID)
+	calls, err := parsed.liveCalls(capture.Process.PID)
 	if err != nil {
 		return err
 	}
-	for _, line := range bytes.Split(bytes.TrimSuffix(raw, []byte{'\n'}), []byte{'\n'}) {
-		parts := agyTraceLine.FindStringSubmatch(string(line))
-		if parts == nil {
-			return errors.New("unsupported current Agy trace prefix")
-		}
-		body := parts[2]
-		if agyTraceName.MatchString(body) || agyTraceResume.MatchString(body) || strings.HasPrefix(body, "+++ exited with ") || strings.HasPrefix(body, "+++ killed by ") || strings.HasPrefix(body, "--- SIG") {
-			continue
-		}
+	if parsed.unknownCurrent {
 		return errors.New("unknown current Agy trace record")
 	}
 	byOffset := map[int]agyTraceCall{}

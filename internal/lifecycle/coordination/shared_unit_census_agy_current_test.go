@@ -2,16 +2,107 @@ package coordination
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
+
+func TestAgyTraceScannerGrammarParity(t *testing.T) {
+	f := newAgyCurrentUnit()
+	corpus := []string{"", string(f.before), string(f.after), "200 read(0 <unfinished ...>\n", "200 read(0 <unfinished ...>\n200 <... read resumed>, \"x\", 1) = 1\n", "200 read(0 <unfinished ...>\n200 close(9) = 0\n", "200 <... read resumed>) = 0\n", "200 read(0 <unfinished ...>\n200 <... write resumed>) = 0\n", "200 read(0<unfinished ...>\n200 <... read resumed>) = 0\n", "200 --- SIGCHLD {si_pid=240} ---\n", "200 +++ killed by SIGKILL +++\n", "200 +++ exited with 0 +++\n", "200 unknown retained record\n", "200 \t\r\fclose(3) = 0\n", "200\vclose(3) = 0\n", "200 close(3) = 0\r\n", "200 close(3) = 0", "1 close(3) = 0\n", "99999999999999999999999 close(3) = 0\n", " 200 close(3) = 0\n", "200\n", "200 \n", "200 read(0 <unfinished ...>\n200 --- SIGX ---\n200 <... read resumed>) = 0\n"}
+	for i, raw := range corpus {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			want, pending, oldErr := agyTraceDecodeReference([]byte(raw))
+			got, nowPending, err := agyTraceDecode([]byte(raw))
+			if (oldErr == nil) != (err == nil) || oldErr != nil && oldErr.Error() != err.Error() || !reflect.DeepEqual(want, got) || !reflect.DeepEqual(pending, nowPending) {
+				t.Fatalf("scanner changed grammar/offset/pairing: old=%v %v %v new=%v %v %v", want, pending, oldErr, got, nowPending, err)
+			}
+		})
+	}
+}
+
+func TestAgyParsedTraceKeepsClosedLiveAndStrictPolicies(t *testing.T) {
+	parsed := agyParseTrace([]byte("200 close(3) = 0\n200 read(0 <unfinished ...>\n"))
+	if _, err := parsed.completeCalls(); err == nil {
+		t.Fatal("closed coverage accepted an unfinished call")
+	}
+	if _, err := parsed.liveCalls(200); err != nil {
+		t.Fatal("bounded live input refused", err)
+	}
+	if _, err := parsed.liveCalls(201); err == nil {
+		t.Fatal("live cache reused another native PID's pending-call proof")
+	}
+	if _, err := parsed.completeCalls(); err == nil {
+		t.Fatal("live validation changed closed coverage")
+	}
+	for _, tail := range []string{"unknown record", "--- SIGCHLD {si_pid=340} ---"} {
+		f := newAgyCurrentUnit()
+		f.after = append(f.after, []byte("200 "+tail+"\n")...)
+		f.observed.After.End = len(f.after)
+		if _, err := agyTraceCalls(f.after); err != nil {
+			t.Fatal("retained decoder changed its unknown-record policy", err)
+		}
+		err := f.check()
+		if (err == nil) != strings.HasPrefix(tail, "--- SIG") {
+			t.Fatalf("current strict grammar changed for %q: %v", tail, err)
+		}
+	}
+}
+
+func TestAgyCensusPassSealedTraceParseAndGrowingRawBoundary(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := unitVerifiedDirectory(t, filepath.Join(home, ".cache"))
+	r := censusVerifiedRead(t, root)
+	sealed := WatchCensusPin{Path: filepath.Join(root, "phase.trace")}
+	sealed.SHA256 = writePrivateFile(t, sealed.Path, []byte("200 close(3) = 0\n"), 0400)
+	growing := filepath.Join(root, "kernel.trace")
+	writePrivateFile(t, growing, []byte("growing raw trace\n"), 0600)
+	first, err := r.agyParsedTrace(sealed, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := os.OpenFile(growing, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.WriteString("new unselected raw line\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := r.agyParsedTrace(sealed, -1)
+	if err != nil || first != again || r.traceParses != 1 || r.local.verified.hashReads != 1 {
+		t.Fatalf("sealed phase decoded/read repeatedly: parses=%d reads=%d %v", r.traceParses, r.local.verified.hashReads, err)
+	}
+	if r.local.verified.files[growing] != nil {
+		t.Fatal("controller opened the unselected growing raw trace")
+	}
+	if err := r.readback(context.Background()); err != nil {
+		t.Fatal("raw append changed a sealed phase", err)
+	}
+	if err := os.Chmod(sealed.Path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sealed.Path, []byte("200 close(4) = 0\n"), 0400); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.agyParsedTrace(sealed, -1); err == nil {
+		t.Fatal("parsed trace cache hid changed sealed bytes")
+	}
+}
 
 // Every trace/process/descriptor below is a synthetic UNIT record. A successful
 // private reader assertion is never a native qualification or FixtureReady claim.
@@ -635,4 +726,59 @@ func TestAgyCurrentPriorGenerationMustRemainGone(t *testing.T) {
 	if err := r.agyCurrentPriorGeneration(before, after); err == nil {
 		t.Fatal("old/reused/unknown PID accepted after claimed join")
 	}
+}
+
+// Preserved pre-optimization regexp decoder is an independent grammar oracle.
+func agyTraceDecodeReference(raw []byte) ([]agyTraceCall, map[int]agyTraceCall, error) {
+	pending := map[int]agyTraceCall{}
+	var out []agyTraceCall
+	position := 0
+	for _, line := range bytes.SplitAfter(raw, []byte{'\n'}) {
+		start := position
+		position += len(line)
+		if len(line) == 0 {
+			continue
+		}
+		if line[len(line)-1] != '\n' {
+			return nil, nil, errors.New("partial Agy trace line")
+		}
+		parts := agyTraceLine.FindStringSubmatch(strings.TrimSuffix(string(line), "\n"))
+		if parts == nil {
+			return nil, nil, errors.New("unsupported Agy trace prefix")
+		}
+		pid, err := strconv.Atoi(parts[1])
+		if err != nil || pid <= 1 {
+			return nil, nil, errors.New("invalid Agy trace PID")
+		}
+		body := parts[2]
+		if resumed := agyTraceResume.FindStringSubmatch(body); resumed != nil {
+			old, ok := pending[pid]
+			if !ok || old.name != resumed[1] {
+				return nil, nil, errors.New("Agy resumed syscall lacks its original prefix")
+			}
+			delete(pending, pid)
+			body = old.body + resumed[2]
+			start = old.start
+		} else if _, overlaps := pending[pid]; overlaps && agyTraceName.MatchString(body) {
+			return nil, nil, errors.New("overlapping unfinished Agy syscall")
+		}
+		name := agyTraceName.FindStringSubmatch(body)
+		if name == nil {
+			if strings.HasPrefix(body, "+++ exited with ") || strings.HasPrefix(body, "+++ killed by ") {
+				out = append(out, agyTraceCall{pid, start, "exit", body})
+			}
+			continue
+		}
+		call := agyTraceCall{pid, start, name[1], body}
+		if strings.HasSuffix(body, "<unfinished ...>") {
+			if _, ok := pending[pid]; ok {
+				return nil, nil, errors.New("overlapping unfinished Agy syscall")
+			}
+			call.body = strings.TrimSuffix(body, " <unfinished ...>")
+			pending[pid] = call
+			continue
+		}
+		out = append(out, call)
+	}
+	return out, pending, nil
 }
