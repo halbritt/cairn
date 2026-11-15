@@ -712,19 +712,40 @@ def client_execution_scope(raw,calls,capture,*,kernel_enforced,updater_disabled,
     for pid in selected:
         require(len([row for row in calls if row['pid']==pid and row['name']=='execve'])==1,
             'updater/version child execs again')
-    updater_tree={updater} if updater is not None else set()
-    updater_start=next((row['start'] for row in calls if row['pid']==updater and row['name']=='execve'),None)
-    while True:
-        new={pid for pid,parent in parents.items() if parent in updater_tree}-updater_tree
-        if not new:break
-        require(all(births[pid]>updater_start for pid in new),'updater descendant predates approved exec')
-        updater_tree.update(new)
-    must_join=updater_tree|({version} if version is not None else set())
-    terminals={row['pid']:row['body'] for row in calls if row['name']=='exit' and row['body'].startswith('+++')}
-    for pid in must_join:
-        require(pid not in terminals or terminals[pid]=='+++ exited with 0 +++','updater/version descendant nonzero exit')
-        require(not final or pid in terminals,'unjoined updater/version descendant')
-    return dict(updater=updater,version=version,updater_tree=updater_tree,updater_start=updater_start,parents=parents)
+    def child_tree(pid):
+        if pid is None:return set(),None
+        execution=next(row['start'] for row in calls if row['pid']==pid and row['name']=='execve')
+        require(pid in births and births[pid]<execution,'child exec lacks prior attributed birth')
+        tree={pid}
+        while True:
+            new={child for child,parent in parents.items() if parent in tree}-tree
+            if not new:break
+            require(all(births[child]>execution for child in new),'updater/version descendant predates approved exec')
+            tree.update(new)
+        return tree,execution
+    updater_tree,updater_start=child_tree(updater)
+    version_tree,_=child_tree(version)
+    require(version is None or parents.get(version) in threads|updater_tree,
+        'version child has unapproved creator')
+    must_join=updater_tree|version_tree
+    terminals={};stopping=set()
+    for row in calls:
+        pid=row['pid'];terminal=row['name']=='exit' and row['body'].startswith('+++')
+        if pid in must_join:
+            require(row['start']>births[pid] and pid not in terminals,'updater/version activity outside attributed lifetime')
+            require(pid not in stopping or terminal,'updater/version activity after exit syscall')
+            if terminal:require(row['body']=='+++ exited with 0 +++','updater/version descendant nonzero exit')
+            elif row['name'] in ('exit','exit_group'):
+                require(re.fullmatch(row['name']+r'\(0\)\s+= \?',row['body']),
+                    'invalid updater/version exit syscall')
+                stopping.add(pid)
+        if row['name'] in ('clone','clone3','fork','vfork'):
+            require(pid not in terminals,'child creator already exited')
+        if terminal:terminals[pid]=row['start']
+    joined=must_join<=terminals.keys()
+    require(not final or joined,'unjoined updater/version descendant')
+    return dict(updater=updater,version=version,updater_tree=updater_tree,version_tree=version_tree,
+        updater_start=updater_start,parents=parents,joined=joined)
 
 
 def audit_client_directory(raw,capture,root,work,*,final=False,enforcement=None):
@@ -1705,6 +1726,7 @@ def stage_scripted_client(approved):
         if not selected.is_absolute():selected=Path(shutil.which(str(selected)) or '/absent')
         tools[name]=tool_pin(selected.resolve())
     dependencies=build/'headers.d'
+    dependencies.touch(mode=0o600,exist_ok=False)
     header_scan=subprocess.run([str(compiler),*flags[0],'-M','-MF',str(dependencies),str(source)],
         capture_output=True,text=True,timeout=15)
     queries.append(dict(argv=header_scan.args,exit=header_scan.returncode,stdout=header_scan.stdout,stderr=header_scan.stderr))
@@ -1726,6 +1748,7 @@ def stage_scripted_client(approved):
     require(headers==headers_before,'stand-in headers changed during compilation')
     require(str(Path('/usr/include/python'+str(sys.version_info.major)+'.'+str(sys.version_info.minor))/'Python.h') in headers,
         'stand-in build did not attest the selected CPython headers')
+    dependencies.chmod(0o400)
     receipt.update(headers=headers,dependency_file=checked_pin(dependencies),joined=True)
     roundtrip.write(build/'build.json',receipt)
     image.chmod(0o500);directory.chmod(0o700)
@@ -2084,8 +2107,15 @@ def collect_native_phase(session,fixture,label,start,destination):
         if not (len(pending)<=1 and all(row['name']=='read' and row['body'].strip()=='read(0'
                 and row['pid'] in threads for row in pending)):return None
         kernel_calls(raw)
+        owner=session.child
+        scope=client_execution_scope(raw,calls,owner.generation,
+            kernel_enforced=verified_kernel_policy(owner,raw,owner.generation,owner.root,
+                owner.network_policy['tcp_ports']),
+            updater_disabled=owner._kernel_updater_disabled,final=False)
+        if not scope['joined']:return None
         return raw,callbacks,histories[0]
-    raw,callbacks,history=r04.wait_for(finished,'actual emitted callbacks, stdin EOF, zero exits and idle frame',timeout=35)
+    raw,callbacks,history=r04.wait_for(finished,
+        'actual emitted callbacks, stdin EOF, auxiliary-tree zero exits and idle frame',timeout=35)
     session.child.capture_generation();session.child.verify_confinement()
     destination.write_bytes(raw);destination.chmod(0o400)
     phase=collector.trace_interval(destination,start,len(raw),callbacks)

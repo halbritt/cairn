@@ -259,6 +259,201 @@ func TestAgyCurrentExactNonSessionVersion(t *testing.T) {
 	}
 }
 
+func agyCurrentUnitRetainBefore(f *agyCurrentUnit, tail []byte) {
+	f.before = append(f.before, tail...)
+	f.observed.Before.End = len(f.before)
+	line := bytes.IndexByte(f.after, '\n') + 1
+	delta := len(f.before) - line
+	f.after = append(append([]byte{}, f.before...), f.after[line:]...)
+	for i := range f.observed.After.Callbacks {
+		ref := &f.observed.After.Callbacks[i]
+		ref.Exec += delta
+		ref.Join += delta
+		ref.Frame += delta
+	}
+	f.observed.After.Start, f.observed.After.End = len(f.before), len(f.after)
+}
+
+func TestAgyCurrentExactUpdaterTree(t *testing.T) {
+	for _, creator := range []string{"root", "native-thread"} {
+		t.Run(creator, func(t *testing.T) {
+			f := newAgyCurrentUnit()
+			var tail bytes.Buffer
+			parent := 200
+			if creator == "native-thread" {
+				fmt.Fprintln(&tail, "200 clone(child_stack=NULL, flags=CLONE_VM|CLONE_THREAD) = 210")
+				parent = 210
+			}
+			fmt.Fprintf(&tail, "%d fork() = 201\n", parent)
+			client := f.observed.Client.Path
+			agyUnitExec(&tail, 201, client, []string{client, "--bg-updater", "--app_data_dir=antigravity-cli", "--gemini_dir=.gemini"})
+			fmt.Fprintln(&tail, "201 clone3({flags=CLONE_VM|CLONE_THREAD}, 88) = 202\n202 vfork() = 203")
+			agyUnitExec(&tail, 203, client, []string{client, "--version"})
+			fmt.Fprintln(&tail, "203 clone(child_stack=NULL, flags=CLONE_VM|CLONE_THREAD) = 204\n204 exit(0)                       = ?\n204 +++ exited with 0 +++\n203 exit_group(0)                 = ?\n203 +++ exited with 0 +++\n202 +++ exited with 0 +++\n201 +++ exited with 0 +++")
+			agyCurrentUnitRetainBefore(&f, tail.Bytes())
+			if err := f.check(); err != nil {
+				t.Fatal("exact joined updater/version tree refused across BEFORE/AFTER", err)
+			}
+		})
+	}
+}
+
+func agyCurrentUnitUpdater(client string) string {
+	return fmt.Sprintf(`200 fork() = 201
+201 execve(%q, [%q, "--bg-updater", "--app_data_dir=antigravity-cli", "--gemini_dir=.gemini"], 0x0) = 0
+201 clone3({flags=CLONE_VM|CLONE_THREAD}, 88) = 202
+202 vfork() = 203
+203 execve(%q, [%q, "--version"], 0x0) = 0
+203 fork() = 204
+204 exit(0) = ?
+204 +++ exited with 0 +++
+203 exit_group(0) = ?
+203 +++ exited with 0 +++
+202 exit(0) = ?
+202 +++ exited with 0 +++
+201 exit_group(0) = ?
+201 +++ exited with 0 +++
+`, client, client, client, client)
+}
+
+func TestAgyCurrentUpdaterTreeRefusals(t *testing.T) {
+	client := "/unit-current/client"
+	base := agyCurrentUnitUpdater(client)
+	updater := fmt.Sprintf("execve(%q, [%q, \"--bg-updater\", \"--app_data_dir=antigravity-cli\", \"--gemini_dir=.gemini\"], 0x0) = 0\n", client, client)
+	version := fmt.Sprintf("execve(%q, [%q, \"--version\"], 0x0) = 0\n", client, client)
+	tests := []struct{ name, old, replacement string }{
+		{"bare-updater", `, "--app_data_dir=antigravity-cli", "--gemini_dir=.gemini"`, ""},
+		{"altered-updater", "--app_data_dir=antigravity-cli", "--app_data_dir=other"},
+		{"reordered-updater", `"--bg-updater", "--app_data_dir=antigravity-cli"`, `"--app_data_dir=antigravity-cli", "--bg-updater"`},
+		{"extra-updater", `"--gemini_dir=.gemini"]`, `"--gemini_dir=.gemini", "extra"]`},
+		{"different-image", "201 execve(\"/unit-current/client\"", "201 execve(\"/unit-current/other\""},
+		{"callback-creator", "200 fork() = 201", "240 fork() = 201"},
+		{"nonthread-creator", "200 fork() = 201", "200 fork() = 210\n210 fork() = 201\n210 +++ exited with 0 +++"},
+		{"fake-thread-flag", "200 fork() = 201", "200 clone(flags=NOTCLONE_THREAD) = 210\n210 fork() = 201"},
+		{"fork-is-not-thread", "200 fork() = 201", "200 fork(flags=CLONE_THREAD) = 210\n210 fork() = 201"},
+		{"dead-native-thread-creator", "200 fork() = 201", "200 clone(flags=CLONE_VM|CLONE_THREAD) = 210\n210 +++ exited with 0 +++\n210 fork() = 201"},
+		{"foreign-creator", "200 fork() = 201\n", ""},
+		{"root-updater", "201 " + updater, "200 " + updater},
+		{"second-updater", "201 +++ exited with 0 +++\n", "201 +++ exited with 0 +++\n200 fork() = 211\n211 " + updater + "211 +++ exited with 0 +++\n"},
+		{"recursive-updater", "202 vfork() = 203", "201 fork() = 211\n211 " + updater + "211 +++ exited with 0 +++\n202 vfork() = 203"},
+		{"second-version", "201 +++ exited with 0 +++\n", "201 +++ exited with 0 +++\n200 fork() = 211\n211 " + version + "211 +++ exited with 0 +++\n"},
+		{"third-parent-version", "202 vfork() = 203", "200 fork() = 210\n210 vfork() = 203\n210 +++ exited with 0 +++"},
+		{"callback-parent-version", "202 vfork() = 203", "240 vfork() = 203"},
+		{"second-updater-exec", "201 " + updater, "201 " + updater + "201 execve(\"/unit-current/other\", [\"/unit-current/other\"], 0x0) = 0\n"},
+		{"second-version-exec", "203 " + version, "203 " + version + "203 " + version},
+		{"new-session", `"--version"`, `"--new-project"`},
+		{"preexec-updater-descendant", "201 " + updater, "201 fork() = 211\n201 " + updater + "211 +++ exited with 0 +++\n"},
+		{"preexec-version-descendant", "203 " + version, "203 fork() = 211\n203 " + version + "211 +++ exited with 0 +++\n"},
+		{"post-exit-syscall", "204 +++ exited with 0 +++", "204 +++ exited with 0 +++\n204 close(9) = 0"},
+		{"post-exit-request", "204 exit(0) = ?", "204 exit(0) = ?\n204 close(9) = 0"},
+		{"second-terminal", "204 +++ exited with 0 +++", "204 +++ exited with 0 +++\n204 +++ exited with 0 +++"},
+		{"execveat", "204 exit(0) = ?", "204 execveat(3, \"\", [\"other\"], 0x0, AT_EMPTY_PATH) = 0\n204 exit(0) = ?"},
+	}
+	for _, pid := range []int{201, 202, 203, 204} {
+		terminal := fmt.Sprintf("%d +++ exited with 0 +++\n", pid)
+		tests = append(tests,
+			struct{ name, old, replacement string }{fmt.Sprintf("missing-terminal-%d", pid), terminal, ""},
+			struct{ name, old, replacement string }{fmt.Sprintf("failed-terminal-%d", pid), terminal, fmt.Sprintf("%d +++ exited with 1 +++\n", pid)})
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(base, tc.old) {
+				t.Fatal("mutation does not select its intended raw record")
+			}
+			f := newAgyCurrentUnit()
+			agyCurrentUnitRetainBefore(&f, []byte(strings.Replace(base, tc.old, tc.replacement, 1)))
+			if err := f.check(); err == nil {
+				t.Fatal("invalid updater/version ancestry/exec/lifetime accepted")
+			}
+		})
+	}
+}
+
+func TestAgyCurrentUpdaterTerminalAndReadbackBounds(t *testing.T) {
+	f := newAgyCurrentUnit()
+	tail := agyCurrentUnitUpdater(f.observed.Client.Path)
+	tail += "200 clone(flags=CLONE_VM|CLONE_THREAD) = 210\n210 read(0 <unfinished ...>\n"
+	agyCurrentUnitRetainBefore(&f, []byte(tail))
+	if err := f.check(); err != nil {
+		t.Fatal("joined children plus sole native-thread input wait refused", err)
+	}
+	for _, raw := range [][]byte{f.before, f.after} {
+		if _, err := agyTraceCalls(raw); err == nil || err.Error() != "incomplete Agy trace syscall coverage" {
+			t.Fatal("current updater rule changed strict closed/readback1 policy", err)
+		}
+	}
+
+	// Each phase alone has one legitimate child, but the whole readback has two.
+	f = newAgyCurrentUnit()
+	f.before = append(f.before, []byte(agyCurrentUnitUpdater(f.observed.Client.Path))...)
+	f.observed.Before.End = len(f.before)
+	other := strings.NewReplacer("201", "211", "202", "212", "203", "213", "204", "214").Replace(agyCurrentUnitUpdater(f.observed.Client.Path))
+	f.after = append(f.after, []byte(other)...)
+	f.observed.After.End = len(f.after)
+	if err := f.check(); err == nil || err.Error() != "second Agy updater/version across current readback" {
+		t.Fatal("per-phase allowances hid two distinct child trees", err)
+	}
+}
+
+func TestAgyCurrentWholeReadbackChildCountsAndBirths(t *testing.T) {
+	for _, kind := range []string{"updater", "version", "changed-birth"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newAgyCurrentUnit()
+			makeChild := func(pid int) []byte {
+				var raw bytes.Buffer
+				fmt.Fprintln(&raw, "200 clone(flags=CLONE_VM|CLONE_THREAD) = 210")
+				fmt.Fprintf(&raw, "200 fork() = %d\n", pid)
+				argv := []string{f.observed.Client.Path, "--version"}
+				if kind != "version" {
+					argv = []string{f.observed.Client.Path, "--bg-updater", "--app_data_dir=antigravity-cli", "--gemini_dir=.gemini"}
+				}
+				agyUnitExec(&raw, pid, f.observed.Client.Path, argv)
+				fmt.Fprintf(&raw, "%d +++ exited with 0 +++\n", pid)
+				return raw.Bytes()
+			}
+			before, after := makeChild(201), makeChild(211)
+			if kind == "changed-birth" {
+				// Same PID, exec bytes and byte offset, different proven creator.
+				after = bytes.Replace(makeChild(201), []byte("200 fork() = 201"), []byte("210 fork() = 201"), 1)
+			}
+			f.before, f.after = append(f.before, before...), append(f.after, after...)
+			f.observed.Before.End, f.observed.After.End = len(f.before), len(f.after)
+			if err := f.check(); err == nil || err.Error() != "second Agy updater/version across current readback" {
+				t.Fatal("per-phase valid children concealed contradictory whole-readback evidence", err)
+			}
+		})
+	}
+}
+
+func TestAgyCurrentChildCannotComeFromPreClientCreator(t *testing.T) {
+	for _, kind := range []string{"updater", "version"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newAgyCurrentUnit()
+			prefix := []byte("200 fork() = 201\n")
+			f.before = append(prefix, f.before...)
+			for i := range f.observed.Before.Callbacks {
+				ref := &f.observed.Before.Callbacks[i]
+				ref.Exec += len(prefix)
+				ref.Join += len(prefix)
+				ref.Frame += len(prefix)
+			}
+			var tail bytes.Buffer
+			client := f.observed.Client.Path
+			argv := []string{client, "--version"}
+			if kind == "updater" {
+				argv = []string{client, "--bg-updater", "--app_data_dir=antigravity-cli", "--gemini_dir=.gemini"}
+			}
+			agyUnitExec(&tail, 201, client, argv)
+			fmt.Fprintln(&tail, "201 +++ exited with 0 +++")
+			f.before = append(f.before, tail.Bytes()...)
+			f.observed.Before.End = len(f.before)
+			if err := f.check(); err == nil {
+				t.Fatal("creator before captured native client exec accepted")
+			}
+		})
+	}
+}
+
 func TestAgyCurrentUnitNativeInputLiveOnly(t *testing.T) {
 	f := newAgyCurrentUnit()
 	if err := f.check(); err != nil {

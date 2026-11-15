@@ -403,8 +403,41 @@ func agyCurrentParsedPair(before, after *agyParsedTrace, observed WatchCensusAgy
 		return errors.New("unknown current Agy installed layer")
 	}
 	installed[installedPath] = bSettings
-	return agyCurrentParsedPhase(after, observed.After, generation.After, observed, observed.B, observed.A,
-		bCommands, aCommands, installed, beforeFiles)
+	if err := agyCurrentParsedPhase(after, observed.After, generation.After, observed, observed.B, observed.A,
+		bCommands, aCommands, installed, beforeFiles); err != nil {
+		return err
+	}
+	// A retained cumulative prefix may contain the same child in both phases;
+	// two distinct executions may not each consume a fresh per-phase allowance.
+	type childExecution struct {
+		native int
+		call   agyTraceCall
+		prefix string
+	}
+	seen := map[string]childExecution{}
+	for i, phase := range []*agyParsedTrace{before, after} {
+		capture := []agyGenerationCapture{generation.Before, generation.After}[i]
+		calls, err := phase.liveCalls(capture.Process.PID)
+		if err != nil {
+			return err
+		}
+		for _, call := range calls {
+			if call.name != "execve" || call.pid == capture.Process.PID {
+				continue
+			}
+			path, argv, err := agyExec(call)
+			if err != nil || path != capture.Client.Path {
+				continue // Each phase already checked literal execs and descendants.
+			}
+			kind := argv[1] // The phase proved an exact updater or version argv.
+			identity := childExecution{capture.Process.PID, call, phase.raw[:call.start]}
+			if old, ok := seen[kind]; ok && old != identity {
+				return errors.New("second Agy updater/version across current readback")
+			}
+			seen[kind] = identity
+		}
+	}
+	return nil
 }
 
 func agyCurrentBefore(raw []byte, phase WatchCensusAgyCurrentPhase, capture agyGenerationCapture, observed WatchCensusAgyCurrentReadback, settings []byte, commands []agyCensusCommand, account string) (map[string][]byte, error) {
@@ -448,11 +481,23 @@ func agyCurrentParsedPhase(parsed *agyParsedTrace, phase WatchCensusAgyCurrentPh
 	}
 	byOffset := map[int]agyTraceCall{}
 	threads, descendants := map[int]bool{capture.Process.PID: true}, map[int]bool{capture.Process.PID: true}
+	parents, births := map[int]int{}, map[int]int{capture.Process.PID: -1}
+	var birthOrder []int
+	children := map[string]agyTraceCall{}
+	dead := map[int]bool{}
 	nativeWrites := map[int][]byte{}
 	var executions []agyTraceCall
-	clientSeen, boundary := false, -1
+	clientSeen, clientStart, boundary := false, -1, -1
 	for _, call := range calls {
 		byOffset[call.start] = call
+		if descendants[call.pid] {
+			if dead[call.pid] || call.start <= births[call.pid] {
+				return errors.New("current Agy descendant activity outside attributed lifetime")
+			}
+			if call.name == "exit" && strings.HasPrefix(call.body, "+++") {
+				dead[call.pid] = true
+			}
+		}
 		if descendants[call.pid] && slices.Contains([]string{"clone", "clone3", "fork", "vfork"}, call.name) {
 			end := strings.LastIndex(call.body, " = ")
 			if end < 0 {
@@ -469,9 +514,15 @@ func agyCurrentParsedPhase(parsed *agyParsedTrace, phase WatchCensusAgyCurrentPh
 				return errors.New("reused or unsafe current Agy descendant PID")
 			}
 			descendants[child] = true
-			if threads[call.pid] && strings.Contains(call.body, "CLONE_THREAD") {
+			parents[child], births[child] = call.pid, call.start
+			birthOrder = append(birthOrder, child)
+			flags := agyTraceFlags.FindStringSubmatch(call.body)
+			if clientSeen && threads[call.pid] && (call.name == "clone" || call.name == "clone3") && len(flags) == 2 && slices.Contains(strings.Split(flags[1], "|"), "CLONE_THREAD") {
 				threads[child] = true
 			}
+		}
+		if call.name == "execveat" && descendants[call.pid] {
+			return errors.New("unselected current Agy execveat")
 		}
 		if call.name == "write" && threads[call.pid] {
 			body, e := agyNativeHookWrite(call)
@@ -491,8 +542,12 @@ func agyCurrentParsedPhase(parsed *agyParsedTrace, phase WatchCensusAgyCurrentPh
 				return errors.New("foreign Agy client exec/argv")
 			}
 			clientSeen = true
+			clientStart = call.start
 		}
 		if !descendants[call.pid] {
+			if e == nil && (path == capture.Client.Path || slices.Contains(argv, "--bg-updater")) {
+				return errors.New("foreign current Agy client creator")
+			}
 			if call.start >= phase.Start && e == nil && (path == selected.Launcher.Path || path == prior.Launcher.Path || len(argv) > 1 && (argv[1] == "hook" || argv[1] == "coordination")) {
 				return errors.New("foreign Agy callback generation")
 			}
@@ -501,13 +556,22 @@ func agyCurrentParsedPhase(parsed *agyParsedTrace, phase WatchCensusAgyCurrentPh
 		if e != nil {
 			return e
 		}
+		if len(argv) > 0 && argv[0] == capture.Client.Path && path != capture.Client.Path {
+			return errors.New("current Agy client argv/image mismatch")
+		}
 		if slices.Contains(argv, "--bg-updater") {
-			return errors.New("Agy background updater execution is forbidden")
+			if !clientSeen || births[call.pid] <= clientStart || path != capture.Client.Path || call.pid == capture.Process.PID || children["--bg-updater"].pid != 0 || !threads[parents[call.pid]] ||
+				!slices.Equal(argv, []string{capture.Client.Path, "--bg-updater", "--app_data_dir=antigravity-cli", "--gemini_dir=.gemini"}) {
+				return errors.New("unapproved current Agy updater argv/image/parent/count")
+			}
+			children["--bg-updater"] = call
+			continue
 		}
 		if path == capture.Client.Path && call.pid != capture.Process.PID {
-			if !slices.Equal(argv, []string{capture.Client.Path, "--version"}) || !agyVersionJoined(calls, call) {
-				return errors.New("foreign nested Agy client generation or unjoined version")
+			if !clientSeen || births[call.pid] <= clientStart || !slices.Equal(argv, []string{capture.Client.Path, "--version"}) || children["--version"].pid != 0 {
+				return errors.New("foreign nested Agy client generation or second version")
 			}
+			children["--version"] = call
 			continue
 		}
 		if path == selected.Launcher.Path {
@@ -529,6 +593,9 @@ func agyCurrentParsedPhase(parsed *agyParsedTrace, phase WatchCensusAgyCurrentPh
 				return errors.New("extra or foreign Agy callback/source")
 			}
 		}
+	}
+	if err := agyCurrentChildrenJoined(calls, threads, parents, births, birthOrder, children); err != nil {
+		return err
 	}
 	if !clientSeen || boundary < phase.Start {
 		return errors.New("Agy refresh unobserved or interval hides its first managed exec")
@@ -634,28 +701,86 @@ func agyCurrentParsedPhase(parsed *agyParsedTrace, phase WatchCensusAgyCurrentPh
 	return nil
 }
 
-func agyVersionJoined(calls []agyTraceCall, execution agyTraceCall) bool {
-	execs, exits := 0, 0
-	dead := false
-	for _, call := range calls {
-		if call.pid != execution.pid {
-			continue
-		}
-		if dead {
-			return false
-		}
-		if call.name == "execve" {
-			execs++
-		}
-		if call.name == "exit" {
-			if call.start <= execution.start || call.body != "+++ exited with 0 +++" {
-				return false
+func agyCurrentChildTree(execution agyTraceCall, parents, births map[int]int, birthOrder []int) (map[int]bool, error) {
+	tree := map[int]bool{}
+	if execution.pid == 0 {
+		return tree, nil
+	}
+	if birth, ok := births[execution.pid]; !ok || birth >= execution.start {
+		return nil, errors.New("Agy child exec lacks prior attributed birth")
+	}
+	tree[execution.pid] = true
+	// Births are already ordered by the parsed kernel call's start offset.
+	// Walk that small ancestry summary, never rescan the raw calls per child.
+	for _, pid := range birthOrder {
+		if tree[parents[pid]] {
+			if births[pid] <= execution.start {
+				return nil, errors.New("Agy auxiliary descendant predates selected exec")
 			}
-			exits++
-			dead = true
+			tree[pid] = true
 		}
 	}
-	return execs == 1 && exits == 1
+	return tree, nil
+}
+
+// Raw ancestry, exact execs and zero terminal records prove this bounded
+// non-session tree. Kernel confinement and updater-disable environment remain
+// the Python owning tracer's separate capture-bound proof, never payload flags.
+func agyCurrentChildrenJoined(calls []agyTraceCall, threads map[int]bool, parents, births map[int]int, birthOrder []int, children map[string]agyTraceCall) error {
+	updater, version := children["--bg-updater"], children["--version"]
+	updaterTree, err := agyCurrentChildTree(updater, parents, births, birthOrder)
+	if err != nil {
+		return err
+	}
+	versionTree, err := agyCurrentChildTree(version, parents, births, birthOrder)
+	if err != nil {
+		return err
+	}
+	if version.pid != 0 && (!threads[parents[version.pid]] && !updaterTree[parents[version.pid]] || version.pid == updater.pid) {
+		return errors.New("current Agy version has an unapproved creator")
+	}
+	for pid := range versionTree {
+		updaterTree[pid] = true
+	}
+	execs, dead, stopping := map[int]int{}, map[int]bool{}, map[int]bool{}
+	for _, call := range calls {
+		if !updaterTree[call.pid] {
+			continue
+		}
+		if call.start <= births[call.pid] || dead[call.pid] {
+			return errors.New("Agy auxiliary activity outside attributed lifetime")
+		}
+		if call.name == "exit" && strings.HasPrefix(call.body, "+++") {
+			if call.body != "+++ exited with 0 +++" {
+				return errors.New("Agy auxiliary descendant did not exit zero")
+			}
+			dead[call.pid] = true
+			continue
+		}
+		if stopping[call.pid] {
+			return errors.New("Agy auxiliary activity after exit syscall")
+		}
+		if call.name == "exit" || call.name == "exit_group" {
+			if !slices.Equal(strings.Fields(call.body), []string{call.name + "(0)", "=", "?"}) {
+				return errors.New("invalid Agy auxiliary exit syscall")
+			}
+			stopping[call.pid] = true
+		}
+		if call.name == "execve" {
+			execs[call.pid]++
+		}
+	}
+	for pid := range updaterTree {
+		if !dead[pid] {
+			return errors.New("unjoined current Agy auxiliary descendant")
+		}
+	}
+	for _, execution := range children {
+		if execs[execution.pid] != 1 {
+			return errors.New("current Agy updater/version child execs again")
+		}
+	}
+	return nil
 }
 
 func agyCurrentFrame(raw []byte, event, session, workspace string) error {

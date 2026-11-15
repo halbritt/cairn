@@ -49,9 +49,12 @@ updater with that setting. At most one exact child
 is permitted, created by the captured root leader or its kernel-derived threads,
 with the same pinned image and verified kernel restrictions. The updater PID
 executes once. At most one exact `[client, "--version"]` child is permitted,
-including the updater's query. Intermediate prefixes may observe them in flight;
-every observed exit must be zero and the complete updater tree must join zero
-before the final audit. Repeated, recursive, reordered or additional client
+created by the native root/threads or the approved updater tree. Intermediate
+audit prefixes may observe them in flight; every observed exit must be zero.
+Both phase snapshots and the final audit require the updater and version
+leaders and every transitive descendant to have joined zero. Ordinary thread
+descendants need their real terminal records, without an invented exec.
+Repeated, recursive, reordered or additional client
 execs, another parent, forced shutdown and missing enforcement refuse.
 
 The provider tuple is exactly local `GeminiFixture`, host `127.0.0.1`, port 0,
@@ -262,7 +265,18 @@ EOF, zero exit and matching raw native write frames. Stop must carry Boolean
 private verified target B and D1–D6 final rereads retain their existing checks.
 The historical held-image prefix is decoder evidence, not a new native run.
 
-The collector waits for callbacks to finish, then seals a complete raw prefix
+Go derives the approved updater and version execs from the captured generation,
+pinned client and unaltered raw trace. Exact argv, native thread ancestry,
+at most one of each child across BEFORE/AFTER, births after the selected exec,
+single leader execs, zero terminal records and absence of post-exit activity
+are reader checks. Python `OwnedKernelTrace`, `audit_host_connections` and
+`audit_client_directory` separately prove the actual capture-bound kernel
+confinement, updater-disable environment and FD/probe invariants. The Go reader
+does not assert those Python checks from a caller-selected Boolean. This split
+adds no schema fields and does not change readback/1.
+
+The collector waits for callbacks and any spawned updater/version tree to
+finish with observed zero exits, then seals a complete raw prefix
 verbatim. It never trims an unfinished record or appends a synthetic resume,
 wait or exit. A boundary is the length of the exact complete byte snapshot
 that was validated; later file growth cannot change that selected offset.

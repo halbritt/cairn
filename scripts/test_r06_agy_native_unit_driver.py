@@ -90,6 +90,30 @@ class ClientDirectoryProbeTests(unittest.TestCase):
             f'201 fork() = 203\n203 execve({path}, {version}, 0x0) = 0\n203 +++ exited with 0 +++\n')
         with self.assertRaises(driver.Refused):self.scope(raw)
 
+    def test_version_creator_and_transitive_lifetimes_are_bounded(self):
+        path=json.dumps(str(self.image));version=json.dumps([str(self.image),'--version'])
+        good=(f'200 fork() = 201\n201 execve({path}, {version}, 0x0) = 0\n'
+            '201 clone(flags=CLONE_VM|CLONE_THREAD) = 202\n202 fork() = 203\n'
+            '203 +++ exited with 0 +++\n202 exit(0)                       = ?\n202 +++ exited with 0 +++\n201 +++ exited with 0 +++\n')
+        self.assertEqual(self.scope(self.raw(good))['version'],201)
+        for old,new in (
+                ('200 fork() = 201','200 fork() = 210\n210 fork() = 201\n210 +++ exited with 0 +++'),
+                ('203 +++ exited with 0 +++\n',''),
+                ('203 +++ exited with 0 +++','203 +++ exited with 1 +++'),
+                ('203 +++ exited with 0 +++','203 +++ exited with 0 +++\n203 close(9) = 0'),
+                ('202 exit(0)                       = ?','202 exit(0)                       = ?\n202 close(9) = 0')):
+            with self.subTest(new=new),self.assertRaises(driver.Refused):
+                self.scope(self.raw(good.replace(old,new,1)))
+
+    def test_live_auxiliary_tree_is_not_joined_until_all_terminal_records_arrive(self):
+        path=json.dumps(str(self.image));version=json.dumps([str(self.image),'--version'])
+        events=f'201 fork() = 202\n202 execve({path}, {version}, 0x0) = 0\n202 clone(flags=CLONE_VM|CLONE_THREAD) = 203\n'
+        raw=self.updater_raw(events,exit_code=None)
+        self.assertFalse(self.scope(raw,final=False)['joined'])
+        complete=raw.replace(b'200 +++ exited with 0 +++\n',
+            b'203 +++ exited with 0 +++\n202 +++ exited with 0 +++\n201 +++ exited with 0 +++\n200 +++ exited with 0 +++\n')
+        self.assertTrue(self.scope(complete)['joined'])
+
     def test_zero_byte_probe_write_through_dup_or_fork_alias_refuses(self):
         probe=json.dumps(str(self.directory/'.update_test123'))
         for events in ('200 dup(5) = 6\n200 write(6, "x", 1) = 1\n',
@@ -186,7 +210,10 @@ class ClientDirectoryProbeTests(unittest.TestCase):
             root=Path(temporary)
             approved=dict(rehearsal=dict(catalog_root=str(root)),
                 tools=dict(python3=driver.tool_pin(Path(sys.executable).resolve())))
-            client=driver.stage_scripted_client(approved)
+            previous_umask=os.umask(0o002)
+            try:client=driver.stage_scripted_client(approved)
+            finally:os.umask(previous_umask)
+            self.assertEqual(stat.S_IMODE((root/'scripted-build/headers.d').stat().st_mode),0o400)
             code=('import subprocess,sys;sys.stdin.buffer.read(1);'
                   'p=subprocess.run([sys.executable,"--bg-updater","--app_data_dir=antigravity-cli","--gemini_dir=.gemini"],'
                   'capture_output=True,timeout=15);assert p.returncode==0,p.stderr')
@@ -1179,6 +1206,63 @@ class TraceBoundaryTests(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError,'Timed out'):
                     driver.complete_trace_boundary(self.session,timeout=.05)
                 self.assertEqual(self.path.read_bytes(),raw)
+
+    def phase_unit(self):
+        """Synthetic callback/raw framing only; no runtime or confinement claim."""
+        root=self.path.parent;home=root/'home';home.mkdir(mode=0o700)
+        work=root/'work';work.mkdir(mode=0o700)
+        image=root/'native-agy';image.write_bytes(b'UNIT-only phase image');image.chmod(0o500)
+        program='/UNIT-only/callback'
+        launcher=root/'inbox';launcher.write_text('#!/bin/sh\nexec '+program+' "$@"\n');launcher.chmod(0o500)
+        identity='NONNATIVE-unit-phase';history=home/identity/'history.json'
+        raw=bytearray();rows=[]
+        def line(pid,body):raw.extend((str(pid)+' '+body+'\n').encode())
+        def execution(pid,path,argv):line(pid,'execve('+json.dumps(path)+', '+json.dumps(argv)+', 0x0) = 0')
+        execution(200,str(image),[str(image)])
+        for index,event in enumerate(('PreInvocation','Stop')):
+            pid=240+index;argv=[str(launcher),'hook','--config',str(root/'config.json'),'--event',event]
+            rows.append(dict(argv=argv));line(200,'fork() = '+str(pid))
+            execution(pid,str(launcher),argv);execution(pid,program,[program,*argv[1:]])
+            payload=dict(conversationId=identity,hookEventName=event,workspacePaths=[str(work)],transcriptPath=str(history))
+            if event=='Stop':payload['fullyIdle']=True
+            body=json.dumps(payload);quoted=json.dumps(body)
+            line(200,f'write(9, {quoted}, {len(body)}) = {len(body)}')
+            line(pid,f'read(0, {quoted}, 4096) = {len(body)}');line(pid,'read(0, "", 4096) = 0')
+            line(pid,'+++ exited with 0 +++')
+        line(200,'fork() = 201')
+        execution(201,str(image),[str(image),'--bg-updater','--app_data_dir=antigravity-cli','--gemini_dir=.gemini'])
+        line(201,'clone(flags=CLONE_VM|CLONE_THREAD) = 202')
+        self.path.write_bytes(raw)
+        checked=[]
+        child=SimpleNamespace(trace=self.path,pid=200,root=root,network_policy=dict(tcp_ports=[]),
+            generation=dict(Process=dict(PID=200),Client=driver.checked_pin(image),ClientArgv=[str(image)]),
+            _kernel_updater_disabled=True,capture_generation=lambda:checked.append('capture'),
+            verify_confinement=lambda:checked.append('confinement'))
+        session=SimpleNamespace(child=child,identity=identity)
+        fixture=SimpleNamespace(home=home,work=work,generations=dict(A=dict(
+            selection=dict(Launcher=dict(Path=str(launcher))),rows=rows)))
+        return session,fixture,bytes(raw),checked
+
+    def test_phase_waits_for_observed_updater_descendant_zero_exits_before_sealing(self):
+        session,fixture,raw,checked=self.phase_unit()
+        destination=self.path.parent/'phase.trace'
+        suffix=b'202 exit(0) = ?\n202 +++ exited with 0 +++\n201 +++ exited with 0 +++\n'
+        def append():
+            with self.path.open('ab') as stream:stream.write(suffix)
+        writer=threading.Timer(.1,append);writer.start();self.addCleanup(writer.join)
+        with patch.object(driver,'verified_kernel_policy',return_value=True):
+            phase,history=driver.collect_native_phase(session,fixture,'A',0,destination)
+        writer.join()
+        self.assertEqual(destination.read_bytes(),raw+suffix)
+        self.assertEqual(phase['End'],len(raw+suffix));self.assertEqual(checked,['capture','confinement'])
+        self.assertIn(session.identity,history)
+
+    def test_phase_refuses_failed_updater_descendant_without_sealing(self):
+        session,fixture,raw,_=self.phase_unit();destination=self.path.parent/'phase.trace'
+        self.path.write_bytes(raw+b'202 +++ exited with 1 +++\n201 +++ exited with 0 +++\n')
+        with patch.object(driver,'verified_kernel_policy',return_value=True),self.assertRaisesRegex(driver.Refused,'nonzero exit'):
+            driver.collect_native_phase(session,fixture,'A',0,destination)
+        self.assertFalse(destination.exists())
 
 
 class NativeStateSchemaTests(unittest.TestCase):
