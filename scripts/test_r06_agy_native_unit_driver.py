@@ -1060,6 +1060,7 @@ for action,name in request:
     elif action=='rewrite':path.write_bytes(b'rewritten fixture\\n')
     elif action=='replace':
         temporary=path.with_name('actor-replacement');temporary.write_bytes(path.read_bytes())
+        temporary.chmod(path.stat().st_mode&0o777)
         os.replace(temporary,path)
     elif action=='probe':
         probe=path/'.update_test123'
@@ -1103,10 +1104,15 @@ print('joined owned stand-in')
         driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
         self.assertEqual(before['rows'][str(image)],after['rows'][str(image)])
 
-    def test_only_characterized_vendor_config_churn_is_mutable(self):
-        before=self.snapshot();self.actor([('vendor-config',self.fixture.account)]);after=self.snapshot()
+    def test_characterized_vendor_config_churn_before_capture_sets_the_idle_baseline(self):
+        self.actor([('vendor-config',self.fixture.account)])
+        self.actor([('vendor-config',self.fixture.account)])
+        before=self.snapshot()
+        self.actor([('append',self.root/'kernel.stderr'),
+            ('append',self.fixture.home/'.gemini/antigravity-cli/data')])
+        after=self.snapshot()
         driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
-        self.assertIn(str(self.fixture.account/'config.json'),after['vendor_files'])
+        self.assertIn(str(self.fixture.account/'config.json'),after['rows'])
         hooks=self.fixture.account/'hooks.json'
         self.assertEqual(before['rows'][str(hooks)],after['rows'][str(hooks)])
         for name in ('another.json','config.json.not-a-uuid.tmp','.cairn-unknown'):
@@ -1115,6 +1121,24 @@ print('joined owned stand-in')
             with self.assertRaisesRegex(driver.Refused,'protected'):
                 driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
             (self.fixture.account/name).unlink()
+
+    def test_idle_vendor_config_identity_content_or_membership_mutation_refuses(self):
+        self.actor([('vendor-config',self.fixture.account)])
+        config=self.fixture.account/'config.json'
+        for action,path in (('replace',config),('append',config),('vendor-config',self.fixture.account)):
+            with self.subTest(action=action):
+                before=self.snapshot();self.actor([(action,path)]);after=self.snapshot()
+                with self.assertRaisesRegex(driver.Refused,'protected'):
+                    driver.assert_live_preserved(before,after,Path(self.fixture.unit['ConfigRoot']))
+        before=self.snapshot()
+        temporary=self.fixture.account/'config.json.11111111-1111-4111-8111-111111111111.tmp'
+        temporary.write_bytes(b'owned temporary config');temporary.chmod(0o600)
+        with self.assertRaisesRegex(driver.Refused,'protected'):
+            driver.assert_live_preserved(before,self.snapshot(),Path(self.fixture.unit['ConfigRoot']))
+        temporary.unlink();before=self.snapshot()
+        temporary.write_bytes(b'transient owned config');temporary.unlink()
+        with self.assertRaisesRegex(driver.Refused,'protected'):
+            driver.assert_live_preserved(before,self.snapshot(),Path(self.fixture.unit['ConfigRoot']))
 
     def test_vendor_config_symlink_and_credential_hardlink_refuse_without_content_read(self):
         target=self.fixture.account/'mcp_config.json'
@@ -1147,6 +1171,46 @@ print('joined owned stand-in')
         self.assertEqual(before['rows'],after['rows'])
         for path,row in before['appends'].items():
             self.assertGreater(len(after['appends'][path]['bytes']),len(row['bytes']))
+
+    def test_maintained_compiled_idle_churn_keeps_selected_account_quiescent(self):
+        """Run the actual idle protocol without prompts, Go callbacks or a provider call."""
+        root=self.root/'owned-idle';root.mkdir(mode=0o700)
+        home=root/'native-home';account=home/'.gemini/config';account.mkdir(mode=0o700,parents=True)
+        internal=home/'.gemini/antigravity-cli';internal.mkdir(mode=0o700)
+        work=root/'workspace';work.mkdir(mode=0o700)
+        data=internal/'rehearsal-data';data.write_bytes(b'initial owned data\n');data.chmod(0o600)
+        approved=dict(rehearsal=dict(catalog_root=str(root)),
+            tools=dict(python3=driver.tool_pin(Path(sys.executable).resolve())))
+        client=driver.stage_scripted_client(approved)
+        listener=socket.socket();self.addCleanup(listener.close)
+        listener.bind(('127.0.0.1',0));listener.listen(1);port=listener.getsockname()[1]
+        plan=root/'idle-unit-plan.json'
+        plan.write_text(json.dumps(dict(provider='http://127.0.0.1:'+str(port),
+            home=str(home),workspace=str(work),
+            hooks=str(account/'hooks.json'),internal=str(internal),client=client['pin']['Path'])))
+        plan.chmod(0o400)
+        def account_snapshot():
+            return {str(path.relative_to(account)):
+                (driver.policy_identity(path),driver.r04.digest(path) if path.is_file() else None)
+                for path in [account,*sorted(account.rglob('*'))]}
+        child=driver.OwnedKernelTrace([client['pin']['Path'],'-I','-S','-B',client['script']['Path'],str(plan)],
+            root,env=dict(os.environ,AGY_CLI_DISABLE_AUTO_UPDATE='1'),ports=(port,))
+        try:
+            with driver.selectors.DefaultSelector() as selector:
+                selector.register(child.process.stdout,driver.selectors.EVENT_READ)
+                self.assertTrue(selector.select(timeout=15),'maintained idle client did not initialize')
+                self.assertEqual(json.loads(child.process.stdout.readline())['event'],'init')
+            before=account_snapshot();initial=data.read_bytes()
+            nonce=str(uuid.uuid4())
+            child.process.communicate((json.dumps(dict(event='rehearsal-churn',nonce=nonce))+'\n').encode(),timeout=20)
+        finally:child.close()
+        self.assertEqual(child.cleanup['exit'],0)
+        self.assertTrue(child.cleanup['all_absent']);self.assertFalse(child.cleanup['forced_signals'])
+        self.assertEqual(account_snapshot(),before)
+        self.assertTrue(data.read_bytes().startswith(initial))
+        self.assertIn(b'owned concurrent client-internal churn',data.read_bytes())
+        self.assertIn(b'NONNATIVE rehearsal background stderr append',(root/'kernel.stderr').read_bytes())
+        self.assertEqual((internal/'rehearsal-ack').read_text(),nonce)
 
     def test_every_cairn_account_workspace_state_and_sealed_file_stays_protected(self):
         for path in self.protected:

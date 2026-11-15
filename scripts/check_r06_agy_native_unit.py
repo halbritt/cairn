@@ -127,7 +127,6 @@ def churn(message):
     with (internal / 'rehearsal-data').open('ab') as stream:
         stream.write(b'owned concurrent client-internal churn\n')
     os.write(2, b'NONNATIVE rehearsal background stderr append\n')
-    vendor_turn_churn()
     if message.get('target'):
         target = Path(message['target'])
         mode = target.stat().st_mode & 0o777 if target.exists() else 0o600
@@ -1817,7 +1816,7 @@ def client_config_file(path,account):
 
 
 def live_root_snapshot(fixture,session):
-    """Keep Cairn state protected across the characterized, narrowly selected client churn."""
+    """Protect the selected account across idle control after turn-boundary capture."""
     session.child.verify_client()
     root=fixture.root;internal=fixture.home/'.gemini/antigravity-cli'
     account=fixture.home/'.gemini/config';vendor_directories={account,account/'projects'}
@@ -1859,12 +1858,9 @@ def live_root_snapshot(fixture,session):
             require(stat.S_ISREG(info.st_mode) and path.resolve()==path and info.st_uid==os.getuid()
                     and info.st_nlink==1 and not os.path.samestat(info,secret),
                     'unsafe mutable vendor config ownership/type/credential alias')
-            vendor_files[str(path)]=dict(row,content_read=False)
-            return
         if path in vendor_directories:
             require(stat.S_ISDIR(info.st_mode) and path.resolve()==path and info.st_uid==os.getuid()
                     and stat.S_IMODE(info.st_mode)==0o700,'unsafe vendor config directory')
-            for key in ('mtime','ctime','bytes'):row.pop(key)
         if path==internal:
             require(stat.S_ISDIR(info.st_mode) and not path.is_symlink() and path.resolve()==path
                     and info.st_uid==os.getuid() and not info.st_mode&0o022,'unsafe mutable client subtree')
@@ -1892,6 +1888,7 @@ def live_root_snapshot(fixture,session):
         elif stat.S_ISREG(info.st_mode):row['sha256']=read_regular(path,info)
         elif stat.S_ISLNK(info.st_mode):row['link']=os.readlink(path)
         rows[str(path)]=row
+        if client_config_file(path,account):vendor_files[str(path)]=dict(row,content_read=True)
         if stat.S_ISDIR(info.st_mode):
             require(path.resolve()==path,'protected directory traverses a symlink')
             for child in sorted(path.iterdir()):visit(child)

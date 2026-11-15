@@ -165,14 +165,26 @@ PID, flags, result and `mutation=false`. A successful deletion, other errno,
 bare `unlink`, another name, open/create/write, rename or link refuses. Per-phase
 and final audit receipts retain raw byte offsets and hashes.
 
-Only characterized vendor files in `native-home/.gemini/config` may churn:
+Characterized vendor files in `native-home/.gemini/config` may churn at startup
+and turn boundaries before capture:
 `.migrated`, `mcp_config.json`, `config.json`, canonical UUID temporary files
 for `config.json`, and `projects/<uuid>.json` with its UUID temporary files.
 Those files must be owned regular single-link files with no symlink or credential
-alias. The config and projects directories retain identity and permissions;
-entry-size and time changes alone do not qualify a protected-state change.
-Every other path, including Cairn `hooks.json`, `.cairn-*` and layer files,
-retains the existing protection. This is not a whole-home or whole-config exception.
+alias. The selected characterization trace had no config mutations during its
+60-second final idle interval; its background database activity stayed in the
+explicit client-internal subtree. This is a finite observation, not a promise
+about other sessions or vendor versions.
+
+During idle `live_unit_control`, the selected account must remain unchanged.
+`live_root_snapshot` protects the vendor files' complete identity and digest,
+and the config/projects directories' identity, size and times. Replacement with
+identical bytes, content changes and temporary membership changes refuse. The
+scripted idle protocol changes only client-internal rehearsal data and stderr;
+its startup/turn-boundary config operations remain before capture. Go
+`LayerFiles`, account inventory and D1–D6 rechecks remain strict, with config
+files still selected. Cairn `hooks.json`, `.cairn-*` and all other protected
+paths retain their existing checks. There is no whole-home or whole-config
+exemption during the drain.
 
 The scripted client is a distinctly nonnative, cache-built ELF embedding the
 normal pinned CPython runtime. Its C source is embedded in this driver; build
