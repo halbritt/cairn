@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -247,6 +248,9 @@ print(json.dumps(code))
     def test_changed_generation_refuses_before_collection(self):
         child=object.__new__(driver.OwnedKernelTrace)
         child.pidfd,child.pid,child.generation=12345,200,self.capture
+        child.image=self.capture['Client'];child.client_parent=None
+        info=self.image.lstat()
+        child.image_identity=(info.st_dev,info.st_ino,info.st_uid,stat.S_IMODE(info.st_mode),info.st_nlink,info.st_size)
         changed=copy.deepcopy(self.capture);changed['Process']['Start']='2'
         with patch.object(driver.collector,'capture_owned_generation',return_value=changed):
             with self.assertRaisesRegex(driver.Refused,'generation changed'):child.capture_generation()
@@ -379,6 +383,9 @@ class FullSequenceRehearsalTests(unittest.TestCase):
         for label in ('native-A-to-B','native-B-to-retained-Go3-A'):
             operation=json.loads((root/'case'/(label+'.exit.json')).read_text())
             self.assertEqual(operation['exit'],0);self.assertEqual(len(operation['interleaved']),1)
+            self.assertEqual(operation['deadline_seconds'],30)
+            self.assertGreater(operation['control_wall_seconds'],0)
+            self.assertGreater(operation['remaining_seconds'],0)
             preservation=json.loads((root/'case'/(label+'.preservation.json')).read_text())
             self.assertEqual(preservation['database_before'],preservation['database_after'])
             self.assertTrue(any(preservation['after']['appends'][p]['bytes']>row['bytes']
@@ -406,14 +413,80 @@ class FullSequenceRehearsalTests(unittest.TestCase):
         self.assertFalse((root/'case/native-A-to-B.plan.json').exists())
 
     def test_protected_changes_during_real_public_switch_are_refused(self):
-        for fault in ('cairn','account','workspace','state'):
-            with self.subTest(fault=fault):
+        for phase in ('forward','reverse'):
+            for fault in ('cairn','account','workspace','state'):
+                with self.subTest(fault=fault,phase=phase):
+                    root=self.fresh()
+                    with self.assertRaises(driver.Refused):
+                        driver.prepare_sequence_rehearsal(root,fault=fault,fault_phase=phase,**self.inputs)
+                    result=json.loads((root/'case/rehearsal-result.json').read_text())
+                    self.assertIn('protected',result['error']);self.assertFalse(result['NativePASS'])
+                    label='native-A-to-B' if phase=='forward' else 'native-B-to-retained-Go3-A'
+                    operation=json.loads((root/'case'/(label+'.exit.json')).read_text())
+                    self.assertEqual(len(operation['interleaved']),1)
+
+    def test_deliberate_database_write_during_real_public_control_is_refused(self):
+        for phase in ('forward','reverse'):
+            with self.subTest(phase=phase):
                 root=self.fresh()
-                with self.assertRaises(driver.Refused):driver.prepare_sequence_rehearsal(root,fault=fault,**self.inputs)
+                with self.assertRaisesRegex(driver.Refused,'protected API state'):
+                    driver.prepare_sequence_rehearsal(root,fault='database',fault_phase=phase,**self.inputs)
                 result=json.loads((root/'case/rehearsal-result.json').read_text())
-                self.assertIn('protected',result['error']);self.assertFalse(result['NativePASS'])
-                operation=json.loads((root/'case/native-A-to-B.exit.json').read_text())
+                self.assertFalse(result['NativePASS']);self.assertFalse(result['RehearsalPASS'])
+                self.assertEqual(result['actual_Agy'],0)
+                label='native-A-to-B' if phase=='forward' else 'native-B-to-retained-Go3-A'
+                operation=json.loads((root/'case'/(label+'.exit.json')).read_text())
                 self.assertEqual(len(operation['interleaved']),1)
+                mutation=operation['interleaved'][0]['database_mutation']
+                self.assertEqual(mutation['operation'],'remember')
+                self.assertEqual(str(uuid.UUID(mutation['record_id'])),mutation['record_id'])
+                self.assertEqual(mutation['version'],1)
+                preservation=json.loads((root/'case'/(label+'.preservation.json')).read_text())
+                self.assertNotEqual(preservation['database_before'],preservation['database_after'])
+                if phase=='forward':self.assertFalse((root/'case/native-B-to-retained-Go3-A.plan.json').exists())
+                else:self.assertFalse((root/'catalog/phase-restored-A.trace').exists())
+
+
+class RehearsalTerminalTests(unittest.TestCase):
+    """Failure after the sequence cannot leave a passing atomic outcome."""
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-rehearsal-terminal-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup);self.root=Path(temporary.name)
+        self.approved=dict(rehearsal=dict(ledger=str(self.root/'rehearsal-ledger.json')),
+            rehearsal_pins=dict(kind='PREPARATION_REHEARSAL',NativePASS=False,actual_Agy=0))
+        self.reservation=driver.RehearsalReservation(self.approved)
+        self.outcome=dict(state='passed',kind='PREPARATION_REHEARSAL',RehearsalPASS=True,
+            NativePASS=False,actual_Agy=0,actual_native_attempts=0)
+
+    def terminal(self):
+        terminal=self.reservation.path.with_suffix('.terminal.json')
+        data=json.loads(terminal.read_bytes())
+        self.assertEqual(data['kind'],'PREPARATION_REHEARSAL')
+        self.assertEqual(data['state'],'failed')
+        self.assertFalse(data['outcome']['NativePASS'])
+        self.assertFalse(data['outcome']['RehearsalPASS'])
+        return data['outcome']
+
+    def test_cleanup_failure_after_sequence_clears_pass_and_preserves_first_error(self):
+        def interrupted(_):
+            driver.roundtrip.write(self.root/'rehearsal-result.json',dict(self.outcome,
+                state='failed',error_type='ValueError',error='first owned close failure',
+                cleanup_errors=['API join failed']))
+            raise RuntimeError('secondary final pin failure')
+        with self.assertRaisesRegex(RuntimeError,'secondary final pin'):
+            driver.run_reserved_case(self.approved,interrupted,self.reservation,
+                self.root,'rehearsal-result.json')
+        result=self.terminal()
+        self.assertEqual(result['error'],'first owned close failure')
+        self.assertEqual(result['cleanup_errors'],['API join failed'])
+        self.assertEqual(result['finalization_error']['error'],'secondary final pin failure')
+
+    def test_result_write_failure_after_sequence_clears_pass_in_atomic_terminal(self):
+        with patch.object(driver.roundtrip,'write',side_effect=OSError('owned evidence write failed')):
+            with self.assertRaisesRegex(OSError,'owned evidence write'):
+                driver.run_reserved_case(self.approved,lambda _:self.outcome,self.reservation,
+                    self.root,'rehearsal-result.json')
+        self.assertEqual(self.terminal()['result_write_error'],'OSError')
 
 
 class LivePreservationTests(unittest.TestCase):
@@ -1341,7 +1414,10 @@ class RetainedCollectorCodecTests(unittest.TestCase):
 def load_tests(loader, standard, pattern):
     # Normal discovery keeps the standing portable controls. This explicit
     # fixture input adds real sealed-recipe controls, with no skipped tests.
-    cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests,NativeDriverBoundaries]
+    cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests,
+        NativeDriverBoundaries,NativeStateSchemaTests,LivePreservationTests,TraceBoundaryTests,RehearsalTerminalTests]
+    if os.environ.get('CAIRN_R06_REHEARSAL_SELECTION'):
+        cases.append(FullSequenceRehearsalTests)
     if os.environ.get('CAIRN_R06_AGY_CONTROLLED_PACKET'):
         cases.append(SealedRecipeCompatibilityTests)
     if os.environ.get('CAIRN_R06_AGY_RETAINED_PREFIX'):

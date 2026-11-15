@@ -1040,13 +1040,14 @@ def run_reserved_case(approved,execute,reservation,evidence,result_name):
                             application_start_boundary_entered=True,archive_state='pending-after-terminal')
                 for key,field in failure.items():result.setdefault(key,field)
                 if any(result[key]!=field for key,field in failure.items()):result['finalization_error']=failure
-
+        if 'RehearsalPASS' in result:result['RehearsalPASS']=False
         raise
     finally:
         try:
             if evidence:roundtrip.write(Path(evidence)/result_name,result)
         except BaseException as error:
             result=dict(result,state='failed',NativePASS=False,result_write_error=type(error).__name__)
+            if 'RehearsalPASS' in result:result['RehearsalPASS']=False
             raise
         finally:
             reservation.finish(result)
@@ -1118,15 +1119,9 @@ class NativeUnitFixture:
             self.host=DisposableHost.start(cluster,binary=images['api'],repo='fixture:agy:native:'+str(uuid.uuid4()),
                 database='agy_'+uuid.uuid4().hex,home=f.root/'api-home',socket_path=f.root/'api.sock',
                 log=evidence/'api.log',roles=('worker',),label='r06_agy_native')
-            # Race instrumentation stays enabled. Its post-main exit sleep is
-            # unnecessary for these joined fixture CLI calls and otherwise
-            # consumes the public control's unchanged 30-second deadline.
-            race_options=self.host.env.get('GORACE','').split()
-            if not any(option.startswith('atexit_sleep_ms=') for option in race_options):
-                race_options.append('atexit_sleep_ms=0')
-            self.host.env=dict(self.host.env,GORACE=' '.join(race_options))
             roundtrip.write(evidence/'fixture-command-runtime.json',dict(
-                GORACE=self.host.env['GORACE'],scope='Owned API CLI/public-control children only; parent unchanged',
+                GORACE=self.host.env.get('GORACE'),baseline_environment_preserved=True,
+                scope='Owned API CLI/public-control children inherit the normal host runtime options',
                 race_instrumentation='as-built -race remains active',public_control_deadline_seconds=30))
             self.host_dsn=self.host.dsn
             self.bridge=AuthenticatedAPIBridge(f.root,self.host,images['api'],evidence)
@@ -1422,8 +1417,17 @@ def live_unit_control(approved,fixture,session,client,body,evidence,label,*,reve
         interleaved.append(dict(operation=api_argv[-1],control_pid=process.pid))
         nonce=str(uuid.uuid4())
         message=dict(event='rehearsal-churn',nonce=nonce)
-        fault=approved.get('rehearsal_fault')
-        if fault:
+        fault=approved.get('rehearsal_fault') if approved.get('rehearsal_fault_phase','forward')==(
+            'reverse' if reverse else 'forward') else None
+        if fault=='database':
+            mutation=fixture.host.agent('worker','remember',
+                'Selected NONNATIVE public-control database drift '+nonce,
+                args=('--repo',fixture.host.repo,'--kind','note','--shareable',
+                    '--request-id',nonce,'--stdin'))
+            interleaved[-1]['database_mutation']=dict(operation='remember',
+                record_id=mutation['record_id'],version=mutation['version'],
+                transport='actual owned disposable API; unchanged response')
+        elif fault:
             targets=dict(account=fixture.account/'hooks.json',workspace=fixture.work/'protected-fixture',
                 state=next(Path(fixture.f.coord['state_dir']).glob('*.json')),cairn=Path(fixture.f.coord_path))
             require(fault in targets,'unknown nonnative protected mutation')
@@ -1437,15 +1441,19 @@ def live_unit_control(approved,fixture,session,client,body,evidence,label,*,reve
         fixture.bridge.after_call=concurrent_background_write
     try:
         session.child.capture_generation();session.child.verify_confinement()
+        started=time.monotonic()
         process=subprocess.Popen(argv,env=fixture.host.env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         process_started.set()
         try:out,err=process.communicate(timeout=150)
         except subprocess.TimeoutExpired:
             process.kill();out,err=process.communicate();raise
+        elapsed=time.monotonic()-started
     finally:
         fixture.bridge.after_call=original
     (evidence/(label+'.stdout')).write_text(out);(evidence/(label+'.stderr')).write_text(err)
-    roundtrip.write(evidence/(label+'.exit.json'),dict(exit=process.returncode,argv=argv,interleaved=interleaved))
+    roundtrip.write(evidence/(label+'.exit.json'),dict(exit=process.returncode,argv=argv,interleaved=interleaved,
+        control_wall_seconds=elapsed,deadline_seconds=30,remaining_seconds=30-elapsed,
+        timing_scope='Popen through joined exit, including inherited runtime exit behavior'))
     after=live_root_snapshot(fixture,session)
     database_after=roundtrip.api_snapshot(fixture.host.dsn,fixture.host.pg_bin,fixture.root/'state-placeholder')
     def receipt(snapshot):
@@ -1460,7 +1468,9 @@ def live_unit_control(approved,fixture,session,client,body,evidence,label,*,reve
             'public live transition failed: '+str(parsed.get('error','unpublished result; see exact stdout receipt')))
     require(parsed['census']['NativeRefresh']=='unobserved' and parsed['census']['ExternalCoverage']=='unknown',
             'finite live transition claimed native qualification')
-    if client.get('kind')=='SCRIPTED_NONNATIVE':require(len(interleaved)==1,'real public rehearsal interleaving was not reached')
+    if client.get('kind')=='SCRIPTED_NONNATIVE':
+        require(elapsed<30,'nonnative public control exceeded the unchanged 30-second wall contract')
+        require(len(interleaved)==1,'real public rehearsal interleaving was not reached')
     return parsed
 
 
@@ -1898,7 +1908,9 @@ def execute_owned_case(approved,*,rehearsal):
         except BaseException as error:errors.append('final-pins:'+type(error).__name__)
         if not errors:
             shutil.rmtree(runtime)
-        if errors or active_error:result.update(state='failed',NativePASS=False)
+        if errors or active_error:
+            result.update(state='failed',NativePASS=False)
+            if rehearsal:result['RehearsalPASS']=False
         result.update(cleanup_errors=errors,PG_runtime_removed=not runtime.exists(),archive_state='pending-after-terminal')
         roundtrip.write(evidence/('rehearsal-result.json' if rehearsal else 'native-result.json'),result)
         require(not errors,'owned cleanup unresolved: '+','.join(errors))
@@ -2378,11 +2390,14 @@ class RehearsalReservation:
 
 
 def prepare_sequence_rehearsal(evidence,*,python_sha256,strace_sha256,manifest,
-        manifest_sha256,index,index_sha256,complete,complete_sha256,fault=None):
+        manifest_sha256,index,index_sha256,complete,complete_sha256,fault=None,fault_phase='forward'):
     """Full maintained sequence using the scripted protocol, never held Agy."""
     evidence=private_directory(evidence)
-    require(fault in (None,'client-rename','client-sibling','account','workspace','state','cairn'),
+    require(fault in (None,'client-rename','client-sibling','account','workspace','state','cairn','database'),
             'unknown nonnative rehearsal fault')
+    require(fault_phase in ('forward','reverse') and
+        (fault_phase=='forward' or fault not in (None,'client-rename','client-sibling')),
+        'invalid nonnative rehearsal fault phase')
     require(not list(evidence.iterdir()),'fresh empty rehearsal evidence required')
     tools=dict(python3=tool_pin(Path(sys.executable).resolve(),python_sha256),
         strace=tool_pin(Path(shutil.which('strace') or '/absent').resolve(),strace_sha256))
@@ -2400,9 +2415,10 @@ def prepare_sequence_rehearsal(evidence,*,python_sha256,strace_sha256,manifest,
         attempt_id='NONNATIVE-scripted-rehearsal',tools=tools)
     selected_pins=dict(kind='PREPARATION_REHEARSAL',NativePASS=False,actual_Agy=0,
         actual_native_attempts=0,images=packet,image_source_head=pins['source_head'],
-        driver_sources=source_pins,tools=tools)
+        driver_sources=source_pins,tools=tools,fault=dict(kind=fault,phase=fault_phase))
     roundtrip.write(evidence/'rehearsal-selection.json',selected_pins)
-    approved=dict(rehearsal=selection,rehearsal_pins=selected_pins,rehearsal_fault=fault,images=images,image_pins=pins,
+    approved=dict(rehearsal=selection,rehearsal_pins=selected_pins,rehearsal_fault=fault,
+        rehearsal_fault_phase=fault_phase,images=images,image_pins=pins,
         packet=packet,tools=tools,preflight=dict(pg=str(pg),pg_pins=pg_pins,source_pins=source_pins,
             parent=dict(HOME=os.environ['HOME'],CODEX_HOME=os.environ.get('CODEX_HOME'))))
     # Same real-new-control pressure guard, with separately reported API/PG effects.

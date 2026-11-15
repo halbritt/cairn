@@ -42,7 +42,7 @@ The client is Root1383's frozen Agy1.5.7 image, SHA256
 `5df525a2d6908989c57b897723caea66e00d7c4d2e24411f91ad306989574642`, under
 `/home/halbritt/.cache/cairn301-release-1383/agy-receipt-filetype-20261112/`.
 The driver copies its bytes to `catalog_root/client/native-agy`, an owned 0500 regular
-file with a distinct inode, inside an owned 0500 client directory. The native
+file with a distinct inode, inside an owned 0700 client directory. The native
 child receives `AGY_CLI_DISABLE_AUTO_UPDATE=1`. A background updater or second
 session exec is rejected; only an exact child `[client, "--version"]` with one
 exec and an observed zero exit is permitted.
@@ -96,6 +96,12 @@ conversation, workspace and native history must remain equal. The driver
 collects actual emitted owner state and callback facts. It creates no
 native-looking state to satisfy the census.
 
+The owner-state reader requires both `registration.native_session_id` and
+`agent.native_session_id` to be nonempty strings equal to the client's actual
+conversation. An optional legacy outer `native_session_id` must also match;
+it cannot replace either nested identity. File pins must remain equal across
+the state read, and exactly one matching owner state is required.
+
 Public A→B and B→retained Go /3 A use literal TargetReceipt, actual session
 paths, maintained `plan`/`invoke` and unchanged authenticated reads. Reverse
 examines current B while B remains installed. Both publications preserve
@@ -103,6 +109,39 @@ protected filesystem and API state and the same watch-lock inode. The stager
 restores exact A settings; a third actual turn must use the same native
 generation/history. The local provider's final request must contain all three
 actual prompts. Shutdown must be orderly, zero and joined.
+
+The scripted preparation entry `--prepare-stubbed --rehearse-sequence` uses
+this same maintained sequence with a clearly labelled nonnative stream-json
+client, genuine Go /3 callbacks and the real disposable API and PostgreSQL.
+It must finish public forward and reverse, retain the watcher lock, restore A,
+verify all three prompts in actual history, close with zero exit and complete
+the final descendant audit. Its result always has `NativePASS=false` and
+zero actual Agy/native attempts. Only the complete sequence can set
+`RehearsalPASS=true`; a partial capture or a successful preparation stage
+cannot set it. Cleanup or result-publication failure clears a prior rehearsal
+success before the atomic terminal is published. Candidate image inputs must
+match the composed source checkout;
+an old packet cannot be relabelled as a new candidate.
+
+Client executable identity, mode, size and digest, the 0700 parent identity and
+its exact single-entry inventory are checked at each phase, before public
+control and after joining the client. A genuine rename to another image or a
+new sibling refuses. During public forward and reverse, all Cairn files,
+account/workspace/state data, profiles and credentials remain protected,
+together with unchanged API database snapshots. Only appends to the same raw
+trace and stderr files, and the explicitly selected client-internal subtree,
+may change. Rewrites, truncation, replacement, symlink escapes and hardlink
+aliases refuse. Real concurrent mutation and deliberate database drift need
+separate refusal coverage.
+
+The parent and owned API/control children retain the normal host runtime
+options. The fixture does not set `GORACE=atexit_sleep_ms=0` or disable race
+instrumentation. Its runtime receipt records the inherited value, including
+an unset value, and the unchanged public 30-second deadline. Exit-sleep tuning,
+smaller inputs or a longer deadline cannot establish the rehearsal gate.
+Each public operation records elapsed wall time from process launch through
+joined exit, including inherited runtime exit behavior, and its remaining
+margin against 30 seconds. A nonnative rehearsal requires a positive margin.
 
 ## Kernel network restriction and measured trace budget
 
@@ -177,7 +216,9 @@ The historical held-image prefix is decoder evidence, not a new native run.
 
 The collector waits for callbacks to finish, then seals a complete raw prefix
 verbatim. It never trims an unfinished record or appends a synthetic resume,
-wait or exit. BEFORE/AFTER byte offsets and exec/join/frame references locate
+wait or exit. A boundary is the length of the exact complete byte snapshot
+that was validated; later file growth cannot change that selected offset.
+BEFORE/AFTER byte offsets and exec/join/frame references locate
 those exact bytes. AFTER ends before the later restored-A turn; the full final
 trace retains that turn and must contain the sealed AFTER prefix unchanged.
 Extra A callbacks within the B phase refuse.
