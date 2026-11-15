@@ -142,12 +142,12 @@ func (r *watchCensusRead) unboundReceipt(pin WatchCensusPin) (*watchCensusAssoci
 			return nil, nil, err
 		}
 	}
-	// Seed only the strictly parsed, pinned receipt, so validation cannot discover
-	// a replacement receipt's paths. All validator disk reads above are already
-	// in ordinary census facts and will undergo the final readback.
+	// Validate the strictly parsed, pinned receipt on the same tracked build
+	// bytes. This retains the generic receipt predicates without rereading the
+	// complete binary and source closure on every association reference.
 	compat := &CompatibilityContext{Role: "coordination", Entrypoint: "coordination.py", ConfigPath: selected[0].Path,
 		HookTimeout: 15, LaunchRoot: filepath.Dir(pin.Path), Shell: "/bin/sh", Receipt: receipt, Profile: r.cli.profile()}
-	if err := compat.VerifyReceipt(r.cli.profile()); err != nil {
+	if err := r.verifyUnitReceipt(compat, receipt); err != nil {
 		return nil, nil, fmt.Errorf("unbound receipt: %w", err)
 	}
 	// The manifest and role-profile predicates of UnboundProfiles were checked

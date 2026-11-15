@@ -113,6 +113,7 @@ func (r *WatchDrainReceipt) recheckPrepared(ctx context.Context, swap *watchBind
 }
 
 type watchDrainRead struct {
+	verified      *unitVerifiedFiles
 	configPaths   map[*value.Value]string
 	censusMembers map[string]WatchCensusMember
 	cli           *CLI
@@ -133,11 +134,17 @@ type watchDrainSession struct {
 func (c *CLI) readWatchDrain(ctx context.Context, selected WatchBindings, callbacks []*value.Value) (*watchDrainRead, error) {
 	return c.readWatchDrainCensus(ctx, selected, callbacks, nil, nil)
 }
-func (c *CLI) readWatchDrainCensus(ctx context.Context, selected WatchBindings, callbacks []*value.Value, census *unitCensusDrain, swap *watchBindingsSwap) (*watchDrainRead, error) {
+func (c *CLI) readWatchDrainCensus(ctx context.Context, selected WatchBindings, callbacks []*value.Value, census *unitCensusDrain, swap *watchBindingsSwap) (result *watchDrainRead, err error) {
 	if c.Host == nil || c.profile() == nil {
 		return nil, &value.ProfileUnavailable{}
 	}
-	read := &watchDrainRead{cli: c, facts: map[string]string{}, locks: map[string]string{}, tokenPaths: map[string]bool{}, memories: map[*value.Value]*value.Value{}, settled: map[*value.Value]*value.Value{}}
+	verified := newUnitVerifiedFiles(ctx)
+	defer func() {
+		if closeErr := verified.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
+	read := &watchDrainRead{cli: c, verified: verified, facts: map[string]string{}, locks: map[string]string{}, tokenPaths: map[string]bool{}, memories: map[*value.Value]*value.Value{}, settled: map[*value.Value]*value.Value{}}
 	if census != nil && len(census.associationFacts) != 0 {
 		members, facts, err := census.observeDrainAssociations(ctx, swap)
 		if err != nil {
@@ -155,6 +162,11 @@ func (c *CLI) readWatchDrainCensus(ctx context.Context, selected WatchBindings, 
 		}
 	}
 	if err := read.local(selected); err != nil {
+		return nil, err
+	}
+	// The local build may reuse bytes. A fresh byte readback, including the
+	// common config.cairn image, must finish before the first status/API call.
+	if err := verified.Recheck(); err != nil {
 		return nil, err
 	}
 	if err := read.store(ctx); err != nil {
@@ -182,6 +194,11 @@ func (c *CLI) readWatchDrainCensus(ctx context.Context, selected WatchBindings, 
 		if err := read.record(fmt.Sprintf("callback:%d", i), ref); err != nil {
 			return nil, err
 		}
+	}
+	// Status calls can intervene after the local read. Metadata and read-only
+	// modes do not establish current bytes at this second boundary.
+	if err := verified.Recheck(); err != nil {
+		return nil, err
 	}
 	if census != nil && len(census.associationFacts) != 0 {
 		_, facts, err := census.observeDrainAssociations(ctx, swap)

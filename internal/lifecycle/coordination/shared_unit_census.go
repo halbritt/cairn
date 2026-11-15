@@ -125,7 +125,7 @@ func (c *CLI) InspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 	return c.inspectWatchUnitCensus(ctx, catalog, proposed, nil)
 }
 
-func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin, proposed WatchCensusProposal, control *unitCensusScope) (WatchUnitCensus, error) {
+func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin, proposed WatchCensusProposal, control *unitCensusScope) (report WatchUnitCensus, err error) {
 	r := &watchCensusRead{cli: c, nodes: map[string]*WatchCensusMember{}, files: map[string]string{},
 		directories: map[string][]string{}, inodes: map[string]string{}, images: map[string]bool{},
 		nodeBlockers: map[string][]string{}, nodeGrants: map[string][]string{}, sessionRefs: map[string]WatchCensusSession{},
@@ -136,7 +136,13 @@ func (c *CLI) inspectWatchUnitCensus(ctx context.Context, catalog WatchCensusPin
 	if c == nil || c.Host == nil || c.profile() == nil {
 		return r.report, &value.ProfileUnavailable{}
 	}
-	r.local = &watchDrainRead{cli: c, facts: r.report.Facts, tokenPaths: map[string]bool{}, locks: map[string]string{}}
+	verified := newUnitVerifiedFiles(ctx)
+	defer func() {
+		if closeErr := verified.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
+	r.local = &watchDrainRead{cli: c, verified: verified, facts: r.report.Facts, tokenPaths: map[string]bool{}, locks: map[string]string{}}
 	if err := r.loadCatalog(ctx, catalog); err != nil {
 		return r.report, err
 	}

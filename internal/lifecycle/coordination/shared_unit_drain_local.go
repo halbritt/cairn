@@ -14,11 +14,27 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// opened reuses build bytes only when the enclosing observation owns a pass.
+// Standalone readers retain their ordinary fresh-read behavior.
+func (r *watchDrainRead) opened(path string, limit int64, image bool) ([]byte, string, error) {
+	if r.tokenPaths[path] {
+		return nil, "", errors.New("drain scope overlaps a credential selector; visibility is unknown")
+	}
+	if r.verified != nil {
+		return r.verified.Read(path, limit, image)
+	}
+	if image {
+		digest, err := compatibilityOpenedBinary(path, uint32(os.Getuid()))
+		return nil, digest, err
+	}
+	return compatibilityOpened(path, limit, uint32(os.Getuid()))
+}
+
 func (r *watchDrainRead) file(path string) (*value.Value, error) {
 	if r.tokenPaths[path] {
 		return nil, errors.New("drain scope overlaps a credential selector; visibility is unknown")
 	}
-	raw, digest, err := compatibilityOpened(path, 1048576, uint32(os.Getuid()))
+	raw, digest, err := r.opened(path, 1048576, false)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +84,7 @@ func (r *watchDrainRead) local(selected WatchBindings) error {
 		}
 		r.configPaths[config] = filepath.Join(selected.Directory, name)
 		r.tokenPaths[nativeText(config.Get("token_file"))] = true
-		binary, err := compatibilityOpenedBinary(nativeText(config.Get("cairn")), uint32(os.Getuid()))
+		_, binary, err := r.opened(nativeText(config.Get("cairn")), -1, true)
 		if err != nil {
 			return err
 		}

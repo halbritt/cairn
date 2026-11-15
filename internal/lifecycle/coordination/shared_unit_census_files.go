@@ -82,6 +82,10 @@ func censusPinMap(pins []WatchCensusPin) (map[string]string, error) {
 }
 
 func (r *watchCensusRead) pin(pin WatchCensusPin, image bool) ([]byte, error) {
+	return r.pinLimit(pin, image, 1048576)
+}
+
+func (r *watchCensusRead) pinLimit(pin WatchCensusPin, image bool, limit int64) ([]byte, error) {
 	if !censusDigest(pin.SHA256) {
 		return nil, errors.New("census pin requires lowercase SHA-256")
 	}
@@ -95,10 +99,10 @@ func (r *watchCensusRead) pin(pin WatchCensusPin, image bool) ([]byte, error) {
 	var digest string
 	var err error
 	if image {
-		digest, err = compatibilityOpenedBinary(pin.Path, uint32(os.Getuid()))
+		_, digest, err = r.local.opened(pin.Path, -1, true)
 		r.images[pin.Path] = true
 	} else {
-		raw, digest, err = compatibilityOpened(pin.Path, 1048576, uint32(os.Getuid()))
+		raw, digest, err = r.local.opened(pin.Path, limit, false)
 	}
 	if err != nil {
 		return nil, err
@@ -631,6 +635,11 @@ func (r *watchCensusRead) readback(ctx context.Context) error {
 		}
 		if !slices.Equal(before, after) {
 			return errors.New("census directory membership changed during readback")
+		}
+	}
+	if r.local.verified != nil {
+		if err := r.local.verified.Recheck(); err != nil {
+			return fmt.Errorf("census pin changed during byte readback: %w", err)
 		}
 	}
 	for _, path := range slices.Sorted(maps.Keys(r.files)) {
