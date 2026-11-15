@@ -35,6 +35,33 @@ reverses and reconciled rollout plan. No new acceptance reviewer or dispatch
 is created here. Final packet review and joint Coordinator+Supervisor admission
 remain outstanding.
 
+## Completed OpenCode receipt binding
+
+The [R06 OpenCode correspondence](r06-release-candidate.md#opencode-historical-receipts-and-fresh5275-binding)
+now binds accepted historical staged-TS Node evidence
+`b1f6e633-1f1b-496e-b5a5-8b7f88ade99c/v1` on d31 and historical native
+`04540693-315c-40f4-8f4e-f440f0863a3c/v1` on87b→b361, separately from agent1466
+`07e44525-79b4-4aed-8aba-a1ebdb64b027/v1` on clean5275/tree01e7d.
+The fresh primary
+`/home/halbritt/.cache/cairn301-opencode-5275-1466-20261115/report.json`, SHA
+`0503759b0dc065855dcd19f0317f67bcdd5af8eb0b1fc8d15b957b141325b62d`,
+records one invocation49.7846256s/exit0/reruns0, whole-fixture PASS/cleanup PASS,
+13 observations and two expected missing/corrupt-receipt refusals with zero
+synthetic API effects. It is **fixture-built from5275bd3d source, not the
+sealed FINAL5 images**; per-case flags/skips and temporary stager hash/build
+details remain unexposed. Its two temporary tools do not change the five image
+pins above or the actual886 Agy budget/history.
+
+B1.4/B2 and FT03/FT10 now have concrete finite receipt bindings for final
+review. Same-image config-cache A/B, directory-instance/sibling refresh,
+NO_WRITES capture, synthetic API/model and heuristic settle limits remain;
+no saved-record, single-thread, full watcher barrier or live installed-client
+qualification is inferred. All ten factual joins are supplied, not an
+independent ACCEPT or four-ticket Done. Root selection v2/focused sole1415
+closure and joint phase admission remain outstanding. Production/R07/R08,
+per-host installed facts/reverses, semantic ABI smokes and observation gates
+remain held or PENDING EXECUTION exactly as below.
+
 ## Landed operator semantics and refusal recovery
 
 Current5275 supports stopped inactive/dead/MainPID0 services with an explicitly
@@ -87,7 +114,7 @@ static candidate is not finalPACKETREADY or permission to execute.
 
 | Admission item | Filled evidence / exact remainder |
 | --- | --- |
-| A1 — candidate and predecessors |5275 ACCEPTa8, fresh FINAL5/full validator/full11/four SHAPE/default refusal and actual886 native correspondence complete. Root joins current R03AC4/R04/R05/S05/S04R/R06/HC05/FT finite case/tuple dispositions (R06 FT01–12 table; FT04 unsupported census and FT12 downstream observation are not four-ticket Done gates) and the final1415 PACKET acceptance; no whole installed/usefulness PASS is invented. |
+| A1 — candidate and predecessors |5275 ACCEPTa8, fresh FINAL5/full validator/full11/four SHAPE/default refusal and actual886 native correspondence complete. R06 J1–J8/FT01–12 now submit the finite R03AC4/R04/R05/S05/S04R/R06/HC05 receipt/tuple joins, including historical and fresh5275 OpenCode binding. FT04 unsupported census and FT12 downstream observation are not four-ticket Done gates. Final1415 PACKET acceptance remains separate; no whole installed/usefulness PASS is invented. |
 | A2 — safe complete-unit transition | Supported5275 stopped bootstrap/fence/external-state/reverse mechanisms complete. UNSELECTED Root per-host record/version/bodySHA, CURRENT/TARGET catalog and transition paths+SHA, ConfigRoot/generation, all members/resources/accounts/owners/restart graph, binaries/ancestors, original modes/locks/absence, exact forward/reverse/rollback and service/native argv. D1–D7/adoption/real default positive and timing receipts PENDING EXECUTION. |
 | A3 — both reverses and backup | Supported retainedPython2 raw-original/bundle and S04R publication/fileverify/supervisor invocation complete. UNSELECTED production closure/managed consumer/backup/restore/operator selections. Actual checkpoint/header/export/inspection FIRST, both executable reverse runtime/ABI/effect/readback, all-writer graph and semantic STOP read PENDING EXECUTION before rollout/Rust3. |
 | A4 — reviewed execution and exit | Final1415 RC+R07 PACKET review and joint Coordinator+Supervisor phase admission outstanding. Root selects exact host schedule/scoped operators/abort-reconciliation paths; actual affected-lane cycles, continuous>=24h R08 AND full selected Rust rebuild, R09 reset/removal revalidation remain PENDING EXECUTION. |
@@ -284,6 +311,52 @@ every reverse. These captures have **no destructive inverse**: the checkpoint
 is append-only audit metadata and the external artifacts remain retained.
 
 ## Proximal semantic staging and retained Python reverse
+
+### Selected host-plan shorthand override
+
+For every selected proposal representation, **all** occurrences of
+`S04R1bca1003` are historical provenance only and are superseded by
+`a42a4c8e-9770-4595-b20b-0630e3d751bc/v1` SECTION1 plus the corrected
+`source-command-crosswalk.json` SHA
+`926e4baa5b958c68b3e68be9ffa887689cc2ddb312a45c29ef92a34c459d8880`.
+This applies throughout each proximal/archon/talos proposal body, its
+`phase_order[2].requirements`, `common.json`, the semantic-input status and
+sealed `PROPOSED-plan.md` representations, including occurrences outside the
+listed JSON pointers. No unresolved command, fabricated UUID or Git revision
+may be derived from the shorthand.
+
+The immutable proposal root is
+`/home/halbritt/.cache/cairn301-plans-5275-1467-20261115/`:
+
+| Original selected body | Superseded JSON pointer | Original SHA256, unchanged |
+| --- | --- | --- |
+| `proximal/PROPOSED-plan.json` | `/phase_order/2/requirements` | `1899fe9c7d9515c63fce9a6559dca5bf9cb4853d9ffe771c3bcb366547ffa8bb` |
+| `archon/PROPOSED-plan.json` | `/phase_order/2/requirements` | `69d761a68a99d1354658c925830d01717139953f67a437d07de3f29c398ef861` |
+| `talos/PROPOSED-plan.json` | `/phase_order/2/requirements` | `877a883278f904a65a883c63cfea769f3feccdc3777bf045e5bc6156672911cf` |
+| `common.json` | `/phase_order/2/requirements` | `5c602280a129a31e2c3ab608eef45e5dd99832d800276bb059da85882899b196` |
+| `evidence/semantic-reverse-inputs.json` | `/source_selection_status` | `87485d6cfa1f7f7b2383742f7405e389afe19dba2ff9a7874404f07aa9276345` |
+
+Root's explicit source-priority override is
+`/home/halbritt/.cache/cairn301-release-1496/final-join-repair-76684d7d-20261115/Root-semantic-reverse-override.json`,
+SHA `f0ba658c5e515561d930b842d4ad215c9f054675426eedf7663c10dc2a995c76`.
+It corrects interpretation of the old selection manifest
+`/home/halbritt/.cache/cairn301-release-1496/final-review-5275-20261115/Root-selected-plans.json`,
+SHA `2de383d1c278490d11c430bfbc0559e6f027d521cd058a0c1f51feba456b9a15`.
+Root owns `Root-selected-plans-v2.DRAFT.json` finalization after this child doc
+commit; that draft is not claimed selected or admitted here. Its future digest
+is intentionally not a document input because it will pin these documents.
+
+The operative procedure is StepA publication plus **separate real**
+`payload.json` and `controls.json` file-verifier invocations, then StepB six
+one-request Go-supervisor smokes (three retained-Python and three Rust modes)
+with the exact schemas below. The illustrative quoted brace filename is never
+one actual file. Historical a42a sections2/3 supply no current SQL, reviewer or
+native routing:5275 fence/sole1415/current admission rules govern those parts.
+The frozen `49a3d89d-a11b-42a8-af75-006a131faead/v1` deliverable remains
+unchanged under `39fb1c2e-d173-42e8-8b68-98a0766d8c69/v1`; no producer rebuild,
+reissue, cache-body or canonical-plan write occurs. Publication, six runtime
+smokes, ABI/loaded-byte qualification, stopped semantic read, both executable
+reverses and each-host real-manager positive remain admitted-R07 prerequisites.
 
 The exact operative source is Supervisor
 `a42a4c8e-9770-4595-b20b-0630e3d751bc/v1`, SECTION1, body SHA

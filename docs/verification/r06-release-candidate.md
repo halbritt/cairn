@@ -17,6 +17,15 @@ review and integration. The completed composed CODE review is a distinct
 subject. Standing owner grant `a3065785/v1` removes the human wait while
 retaining technical gates and production hold `98d46758/v1`.
 
+The sole1415 final packet verdict
+`76684d7d-e804-444c-95e1-916138c5c0a4/v1` rejected documentation joins;
+source lineage, fence and reverse procedure passed, with no code/build/runtime
+defect. This held child supplies factual corrections for follow-up acceptance.
+The earlier OpenCode locator gap is resolved by located historical receipts
+and the completed fresh5275 fixture bound in J4. All ten factual joins are
+supplied for final review; packet acceptance and Root selection integration
+have not occurred.
+
 ## Evidence vocabulary and current candidate
 
 **Qualified, finite scope** applies only to the named case and tuple. Failed
@@ -315,12 +324,12 @@ be summed into a new native, installed or final-candidate pass.
 
 | Observable | Retained-Python / Go correspondence | Selected actual result and remaining limit |
 | --- | --- | --- |
-| Request replay/refusal and journal state | [R05-062](r05-journal-core-062.md) maps the unchanged Python recovery method to the real Go journal using the same scripted CLI. Request identity, persisted status, refusal order, result and reply matter. | The source specification expects four sends and preserves eight original assertions. It discloses the old checker's insensitivity to exit status and final send count. Select the exact paired fault-results receipt for the final tuple; this draft does not invent one or retire the old assertions. |
-| Issued effects and cross-reader state | [Retained effects](r06-retained-effects.md) distinguishes pending, completed, settled and `reply_possible`, actual emitted `/2` callbacks, Go retries and explicit `/2` selection. | The fixture's effect semantics are concrete; bind its exact accepted raw result to the final source/image tuple. A copied journal or fake status is not that result. |
+| Request replay/refusal and journal state | Accepted R05-062 Source/Go six-outcome correspondence, four sends/eight retained assertions and12 fault controls. | [J1](#j1-r05-062-journal-replay-and-fault-results) binds manifest/fault receipts, full acceptance/landing IDs and42 matching actor pins at5275; other13 cores remain retained. |
+| Issued effects and cross-reader state | Accepted retained-effects pending/completed/settled/reply_possible and actual immutable `/2` callbacks/Go retries. | [J2](#j2-retained-issued-effects-compact-handles-and-cross-reader-state) binds raw index/freeze/effects,3600s semantics and explicit changed-helper/current5275 applicability; no rewritten historical runtime. |
 | Disposable Go `/3` forward/reverse | `TargetReceipt` selects independently validated current/target closure; reverse restores exact retained Go `/3` A and the same watcher-lock inode. | Reviewer preparation: six operations, two publications, three preflight refusals and one actual final-D6 target-memory refusal; 12 authenticated reads. Empty session/callback inventories do not establish native D1/D2/D5. This is not Python `/2` reverse. |
 | Trace and generation collection | The standalone preparation STUB uses an owned Python process, complete stdin EOF, literal argv and live Before/After generation. | One reviewer standalone STUB exec, 35 input bytes, complete 186,654-byte trace interval, zero exit. It emits no Agy session or hook and establishes no native refresh. Author's three historical STUB runs remain a separate population. |
 | Historical complete native12 unit | Frozen source `caae7a032f98069bb9d6c2d6750c8cb2dbb45056`, tree `cd7dc6d1d9920f4c5926b0026357eb74c3f20538`; carried b8 image manifest SHA256 `eb3b550ed34cbe933df4c90da3491b56430ee177f7e79426b26f5a80858a3a8c`, not the historical1508 manifest. | Actual retained Python `/2` issued read/finish-reply, Go `/3` forward, orderly same-history join/resume and retained Python `/2` reverse/readback passed in that fixture. Outer/helper/child exits 0; 131 command exits include one expected `DELIVERY_ACTIVE` exit 4; seven empty polls/readbacks, 33 hook stdio records and 20 state pairs. This historical bound-unit reverse is not the pending unbound Agy/operator-bootstrap reverse at the final tuple. `ExternalCoverage` remains unknown and controller `NativeRefresh` unobserved; no live/full R06/HC05 acceptance. |
-| Hermes native continuity and retained `/2` | The [Hermes procedure](r03-hermes-continuity.md#implemented-sequence-requiring-a-new-native-admission) uses the cached-A boundary, orderly finalization/reap, same-history B resume and explicit retained `/2` resume. | Hermes3 result `fb2b0b37-0f94-4401-a5bd-b93047b3dd56/v1`: eight callbacks over `UserPromptSubmit`/`SessionEnd`; history lengths 4/4, 6/6, 8/8; final record/capture/recall counts 5/4/4; attempt/delivery counts 0/0; zero audit violations. Qualified finite R03 fixture only; AC4 and common-unit joins remain open. Historical Go control and checker source identities are distinct. |
+| Hermes native continuity and retained `/2` | The [Hermes procedure](r03-hermes-continuity.md#implemented-sequence-requiring-a-new-native-admission) uses the cached-A boundary, orderly finalization/reap, same-history B resume and explicit retained `/2` resume. | Hermes3 result `fb2b0b37-0f94-4401-a5bd-b93047b3dd56/v1`: eight callbacks over `UserPromptSubmit`/`SessionEnd`; history lengths 4/4, 6/6, 8/8; final record/capture/recall counts 5/4/4; attempt/delivery counts 0/0; zero audit violations. Qualified finite R03 fixture; the explicit later AC4/shared-unit correspondence is joined below, with no production gateway claim. Historical Go control and checker source identities are distinct. |
 
 Raw reviewer preparation evidence under
 `/home/halbritt/.cache/cairn301-review-1415/r06-auth-prep-33-20261114/` includes:
@@ -344,6 +353,378 @@ those selectors. Neither that carry nor native12's b8 carry is evidence that
 the same result ran against the final common-RC images. Source, executed image,
 checker and scope must remain separate columns in the eventual join.
 
+## Bound pre-cutover evidence joins
+
+These are factual receipt and applicability joins for REL-MANIFEST and
+REL-EQUIVALENCE. They do not relabel a historical executable as5275. The static
+path/blob comparisons are sealed in
+`/home/halbritt/.cache/cairn301-release-1465/doc-repair-76684-20261115/source-carry.json`,
+SHA `8397d2021b5a797a1d15cbc6532d1dbd5740aa3f3e37c1873879b7e1bb19a360`.
+The complete42e..5275 and67da..5275 histories contain166 and90 changed paths,
+respectively; neither whole history is a fence/bootstrap-only delta. Only the
+final886..5275 eight-file cut has that reviewed scope. Unchanged exercised
+paths, named accepted later changes and actual current gates are separate joins.
+
+### J1: R05-062 journal replay and fault results
+
+The accepted landing is `42e1d8ba71c361e94ab8b00bd9e04f5b8c09b4f0`.
+[R05-062](r05-journal-core-062.md) has SHA
+`907e43bded7afed2a483799f178f6de158e13b262baaf69a42c92202dd7deccf`.
+J-R2 ACCEPT `3a0e9fb9-1216-4de1-8ace-201c779de78b/v1` reviewed700b9055;
+landing/carry `d694d683-c11f-4097-9ab1-7a0cc0454816/v1` binds the identical
+four blobs, patch and42 actor pins at42e. The raw packet is
+`/home/halbritt/.cache/cairn301-release-1374/r05-062-20261112/`:
+
+| Selected member | SHA256 | Exact observation |
+| --- | --- | --- |
+| `manifest.json` | `47a93c0051b8649ff739323b5529359e2e9ffb0a3b690150505fadc56e850586` |172 selected files; source candidate6dea5147, not a new5275 run. |
+| `fault-01/fault-controls.json` | `16877f483c6f20e6ff17e1dc40b2b0eea9e720626b086867718ef85533955810` |12 controls: two executors times six mutations; original fault population retained. |
+| `functional-final/fault-controls.json` | `4d8eb2b272ba6eef0a07678694380db13c889706d52683f5de2dd74731e99063` |New checker rejects all12; old checker misses wrong exit and missing final Store call for each executor. |
+| `functional-final/driver-build.json` | `6df359d225f728c34626f59cbe5f6ed2981efaf393abde5de41576b4a9fff822` |42 actor SHA pins, exact build argv/toolchain and non-race adapter identity. |
+
+The six paired outcomes retain exits0,0,4,4,4,4, four final API sends,
+immutable request/journal state and all eight original assertion expressions.
+Reordered *different reply steps* are detected; swapping identical API requests
+does not prove ordering. The diagnostic-only RED remains retained. Independent
+700b gates were44 top-level/181 total Go passes, paired/fault2 passes, zero
+failures/skips, check0 and docs1–4 PASS. Historical matched Source/Go medians
+.989004s/.155069s belong to6dea, not5275 or an installed speedup.
+
+All42 actor pins still match5275 exactly, including the17 Source members,
+journal actors, test fixture and Go module pins. `execute.go` remains blob
+`769beef8e204aeb4a2b6717cc43f99e8ddeae625`. This carries that finite diagnostic,
+replay/refusal and sensitivity result. Production reader/envelope layers are
+not newly exercised by the adapter; the separately attributed unfiltered
+integration `7b82fcef-7c90-4406-b3fc-5ddad6560f2c/v1` is joined inJ6.
+All141 legacy methods/assertions and the other13 Python journal cores remain
+retained, not retired by this row.
+
+### J2: retained issued effects, compact handles and cross-reader state
+
+The accepted document/source is
+`67da9cb6515f042657e3224ac25c34dad510998c`,
+[retained effects](r06-retained-effects.md), SHA
+`d8181c53980920a1c91d668c2862473efa7b3be7c9f3446250c8c190f2682c15`.
+Under `/home/halbritt/.cache/cairn301-release-1465/r06-retained-effects-20261113/`:
+
+| Selected member | SHA256 | Binding |
+| --- | --- | --- |
+| `index.json` | `abc904043fe34a3b12cf5fd0c0f374daadaf56b1c14e7054df77aa1a8b2fa8b6` |623 raw files, argv/stdin/streams/numeric exits and Source/Go cross-reader effects. |
+| `candidate-freeze.json` | `15a6ba6d4211a3e54a2c68a29640e5011422b75a52d7c49c1b126c38f33e2e59` |Images built from9e19e22d63ac5ddfd57bf2687e2b865e5bbff62f; later doc/driver changes are not compiled-image changes. |
+| `final-effects/effects/effects-result.json` | `2a5273ace11de0fe3f6e1022103c0738c15e0bb0a5dee1272f8234a59e6f8954` |Pending exercised, `reply_possible`, protected bytes and foreign-delivery refusal; one request result-version increment plus causal reply, notice handled without result/reply. |
+
+The issued immutable `/2` read/complete/ACK/reply vectors, Go retries and
+explicit retained-Python selection preserve pending/completed/settled state.
+The Source `COMPACT_HANDLE_SECONDS=3600` and Go compact validity check use the
+same3600s lifetime; stale/foreign handles do not become this session's work.
+The unchanged retained fixture is evidence for its asserted boundaries, not a
+new3600s wall-clock wait. Static67da..5275 carry matches31/33 selected paths:
+all17 Source members, journal actors, compact/inbox/CLI and retained-effects
+driver/tests. The two changed helper paths are explicit: native-unit composition
+`7d22b663`, owned-host/custody `04923793`, retained-watch reverse `caae7a03`;
+unit-control authenticated historical poll policy `29215eae`. None changes
+the sealed old result into current runtime. Current controller coverage is the
+separate5275 full11 receipt
+`Root-final-image-rehearsal-summary.json`, SHA
+`bb790d9724cff99bdc67f28556a2db97fba297a69a583d526371ec9d2691f707`,
+under `/home/halbritt/.cache/cairn301-release-1496/final5-gates-5275-20261115/`.
+It has8BOUND+3UNBOUND fixture members; native/whole installed effects remain
+outside the retained-effects fixture.
+
+### J3: semantic software and executable-reverse selection
+
+FT02 binds these accepted software inputs, separately from future deployment:
+
+| Component | Accepted source and exact selected artifact |
+| --- | --- |
+| Rust package/native driver | `1945d6c4295dd59b32c6babd978b8df52da2599a` / `362feb804b8973bf8041caa9cdd7fd00ff2bc8f4`. `/home/halbritt/.cache/cairn-r06-final-candidate-1468-20261113/sources/rust-staged-original-manifest.json`, SHA `b9da438780acd933112b78919aa59fb0ff86e3b4351d7272e27dab2072f26dd5`; payload address `834eda5e920b5d0329210fccfac973bf6523621ad9ae9f513e75ad236553fc3d`, launcher-set `d83cfe34bb9d1b20d78c412294b7e07f7b3dc094737dfd7fbf4c67c31742c2d7`. |
+| Python closure | `58269deeb401723086a8f4732f7c5c9c6fe4df38`; accepted payload `c6c1bd58dccd51ae1b06c0213c94ef9f87206a80951fc198ff0674654b0c7221`, control/launcher selections preserved by the R07 StepA selected payload/control references. |
+| S04R future procedure | `a42a4c8e-9770-4595-b20b-0630e3d751bc/v1` SECTION1 only, body SHA `b4b76d4e942644150401e500e9685958ae1ca6d57ca800ce00d9c49d226509ad`; corrected crosswalk `/home/halbritt/.cache/cairn301-release-1465/r07-runtime-correction-8a809-20261114/source-command-crosswalk.json`, SHA `926e4baa5b958c68b3e68be9ffa887689cc2ddb312a45c29ef92a34c459d8880`. Separate `payload.json`/`controls.json` file verifiers and six one-request Python/Rust supervisor modes; no runtime PASS. |
+| S05 / CAIRN-328 | `af156dee8b1319bf944878d9fe4c2b21ae2bf756`; decisions `78a76a12-70c7-4492-8342-73ca6b23d096/v1`, `bc4722b5-a321-4541-81a1-1b01eed21620/v1`; finite runbook `0f2dd76d1355a2018e569b92a36f8e001b0b32ca`. |
+| HC01 / CAIRN-329 | `c991d141e220442e1f9af58ff953ab65559e9508`, decision `cbd58d7d-bb41-44a8-a274-04a91a8bcc95/v1`; `/home/halbritt/.cache/cairn301-semantic-1382/qualification-final/retrieval-quality.json`, SHA `01d1ab496339ca2cf43ed32721bbbe56614799616d7228b8ea9ab9e456705854`:68 results,12 selected passages/two orders, authored questions/local notes; no model/downstream-benefit claim. |
+
+Preflight `662144b9-a250-4cd3-9765-29cd235ef76e/v1` selects
+`/home/halbritt/.cache/cairn301-semantic-1382/r07-prep-20261113/SUMMARY.md`,
+SHA `9c2ec45bbff741f1858fb0f8a9cd3279396236774655630a5e3bdc7400adefc1`,
+and `SHA256SUMS`, SHA
+`a77a3bf371a07cb1b55f25710d7f5f619f2a59191eaf910e8f81f21383d05e8f`.
+The staged Rust manifest's build/source identity hashes are
+`b0321dd65530a9f6ee9616cd2e9cdf5de37086da17becc9c2af4e90a8187ff40` /
+`e2d65e1063d9676572995c41547bac8f4963374ebe8cd5655c0eb61eaf5ba7b4`;
+loaded closure, telemetry writes and CPU class remain unobserved.
+Six host Rust ABI library hashes differ, six match and four are tooling-new;
+the destination was uninstalled. Python reverse compared7155 files with7148
+matches and seven glibc-family differences; deleted mapped bytes are unknown.
+These are admitted-R07 stage/runtime/ABI/loaded-byte smoke gates, not corrected
+by a software-manifest join.
+
+At5275 the package implementation and native driver, Python closure checker/
+tests and all five S05 implementation/test paths retain their accepted blobs.
+Later Rust real-fixture changes `33b8c0be`/`caa34519` add runtime isolation/mode
+and observer contracts; they do not assert that old runtime used a new image.
+Semantic documentation changes `88becc6d`, `ea925dbf`, `0f2dd76d` record the
+owner reset, roster and finite runbook. HC01's original comparison population
+is retained. Current fence/bootstrap and separate S04R runtime procedure govern
+future execution; historical a42a sections2/3 do not override5275/sole1415.
+
+### J4: ten operation groups, routing variants and Foundation contracts
+
+The selected correspondence inputs are
+`/home/halbritt/.cache/cairn301-r03-r04-native3-join-1467-20261114/ledger.json`,
+SHA `8f0766ac5339c9631d837a6e52b08d1b52a05ebe40cfd00ade1791e9ba0b0ed4`,
+and `/home/halbritt/.cache/cairn301-release-1465/r04-r06-receipt-join-20261113/ledger.md`,
+SHA `6e08fb2d760db5bbf91dcf12137497edef0dacf186b01bd40958b6f838a71a92`.
+They join effect/negative groups R01-1..10; H001–H111 enumerate routing
+configurations, not111 independent passing operations. Their old UNKNOWN and
+dated failure labels are retained unless an identified later receipt fills
+that exact row. Hermes3 changes R01-5, not unrelated OpenCode/Agy rows.
+
+| Group | Supported effect/negative and selected correspondence |
+| --- | --- |
+| R01-1 | Claude/Codex start/prompt recall, request/context bounds, privacy/repeat/refusal; current checked consumer and historical native pairs retain their own images. |
+| R01-2 | Claude PreCompact/SessionEnd and Codex PreCompact/async Stop capture, coalescing/private/foreign-session controls; J8 adds one genuine ordinary `/2` cold capture. |
+| R01-3 | Claude/OpenCode tool hints and later-use boundaries; actual tool/provider object receipts in the ledgers, not a recall on every tool. |
+| R01-4 | Required OpenCode TS request-copy/tools/idle/compact/disposal: accepted d31 LayerA Node fixture, accepted87b→b361 historical native LayerB, and actual fresh5275 LayerB result07e44525 below bind H085–H109/306-2 within their finite effect/negative/return scope. Native before-tool callback remains absent. |
+| R01-5 | Required Hermes provider/registration/owner recall/completed capture/disposal; accepted bd2e installed/native objects plus actual Hermes3 and AC4 workflow joined below. |
+| R01-6 | Codex/Claude required `/2` inbox recall with binding/identity/privacy/refusal; four enabled ambient/default combinations refuse before effects. |
+| R01-7 | Distinct coordination hooks and native frames per supported harness; ordinary Agy memory is unsupported, child/busy/privacy/wrong-session negatives remain distinct. |
+| R01-8 | Issued read/complete/ACK/respond/finish, compact3600s and cross-reader recovery; J1/J2 plus actual historical native12 retained-Python effects. |
+| R01-9 | Supported idle wake and negative/busy/foreign/child cases; NativeRefresh and ExternalCoverage retain their measured unknown/unobserved limits. |
+| R01-10 | Recovery/retry/idempotence with exactly one result/causal reply, J1/J2 and J5; public Store cancellation is unsupported. |
+
+R04 cuts are `8ff6c9b7d243580d8203c7a7531e5797270de4b6`,
+`d75d700516dfb54d2a3a5280a937ecee53fd1ceb`,
+`71bb21aecfff8a8c736b1d4047b9633d27d18083`,
+`d83ab5bddf326b3f3e91c6380ac8bd8260efbc05` and
+`7c129123b903c79d0a4e61867ae63d273fac2d78`.
+Foundation contract index `f56d7376-f740-4185-82eb-ff6f1c10f275/v1`
+binds `75e08273e37c086ed1fdce3a8c5ecb3ab5ecb4ab` and accepted F01–F04 /
+CAIRN-318/319/320: authenticated profile selection, caller-specific locks,
+lossless frame/stdio, immutable `/2` versus checked `/3`, no fallback after Go
+starts, supported H13/H150 memory ABI and issued-command semantics.
+
+#### OpenCode historical receipts and fresh5275 binding
+
+The old lookup gap in `82f28b53-0517-4900-800d-8566f3de9094/v1` and the
+dated ledgers is preserved as history. It is now superseded by the located
+receipts below and the completed fresh5275 result. Corrected sole1415
+`c82914e9-6acb-4450-bcf7-21ff7cc74838/v2`, body SHA
+`3368f29afbb6c53cdae457de9f6a7ebd1391e059485087b63e74c26e2ae96faf`,
+distinguishes LayerA staged-TS host-fixture execution from LayerB disposable
+native-client execution. Supervisor
+`7b15a530-9f8f-4df1-b306-ee1502467f7b/v1` SECTION3 and Coordinator
+`97cb4e0d-b33f-4d8d-b167-a4f36025e97a/v1` select the single fresh check;
+Root `575d5578-1536-41f6-8b01-b130e3241776/v1` corrects the ruling's row
+annotations and nonexistent workflow-suite locator. No criterion is waived.
+
+| Actual tuple / layer | Selected acceptance and raw receipt | Observed finite result |
+| --- | --- | --- |
+| Nov11 d31ffdde / LayerA | `b1f6e633-1f1b-496e-b5a5-8b7f88ade99c/v1`, body SHA `6dfec798196cde3f8a7f049c177177b1ca99e10c023c7af19bc3b9e3263cd002`; `/home/halbritt/.cache/cairn-review-rr1-1371/r04-opencode-tools-d31ffdde/focused-receipt.json`, SHA `40a6067b69f82c28189ba107fbe4b273c6a2a44c23e190a44f91cf2353c6d493`; `focused.log`, SHA `e2af2628411026c4175978f45d5ce30c832e2e60cb73888342c895b426b8e422`. | Four focused methods/exit0 on clean `d31ffdded158afc47c6152da2b89322833168a0d`. Actual Node strip-types execution loads staged lifecycle/coordination TS after installer package removal; request/context/hints/capture-handler/returns, reverse inputs and changed-selection refusals are checked. |
+| Nov11 87b→b361 / LayerB | `04540693-315c-40f4-8f4e-f440f0863a3c/v1`, body SHA `09e52434d10ab6d596a850e696dd3164ff76a7871e8296a07c381508b6efc6be`; `/home/halbritt/.cache/cairn-review-rr1-1371/r04-native-opencode-87b1bf71/native.stdout`, SHA `4d9e47bd22bd56032de579fed1938624c4364b6a4517133696b57e9e05860f0f`; `native-receipt.json`, SHA `de96fcc0c48cfc3f5492b9238dd4f960245bb6700b5782dd9e3e7c9081ba868b`; `trace-receipt.json`, SHA `b39d481c89d85f60e54d7109535bbc62f29a1ed028e1fc93b9c947c08295281e`. | Historical native client whole-fixture passed/cleanup passed,13 observations and two expected receipt refusals on clean `87b1bf71549ae6c41f03844d8a2753096d457012`. Driver landed as `b361878782acd7e3b6fdef6377d311c6533faa4d`, same blob `856bca6ebcd3348a345cb8d8c19d07239e0e3e71`. This is not5275 runtime. |
+| Nov15 5275 / fresh LayerB | Agent1466 `07e44525-79b4-4aed-8aba-a1ebdb64b027/v1`, body SHA `33d698210307f51c7718fb65adacb223701967d8480722cb6ae9110c5c5cabe4`; primary packet and pins below. | Exactly one unchanged invocation13:34:39.906172–13:35:29.690806PST,49.7846256s, exit0/reruns0. Whole-fixture passed=true/cleanup_passed=true,13 observations. **Fixture-built from5275bd3d source, not the sealed FINAL5 images.** |
+
+The fresh primary root is
+`/home/halbritt/.cache/cairn301-opencode-5275-1466-20261115/`:
+
+| Primary member | SHA256 | Binding |
+| --- | --- | --- |
+| `report.json` | `0503759b0dc065855dcd19f0317f67bcdd5af8eb0b1fc8d15b957b141325b62d` |11181B; exact argv/source/tree/tool/client attribution, cleanup and honest unknowns. |
+| `index.json` | `4d6e8ffe5c0f595855a140195e7f01142ecdb1d05695557e1347524ab16da7e0` |20128B; selected raw stdout/stderr, archive, trace and metadata pins. |
+| `native-isolation.json` | `9ba9dd9e6f717b6551428090202c328adc965d8b13e94e1c44d03629d2f001a0` |2451B; wrapper return0, clean5275, isolation/self-test passed, loopback-only fixture. |
+| `artifacts/report.json` | `a8f7265b2a5dfe5ade3f4b4d54ae857f208c8ff3fa2d28442149f86e26391988` |61184B; actual native schema `cairn.r04-native-opencode/1`; matched by Root to raw stdout/archive. |
+
+The actual source is `5275bd3d0d71c95062b257bdeda42acc147c5f2e`, tree
+`01e7d7b0f5b5832a53882ac8af413bee5c7f1a90`, clean before/after. The unchanged
+fixture builds two temporary Go targets, `cmd/cairn-stage-lifecycle` and
+`cmd/cairn-lifecycle`, using `go build -buildvcs=false`; Go1.25.0 is reported.
+The exposed staged lifecycle image SHA is
+`a8bf5cd5580ba6395aaed0de66ea3322948dda42d260afb470326e9f8b850063`.
+Temporary stager hash/path, separate build exits and host Go origin are
+**UNKNOWN/not exposed**. None is replaced with a sealed FINAL5 digest.
+The selected actual client is1.19.5+cairn.810c0eb, SHA
+`977b43dd6361a55a1a32bf511834c118195fd75b27c065e46c100c6e0f4b0e1c`.
+
+Observed labels are fresh-a, existing-a, sibling-a, control-a,
+cached-a-after-b-publish, fresh-b, refreshed-b, sibling-refreshed-b,
+control-still-a, missing-receipt, corrupt-receipt,
+cached-b-after-reverse-publish and reversed-a. Missing/corrupt receipt are
+two expected refusals with synthetic API deltas[0,0], not failed cases.
+Per-case status flags and an explicit skip counter are UNKNOWN/not exposed;
+13 observations do not become13 separately reported PASS counters. Root's
+`Root-OpenCode-qualified-result.json` and `Root-OpenCode-primary-pin-check.json`
+under `/home/halbritt/.cache/cairn301-release-1496/final-join-repair-76684d7d-20261115/`
+bind the primary hashes, stdout/archive equality,13 trace pins,39 regular
+archive members, isolation, cleanup and removed producer worktree. This author
+checks selected bytes and sources, without rerunning or expanding that fixture.
+
+The TS adapters/Node transport remain3/3 identical fromd31 to5275; the native
+driver retains the87b/b361 blob. Staging changed betweenb361 anda00dc8b1,
+including8ff6c9b7/d75d7005/a00dc8b1 and the intervening accepted route changes.
+The10 selected TS/driver/wiring/wrapper/compatibility paths have zero changes
+acrossa00dc8b1..5275, recorded in
+`/home/halbritt/.cache/cairn301-release-1465/opencode-final-bind-5275-20261115/opencode-source-carry.json`,
+SHA `49fa67dad1b1cfa4a8613395cac60436e8977d2e23f9d748af25d4d1a96f872a`.
+That is source carry, not another LayerA run; the genuinely fresh1466 LayerB
+receipt supplies the admitted current-source execution instead of assuming
+carry across earlier staging edits.
+
+The finite limits apply to both historical and fresh native fixtures: A/B are
+receipt/config-cache selections of the same Go image, not a different-code
+upgrade. `instance.dispose` refreshes the directory instance and its siblings,
+not one thread. Capture invokes the real handler with a local selector choosing
+NO_WRITES, so it proves no saved record. The API/model are synthetic loopback
+fixtures, not Store/auth or real provider qualification. The settle wait is a
+timing heuristic. Staged PreToolUse is a command route; the plugin has no native
+before-tool callback. Existing J1/J2/J8 and R03 effect fixtures keep their own
+write/population evidence; their effects are not attributed to this OpenCode
+fixture. No whole watcher barrier, other-harness, live installed-client, full
+R04/R06 or production qualification follows. B1.4/R01-4/H085–H109/306-2 and
+B2/FT03/FT10 now have a concrete, finite receipt join for final review; this
+factual closure is neither independent ACCEPT nor Plane Done/admission.
+
+
+Source exclusions are checked against current5275, rather than frozen route
+labels: H031/H032 are bound Codex ambient start/prompt and H074/H075 bound Claude
+ambient start/prompt: the four enabled ambient/default recall refusals.
+H078/H079 are bound Claude ambient post-tool/failure hints; H102/H103 are
+unbound OpenCode ambient post-tool/failure hints. These tool routes and bound
+OpenCode memory retain Python. They are not unbound capture or SessionEnd
+labels. Ordinary Agy memory and
+public Store cancellation are unsupported. The finding's0c93587c/Python-retained
+Claude UserPromptSubmit exclusion is dated wording, not the current route.
+The accepted3d75910e prompt/native chain selects checked bound agent_tools Go;
+it must not be declared currently unsupported. Four enabled ambient/default
+Claude/Codex profiles still fail `inbox_binding.py` admission; disabled-binding
+fixtures do not admit them. Current bound tool admission2ade27c9 preserves H13;
+71bb21ae carries checked coordinator snapshots; c94729a7 adds only the typed
+configuration-failure trace/Unicode seed behavior. These changed paths are
+named in source-carry; no blanket unchanged-R03 or full native matrix claim.
+
+### J5: schema, currentness and disposable recovery
+
+FT05 binds the current schema set, including
+`core/schema/056_semantic_passages.sql` (blob
+`590f514ac385faa505044b1bad4bd98b8d8717c0`, SHA
+`2145761207d97e652f866d637b8fa479dc229dc493f1976a15a5236b578c5214`)
+and `057_checkpoint_members.sql` (blob
+`0cb01fb738600cc9d443cc2fca082f886ce37f51`, SHA
+`56d79e770fbff440d7ed2791e7319b28ca73ef14c2356fe3d9d0ffe13162b9a0`).
+All84 selected schema paths are unchanged fromca5ed8a4 to5275. Attempt-status
+cut `cde4a4aca91f96a154a9dc9a34ac8170eafd728f` and decision
+`896db6b3-3b52-4275-938e-67c7b03d4764/v1` retain the same attempt-status core;
+later authenticated poll-history readers `29215eae` change the API consumers,
+not the old attempt-status result.
+
+Accepted recovery `ca5ed8a40451f487e07649ee7e8557532a7c3b68` selects
+[recovery rehearsal](r07-recovery-rehearsal.md), SHA
+`1b0480aed793384310507a7f0eb77bcfd9a25ff6e99a99cd7a716e005cf8a6f5`,
+and `/home/halbritt/.cache/cairn-r07-integration-1468-20261113/`:
+`final-qualification.json`, SHA
+`601cb5e71c307a0bf025618259cb6643b4c1f164d9db0cb865024abccd54d634`,
+`actual-recovery/result.json`, SHA
+`36e6f55f8f26016bd7f88a771072d5006500bb3dea279d5722ab60a762b1dfed`,
+and `images-host.json`, SHA
+`1d24857e616f6bdd85925205bf623fb5bb8a6c00fcb5cec11b9c6ea9198eeffb`.
+It records one actual private recovery exit0,67 command receipts/two API
+processes,29 fresh focused passes/zero skips (transport exit not retained,
+terminal OK checked), check/docs0, private PID/PG cleanup and removed runtime.
+The five images are qualified carry from3537, not newca5/5275 builds; actual
+API image pin `a17a89fe189f6fb67210d0764908659c0b5ad7f4c57bdd87eea0fd09da1823dc`
+is explicitly recorded. Native10 held/native11 not run, three audit gaps and
+four residual effects remain in that receipt. Recovery driver/tests are2/2
+unchanged at5275.
+
+The earlier driver2 failure is retained at
+`/home/halbritt/.cache/cairn-r07-recovery-rehearsal-attempt2-1381-20261113/final-qualification.json`,
+SHA `96220258152b55a3602f66b6418e70cd12fd4e836f33550ea51d031acf8fefcf`:
+binding metadata/VCS-stamp failure before API/PG/recovery creation. That frozen
+receipt records its then self-imposed two-attempt metadata cap and no third
+attempt under that cap. Subsequent owner linked-worktree decision
+`01a83f82-3108-46c5-8daa-745ebefcf065/v1` permits the selected regular `.git`
+file context with source checks and explicitly rules that pre-PostgreSQL
+metadata stops with zero recovery execution do **not** exhaust recovery caps.
+It authorizes the correction and later actual rehearsal above; the earlier
+failure stays retained. Its historical reviewer route is superseded by current
+sole1415. This is no current native/characterization budget reset or authority
+for arbitrary unknown images. Fresh production checkpoint/export, backup/WAL/
+Talos facts and semantic STOP read remain admitted-R07 execution receipts.
+
+### J6: fixed-head tests, integration and current dependencies
+
+| Selected actual gate | Exact source, raw locator and outcome |
+| --- | --- |
+| Fixed normal-host `mise run test` | `7c129123b903c79d0a4e61867ae63d273fac2d78`; `/home/halbritt/.cache/cairn301-foundation-1381/fixed-host-test-retry01.log`, SHA `03ca1d9b3da56961719416235a3ad187b7ff16a7053093b8ff507c22fc8d44be`, exit0,3208.204s, unchanged head/tree/clean. Default non-DB gate, not75e/5275 full-suite or PG coverage. |
+| Earlier landed45c host suite | `45c6083f32910256ca5c435b2d3a6c421dcab9c2`; `/home/halbritt/.cache/cairn301-coordinator/host-make-test-landed-45c6083f.log`, SHA `4f1fa5b365d30e5294dd532c2bbfddf40286811d8c7f1231fa82abfc8cac5979`, exit0; Ran4646 Python tests, skipped39, no failures/errors; historical recorded host command is retained as reported. |
+| Unfiltered integration | `7b82fcef-7c90-4406-b3fc-5ddad6560f2c/v1`, actual source `c2fcd6585455837dfabd76703a4f89e1d321caa0`; `/home/halbritt/.cache/cairn301-foundation-1381/cairn307-c4-integration-retry1-20261112/stdout.log`, SHA `99c162f4834f66968de7f839a175c826574d7b5559d186a38f0f151cdb2fa97d`, exit0 in29m25;42 Go packages =34 PASS/eight no-test-files. Nonverbose individual/skip counts unknown, not zero. |
+| Current5275 gates | FINAL5 original images and whole packet validator above; `Root-final-image-rehearsal-summary.json` SHA `bb790d9724cff99bdc67f28556a2db97fba297a69a583d526371ec9d2691f707` and `Root-r07-workflow-summary.json` SHA `81d8792f4e780062b0f4420a228d55fa0a13edec94685f5a2af9b1b35e3d9e0e`: full11 one PASS/zero skip and four SHAPE workflows. Separate current fixture coverage, not a current full-suite rerun. |
+
+Integration kept37 workflow receipts/provider calls false and26 protocol-skew
+combinations. `CAIRN_SEMANTIC_WORKER`, `CAIRN_SEMANTIC_STREAM_WORKER` and
+`CAIRN_OPENCODE_BINARY` were unset: optional real-worker/native-OpenCode probes
+were **NOT RUN**. A generic worker-pool fixture does not replace them.
+The dated disposition
+`/home/halbritt/.cache/cairn301-release-1383/ticket-reconciliation-20261112/CAIRN-305-307-disposition.md`,
+SHA `1ef741d2c52789ead8eea42090a2cd477c9add9a755d208c928ba67d450b3fd1`,
+predates that completed C4 retry; its missing-C4 label is superseded only by
+7b82. J1 actor pins, J4 accepted routing changes and current5275 gates state
+applicability; no baseline rerun, new optional probe or universal PASS follows.
+
+### J7: maximum-document oracle and Overall disposition
+
+FT07 records the original31-file maximum-document oracle seal SHA
+`ef04e09d5bb7d906740da0f6406b14b4de3d14a6dfe664d313ce8ebb87815a4d`
+from `378ded83-462a-47f1-82d8-f5243bef82db/v1`. Its65536 punctuation case,
+normalization/non-injective coverage limits and provisional audit remain
+historical; they are not a numerical full-coverage certification. Overall
+`0ba29009-f422-4a11-a94b-018f1d3139b0/v1` authorizes exactly two B1 passage
+executions and one B2 real-Go90 document execution conditionally; authorization
+is not proof they executed. `b8bde736-20e4-4957-88f3-2acc7109e4fb/v1`
+permits the owned0700 external wrapper operand only, retaining the seal and
+ceilings without another experiment.
+
+Owner reset `cb71136b-cd84-4fc2-b84f-eb247b975548/v1` retains236/238 S01b
+subcases and completed S02/S03 bit-exact evidence, documents Latin65536 /
+CJK65535 maximum-byte boundary limits and preserves the old audit exit3.
+Whether optional B1/B2 search executed remains provenance-unknown. No new model
+experiment, reset, metric series or invented PASS is needed for this factual
+disposition join; accepted finite software and its stated limits are selected.
+
+### J8: genuine retained Python `/2` cold restore
+
+FT08 binds `66849af1af930bbb5877975c4e9de0bade955373`,
+[offline restore](r06-lifecycle-offline-restore.md), SHA
+`c3781eb1ac568555f75b9c46636ecb6dc9095cc0e1951ed29b78eadb32fc5936`,
+and landing `a5bbd41f-9b8c-4a3e-8c07-5ad51c32f033/v1`. The author packet
+`/home/halbritt/.cache/cairn-r06-retained2-ws-1468-20261114/evidence-index.json`
+has SHA `3e3c80c6627db785b2362c961d6dab5d6a9594e9ab19ac405cd4c20f1aed1856`;
+its `final-run/payload-manifest.json` SHA is
+`f68f8b986e8556c96313918f8c4d02b0b9578b022fd8990adcd4a804e27c06bb`.
+The independently accepted cold-run receipt directory is
+`/home/halbritt/.cache/cairn301-review-1416/r06-retained2-cold-restore-20261114/cold-run-receipts/`.
+Its archive/manifest hashes are
+`b7496523553804e525867f351554838d1158fc60d042f24a1d0aca0e510d86e3` /
+`98313b7e8afd94117b4bab009db785b66252605b2b462576ef774a48f0d21ad3`:
+911 members/840 regular files/118692951 bytes. This is historical acceptance,
+not a new1416 route or current final-packet review.
+
+The sealed CPython closure includes mandatory websocket-client1.9.0 and34 ELF
+libraries; the genuine17-member `/2` engine/bridge/binding/configuration and
+literal issued argv restore after retired paths were initially absent. Actual
+restored ordinary Claude SessionEnd saved one lesson/one capture in private
+API/PG, sessions0. Package origins, mapped libraries and actual local WebSocket
+socketpair exchange were checked; this is not TLS or native-client proof.
+Fifteen prelaunch refusals, unchanged `/3`-refuses-`/2` exit1, API exit0/PG
+stopped and147 owned PIDs absent are retained. Deeper binding mutations hit
+member-hash checks, not independently authenticated deeper semantics.
+The correct historical image manifest is
+`eb3b550ed34cbe933df4c90da3491b56430ee177f7e79426b26f5a80858a3a8c`;
+the landing corrects an old review prose transcription without changing sealed
+receipts. All19 selected Source/driver/test paths are unchanged at5275.
+Scope remains one ordinary capture row on Linux x86_64 with the fixed,
+non-retired OS loader ABI; no semantic reverse, all-host/all-harness, new common
+image, full HC05 or production qualification is inferred.
+
+
 ## Supported and unsupported R01 matrix
 
 This is source support plus evidence disposition, not a successful installed
@@ -351,11 +732,11 @@ cycle matrix. The [R01 characterization](hybrid-runtime-r01-characterization-202
 and [supported-operation definitions](hybrid-runtime-supported-operations-2026-11-06.md#operation-evidence-and-required-installed-effects)
 retain the exact event/refusal contracts.
 
-| Harness | Ordinary memory support | Coordination / explicit unsupported cases | Evidence still required for the final unit |
+| Harness | Ordinary memory support | Coordination / explicit unsupported cases | Scope of later installed qualification |
 | --- | --- | --- | --- |
 | Claude | Start/prompt recall, tool hints, PreCompact/SessionEnd capture; ordinary Stop capture is unsupported. | Bound recall and channel delivery/idle wake are distinct; public running native cancellation unsupported. | Exact loaded selection, actual supported memory and required-context event matrix, channel/session continuity and supported idle-boundary refresh. |
 | Codex | Start/prompt recall, PreCompact and asynchronous Stop capture; ordinary SessionEnd capture/tool hints unsupported. | Exact queue/turn delivery and wake; Interrupt is presence, not request cancellation/cleanup. | Every affected loaded thread's hook/config readback and natural supported cycle; no inference from cwd, parentage or current MCP alone. |
-| OpenCode | Actual TS request-copy recall, tool hints, idle/compaction/disposal capture. | Child/title exclusions; cancellation only in the qualified opt-in trial, not general Store cancellation. | Actual TS execution and peer/capability/turn/tool correspondence; directory-wide disposal cannot be reported as a per-session refresh. |
+| OpenCode | Actual TS request-copy recall, tool hints, idle/compaction/disposal capture. | Child/title exclusions; cancellation only in the qualified opt-in trial, not general Store cancellation. | J4 binds historical staged-TS and fresh5275 native fixtures; actual installed owner/peer/capability/turn/tool and directory-scope refresh still need their selected runtime evidence. |
 | Agy | Ordinary automatic lifecycle memory **unsupported**; explicit MCP memory is separate. | PreInvocation and fully-idle Stop, top-level wake versus child deferral; public native cancellation unsupported. | Actual native generation/session, one managed layer, A-to-B same-process refresh and native drain; `ExternalCoverage` unknown, `NativeRefresh` unobserved; one owned native interval at886 does not qualify every installed row. |
 | Hermes | Required Python provider/registration, owner-turn recall, completed-turn/pre-compaction capture and disposal. | Local abort does not attest public Store request cancellation. | Final installed provider/registration/host-return and common-unit correspondence beyond the finite native3 case; retain required Python. |
 
@@ -378,62 +759,114 @@ not permission to move files, create locks, alter permissions or restart units.
 
 ## Predecessor and operational correspondence
 
-| Target / case family | Actual attributed evidence | Remaining boundary |
+These mappings submit the four tickets' existing pre-cutover criteria for final
+packet acceptance. They do not change Plane states, add production requirements
+or assert a final acceptance that has not occurred.
+
+| Ticket | Reconciled pre-cutover mapping | Exact boundary |
 | --- | --- | --- |
-| R01 supported operations | Dated141-ID characterization and explicit harness support/refusal rows above; no new native or R01 rerun in this docs task. | Finite source support/method checks do not certify every installed host or hook latency. Preserve unsupported operations and dated failures. |
-| R03 / CAIRN-305 AC4 | Hermes3 exact source/checker/image/command map and native custody above; retained effects/journal mappings remain on their original tuples. New5275 changed compiled paths are fence/bootstrap only. | Root joins AC4, host-return/lifetime/custody and common-unit predecessor criteria; unchanged source alone does not make old actual runtime5275. |
-| R04 / CAIRN-306 | Native12, retained `/2` hook/effect results and supported source rows above; new composed source and final-image controller gates are separately actual. | J06/J05/F02/F03/R02 and full supported harness/refresh/external coverage remain exact criterion joins, not a global native PASS. |
-| R06 / CAIRN-308 |5275 ACCEPTa8, fresh FINAL5/full validator, four SHAPE/default-refusal gates, full11 and reviewed correspondence to f637. | Installed live census/unit-control is UNSUPPORTED/FIXTURE_ONLY, an explicit nonclaim rather than a four-ticket Done blocker; real per-host stopped bootstrap/adoption is later admitted work. |
-| HC05 / CAIRN-312 | Current five original digests and controller/SHAPE/full11 results, attributed actual native886, historical harness-specific receipts. | Root selects the exact supported installed/equivalence matrix and acceptance disposition. No whole-ticket Done or current installed acceptance is supplied by prose. |
-| FT01–12 / routing variants | Exact Root criterion ledger and earlier receipt join are selected below; no additional functional/native trial ran here. | FT04 unsupported production census and FT12 downstream rollout/observation are explicit nonclaims, **not four-ticket Done blockers**. |
+| CAIRN-305 / R03 | AC1–3 bind the bd2e installed provider/registration, effects, negatives and owned lifetime evidence below. AC4 joins actual Hermes3 cached-A refusal/orderly B and explicit `/2` resume to the current5275 shared-unit/Hermes-external-state SHAPE workflow. | Different native/image/controller populations stay distinct. f637 does **not** exercise Hermes. No whole gateway restart, all-client refresh or production adoption claim. |
+| CAIRN-306 / R04 | R01-1..10 map effects/negatives/return envelopes through J4,111 routing variants remain definitions, J1/J2 bind replay/refusal/3600s handles and immutable `/2` completion/ACK/reply; native12, Hermes3,886 f637 and5275 gates have separate source/image tuples. | J4 now binds accepted historical Node/native receipts and fresh5275 fixture-built native evidence. Source carry, per-case unknown counters and same-image/directory-refresh/NO_WRITES limits remain explicit; no universal installed PASS. |
+| CAIRN-308 / R06 | FT01,02,03,05,06,07,08,09,10 and the code/build portion of11 are joined below to selected raw receipts, accepted source or finite stated disposition. FT04 is a nonclaim; FT12 is downstream. | Final packet acceptance is pending correction review. Unsupported live census is not a four-ticket Done prerequisite; actual per-host deployment/reverses remain admitted-R07 work. |
+| CAIRN-312 / HC05 | Accepted R02–R06 predecessor chain below, immutable `/2` and `/3` coexistence, supported refusal/drain/repin/restart/reverse effects, offline cold closure J8 and distinct actual unit populations bind the finite common-unit correspondence. | Current5275 full11/SHAPE is not global12 or Hermes3 or886 nativef637. No universal all-host/all-harness runtime PASS or replacement for actual runtime receipts. |
+
+### CAIRN-305 effects, AC4 and accepted predecessor chain
+
+AC1–3 select
+`/home/halbritt/.cache/cairn301-foundation-1379/cairn305-readonly-reconciliation-20261112/CAIRN-305-reconciliation.md`,
+SHA `a38a5c51c10732a4620e5770eeb2c768736ce01e30cadf757c00f88a99556c70`,
+result `d810c2cb-2473-44d8-97b3-fa72e8a45289/v1`, actual memory source
+`bd2e818bc60666579adaba29ca0fa7d380a22e5f`.
+Memory J-R2 ACCEPT `e1daa573-e561-4016-ba24-8025cbd09880/v1`, composed carry
+`aa6a84a1-1d76-4207-845d-4a17ee874308/v1` and landing
+`7b700d03-78e4-4504-a69f-0e926693fdb3/v1` bind the exact nine memory blobs;
+coordination half `d3324c0b-3d19-44ea-9103-c66e55a5ad91/v1` binds its two
+blobs and11+21 checks. The raw bd2e
+`/home/halbritt/.cache/cairn305-r03-composed-1375-20261112/validation-packet.json`,
+SHA `d4fb6b056617c082168ce17ed666755f3fa7fcd583285c80deed5cc3614a96f8`,
+records31 focused/10 installed-native-object cases/self-test/real Store effects,
+check/docs exits0; installed receipt SHA
+`532ec610469d944ecb91824aab92ff792b21a182c350984941f51cbc8f982d6d`.
+Real installed MemoryProvider/five registration handles and selected dispatch
+verify request copy, bounded recall, owner-turn deduplication, private/foreign
+exclusion, capture/coalescing and disposal. The effectful installed case has27
+API calls/two writes; interrupted ownership exit130 preserves the unrelated
+process, joins only the owned tree and writes0. Missing/tampered/incompatible
+closure refusal and cached-A/new-B/retained-Python cases remain in that packet.
+These are actual objects/processes with a declared scripted selector, not an
+actual gateway service or public Store-cancel implementation.
+
+AC4's later native selection is checker
+`3637bb31b949db20bd4b67387dec369cba68dbfb`, actual Go image source
+`7d22b663d6abb0295dda0263adc9033353e5cefa`, result
+`fb2b0b37-0f94-4401-a5bd-b93047b3dd56/v1`.
+`/home/halbritt/.cache/cairn301-hermes-run3-native-1467-20261114/actual-command-image-map.json`
+SHA `887bfa932125bd38108ace5a1067c0e8ed4ef9611dd0e2a966093c8fc56066a0`
+and `native-proof.json` SHA
+`d3aa08d40b75d8f863676f9e7098dade7c19a8d0fbf378a9dcfadcade419c055`
+bind actual argv, provider/configuration, source/image custody and phases.
+Eight emitted Prompt/End callbacks, histories4/4,6/6,8/8, five records/four
+captures/four recalls, attempts/deliveries0/0 and audit violations0 qualify that
+finite case. Cached A refuses the changed selection; orderly join/reap and
+same-history B resume precede explicit retained `/2` resume. Current5275
+`Root-r07-workflow-summary.json` SHA
+`81d8792f4e780062b0f4420a228d55fa0a13edec94685f5a2af9b1b35e3d9e0e`
+supplies the separate shared-unit stop/switch/reverse/rollback SHAPE with
+Hermes external state and raw originals. Current full11 SHA bb790d97 supplies
+its8BOUND+3UNBOUND fixture only. Nativef637 remains actual886 and explicitly
+supplies no Hermes proof. AC4's finite pre-cutover correspondence is this
+combination; deployed per-host positive manager/adoption checks remain later.
+
+All seven Hermes3 producer-file SHA pins match5275 exactly (installer, hook/
+compatibility stagers, R02 compatibility fixture, compatibility/bundle engines
+and native checker); source-carry retains their receipt hashes and Git blobs.
+This does not substitute5275 images for the actual7d22 images.
+Static bd2e..5275 correspondence retains18/22 selected reconciliation paths;
+changed `checked.go` is the accepted c947 configuration-failure trace repair;
+stager/test/contract changes are explicitly listed in source-carry. The current
+R04 route changes and H13 bound-tool/snapshot rules are J4, not a new bd2e
+native run. The native Hermes3 map keeps its own7d22 executable source.
+
+| Predecessor | Accepted finite input to the join |
+| --- | --- |
+| F01–F04 / CAIRN-318/319/320 | Foundation75e index `f56d7376-f740-4185-82eb-ff6f1c10f275/v1`; F01 `c8df7493-4a33-45c2-946b-8b43a8de1eb5/v1`, F04 `eed27e0e-3d43-4d59-9198-40bb6f8b33de/v1`, F02/F03 `0becbeb6-bb62-4103-95fb-8fa6f389a2e5/v1`, carried21 blobs/five patches and actual8+3 reviewer checks. Token path selects profile; payload identity is not authentication. |
+| J05 / CAIRN-336 | `0585fa42-ee0b-4dee-8426-e25e4f16a7ba/v1`, exact private dispatch/recovery/race acceptance on26fa0f5e, nine reviewed blobs. Archive clean-HEAD field unknown remains unknown; no production consequence inferred. |
+| R02 / CAIRN-304 | Accepted installer/runtime-selection chain e258e042 /9fcd218a /c8014ece /87b2ad3c; bd2e installed effects execute after installer inputs are removed, with Source/Go pins and refused missing/tampered members. An install alone is not a refreshed unit. |
+| R03 | AC1–3 bd2e actual effects/ownership above; later native Hermes3 and5275 AC4 SHAPE fill the identified shared-unit correspondence, without rewriting the earlier OPEN-AC4 report. |
+| R04 | J4 ten operation groups/111 routing definitions, dated source/native receipts and explicit exclusions; J4 now supplies exact historical Node/native and fresh5275 actual OpenCode receipts, with finite supported limits and original tuple attribution. |
+| R05 / R06 | J1 accepted journal062 plus retained other13 cores; J2 issued effects/compact state; J5 recovery; J8 cold `/2`; current5275 original five/full validator/full11/four SHAPE workflows. |
 
 ### FT01–12 criterion correspondence and ten supported groups
 
-The exact dated886 Root criterion selection is
+The dated886 criterion source is
 `/home/halbritt/.cache/cairn301-release-1481/post-native-r07-973-20261115/Root-criteria-reconciliation.json`,
-SHA256 `86b7a6d84944efc1218d6a83d5f8557d3d57822fd8f19d1865739b04948f6925`.
-Its twelve final-tuple rows and four ticket blocks preserve criterion meanings;
-old pending code/build/rehearsal dispositions are updated by actual5275
-acceptance and final-image evidence above. It is not a claim that the dated886
-receipt ran5275. Only Root/Coordinator selects final ticket closure.
+SHA `86b7a6d84944efc1218d6a83d5f8557d3d57822fd8f19d1865739b04948f6925`.
+Its definitions/dispositions remain; current5275 receipts close its old source,
+build and controller fields, without relabeling nativef637. J4 supplies the
+ten supported groups versus111 routes and the exact return/negative limits.
 
-The retained receipt ledger
-`/home/halbritt/.cache/cairn301-release-1465/r04-r06-receipt-join-20261113/ledger.md`,
-SHA256 `6e08fb2d760db5bbf91dcf12137497edef0dacf186b01bd40958b6f838a71a92`,
-lines31–46 defines **ten R01-1..10 effect/negative groups**, separately from
-**111 config/event routing variants** (E14 enumeration; C04 lines110–191).
-Those old row verdicts are historical, superseded by exact later finite
-receipts where applicable.111 routes are not111 native trials or a mandate
-for111 new runs. The current supported-operation definition has SHA
-`3f392718c21b6707339bd5a95321ce8152ff69fb4ede09669470ca2d6948c0e5`;
-its unchanged source can carry definitions, not invented later runtime results.
-
-| Criterion | Actual current correspondence | Remaining scope / disposition |
+| Criterion | Bound pre-cutover evidence | Remaining boundary |
 | --- | --- | --- |
-| FT01 | COMPLETE5275 landed source/tree/eight blobs/fresh FINAL5/tool and source custody. | Later docs-only HEAD stays distinct; old886 packet retained only for actual native tuple. |
-| FT02 | Existing accepted Rust/model/config/derivation/native-library/ABI/launcher and S05/S04R artifacts retain their own sources/pins. | Final software-manifest tuple join, not new production runtime. Actual stage/writer census/full rebuild are admitted R07/R08 work. |
-| FT03 | Finite immutable Python2 17-member bundle/literal argv and Go3 receipt/profile closures; current5275 fixture closure actual. | Match exact final bindings/config/account/shell/interpreter closure; production8+1+1 plans remain separately UNSELECTED. |
-| FT04 | Actual886 nativef637 one-owned-Agy interval plus approved5275 source correspondence; current full11 has eight inactive bound peers plus three unbound profiles. | Installed roster/live Agy census and global refresh remain explicit nonclaims/UNSUPPORTED. They are **not blockers for305/306/308/312 Done**; managed actual readback follows admitted stopped R07. |
-| FT05 | Existing selected software schema/store/currentness/recovery evidence retains its actual acceptance/source. | Final RC recovery-manifest join. Fresh checkpoint/header/export FIRST, WAL/Talos facts and semantic STOP read are R07 steps, not new pre-cutover production execution gates. |
-| FT06 | Current composed ACCEPTa8, fresh packet/full validator/four SHAPE/default-refusal/full11 gates complete; earlier R05 C4/7b82 and50151/b8 correspondence stays attributed. | Final applicability/dependency manifest join with actual skips/NOT RUN; no baseline reruns or universal test PASS. |
-| FT07 | Original maximum-document oracle/B1/B2/Overall evidence keeps its selected historical disposition. | Unknown optional disposition remains unknown; no new experiment, population/metric series or invented defect/pass. |
-| FT08 | Historical global12 actually ran retainedPython2 issued read/finish and reverse; Hermes3 resumed retainedPython2. Currentf637 reverses to Go3A only. | Select exact offline Python2 interpreter/packages/launcher/issued-argv closure; directory restoration alone does not prove restoration with dependencies initially absent. |
-| FT09 | Accepted5275 bootstrap raw-original disable/exchange/reverse/rollback and runtime parity; S04R exact a42a ruling/corrected crosswalk below. | Actual production writer fence/STOP read, both executable reverses, selected semantic rebuild and each-host default-manager positive remain admitted R07 execution work. |
-| FT10 | Ten supported R01 operation groups,111 routing variants, historical native12/Hermes3 and actual886 f637 each retain their separate finite populations. | Final supported effect/negative/return-envelope/actual-TS/Hermes receipt-to-image/source join; preserve unsupported ordinary Agy memory/public Store cancellation and use source-supported exclusions. No inactive-peer/live-client substitution. |
-| FT11 | Composed code repair acceptance, landing and current final-image gates COMPLETE. | ONE final1415 RC+R07 PACKET review of final source/manifest/doc pair and Root-selected host plans; no1416/additional quorum. |
-| FT12 | R07 production cutover, R08 continuous>=24h AND full Rust rebuild, R09 retirement/removal/redeployment are downstream. | Clock UNSTARTED. These are **not four-ticket Done prerequisites** and are not backfilled from a source landing or fixture. |
+| FT01 | Current5275 source/tree/eight blobs/fresh FINAL5/tool and source custody above. | Child docs-only HEAD is separate from compiled5275 and historical886 native images. |
+| FT02 | J3 exact Rust/Python/S04R/S05/HC01 software/payload/config/derivation/library/launcher selection. | Six differing Rust ABI libraries/uninstalled destination and Python loaded-byte unknowns require admitted runtime smoke; no missing software-source placeholder. |
+| FT03 | J4 ten supported groups plus historical LayerA/LayerB and fresh5275 OpenCode raw binding; exact17-member Python `/2` and checked Go `/3` profile/argv closures; J2/J8 actual issued/cold effects and current5275 fixture closure. | Production plan materialization, actual account/shell/path/currentness and per-host runtime checks remain separate; no invented all-host closure. |
+| FT04 | Actual886 f637 interval and accepted5275 correspondence; full11 contains eight inactive bound peers/three unbound profiles. | Live installed census/global refresh UNSUPPORTED/FIXTURE_ONLY, an explicit nonclaim, not a four-ticket Done gate. |
+| FT05 | J5 schema056/057/current schema set, attempt/poll readers, actual disposable recovery, retained driver2 failure and linked-worktree decision. | Fresh checkpoint/export/backup/WAL/Talos/semantic STOP facts are admitted-R07 execution. |
+| FT06 | J6 fixed7c/45c test logs, skipped39 on45c, unfiltered7b82 integration with unknown nonverbose counts, optional probes NOT RUN; separate current5275 gates. | The old integration optional probes stay NOT RUN; J4 supplies a separately admitted later OpenCode result. No current full-suite/real-semantic-worker rerun or universal PASS. |
+| FT07 | J7 original oracle seal and full Overall/reset decisions with retained old exit3 and Latin/CJK limits. | B1/B2 execution provenance remains unknown; authorization is not execution. |
+| FT08 | J8 accepted6684 genuine cold restored CPython/websocket/34-ELF/17-member `/2` closure, initially absent paths and actual capture. | One ordinary Linux x86_64 row/fixed loader ABI; distinct from Go3A reverse and semantic Python reverse. |
+| FT09 | Accepted5275 bootstrap raw-original disable/exchange/reverse/rollback/default refusal; J3 and R07 explicit S04R override/file-verifier/supervisor procedure. | Actual production writer fence, both executable reverses and each-host default-manager positive remain execution prerequisites. |
+| FT10 | J1/J2/J4, exact bd2e effects/native objects, Hermes3/AC4, historical native12/OpenCode and actual886 f637/current5275 controller populations, plus fresh5275 OpenCode07e44525 with its two fixture-built tools. | OpenCode receipt binding is complete within J4 scope; exclusions, NO_WRITES/synthetic API/same-image/directory-instance limits remain explicit. Inactive peers are not live clients. |
+| FT11 | Composed-code ACCEPTa8/current source/FINAL5/gates complete. Sole1415 packet verdict76684d7d rejected documentation joins; this child supplies corrections. | Corrected packet acceptance/Root selection integration pending; no1416/additional quorum or self-admission. |
+| FT12 | R07 cutover, R08 continuous>=24h **and** full Rust rebuild, R09 retirement/removal/redeployment. | Downstream; clock UNSTARTED, not four-ticket pre-cutover Done requirements. |
 
-For CAIRN-305 the remaining join is supported Hermes operation/negative/custody/
-AC4 and predecessors with exact image/source correspondence; f637 does not
-exercise Hermes. For306 it is supported operation/refusal/refresh/retained-
-handle mapping, actual offline TS/applicable host-return evidence or explicit
-source-supported exclusions (including3600s TTL and old2 completion/ACK/reply
-semantics). For308 it is the software/semantic/reverse/operation/dependency
-manifest and final RC acceptance: its former fence/build/controller gate gaps
-are complete here. For312 it is the R02–R06 predecessor and supported installed/
-offline effects/negative/immutable2–3 lifecycle matrix and final RC acceptance.
-Production execution, unsupported live census and downstream observation are
-not added closure criteria. This document changes no ticket status.
+The actual joins above replace the former unfilled Root handoff rows. Located
+historical OpenCode and fresh5275 evidence now close the B1.4/B2 factual receipt
+bindings; the old UNKNOWN lookup and optional-integration NOT RUN history stay
+dated, not rewritten. Operational UNSELECTED/PENDING EXECUTION fields, exposed
+counter/tool-origin unknowns and independent final acceptance retain their
+separate meaning. This author changes no ticket status or acceptance.
+
 
 | Slot | Completed evidence / precise operational remainder |
 | --- | --- |
@@ -441,7 +874,7 @@ not added closure criteria. This document changes no ticket status.
 | P2 — stopped bootstrap/lifecycle reverse | COMPLETE accepted5275 source including finalRecheck, guarded external states, raw originals,17-member executor bundle, literal retained argv and fixture forward/reverse/rollback proof. UNSELECTED Root per-host CURRENT/TARGET/transition plan paths+SHA, generation, member/resource/owner/lock/ancestry and supported service/native argv; installed receipts PENDING EXECUTION. |
 | P3 — both executable reverses | Retained `/2` mechanism and S04R selected-file/supervisor invocation are supported. UNSELECTED production closure/managed consumer selections; actual fresh lifecycle and S04R runtime/ABI/loaded-byte/effect/history/reverse rebuild/readback remain PENDING EXECUTION before rollout/Rust. A Go3 retainedA reverse is not either whole installed closure. |
 | P4 — final common images | COMPLETE5275 source/tree/eight blobs, fresh original five/build custody, Root unchanged full packet validator and final-image full11/SHAPE/default refusal. Old final-code/build/workflow markers are closed. Later docs-only HEAD is separate. |
-| P5 — full supported/equivalence join | Source-disjoint finite receipts remain attributed as above. Root owns exact current R03AC4/R04/common-unit/HC05/FT criterion reconciliation; unknown installed refresh/global/external facts stay unknown. |
+| P5 — full supported/equivalence join | J1–J8 and the explicit CAIRN-305/306/308/312 table bind criteria/predecessors/finite effects to source/image/receipt populations. The old82f28b53 OpenCode gap is superseded by historical b1f6e633/04540693 plus fresh5275 result07e44525; installed refresh/global/external unknowns remain explicit. Final packet acceptance is pending, not a Root checklist placeholder. |
 | P6 — packet/admission/execution | UNSELECTED Root production plan refs and reconciled rollout, backup/restore/operator selections and phase admission; final1415 PACKET review outstanding. Fresh captures, semantic STOP read, real manager positive per host, D1–D7/readback and observation/rebuild/retirement receipts PENDING EXECUTION. |
 
 Global12, Hermes3, old failures and current characterization remain consumed.
