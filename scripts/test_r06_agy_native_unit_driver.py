@@ -522,7 +522,7 @@ class UnitScaleShapeTests(unittest.TestCase):
         for i in range(11):
             home=self.root/f'home-{i}';home.mkdir(mode=0o700)
             path=self.directory/f'coord-{i:02}.json'
-            driver.write_json(path,dict(harness='unit-only',config_home=str(home),
+            driver.write_json(path,dict(harness='unit-only' if i<3 else 'codex',native_delivery=True,config_home=str(home),
                 inbox_recall_binding=None if i<3 else str(self.root/f'UNIT-binding-{i}')))
             self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
             if i==0 or i>=3:
@@ -563,6 +563,14 @@ class UnitScaleShapeTests(unittest.TestCase):
         pin=self.memories[0];path=Path(pin['Path']);path.chmod(0o600)
         path.write_text('{}');path.chmod(0o400);self.memories[0]=driver.checked_pin(path)
         with self.assertRaisesRegex(driver.Refused,'config_home'):self.facts()
+
+    def test_bound_profiles_keep_the_existing_harness_and_native_delivery_contract(self):
+        path=self.directory/'coord-03.json';original=json.loads(path.read_bytes())
+        for changed in (dict(native_delivery=False),dict(harness='opencode')):
+            path.chmod(0o600);path.write_text(json.dumps(dict(original,**changed)));path.chmod(0o400)
+            self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+            with self.subTest(changed=changed),self.assertRaisesRegex(driver.Refused,'bound profile'):
+                self.facts()
 
     def test_pin_change_or_credential_alias_cannot_be_reported_as_scale_input(self):
         path=self.directory/'coord-00.json';path.chmod(0o600);path.write_text('{}');path.chmod(0o400)

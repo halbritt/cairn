@@ -1205,13 +1205,13 @@ class NativeUnitFixture:
         directory=self.root/'peers';directory.mkdir(mode=0o700)
         case=r04.R04HostWiringTests(methodName='runTest')
         case.root,case.binary,case.stager=directory,self.images['control'],self.images['stager']
-        for index,harness in enumerate(('codex','claude','codex','claude','codex','opencode','codex','claude'),1):
+        for index,harness in enumerate(('codex','claude')*4,1):
             name=f'bound-{index:02}.json';peer=case.fixture(f'b{index:02}',harness=harness,bound=True)
             for config in (peer.coord,peer.memory):
                 config.update(cairn=str(self.f.api),socket=str(self.host.socket),token_file=str(self.host.token('worker')),
                     repo=self.host.repo,config_home=str(peer.account),opaque=['café',900719925474099312345])
                 Path(config['state_dir']).mkdir(mode=0o700,exist_ok=True)
-            peer.coord.update(binding=f'scale-bound-{index}',native_delivery=False)
+            peer.coord.update(binding=f'scale-bound-{index}',native_delivery=True)
             generations={}
             for label in ('A','B'):
                 peer.coord['roundtrip_generation']=peer.memory['roundtrip_generation']=label
@@ -1803,6 +1803,9 @@ def unit_scale_input_facts(root,selection,memories,credential_paths):
         require('inbox_recall_binding' in config and (config['inbox_recall_binding'] is None or
             type(config['inbox_recall_binding']) is str and config['inbox_recall_binding']),
             'unit scale binding selector differs')
+        if config['inbox_recall_binding'] is not None:
+            require(config.get('harness') in ('codex','claude') and config.get('native_delivery') is True,
+                'unit scale bound profile must retain supported harness and native_delivery=true')
         account=home(config);require(account not in homes,'unit scale coordinator homes are not distinct')
         homes.add(account);profiles.append(dict(pin=actual,config_home=account,unbound=config['inbox_recall_binding'] is None))
     unbound=sum(row['unbound'] for row in profiles)
