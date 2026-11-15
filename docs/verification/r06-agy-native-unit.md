@@ -347,10 +347,13 @@ three unbound profiles, eleven total**. It uses the maintained R02/R04
 producer with a three-coordinator unbound receipt group and eight bound
 groups. Every coordination and memory profile declares a private owned 0700
 `config_home` inside `catalog.Root`. These are observed synthetic fixture
-inputs. They are independent of B's installed-host material. The real Go
-bound-profile contract remains Codex/Claude with `native_delivery=true`.
-The real Go
-publisher supplies the /3 receipts and the live scripted sequence supplies
+inputs. They are independent of B's installed-host material. The bound-profile
+contract remains Codex/Claude with `native_delivery=true`. The eight inactive
+bound peers declare fresh empty homes: no native settings/readback proof is
+available for them. Original factory settings assets remain untouched outside
+those declared homes. The live Agy account retains its actual selected hook
+and current readback checks. The real Go publisher supplies the /3 receipts
+and the live scripted sequence supplies
 fresh census/readback A/B facts; count observations alone remain unqualified.
 Both public directions exchange all eleven selected members under the
 unchanged 30-second contract, with the complete growing trace and real

@@ -572,6 +572,11 @@ class UnitScaleShapeTests(unittest.TestCase):
             with self.subTest(changed=changed),self.assertRaisesRegex(driver.Refused,'bound profile'):
                 self.facts()
 
+    def test_nonempty_bound_account_needs_native_readback_and_is_not_an_empty_scale_peer(self):
+        path=self.root/'home-3'/'settings.json';driver.write_json(path,{})
+        with self.assertRaisesRegex(driver.Refused,'empty bound account'):self.facts()
+        self.assertTrue(path.exists())
+
     def test_pin_change_or_credential_alias_cannot_be_reported_as_scale_input(self):
         path=self.directory/'coord-00.json';path.chmod(0o600);path.write_text('{}');path.chmod(0o400)
         with self.assertRaisesRegex(driver.Refused,'pin'):self.facts()
