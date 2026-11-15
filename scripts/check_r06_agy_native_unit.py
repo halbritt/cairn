@@ -36,12 +36,14 @@ import r04_agy_trace as trace
 import r06_agy_current_observation as collector
 import check_r06_unbound_roundtrip as roundtrip
 from disposable_host import DisposableHost, OwnedCluster, pg_bindir, stop_postgres
+from test_r04_host_wiring import UnboundFixture
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = '15080de3b1205b161faa66f60b8faf93c30f18da'
 BASE_TREE = '11ec0c51352505930e64236a99b929767e71cc2c'
 ROLES = ('api', 'control', 'stager', 'helper', 'observer')
+SCALE_SHAPE = 'UNIT_CONTROL_SCALE_FIXTURE_SHAPE'
 CONTROLLED_PACKET = Path('/home/halbritt/.cache/cairn301-release-1465/r06-main-images-15080de3-controlled-20261114')
 LINEAGE_SHA256 = '61cedd96993792cdc9d0d6becc3633e33c2a4361752f9b377f2bd3c3b2dc43b5'
 LINEAGE_FINAL_SHA256 = '3a5ebeebde91562fd1bb99856ce661c99cbba739a9fb204877fcba7ab0dbae13'
@@ -1094,16 +1096,37 @@ def stage_native_client(approved):
         raise
 
 
+class ScaleUnboundFixture(UnboundFixture):
+    """Maintained producer inputs for three explicitly synthetic coordinators."""
+    def configuration_plan(self,**kwargs):
+        plan=super().configuration_plan(**kwargs)
+        inputs=Path(plan['coordination_configs'][0]['path']).parent
+        for index in (1,2):
+            home=self.root/f'unbound-home-{index}';home.mkdir(mode=0o700,exist_ok=True)
+            state=self.root/f'unbound-state-{index}';state.mkdir(mode=0o700,exist_ok=True)
+            config=dict(self.coord,binding=f'scale-unbound-{index}',config_home=str(home),state_dir=str(state),
+                opaque=['café',900719925474099312345])
+            path=inputs/f'coordination-{index}.json'
+            path.write_bytes((json.dumps(config,indent=2)+'\n').encode());path.chmod(0o600)
+            plan['coordination_configs'].append(dict(path=str(path),sha256=r04.digest(path)))
+        return plan
+
+
 class NativeUnitFixture:
     """Maintained genuine Go3 material and real disposable authenticated API."""
-    def __init__(self, root, images, cluster, evidence):
+    def __init__(self, root, images, cluster, evidence, *, scale=False):
         self.root,self.images,self.evidence=Path(root),images,Path(evidence)
+        self.scale=scale;self.peers={}
         self.host,self.bridge=None,None
         self.published=None
         require(not self.root.exists(),'producer root must be fresh')
         case=r04.R04HostWiringTests(methodName='runTest')
         case.root,case.binary,case.stager=self.root.parent,images['control'],images['stager']
-        self.f=case.fixture(self.root.name,harness='agy')
+        if scale:
+            self.f=ScaleUnboundFixture(self.root,images['control'],stager=images['stager'],harness='agy')
+            self.f.hook_root=self.root/'hook-generations';self.f.hook_root.mkdir(mode=0o700)
+            self.f.hook_plan=dict(harness='agy',coordination_index=0,replace_commands=dict(memory=[],coordination=[]))
+        else:self.f=case.fixture(self.root.name,harness='agy')
         f=self.f
         try:
             self.home=f.root/'native-home'
@@ -1170,11 +1193,58 @@ class NativeUnitFixture:
                 self.unit['Selection'+label]=self.catalogs[label]['Selections'][0]
                 for key in ('Receipt','Config','Memory'):self.unit[key+label]=generation[key]
                 self.unit['Catalog'+label]=roundtrip.write(f.root/('catalog-'+label+'.json'),self.catalogs[label])
+            if scale:self.add_scale_peers()
             roundtrip.write(evidence/'native-produced-inputs.json',dict(unit=self.unit,generations=self.generations,
                 source='maintained unbound Go3 producer; no native/session/status synthesized'))
         except BaseException:
             self.close()
             raise
+
+    def add_scale_peers(self):
+        """Eight bound producer groups alongside the three-member unbound group."""
+        directory=self.root/'peers';directory.mkdir(mode=0o700)
+        case=r04.R04HostWiringTests(methodName='runTest')
+        case.root,case.binary,case.stager=directory,self.images['control'],self.images['stager']
+        for index,harness in enumerate(('codex','claude','codex','claude','codex','opencode','codex','claude'),1):
+            name=f'bound-{index:02}.json';peer=case.fixture(f'b{index:02}',harness=harness,bound=True)
+            for config in (peer.coord,peer.memory):
+                config.update(cairn=str(self.f.api),socket=str(self.host.socket),token_file=str(self.host.token('worker')),
+                    repo=self.host.repo,config_home=str(peer.account),opaque=['café',900719925474099312345])
+                Path(config['state_dir']).mkdir(mode=0o700,exist_ok=True)
+            peer.coord.update(binding=f'scale-bound-{index}',native_delivery=False)
+            generations={}
+            for label in ('A','B'):
+                peer.coord['roundtrip_generation']=peer.memory['roundtrip_generation']=label
+                r04.InstalledFixture.publish_configuration(peer,enabled=False)
+                generations[label]=dict(Config=checked_pin(peer.coord_path),Memory=checked_pin(peer.memory_path),
+                    Binding=checked_pin(peer.binding),Receipt=checked_pin(peer.receipt_path))
+            self.peers[name]=generations
+        for label in ('A','B'):self.refresh_scale_catalog(label,install=label=='A')
+
+    def refresh_scale_catalog(self,label,*,install=False):
+        selected=self.generations[label]
+        receipt=json.loads(Path(selected['Receipt']['Path']).read_bytes())
+        configs=receipt['coordination_configs']
+        require(len(configs)==3,'scale producer did not publish three unbound coordinators')
+        members={'coordination.json':selected['Config']}
+        for index,descriptor in enumerate(configs[1:],1):
+            members[f'unbound-{index}.json']=checked_pin(descriptor['path'],descriptor['sha256'])
+        members.update({name:generations[label]['Config'] for name,generations in self.peers.items()})
+        active=Path(self.unit['Selection'+label]['Directory'])
+        if install:
+            for name,pin in members.items():
+                if name=='coordination.json':continue
+                path=active/name;path.write_bytes(Path(pin['Path']).read_bytes());path.chmod(0o400)
+        selection=dict(Directory=str(active),Pins={name:pin['SHA256'] for name,pin in members.items()})
+        memories=[selected['Memory'],*[generations[label]['Memory'] for generations in self.peers.values()]]
+        self.unit['Selection'+label]=selection
+        self.unit['ScaleNext'+label]=members;self.unit['ScaleMemories'+label]=memories
+        self.catalogs[label].update(Selections=[selection],Bindings=[selected['Binding'],
+            *[generations[label]['Binding'] for generations in self.peers.values()]],UnboundReceipts=[selected['Receipt']])
+        self.unit['Catalog'+label]=roundtrip.write(self.root/('catalog-'+label+'.json'),self.catalogs[label])
+        if install:
+            facts=unit_scale_input_facts(self.root,selection,memories,[self.host.token('worker')])
+            roundtrip.write(self.evidence/'scale-producer-inputs.json',facts)
 
     def publish(self,label):
         selected=self.generations[label]
@@ -1219,6 +1289,7 @@ class NativeUnitFixture:
         self.unit['SelectionB']['Pins']['coordination.json']=generation['Config']['SHA256']
         self.catalogs['B'].update(Bindings=[generation['Binding']],UnboundReceipts=[generation['Receipt']],
             Selections=[self.unit['SelectionB']])
+        if self.scale:self.refresh_scale_catalog('B')
         self.unit['CatalogB']=roundtrip.write(self.root/'catalog-B.json',self.catalogs['B'])
         roundtrip.write(self.evidence/'staged-live-B.json',generation)
 
@@ -1712,6 +1783,51 @@ def scale_selection_facts(root,selection,credential_paths):
         remaining_gates='genuine producer/receipt verification, full live trace, real control/bootstrap and cleanup')
 
 
+def unit_scale_input_facts(root,selection,memories,credential_paths):
+    """Observed synthetic fixture inputs, independent of B's installed shape."""
+    root=private_directory(root)
+    strict_object(selection,('Directory','Pins'),'unit scale selection')
+    require(type(selection['Pins']) is dict and len(selection['Pins'])==11,'unit scale requires eleven members')
+    directory=private_directory(selection['Directory'])
+    require(directory.is_relative_to(root) and set(selection['Pins'])==
+        {path.name for path in directory.iterdir() if path.name.endswith('.json')},'unit scale inventory differs')
+    profiles=[];homes=set()
+    def home(config):
+        value=config.get('config_home')
+        require(type(value) is str and Path(value).is_relative_to(root) and Path(value)!=root,
+            'unit scale config_home must be declared inside catalog.Root')
+        return str(private_directory(value))
+    for name,pin in sorted(selection['Pins'].items()):
+        require(Path(name).name==name and name.endswith('.json'),'unit scale member name differs')
+        config,actual=fixture_source_json(directory/name,root,credential_paths,dict(Path=str(directory/name),SHA256=pin))
+        require('inbox_recall_binding' in config and (config['inbox_recall_binding'] is None or
+            type(config['inbox_recall_binding']) is str and config['inbox_recall_binding']),
+            'unit scale binding selector differs')
+        account=home(config);require(account not in homes,'unit scale coordinator homes are not distinct')
+        homes.add(account);profiles.append(dict(pin=actual,config_home=account,unbound=config['inbox_recall_binding'] is None))
+    unbound=sum(row['unbound'] for row in profiles)
+    require(unbound==3 and len(profiles)-unbound==8,'unit scale requires eight bound PLUS three unbound')
+    require(type(memories) is list and len(memories)==9,'unit scale memory group inventory differs')
+    observed_memories=[]
+    for pin in memories:
+        config,actual=fixture_source_json(pin['Path'],root,credential_paths,pin)
+        require(home(config) in homes,'unit scale memory config_home is not a selected coordinator home')
+        observed_memories.append(actual)
+    return dict(kind=SCALE_SHAPE,binding_count=11,bound_count=8,unbound_count=3,profiles=profiles,
+        memories=observed_memories,NativePASS=False,complete_unit_qualified=False,
+        installed_roster_live_census='UNSUPPORTED/FIXTURE_ONLY')
+
+
+def unit_control_plan(fixture,*,reverse=False):
+    body=roundtrip.plan(fixture.unit,reverse=reverse)
+    if fixture.scale:
+        members=fixture.unit['ScaleNext'+('A' if reverse else 'B')]
+        body['next']=[dict(name=name,path=str(Path(fixture.unit['ConfigRoot'])/'retained-A'/name)
+            if reverse else pin['Path'],sha256=pin['SHA256']) for name,pin in members.items()]
+        require(len(body['next'])==11 and len(body['current']['pins'])==11,'scale public plan lost a member')
+    return body
+
+
 def bootstrap_fixture_images(images,pins):
     """Map the validated five-role packet to B's local API, without new roles."""
     strict_object(images,ROLES,'bootstrap image roles')
@@ -2010,9 +2126,9 @@ def run_session_sequence(approved,fixture,session,client,provider,evidence):
     audit_b=audit_host_connections(Path(after['Trace']['Path']).read_bytes(),after_capture,root,
         ports={provider.server.server_port},unix_paths=[fixture.bridge.path],final=False,enforcement=session.child)
     states,readback,generation=capture_native_catalogs(fixture,session,before_capture,before,after_capture,after,client)
-    forward=roundtrip.plan(fixture.unit);forward['census']['Proposal']['Sessions']=[p['Path'] for p in states]
+    forward=unit_control_plan(fixture);forward['census']['Proposal']['Sessions']=[p['Path'] for p in states]
     public_forward=live_unit_control(approved,fixture,session,client,forward,evidence,'native-A-to-B')
-    reverse=roundtrip.plan(fixture.unit,reverse=True);reverse['census']['Proposal']['Sessions']=[p['Path'] for p in states]
+    reverse=unit_control_plan(fixture,reverse=True);reverse['census']['Proposal']['Sessions']=[p['Path'] for p in states]
     public_reverse=live_unit_control(approved,fixture,session,client,reverse,evidence,
         'native-B-to-retained-Go3-A',reverse=True)
     locks=[Path(fixture.unit['SelectionA']['Directory'])/'.watch.lock',
@@ -2075,7 +2191,8 @@ def execute_owned_case(approved,*,rehearsal):
         private_directory(root);require(not list(root.iterdir()),'catalog root became nonempty');root.rmdir()
         cluster=OwnedCluster.start(runtime/'pg',pg_bin=pg)
         pg_pids=owned_pg_processes(runtime/'pg/data/postmaster.pid')
-        fixture=NativeUnitFixture(root,approved['images'],cluster,evidence)
+        fixture=NativeUnitFixture(root,approved['images'],cluster,evidence,
+            scale=rehearsal and approved.get('rehearsal_shape')==SCALE_SHAPE)
         client=stage_scripted_client(approved) if rehearsal else stage_native_client(approved)
         fixture.publish('A')
         provider=r04.GeminiFixture()
@@ -2083,6 +2200,8 @@ def execute_owned_case(approved,*,rehearsal):
         approved['case_id']=selected['attempt_id']
         facts=run_session_sequence(approved,fixture,session,client,provider,evidence)
         result.update(state='passed',NativePASS=not rehearsal,**facts)
+        if fixture.scale:result.update(fixture_shape=SCALE_SHAPE,bound_count=8,unbound_count=3,
+            scale_inputs=json.loads((evidence/'scale-producer-inputs.json').read_bytes()))
         if rehearsal:
             result.update(RehearsalPASS=True,scope='NONNATIVE complete maintained sequence with scripted client; never native qualification')
     finally:
@@ -2609,9 +2728,10 @@ class RehearsalReservation:
 
 
 def prepare_sequence_rehearsal(evidence,*,python_sha256,strace_sha256,manifest,
-        manifest_sha256,index,index_sha256,complete,complete_sha256,fault=None,fault_phase='forward'):
+        manifest_sha256,index,index_sha256,complete,complete_sha256,fault=None,fault_phase='forward',shape=None):
     """Full maintained sequence using the scripted protocol, never held Agy."""
     evidence=private_directory(evidence)
+    require(shape in (None,SCALE_SHAPE),'unknown nonnative fixture shape')
     require(fault in (None,'client-rename','client-sibling','account','workspace','state','cairn','database'),
             'unknown nonnative rehearsal fault')
     require(fault_phase in ('forward','reverse') and
@@ -2637,7 +2757,7 @@ def prepare_sequence_rehearsal(evidence,*,python_sha256,strace_sha256,manifest,
         driver_sources=source_pins,tools=tools,fault=dict(kind=fault,phase=fault_phase))
     roundtrip.write(evidence/'rehearsal-selection.json',selected_pins)
     approved=dict(rehearsal=selection,rehearsal_pins=selected_pins,rehearsal_fault=fault,
-        rehearsal_fault_phase=fault_phase,images=images,image_pins=pins,
+        rehearsal_fault_phase=fault_phase,rehearsal_shape=shape,images=images,image_pins=pins,
         packet=packet,tools=tools,preflight=dict(pg=str(pg),pg_pins=pg_pins,source_pins=source_pins,
             parent=dict(HOME=os.environ['HOME'],CODEX_HOME=os.environ.get('CODEX_HOME'))))
     # Same real-new-control pressure guard, with separately reported API/PG effects.

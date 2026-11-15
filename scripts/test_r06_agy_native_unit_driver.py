@@ -346,7 +346,11 @@ class FullSequenceRehearsalTests(unittest.TestCase):
         self.roots=[]
 
     def fresh(self):
-        root=Path(tempfile.mkdtemp(prefix='rh-',dir=self.evidence_base));self.roots.append(root)
+        if self.inputs.get('shape')==driver.SCALE_SHAPE:
+            number=len(list(self.evidence_base.glob('c[0-9][0-9]')))+1
+            root=self.evidence_base/f'c{number:02}';root.mkdir(mode=0o700)
+        else:root=Path(tempfile.mkdtemp(prefix='rh-',dir=self.evidence_base))
+        self.roots.append(root)
         with (self.evidence_base/'cases.jsonl').open('a') as stream:
             stream.write(json.dumps(dict(test=self._testMethodName,evidence=str(root),actual_Agy=0))+'\n')
         return root
@@ -374,6 +378,10 @@ class FullSequenceRehearsalTests(unittest.TestCase):
         root=self.fresh();result=driver.prepare_sequence_rehearsal(root,**self.inputs)
         self.assertTrue(result['RehearsalPASS']);self.assertFalse(result['NativePASS'])
         self.assertEqual(result['actual_Agy'],0);self.assertEqual(result['actual_native_attempts'],0)
+        if self.inputs.get('shape')==driver.SCALE_SHAPE:
+            self.assertEqual(result['fixture_shape'],driver.SCALE_SHAPE)
+            self.assertEqual((result['bound_count'],result['unbound_count']),(8,3))
+            self.assertEqual(len(result['scale_inputs']['profiles']),11)
         self.assertEqual(len(result['results']),3)
         self.assertTrue(result['audit']['full']['all_observed_descendants_exited'])
         for key in ('Before','After','RestoredA'):self.assertEqual(len(result[key]['Callbacks']),2)
@@ -386,6 +394,9 @@ class FullSequenceRehearsalTests(unittest.TestCase):
             self.assertEqual(operation['deadline_seconds'],30)
             self.assertGreater(operation['control_wall_seconds'],0)
             self.assertGreater(operation['remaining_seconds'],0)
+            if self.inputs.get('shape')==driver.SCALE_SHAPE:
+                plan=json.loads((root/'case'/(label+'.plan.json')).read_bytes())
+                self.assertEqual(len(plan['current']['pins']),11);self.assertEqual(len(plan['next']),11)
             preservation=json.loads((root/'case'/(label+'.preservation.json')).read_text())
             self.assertEqual(preservation['database_before'],preservation['database_after'])
             self.assertTrue(any(preservation['after']['appends'][p]['bytes']>row['bytes']
@@ -498,6 +509,66 @@ class ScaleSelectionTests(unittest.TestCase):
         with self.assertRaises(driver.Refused):self.facts()
         self.selection['Directory']=str(self.root.parent)
         with self.assertRaises(driver.Refused):self.facts()
+
+
+class UnitScaleShapeTests(unittest.TestCase):
+    """Unit-file negatives protect the 8 bound PLUS 3 unbound fixture contract."""
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-unit-scale-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup);self.root=Path(temporary.name)
+        self.directory=self.root/'bindings';self.directory.mkdir(mode=0o700)
+        self.token=self.root/'unit.token';self.token.write_bytes(b'UNIT credential; never read');self.token.chmod(0o400)
+        self.selection=dict(Directory=str(self.directory),Pins={});self.memories=[]
+        for i in range(11):
+            home=self.root/f'home-{i}';home.mkdir(mode=0o700)
+            path=self.directory/f'coord-{i:02}.json'
+            driver.write_json(path,dict(harness='unit-only',config_home=str(home),
+                inbox_recall_binding=None if i<3 else str(self.root/f'UNIT-binding-{i}')))
+            self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+            if i==0 or i>=3:
+                memory=self.root/f'memory-{i}.json';driver.write_json(memory,dict(config_home=str(home)))
+                self.memories.append(driver.checked_pin(memory))
+
+    def facts(self):
+        return driver.unit_scale_input_facts(self.root,self.selection,self.memories,[self.token])
+
+    def test_eight_bound_plus_three_unbound_are_observed_as_eleven_without_runtime_claim(self):
+        facts=self.facts()
+        self.assertEqual((facts['bound_count'],facts['unbound_count'],facts['binding_count']),(8,3,11))
+        self.assertEqual(facts['kind'],'UNIT_CONTROL_SCALE_FIXTURE_SHAPE')
+        self.assertEqual(len(facts['memories']),9);self.assertFalse(facts['NativePASS'])
+        self.assertFalse(facts['complete_unit_qualified'])
+
+    def test_eight_total_or_extra_or_omitted_member_is_not_full_scale(self):
+        original=copy.deepcopy(self.selection)
+        for name in list(self.selection['Pins'])[8:]:self.selection['Pins'].pop(name)
+        with self.assertRaisesRegex(driver.Refused,'eleven'):self.facts()
+        self.selection=original
+        driver.write_json(self.directory/'omitted.json',{})
+        with self.assertRaisesRegex(driver.Refused,'inventory'):self.facts()
+
+    def test_missing_external_or_nonprivate_home_refuses_without_repair(self):
+        path=self.directory/'coord-00.json';original=json.loads(path.read_bytes())
+        for value in (None,str(self.root.parent)):
+            path.chmod(0o600);path.write_text(json.dumps(dict(original,config_home=value)));path.chmod(0o400)
+            self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+            with self.assertRaises(driver.Refused):self.facts()
+        path.chmod(0o600);path.write_text(json.dumps(original));path.chmod(0o400)
+        self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+        home=Path(original['config_home']);home.chmod(0o755)
+        with self.assertRaises(driver.Refused):self.facts()
+        self.assertEqual(stat.S_IMODE(home.stat().st_mode),0o755)
+
+    def test_memory_home_is_also_declared_private_and_selected(self):
+        pin=self.memories[0];path=Path(pin['Path']);path.chmod(0o600)
+        path.write_text('{}');path.chmod(0o400);self.memories[0]=driver.checked_pin(path)
+        with self.assertRaisesRegex(driver.Refused,'config_home'):self.facts()
+
+    def test_pin_change_or_credential_alias_cannot_be_reported_as_scale_input(self):
+        path=self.directory/'coord-00.json';path.chmod(0o600);path.write_text('{}');path.chmod(0o400)
+        with self.assertRaisesRegex(driver.Refused,'pin'):self.facts()
+        path.unlink();os.link(self.token,path)
+        with self.assertRaisesRegex(driver.Refused,'credential'):self.facts()
 
 
 class SourceAdapterTests(unittest.TestCase):
@@ -1597,7 +1668,7 @@ def load_tests(loader, standard, pattern):
     # fixture input adds real sealed-recipe controls, with no skipped tests.
     cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests,
         NativeDriverBoundaries,NativeStateSchemaTests,LivePreservationTests,TraceBoundaryTests,
-        RehearsalTerminalTests,ScaleSelectionTests,SourceAdapterTests]
+        RehearsalTerminalTests,ScaleSelectionTests,SourceAdapterTests,UnitScaleShapeTests]
     if os.environ.get('CAIRN_R06_REHEARSAL_SELECTION'):
         cases.append(FullSequenceRehearsalTests)
     if os.environ.get('CAIRN_R06_AGY_CONTROLLED_PACKET'):

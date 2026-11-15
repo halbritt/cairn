@@ -339,6 +339,46 @@ packet-dependent full 8+3 control/bootstrap, live trace, protected-file and
 database drift cases in both directions, restored A, cleanup and final audit
 remain unrun in that phase. Overall C qualification stays open.
 
+### Unit-control scale and installed bootstrap shape
+
+The corrected unit-control qualification is explicitly
+`UNIT_CONTROL_SCALE_FIXTURE_SHAPE`: **eight bound coordinator bindings plus
+three unbound profiles, eleven total**. It uses the maintained R02/R04
+producer with a three-coordinator unbound receipt group and eight bound
+groups. Every coordination and memory profile declares a private owned 0700
+`config_home` inside `catalog.Root`. These are observed synthetic fixture
+inputs. They are independent of B's installed-host material. The real Go
+publisher supplies the /3 receipts and the live scripted sequence supplies
+fresh census/readback A/B facts; count observations alone remain unqualified.
+Both public directions exchange all eleven selected members under the
+unchanged 30-second contract, with the complete growing trace and real
+candidate images. The fixture preserves opaque Unicode and large integer
+values rather than reducing input contents for timing.
+
+The same scale selection is available to all thirteen nonnative cases:
+one complete A/B/restored-A sequence, two client immutability refusals,
+eight protected-file mutation cases and two real disposable-API database
+drift cases. The latter ten exercise forward and reverse separately.
+Expected refusals retain failed atomic results and cleanup evidence; they
+never acquire a passing rehearsal outcome. A genuine positive still needs
+all actual public/census, trace, history, preservation and cleanup checks.
+
+The separate bootstrap qualification retains B's real installed shape:
+proximal eight total profiles (three unbound) and seventeen opaque
+archives, plus the one-profile archon and talos shapes. It preserves absent
+homes, external 0755 account directories, enabled raw /2 manifests and the
+separate legacy binary. It uses the scoped shared-workflow and default-public
+negative labels above. Bootstrap material never supplies unit-control
+native A/B facts. A selected live callback must still refuse D5.
+
+**Product gap:** selected-unit census / live unit-control on the real
+installed roster, with absent coordination or memory `config_home`, external
+0755 account identity directories and non-fixture Scope, is
+**UNSUPPORTED / FIXTURE_ONLY**. After R07, a production live generation
+switch cannot use unit-control until that contract exists. The supported
+production transition and reverse use stopped-boundary unit-bootstrap.
+Qualifying the eleven-member disposable fixture does not close this gap.
+
 Use `mise run test:unit` for focused Python and Go checks. Run bounded process
 checks and documentation tiers1–4 through `mise run host:exec`; run
 `mise run check`. Retain failures and exact source/image/tool receipts. Refusal
