@@ -1650,6 +1650,67 @@ PLANNED_CALLBACKS = 6
 CLIENT_TRACE_OVERHEAD = 64*1024*1024
 
 
+def scale_selection_facts(root,selection,credential_paths):
+    """Observe eight real selected profiles; this is not producer or runtime proof."""
+    root=Path(root)
+    require(root.is_absolute() and root.resolve()==root and root.is_dir() and
+        root.stat().st_uid==os.getuid() and stat.S_IMODE(root.stat().st_mode)==0o700,
+        'private owned scale fixture root required')
+    strict_object(selection,('Directory','Pins'),'scale selection')
+    require(type(selection['Directory']) is str and type(selection['Pins']) is dict and
+        len(selection['Pins'])==8,'scale fixture requires eight selected bindings')
+    directory=Path(selection['Directory'])
+    require(directory.is_absolute() and directory.resolve()==directory and directory.is_relative_to(root)
+        and directory.is_dir() and directory.stat().st_uid==os.getuid() and
+        not directory.stat().st_mode&0o022,'unsafe scale selection directory')
+    names=sorted(path.name for path in directory.iterdir())
+    require(set(selection['Pins'])=={name for name in names if name.endswith('.json')},
+        'scale selection JSON inventory differs')
+    require(type(credential_paths) in (list,tuple) and credential_paths,'scale credential selectors required')
+    secrets=set()
+    for selector in credential_paths:
+        path=Path(selector)
+        require(path.is_absolute() and path.resolve()==path and path.is_relative_to(root),
+            'scale credential selector outside fixture')
+        info=path.lstat();secrets.add((info.st_dev,info.st_ino))
+    observations={}
+    for name,pin in selection['Pins'].items():
+        require(type(name) is str and Path(name).name==name and name.endswith('.json') and
+            type(pin) is str and re.fullmatch('[0-9a-f]{64}',pin),'invalid scale profile pin')
+        path=directory/name;info=path.lstat()
+        require((info.st_dev,info.st_ino) not in secrets,'scale profile aliases credential inode')
+        require(stat.S_ISREG(info.st_mode) and info.st_uid==os.getuid() and info.st_nlink==1 and
+            not info.st_mode&0o022 and path.resolve()==path,'unsafe scale profile owner/mode/alias')
+        observations[name]=info
+    profiles=[]
+    fields=('st_dev','st_ino','st_mode','st_uid','st_gid','st_nlink','st_size','st_mtime_ns','st_ctime_ns')
+    for name,expected in sorted(observations.items()):
+        path=directory/name
+        fd=os.open(path,os.O_RDONLY|os.O_CLOEXEC|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,'rb') as stream:
+            before=os.fstat(stream.fileno())
+            require(all(getattr(before,k)==getattr(expected,k) for k in fields),
+                'scale profile identity changed before read')
+            require(before.st_size<=1048576,'scale profile exceeds bounded JSON size')
+            raw=stream.read(1048577);after=os.fstat(stream.fileno())
+        require(len(raw)==before.st_size and all(getattr(before,k)==getattr(after,k) for k in fields),
+            'scale profile changed during read')
+        require(hashlib.sha256(raw).hexdigest()==selection['Pins'][name],'scale profile pin changed')
+        config=json.loads(raw,object_pairs_hook=admission_pairs)
+        require(type(config) is dict and 'inbox_recall_binding' in config and
+            type(config.get('harness')) is str and config['harness'],'scale profile shape is incomplete')
+        binding=config['inbox_recall_binding']
+        require(binding is None or type(binding) is str and binding,'scale profile binding type differs')
+        profiles.append(dict(pin=dict(Path=str(path),SHA256=selection['Pins'][name]),
+            harness=config['harness'],unbound=binding is None))
+    require(names==sorted(path.name for path in directory.iterdir()),'scale directory inventory changed')
+    unbound=sum(row['unbound'] for row in profiles)
+    require(unbound==3,'scale fixture requires three actual unbound profiles')
+    return dict(kind='NONNATIVE_SCALE_INPUT_OBSERVATION',binding_count=len(profiles),unbound_count=unbound,
+        profiles=profiles,NativePASS=False,complete_unit_qualified=False,
+        remaining_gates='genuine producer/receipt verification, full live trace, real control/bootstrap and cleanup')
+
+
 def trace_budget(callback_bytes):
     require(type(callback_bytes) is list and len(callback_bytes)==2
             and all(type(count) is int and count>0 for count in callback_bytes),'two measured genuine callbacks required')

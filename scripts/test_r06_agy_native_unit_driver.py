@@ -447,6 +447,59 @@ class FullSequenceRehearsalTests(unittest.TestCase):
                 else:self.assertFalse((root/'catalog/phase-restored-A.trace').exists())
 
 
+class ScaleSelectionTests(unittest.TestCase):
+    """Real local files test input observation; they are not a scale rehearsal."""
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='cairn-scale-input-',dir=Path.home()/'.cache')
+        self.addCleanup(temporary.cleanup);self.root=Path(temporary.name)
+        self.directory=self.root/'bindings';self.directory.mkdir(mode=0o700)
+        self.token=self.root/'unit.token';self.token.write_bytes(b'UNIT fixture credential; never read')
+        self.token.chmod(0o400)
+        self.selection=dict(Directory=str(self.directory),Pins={})
+        for i in range(8):
+            path=self.directory/f'member-{i}.json'
+            path.write_text(json.dumps(dict(harness='unit-only',inbox_recall_binding=
+                None if i<3 else str(self.root/f'binding-{i}.json'))))
+            path.chmod(0o400);self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+
+    def facts(self):
+        return driver.scale_selection_facts(self.root,self.selection,[self.token])
+
+    def test_eight_actual_profiles_three_unbound_with_no_qualification_claim(self):
+        facts=self.facts()
+        self.assertEqual(facts['binding_count'],8);self.assertEqual(facts['unbound_count'],3)
+        self.assertEqual(len(facts['profiles']),8)
+        self.assertFalse(facts['NativePASS']);self.assertFalse(facts['complete_unit_qualified'])
+
+    def test_omitted_or_extra_selected_member_refuses(self):
+        omitted=copy.deepcopy(self.selection)
+        self.selection['Pins'].pop('member-7.json')
+        with self.assertRaisesRegex(driver.Refused,'eight'):self.facts()
+        self.selection=omitted
+        (self.directory/'unselected.json').write_text('{}')
+        with self.assertRaisesRegex(driver.Refused,'inventory'):self.facts()
+
+    def test_wrong_unbound_count_and_changed_pin_refuse(self):
+        path=self.directory/'member-0.json'
+        path.chmod(0o600);path.write_text(json.dumps(dict(harness='unit-only',
+            inbox_recall_binding=str(self.root/'binding-extra.json'))));path.chmod(0o400)
+        with self.assertRaisesRegex(driver.Refused,'pin'):self.facts()
+        self.selection['Pins'][path.name]=driver.checked_pin(path)['SHA256']
+        with self.assertRaisesRegex(driver.Refused,'three'):self.facts()
+
+    def test_credential_inode_alias_refuses_before_opening_contents(self):
+        path=self.directory/'member-0.json';path.unlink();os.link(self.token,path)
+        self.selection['Pins'][path.name]='0'*64
+        with patch.object(driver.os,'open',side_effect=AssertionError('credential content open')):
+            with self.assertRaisesRegex(driver.Refused,'credential'):self.facts()
+
+    def test_symlink_or_outside_root_selection_refuses(self):
+        path=self.directory/'member-0.json';path.unlink();path.symlink_to(self.token)
+        with self.assertRaises(driver.Refused):self.facts()
+        self.selection['Directory']=str(self.root.parent)
+        with self.assertRaises(driver.Refused):self.facts()
+
+
 class RehearsalTerminalTests(unittest.TestCase):
     """Failure after the sequence cannot leave a passing atomic outcome."""
     def setUp(self):
@@ -1415,7 +1468,8 @@ def load_tests(loader, standard, pattern):
     # Normal discovery keeps the standing portable controls. This explicit
     # fixture input adds real sealed-recipe controls, with no skipped tests.
     cases=[AgyPreparationTests,AuthenticatedPreparationBoundaries,NativeAdmissionTests,HostConnectAuditTests,
-        NativeDriverBoundaries,NativeStateSchemaTests,LivePreservationTests,TraceBoundaryTests,RehearsalTerminalTests]
+        NativeDriverBoundaries,NativeStateSchemaTests,LivePreservationTests,TraceBoundaryTests,
+        RehearsalTerminalTests,ScaleSelectionTests]
     if os.environ.get('CAIRN_R06_REHEARSAL_SELECTION'):
         cases.append(FullSequenceRehearsalTests)
     if os.environ.get('CAIRN_R06_AGY_CONTROLLED_PACKET'):

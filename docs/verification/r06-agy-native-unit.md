@@ -131,8 +131,11 @@ account/workspace/state data, profiles and credentials remain protected,
 together with unchanged API database snapshots. Only appends to the same raw
 trace and stderr files, and the explicitly selected client-internal subtree,
 may change. Rewrites, truncation, replacement, symlink escapes and hardlink
-aliases refuse. Real concurrent mutation and deliberate database drift need
-separate refusal coverage.
+aliases refuse. The explicit full-sequence tests inject concurrent file
+mutation and a real disposable-API `remember` write independently during
+forward and reverse control. Each must refuse qualification and retain the
+actual command and database snapshots. The selected fault and phase are
+recorded in the separate nonnative rehearsal selection.
 
 The parent and owned API/control children retain the normal host runtime
 options. The fixture does not set `GORACE=atexit_sleep_ms=0` or disable race
@@ -263,6 +266,17 @@ enforcement is recorded separately and remains port-based; this audit does not e
 
 ## Validation, custody and remaining scope
 
+`scale_selection_facts` observes the actual pinned JSON selection inventory:
+eight profiles, including exactly three null/unbound profiles. Credential
+inode aliases, symlinks, changed pins and omitted or extra JSON members refuse.
+This input observation always reports `NativePASS=false` and
+`complete_unit_qualified=false`. It does not establish genuine producer
+receipts or runtime success. Scale qualification still needs the real
+candidate control image, complete producer material, a live growing trace,
+both public unit-control and unit-bootstrap measurements under their unchanged
+30-second contracts, positive measured margins and owned cleanup. No input
+observation, small synthetic image or omitted member can substitute for them.
+
 Use `mise run test:unit` for focused Python and Go checks. Run bounded process
 checks and documentation tiers1–4 through `mise run host:exec`; run
 `mise run check`. Retain failures and exact source/image/tool receipts. Refusal
@@ -290,8 +304,9 @@ Non-private files enter a private archive only with matching pins and no raw
 fixture DSN. PG scratch is removed only after cleanup succeeds. Unresolved
 cleanup fails the attempt.
 
-Retained Python /2 reverse remains unsupported: `loadUnitTarget` requires a
-Go /3 receipt and the old binding/retained-argv shape cannot be normalized into
-one. Ordinary Agy memory remains unsupported. Authoring checks, BUILD-ONLY
-images and finite audits do not qualify commonRC, production, HC05/R07/clock,
+Retained Python /2 reverse through this unit-control driver remains unsupported:
+`loadUnitTarget` requires a Go /3 receipt and the old binding/retained-argv shape
+cannot be normalized into one. Ordinary Agy memory remains unsupported.
+Authoring checks, BUILD-ONLY images and finite audits do not qualify commonRC,
+production, HC05/R07/clock,
 held runtimes, legacy reverse, global budgets or future runs.
