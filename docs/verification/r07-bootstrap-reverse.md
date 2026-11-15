@@ -109,7 +109,7 @@ its parent with `0700`. Go memory activation
 absolute, owner-controlled directory without a plan-root containment rule.
 Python coordination [`validate_config`](../../integrations/lifecycle/coordination.py)
 also requires an absolute selector; Python memory
-[`hook`](../../integrations/lifecycle/memory.py) creates its selected state
+[`handle_event`](../../integrations/lifecycle/memory.py) creates its selected state
 directory with `0700`. Neither runtime requires the existing external parent
 to be private or the state to lie inside this bootstrap plan root. Their
 runtime code and the generic compatibility reader are unchanged.
