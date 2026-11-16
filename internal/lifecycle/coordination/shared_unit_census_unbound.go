@@ -64,7 +64,7 @@ func (r *watchCensusRead) unboundReceipt(pin WatchCensusPin) (*watchCensusAssoci
 		!validReceiptDescriptor(receipt.Get("binary"), "path", "sha256") {
 		return nil, nil, errors.New("unsupported unbound receipt descriptors")
 	}
-	memory, _, err := r.unboundDescriptor(receipt.Get("memory_config"))
+	memory, _, err := r.unboundMemoryDescriptor(receipt.Get("memory_config"))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -81,12 +81,19 @@ func (r *watchCensusRead) unboundReceipt(pin WatchCensusPin) (*watchCensusAssoci
 		profiles, selected = append(profiles, profile), append(selected, member)
 	}
 	homes := map[string]bool{}
+	anchor := memory
+	if memory == nil {
+		anchor = profiles[1]
+	}
 	for i, profile := range profiles {
+		if i == 0 && memory == nil {
+			continue
+		}
 		if value.Truth(profile.Get("inbox_recall_binding")) {
 			return nil, nil, errors.New("selected unbound profile has a binding")
 		}
 		for _, field := range []string{"harness", "cairn", "socket", "token_file", "repo"} {
-			if nativeText(profile.Get(field)) == "" || !hookValuesEqual(profile.Get(field), memory.Get(field)) {
+			if nativeText(profile.Get(field)) == "" || !hookValuesEqual(profile.Get(field), anchor.Get(field)) {
 				return nil, nil, errors.New("mixed unbound profile selectors")
 			}
 		}
@@ -97,13 +104,13 @@ func (r *watchCensusRead) unboundReceipt(pin WatchCensusPin) (*watchCensusAssoci
 		}
 		if i > 0 {
 			home := nativeText(profile.Get("config_home"))
-			if homes[home] || nativeText(profile.Get("state_dir")) == nativeText(memory.Get("state_dir")) {
+			if homes[home] || memory != nil && nativeText(profile.Get("state_dir")) == nativeText(memory.Get("state_dir")) {
 				return nil, nil, errors.New("mixed unbound coordinator homes or memory state")
 			}
 			homes[home] = true
 		}
 	}
-	if !homes[nativeText(memory.Get("config_home"))] {
+	if memory != nil && !homes[nativeText(memory.Get("config_home"))] {
 		return nil, nil, errors.New("unbound memory account is not a selected coordinator account")
 	}
 	binding := WatchCensusPin{nativeText(receipt.Get("binding").Get("path")), nativeText(receipt.Get("binding").Get("sha256"))}
@@ -327,7 +334,7 @@ func (r *watchDrainRead) unboundMemory(config *value.Value) (*value.Value, error
 	if r.facts["file:"+member.Binding.Path] != member.Binding.SHA256 || !value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/3") || enabled == nil || enabled.Kind != value.Bool || enabled.Boolean {
 		return nil, errors.New("D1 unbound manifest must remain exactly selected and disabled")
 	}
-	memory, err := r.descriptor(manifest.Get("memory_config"))
+	memory, err := r.memoryDescriptor(manifest.Get("memory_config"))
 	if err != nil {
 		return nil, err
 	}

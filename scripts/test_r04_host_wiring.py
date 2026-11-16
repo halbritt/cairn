@@ -17,6 +17,7 @@ from test_f04_activation import ROOT, SESSION, encoded, write
 from test_r02_compatibility_install import InstalledTools
 import test_f04_issued as issued
 import test_r04_hook_settings as hooks
+from stage_lifecycle_compatibility import memory_absent
 
 pin = hooks.pin
 
@@ -26,6 +27,8 @@ class UnboundFixture(hooks.HookFixture):
         plan = super().configuration_plan(**kwargs)
         plan.update(profile_mode='unbound', enabled=False)
         for config, selected in [(self.memory, plan['memory_config']), (self.coord, plan['coordination_configs'][0])]:
+            if memory_absent(selected):
+                continue
             config['inbox_recall_binding'] = None
             # Preserve whitespace, a non-ASCII value and an opaque large int.
             raw = (json.dumps(dict(config, opaque=['café', 900719925474099312345]), indent=2) + '\n').encode()
@@ -43,9 +46,9 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
 
-    def fixture(self, name, harness='opencode', bound=False):
+    def fixture(self, name, harness='opencode', bound=False, coordination_only=False):
         cls = hooks.HookFixture if bound else UnboundFixture
-        f = cls(self.root / name, self.binary, stager=self.stager, harness=harness)
+        f = cls(self.root / name, self.binary, stager=self.stager, harness=harness, coordination_only=coordination_only)
         # The external API fixture must accept the plugin's real disposal call.
         f.api.chmod(0o700)
         write(f.api, f.api.read_bytes().replace(b"elif op!='search':",
@@ -143,7 +146,16 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         self.assertEqual(f.api_calls(), [])
 
     def test_agy_installed_go_events_match_retained_source_after_package_removal(self):
-        f = self.fixture('agy real processes', harness='agy')
+        self.agy_event_parity(coordination_only=False)
+
+    def test_agy_coordination_only_events_match_retained_source_after_package_removal(self):
+        self.agy_event_parity(coordination_only=True)
+
+    def agy_event_parity(self, *, coordination_only):
+        f = self.fixture('agy real processes', harness='agy', coordination_only=coordination_only)
+        if coordination_only:
+            self.assertEqual(f.receipt['memory_config'], {'absent': True})
+            self.assertFalse(f.memory_path.exists())
         _, _, record = self.selected(f)
         shutil.rmtree(f.package)
         environment = dict(f.env(), ANTIGRAVITY_CLI_CONFIG_DIR=str(f.account))

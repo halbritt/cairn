@@ -119,10 +119,25 @@ The plan has exactly these fields:
 | `sources` | Map of all 18 canonical F-04 source basenames to independent `{path, sha256}` input pins, including `lifecycle_compatibility.py`. |
 | `source_revision` | Source provenance text; it grants no authority. |
 | `binary` | `{path, sha256}` for the independently selected `cmd/cairn-lifecycle` build. |
-| `memory_config` | `{path, sha256}` for already-rendered memory configuration bytes. |
+| `memory_config` | `{path, sha256}` for already-rendered memory configuration bytes, or exactly `{"absent": true}` for an explicitly coordination-only selection. |
 | `coordination_configs` | Ordered list of one to eight already-rendered `{path, sha256}` selections. |
 | `aliases` | Public alias basename to `memory.py` or `coordination.py`; aliases cannot shadow canonical members. |
 | `python`, `shell` | Approved absolute interpreter and noninteractive shell paths, external to receipt authentication. |
+
+A coordination-only selection requires `profile_mode: "unbound"` and
+`enabled: false`. Its binding and receipt retain exactly
+`memory_config: {"absent": true}`. No memory profile, state directory, launcher
+or hook is generated, and a memory-role invocation refuses. Missing, null,
+false or mixed descriptors are not absence declarations. Forward and reverse
+must preserve that absence as well as the exact coordination identity/state.
+The complete source closure and all coordination credentials, admissions,
+drain, lock, currentness and fence checks remain required.
+
+Hook rendering for this selection adds coordination rows only, including for
+Codex, and refuses a memory replacement list. Unrelated callbacks remain.
+For OpenCode, select only the `coordination` plugin source; no memory plugin or
+memory configuration is published. Existing paired-memory selections retain
+their previous contract and hooks.
 
 Each input is an owned, singly linked regular file, without group/other write
 permission or symlink ancestors. Source files are bounded at 2 MiB and each
@@ -413,7 +428,7 @@ An OpenCode hook plan uses the fields above with these differences:
 | --- | --- |
 | `settings` | Independent pin for the existing `cairn-lifecycle.json` object, or a separately staged empty object. |
 | `coordination_settings` | Independent pin for the existing `cairn-coordination.json` object, or a separately staged empty object. |
-| `plugins` | Exactly `memory` and `coordination`, each an independent `{path, sha256}` pin for the selected `lifecycle.ts` and `coordination.ts` adapter source. Use controlled files in the selected installer package. |
+| `plugins` | Paired selections require `memory` and `coordination`; coordination-only selections require only `coordination`. Each is an independent `{path, sha256}` source pin. Use controlled files in the selected installer package. |
 | `replace_commands` | Exactly `{"memory": [], "coordination": []}`; plugin configurations do not contain shell hook groups. |
 
 For example, the additions to an otherwise complete hook plan are:

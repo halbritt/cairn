@@ -285,7 +285,7 @@ func (r *watchCensusRead) members(ctx context.Context) error {
 		if manifest.Get("enabled").Boolean {
 			r.nodeBlockers[path] = append(r.nodeBlockers[path], "selected binding is enabled; disabled refresh is unobserved")
 		}
-		_, node.Memory, err = r.descriptor(manifest.Get("memory_config"))
+		_, node.Memory, err = r.memoryDescriptor(manifest.Get("memory_config"))
 		if err != nil {
 			return err
 		}
@@ -299,7 +299,11 @@ func (r *watchCensusRead) members(ctx context.Context) error {
 			}
 		}
 		node.Mode = nativeText(manifest.Get("schema"))
-		for _, directory := range []string{nativeText(config.Get("state_dir")), nativeText(memory.Get("state_dir"))} {
+		directories := []string{nativeText(config.Get("state_dir"))}
+		if memory != nil {
+			directories = append(directories, nativeText(memory.Get("state_dir")))
+		}
+		for _, directory := range directories {
 			if _, err := r.directory(directory); err != nil {
 				return err
 			}
@@ -334,7 +338,7 @@ func (r *watchCensusRead) profiles(config, manifest *value.Value) (*value.Value,
 	if (mode != "cairn.inbox-recall-binding/2" && mode != "cairn.inbox-recall-binding/3") || enabled == nil || enabled.Kind != value.Bool {
 		return nil, errors.New("unknown selected binding schema/enablement")
 	}
-	memory, _, err := r.descriptor(manifest.Get("memory_config"))
+	memory, _, err := r.memoryDescriptor(manifest.Get("memory_config"))
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +353,9 @@ func (r *watchCensusRead) profiles(config, manifest *value.Value) (*value.Value,
 			return nil, err
 		}
 		coordinators = append(coordinators, coord)
+	}
+	if memory == nil {
+		return nil, coordinationOnlyProfiles(config, manifest, coordinators)
 	}
 	if err := binding.ValidateConfigurationProfiles(binding.ConfigurationProfiles{Current: config, Memory: memory, Coordinators: coordinators, ManifestPath: config.Get("inbox_recall_binding").String, Resolve: r.cli.profile().Routes.Filesystem().Resolve}); err != nil {
 		return nil, err
@@ -503,7 +510,9 @@ func (r *watchCensusRead) sessions(ctx context.Context) error {
 			return errors.New("session memory has no verified census association")
 		}
 		memory := association.memory
-		memories[nativeText(memory.Get("state_dir"))] = true
+		if memory != nil {
+			memories[nativeText(memory.Get("state_dir"))] = true
+		}
 	}
 	wanted := map[string]string{}
 	for _, pin := range r.catalog.Sessions {

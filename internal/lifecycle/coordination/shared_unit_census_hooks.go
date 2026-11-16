@@ -351,7 +351,11 @@ func (r *watchCensusRead) inspectClaudeHooks(ctx context.Context, selected Watch
 		return errors.New("native hook previous settings do not match the emitted source pin")
 	}
 	for _, role := range []string{"memory", "coordination"} {
-		_, pin, err := r.descriptor(producer.Get("role_configurations").Get(role))
+		readDescriptor := r.descriptor
+		if role == "memory" {
+			readDescriptor = r.memoryDescriptor
+		}
+		_, pin, err := readDescriptor(producer.Get("role_configurations").Get(role))
 		if err != nil {
 			return err
 		}
@@ -425,7 +429,10 @@ func (r *watchCensusRead) claudeRetainedMembers(node *WatchCensusMember, members
 	}
 	expected := map[string]bool{"binding.json": true, "lifecycle-bundle.json": true, "retained-argv.json": true}
 	profiles := append([]*value.Value{manifest.Get("memory_config")}, manifest.Get("coordination_configs").Items...)
-	for _, profile := range profiles {
+	for index, profile := range profiles {
+		if index == 0 && memoryAbsent(profile) {
+			continue
+		}
 		path := nativeText(profile.Get("path"))
 		if !exactReceiptObject(profile, "path", "sha256") || members[filepath.Base(path)] != (WatchCensusPin{path, nativeText(profile.Get("sha256"))}) {
 			return errors.New("retained native profile is outside its selected generation")
@@ -461,10 +468,14 @@ func (r *watchCensusRead) claudeRetainedMembers(node *WatchCensusMember, members
 	if err != nil {
 		return err
 	}
-	if !exactReceiptObject(launches, "memory", "coordination") {
+	roles := []string{"memory", "coordination"}
+	if memoryAbsent(manifest.Get("memory_config")) {
+		roles = []string{"coordination"}
+	}
+	if !exactReceiptObject(launches, roles...) {
 		return errors.New("unsupported retained native role argv coverage")
 	}
-	for _, role := range []string{"memory", "coordination"} {
+	for _, role := range roles {
 		argv, err := hookStringVector(launches.Get(role))
 		if err != nil {
 			return err
@@ -507,7 +518,11 @@ func (r *watchCensusRead) claudeHookLaunches(selected WatchCensusClaudeHooks, pr
 		return nil, err
 	}
 	if node.Mode == "cairn.inbox-recall-binding/2" {
-		if !exactReceiptObject(metadata, "memory", "coordination") {
+		roles := []string{"memory", "coordination"}
+		if node.Memory == (WatchCensusPin{}) {
+			roles = []string{"coordination"}
+		}
+		if !exactReceiptObject(metadata, roles...) {
 			return nil, errors.New("unsupported retained native role argv coverage")
 		}
 		return metadata, nil
@@ -917,7 +932,10 @@ func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *va
 	if nativeText(compat.Receipt.Get("binding").Get("path")) != r.nodes[selected.Config.Path].Binding.Path || nativeText(compat.Receipt.Get("binding").Get("sha256")) != r.nodes[selected.Config.Path].Binding.SHA256 {
 		return errors.New("native hook receipt selects another binding")
 	}
-	for _, desc := range append([]*value.Value{compat.Receipt.Get("memory_config")}, compat.Receipt.Get("coordination_configs").Items...) {
+	for index, desc := range append([]*value.Value{compat.Receipt.Get("memory_config")}, compat.Receipt.Get("coordination_configs").Items...) {
+		if index == 0 && memoryAbsent(desc) {
+			continue
+		}
 		if _, _, err := r.descriptor(desc); err != nil {
 			return err
 		}

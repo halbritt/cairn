@@ -652,14 +652,12 @@ def production_state_paths(f, host):
     parents = {'codex': 'codex-hooks', 'claude-one': 'claude-hooks',
                'claude-two': 'claude-harm-hooks', 'opencode': 'opencode-hooks'}
     for *_, group in production_roster(host):
+        if group == 'agy' or host == 'archon':
+            continue
         if group == 'hermes':
             memory[group] = f.production_home / '.hermes/cairn/state'
-        elif host == 'archon':
-            # Actual unbound memory selection remains an operator input. This
-            # path is the explicitly synthetic inactive memory fixture only.
-            memory[group] = f.root / 'memory'
         else:
-            memory[group] = f.root / parents.get(group, 'inactive-memory-' + group) / 'state'
+            memory[group] = f.root / parents[group] / 'state'
     return coordinator, memory
 
 
@@ -717,7 +715,7 @@ def prepare_production_state_layout(f, host):
         actions.append(dict(path=str(path), before=prior, prepared=metadata(path)))
     result = dict(host=host, before=before, actions=actions,
                   claim='disposable state shapes and reversible preparation; no production observation or mutation',
-                  archon_memory='synthetic inactive input; actual selected unbound memory remains PENDING' if host == 'archon' else 'declared fixture role paths',
+                  coordination_only=['codex-archon'] if host == 'archon' else ['agy-one'] if host == 'proximal' else [],
                   fixture_control_state=str(f.state_dir))
     control.write(f.root / 'production-layout.json', result)
     return result
@@ -834,18 +832,19 @@ def production_effect_plan(f, images, host):
     for group, selected in groups.items():
         original_dir, bound = selected['directory'], selected['bound']
         old_memory = original_dir / 'memory.json'
-        memory_state = memory_states[group]
-        if host != 'talos':
+        memory_state = memory_states.get(group)
+        if memory_state is not None and host != 'talos':
             memory_state.mkdir(mode=0o700, exist_ok=True)
-        memory = dict(harness=selected['harness'], cairn=str(legacy_client), socket=base['socket'],
+        memory = None if memory_state is None else dict(harness=selected['harness'], cairn=str(legacy_client), socket=base['socket'],
                       token_file=base['token_file'], repo=base['repo'], state_dir=str(memory_state),
                       recall_mode='agent_tools', context_bytes=9500)
         if bound:
             memory['inbox_recall_binding'] = str(selected['binding'])
         # Memory home is absent, as on all three installed bound /2 groups.
-        control.write(old_memory, memory)
+        if memory is not None:
+            control.write(old_memory, memory)
         manifest = dict(schema='cairn.inbox-recall-binding/2', enabled=bound,
-                        memory_config=pin(old_memory), coordination_configs=[pin(path) for _, path in selected['profiles']],
+                        memory_config={'absent': True} if memory is None else pin(old_memory), coordination_configs=[pin(path) for _, path in selected['profiles']],
                         engine=dict(**pin(source / 'memory.py'), bundle=descriptor),
                         bridge=dict(**pin(source / 'inbox_recall.py'), bundle=descriptor))
         control.write(selected['binding'], manifest)
@@ -854,8 +853,10 @@ def production_effect_plan(f, images, host):
                     'unbound original cannot acquire an installed binding selector')
         for name, path in selected['profiles']:
             argv = original_dir / ('argv-' + name + '.json')
-            control.write(argv, dict(memory=[str(Path(sys.executable).resolve()), '-I', '-B', str(source / 'memory.py'), '--config', str(old_memory)],
-                                    coordination=[str(Path(sys.executable).resolve()), '-I', '-B', str(source / 'coordination.py'), 'hook', '--config', str(path)]))
+            roles = dict(coordination=[str(Path(sys.executable).resolve()), '-I', '-B', str(source / 'coordination.py'), 'hook', '--config', str(path)])
+            if memory is not None:
+                roles['memory'] = [str(Path(sys.executable).resolve()), '-I', '-B', str(source / 'memory.py'), '--config', str(old_memory)]
+            control.write(argv, roles)
             original_associations[name + '.json'] = dict(binding=to_go(selected['binding']), argv=to_go(argv))
         stage = f.root / ('forward-' + group)
         stage.mkdir(mode=0o700)
@@ -864,13 +865,15 @@ def production_effect_plan(f, images, host):
         inputs = f.root / ('forward-inputs-' + group)
         inputs.mkdir(mode=0o700)
         for role, config in [('memory', memory), *[(name, configs[name]) for name, _ in selected['profiles']]]:
+            if config is None:
+                continue
             forward = dict(config, cairn=str(forward_client))
             if bound:
                 forward['inbox_recall_binding'] = str(generation / 'binding.json')
             control.write(inputs / (role + '.json'), forward)
         installation = dict(id=identity, enabled=False, profile_mode='bound' if bound else 'unbound',
             sources={name: pin(source_inputs / name) for name in (*bundle.MODULE_FILES, 'lifecycle_compatibility.py')},
-            source_revision=revision, binary=pin(images['control']), memory_config=pin(inputs / 'memory.json'),
+            source_revision=revision, binary=pin(images['control']), memory_config={'absent': True} if memory is None else pin(inputs / 'memory.json'),
             coordination_configs=[pin(inputs / (name + '.json')) for name, _ in selected['profiles']],
             aliases={}, python=str(Path(sys.executable).resolve()), shell='/bin/sh')
         installer.stage(images['stager'], stage, installation)
@@ -881,7 +884,7 @@ def production_effect_plan(f, images, host):
             target_associations[target.name] = dict(binding=to_go(generation / 'binding.json'),
                 argv=dict(Path='', SHA256=''), receipt=to_go(generation / 'receipt.json'))
         production_material['groups'].append(dict(name=group, kind=selected['harness'], bound=bound,
-            original_binding=to_go(selected['binding']), original_binding_installed=bound, memory_state=str(memory_state),
+            original_binding=to_go(selected['binding']), original_binding_installed=bound, memory_state=None if memory_state is None else str(memory_state),
             target_binding=to_go(generation / 'binding.json'), target_receipt=to_go(generation / 'receipt.json'),
             members=[name + '.json' for name, _ in selected['profiles']]))
     def member(path, directory=False):
@@ -1043,7 +1046,7 @@ def production_shape_refusals(f, images, plan, pin, material):
     before = f.snapshot()
     for label, name, field, error in (
             ('bound-field-removed', 'codex-one.json', None, 'does not select exact active config'),
-            ('unbound-field-present', 'agy-one.json', 'present', 'does not select exact active config')):
+            ('unbound-field-present', 'agy-one.json', 'present', 'coordination-only current3 selection must be disabled and unbound')):
         target = json.loads(target_raw)
         current = Path(target['current']['directory']) / name
         raw = current.read_bytes()
@@ -1175,9 +1178,20 @@ def production_shape_cases(cluster, images, root, host, *, kill_phase=None):
         require({profile['harness'] for profile in target_profiles.values()} == ({'agy', 'claude', 'codex', 'hermes', 'opencode'} if host == 'proximal' else {'codex'} if host == 'archon' else {'opencode'}), 'real emitted target kinds differ')
         require(sum(not profile.get('inbox_recall_binding') for profile in target_profiles.values()) == (3 if host == 'proximal' else 1), 'real emitted profiles lost null binding selectors')
         require(len(material['target_unbound_receipts']) == (3 if host == 'proximal' else 1), 'production genuine unbound coverage changed')
+        coordination_only = {'agy'} if host == 'proximal' else {'codex'} if host == 'archon' else set()
+        for group in material['groups']:
+            original = json.loads(Path(group['original_binding']['Path']).read_bytes())
+            target = json.loads(Path(group['target_binding']['Path']).read_bytes())
+            require((original['memory_config'] == {'absent': True}) == (group['name'] in coordination_only),
+                    'real original coordination-only role declaration differs')
+            require((target['memory_config'] == {'absent': True}) == (group['name'] in coordination_only),
+                    'real target coordination-only role declaration differs')
+            if group['name'] in coordination_only:
+                require(group['memory_state'] is None and not (Path(group['target_binding']['Path']).parent / 'memory.json').exists(),
+                        'coordination-only staging invented a memory profile or state')
         def affected_state():
             result = {}
-            for directory in sorted(set(material['state_paths'].values()) | {group['memory_state'] for group in material['groups']}):
+            for directory in sorted(set(material['state_paths'].values()) | {group['memory_state'] for group in material['groups'] if group['memory_state'] is not None}):
                 path = Path(directory)
                 if not path.exists():
                     result[directory] = 'absent'

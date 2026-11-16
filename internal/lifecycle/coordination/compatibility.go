@@ -840,7 +840,7 @@ func (c *CompatibilityContext) validateReceiptClosureAndPins(role string, receip
 			return preflightError("closure")
 		}
 	}
-	if !validReceiptDescriptor(receipt.Get("binary"), "path", "sha256") || !validReceiptDescriptor(receipt.Get("memory_config"), "path", "sha256") || !validReceiptDescriptor(receipt.Get("binding"), "path", "sha256", "schema") {
+	if !validReceiptDescriptor(receipt.Get("binary"), "path", "sha256") || !validMemoryDescriptor(receipt.Get("memory_config")) || !validReceiptDescriptor(receipt.Get("binding"), "path", "sha256", "schema") {
 		return preflightError("descriptor")
 	}
 	coordList := receipt.Get("coordination_configs")
@@ -857,7 +857,7 @@ func (c *CompatibilityContext) validateReceiptClosureAndPins(role string, receip
 
 func (c *CompatibilityContext) validateReceiptRoleAndDiskPins(role string, receipt, aliases, members, coordList *value.Value) error {
 	if role == "memory" {
-		if !value.SameText(receipt.Get("memory_config").Get("path"), c.ConfigPath) {
+		if memoryAbsent(receipt.Get("memory_config")) || !value.SameText(receipt.Get("memory_config").Get("path"), c.ConfigPath) {
 			return preflightError("config role")
 		}
 	} else {
@@ -1252,6 +1252,9 @@ func (c *CompatibilityContext) CheckedBinding(fallbackProfile *value.SourceReade
 }
 
 func (c *CompatibilityContext) finishCheckedBinding(prof *value.SourceReaderProfile, receipt *value.Value, path string, raw []byte) error {
+	if memoryAbsent(receipt.Get("memory_config")) {
+		return preflightError("coordination-only selection cannot enable inbox recall")
+	}
 	manifest, err := decodeCompatibilityJSON(prof, SiteCompatibilityManifest, raw)
 	if err != nil {
 		return err
@@ -1476,7 +1479,10 @@ func (c *CompatibilityContext) verifyUnboundRoleProfiles(prof *value.SourceReade
 		return preflightError("unbound coordination_configs")
 	}
 	descriptors := append([]*value.Value{memDesc}, coordList.Items...)
-	for _, desc := range descriptors {
+	for index, desc := range descriptors {
+		if index == 0 && memoryAbsent(desc) {
+			continue
+		}
 		if desc == nil || desc.Kind != value.Object {
 			return preflightError("unbound descriptor")
 		}

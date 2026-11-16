@@ -167,7 +167,11 @@ func (r *watchCensusRead) loadUnitTarget() error {
 		if _, err := r.pin(WatchCensusPin{client, r.clientPins[client]}, true); err != nil {
 			return err
 		}
-		for _, directory := range []string{nativeText(config.Get("state_dir")), nativeText(config.Get("config_home")), nativeText(association.memory.Get("state_dir"))} {
+		directories := []string{nativeText(config.Get("state_dir")), nativeText(config.Get("config_home"))}
+		if association.memory != nil {
+			directories = append(directories, nativeText(association.memory.Get("state_dir")))
+		}
+		for _, directory := range directories {
 			if _, err := r.directory(directory); err != nil {
 				return err
 			}

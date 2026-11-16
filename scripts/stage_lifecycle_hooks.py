@@ -68,11 +68,16 @@ def retained_definitions(stager, plan):
         raise ValueError('selected coordination configuration is absent')
     profiles = {'memory': install['memory_config'], 'coordination': install['coordination_configs'][index]}
     all_unbound = not any(selected_data(pin).get('inbox_recall_binding')
-                          for pin in [install['memory_config'], *install['coordination_configs']])
+                          for pin in [install['memory_config'], *install['coordination_configs']]
+                          if not installation.memory_absent(pin))
+    if installation.memory_absent(install['memory_config']) and plan['replace_commands']['memory']:
+        raise ValueError('coordination-only selection cannot replace memory hooks')
     if plan['harness'] == 'agy' and not all_unbound:
         raise ValueError('Agy coordination requires unbound profiles; bound recall is unsupported')
     rows = []
     for role, profile in profiles.items():
+        if role == 'memory' and installation.memory_absent(profile):
+            continue
         config = selected_data(profile)
         if config['harness'] != plan['harness'] or config.get('config_home') and config['config_home'] != plan['account_home']:
             raise ValueError('hook harness/account differs from retained configuration')
@@ -115,12 +120,17 @@ def hook_materials(stager, plan):
     if index >= len(receipt['coordination_configs']):
         raise ValueError('selected coordination configuration is absent')
     all_unbound = not any(selected_data(pin).get('inbox_recall_binding')
-                          for pin in [receipt['memory_config'], *receipt['coordination_configs']])
+                          for pin in [receipt['memory_config'], *receipt['coordination_configs']]
+                          if not installation.memory_absent(pin))
+    if installation.memory_absent(receipt['memory_config']) and plan['replace_commands']['memory']:
+        raise ValueError('coordination-only selection cannot replace memory hooks')
     if plan['harness'] == 'agy' and not all_unbound:
         raise ValueError('Agy coordination requires unbound profiles; bound recall is unsupported')
     profiles = {'memory': receipt['memory_config'], 'coordination': receipt['coordination_configs'][index]}
     rows, go_launchers = [], {}
     for role, profile in profiles.items():
+        if role == 'memory' and installation.memory_absent(profile):
+            continue
         if role == 'memory' and not MEMORY[plan['harness']]:
             continue
         config = selected_data(profile)
@@ -276,12 +286,15 @@ def opencode_payloads(plan, rows):
     generation records that layout; installing it remains a separate action.
     """
     pins = plan['plugins']
-    if type(pins) is not dict or set(pins) != {'memory', 'coordination'}:
-        raise ValueError('explicit memory and coordination plugin source pins required')
+    roles = {row['role'] for row in rows}
+    if type(pins) is not dict or set(pins) != roles:
+        raise ValueError('plugin source pins must match the selected hook roles')
     if plan['replace_commands'] != {'memory': [], 'coordination': []}:
         raise ValueError('OpenCode stages plugin configurations, not shell command replacement lists')
     payloads, layout = {}, {}
     for role, name, key in (('memory', 'lifecycle', 'settings'), ('coordination', 'coordination', 'coordination_settings')):
+        if role not in roles:
+            continue
         original = installation.read_selected(plan[key], 1024 * 1024)
         config = json.loads(original.decode('utf-8'))
         if type(config) is not dict:

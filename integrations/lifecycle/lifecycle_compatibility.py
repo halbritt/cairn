@@ -44,6 +44,7 @@ def canonical(p):
 def digest(s): return type(s) is str and re.fullmatch('[0-9a-f]{64}',s) is not None
 def descriptor(d,keys=('path','sha256')):
     if type(d) is not dict or set(d)!=set(keys) or not canonical(d['path']) or not digest(d['sha256']): raise ValueError('descriptor')
+def memory_absent(d): return type(d) is dict and set(d)=={'absent'} and d['absent'] is True
 def opened(path,limit,binary=False):
     if not canonical(path): raise ValueError('path')
     parts=path[1:].split('/'); parent=os.open('/',os.O_RDONLY|os.O_DIRECTORY)
@@ -97,7 +98,10 @@ try:
     for name,target in r['aliases'].items():
         if type(name) is not str or not name or name in ('.','..') or '/' in name or '\\' in name or '\0' in name or name in names or target not in ('memory.py','coordination.py'): raise ValueError('alias')
     if type(r['members']) is not dict or set(r['members'])!=names|set(r['aliases']): raise ValueError('closure')
-    for d in (r['binary'],r['memory_config']): descriptor(d)
+    descriptor(r['binary'])
+    if memory_absent(r['memory_config']):
+        if a.role=='memory': raise ValueError('memory role absent')
+    else: descriptor(r['memory_config'])
     descriptor(r['binding'],('path','sha256','schema'))
     if r['binding']['schema']!='cairn.inbox-recall-binding/3' or type(r['coordination_configs']) is not list or not 1<=len(r['coordination_configs'])<=8: raise ValueError('binding')
     for d in r['coordination_configs']: descriptor(d)
@@ -133,6 +137,10 @@ finally: os.close(fd)
 
 class CompatibilityPreflightError(Exception):
     pass
+
+
+def memory_absent(descriptor):
+    return type(descriptor) is dict and set(descriptor) == {'absent'} and descriptor['absent'] is True
 
 
 class ParentSignal(BaseException):
@@ -242,6 +250,8 @@ class InvocationContext:
                        for key in ('binary', 'memory_config', 'coordination_configs'))):
             raise CompatibilityPreflightError()
         for pin in [self.receipt['memory_config'], *self.receipt['coordination_configs']]:
+            if memory_absent(pin):
+                continue
             raw = self.current_raw if pin['path'] == self.args.config else self.controlled_data(pin['path'])
             config = json.loads(raw)
             if (hashlib.sha256(raw).hexdigest() != pin['sha256'] or not isinstance(config, dict)
@@ -442,6 +452,8 @@ class InvocationContext:
 
     def checked_binding(self):
         if self.manifest is not None: return
+        if memory_absent(self.receipt['memory_config']):
+            raise CompatibilityPreflightError()
         self.config(self.args.config)
         path = self.receipt['binding']['path']
         raw = self.controlled_data(path, private=True)

@@ -21,8 +21,9 @@ from unittest.mock import patch
 
 
 class InstalledFixture(Fixture):
-    def __init__(self, root, binary, *, stager, **kwargs):
+    def __init__(self, root, binary, *, stager, coordination_only=False, **kwargs):
         self.stager = stager
+        self.coordination_only = coordination_only
         self.image_source = Path(binary)
         super().__init__(root, binary, **kwargs)
         self.install_root = root / 'release'
@@ -37,7 +38,7 @@ class InstalledFixture(Fixture):
             shutil.copyfile(ROOT / 'integrations/lifecycle' / name, self.sources / name)
             (self.sources / name).chmod(0o600)
         self.selected = None
-        self.next_enabled = kwargs.get('enabled', True)
+        self.next_enabled = False if coordination_only else kwargs.get('enabled', True)
         self.publish_configuration()
 
     def installer_call(self, *args, body=None):
@@ -51,17 +52,23 @@ class InstalledFixture(Fixture):
         final = self.install_root / 'generations' / ('selection-' + identity)
         inputs = self.package / identity
         inputs.mkdir(mode=0o700)
-        for role, config in [('memory', self.memory), ('coordination', self.coord)]:
-            config['inbox_recall_binding'] = str(final / 'binding.json')
+        profiles = [('coordination', self.coord)] if self.coordination_only else [('memory', self.memory), ('coordination', self.coord)]
+        for role, config in profiles:
+            if self.coordination_only:
+                config.pop('inbox_recall_binding', None)
+            else:
+                config['inbox_recall_binding'] = str(final / 'binding.json')
             path = inputs / (role + '.json')
             path.write_bytes(encoded(config))
             path.chmod(0o600)
         def descriptor(path): return dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
         plan = dict(id=identity, enabled=self.next_enabled, source_revision='f662f198c87e14acfc927552272bc4d3f6896602',
                     sources={name: descriptor(self.sources / name) for name in compat.MEMBERS}, binary=descriptor(self.image_source),
-                    memory_config=descriptor(inputs / 'memory.json'), coordination_configs=[descriptor(inputs / 'coordination.json')],
+                    memory_config={'absent': True} if self.coordination_only else descriptor(inputs / 'memory.json'), coordination_configs=[descriptor(inputs / 'coordination.json')],
                     aliases={'memory-hook.py': 'memory.py', 'coordination-hook.py': 'coordination.py', 'manifest.json': 'memory.py'},
                     python=sys.executable, shell='/bin/sh')
+        if self.coordination_only:
+            plan['profile_mode'] = 'unbound'
         return plan
 
     def publish_configuration(self, *, enabled=None):

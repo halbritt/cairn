@@ -158,6 +158,10 @@ def qualify_launch_anchors(plan, scratch):
                 retention='external approved interpreter/stdlib and shell; not receipt-authenticated')
 
 
+def memory_absent(descriptor):
+    return type(descriptor) is dict and set(descriptor) == {'absent'} and descriptor['absent'] is True
+
+
 class Assembler:
     def __init__(self, stager, root, plan, scratch):
         self.stager, self.root, self.plan, self.scratch = stager, root, plan, scratch
@@ -169,6 +173,8 @@ class Assembler:
         self.profile_mode = plan.get('profile_mode', 'bound')
         if self.profile_mode not in ('bound', 'unbound') or self.profile_mode == 'unbound' and plan['enabled']:
             raise ValueError('unbound profiles require an explicitly disabled binding')
+        if memory_absent(plan['memory_config']) and self.profile_mode != 'unbound':
+            raise ValueError('coordination-only selection requires unbound profiles')
         if type(plan['source_revision']) is not str or any(0xd800 <= ord(c) <= 0xdfff for c in plan['source_revision']):
             raise ValueError('source revision must be Unicode provenance text')
         self.generation = root / 'generations' / ('selection-' + identity)
@@ -213,6 +219,8 @@ class Assembler:
         if not 2 <= len(inputs) <= 9:
             raise ValueError('one memory and one to eight coordination configurations required')
         for index, pin in enumerate(inputs):
+            if index == 0 and memory_absent(pin):
+                continue
             name = 'memory.json' if index == 0 else 'coordination-' + str(index - 1) + '.json'
             raw = read_selected(pin, 1024 * 1024)
             # Configuration keeps the source interpreter's duplicate-last and
@@ -226,7 +234,8 @@ class Assembler:
             elif config.get('inbox_recall_binding'):
                 raise ValueError('unbound profiles must already be unbound; no binding is removed')
             self.payloads[name] = raw
-        return self.descriptor('memory.json'), [self.descriptor('coordination-' + str(i) + '.json') for i in range(len(inputs) - 1)]
+        memory = {'absent': True} if memory_absent(inputs[0]) else self.descriptor('memory.json')
+        return memory, [self.descriptor('coordination-' + str(i) + '.json') for i in range(len(inputs) - 1)]
 
     def snapshot(self, writer, sources):
         aliases = self.plan['aliases']
@@ -247,6 +256,8 @@ class Assembler:
         roles = [('memory', receipt['memory_config'], (13, 150))]
         roles += [('coordination', config, (2, 15)) for config in receipt['coordination_configs']]
         for index, (role, config, timeouts) in enumerate(roles):
+            if role == 'memory' and memory_absent(config):
+                continue
             entry = next((name for name, target in sorted(receipt['aliases'].items()) if target == role + '.py'), role + '.py')
             for timeout in timeouts:
                 label = role + ':' + str(index) + ':' + str(timeout)
@@ -330,6 +341,8 @@ def retained_member(files, descriptor):
 
 
 def retained_vector(files, vector, role, profiles):
+    if role == 'memory' and memory_absent(profiles[0]):
+        raise ValueError('coordination-only selection has no memory argv')
     if (type(vector) is not list or not vector
             or any(type(arg) is not str or '\0' in arg
                    or any(0xd800 <= ord(c) <= 0xdfff for c in arg) for arg in vector)
@@ -371,7 +384,9 @@ def inspect_retained(stager, selected):
             or type(binding['coordination_configs']) is not list or not 1 <= len(binding['coordination_configs']) <= 8):
         raise ValueError('unsupported retained /2 binding')
     profiles = [binding['memory_config'], *binding['coordination_configs']]
-    names = [retained_member(files, pin) for pin in profiles]
+    if memory_absent(profiles[0]) and binding['enabled']:
+        raise ValueError('coordination-only retained binding must be disabled')
+    names = [retained_member(files, pin) for pin in profiles if not memory_absent(pin)]
     if len(set(names)) != len(names) or required.intersection(names):
         raise ValueError('ambiguous retained profile selection')
     expected = set(required) | set(names)
@@ -390,11 +405,14 @@ def inspect_retained(stager, selected):
             raise ValueError('retained engine/bridge entrypoint differs from its bundle role')
         expected.add(name)
     for pin in profiles:
+        if memory_absent(pin):
+            continue
         config = json.loads(read_selected(pin, 1024 * 1024))
         if type(config) is not dict or config.get('inbox_recall_binding') not in (None, '', pins['binding.json']['path']):
             raise ValueError('retained profile selects another binding')
     launchers = decoded(read_selected(pins['retained-argv.json'], 1024 * 1024))
-    if type(launchers) is not dict or set(launchers) != {'memory', 'coordination'}:
+    roles = {'coordination'} if memory_absent(profiles[0]) else {'memory', 'coordination'}
+    if type(launchers) is not dict or set(launchers) != roles:
         raise ValueError('one literal retained argv per hook role required')
     for role, vector in launchers.items():
         expected.add(retained_vector(files, vector, role, profiles))

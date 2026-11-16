@@ -502,6 +502,9 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 		}
 		originalLegacy := b.plan.Schema == "cairn.unit-bootstrap/2" && value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/2")
 		for _, profile := range []*value.Value{config, memory} {
+			if profile == nil {
+				continue
+			}
 			home := profile.Get("config_home")
 			if nativeNone(home) {
 				continue
@@ -513,9 +516,10 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 				return nil, err
 			}
 		}
-		affected = append(affected,
-			bootstrapAffectedState{name, "coordination", nativeText(config.Get("state_dir"))},
-			bootstrapAffectedState{name, "memory", nativeText(memory.Get("state_dir"))})
+		affected = append(affected, bootstrapAffectedState{name, "coordination", nativeText(config.Get("state_dir"))})
+		if memory != nil {
+			affected = append(affected, bootstrapAffectedState{name, "memory", nativeText(memory.Get("state_dir"))})
+		}
 		binary := nativeText(config.Get("cairn"))
 		b.binaryDirs[filepath.Dir(binary)] = true
 		if selected := nativeText(manifest.Get("binary").Get("path")); selected != "" {
@@ -544,13 +548,19 @@ func (b *bootstrapRead) local() (map[string]string, error) {
 		r.configs = append(r.configs, config)
 		r.configPaths[config] = path
 		r.memories[config] = memory
-		states[nativeText(config.Get("state_dir"))], memories[nativeText(memory.Get("state_dir"))] = true, true
+		states[nativeText(config.Get("state_dir"))] = true
+		if memory != nil {
+			memories[nativeText(memory.Get("state_dir"))] = true
+		}
 		mode := ":disabled-bound"
 		if nativeNone(config.Get("inbox_recall_binding")) {
 			mode = ":disabled-unbound"
 		}
 		if value.Truth(manifest.Get("enabled")) {
 			mode = strings.Replace(mode, ":disabled-", ":enabled-", 1)
+		}
+		if memoryAbsent(manifest.Get("memory_config")) {
+			mode += ":coordination-only"
 		}
 		associations[name] = nativeText(manifest.Get("schema")) + mode
 	}
@@ -749,9 +759,15 @@ func (b *bootstrapRead) association(name string, config *value.Value) (*value.Va
 	}
 	var memory *value.Value
 	matched := 0
+	if memoryAbsent(manifest.Get("memory_config")) && (bound != "" || value.Truth(manifest.Get("enabled"))) {
+		return nil, nil, errors.New("coordination-only retained selection must be disabled and unbound")
+	}
 	selectedProfilePath := ""
 	var coordinators []*value.Value
 	for i, desc := range append([]*value.Value{manifest.Get("memory_config")}, coords.Items...) {
+		if i == 0 && memoryAbsent(desc) {
+			continue
+		}
 		if !exactReceiptObject(desc, "path", "sha256") {
 			return nil, nil, errors.New("bootstrap retained profile descriptor unknown")
 		}
@@ -821,7 +837,13 @@ func (b *bootstrapRead) current3(config, manifest *value.Value, selected Bootstr
 	}
 	configPath := ""
 	var memory *value.Value
+	if memoryAbsent(manifest.Get("memory_config")) && (!nativeNone(config.Get("inbox_recall_binding")) || value.Truth(manifest.Get("enabled"))) {
+		return nil, errors.New("coordination-only current3 selection must be disabled and unbound")
+	}
 	for i, desc := range append([]*value.Value{manifest.Get("memory_config")}, coords.Items...) {
+		if i == 0 && memoryAbsent(desc) {
+			continue
+		}
 		if !exactReceiptObject(desc, "path", "sha256") {
 			return nil, errors.New("bootstrap current3 profile descriptor unknown")
 		}
@@ -867,7 +889,7 @@ func (b *bootstrapRead) current3(config, manifest *value.Value, selected Bootstr
 	}
 	// Each actual receipt is verified once in this observation. Every selected
 	// source/profile/image is held and freshly hashed after the API bracket.
-	if cached := b.receipts[selected.Receipt.Path]; cached != nil {
+	if cached, ok := b.receipts[selected.Receipt.Path]; ok {
 		return cached, nil
 	}
 	for _, member := range members.Members {
@@ -960,10 +982,14 @@ func (b *bootstrapRead) retainedRuntime(manifest *value.Value, argvPin WatchCens
 	if err != nil {
 		return err
 	}
-	if !exactReceiptObject(argv, "memory", "coordination") {
+	roles := []string{"memory", "coordination"}
+	if memoryAbsent(manifest.Get("memory_config")) {
+		roles = []string{"coordination"}
+	}
+	if !exactReceiptObject(argv, roles...) {
 		return errors.New("bootstrap retained literal role argv unknown")
 	}
-	for _, role := range []string{"memory", "coordination"} {
+	for _, role := range roles {
 		literal, err := hookStringVector(argv.Get(role))
 		if err != nil || len(literal) == 0 {
 			return errors.New("bootstrap retained argv invalid")

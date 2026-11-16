@@ -14,7 +14,7 @@ import (
 // census's tracked bytes. It never sets CompatibilityContext.receiptVerified
 // and never grants authority to a cached digest or caller-supplied flag.
 // Keep these predicates in parity with the generic validator; only the two
-// disk read sites differ. The generic compatibility contract is untouched.
+// disk read sites differ, including the same explicit absent-memory selection.
 type unitReceiptPass struct {
 	*CompatibilityContext
 	read *watchCensusRead
@@ -94,7 +94,7 @@ func (c *unitReceiptPass) validateReceiptClosureAndPins(role string, receipt *va
 			return preflightError("closure")
 		}
 	}
-	if !validReceiptDescriptor(receipt.Get("binary"), "path", "sha256") || !validReceiptDescriptor(receipt.Get("memory_config"), "path", "sha256") || !validReceiptDescriptor(receipt.Get("binding"), "path", "sha256", "schema") {
+	if !validReceiptDescriptor(receipt.Get("binary"), "path", "sha256") || !validMemoryDescriptor(receipt.Get("memory_config")) || !validReceiptDescriptor(receipt.Get("binding"), "path", "sha256", "schema") {
 		return preflightError("descriptor")
 	}
 	coordList := receipt.Get("coordination_configs")
@@ -111,7 +111,7 @@ func (c *unitReceiptPass) validateReceiptClosureAndPins(role string, receipt *va
 
 func (c *unitReceiptPass) validateReceiptRoleAndDiskPins(role string, receipt, aliases, members, coordList *value.Value) error {
 	if role == "memory" {
-		if !value.SameText(receipt.Get("memory_config").Get("path"), c.ConfigPath) {
+		if memoryAbsent(receipt.Get("memory_config")) || !value.SameText(receipt.Get("memory_config").Get("path"), c.ConfigPath) {
 			return preflightError("config role")
 		}
 	} else {

@@ -96,7 +96,9 @@ func (r *watchDrainRead) local(selected WatchBindings) error {
 		if err != nil {
 			return err
 		}
-		memories[nativeText(memory.Get("state_dir"))] = true
+		if memory != nil {
+			memories[nativeText(memory.Get("state_dir"))] = true
+		}
 		r.memories[config] = memory
 	}
 	for directory := range states {
@@ -142,7 +144,7 @@ func (r *watchDrainRead) disabledBinding(config *value.Value) (*value.Value, err
 	if enabled == nil || enabled.Kind != value.Bool || enabled.Boolean {
 		return nil, errors.New("D1 selected binding is enabled or unknown")
 	}
-	memory, err := r.descriptor(manifest.Get("memory_config"))
+	memory, err := r.memoryDescriptor(manifest.Get("memory_config"))
 	if err != nil {
 		return nil, err
 	}

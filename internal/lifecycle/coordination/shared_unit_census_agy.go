@@ -332,7 +332,11 @@ func (r *watchCensusRead) agyProducedLayerFor(ctx context.Context, selected Watc
 	}
 	var coordinationProfile WatchCensusPin
 	for _, role := range []string{"memory", "coordination"} {
-		_, pin, err := r.descriptor(producer.Get("role_configurations").Get(role))
+		readDescriptor := r.descriptor
+		if role == "memory" {
+			readDescriptor = r.memoryDescriptor
+		}
+		_, pin, err := readDescriptor(producer.Get("role_configurations").Get(role))
 		if err != nil {
 			return nil, err
 		}

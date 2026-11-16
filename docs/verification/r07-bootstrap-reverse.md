@@ -123,9 +123,11 @@ only the missing owned `0700` parent and changes the required private parent to
 `0700`; reverse restores its exact original mode or absence after consumers
 join. Original talos coordination/bindings `0755` remains supported and is not
 normalized away. Shared `.local`/share/PATH ancestor preparation and reverses
-are separately recorded. HOME is never chmodded. The archon inactive memory
-fixture is explicitly synthetic until the actual unbound memory selection is
-known; fixture material does not establish an installed selector.
+are separately recorded. HOME is never chmodded. The production-shape fixture
+selects explicit coordination-only roles for proximal `agy-one` and archon
+`codex-archon`, without an inactive memory profile or memory directory. Other
+members retain their paired-memory cases. Fixture material does not establish
+installed selectors or authorize host preparation.
 
 An existing lock must be the same actual inode in both selections, linked during
 off-path preparation. Its exact exclusive flock is identified through
@@ -145,8 +147,18 @@ profiles, source bundle and literal commands. It is selection data, never an
 invented installed binding or a `/3` receipt. All selected members remain in the
 plan. No `/2` profile or command is normalized into `/3`.
 
+An unbound member with no memory role declares exactly
+`memory_config: {"absent": true}` in both its retained `/2` manifest and its
+disabled `/3` binding/receipt. Its literal retained argv has only the
+`coordination` key. This declaration is pinned selection data, not an omitted
+association: every member still needs its explicit association and complete
+source closure. Missing/contradictory declarations, bound or enabled no-memory
+selections, and memory-role invocations refuse. Both sides preserve absence;
+state/drain coverage includes the actual coordination state without inventing
+a memory state. Paired-memory descriptors and validations remain unchanged.
+
 The reader checks the engine/bridge, all 17 named source members and their bundle
-digest. Memory and coordination argv must select the actual source generation,
+digest. Each selected role's argv must select the actual source generation,
 role and exact profile (`hook --config` for coordination). Shared bound groups
 retain the existing profile validator: memory home is unnecessary, one
 coordinator may omit its home, and multiple coordinators need distinct explicit

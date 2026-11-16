@@ -44,11 +44,11 @@ def snapshot(root, credential):
     return result
 
 
-def run(images, evidence, *, association_only=False, typed=False):
+def run(images, evidence, *, association_only=False, typed=False, coordination_only=False):
     # Reuse construction, not a prior Agy test method or native baseline.
     case = R04HostWiringTests(methodName='runTest')
     case.root, case.binary, case.stager = evidence, images['control'], images['stager']
-    fixture = case.fixture('owned-agy', harness='agy')
+    fixture = case.fixture('owned-agy', harness='agy', coordination_only=coordination_only)
     if association_only:
         # Fixture construction: source settings live outside the empty account.
         # No native client has loaded them, and the profile bytes stay exact.
@@ -63,13 +63,13 @@ def run(images, evidence, *, association_only=False, typed=False):
         'actual producer support changed')
     require([(row['role'], row['event']) for row in producer['rows']] ==
         [('coordination', 'PreInvocation'), ('coordination', 'Stop')], 'actual Agy event coverage changed')
-    for path in (fixture.coord_path, fixture.memory_path):
+    for path in (fixture.coord_path,) if coordination_only else (fixture.coord_path, fixture.memory_path):
         require(json.loads(path.read_bytes()).get('inbox_recall_binding') is None,
             'probe must retain the actual unbound producer profile')
     require(fixture.api_calls() == [], 'setup unexpectedly executed the synthetic API')
     write(evidence / 'actual-producer.json', dict(selected=selected, producer=producer,
         coordination=dict(path=str(fixture.coord_path), sha256=sha(fixture.coord_path)),
-        memory=dict(path=str(fixture.memory_path), sha256=sha(fixture.memory_path)),
+        memory={'absent': True} if coordination_only else dict(path=str(fixture.memory_path), sha256=sha(fixture.memory_path)),
         native_executed=False, callbacks_executed=False, api_calls=0))
 
     # A metadata-only, zero-byte, unreadable fixture selector. It is never
@@ -77,7 +77,7 @@ def run(images, evidence, *, association_only=False, typed=False):
     credential = Path(fixture.coord['token_file'])
     credential.touch(mode=0o000, exist_ok=False)
     credential.chmod(0o000)
-    for directory in (fixture.coord['state_dir'], fixture.memory['state_dir']):
+    for directory in (fixture.coord['state_dir'],) if coordination_only else (fixture.coord['state_dir'], fixture.memory['state_dir']):
         Path(directory).mkdir(mode=0o700, exist_ok=True)
     config_root = fixture.root / 'selected-configs'
     active = config_root / 'unit'

@@ -239,7 +239,7 @@ func (r *watchCensusRead) agyCurrentA(ctx context.Context, selected WatchCensusA
 	if err != nil {
 		return nil, nil, err
 	}
-	_, memory, err := r.unboundDescriptor(receipt.Get("memory_config"))
+	_, memory, err := r.unboundMemoryDescriptor(receipt.Get("memory_config"))
 	if err != nil {
 		return nil, nil, err
 	}

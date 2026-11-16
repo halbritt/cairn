@@ -207,16 +207,18 @@ func (c *CLI) unitControlUnboundPreflight(ctx context.Context, p *UnitControlPla
 			return err
 		}
 		memoryDescriptor := manifest.Get("memory_config")
-		if !value.SameText(memoryDescriptor.Get("path"), memoryPin.Path) || !value.SameText(memoryDescriptor.Get("sha256"), memoryPin.SHA256) {
+		if nativeText(memoryDescriptor.Get("path")) != memoryPin.Path || nativeText(memoryDescriptor.Get("sha256")) != memoryPin.SHA256 {
 			return errors.New("unbound preflight memory association changed")
 		}
-		memory, err := read.descriptor(memoryDescriptor)
+		memory, err := read.memoryDescriptor(memoryDescriptor)
 		if err != nil {
 			return err
 		}
-		for _, key := range []string{"harness", "cairn", "socket", "token_file", "repo"} {
-			if !nativeEqual(next.Get(key), memory.Get(key)) {
-				return errors.New("unbound proposed profile and memory selectors differ")
+		if memory != nil {
+			for _, key := range []string{"harness", "cairn", "socket", "token_file", "repo"} {
+				if !nativeEqual(next.Get(key), memory.Get(key)) {
+					return errors.New("unbound proposed profile and memory selectors differ")
+				}
 			}
 		}
 		if err := unitControlPairIdentity([]*value.Value{config, next}, []string{nativeText(currentMemory.Get("state_dir")), nativeText(memory.Get("state_dir"))}); err != nil {

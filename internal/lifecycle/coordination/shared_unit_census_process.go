@@ -290,7 +290,7 @@ func (r *watchCensusRead) callbackSelection(record watchCensusCallbackRecord) ([
 	if mode != "cairn.inbox-recall-binding/2" && mode != "cairn.inbox-recall-binding/3" {
 		return nil, nil, "", errors.New("unknown retained binding schema")
 	}
-	memory, _, err := r.descriptor(manifest.Get("memory_config"))
+	memory, _, err := r.memoryDescriptor(manifest.Get("memory_config"))
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -314,10 +314,19 @@ func (r *watchCensusRead) callbackSelection(record watchCensusCallbackRecord) ([
 		r.local.configs = append(r.local.configs, coord)
 		r.configPaths[coord] = user
 	}
-	if err := binding.ValidateConfigurationProfiles(binding.ConfigurationProfiles{Current: config, Memory: memory, Coordinators: configs, ManifestPath: []rune(record.Binding.Path), Resolve: r.cli.profile().Routes.Filesystem().Resolve}); err != nil {
-		return nil, nil, "", err
+	if memory == nil {
+		if err := coordinationOnlyProfiles(config, manifest, configs); err != nil {
+			return nil, nil, "", err
+		}
+	} else {
+		if err := binding.ValidateConfigurationProfiles(binding.ConfigurationProfiles{Current: config, Memory: memory, Coordinators: configs, ManifestPath: []rune(record.Binding.Path), Resolve: r.cli.profile().Routes.Filesystem().Resolve}); err != nil {
+			return nil, nil, "", err
+		}
 	}
-	resources := []string{nativeText(config.Get("state_dir")), nativeText(memory.Get("state_dir")), filepath.Dir(record.Executable.Path)}
+	resources := []string{nativeText(config.Get("state_dir")), filepath.Dir(record.Executable.Path)}
+	if memory != nil {
+		resources = append(resources, nativeText(memory.Get("state_dir")))
+	}
 	for _, path := range resources {
 		if _, err := r.directory(path); err != nil {
 			return nil, nil, "", err
