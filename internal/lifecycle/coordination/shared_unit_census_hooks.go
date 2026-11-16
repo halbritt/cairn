@@ -243,6 +243,44 @@ func (r *watchCensusRead) hookLayers(ctx context.Context, selected WatchCensusCl
 	return nil
 }
 
+func (r *watchCensusRead) claudeHookProducer(ctx context.Context, selected WatchCensusClaudeHooks) (*value.Value, map[string]WatchCensusPin, error) {
+	if !censusWithin(r.catalog.Root, selected.Generation.Path) {
+		return nil, nil, errors.New("external native hook generation")
+	}
+	files, err := install.ReadGeneration(ctx, install.Generation{Path: selected.Generation.Path, SHA256: selected.Generation.SHA256})
+	if err != nil {
+		return nil, nil, fmt.Errorf("native hook generation: %w", err)
+	}
+	if !censusWithin(r.catalog.Root, selected.Generation.Path) {
+		return nil, nil, errors.New("external native hook generation")
+	}
+	if _, err := r.pin(selected.Generation, false); err != nil {
+		return nil, nil, err
+	}
+	members := map[string]WatchCensusPin{}
+	for _, file := range files {
+		if !censusWithin(r.catalog.Root, file.Path) {
+			return nil, nil, errors.New("external native hook generation member")
+		}
+		pin := WatchCensusPin{file.Path, file.SHA256}
+		if _, err := r.pin(pin, file.Executable); err != nil {
+			return nil, nil, err
+		}
+		members[file.Name] = pin
+	}
+	if len(members) != 3 || members["hook-settings.json"] != selected.Settings || members["previous-settings.json"].Path == "" || members["hook-selection.json"].Path == "" {
+		return nil, nil, errors.New("native hook generation membership/settings selection disagrees")
+	}
+	producer, err := r.jsonFile(members["hook-selection.json"].Path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !value.SameText(producer.Get("schema"), "cairn.lifecycle-hook-settings/1") || !value.SameText(producer.Get("harness"), "claude") || nativeText(producer.Get("account_home")) != selected.Account {
+		return nil, nil, errors.New("native hook producer harness/account disagrees")
+	}
+	return producer, members, nil
+}
+
 func (r *watchCensusRead) inspectClaudeHooks(ctx context.Context, selected WatchCensusClaudeHooks) error {
 	for _, pin := range []WatchCensusPin{selected.Config, selected.Session, selected.Generation, selected.Settings, selected.Readback} {
 		if !censusWithin(r.catalog.Root, pin.Path) {
@@ -277,39 +315,9 @@ func (r *watchCensusRead) inspectClaudeHooks(ctx context.Context, selected Watch
 	if err := r.hookLayers(ctx, selected); err != nil {
 		return err
 	}
-	if !censusWithin(r.catalog.Root, selected.Generation.Path) {
-		return errors.New("external native hook generation")
-	}
-	files, err := install.ReadGeneration(ctx, install.Generation{Path: selected.Generation.Path, SHA256: selected.Generation.SHA256})
-	if err != nil {
-		return fmt.Errorf("native hook generation: %w", err)
-	}
-	if !censusWithin(r.catalog.Root, selected.Generation.Path) {
-		return errors.New("external native hook generation")
-	}
-	if _, err := r.pin(selected.Generation, false); err != nil {
-		return err
-	}
-	members := map[string]WatchCensusPin{}
-	for _, file := range files {
-		if !censusWithin(r.catalog.Root, file.Path) {
-			return errors.New("external native hook generation member")
-		}
-		pin := WatchCensusPin{file.Path, file.SHA256}
-		if _, err := r.pin(pin, file.Executable); err != nil {
-			return err
-		}
-		members[file.Name] = pin
-	}
-	if len(members) != 3 || members["hook-settings.json"] != selected.Settings || members["previous-settings.json"].Path == "" || members["hook-selection.json"].Path == "" {
-		return errors.New("native hook generation membership/settings selection disagrees")
-	}
-	producer, err := r.jsonFile(members["hook-selection.json"].Path)
+	producer, members, err := r.claudeHookProducer(ctx, selected)
 	if err != nil {
 		return err
-	}
-	if !value.SameText(producer.Get("schema"), "cairn.lifecycle-hook-settings/1") || !value.SameText(producer.Get("harness"), "claude") || nativeText(producer.Get("account_home")) != selected.Account {
-		return errors.New("native hook producer harness/account disagrees")
 	}
 	lifecycle := producer.Get("lifecycle_selection")
 	lifePin := WatchCensusPin{nativeText(lifecycle.Get("path")), nativeText(lifecycle.Get("sha256"))}
@@ -336,7 +344,7 @@ func (r *watchCensusRead) inspectClaudeHooks(ctx context.Context, selected Watch
 		bindingMatched = bindingMatched || pin == node.Binding
 		lifeMembers[file.Name] = pin
 	}
-	if !bindingMatched {
+	if !bindingMatched && !(node.Mode == "cairn.inbox-recall-binding/2" && lifeMembers["retained-package.json"].Path != "") {
 		return errors.New("native hook generation selects another lifecycle binding")
 	}
 	if node.Mode == "cairn.inbox-recall-binding/2" {
@@ -398,6 +406,9 @@ func (r *watchCensusRead) inspectClaudeHooks(ctx context.Context, selected Watch
 // Retained /2 observations select the installed bundle and literal Python
 // commands. They cannot borrow a /3 receipt or a different generation's code.
 func (r *watchCensusRead) claudeRetainedMembers(node *WatchCensusMember, members map[string]WatchCensusPin, producer *value.Value) error {
+	if members["retained-package.json"].Path != "" {
+		return r.retainedPackage(node, members, producer)
+	}
 	if members["retained-argv.json"].Path == "" || members["selection.json"].Path != "" || members["receipt.json"].Path != "" {
 		return errors.New("retained native selection is missing argv or mixes compatibility metadata")
 	}
@@ -500,11 +511,27 @@ func (r *watchCensusRead) claudeRetainedMembers(node *WatchCensusMember, members
 
 func (r *watchCensusRead) claudeHookLaunches(selected WatchCensusClaudeHooks, producer *value.Value) (*value.Value, error) {
 	node := r.nodes[selected.Config.Path]
-	if node == nil {
+	if node == nil || node.Config != selected.Config {
 		return nil, errors.New("unknown native hook lifecycle selection")
 	}
 	name := "selection.json"
 	if node.Mode == "cairn.inbox-recall-binding/2" {
+		if producer.Get("retained_python").Get("package") != nil {
+			members, err := r.retainedGeneration(context.Background(), producer)
+			if err != nil {
+				return nil, err
+			}
+			if err := r.retainedPackage(node, members, producer); err != nil {
+				return nil, err
+			}
+			pkg := r.retainedPackages[node.Config.Path]
+			metadata := pkg.Files["retained-package.json"]
+			if r.files[metadata.Path] != metadata.SHA256 {
+				return nil, retainedPackageError()
+			}
+			member := pkg.Object.Get("members").Get(nativeText(producer.Get("retained_python").Get("member")))
+			return member.Get("argv"), nil
+		}
 		name = "retained-argv.json"
 	} else if node.Mode != "cairn.inbox-recall-binding/3" {
 		return nil, errors.New("unsupported native hook lifecycle selection")
@@ -626,7 +653,18 @@ func (r *watchCensusRead) claudeRetainedHookRow(selected WatchCensusClaudeHooks,
 	if role == "coordination" {
 		tail = append([]string{"hook"}, tail...)
 	}
-	if !slices.Equal(observedTail, tail) || filepath.Dir(script) != filepath.Dir(node.Binding.Path) || r.files[script] == "" || r.files[script] != r.files[canonicalScript] {
+	selectedScript := filepath.Dir(script) == filepath.Dir(node.Binding.Path) && r.files[script] != "" && r.files[script] == r.files[canonicalScript]
+	if pkg := r.retainedPackages[node.Config.Path]; pkg != nil {
+		selectedScript = false
+		for _, member := range pkg.Object.Get("members").Members {
+			if nativeText(member.Value.Get("config").Get("sha256")) != node.Config.SHA256 || !nativeEqual(member.Value.Get("argv").Get(role), row.Get("argv")) {
+				continue
+			}
+			entry, err := retainedPackagePin(member.Value.Get("runtime").Get(role).Get("entry"))
+			selectedScript = err == nil && entry.Path == script && r.files[script] == entry.SHA256
+		}
+	}
+	if !slices.Equal(observedTail, tail) || !selectedScript {
 		return errors.New("unsupported retained native Python program/config frame")
 	}
 	if event == "UserPromptSubmit" {

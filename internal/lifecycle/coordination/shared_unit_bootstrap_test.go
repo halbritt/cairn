@@ -832,7 +832,16 @@ func TestUnitBootstrapOwnedTransition(t *testing.T) {
 			t.Fatal("invalid owned operation")
 		}
 		var transition UnitBootstrapResult
-		if err := invoke(spec.Operation, &transition, nil); err != nil {
+		err := invoke(spec.Operation, &transition, nil)
+		if spec.RefuseContains != "" {
+			if err == nil || !strings.Contains(err.Error(), spec.RefuseContains) || transition.Published || !reflect.DeepEqual(before, bootstrapPreservedMetadata(t, p.Current.Directory)) {
+				t.Fatalf("owned operation refusal lost: %v %+v", err, transition)
+			}
+			raw, _ := json.Marshal(map[string]any{"result": "PASS", "operation": spec.Operation, "published": false, "error": err.Error(), "seconds": timings, "deadline_seconds": 30, "api_read_operations": reads, "workflow_proof": "SHARED_CLI_WORKFLOW_WITH_FIXTURE_FENCE"})
+			writePrivateFile(t, spec.Result, raw, 0600)
+			return
+		}
+		if err != nil {
 			t.Fatal(err)
 		}
 		if spec.Operation != "rollback" && (!transition.Published || !transition.Rechecked || transition.DatabaseCoverage != "not-selected") {

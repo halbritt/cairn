@@ -14,6 +14,19 @@ consumer is unchanged. A selected-file S04R staging utility supplies the actual
 API launcher flags; starting or changing a managed API remains an admitted
 operator step.
 
+The initial hook/binding cutover conditionally keeps the raw Python presence
+watcher. Its separate captured-watcher fixture must prove the complete `/3`
+selection, same lock, owner wake and settlement across stopped forward/reverse
+exchanges and restarts; a lock-held exchange must refuse. A partial or failed
+fixture admits no watcher reliance. See the
+[interim watcher contract](../developer/retained-lifecycle-package.md#interim-watcher-and-required-go-adoption).
+
+Adopting the Go watcher is a mandatory later step with its own admission after
+the initial R07 cutover, supported unit selection, byte-exact reverse, the same
+lock identity and mixed-unit membership. R08 must include at least 24 hours
+of affected-lane observation on the Go watcher before R08 completion and R09
+removal of Python lifecycle code. No observation clock starts here.
+
 ## Operator commands and selection data
 
 The ordinary private frontend uses the concrete coordination profile and
@@ -138,6 +151,16 @@ new private lock. Reverse restores the original absence and directory mode;
 it does not silently initialize the retained generation.
 
 ## Bound and unbound retained Python /2
+
+An explicitly selected
+[retained installed package](../developer/retained-lifecycle-package.md) also
+supports original installed paths, separate complete closures, aliases and the
+existing coordination facade/delegate. Its outer generation manifest authenticates
+declared per-member argv and evidence without relocating original selectors.
+Every declared closure separately pins its actual adjacent bundle sidecar.
+Unknown installed sidecars remain a qualification gap; generated fixture
+sidecars cannot fill it. Omitting the package selector keeps the existing
+generation-local association below.
 
 Every original member selects its actual `/2` manifest and literal
 `retained-argv.json`. Bound profiles name their real installed manifest. A
@@ -329,6 +352,33 @@ interpreter or model. Production path qualification, loaded-byte/ABI checks,
 model/effects evidence and actual API startup/readback remain R07 obligations.
 
 ## Local verification
+
+### Final-image issued-inbox gate
+
+The earlier `5275bd3d` full11 rehearsal covered eight bound and three unbound
+members, but omitted issued inbox command execution for those unbound members.
+Its maintained driver's `add_scale_peers`/`refresh_scale_catalog` supply the
+extra profiles, while `run_session_sequence` drives the primary scripted hook
+sequence. The retained full11 result SHA `4c7a10e5b8183e7be30fec9cdde65da2e7cbd61f7185b8d4290ce6a5c6e49355`
+and `actual-api-bridge-calls.json` SHA `14b36314015c1a9c99ab622598fc8e90fc813815f2a973e08b1761cd919edf3f`
+join to 31 read/presence calls and zero inbox-claim, ack, complete, publish or
+drain calls. Member count and rehearsal PASS did not establish issued-command
+coverage.
+
+The final-image gate remains **PENDING**: for each of the three unbound members,
+issue and execute context `ack`, `complete`, `respond`, `finish-reply`, compact
+`read`, `inspect`, `settle`, `advance`, and tool-cued `drain` through the actual
+selected image/profile. Retain original issued launcher/context bytes, exact
+argv, state/client/socket/auth correspondence, journal commitments, API effects
+and negative selection/downgrade refusals. Go/Python process parity across
+bound, unbound-with-memory and coordination-only classes is a separate source
+check; it does not qualify this final-image member gate or an installed host.
+
+The presence90 drop-in's raw custody under `0775` user-systemd/service.d parents
+remains **OPEN and hard-excluded**. No alternative read or mode repair follows
+from these fixtures. Later Go watcher adoption remains mandatory after initial
+R07, with its **own admission** and at least **24 hours of Go R08 observation
+before R09**. No fixture starts that clock or admits Stage2/production.
 
 All test commands use mise and maintained host process ownership. The fixture
 uses normal host HOME/CODEX_HOME/tools, disposable application CAIRN_HOME/state,

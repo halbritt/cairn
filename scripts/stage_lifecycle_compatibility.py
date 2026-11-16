@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import shlex
@@ -18,6 +19,7 @@ import uuid
 
 
 SELECTION_SCHEMA = 'cairn.lifecycle-install-selection/1'
+RETAINED_PACKAGE_SCHEMA = 'cairn.lifecycle-retained-package/1'
 # The retained /2 bundle contract, independent of any selected payload loader.
 RETAINED_MEMBERS = frozenset((
     'lifecycle_bundle.py', 'memory.py', 'coordination.py', 'inbox_recall.py',
@@ -81,16 +83,17 @@ def directory(path, private=False):
         os.close(fd)
 
 
-def read_selected(descriptor, limit):
+def read_selected(descriptor, limit, *, private=False, modes=None):
     if set(descriptor) != {'path', 'sha256'} or not canonical(descriptor['path']):
         raise ValueError('invalid selected input descriptor')
     path = Path(descriptor['path'])
-    with directory(str(path.parent)) as parent:
+    with directory(str(path.parent), private=private) as parent:
         fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
     with os.fdopen(fd, 'rb') as source:
         before = os.fstat(source.fileno())
         if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
-                or before.st_nlink != 1 or before.st_mode & 0o7022 or before.st_size > limit):
+                or before.st_nlink != 1 or before.st_mode & 0o7022 or before.st_size > limit
+                or modes is not None and stat.S_IMODE(before.st_mode) not in modes):
             raise ValueError('selected input is not a controlled bounded regular file: ' + path.name)
         raw = source.read(limit + 1)
         after = os.fstat(source.fileno())
@@ -99,6 +102,14 @@ def read_selected(descriptor, limit):
         if identity(before) != identity(after) or len(raw) != before.st_size or len(raw) > limit or sha(raw) != descriptor['sha256']:
             raise ValueError('selected input bytes or metadata changed')
         return raw
+
+
+def read_retained_data(descriptor, limit):
+    return read_selected(descriptor, limit, private=True)
+
+
+def read_retained_profile(descriptor, limit):
+    return read_selected(descriptor, limit, modes=(0o400, 0o600))
 
 
 def run_owned(argv, *, payload=None, timeout, env=None):
@@ -330,17 +341,22 @@ def stage(stager, root, plan):
         return selected
 
 
-def retained_member(files, descriptor):
+def retained_member(files, descriptor, associations=None):
     if (type(descriptor) is not dict or set(descriptor) != {'path', 'sha256'}
             or not canonical(descriptor['path'])):
         raise ValueError('invalid retained input descriptor')
+    if associations is not None:
+        matches = [name for name, pin in associations.items() if pin == descriptor]
+        if len(matches) != 1 or files.get(matches[0], {}).get('sha256') != descriptor['sha256']:
+            raise ValueError('installed retained descriptor has no unique pinned copy')
+        return matches[0]
     member = files.get(Path(descriptor['path']).name)
     if member is None or descriptor != {key: member[key] for key in ('path', 'sha256')}:
         raise ValueError('retained descriptor differs from verified generation member')
     return Path(descriptor['path']).name
 
 
-def retained_vector(files, vector, role, profiles):
+def retained_vector(files, vector, role, profiles, runtime=None):
     if role == 'memory' and memory_absent(profiles[0]):
         raise ValueError('coordination-only selection has no memory argv')
     if (type(vector) is not list or not vector
@@ -363,16 +379,284 @@ def retained_vector(files, vector, role, profiles):
     if offset >= len(vector) or vector[offset + 1:] != tail or not canonical(vector[offset]):
         raise ValueError('retained argv does not match its literal hook role')
     name = Path(vector[offset]).name
+    if runtime is not None:
+        if vector[offset] != runtime['entry']['path']:
+            raise ValueError('retained argv differs from declared installed role')
+        return name
     if (name not in files or files[name]['path'] != vector[offset]
             or files[name]['sha256'] != files[role + '.py']['sha256']):
         raise ValueError('retained argv entrypoint differs from its verified bundle role')
     return name
 
 
-def inspect_retained(stager, selected):
+def package_fields(item, names):
+    if type(item) is not dict or set(item) != set(names):
+        raise ValueError('retained package has unknown or missing fields')
+
+
+def package_pin(pin):
+    package_fields(pin, ('path', 'sha256'))
+    if not canonical(pin['path']) or type(pin['sha256']) is not str or not re.fullmatch('[0-9a-f]{64}', pin['sha256']):
+        raise ValueError('retained package requires canonical pinned inputs')
+
+
+def package_facade(delegate):
+    if any(char in delegate for char in "'\\\r\n"):
+        raise ValueError('unsupported retained facade delegate spelling')
+    return ("#!/usr/bin/python3\n"
+            '\"\"\"Select the verified Cairn coordination bundle for native hooks.\"\"\"\n'
+            'from runpy import run_path\n\nglobals().update(run_path(\n'
+            "    '" + delegate + "',\n    run_name=__name__,\n))\n").encode()
+
+
+def package_runtime(runtime, role, closures, read):
+    package_fields(runtime, ('entry', 'delegate', 'closure'))
+    package_pin(runtime['entry'])
+    root = runtime['closure']
+    if root not in closures:
+        raise ValueError('retained runtime selects an undeclared closure')
+    expected = closures[root]['files'][role + '.py']
+    raw = read(runtime['entry'], 1024 * 1024)
+    if runtime['delegate'] is None:
+        if str(Path(runtime['entry']['path']).parent) != root or runtime['entry']['sha256'] != expected:
+            raise ValueError('retained installed alias differs from its role')
+    else:
+        delegate = runtime['delegate']
+        package_pin(delegate)
+        if (role != 'coordination' or delegate != dict(path=str(Path(root) / 'coordination.py'), sha256=expected)
+                or raw != package_facade(delegate['path'])):
+            raise ValueError('retained facade/delegate association disagrees')
+        read(delegate, 1024 * 1024)
+
+
+def package_native_claims(node, pins, vectors, harness):
+    if type(node) is list:
+        for item in node:
+            package_native_claims(item, pins, vectors, harness)
+    elif type(node) is dict:
+        if 'path' in node and 'sha256' in node and node['path'] in pins and node['sha256'] != pins[node['path']]:
+            raise ValueError('retained evidence digest disagrees with association')
+        if 'source_path' in node and node['source_path'] not in pins:
+            raise ValueError('retained evidence selects an undeclared source')
+        for key, item in node.items():
+            if key in ('literal_command_text', 'one_shared_literal_command'):
+                if type(item) is not str:
+                    raise ValueError('retained native command text must be a string')
+                argv = shlex.split(item)
+                if argv not in vectors and not (harness == 'agy' and argv[-2:] in (['--event', 'PreInvocation'], ['--event', 'Stop']) and argv[:-2] in vectors):
+                    raise ValueError('retained native command evidence disagrees with association')
+            if key in ('derived_argv', 'actual_internal_engine_derived_argv') and item not in vectors:
+                raise ValueError('retained derived argv evidence disagrees with association')
+            package_native_claims(item, pins, vectors, harness)
+
+
+def package_evidence(package, files, read, pins):
+    names = sorted(package['members'])
+    expected = {'native-representation.json', 'provenance.json'} | {'argv-' + name + '.json' for name in names}
+    if set(package['evidence']) != expected:
+        raise ValueError('retained evidence names or declared multiplicity differ')
+    records = {}
+    for name, declaration in package['evidence'].items():
+        package_fields(declaration, ('sha256', 'members'))
+        members = names if name in ('native-representation.json', 'provenance.json') else [name[5:-5]]
+        if (declaration['members'] != members or files.get(name, {}).get('sha256') != declaration['sha256']):
+            raise ValueError('retained evidence membership/digest disagrees')
+        records[name] = decoded(read({key: files[name][key] for key in ('path', 'sha256')}, 1024 * 1024))
+    for name, member in package['members'].items():
+        if records['argv-' + name + '.json'] != member['argv']:
+            raise ValueError('retained argv evidence is not its declared member')
+    native, provenance = records['native-representation.json'], records['provenance.json']
+    if type(native) is not dict or type(provenance) is not dict:
+        raise ValueError('retained native/provenance evidence must be objects')
+    if type(native.get('roles')) is not dict:
+        raise ValueError('retained native roles must be an object')
+    if (sorted(native['members']) != [package['host'] + '/' + name for name in names]
+            or sorted(provenance['members']) != names or provenance['native_representation'] != native):
+        raise ValueError('retained native/provenance membership disagrees')
+    for flag in ('actual_native_command_text_rewritten', 'original_profile_bytes_rewritten',
+                 'source17_bytes_rewritten', 'source17_canonicalization_into_native_argv'):
+        if provenance.get(flag) is not False:
+            raise ValueError('retained evidence claims rewritten originals')
+    correspondence = {row['generation_name']: dict(path=row['original_path'], sha256=row['sha256'])
+                      for row in provenance['profile_correspondence']}
+    if len(correspondence) != len(provenance['profile_correspondence']) or correspondence != package['profiles']:
+        raise ValueError('retained profile evidence disagrees with association')
+    all_vectors = [argv for member in package['members'].values() for argv in member['argv'].values()]
+    package_native_claims(native, pins, all_vectors, package['harness'])
+    for role, claim in native['roles'].items():
+        if type(claim) is not dict:
+            raise ValueError('retained native role evidence must be an object')
+        role_vectors = [member['argv'][role] for member in package['members'].values() if role in member['argv']]
+        package_native_claims(claim, pins, role_vectors, package['harness'])
+        if 'member_variants' in claim:
+            if type(claim['member_variants']) is not dict:
+                raise ValueError('retained native member variants must be an object')
+            if set(claim['member_variants']) != set(names):
+                raise ValueError('retained native member variants differ')
+            for name, variant in claim['member_variants'].items():
+                if type(variant) is not dict:
+                    raise ValueError('retained native member variant must be an object')
+                for field in ('declared_profile', 'actual_binding'):
+                    if field in variant:
+                        if type(variant[field]) is not dict:
+                            raise ValueError('retained native profile evidence must be an object')
+                        if {key: variant[field].get(key) for key in ('path', 'sha256')} != package['members'][name]['config']:
+                            raise ValueError('retained native evidence names another member profile')
+                package_native_claims(variant, pins, [package['members'][name]['argv'][role]], package['harness'])
+
+
+def validate_retained_package(package, files, read=read_retained_data, read_profile=read_retained_profile):
+    package_fields(package, ('schema', 'host', 'harness', 'multiplicity', 'primary', 'binding', 'profiles', 'closures', 'members', 'evidence', 'files'))
+    for name in ('profiles', 'closures', 'members', 'evidence', 'files'):
+        if type(package[name]) is not dict or not 1 <= len(package[name]) <= 128:
+            raise ValueError('retained package requires bounded explicit maps')
+    if (package['schema'] != RETAINED_PACKAGE_SCHEMA or not re.fullmatch('[a-z0-9-]+', package['host'])
+            or package['harness'] not in ('codex', 'claude', 'opencode', 'agy', 'hermes')
+            or type(package['multiplicity']) is not int or package['multiplicity'] != len(package['members'])
+            or package['multiplicity'] not in (1, 3) or package['multiplicity'] == 3 and package['harness'] != 'codex'
+            or package['primary'] not in package['members']):
+        raise ValueError('retained package schema/cohort unsupported')
+    expected = set(RETAINED_MEMBERS) | {'binding.json', 'lifecycle-bundle.json', 'retained-argv.json'} | set(package['profiles']) | set(package['evidence'])
+    if (set(package['files']) != expected or set(files) != expected | {'retained-package.json'}
+            or any(member.get('executable', False) for member in files.values())
+            or any(Path(name).name != name or name in ('.', '..') or '\\' in name for name in expected)
+            or any(files[name]['sha256'] != digest for name, digest in package['files'].items())):
+        raise ValueError('retained package has undeclared, extra or changed material')
+    package_pin(package['binding'])
+    if files['binding.json']['sha256'] != package['binding']['sha256']:
+        raise ValueError('retained package selects another binding')
+    binding = decoded(read(package['binding'], 1024 * 1024))
+    package_fields(binding, ('schema', 'enabled', 'engine', 'bridge', 'memory_config', 'coordination_configs'))
+    if (binding['schema'] != 'cairn.inbox-recall-binding/2' or type(binding['enabled']) is not bool
+            or type(binding['coordination_configs']) is not list or not 1 <= len(binding['coordination_configs']) <= 8):
+        raise ValueError('unsupported retained package binding')
+    profiles = [binding['memory_config'], *binding['coordination_configs']]
+    actual_profiles, pins = [], {package['binding']['path']: package['binding']['sha256']}
+    for descriptor in profiles:
+        if memory_absent(descriptor):
+            continue
+        package_pin(descriptor)
+        retained_member(files, descriptor, package['profiles'])
+        # Original profiles retain the established duplicate-last JSON policy;
+        # package, binding, closure and evidence metadata reject duplicates.
+        config = json.loads(read_profile(descriptor, 1024 * 1024))
+        if type(config) is not dict or config.get('harness') != package['harness'] or config.get('inbox_recall_binding') not in (None, '', package['binding']['path']):
+            raise ValueError('retained original profile/binding association differs')
+        actual_profiles.append(descriptor)
+        pins[descriptor['path']] = descriptor['sha256']
+    if (len(actual_profiles) != len(package['profiles']) or memory_absent(profiles[0]) and binding['enabled']):
+        raise ValueError('retained package profile coverage differs')
+    for root, bundle in package['closures'].items():
+        package_fields(bundle, ('schema', 'sha256', 'files', 'manifest'))
+        if (not canonical(root) or bundle['schema'] != 'cairn.lifecycle-bundle/1' or set(bundle['files']) != RETAINED_MEMBERS
+                or sha(encoded(bundle['files'])) != bundle['sha256']):
+            raise ValueError('retained complete closure identity differs')
+        package_pin(bundle['manifest'])
+        if (bundle['manifest']['path'] != str(Path(root) / 'lifecycle-bundle.json')
+                or decoded(read(bundle['manifest'], 1024 * 1024)) != {key: bundle[key] for key in ('schema', 'sha256', 'files')}):
+            raise ValueError('retained installed sidecar is unpinned or disagrees with closure')
+        pins[bundle['manifest']['path']] = bundle['manifest']['sha256']
+        for name, digest in bundle['files'].items():
+            descriptor = dict(path=str(Path(root) / name), sha256=digest)
+            package_pin(descriptor)
+            read(descriptor, 1024 * 1024)
+            pins[descriptor['path']] = digest
+    for role, entry in (('engine', 'memory.py'), ('bridge', 'inbox_recall.py')):
+        descriptor = binding[role]
+        package_fields(descriptor, ('path', 'sha256', 'bundle'))
+        bundle = package['closures'].get(str(Path(descriptor['path']).parent))
+        if (bundle is None or descriptor['bundle'] != {key: bundle[key] for key in ('schema', 'sha256', 'files')} or Path(descriptor['path']).name != entry
+                or descriptor['sha256'] != bundle['files'][entry]):
+            raise ValueError('retained binding closure/entry disagrees')
+    canonical_bundle = binding['engine']['bundle']
+    if (decoded(read({key: files['lifecycle-bundle.json'][key] for key in ('path', 'sha256')}, 1024 * 1024)) != canonical_bundle
+            or any(files[name]['sha256'] != digest for name, digest in canonical_bundle['files'].items())):
+        raise ValueError('retained copied source closure differs')
+    roles = {'coordination'} if memory_absent(profiles[0]) else {'memory', 'coordination'}
+    configs = []
+    for name, member in package['members'].items():
+        package_fields(member, ('config', 'argv', 'runtime'))
+        if not re.fullmatch('[a-z][a-z0-9-]{0,63}', name) or member['config'] not in profiles[1:] or set(member['argv']) != roles or set(member['runtime']) != roles:
+            raise ValueError('retained member role/profile differs')
+        configs.append(member['config'])
+        for role in roles:
+            package_runtime(member['runtime'][role], role, package['closures'], read)
+            entry = member['runtime'][role]['entry']
+            pins[entry['path']] = entry['sha256']
+            retained_vector(files, member['argv'][role], role, [profiles[0], member['config']], member['runtime'][role])
+    if sorted(configs, key=lambda pin: pin['path']) != sorted(profiles[1:], key=lambda pin: pin['path']):
+        raise ValueError('retained member/config coverage is not exact')
+    if decoded(read({key: files['retained-argv.json'][key] for key in ('path', 'sha256')}, 1024 * 1024)) != package['members'][package['primary']]['argv']:
+        raise ValueError('retained primary argv disagrees')
+    package_evidence(package, files, read, pins)
+    return binding
+
+
+def inspect_retained_package(files, selected, coordination_index):
+    pin = {key: files['retained-package.json'][key] for key in ('path', 'sha256')}
+    package = decoded(read_selected(pin, 1024 * 1024))
+    binding = validate_retained_package(package, files)
+    if type(coordination_index) is not int or not 0 <= coordination_index < len(binding['coordination_configs']):
+        raise ValueError('retained package has no selected coordination configuration')
+    config = binding['coordination_configs'][coordination_index]
+    members = [(name, member) for name, member in package['members'].items() if member['config'] == config]
+    if len(members) != 1:
+        raise ValueError('retained package has no selected member')
+    name, member = members[0]
+    return dict(selection=selected, launchers=member['argv'], memory_config=binding['memory_config'],
+                coordination_configs=binding['coordination_configs'], retained_python=dict(
+                    binding=package['binding'], binding_schema=binding['schema'], engine=binding['engine'], bridge=binding['bridge'],
+                    bundle_manifest={key: files['lifecycle-bundle.json'][key] for key in ('path', 'sha256')},
+                    retained_argv={key: files['retained-argv.json'][key] for key in ('path', 'sha256')}, package=selected, member=name))
+
+
+def stage_retained_package(stager, root, plan):
+    package_fields(plan, ('id', 'package', 'material'))
+    identity = plan['id']
+    if str(uuid.UUID(identity)) != identity or uuid.UUID(identity).int == 0:
+        raise ValueError('retained package requires a selected nonzero UUID')
+    package = plan['package']
+    if set(plan['material']) != set(package['files']):
+        raise ValueError('retained producer material is not exactly declared')
+    final = Path(root) / ('selection-' + identity)
+    files, payloads = {}, {}
+    for name, pin in plan['material'].items():
+        package_pin(pin)
+        if pin['sha256'] != package['files'][name] or Path(name).name != name or name in ('.', '..') or '\\' in name:
+            raise ValueError('retained producer material digest/name differs')
+        payloads[name] = read_selected(pin, 1024 * 1024)
+        files[name] = dict(path=str(final / name), sha256=pin['sha256'])
+    payloads['retained-package.json'] = encoded(package)
+    files['retained-package.json'] = dict(path=str(final / 'retained-package.json'), sha256=sha(payloads['retained-package.json']))
+    selected_payloads = {files[name]['path']: raw for name, raw in payloads.items()}
+
+    def planned_read(pin, limit):
+        if pin['path'] in selected_payloads:
+            raw = selected_payloads[pin['path']]
+            if sha(raw) != pin['sha256'] or len(raw) > limit:
+                raise ValueError('retained planned bytes differ')
+            return raw
+        return read_retained_data(pin, limit)
+
+    validate_retained_package(package, files, planned_read)
+    with tempfile.TemporaryDirectory(prefix='cairn-retained-package-') as temporary:
+        selected = []
+        for name, raw in sorted(payloads.items()):
+            path = Path(temporary) / name
+            path.write_bytes(raw)
+            path.chmod(0o600)
+            selected.append(dict(name=name, path=str(path), sha256=sha(raw)))
+        generation = backend(stager, ['generation', '--root', str(root)], dict(id=identity, files=selected))
+    inspect_retained(stager, generation)
+    return generation
+
+
+def inspect_retained(stager, selected, coordination_index=0):
     """Verify /2 data and literal argv without executing its selected code."""
     generation = backend(stager, ['inspect-generation', '--path', selected['path'], '--sha256', selected['sha256']])
     files = {member['name']: member for member in generation['files']}
+    if 'retained-package.json' in files:
+        return inspect_retained_package(files, selected, coordination_index)
     pins = {name: {key: member[key] for key in ('path', 'sha256')} for name, member in files.items()}
     required = RETAINED_MEMBERS | {'binding.json', 'lifecycle-bundle.json', 'retained-argv.json'}
     if not required <= files.keys() or 'selection.json' in files or 'receipt.json' in files:
@@ -430,6 +714,8 @@ def inspect(stager, selected, legacy=False):
     if legacy:
         if 'selection.json' in files:
             raise ValueError('compatibility generations require full inspection, not --legacy')
+        if 'retained-package.json' in files:
+            return inspect_retained_package(files, selected, 0)
         member = files['retained-argv.json']
         launches = decoded(read_selected({key: member[key] for key in ('path', 'sha256')}, 1024 * 1024))
         return dict(selection=selected, launchers=launches, retained='explicit-legacy')
@@ -489,6 +775,8 @@ def main():
     sub = parser.add_subparsers(dest='operation', required=True)
     write = sub.add_parser('stage')
     write.add_argument('--root', required=True)
+    retained_write = sub.add_parser('stage-retained')
+    retained_write.add_argument('--root', required=True)
     read = sub.add_parser('inspect')
     read.add_argument('--path', required=True)
     read.add_argument('--sha256', required=True)
@@ -496,14 +784,18 @@ def main():
     args = parser.parse_args()
     if not canonical(args.stager):
         raise ValueError('canonical stager path required')
-    if args.operation == 'stage':
+    if args.operation in ('stage', 'stage-retained'):
         if not canonical(args.root):
             raise ValueError('canonical absolute installation root required')
         raw = sys.stdin.buffer.read(1024 * 1024 + 1)
         if len(raw) > 1024 * 1024:
             raise ValueError('installation plan exceeds 1 MiB')
-        selected = stage(args.stager, Path(args.root), decoded(raw))
-        result = inspect(args.stager, selected)
+        if args.operation == 'stage-retained':
+            selected = stage_retained_package(args.stager, Path(args.root), decoded(raw))
+            result = inspect_retained(args.stager, selected)
+        else:
+            selected = stage(args.stager, Path(args.root), decoded(raw))
+            result = inspect(args.stager, selected)
     else:
         result = inspect(args.stager, dict(path=args.path, sha256=args.sha256), args.legacy)
     sys.stdout.buffer.write(encoded(result) + b'\n')

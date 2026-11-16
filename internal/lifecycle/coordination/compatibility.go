@@ -1641,9 +1641,20 @@ func (c *CompatibilityContext) ContextCommands(ctxObj *value.Value) error {
 	return nil
 }
 
+func (c *CompatibilityContext) inboxProfiles(prof *value.SourceReaderProfile) error {
+	config, err := c.Config(prof, c.ConfigPath)
+	if err != nil {
+		return err
+	}
+	if !value.Truth(config.Get("inbox_recall_binding")) {
+		return c.UnboundProfiles(prof)
+	}
+	return c.CheckedBinding(prof)
+}
+
 func (c *CompatibilityContext) BindLookup(fallbackProfile *value.SourceReaderProfile, root string, bindingName, configPath *string) error {
 	prof := c.profile(fallbackProfile)
-	if err := c.CheckedBinding(prof); err != nil {
+	if err := c.inboxProfiles(prof); err != nil {
 		return err
 	}
 	stateDirVal, err := nativeRequired(c.current, "state_dir")
@@ -1686,7 +1697,7 @@ func (c *CompatibilityContext) BindLookup(fallbackProfile *value.SourceReaderPro
 
 func (c *CompatibilityContext) BindContextPath(fallbackProfile *value.SourceReaderProfile, path string) error {
 	prof := c.profile(fallbackProfile)
-	if err := c.CheckedBinding(prof); err != nil {
+	if err := c.inboxProfiles(prof); err != nil {
 		return err
 	}
 	stateDirVal, err := nativeRequired(c.current, "state_dir")

@@ -125,6 +125,19 @@ func (r *watchCensusRead) jsonFile(path string) (*value.Value, error) {
 	if err := r.safePath(path, false); err != nil {
 		return nil, err
 	}
+	// Only the original profiles (and byte-identical selected copies) of a
+	// fully authenticated explicit package use its existing source JSON policy.
+	if pin, ok := r.retainedProfiles[path]; ok {
+		raw, err := r.retainedProfileBytes(pin)
+		if err != nil {
+			return nil, err
+		}
+		v, err := value.DecodeBytesWithObjectPolicy(raw, 0, value.DuplicateLast)
+		if err != nil || v == nil || v.Kind != value.Object {
+			return nil, errors.Join(err, retainedPackageError())
+		}
+		return v, nil
+	}
 	old := r.files[path]
 	v, err := r.local.file(path)
 	if err == nil {
@@ -380,6 +393,44 @@ func (r *watchCensusRead) knownConfig(pin WatchCensusPin) bool {
 }
 
 func (r *watchCensusRead) runtime(node *WatchCensusMember, manifest *value.Value) error {
+	if pkg := r.retainedPackages[node.Config.Path]; pkg != nil {
+		if node.Mode != "cairn.inbox-recall-binding/2" || !nativeEqual(manifest, pkg.Binding) {
+			return retainedPackageError()
+		}
+		// The package already authenticated every complete role closure and its
+		// entry/delegate. Different roles may intentionally select different ones.
+		for _, closure := range pkg.Object.Get("closures").Members {
+			root := string(closure.Key)
+			if _, err := r.directory(root); err != nil {
+				return err
+			}
+			node.Resources = append(node.Resources, root)
+		}
+		identity := &value.Value{Kind: value.Object}
+		for _, role := range []string{"engine", "bridge"} {
+			identity.Set("binding_"+role, manifest.Get(role).Get("bundle").Get("sha256"))
+		}
+		for _, member := range pkg.Object.Get("members").Members {
+			if nativeText(member.Value.Get("config").Get("sha256")) != node.Config.SHA256 {
+				continue
+			}
+			for _, role := range member.Value.Get("runtime").Members {
+				closure := pkg.Object.Get("closures").Get(nativeText(role.Value.Get("closure")))
+				identity.Set(string(role.Key), closure.Get("sha256"))
+				directory := filepath.Dir(nativeText(role.Value.Get("entry").Get("path")))
+				if _, err := r.directory(directory); err != nil {
+					return err
+				}
+				node.Resources = append(node.Resources, directory)
+			}
+		}
+		if len(identity.Members) <= 2 {
+			return retainedPackageError()
+		}
+		var err error
+		node.Image, err = canonicalSortedJSONSHA256(identity)
+		return err
+	}
 	if node.Mode == "cairn.inbox-recall-binding/3" {
 		binary := manifest.Get("binary")
 		pin := WatchCensusPin{nativeText(binary.Get("path")), nativeText(binary.Get("sha256"))}
@@ -654,6 +705,12 @@ func (r *watchCensusRead) readback(ctx context.Context) error {
 	for _, path := range slices.Sorted(maps.Keys(r.files)) {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if pin, ok := r.retainedProfiles[path]; ok {
+			if _, err := r.retainedProfileBytes(pin); err != nil {
+				return err
+			}
+			continue
 		}
 		if _, err := r.pin(WatchCensusPin{path, r.files[path]}, r.images[path]); err != nil {
 			return err

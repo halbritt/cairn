@@ -113,6 +113,8 @@ type watchCensusRead struct {
 	clientPins            map[string]string
 	control               *unitCensusScope
 	hookSelections        []watchCensusHookSelection
+	retainedPackages      map[string]*retainedDataPackage
+	retainedProfiles      map[string]WatchCensusPin
 	associations          map[string]*watchCensusAssociation
 	target                *unitCensusTarget
 	parsedTraces          map[agyTraceParseKey]*agyParsedTrace
@@ -184,6 +186,9 @@ func (c *CLI) openWatchUnitCensus(ctx context.Context, catalog WatchCensusPin, p
 		return r, err
 	}
 	if err := r.loadHookSelections(); err != nil {
+		return r, err
+	}
+	if err := r.loadRetainedPackages(ctx); err != nil {
 		return r, err
 	}
 	if err := r.members(ctx); err != nil {

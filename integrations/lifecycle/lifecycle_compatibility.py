@@ -658,8 +658,15 @@ class InvocationContext:
             raise ValueError('issued lifecycle command presentation exceeds budget')
         context['shell_commands'] = rendered
 
+    def inbox_profiles(self):
+        config = self.config(self.args.config)
+        if not config.get('inbox_recall_binding'):
+            self.unbound_profiles()
+        else:
+            self.checked_binding()
+
     def bind_lookup(self, root, binding=None, config_path=None):
-        self.checked_binding()
+        self.inbox_profiles()
         selected = Path(self.current['state_dir']).resolve()
         if root.resolve() != selected.parent.parent:
             raise CompatibilityPreflightError()
@@ -669,7 +676,7 @@ class InvocationContext:
             raise CompatibilityPreflightError()
 
     def bind_context_path(self, path):
-        self.checked_binding()
+        self.inbox_profiles()
         if path.resolve().parent != (Path(self.current['state_dir'])/'inbox').resolve():
             raise CompatibilityPreflightError()
 

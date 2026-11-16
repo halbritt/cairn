@@ -62,7 +62,7 @@ def checked_go_launcher(stager, image, role, vector):
 
 
 def retained_definitions(stager, plan):
-    install = installation.inspect_retained(stager, plan['selection'])
+    install = installation.inspect_retained(stager, plan['selection'], plan['coordination_index'])
     index = plan['coordination_index']
     if index >= len(install['coordination_configs']):
         raise ValueError('selected coordination configuration is absent')

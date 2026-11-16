@@ -63,6 +63,7 @@ type BootstrapRetainedAssociation struct {
 	Binding WatchCensusPin  `json:"binding"`
 	Argv    WatchCensusPin  `json:"argv"`
 	Receipt *WatchCensusPin `json:"receipt,omitempty"`
+	Package *WatchCensusPin `json:"package,omitempty"`
 }
 
 // Both directories already contain their complete prepared selections. The
@@ -267,11 +268,14 @@ func bootstrapExtensionKeys(tree *value.Value) error {
 		}
 		for _, member := range associations.Members {
 			a := member.Value
-			if !(exactReceiptObject(a, "binding", "argv") || exactReceiptObject(a, "binding", "argv", "receipt")) || !exactReceiptObject(a.Get("binding"), "Path", "SHA256") || !exactReceiptObject(a.Get("argv"), "Path", "SHA256") {
+			if !(exactReceiptObject(a, "binding", "argv") || exactReceiptObject(a, "binding", "argv", "receipt") || exactReceiptObject(a, "binding", "argv", "package")) || !exactReceiptObject(a.Get("binding"), "Path", "SHA256") || !exactReceiptObject(a.Get("argv"), "Path", "SHA256") {
 				return errors.New("bootstrap association has unknown or nonliteral fields")
 			}
 			if receipt := a.Get("receipt"); receipt != nil && !exactReceiptObject(receipt, "Path", "SHA256") {
 				return errors.New("bootstrap receipt selector fields unknown")
+			}
+			if pkg := a.Get("package"); pkg != nil && !exactReceiptObject(pkg, "Path", "SHA256") {
+				return retainedPackageError()
 			}
 		}
 	}
@@ -746,6 +750,9 @@ func (b *bootstrapRead) association(name string, config *value.Value) (*value.Va
 		return nil, nil, err
 	}
 	if value.SameText(manifest.Get("schema"), "cairn.inbox-recall-binding/3") {
+		if selected.Package != nil {
+			return nil, nil, retainedPackageError()
+		}
 		memory, err := b.current3(config, manifest, selected)
 		return manifest, memory, err
 	}
@@ -808,7 +815,11 @@ func (b *bootstrapRead) association(name string, config *value.Value) (*value.Va
 			return nil, nil, err
 		}
 	}
-	if err := b.retainedRuntime(manifest, selected.Argv, selectedProfilePath); err != nil {
+	if selected.Package != nil {
+		if err := b.retainedPackage(selected, selectedProfilePath); err != nil {
+			return nil, nil, err
+		}
+	} else if err := b.retainedRuntime(manifest, selected.Argv, selectedProfilePath); err != nil {
 		return nil, nil, err
 	}
 	return manifest, memory, nil
