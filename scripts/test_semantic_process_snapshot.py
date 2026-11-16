@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -48,6 +49,34 @@ if cfg.get('deleted'):
  maps.append(mmap.mmap(fd,0,flags=mmap.MAP_PRIVATE,prot=mmap.PROT_READ|mmap.PROT_EXEC));os.close(fd)
 print('ready',flush=True)
 sys.stdin.buffer.read(1)
+'''
+
+
+STARTUP_CHILD = r'''
+import os,sys,json,mmap,fcntl
+cfg=json.load(open(sys.argv[1]));images=[open(p,'rb').read() for p in cfg['native']]
+fds=[os.memfd_create('cairn-startup',os.MFD_CLOEXEC|os.MFD_ALLOW_SEALING) for _ in images];maps=[];extra=None
+for fd,image in zip(fds,images):os.write(fd,image[:64])
+print('startup',flush=True)
+for command in sys.stdin:
+ command=command.strip()
+ if command=='grow':
+  for fd,image in zip(fds,images):os.pwrite(fd,image,0)
+ elif command in ('seal','wrong','wrong-unmapped'):
+  for index,(fd,image) in enumerate(zip(fds,images)):
+   os.pwrite(fd,image+(b'wrong' if command.startswith('wrong') and index==0 else b''),0)
+   fcntl.fcntl(fd,fcntl.F_ADD_SEALS,15)
+   if command!='wrong-unmapped':maps.append(mmap.mmap(fd,0,flags=mmap.MAP_PRIVATE,prot=mmap.PROT_READ|mmap.PROT_EXEC))
+ elif command=='unready':extra=os.memfd_create('cairn-startup-extra',os.MFD_CLOEXEC|os.MFD_ALLOW_SEALING)
+ elif command=='close-extra':os.close(extra);extra=None
+ elif command=='extra-map':
+  with open(cfg['native'][0],'rb') as image:maps.append(mmap.mmap(image.fileno(),0,flags=mmap.MAP_PRIVATE,prot=mmap.PROT_READ|mmap.PROT_EXEC))
+ elif command=='replace-sealed':
+  maps[0].close();os.close(fds[0]);fd=os.memfd_create('cairn-startup',os.MFD_CLOEXEC|os.MFD_ALLOW_SEALING)
+  os.write(fd,images[0]);fcntl.fcntl(fd,fcntl.F_ADD_SEALS,15);fds[0]=fd
+  maps[0]=mmap.mmap(fd,0,flags=mmap.MAP_PRIVATE,prot=mmap.PROT_READ|mmap.PROT_EXEC)
+ elif command=='exit':break
+ print(command,flush=True)
 '''
 
 
@@ -100,19 +129,168 @@ class SnapshotTests(unittest.TestCase):
         child = subprocess.Popen([str(self.worker), '-I', '-B', '-c', CHILD, str(cfg)],
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  env=self.selection['worker_environment'])
-        def cleanup():
-            if child.poll() is None:
-                child.kill()
-            child.wait(timeout=5)
-            for stream in (child.stdin, child.stdout, child.stderr):
-                stream.close()
-        self.addCleanup(cleanup)
+        self.own_child(child)
         ready = child.stdout.readline()
         self.assertEqual(ready, b'ready\n', child.stderr.read() if not ready else ready)
         return child
 
+    def own_child(self, child):
+        def cleanup():
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=5)
+            self.assertFalse(Path('/proc', str(child.pid)).exists(), 'fixture process was not reaped')
+            for stream in (child.stdin, child.stdout, child.stderr):
+                stream.close()
+        self.addCleanup(cleanup)
+
+    def startup_child(self):
+        cfg = self.root / 'startup.json'
+        cfg.write_text(json.dumps({'native': [str(path) for path in self.native]}))
+        child = subprocess.Popen([str(self.worker), '-I', '-B', '-c', STARTUP_CHILD, str(cfg)],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 env=self.selection['worker_environment'])
+        self.own_child(child)
+        self.assertEqual(child.stdout.readline(), b'startup\n')
+        return child
+
+    def command(self, child, command):
+        child.stdin.write((command + '\n').encode())
+        child.stdin.flush()
+        if command == 'exit':
+            self.assertEqual(child.wait(timeout=5), 0)
+        else:
+            self.assertEqual(child.stdout.readline(), (command + '\n').encode())
+
+    def test_startup_unsealed_population_is_not_an_immutable_change(self):
+        child = self.startup_child()
+        original = helper.capture_executable_maps
+        def grow_after_inventory(*args):
+            captured = original(*args)
+            self.command(child, 'grow')
+            return captured
+        # Only schedule a real write after FD inventory; no procfs fact is mocked.
+        with mock.patch.object(helper, 'capture_executable_maps', side_effect=grow_after_inventory):
+            row = helper.strict_snapshot(child.pid, self.selection, os.getpid())
+        self.assertFalse(row['qualified'])
+        self.assertFalse(any('held object changed' in error['message'] for error in row['errors']), row['errors'])
+        self.assertEqual(row['readiness'], 'NOT_READY')
+        self.assertEqual(len(row['native_startup']), 4)
+        self.assertTrue(all(state['seals'] == 0 and not state['maps'] for state in row['native_startup']))
+
+    def startup_sample(self, child, known):
+        rows = helper.process_snapshot(self.payload, known, ancestor=child.pid, strict_selection=self.selection)
+        self.assertEqual(len(rows), 1)
+        return rows[0]
+
+    def test_startup_write_then_seal_needs_two_identical_complete_samples(self):
+        child, known = self.startup_child(), {}
+        unready = self.startup_sample(child, known)
+        self.assertEqual(unready['readiness'], 'NOT_READY')
+        self.command(child, 'grow')
+        self.command(child, 'seal')
+        first = self.startup_sample(child, known)
+        self.assertFalse(first['qualified'])
+        self.assertEqual(first['stable_samples'], 1)
+        second = self.startup_sample(child, known)
+        self.assertTrue(second['qualified'], second['errors'])
+        self.assertEqual(second['stable_samples'], 2)
+        self.assertEqual(first['candidate_fingerprint'], second['candidate_fingerprint'])
+        helper.require_stable_workers(known)
+
+    def test_startup_never_seals_remains_unqualified_at_bounded_deadline(self):
+        child, known = self.startup_child(), {}
+        deadline, observations = time.monotonic() + 0.15, []
+        while time.monotonic() < deadline:
+            observations.append(self.startup_sample(child, known))
+            time.sleep(0.01)
+        self.assertTrue(observations)
+        self.assertTrue(all(row['readiness'] == 'NOT_READY' and not row['qualified'] for row in observations))
+        with self.assertRaisesRegex(RuntimeError, 'no stable sample'):
+            helper.require_stable_workers(known)
+
+    def test_startup_exit_before_second_sample_fails_no_stable_sample(self):
+        child, known = self.startup_child(), {}
+        self.command(child, 'seal')
+        first = self.startup_sample(child, known)
+        self.assertFalse(first['qualified'])
+        self.command(child, 'exit')
+        self.assertEqual(helper.process_snapshot(self.payload, known, ancestor=child.pid, strict_selection=self.selection), [])
+        with self.assertRaisesRegex(RuntimeError, 'no stable sample'):
+            helper.require_stable_workers(known)
+
+    def test_startup_sealed_wrong_content_is_fatal(self):
+        for command in ('wrong', 'wrong-unmapped'):
+            with self.subTest(command=command):
+                child = self.startup_child()
+                self.command(child, command)
+                row = self.startup_sample(child, {})
+                self.assertFalse(row['qualified'])
+                self.assertEqual(row['readiness'], 'FATAL')
+                self.assertIn('sealed native', row['errors'][0]['message'])
+
+    def test_sealed_same_content_replacement_is_fatal_identity_change(self):
+        child, known = self.startup_child(), {}
+        self.command(child, 'seal')
+        self.startup_sample(child, known)
+        self.command(child, 'replace-sealed')
+        row = self.startup_sample(child, known)
+        self.assertEqual(row['readiness'], 'FATAL')
+        self.assertFalse(row['qualified'])
+        self.assertIn('sealed native identity changed', row['errors'][0]['message'])
+
+    def test_prior_worker_qualification_cannot_cover_new_worker_early_exit(self):
+        first, known = self.startup_child(), {}
+        self.command(first, 'seal')
+        self.startup_sample(first, known)
+        self.assertTrue(self.startup_sample(first, known)['qualified'])
+        second = self.startup_child()
+        self.assertFalse(self.startup_sample(second, known)['qualified'])
+        self.command(second, 'exit')
+        with self.assertRaisesRegex(RuntimeError, 'no stable sample'):
+            helper.require_stable_workers(known)
+
+    def test_mapped_elf_metadata_mutation_is_fatal_between_observations(self):
+        child, known = self.startup_child(), {}
+        self.command(child, 'seal')
+        self.command(child, 'extra-map')
+        self.startup_sample(child, known)
+        self.native[0].touch()
+        row = self.startup_sample(child, known)
+        self.assertEqual(row['readiness'], 'FATAL')
+        self.assertFalse(row['qualified'])
+        self.assertIn('mapped ELF object changed', row['errors'][0]['message'])
+
+    def test_startup_descriptors_close_on_unready_and_fatal_paths(self):
+        child = self.startup_child()
+        before = set(os.listdir('/proc/self/fd'))
+        for _ in range(3):
+            self.assertEqual(helper.strict_snapshot(child.pid, self.selection, os.getpid())['readiness'], 'NOT_READY')
+        self.command(child, 'wrong')
+        self.assertEqual(helper.strict_snapshot(child.pid, self.selection, os.getpid())['readiness'], 'FATAL')
+        self.assertEqual(before, set(os.listdir('/proc/self/fd')))
+
+    def test_stable_pair_resets_after_real_unready_object_or_executable_map_change(self):
+        for changed, restore in (('unready', 'close-extra'), ('extra-map', None)):
+            with self.subTest(changed=changed):
+                child, known = self.startup_child(), {}
+                self.command(child, 'seal')
+                self.assertFalse(self.startup_sample(child, known)['qualified'])
+                self.command(child, changed)
+                changed_row = self.startup_sample(child, known)
+                self.assertFalse(changed_row['qualified'])
+                if restore:
+                    self.assertEqual(changed_row['readiness'], 'NOT_READY')
+                    self.command(child, restore)
+                    self.assertEqual(self.startup_sample(child, known)['stable_samples'], 1)
+                self.assertTrue(self.startup_sample(child, known)['qualified'])
+                self.command(child, 'exit')
+
     def capture(self, child, selection=None):
-        return helper.strict_snapshot(child.pid, selection or self.selection, os.getpid())
+        first = helper.advance_stability(None, helper.strict_snapshot(child.pid, selection or self.selection, os.getpid()))
+        if not first['snapshot_complete']:
+            return first
+        return helper.advance_stability(first, helper.strict_snapshot(child.pid, selection or self.selection, os.getpid()))
 
     def test_complete_actual_owned_snapshot_covers_every_executable_range(self):
         child = self.child()
@@ -391,7 +569,7 @@ class SnapshotTests(unittest.TestCase):
 
     def test_no_worker_staged_fixture_refuses_and_preserves_trace_and_cleanup(self):
         args, output = self.staged_case(self.selection)
-        with self.assertRaisesRegex(RuntimeError, 'no complete owned snapshot'):
+        with self.assertRaisesRegex(RuntimeError, 'no stable sample'):
             helper.run_staged_case(args)
         receipt = json.loads((output / 'receipt.json').read_text())
         self.assertEqual(receipt['runtime_attempts'], 1)

@@ -179,8 +179,8 @@ def file_signature(info):
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
-def retain_object(fd, handles):
-    handles.append((fd, file_signature(os.fstat(fd))))
+def retain_object(fd, handles, locator):
+    handles.append((fd, file_signature(os.fstat(fd)), locator))
     return fd
 
 
@@ -296,7 +296,7 @@ def mapped_object(procfd, row, handles):
     require(row['path'].startswith('/') and not row['path'].endswith(' (deleted)'), 'deleted or unnamed file has no held proof')
     require(os.readlink('map_files/' + map_files_name(row), dir_fd=procfd) == row['path'], 'mapped link changed')
     fd = os.open('root/' + row['path'].lstrip('/'), os.O_RDONLY | os.O_CLOEXEC, dir_fd=procfd)
-    retain_object(fd, handles)
+    retain_object(fd, handles, 'mapped ELF ' + row['path'])
     info = os.fstat(fd)
     require(info.st_ino == row['inode'], 'mapped inode differs from opened object')
     proof = held_file_record(fd)
@@ -306,32 +306,58 @@ def mapped_object(procfd, row, handles):
     return proof
 
 
-def native_objects(procfd, rows, handles):
-    proofs = {}
-    directory = '/proc/self/fd/' + str(procfd) + '/fd'
-    for number in os.listdir(directory):
-        target = os.readlink('fd/' + number, dir_fd=procfd)
-        if not target.startswith('/memfd:'):
-            continue
-        fd = os.open('fd/' + number, os.O_RDONLY | os.O_CLOEXEC, dir_fd=procfd)
-        retain_object(fd, handles)
+def native_descriptor(procfd, number, rows, handles):
+    target = os.readlink('fd/' + number, dir_fd=procfd)
+    if not target.startswith('/memfd:'):
+        return None, None
+    fd = os.open('fd/' + number, os.O_RDONLY | os.O_CLOEXEC, dir_fd=procfd)
+    retained = False
+    try:
         info = os.fstat(fd)
-        key = (info.st_dev, info.st_ino)
         matching = [row for row in rows if row['inode'] == info.st_ino and
                     os.makedev(*(int(part, 16) for part in row['device'].split(':'))) == info.st_dev]
-        if not matching:
-            continue
+        seals = fcntl.fcntl(fd, fcntl.F_GET_SEALS)
+        state = {'descriptor_locator': number, 'display_target': target, 'device': info.st_dev,
+                 'inode': info.st_ino, 'signature': list(file_signature(info)), 'seals': seals,
+                 'maps': matching, 'readiness': 'NOT_READY'}
+        if seals != 15:
+            state.update(signature_after=list(file_signature(os.fstat(fd))),
+                         seals_after=fcntl.fcntl(fd, fcntl.F_GET_SEALS))
+            return state, None
         proof = held_file_record(fd)
-        proof.update(seals=fcntl.fcntl(fd, fcntl.F_GET_SEALS), mapped_device=matching[0]['device'],
+        require(state['signature'] == proof['signature'], 'sealed native object changed: ' + repr(state) + ' -> ' + repr(proof))
+        state.update(sha256=proof['sha256'], elf=proof['elf'], signature_after=proof['signature'])
+        if not any('x' in row['permissions'] for row in matching):
+            return state, None
+        proof.update(seals=seals, mapped_device=matching[0]['device'],
                      maps=[dict(row) for row in matching], descriptor_locator=number)
-        require(proof['signature'] == list(file_signature(os.fstat(fd))), 'native FD changed after seal read')
-        proofs[key] = proof
-    return proofs
+        retain_object(fd, handles, 'sealed native FD ' + number + ' ' + target)
+        retained = True
+        state['readiness'] = 'READY'
+        return state, proof
+    finally:
+        if not retained:
+            os.close(fd)
+
+
+def native_objects(procfd, rows, handles):
+    proofs, states = {}, []
+    for number in os.listdir('/proc/self/fd/' + str(procfd) + '/fd'):
+        state, proof = native_descriptor(procfd, number, rows, handles)
+        if state is not None:
+            states.append(state)
+        if proof is not None:
+            proofs[(proof['device'], proof['inode'])] = proof
+    return proofs, states
 
 
 def capture_executable_maps(procfd, raw, selection, handles):
     rows = parse_process_maps(raw)
-    native = native_objects(procfd, rows, handles)
+    native, startup = native_objects(procfd, rows, handles)
+    expected = set(selection['native'].values())
+    for state in startup:
+        if state['seals'] == 15:
+            require(state['elf'] and state['sha256'] in expected, 'sealed native hash/ELF not selected: ' + repr(state))
     files, classified = {}, []
     for row in rows:
         if 'x' not in row['permissions']:
@@ -349,15 +375,40 @@ def capture_executable_maps(procfd, raw, selection, handles):
             classified.append(classify_executable(row, proof, selection))
         except (OSError, RuntimeError) as error:
             classified.append(dict(row, classification='unknown', reason=str(error)))
-    expected = set(selection['native'].values())
     selected_native = {proof['sha256'] for proof in native.values() if proof['seals'] == 15 and
                        any('x' in row['permissions'] for row in proof['maps'])}
-    return classified, list(native.values()), selected_native == expected and len(native) == 4
+    complete = selected_native == expected and len(native) == 4 and all(state['readiness'] == 'READY' for state in startup)
+    return classified, list(native.values()), complete, startup
+
+
+def finish_snapshot(report, procfd, ancestor, handles):
+    report['raw_maps_after'] = proc_text(procfd, 'maps')
+    after = proc_identity(procfd, report['pid'])
+    report['identity_after'] = after
+    report['changed_objects'] = []
+    for fd, signature, locator in handles:
+        observed = file_signature(os.fstat(fd))
+        if signature != observed:
+            report['changed_objects'].append({'locator': locator, 'before': list(signature), 'after': list(observed)})
+    require(not report['changed_objects'], 'held object changed before capture boundary: ' + repr(report['changed_objects']))
+    require(report['identity_before'] == after and descendant_of(report['pid'], ancestor), 'process/starttime/namespace/ancestry changed')
+    require(not any(row['classification'] == 'unknown' for row in report['executable_mappings']), 'unknown executable mapping')
+    if report['raw_maps'] != report['raw_maps_after'] or not report['native_set_complete']:
+        message = ('maps changed during held-FD capture' if report['raw_maps'] != report['raw_maps_after'] else
+                   'selected four sealed native images incomplete')
+        report.update(readiness='NOT_READY', readiness_reason='MAPS_CHANGED' if report['raw_maps'] != report['raw_maps_after'] else 'NATIVE_STARTUP')
+        report['errors'].append({'type': 'RuntimeError', 'message': message})
+    else:
+        report.update(readiness='CANDIDATE', snapshot_complete=True)
 
 
 def strict_snapshot(pid, selection, ancestor):
-    """Finite full-map witness. Does not attest private COW pages or continuous memory."""
+    """One candidate witness; advance_stability alone can qualify its stable pair.
+
+    Does not attest private COW pages or continuous memory.
+    """
     report = {'pid': pid, 'scope': 'strict_full_executable_maps', 'qualified': False,
+              'snapshot_complete': False, 'readiness': 'FATAL', 'stable_samples': 0,
               'raw_maps': None, 'raw_maps_after': None, 'executable_mappings': [], 'errors': [],
               'limits': 'Backing-file custody does not attest private COW pages or continuous memory.'}
     handles, procfd = [], None
@@ -375,36 +426,65 @@ def strict_snapshot(pid, selection, ancestor):
         report['executable_mappings'] = [dict(row, classification='unknown', reason='full capture incomplete')
                                          for row in parse_process_maps(report['raw_maps']) if 'x' in row['permissions']]
         exe = os.open('exe', os.O_RDONLY | os.O_CLOEXEC, dir_fd=procfd)
-        retain_object(exe, handles)
+        retain_object(exe, handles, 'worker ELF /proc/' + str(pid) + '/exe')
         report['worker_elf'] = held_file_record(exe)
         require(os.readlink('exe', dir_fd=procfd) == selection['worker']['path'] and
                 report['worker_elf']['sha256'] == selection['worker']['sha256'] and report['worker_elf']['elf'],
                 'running ELF differs from explicitly selected worker')
         env = dict(entry.split('=', 1) for entry in proc_text(procfd, 'environ').strip('\0').split('\0') if entry)
         require(env == selection['worker_environment'], 'selected worker environment differs')
-        mappings, native, complete = capture_executable_maps(procfd, report['raw_maps'], selection, handles)
-        report.update(executable_mappings=mappings, native_images=native, native_set_complete=complete)
-        report['raw_maps_after'] = proc_text(procfd, 'maps')
-        after = proc_identity(procfd, pid)
-        report['identity_after'] = after
-        require(all(before_signature == file_signature(os.fstat(fd)) for fd, before_signature in handles),
-                'held object changed before capture boundary')
-        require(before == after and descendant_of(pid, ancestor), 'process/starttime/namespace/ancestry changed')
-        require(report['raw_maps'] == report['raw_maps_after'], 'maps changed during held-FD capture')
-        require(not any(row['classification'] == 'unknown' for row in mappings), 'unknown executable mapping')
-        require(complete, 'selected four sealed native images incomplete')
-        report['qualified'] = True
+        mappings, native, complete, startup = capture_executable_maps(procfd, report['raw_maps'], selection, handles)
+        report.update(executable_mappings=mappings, native_images=native, native_set_complete=complete, native_startup=startup)
+        finish_snapshot(report, procfd, ancestor, handles)
     except (OSError, RuntimeError, ValueError) as error:
         report['errors'].append({'type': type(error).__name__, 'message': str(error)})
         for row in report['executable_mappings']:
             if row['reason'] == 'full capture incomplete':
                 row['reason'] = 'capture stopped before held proof: ' + str(error)
     finally:
-        for fd, _ in handles:
+        for fd, _, _ in handles:
             os.close(fd)
         if procfd is not None:
             os.close(procfd)
     return report
+
+
+def advance_stability(previous, current):
+    if current['readiness'] == 'FATAL':
+        return current
+    sealed = {state['sha256']: state['signature'] for state in current['native_startup'] if state['seals'] == 15}
+    mapped = {row['path']: row['evidence']['signature'] for row in current['executable_mappings']
+              if row['classification'] in ('pinned_payload_elf', 'named_system_elf')}
+    try:
+        if previous is not None:
+            require(previous['identity_after'] == current['identity_before'], 'owned worker epoch changed between samples')
+            for checksum, signature in previous.get('sealed_native', {}).items():
+                require(sealed.get(checksum) == signature,
+                        'sealed native identity changed or custody lost: ' + repr({'sha256': checksum, 'before': signature, 'after': sealed.get(checksum)}))
+            for path, signature in previous.get('mapped_elf', {}).items():
+                require(path not in mapped or mapped[path] == signature,
+                        'mapped ELF object changed: ' + repr({'path': path, 'before': signature, 'after': mapped.get(path)}))
+        current['sealed_native'] = sealed
+        current['mapped_elf'] = (previous.get('mapped_elf', {}) if previous is not None else {}) | mapped
+        if current['snapshot_complete']:
+            executable = [{key: row[key] for key in ('range', 'permissions', 'offset', 'device', 'inode', 'path', 'classification')} |
+                          {'object': {key: row.get('evidence', {}).get(key) for key in ('signature', 'sha256', 'seals')}}
+                          for row in current['executable_mappings']]
+            fingerprint = package.digest(package.canonical({'identity': current['identity_after'],
+                'worker': current['worker_elf'], 'native': sealed, 'executable': executable}))
+            current['candidate_fingerprint'] = fingerprint
+            current['stable_samples'] = 2 if previous is not None and previous.get('candidate_fingerprint') == fingerprint else 1
+            if current['stable_samples'] == 2:
+                current.update(readiness='QUALIFIED', qualified=True)
+    except RuntimeError as error:
+        current.update(readiness='FATAL', qualified=False, stable_samples=0)
+        current['errors'].append({'type': type(error).__name__, 'message': str(error)})
+    return current
+
+
+def require_stable_workers(known):
+    require(known and all(row['qualified'] for row in known.values()),
+            'no stable sample for every observed owned worker epoch: ' + repr({pid: row['readiness'] for pid, row in known.items()}))
 
 
 def strict_process_snapshots(payload, known, ancestor, selection):
@@ -422,13 +502,17 @@ def strict_process_snapshots(payload, known, ancestor, selection):
                             'previously captured process identity changed or PID reused')
                 finally:
                     os.close(fd)
-                continue
+                if known[int(proc.name)]['qualified']:
+                    continue
             argv = (proc / 'cmdline').read_bytes().strip(b'\0').split(b'\0')
             if not argv or argv[0] != os.fsencode(selection['worker']['path']):
+                require(int(proc.name) not in known, 'selected worker command changed')
                 continue
             if not descendant_of(int(proc.name), ancestor):
                 continue
-            found.append(strict_snapshot(int(proc.name), selection, ancestor))
+            row = advance_stability(known.get(int(proc.name)), strict_snapshot(int(proc.name), selection, ancestor))
+            known[int(proc.name)] = row
+            found.append(row)
         except (FileNotFoundError, ProcessLookupError):
             continue  # No candidate witness is created for an exited selection scan.
     return found
@@ -807,16 +891,12 @@ def run_staged_case(args):
                                            standalone=False, strict_selection=selection)
                 report['samples'].extend(samples)
                 for row in samples:
-                    require(not any(mapping['classification'] == 'unknown' for mapping in row['executable_mappings']), 'unknown executable range in case')
-                    require(all(error['message'] in ('maps changed during held-FD capture',
-                                                     'selected four sealed native images incomplete') for error in row['errors']),
-                            'missing or failed snapshot facts: ' + repr(row['errors']))
-                    if row['qualified']:
-                        known[row['pid']] = row
+                    require(row['readiness'] != 'FATAL', 'missing or failed snapshot facts: ' + repr(row['errors']))
                 time.sleep(0.01)
             report['returncode'] = child.wait()
             require(input_proof['signature'] == list(file_signature(os.fstat(stdin.fileno()))), 'finite input changed during case')
-        require(report['returncode'] == 0 and known, 'case failed or no complete owned snapshot')
+        require_stable_workers(known)
+        require(report['returncode'] == 0, 'owned staged case failed')
         replies = [json.loads(line) for line in (output / 'stdout.jsonl').read_text().splitlines()]
         require(len(replies) == 1, 'exactly one reply required')
         report['functional'] = staged_reply(selection, request, replies[0])
