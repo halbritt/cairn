@@ -1,11 +1,10 @@
 # R07 execution packet draft
 
 **DRAFT — PRODUCTION PLAN SELECTION, FINAL PACKET REVIEW AND ADMISSION OPEN.**
-Current landed source is `5275bd3d0d71c95062b257bdeda42acc147c5f2e`, tree
-`01e7d7b0f5b5832a53882ac8af413bee5c7f1a90`. Fresh original FINAL5 and all
-required Root final-image gates are complete in the [R06 correspondence](r06-release-candidate.md).
-A later docs-only HEAD is separate from this build source. No production step
-in this packet has been executed by this author.
+Current build source is `66ca5909d8862c24cb19919d2cbf99f1c0678cff`, tree
+`e23c6306c625c0f7c0c1ec3052b4c90763e84861` (parent416a). The current selection
+below distinguishes accepted staged data from future execution. A later docs-only
+HEAD does not change the build. This author performs documentation validation only.
 
 Nativef637 remains actual886 + its original FINAL5 + frozen Agy1.5.7, carried
 by reviewed fence/bootstrap-only unreachable-path correspondence to5275.
@@ -17,9 +16,121 @@ is immutable. Standing ownera306 removes the interactive owner wait while
 preserving production hold98d46758 and all technical gates. Subscription routes
 remain mandatory; actual auth/quota failure stops without fallback.
 
-## Completed source and final-image evidence
+## Current 66ca staged-data selection
 
-| Lane | Exact current proof | Scope |
+The release build source is `66ca5909d8862c24cb19919d2cbf99f1c0678cff`, tree
+`e23c6306c625c0f7c0c1ec3052b4c90763e84861`, parent
+`416a367dd22871faf42260efcb820b653cc13e1c`. A later documentation commit does
+not change the FINAL5 source. Root1496 accepted the lifecycle staged-data
+preparation from assignment `4b0078de`, final `20a933da/v1`, after reviewing
+all ten members. **Aggregate campaign Stage1 is not declared complete;
+Stage2, production, native/runtime adoption and observation clocks remain held.**
+Only sole reviewer agent-1415 may perform the final packet adequacy review;
+agent-1496 owns integration. No new reviewer or operational action is selected.
+
+| Current evidence | Selected result and limit |
+| --- | --- |
+| FINAL5 | Accepted existing api `8bd3c001…`, control `cc156734…`, stager `7348eec3…`, helper `86d0b768…`, observer `511e309e…`; 15 same-host imported role files accepted. API client and receipt/control roles remain distinct. No rebuild or reimport in the staged-data task. |
+| Full11 and R07 | Current66ca full11 SCRIPTED NONNATIVE PASS, 153.108477s, 8 bound + 3 unbound; four R07 SHAPE workflows/default refusal accepted. Each host's real stopped-manager positive and timing remain future gates. These finite results are not installed adoption. |
+| OpenCode66 | Thirteen finite observations, scripted loopback model/synthetic API, two temporary source66 Go images rather than FINAL5. Post-client custody was checked 106.819628s late (about107s); the immediate check requirement was not met and the task remained PARTIAL. Compiler exit receipts/skips were not emitted. No continuous custody or installed/native qualification is inferred. |
+| Issued commands | Root accepted merged96 unique keys: 79 old + 17 new, 82 positive cases + 14 negative groups / 64 unique refusals. All 80 old records and both c045 records remain in 97 retained records; the original first 24 are excluded. Native leases90s and ordinary drains900s are unchanged. Claude channel state is synthetic. Old negative SQL equality remains live-collector testimony without raw snapshots; the new 16 refusal snapshot pairs are retained. |
+| Lifecycle staged data | Eight disabled `/3` forward + eight installed `/2` retained generations, eight cohorts and ten distinct members; all ten associations reviewed. Six LITERAL + four DERIVED_COMPLETE, 16 distinct target configs. No staged launcher, native/provider/API/store/PG, current `unit-bootstrap inspect` or exchange was executed. |
+
+The accepted FINAL5 roles below remain at the 66ca packet; they are not rebuilt
+by this factual fold. Each host has its separately pinned imported copy.
+
+| Role | SHA256 |
+| --- | --- |
+| API client | `8bd3c001f91856263363e31302ad33ec645b3d2d3036ed8cf8aa66b9ee0dd1e4` |
+| Lifecycle control | `cc1567341624ba9d27cc5a701f2c79e0ccbb59a09bf7f226e94b3be0da2a9b78` |
+| Stager | `7348eec3def8896f1eb99f442eb06ced5a474660e8d35688cb502ce9a68188e8` |
+| Helper | `86d0b768d244265776c655375418544977ecb64911e5092c0d51803b94567b31` |
+| Observer | `511e309e31789a6404170f91c27e49a63b52f3f63a5eb4aa3c093aa8927267da` |
+
+| Host | Forward / retained outer generations | Cohorts / distinct members |
+| --- | --- | --- |
+| proximal | 6 / 6 | 6 / 8 |
+| archon | 1 / 1 | 1 / 1 |
+| talos | 1 / 1 | 1 / 1 |
+
+Shared Codex is **one cohort with three member proofs**, not three generations.
+Proximal Agy and Archon Codex retain genuine memory absence. All 10 retained
+original config, native argv, runtime-entry/delegate, source and evidence
+associations were checked. Forward copied configs preserve their other fields
+while selecting the same-host API and applicable copied binding selector.
+Hermes remains its unchanged in-process provider. OpenCode derived vectors and
+unobserved override limits remain named; no guessed hook CLI is added.
+
+Retained source17, profile and native-command bytes stay raw. The forward
+source18 snapshots instead use the maintained `guarded_sources` preflight
+prefix and declared aliases; they are not byte-equal raw source copies.
+The audit covers 19 original profiles/bindings, 9 facade/alias entries,
+187 source members, 11 genuine adjacent sidecars, 3 decoded map digests and
+26 sealed evidence files, with 247 unique originals unchanged in full metadata.
+These categories overlap. A raw sidecar byte SHA is not its decoded map digest.
+All 32 maintained stage/stage-retained/independent-inspect receipts succeeded;
+Root's independent FD readback covered 461 staged files in 16 directories,
+215,351,468 bytes. Existing five-image/four-packet and 15 imported-role custody
+remained unchanged. Root also verified the staging packet's79 input pins,282
+indexed regular files and283 safe archive members. This is selection-data
+acceptance only.
+
+The current source/data-parent contract remains exact0700. OptionC changed
+only two Talos directories from0755 to0700: coordination dev64512/inode4610709
+and opencode-hooks dev64512/inode4349236. Their Cairn parent stayed0700;
+bindings inode5269819 stayed0755. The campaign records **seven existing-directory
+mode effects: five prior selected effects plus these two Root effects**.
+The exact same-two-inode 0755 inverse is recorded, **not executed**; it requires
+joined dependents and fresh identity/ACL checks, never recursion or a bindings
+change. Historical 0755 artifacts remain historical. Broader 0755 source-parent
+support is an unimplemented, nonblocking follow-up, not a widened reader rule.
+The stopped77b9 remains CLOSED PARTIAL (2/2 cache slots, cadence failure,
+zero operations). New 4b used 1/2 cache-planning slots for a wrong comparator
+object before publication, with no product refusal/retry or worker mode change.
+Its final was written 21:50:17 PST before 22:01:25 hard deadline; contractual
+eight-minute cadence passed. The separately missed promised targets remain
+recorded and are not erased by that acceptance.
+
+Current locators are private evidence, not new commands or invented catalogs:
+
+- Root selection: `/home/halbritt/.cache/cairn301-release-1496/final5-gates-66ca5909-20261116/stage1-restaging66-optionC-1466/Root-terminal-COMPLETE-STAGED-DATA-selection.json`, SHA256 `36ad6b5d03503a9af80b46fbfdd6ecaf4b76ef2e64e2b2748dd757842e84d5fb`.
+- Actual16 outer manifest pins: `/home/halbritt/.cache/cairn301-stage1-restaging-66ca5909-optionC-1466-20261116/actual-generation-pins.json`, SHA256 `5e98a72b625db4e63c6a67b3f5016b4fd72411e6b53459d6845139fa98d1e8fb`; inner retained-package metadata is not the outer pin.
+- Each `/home/halbritt/.cache/cairn301-stage1-restaging-66ca5909-optionC-1466-20261116/HOST/stage1-assembly.json` contains actual generation/image/member pins but is **NONEXECUTABLE_ASSEMBLY_WITH_ACTUAL_GENERATION_PINS**. Each `HOST/stage2-capture-registry.json` still has nine unfilled `CAPTURE_AT_STAGE2_STEP` entries. No strict operator plan, empty callbacks, Scope, fence or execution timestamp is fabricated.
+- Ordered future procedure: `/home/halbritt/.cache/cairn301-stage1-restaging-66ca5909-optionC-1466-20261116/future-stage2-runbook.md`, SHA256 `1713d5f2fb91a4bba1173f0e9156676c9e153b865036cd7284e7accad617d5c4`.
+- Finite evidence: `/home/halbritt/.cache/cairn301-release-1496/final5-gates-66ca5909-20261116/Root-gates-concise-selection.json`, `Root-OpenCode66-final-audit.json` and `Root-completion17-final-merged96-audit.json`. The last supersedes the earlier concise selection's pending issued-gate field; none is native or whole-design acceptance.
+
+### Rust and joint cutover decision remain open
+
+Rust is **PARKED**, not qualified. Series2 on416a technically captured embed
+and rank; stream failed in sample4 on `fd/4`, with zero qualified samples and
+empty functional output. The causal close and failed descriptor identity remain
+UNKNOWN. The bounded1467 postmortem is accepted PARTIAL:17 observed fd4
+open/close pairs establish slot reuse, not which close caused the failure;
+wider unlisted source17 equality is UNESTABLISHED. No third helper round,
+code repair or runtime retry follows.
+
+Coordinator `b9498fbc/v1` and Supervisor `ff201` leave two obligations separate:
+Root1496 and then sole1415 must decide the helper's write-open rows outside
+`/dev`, `/proc` and memfd, plus connect-family rows, with each original raw
+line and a plain per-case raw write/create-open count comparison. Differences
+must be reported. This includes old and new cases and the first failed embed;
+it does not require rereading every remaining103k trace line. Root raw-row
+decisions and1415 adequacy are still OPEN. The selected bounded postmortem is
+`/home/halbritt/.cache/cairn301-release-1496/final5-gates-66ca5909-20261116/Root-rust-fd4-postmortem1467-terminal-PARTIAL-audit.json`, SHA256
+`53477567c98d14d326718087a6a1431edf0dc862da82434cc85b16c2af80c74f`.
+
+**Unified cutover versus Go-lifecycle-first/Rust-later is an OPEN decision for
+BOTH gatekeepers.** Lifecycle staged-data readiness does not decide it. The
+future unified sequence below is preserved for that decision; this factual
+fold selects no split, denominator, timing change, admission or clock start.
+
+## Historical 5275 source and final-image evidence
+
+The tables and review expectations in this section record the earlier5275
+checkpoint. The current66 staged-data selection above governs the factual fold;
+these receipts and their then-pending joins are not relabelled or re-executed.
+
+| Lane | Original 5275 proof, retained historically | Scope |
 | --- | --- | --- |
 | Composed source |5275/tree01e7d, eight-file code ACCEPT `a8aafa7c-597c-4eed-96c7-60dcd8a3231d/v1`, Root00fac and Supervisor495340a3 PASS; check0/push0/clean. | Includes original0903163b fence and3bbe/42 bootstrap production lineage, final callerRecheck/external states/runtime parity. Final PACKET acceptance is separate. |
 | FINAL5 | Producer146b808f; manifest404b3bad, index727456ea, completee25b8e93. Original api/control/stager/helper/observer at5275;2,946 source pins; Root full unchanged `checked_packet(native=True)` PASS. | Input/build custody, not native execution. Exact role digests/paths/identities in R06. No sixth role or relabelled886 image. |
@@ -35,7 +146,11 @@ reverses and reconciled rollout plan. No new acceptance reviewer or dispatch
 is created here. Final packet review and joint Coordinator+Supervisor admission
 remain outstanding.
 
-## Completed OpenCode receipt binding
+## Historical 5275 OpenCode receipt binding
+
+This subsection preserves the Nov15 correspondence and its then-pending review
+fields. The current66 finite evidence and its timing limit are selected above;
+these historical receipts are not relabelled as current FINAL5 execution.
 
 The [R06 OpenCode correspondence](r06-release-candidate.md#opencode-historical-receipts-and-fresh5275-binding)
 now binds accepted historical staged-TS Node evidence
@@ -64,7 +179,7 @@ remain held or PENDING EXECUTION exactly as below.
 
 ## Landed operator semantics and refusal recovery
 
-Current5275 supports stopped inactive/dead/MainPID0 services with an explicitly
+Source66ca retains stopped inactive/dead/MainPID0 services with an explicitly
 empty ControlGroup and stopped Restart=on-failure, stable properties/InvocationID/
 StateChange across all observations, recursive stopped triggers and conservative
 self/unreadable/zombie/exiting-process handling. The historical refusal text
@@ -74,8 +189,8 @@ saves its prior enablement for exact reverse. Any active/unknown/drifted fact
 refuses. Actual per-host default-manager positive/library and complete-launch
 30s margins are execution-time gates BEFORE ANY exchange on EACH admitted host.
 
-The last fresh same-scope `fence.Recheck(ctx, t.Fence)` at `shared_unit_bootstrap.go:1701–1703`
-immediately precedes `Renameat2(RENAME_EXCHANGE)` at1704 in both directions,
+The last fresh same-scope `fence.Recheck(ctx, t.Fence)` at `shared_unit_bootstrap.go:1738–1740`
+immediately precedes `Renameat2(RENAME_EXCHANGE)` at1741 in both directions,
 after callbacks, descriptor opens and state/operand checks; nothing intervenes.
 A late refusal means **zero namespace exchange**, not no earlier effects.
 Disabled raw Python2 manifests and recovery journal may already persist in
@@ -108,14 +223,15 @@ archon/talos candidate upload/read-only execution needs separate joint admission
 ## Four-point technical admission and operational insertion seams
 
 These four groups index existing obligations. Code/image/workflow evidence above
-is complete. Operational selections remain **UNSELECTED** until Root chooses
-exact refs; future production receipts remain **PENDING EXECUTION**. A complete
+is complete. Actual16 generation/member selections are filled above. Strict operator plans,
+complete live owner/resource graphs and future captures remain **UNSELECTED**;
+production receipts remain **PENDING EXECUTION**. A complete
 static candidate is not finalPACKETREADY or permission to execute.
 
 | Admission item | Filled evidence / exact remainder |
 | --- | --- |
-| A1 — candidate and predecessors |5275 ACCEPTa8, fresh FINAL5/full validator/full11/four SHAPE/default refusal and actual886 native correspondence complete. R06 J1–J8/FT01–12 now submit the finite R03AC4/R04/R05/S05/S04R/R06/HC05 receipt/tuple joins, including historical and fresh5275 OpenCode binding. FT04 unsupported census and FT12 downstream observation are not four-ticket Done gates. Final1415 PACKET acceptance remains separate; no whole installed/usefulness PASS is invented. |
-| A2 — safe complete-unit transition | Supported5275 stopped bootstrap/fence/external-state/reverse mechanisms complete. UNSELECTED Root per-host record/version/bodySHA, CURRENT/TARGET catalog and transition paths+SHA, ConfigRoot/generation, all members/resources/accounts/owners/restart graph, binaries/ancestors, original modes/locks/absence, exact forward/reverse/rollback and service/native argv. D1–D7/adoption/real default positive and timing receipts PENDING EXECUTION. |
+| A1 — candidate and predecessors | Current66 FINAL5/full11/R07 finite evidence, merged96 issued gate,15 role imports and16 lifecycle staged generations are selected above. OpenCode retains its107s custody limit and temporary-image scope; actual886 native history stays at886. Final1415 packet adequacy is separate. |
+| A2 — safe complete-unit transition | All10 staged member associations and actual outer generation pins are filled. The three assemblies remain nonexecutable. Strict original/disabled-target plans and hashes, actual layout/Scope/callbacks/owners/restart graph, D1–D7, first disabled-target inspect, each real-manager positive/timing and adoption/reverse receipts remain unfilled future captures. |
 | A3 — both reverses and backup | Supported retainedPython2 raw-original/bundle and S04R publication/fileverify/supervisor invocation complete. UNSELECTED production closure/managed consumer/backup/restore/operator selections. Actual checkpoint/header/export/inspection FIRST, both executable reverse runtime/ABI/effect/readback, all-writer graph and semantic STOP read PENDING EXECUTION before rollout/Rust3. |
 | A4 — reviewed execution and exit | Final1415 RC+R07 PACKET review and joint Coordinator+Supervisor phase admission outstanding. Root selects exact host schedule/scoped operators/abort-reconciliation paths; actual affected-lane cycles, continuous>=24h R08 AND full selected Rust rebuild, R09 reset/removal revalidation remain PENDING EXECUTION. |
 
@@ -188,19 +304,23 @@ manager latency has been measured.
 
 ## First admitted operation: fresh external checkpoint and recovery export
 
-This section precedes every Python/Rust staging or lifecycle `/3` step. It is
+The completed lifecycle file-data preparation above is not a checkpoint, backup
+or adoption. The following guard remains first for future admitted operational
+cutover/semantic work; no historical receipt supplies a fresh capture.
+
+This section precedes future semantic staging/adoption or lifecycle exchange. It is
 a future unscoped **operator** procedure, absent from the agent API. It has
 not been executed. The operator keeps the selected production connection in
 its existing protected mechanism; no DSN, password, token or configuration
 contents enter this document or a hosted receipt. The proposed operator CLI below selects the actual final common API/CLI image
-from FINAL5 at5275: SHA256 `f069c54614efe66be1411f75c5712ea6215f79d8cac90ab2fbe2d67982cf4a95`,
-mode0500, source5275. It supports migration057/member-backed checkpoints.
+from accepted FINAL5 at66ca: SHA256 `8bd3c001f91856263363e31302ad33ec645b3d2d3036ed8cf8aa66b9ee0dd1e4`,
+mode0500, source66ca. It supports migration057/member-backed checkpoints.
 Actual unscoped operator connection/admitted use remains Release's selection;
 a scoped agent command is not a substitute.
 
-The proposed output (PENDING Root selection/fresh absence check) is
-`/home/halbritt/.cache/cairn301-r07-execution-5275-20261115`, owned by the
-operator, mode0700, outside the database/restore and selection roots. Admission
+The output remains PENDING Root selection and fresh absence/ancestry checks:
+select an operator-owned0700 directory outside database/restore and selection
+roots. The earlier5275 proposed path is historical, not a selected current output. Admission
 must verify its ancestors and owner and select an independent retained copy.
 If the path already exists, stop and reconcile it; do not overwrite it or
 reissue a checkpoint under a different request identity to conceal uncertainty.
@@ -210,8 +330,8 @@ actual argv, stdout, stderr and exit status in the private operator receipt.
 ```sh
 set -eu
 umask 077
-R07_CAIRN_OPERATOR=/home/halbritt/.cache/cairn301-final-go-5275bd3d-1466-20261115/tools/api
-R07_PRIVATE_EVIDENCE=/home/halbritt/.cache/cairn301-r07-execution-5275-20261115
+R07_CAIRN_OPERATOR=/home/halbritt/.cache/cairn301-final-go-66ca5909-1466-20261116/tools/api
+: "${R07_PRIVATE_EVIDENCE:?PENDING Root-selected fresh private operator evidence directory}"
 test ! -e "$R07_PRIVATE_EVIDENCE"
 test ! -L "$R07_PRIVATE_EVIDENCE"
 mkdir -m 700 -- "$R07_PRIVATE_EVIDENCE"
@@ -425,9 +545,9 @@ plan artifact/pin is PENDING. The payload-reference hash comes from the retained
 ```
 
 ```sh
-: "${R07_SOURCE:?Root-selected clean frozen5275 source directory}"
-test "$(git -C "$R07_SOURCE" rev-parse HEAD)" = 5275bd3d0d71c95062b257bdeda42acc147c5f2e
-test "$(git -C "$R07_SOURCE" rev-parse 'HEAD^{tree}')" = 01e7d7b0f5b5832a53882ac8af413bee5c7f1a90
+: "${R07_SOURCE:?Root-selected clean frozen66ca source directory}"
+test "$(git -C "$R07_SOURCE" rev-parse HEAD)" = 66ca5909d8862c24cb19919d2cbf99f1c0678cff
+test "$(git -C "$R07_SOURCE" rev-parse 'HEAD^{tree}')" = e23c6306c625c0f7c0c1ec3052b4c90763e84861
 R07_SEMANTIC_PREP=/home/halbritt/.cache/cairn301-semantic-1382/r07-prep-20261113
 R07_S04R_ACCEPTED=/home/halbritt/.cache/cairn-hybrid-execution-1249/semantic-S-B2/s04r-python-closure-20261111/qualified-selection
 R07_PY_STAGE=/home/halbritt/.local/share/cairn/semantic-python-retained
@@ -436,7 +556,7 @@ R07_NEW_PRIVATE_PUBLICATIONS="$R07_PRIVATE_EVIDENCE/python-publications"
 R07_SEMANTIC_REVERSE_SELECTION="$R07_PRIVATE_EVIDENCE/semantic-reverse-selection.json"
 : "${R07_SEMANTIC_REVERSE_SHA256:?PENDING Release frozen installed selection plan hash}"
 printf '%s\n' \
-  "c1fa788e51451a45330769fefe5954d345eb413bb24678870482af43c1ef173d  $R07_SOURCE/scripts/check_r07_bootstrap_reverse.py" \
+  "cba81b5ebb0dcbada9af279ca513a63ea1ba4945f9917f7d7aa7d4feacb64288  $R07_SOURCE/scripts/check_r07_bootstrap_reverse.py" \
   "ff28c71eb21b798a555443b45f80accc1104f226f2e31d20a6e8c81d607ae7ce  $R07_SOURCE/scripts/semantic_python_closure.py" \
   "eb0759f6d0357fb6baeeae125ea5fee7d124343ff445ed234ecfb194eb7cebda  $R07_SOURCE/scripts/check_semantic_python_closure.py" \
   "ffdc4358a30547f4ddb63628b939893192f0a549e97c3ece31e55f7abe269f46  $R07_S04R_ACCEPTED/candidate.json" \
@@ -567,7 +687,7 @@ During that admitted phase only, select the frozen final RC source/tree and
 create this fresh owned0700 scratch directory. It is disposable application
 scratch, not a replacement HOME or a worktree. Preserve the normal parent
 HOME/CODEX_HOME/tools/auth. The final RC source/five-image pins are supplied
-by FINAL5 at5275; the operational frozen source directory remains selected by
+by FINAL5 at66ca; the operational frozen source directory remains selected by
 Release; the following build/smoke is **not executed by this docs correction**.
 The common-five packet fixes the five release images; this disposable driver
 is a separate existing smoke tool and does not rebuild or replace any role.
@@ -578,10 +698,10 @@ test ! -e "$R07_SCRATCH"
 test ! -L "$R07_SCRATCH"
 mkdir -m 700 -- "$R07_SCRATCH"
 test "$(stat -c '%u:%a' -- "$R07_SCRATCH")" = "$(id -u):700"
-: "${R07_DRIVER_SOURCE:?Release-selected clean frozen5275 checkout, separate from later doc HEAD}"
+: "${R07_DRIVER_SOURCE:?Release-selected clean frozen66ca checkout, separate from later doc HEAD}"
 cd "$R07_DRIVER_SOURCE"
-test "$(git rev-parse HEAD)" = 5275bd3d0d71c95062b257bdeda42acc147c5f2e
-test "$(git rev-parse 'HEAD^{tree}')" = 01e7d7b0f5b5832a53882ac8af413bee5c7f1a90
+test "$(git rev-parse HEAD)" = 66ca5909d8862c24cb19919d2cbf99f1c0678cff
+test "$(git rev-parse 'HEAD^{tree}')" = e23c6306c625c0f7c0c1ec3052b4c90763e84861
 git rev-parse HEAD 'HEAD^{tree}' > "$R07_SCRATCH/source.txt"
 R07_DRIVER_GO=/home/halbritt/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/bin/go
 printf '%s\n' "b93cdfdbc72f1afc3f21498c80bf3d155a44a9b95e2d690c940511051574bc25  $R07_DRIVER_GO" | sha256sum --check --status
@@ -729,6 +849,11 @@ through reverse; file staging has no consumer to switch back until adoption.
 
 ## Three-host units and future catalogs
 
+The actual66 assemblies and generation pins above fill staged-data membership
+only. Their nine per-host external captures remain unfilled; they do not turn
+into strict plans or a complete installed callback/owner/resource census. The
+Nov14 observations below remain dated historical inputs, not current absences.
+
 Per-host unit-bootstrap/unit-control catalogs are **UNSELECTED FUTURE R-07
 STAGING INPUTS**, not pre-existing authoritative files to locate. Supervisor
 `f01dc85f-d472-4062-965f-76fc4377c73c/v1`, Coordinator9a3072cf and Root91f02645
@@ -767,12 +892,12 @@ directory (`compatibility.go:528–547`, `shared_unit_census_files.go:40–57`).
 Layout Step A addresses selected unsafe ancestors; layout Step B addresses the separate
 immediate-parent requirement.
 
-The fresh targeted ancestor observations agree with the unsafe ancestry in
+The historical Nov14 targeted ancestor observations agree with the unsafe ancestry in
 historical6c560: proximal and talos HOME0750, `.local`0775 and `.local/share`0775;
 archon HOME0700, `.local`0755 and `.local/share`0755. Proximal and talos also have
 `.npm-global`0775 and its selected `lib/node_modules`0775. Thus proximal Codex's
 0700 immediate parent does not repair its unsafe package ancestors.
-Talos `.local/bin`0775 also fails the0022 ancestor guard while traversing to
+The recorded Talos `.local/bin`0775 also fails the0022 ancestor guard while traversing to
 its declared Cairn file, independently of the final-parent exact0700 check.
 The old binding/lock/opaque-file preservation tables and accepted3bbe reverse contract
 remain intact; this addendum did not recensus their contents or rehash old
@@ -788,6 +913,11 @@ and updater behavior for co-resident tools and other owner processes. A listing
 is not a complete ownership/user census; unknown users remain unknown.
 
 ### Layout Step A: selected ancestry modes and exact reverse
+
+The historical proposal and0775 observations below are retained, not a recipe
+to repeat the seven already recorded campaign mode effects. Current OptionC
+only changed the two exact Talos source parents listed above. No mode operation
+or inverse is performed by this document; revalidate all future selections.
 
 The following source-backed operator contract is not a current host operation.
 Release must select the exact per-host plan, dependencies and reverse
@@ -863,11 +993,16 @@ chmod 0775 -- /home/halbritt/.local/share /home/halbritt/.local
 
 Read back original modes/owners/device/inode and retained `/2` references;
 chmod does not restore old ctime. An unknown consumer/lock/identity prevents
-this permission reverse. These forward/reverse commands are **future packet
-steps only: executed0**. They do not replace backup-first or the separate
+this permission reverse. These historical proposed inverses have **not been executed**; only the
+separately recorded seven mode effects above are asserted as actual. They do not replace backup-first or the separate
 lifecycle and semantic reverses.
 
 ### Layout Step A state parents: exact0700 and original reverse
+
+The following table preserves the historical state-parent proposal. Fresh
+state-parent captures remain held; Talos opencode-hooks is the exception already
+set0700 by Root OptionC. Do not repeat that change or treat historical modes
+as current readback. Its exact same-inode0755 inverse remains recorded, not run.
 
 The accepted5275 fixture functions `prepare_production_state_layout`666–723
 and `reverse_production_state_layout`726–741 prove the state-parent contract.
@@ -880,13 +1015,14 @@ owner/device/inode/mode/absence and dependency checks before any action.
 | proximal `/home/halbritt/.local/share/cairn/coordination/state` observed0775 | Planned `chmod 0700 -- /home/halbritt/.local/share/cairn/coordination/state`, guarded by selected original identity. | Planned `chmod 0775 -- /home/halbritt/.local/share/cairn/coordination/state`; verify same owner/device/inode and original mode. |
 | archon same absolute coordination/state, observed0755 | Planned `chmod 0700 -- /home/halbritt/.local/share/cairn/coordination/state` with archon's original identity. | Planned `chmod 0755 -- /home/halbritt/.local/share/cairn/coordination/state`; verify archon's originals. Actual unbound memory state selection remains UNSELECTED. |
 | talos same coordination/state parent, observed absent | Planned owned `mkdir -m 0700 -- /home/halbritt/.local/share/cairn/coordination/state` only after fresh exact-absence/ancestry/owner checks. State leaves retain their source-supported absence/creation contract. | Remove only that exact newly created parent through `rmdir -- /home/halbritt/.local/share/cairn/coordination/state` after all created children/state effects have their separately selected safe reverse and the parent is empty. Unknown/nonempty contents stop; no recursive delete. |
-| talos `/home/halbritt/.local/share/cairn/opencode-hooks` observed0755, memory state leaf absent | Planned `chmod 0700 -- /home/halbritt/.local/share/cairn/opencode-hooks`; no invented installed state contents. | Planned `chmod 0755 -- /home/halbritt/.local/share/cairn/opencode-hooks` after selected state/consumer reverse and original identity checks. |
+| talos `/home/halbritt/.local/share/cairn/opencode-hooks` historically0755, now0700 by Root OptionC | Root already changed only inode4349236/dev64512; no new chmod is selected here. Memory-state contents remain unobserved. | Planned `chmod 0755 -- /home/halbritt/.local/share/cairn/opencode-hooks` after selected state/consumer reverse and original identity checks. |
 
 The source fixture does not normalize original talos coordination/bindings0755
 into0700. Preserve supported legacy directory modes and exact original lock
 absence. Only required private state parents change. Actual per-host selection,
 additional state-leaf operations/reverses, ACL/xattr/dependency checks and
-execution receipts remain UNSELECTED/PENDING EXECUTION; no command above ran.
+execution receipts remain UNSELECTED/PENDING EXECUTION. Apart from the separately
+recorded OptionC effect, the historical state-parent commands are unexecuted.
 
 ### Layout Step B: dedicated lifecycle generation parents
 
@@ -927,8 +1063,9 @@ strict selection; no old client is overwritten or removed by this proposal.
 The new generation subtree alone cannot hide unchanged account/config/state/client
 references or relax `unitControlPairIdentity`; proximal/talos HOME and existing
 references outside Step A still require an explicit Root-selected solution.
-No filesystem, permission, service, API/database, bootstrap, adoption or native
-action occurred.
+This factual-docs task performs no filesystem installation, permission, service,
+API/database, bootstrap, adoption or native action. Earlier selected mode and
+file-data effects are recorded separately above.
 
 
 ## D1–D7 and semantic writer fence
@@ -963,7 +1100,7 @@ writer/restart edge blocks the corresponding transition.
 
 ### Lifecycle-only receipt and separate operator semantic read
 
-At5275 (0903163b lineage, composed fixes), the selected-unit fence supports empty
+At66ca (0903163b lineage, composed fixes), the selected-unit fence supports empty
 `Database`/`DatabaseSystemID` with a nil database connection. Require that
 lifecycle-only mode in the **accepted3bbe `unit-bootstrap` producer refined5275**;
 actual installed plans and operational receipts remain pending. The mode's
@@ -1071,7 +1208,7 @@ supervisors or other collection owners. Retain that external coverage as
 `unknown` until the separate operator graph/fence evidence resolves it. Queue
 counts are not a selected-Rust completion denominator or rebuild proof.
 
-The current5275 selected-database branch uses `cairn.semantic_job` at
+The current66ca selected-database branch uses `cairn.semantic_job` at
 `shared_unit_fence.go:selectedFenceDatabase`; the old `public.semantic_job`
 limitation is corrected. Lifecycle nil-DB mode remains database_coverage=
 not-selected and does not perform the operator STOP read or establish a global
@@ -1080,8 +1217,10 @@ a fake receipt. Ordinary operator metadata stays private.
 
 ## Required phase order and failure boundary
 
-This is a dependency order for the future reviewed packet, not execution
-authorization for the current author.
+This preserves the existing future unified dependency order for BOTH gatekeepers
+to decide. Rust remains parked and unified versus lifecycle-first/Rust-later is
+OPEN; this factual update changes neither cutover split nor observation/rebuild
+requirements. It grants no execution authority.
 
 1. Freeze the final source/image/config/host/client tuple and full predecessor,
    installed-matrix and equivalence joins. Obtain independent review, verify
@@ -1160,24 +1299,34 @@ connections require their whole unit joined; host order cannot split one unit.
 Finish each selected host's qualified adoption/readback and retain its reverse
 boundary before advancing.
 
-The canonical source packet contains `tools/control` at the5275 FINAL5 root
-in R06. Each host requires its own Root-selected staged owned0700-parent path
+The current66ca packet contains `tools/control`; the same bytes have already
+been imported to each host as recorded above. Each host requires its own Root-selected staged owned0700-parent path
 with that SAME control digest; a proximal producer path is not assumed to exist
 on archon/talos. The source-supported invocation selects the final common control image
-SHA `f844cdfcf9b1c3b5f88eec7721d26fd272354641c27944a5f23fcc15e5b18093`.
+SHA `cc1567341624ba9d27cc5a701f2c79e0ccbb59a09bf7f226e94b3be0da2a9b78`.
 The host-specific immutable `cairn.unit-bootstrap/2` transition plan and hash
 remain **PENDING ROOT SELECTION**; the following shell refuses an absent choice.
 It is a future command template, not an issued plan or executed command.
 
 ```sh
-: "${R07_LIFECYCLE_OPERATOR:?UNSELECTED Root-staged host control path, digest f844cdfcf9b1c3b5f88eec7721d26fd272354641c27944a5f23fcc15e5b18093}"
+: "${R07_LIFECYCLE_OPERATOR:?Root-selected same-host imported control path, digest cc1567341624ba9d27cc5a701f2c79e0ccbb59a09bf7f226e94b3be0da2a9b78}"
 : "${R07_TRANSITION_PLAN:?PENDING Root-selected host transition-plan path}"
 : "${R07_TRANSITION_SHA256:?PENDING Root-selected host transition-plan SHA256}"
-"$R07_LIFECYCLE_OPERATOR" unit-bootstrap inspect   --plan "$R07_TRANSITION_PLAN" --sha256 "$R07_TRANSITION_SHA256"
+: "${R07_DISABLED_TARGET_PLAN:?CAPTURE_AT_STAGE2_STEP_C actual disabled-target plan path}"
+: "${R07_DISABLED_TARGET_SHA256:?CAPTURE_AT_STAGE2_STEP_C actual disabled-target SHA256}"
+"$R07_LIFECYCLE_OPERATOR" unit-bootstrap inspect   --plan "$R07_DISABLED_TARGET_PLAN" --sha256 "$R07_DISABLED_TARGET_SHA256"
 "$R07_LIFECYCLE_OPERATOR" unit-bootstrap switch   --plan "$R07_TRANSITION_PLAN" --sha256 "$R07_TRANSITION_SHA256"
 ```
 
-Exact supported effectful reverse, using that SAME immutable host plan/hash:
+The first post-layout command is inspect of the **disabled target**, before any
+exchange. Require exit0, `cairn.unit-bootstrap-result/1`, `inspected=true`,
+`rechecked=true`, `published=false`; refusal/unknown stops the host. Inspecting
+an enabled original `/2` selection is deliberately refused. Each exchange still
+requires a fresh real<30s positive, positive library/full-launch margins and the
+final successful same-Scope Recheck before Rename. The transition variable names
+the ORIGINAL immutable plan; the target inspect plan cannot replace it.
+
+Exact supported effectful reverse, using that SAME ORIGINAL host plan/hash:
 
 ```sh
 "$R07_LIFECYCLE_OPERATOR" unit-bootstrap reverse   --plan "$R07_TRANSITION_PLAN" --sha256 "$R07_TRANSITION_SHA256"
@@ -1212,9 +1361,9 @@ consumer forward and retained Python reverse argv, staged generation retention,
 restoration qualification and cleanup/readback. No `systemctl` recipe or
 invented vendor wrapper fills these slots.
 
-## Source and validation crosswalk at5275
+## Source and validation crosswalk at66ca
 
-| Command / contract | Current5275 source | Limit |
+| Command / contract | Current66ca source | Limit |
 | --- | --- | --- |
 | `checkpoint --header`, `verify-checkpoint` | `cmd/cairn/commands.go`, `core/checkpoint.go`; [checkpoints](../audit-checkpoints.md) | Unscoped operator minimum audit metadata, not backup/full-body freshness. |
 | `recovery-export/inspect --directory` | `cmd/cairn/recovery_bundle.go`, `core/recovery_stream.go`; [bundles](../recovery-bundles.md) | Complete manifest/parts and externally retained expectation; consistency is not resume permission. |
@@ -1224,11 +1373,27 @@ invented vendor wrapper fills these slots.
 | Fence / semantic read | `shared_unit_fence.go:CaptureSelectedUnitFence`, `core/schema/056_semantic_passages.sql` | API-available lifecycle nil-DB mode; separate OPERATOR semantic read at API STOP. |
 | Path guards / fixed identity | `compatibility.go:528–547`, `shared_unit_census_files.go:safePath`, `shared_unit_control.go:unitControlPairIdentity` | No real-HOME chmod, aliased vendor relocation, fake Scope/home/census/fence or omitted unit member. |
 
-The two-document author performs static source/evidence inspection, maintained
+The four-document author performs static source/evidence inspection, maintained
 documentation tiers1–4 and `mise run check` on its clean held candidate. Exact
 receipts accompany the commit. No new runtime/native/model/API-PG/rehearsal
 case, image build, production query, staging, chmod, service action, canonical
 cache/board/tracker write or final-review dispatch is performed by this task.
+
+## First natural coordination-only hook
+
+After a separately admitted qualified cutover, observe the first **natural**
+affected proximal Agy hook and Archon Codex hook when selected. Bind host/member,
+image/plan, time, PID/start/boot, session, exit/error (including an explicitly
+empty observation) and state effect. Failure, refusal or unknown means same-host
+rollback and next-host HOLD. No natural invocation means absence and BOTH
+gatekeepers' disposition, not elapsed-time acceptance. Never manufacture a hook,
+event, session, model/client start or inbox injection.
+
+Agy binding `config_home` stays ABSENT. Producer `account_home` and census
+`Account` are `/home/halbritt/.gemini/config`; a separately admitted publisher
+uses `AccountHome=/home/halbritt`, `layer=account`, workspace
+`/home/halbritt/git/cairn`. These are different typed selectors, not substitute
+paths. Hermes remains in-process; OpenCode unobserved overrides remain unknown.
 
 ## Observation, R09 reset and retirement
 

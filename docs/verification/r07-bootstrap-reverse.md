@@ -27,6 +27,28 @@ lock identity and mixed-unit membership. R08 must include at least 24 hours
 of affected-lane observation on the Go watcher before R08 completion and R09
 removal of Python lifecycle code. No observation clock starts here.
 
+## Current66 staged-data status
+
+Current source66ca/treee23c6306/parent416a and its five accepted FINAL5 roles
+are separate from historical5275/462/416a receipts. Root1496 accepted15
+same-host imported role files and all10 member associations in16 actual
+generations (8 disabled forward `/3`,8 retained installed `/2`;8 cohorts).
+See the [current packet selection](r07-execution-packet-draft.md#current-66ca-staged-data-selection)
+for counts, exact cache locators, OptionC mode ledger and the parked Rust state.
+This completes lifecycle file-data preparation only. The three current assemblies
+are nonexecutable metadata with actual pins; their nine future captures per host
+remain unfilled. Current Go bootstrap inspect, exchange/adoption, native/runtime,
+aggregate Stage1 and Stage2 are not established by these readbacks.
+
+The first future post-layout inspect must select the **disabled target** and
+return exit0/schema `cairn.unit-bootstrap-result/1`, `inspected=true`,
+`rechecked=true`, `published=false`, before any exchange. Enabled-original `/2`
+read-only refusal is intentional. Each exchange needs its fresh real<30s fence,
+positive library/full-launch margins and final same-Scope Recheck before Rename.
+Reverse and rollback select the SAME ORIGINAL transition-plan path and SHA.
+Raw retained17 and guarded/aliased forward18 snapshots have different derivations;
+the accepted stage receipts do not assert raw-source equality or execute hooks.
+
 ## Operator commands and selection data
 
 The ordinary private frontend uses the concrete coordination profile and
@@ -365,14 +387,17 @@ join to 31 read/presence calls and zero inbox-claim, ack, complete, publish or
 drain calls. Member count and rehearsal PASS did not establish issued-command
 coverage.
 
-The final-image gate remains **PENDING**: for each of the three unbound members,
-issue and execute context `ack`, `complete`, `respond`, `finish-reply`, compact
-`read`, `inspect`, `settle`, `advance`, and tool-cued `drain` through the actual
-selected image/profile. Retain original issued launcher/context bytes, exact
-argv, state/client/socket/auth correspondence, journal commitments, API effects
-and negative selection/downgrade refusals. Go/Python process parity across
-bound, unbound-with-memory and coordination-only classes is a separate source
-check; it does not qualify this final-image member gate or an installed host.
+Root's current66 final-image issued-command gate is now accepted as finite
+fixture evidence:96 unique selected keys (79old+17new),82 positive cases,
+14 negative groups/64 unique refusals,97 retained records including both c045.
+All80 old records stay preserved; the first24 are excluded. Applicable operations
+ran through actual selected Go/Python frontends; unsupported cells preserve their
+no-emission/refusal baseline. Native90s grants and ordinary900s drain remain
+unchanged. Claude channel is synthetic. Old negative SQL snapshots are absent
+and retain their live-collector equality limit; the new16 refusal pairs have
+exact returned SQL bodies. This finite gate is not installed/native qualification.
+Root's exact merged audit and current full11/R07/OpenCode limits are linked in
+the [current packet](r07-execution-packet-draft.md#current-66ca-staged-data-selection).
 
 The presence90 drop-in's raw custody under `0775` user-systemd/service.d parents
 remains **OPEN and hard-excluded**. No alternative read or mode repair follows

@@ -138,6 +138,26 @@ This schema does not introduce a Hermes hook CLI, change provider selectors,
 or add Hermes to the hook-settings stager. Watcher policy and issued installed
 helper/context commands are separate contracts and are not rewritten here.
 
+## Current66 installed-data evidence
+
+Root1496's `20a933da/v1` selection accepts8 installed `/2` retained packages
+paired with8 disabled `/3` forward generations:8 cohorts/10 distinct members
+on3 hosts, with all10 actual associations reviewed. Shared Codex remains one
+cohort/three proofs; proximal Agy and Archon Codex memory are genuinely absent.
+The [current packet selection](../verification/r07-execution-packet-draft.md#current-66ca-staged-data-selection)
+records counts, actual outer-generation pin locator and exact custody limits.
+The raw17-file installed closures, original config/native argv and facade/delegate
+bytes were preserved. Forward18 uses the maintained guarded-source transform
+and aliases, not raw-source equality. Raw sidecar SHA remains distinct from its
+decoded map digest. These data readbacks do not execute a retained runtime.
+
+Talos's exact two source-parent0755-to0700 changes and recorded, unexecuted
+same-inode0755 inverse leave the current0700 source/data contract intact;
+bindings0755 is unchanged. Broader0755 source-parent support is not implemented.
+Actual staged pins do not fill strict operator plans, owner/callback/Scope or
+future runtime captures. Rust remains parked; aggregate Stage1, final1415
+adequacy, BOTH cutover-split decision, Stage2 and all observation clocks stay open.
+
 ## Interim watcher and required Go adoption
 
 The initial R07 hook/binding cutover conditionally retains the current raw
@@ -200,11 +220,16 @@ Agy hook sequence and includes two additional unbound profiles in producer/censu
 inputs. The retained `actual-api-bridge-calls.json` contains 31 calls: registration,
 heartbeat/context, wake-attempts, event-watch and session-inbox-control; no claim,
 ack, completion, response publication or drain. The whole-case PASS therefore
-did not cover issued commands. The final-image gate must separately issue and
-execute all operations above for **each of those three unbound members**, with
-its actual selected profile/state/client/auth and raw context/launcher, journal
-and API-effect receipts. That gate remains PENDING; class-level unit parity does
-not close it. See the [R07 gate](../verification/r07-bootstrap-reverse.md#final-image-issued-inbox-gate).
+did not cover issued commands. The later current66 gate is now accepted as a **finite issued-command fixture**:
+Root's merged96 selects79 old+17 new keys,82 positive cases and14 negative
+groups/64 unique refusals. All80 old records and both c045 records remain in97
+retained records; the first24 are not added. Unsupported compact/batch remains
+valid no-emission/refusal coverage, not manufactured positives. Original90s
+native grants and900s ordinary drain remain unchanged. Claude channel state
+is synthetic. Old negative SQL equality remains collector testimony without
+raw snapshots; the new16 refusal snapshot pairs are retained. This closes the
+named finite fixture gate, not native adoption or full-design qualification.
+See the [R07 gate](../verification/r07-bootstrap-reverse.md#final-image-issued-inbox-gate).
 
 ```sh
 mise run test:unit -- scripts/test_issued_inbox_compatibility.py -v

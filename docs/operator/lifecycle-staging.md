@@ -33,6 +33,38 @@ The ordinary `./cmd/cairn` image remains the API/store CLI and its public
 `cairn lifecycle` command remains disabled. Configuration field `cairn` continues
 to select that ordinary API CLI; it is not replaced by the private image.
 
+## Current66 staged-data boundary
+
+Root1496 accepted the existing66ca FINAL5 and15 same-host role imports, then
+the actual eight forward disabled `/3` and eight retained installed `/2`
+generations across proximal, archon and talos. Eight cohorts cover ten members;
+shared Codex is one cohort with three proofs. This is lifecycle staged-data
+preparation, not aggregate Stage1 completion, native/runtime adoption or Stage2.
+The [current packet selection](../verification/r07-execution-packet-draft.md#current-66ca-staged-data-selection)
+names exact evidence, generation-pin locators and remaining captures.
+
+All ten retained associations preserve raw original profile/native argv/source17
+bytes. Forward source18 uses `guarded_sources` preflight-prefix transformation
+and declared aliases; do not compare its hashes to untransformed source or
+rewrite originals. Forward configuration selects the same-host API client;
+the receipt binary selects the distinct control role. No staged launcher,
+native/provider/API/store/PG or current Go bootstrap inspect ran in this phase.
+The three assemblies contain actual generation pins and nine unfilled captures
+per host; they are not strict executable plans. The first future post-layout
+gate inspects the disabled target before any exchange. Fresh real<30s fence and
+positive library/full-launch margins precede every exchange, with same-Scope
+final Recheck; reverse/rollback reuse the SAME ORIGINAL plan path and hash.
+
+OptionC changed only Talos coordination inode4610709 and opencode-hooks
+inode4349236 (dev64512),0755 to0700; parent0700 and bindings inode5269819/0755
+stayed unchanged. The same-inode0755 inverse is recorded, not run. Source/data
+parents still require0700; wider0755 support is only a nonblocking follow-up.
+All presence90/raw-drop-in,0775/state/PATH, failed-native, installed Agy1.5.9,
+shared-service/PG and production holds persist. Python watcher remains interim;
+later Go adoption needs its own admission and>=24h qualified Go R08 before R09.
+Rust remains parked and BOTH gatekeepers' unified-versus-split decision is OPEN.
+Nothing in these file-data results starts a clock or authorizes an operation.
+
 ## Versioned configuration generations
 
 `cairn-stage-lifecycle generation --root ABSOLUTE_RELEASE_DIRECTORY` reads a
