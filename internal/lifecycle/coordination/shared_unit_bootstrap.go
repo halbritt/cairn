@@ -1279,8 +1279,12 @@ func (c *CLI) readBootstrapSelectionPhase(ctx context.Context, p *UnitBootstrapP
 // Only the exact exclusive flock visible on this open file description may be
 // excluded from D3. Other owners, waiters and same-inode ambiguities refuse.
 func bootstrapLockOwners(r *watchDrainRead, owned *LockLease) error {
+	return bootstrapLockOwnersFrom(r, owned, r.openProcLocks)
+}
+
+func bootstrapLockOwnersFrom(r *watchDrainRead, owned *LockLease, open procLocksOpen) error {
 	if owned == nil {
-		return r.lockOwners()
+		return r.lockOwnersFrom(open)
 	}
 	info, err := owned.file.Stat()
 	if err != nil {
@@ -1310,43 +1314,31 @@ func bootstrapLockOwners(r *watchDrainRead, owned *LockLease) error {
 	if root != "/proc" {
 		return errors.New("bootstrap mutation requires actual kernel lock observations")
 	}
-	raw, err := os.ReadFile("/proc/locks")
+	inodes, err := r.lockInodes()
 	if err != nil {
 		return err
 	}
+	inodes[st.Ino] = true
+	rows, err := stableProcLocks(open, inodes)
+	if err != nil {
+		return fmt.Errorf("bootstrap kernel lock visibility is unknown: %w", err)
+	}
 	seen := 0
-	for _, line := range strings.Split(string(raw), "\n") {
-		fields := strings.Fields(line)
-		for _, field := range fields {
-			parts := strings.Split(field, ":")
-			if len(parts) != 3 {
-				continue
-			}
-			inode, e := strconv.ParseUint(parts[2], 10, 64)
-			if e != nil || inode != st.Ino {
-				continue
-			}
-			if len(fields) != 8 || !slices.Equal(fields[1:], own) {
+	var other []procLockRow
+	for _, row := range rows {
+		if row.inode == st.Ino {
+			if row.fields != strings.Join(own, " ") {
 				return errors.New("bootstrap watcher lock has another owner/waiter or ambiguous identity")
 			}
 			seen++
+		} else {
+			other = append(other, row)
 		}
 	}
 	if seen != 1 {
 		return errors.New("bootstrap owned watcher flock is not uniquely observed")
 	}
-	removed := map[string]string{}
-	for key, path := range r.locks {
-		if strings.HasSuffix(key, fmt.Sprintf(":%d", st.Ino)) {
-			removed[key] = path
-			delete(r.locks, key)
-		}
-	}
-	err = r.lockOwners()
-	for key, path := range removed {
-		r.locks[key] = path
-	}
-	return err
+	return r.refuseLockOwners(other)
 }
 
 func bootstrapDirectory(path string) (BootstrapMember, error) {

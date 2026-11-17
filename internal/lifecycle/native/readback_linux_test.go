@@ -27,6 +27,30 @@ func TestNativeReadbackRefusesCachedMissingOrForeignRows(t *testing.T) {
 	}
 }
 
+func TestNativeReadbackRefusesAdditiveForeignRows(t *testing.T) {
+	raw := []byte(`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"checked"}]}]}}`)
+	settings := map[string]json.RawMessage{"effective": raw}
+	flag := `{"event":"SessionStart","commandText":"checked","source":"flagSettings"}`
+	for _, source := range []string{"userSettings", "projectSettings", "policySettings", ""} {
+		t.Run(source, func(t *testing.T) {
+			foreign, err := json.Marshal(map[string]string{"event": "Stop", "commandText": "foreign", "source": source})
+			if err != nil {
+				t.Fatal(err)
+			}
+			listing := map[string]json.RawMessage{"hooks": json.RawMessage("[" + flag + "," + string(foreign) + "]")}
+			if err := verifyNativeReadback(raw, settings, listing); err == nil || !strings.Contains(err.Error(), "foreign settings source") {
+				t.Fatalf("additive foreign source %q was accepted: %v", source, err)
+			}
+		})
+	}
+	if err := verifyNativeReadback(raw, settings, map[string]json.RawMessage{"hooks": json.RawMessage("[" + flag + "]")}); err != nil {
+		t.Fatal("owned flag-settings hooks refused:", err)
+	}
+	if err := verifyNativeReadback([]byte(`{}`), map[string]json.RawMessage{"effective": json.RawMessage(`{}`)}, map[string]json.RawMessage{"hooks": json.RawMessage(`[]`)}); err != nil {
+		t.Fatal("normal fresh private empty hooks refused:", err)
+	}
+}
+
 func TestNativeHookFailureIsNotSuccessfulInitializationOrJoin(t *testing.T) {
 	for _, raw := range []string{`{"subtype":"hook_response","exit_code":2,"outcome":"error"}`, `{"subtype":"hook_response","exit_code":0,"outcome":"error"}`, `{"subtype":"hook_response","outcome":"success"}`} {
 		var event map[string]json.RawMessage

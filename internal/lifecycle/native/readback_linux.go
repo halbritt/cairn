@@ -53,9 +53,10 @@ func verifyNativeReadback(raw []byte, settings, listing map[string]json.RawMessa
 	}
 	actual := map[nativeRowKey]int{}
 	for _, row := range rows {
-		if row.Source == "flagSettings" {
-			actual[nativeRowKey{row.Event, row.Command}]++
+		if row.Source != "flagSettings" {
+			return errors.New("native public hook listing contains a foreign settings source")
 		}
+		actual[nativeRowKey{row.Event, row.Command}]++
 	}
 	if !reflect.DeepEqual(actual, wanted) {
 		return errors.New("native public hook listing differs from owned command rows")
