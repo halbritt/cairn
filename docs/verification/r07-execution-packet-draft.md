@@ -25,8 +25,12 @@ not change the FINAL5 source. Root1496 accepted the lifecycle staged-data
 preparation from assignment `4b0078de`, final `20a933da/v1`, after reviewing
 all ten members. **Aggregate campaign Stage1 is not declared complete;
 Stage2, production, native/runtime adoption and observation clocks remain held.**
-Only sole reviewer agent-1415 may perform the final packet adequacy review;
-agent-1496 owns integration. No new reviewer or operational action is selected.
+Only sole reviewer agent-1415 may perform the final packet adequacy review of
+the exact amended four-doc commit and receipts. Supervisor `00facf60/v1`
+pre-land spotcheck follows that review; agent-1496 then owns trunk landing,
+push and cleanup. This gate-owner clarification is explicit in Supervisor
+`2cbf8a34/v1`; earlier Root spotcheck shorthand does not replace it. No new
+reviewer or operational action is selected.
 
 | Current evidence | Selected result and limit |
 | --- | --- |
@@ -96,10 +100,10 @@ Current locators are private evidence, not new commands or invented catalogs:
 - Root selection: `/home/halbritt/.cache/cairn301-release-1496/final5-gates-66ca5909-20261116/stage1-restaging66-optionC-1466/Root-terminal-COMPLETE-STAGED-DATA-selection.json`, SHA256 `36ad6b5d03503a9af80b46fbfdd6ecaf4b76ef2e64e2b2748dd757842e84d5fb`.
 - Actual16 outer manifest pins: `/home/halbritt/.cache/cairn301-stage1-restaging-66ca5909-optionC-1466-20261116/actual-generation-pins.json`, SHA256 `5e98a72b625db4e63c6a67b3f5016b4fd72411e6b53459d6845139fa98d1e8fb`; inner retained-package metadata is not the outer pin.
 - Each `/home/halbritt/.cache/cairn301-stage1-restaging-66ca5909-optionC-1466-20261116/HOST/stage1-assembly.json` contains actual generation/image/member pins but is **NONEXECUTABLE_ASSEMBLY_WITH_ACTUAL_GENERATION_PINS**. Each `HOST/stage2-capture-registry.json` still has nine unfilled `CAPTURE_AT_STAGE2_STEP` entries. No strict operator plan, empty callbacks, Scope, fence or execution timestamp is fabricated.
-- Ordered future procedure: `/home/halbritt/.cache/cairn301-stage1-restaging-66ca5909-optionC-1466-20261116/future-stage2-runbook.md`, SHA256 `1713d5f2fb91a4bba1173f0e9156676c9e153b865036cd7284e7accad617d5c4`.
+- Staged-data task's retained future procedure (its then-unified order is superseded by the selected 2a/2b order below): `/home/halbritt/.cache/cairn301-stage1-restaging-66ca5909-optionC-1466-20261116/future-stage2-runbook.md`, SHA256 `1713d5f2fb91a4bba1173f0e9156676c9e153b865036cd7284e7accad617d5c4`.
 - Finite evidence: `/home/halbritt/.cache/cairn301-release-1496/final5-gates-66ca5909-20261116/Root-gates-concise-selection.json`, `Root-OpenCode66-final-audit.json` and `Root-completion17-final-merged96-audit.json`. The last supersedes the earlier concise selection's pending issued-gate field; none is native or whole-design acceptance.
 
-### Rust and joint cutover decision remain open
+### Selected Stage 2a and 2b order with Rust parked
 
 Rust is **PARKED**, not qualified. Series2 on416a technically captured embed
 and rank; stream failed in sample4 on `fd/4`, with zero qualified samples and
@@ -119,10 +123,53 @@ decisions and1415 adequacy are still OPEN. The selected bounded postmortem is
 `/home/halbritt/.cache/cairn301-release-1496/final5-gates-66ca5909-20261116/Root-rust-fd4-postmortem1467-terminal-PARTIAL-audit.json`, SHA256
 `53477567c98d14d326718087a6a1431edf0dc862da82434cc85b16c2af80c74f`.
 
-**Unified cutover versus Go-lifecycle-first/Rust-later is an OPEN decision for
-BOTH gatekeepers.** Lifecycle staged-data readiness does not decide it. The
-future unified sequence below is preserved for that decision; this factual
-fold selects no split, denominator, timing change, admission or clock start.
+Coordinator `87fd8939-9bfd-486c-a0a0-5435578ac9b9/v1` and matching Supervisor
+`ec1865b1-e989-4b43-b2e4-ef95723cf49b/v1` selected **Option A: Stage 2a Go
+lifecycle first, Stage 2b Rust semantic switch later**. This supersedes the
+current pending-split/unified future order from `45d6f91a/v1`, not historical
+5275/416a receipts. It shapes the packet only: **Stage2 is NOT admitted**.
+
+Stage 2a is selector-only Go `/3` lifecycle bootstrap/cutover on **proximal →
+archon → talos**, leaving the semantic service **exactly unchanged on its
+current retained Python route**. Its prerequisites retain Root's accepted
+staged data `36ad6b5d…`, 66ca FINAL5 plus gates, 15 imports, all seven mode-change
+reverse notes, these four factual docs, sole1415 verdict, then **Supervisor**
+`00facf60/v1` pre-land spotcheck and Root trunk landing. The earlier staged and
+verified Python semantic reverse/S04R closure stays intact as a 2a prerequisite.
+Fresh production D1–D7 quiescence, genuine fresh <30s fences with positive
+library/full-launch timing margins and final same-Scope Recheck before each
+exchange remain execution-time gates. BOTH must check the one 2a Stage1 receipts
+bundle before separate execution admission; no capture or clock is supplied here.
+
+Stage 2b is a **separately admitted later** Rust semantic switch. All three
+Rust worker cases (embed/rank/stream) must qualify; Root must review the original
+write-open/connect rows and raw per-case counts, then sole1415 must judge Rust
+adequacy. Any helper redesign requires its own mise tests, sole1415 review,
+Supervisor `00facf60/v1` spotcheck and trunk landing, followed by the Rust binding
+activation plan. These remain required CAIRN-301/CAIRN-330 work off the 2a
+critical path. Existing host Rust stage/binding material stays unused and is
+not deleted. The failed stream, zero qualification, UNKNOWN cause, PARTIAL
+postmortem and UNESTABLISHED wider source17 comparison above are unchanged;
+no third round or runtime retry is authorized.
+
+Keep **two observation records**: admitted 2a lifecycle lanes each need >=24
+continuous hours after their last relevant change. When 2b changes semantic,
+semantic and dependent lifecycle lanes reset for fresh >=24h and the full
+proximal semantic rebuild. The separately admitted Go-watcher step still needs
+>=24h qualified Go R08 before R09. **R09/Python retirement is not selected**;
+by default it waits for 2a, 2b and Go-watcher observations. If Rust is still
+parked when the 2a windows end, bring the facts of that day to BOTH gatekeepers.
+See [observation and reset](#observation-r09-reset-and-retirement). All other
+holds persist; neither selected order nor staged data starts any clock.
+
+Exact decision bodies and Root's whole-source reconciliation are pinned under
+`/home/halbritt/.cache/cairn301-release-1496/final5-gates-66ca5909-20261116/lifecycle-ready-BOTH-split-decision/Root-BOTH-lifecycle-first-selection.json`,
+SHA256 `7749f9fc3743b10fc90a870cc8d6cba0e9ed7db26b07444797b9cc23da227ad0`.
+Supervisor response-group5e50 remains OPEN with c108 labelled unmatched;
+correlation is absent and cause unadjudicated. The explicit matching whole
+bodies establish packet-order concurrence, not a collected group or an exemption
+for unresolved deliveries. The later Co2dbda547/Sup2cbf8a34 single-correction
+ruling clarifies the Supervisor spotcheck owner without reopening old receipts.
 
 ## Historical 5275 source and final-image evidence
 
@@ -233,7 +280,7 @@ static candidate is not finalPACKETREADY or permission to execute.
 | A1 — candidate and predecessors | Current66 FINAL5/full11/R07 finite evidence, merged96 issued gate,15 role imports and16 lifecycle staged generations are selected above. OpenCode retains its107s custody limit and temporary-image scope; actual886 native history stays at886. Final1415 packet adequacy is separate. |
 | A2 — safe complete-unit transition | All10 staged member associations and actual outer generation pins are filled. The three assemblies remain nonexecutable. Strict original/disabled-target plans and hashes, actual layout/Scope/callbacks/owners/restart graph, D1–D7, first disabled-target inspect, each real-manager positive/timing and adoption/reverse receipts remain unfilled future captures. |
 | A3 — both reverses and backup | Supported retainedPython2 raw-original/bundle and S04R publication/fileverify/supervisor invocation complete. UNSELECTED production closure/managed consumer/backup/restore/operator selections. Actual checkpoint/header/export/inspection FIRST, both executable reverse runtime/ABI/effect/readback, all-writer graph and semantic STOP read PENDING EXECUTION before rollout/Rust3. |
-| A4 — reviewed execution and exit | Final1415 RC+R07 PACKET review and joint Coordinator+Supervisor phase admission outstanding. Root selects exact host schedule/scoped operators/abort-reconciliation paths; actual affected-lane cycles, continuous>=24h R08 AND full selected Rust rebuild, R09 reset/removal revalidation remain PENDING EXECUTION. |
+| A4 — reviewed execution and exit | Final1415 RC+R07 PACKET review and joint Coordinator+Supervisor phase admission outstanding. Root selects exact host schedule/scoped operators/abort-reconciliation paths; actual 2a lifecycle cycles and >=24h record, separately admitted 2b semantic/dependent-lane reset with fresh>=24h and full proximal Rust rebuild, Go-watcher observation and R09 removal revalidation remain PENDING EXECUTION. |
 
 The **Per-host selected-plan ledger** is the precise insertion seam for Root's
 record/version/bodySHA and actual plan/catalog/transition refs. Agent1467's
@@ -466,6 +513,13 @@ Root owns `Root-selected-plans-v2.DRAFT.json` finalization after this child doc
 commit; that draft is not claimed selected or admitted here. Its future digest
 is intentionally not a document input because it will pin these documents.
 
+The earlier Python semantic reverse/S04R closure remains staged/verified and
+intact for 2a, while the live semantic service stays unchanged on retained
+Python. The following semantic publication/runtime procedure is retained for
+its separately admitted scope; the Rust work and six-case Rust/Python runtime
+qualification belong to 2b, off the 2a critical path. It is not an instruction
+to restage existing material or run a smoke during this docs pass.
+
 The operative procedure is StepA publication plus **separate real**
 `payload.json` and `controls.json` file-verifier invocations, then StepB six
 one-request Go-supervisor smokes (three retained-Python and three Rust modes)
@@ -475,8 +529,10 @@ native routing:5275 fence/sole1415/current admission rules govern those parts.
 The frozen `49a3d89d-a11b-42a8-af75-006a131faead/v1` deliverable remains
 unchanged under `39fb1c2e-d173-42e8-8b68-98a0766d8c69/v1`; no producer rebuild,
 reissue, cache-body or canonical-plan write occurs. Publication, six runtime
-smokes, ABI/loaded-byte qualification, stopped semantic read, both executable
-reverses and each-host real-manager positive remain admitted-R07 prerequisites.
+smokes and Rust ABI/loaded-byte qualification remain 2b prerequisites. The
+intact Python semantic reverse closure, stopped-boundary semantic read, complete
+writer/restart graph and each-host real-manager positive retain their applicable
+2a gates; none is fabricated or performed here.
 
 The exact operative source is Supervisor
 `a42a4c8e-9770-4595-b20b-0630e3d751bc/v1`, SECTION1, body SHA
@@ -501,8 +557,9 @@ It supplies exact file selections below, not loaded production identities.
 Seven glibc-family differences, deleted mapped-byte unknowns and six Rust ABI
 changes retain their actual holds until selected runtime evidence resolves
 them. No six-smoke runtime PASS, stage, launcher, service or model execution
-is claimed by this author. Both executable reverse closures and these steps
-precede rollout/Rust consumer adoption under admitted R07.
+is claimed by this author. Both executable reverse closures remain protected;
+Rust runtime steps precede separately admitted 2b consumer adoption, while 2a
+leaves the semantic service unchanged on retained Python.
 
 ### Step A: selected-file publication and verification
 
@@ -623,8 +680,11 @@ it is not fresh production runtime proof. No production-stage flag, new
 implementation or agent-1466 split is needed. Step B below is an **already
 supported future operational smoke**, with actual execution/ABI results pending.
 
-The remaining Step A Rust stage command is the maintained command below.
-It stages files before Step B; it does not switch the API. It is the invocation from
+The maintained Rust staging command below records the earlier preparation
+contract; current host Rust stage/binding material remains unused, not deleted.
+Do not rerun it for 2a. Any later admitted 2b staging selects and reconciles
+existing destinations before Step B; file staging does not switch the API.
+It is the invocation from
 `R07-stage-rust.sh` SHA256
 `1a0ffea63c037804f195dd0c368af9c701eef3e125e0d53ff4a65c0c559cc404`,
 with output directed to the new private execution evidence instead of writing
@@ -667,12 +727,15 @@ SHA256 `dc2484344a2805e54a354d80a4036e402cc42facb17ce454d768f581a1609b8d`.
 The Rust embeddings launcher is
 `/home/halbritt/.local/share/cairn/semantic-rust/launchers/bc471692432cf9ed7ecd538447d35b408803688e788ed58618b79a55104a9a8f/embed`,
 SHA256 `3d5d320fdca442d9fa6a86444068b481185e9fe10cc2757478750457b3b0f6d4`.
-These are planned selections, not installed/adopted facts or ABI clearance.
+These historical selection pins do not prove consumer adoption or ABI clearance.
+Existing host Rust stage/binding material stays unused and is not deleted.
 
 ### Step B: existing Go-supervisor smoke at the relocated paths
 
-**Invocation contract RESOLVED; actual smoke receipts PENDING EXECUTION during
-admitted R07.** Run after BOTH Step A stages/file verifications and before
+**Invocation contract RESOLVED; actual smoke receipts PENDING EXECUTION for
+separately admitted Stage 2b.** They are off the 2a critical path; semantic stays
+on current retained Python in 2a. Run only after BOTH Step A stages/file
+verifications are reconciled for that admitted scope and before
 `cairn-api.service` selects Rust. The existing
 `scripts/testdata/semantic-python-closure-driver/main.go:1-104` uses production
 `semantic.Command`, `StreamCommand` and `EmbeddingCommand`; it opens no Store,
@@ -1217,16 +1280,19 @@ a fake receipt. Ordinary operator metadata stays private.
 
 ## Required phase order and failure boundary
 
-This preserves the existing future unified dependency order for BOTH gatekeepers
-to decide. Rust remains parked and unified versus lifecycle-first/Rust-later is
-OPEN; this factual update changes neither cutover split nor observation/rebuild
-requirements. It grants no execution authority.
+The selected order is Stage 2a Go lifecycle selectors first, semantic unchanged
+on current retained Python, then a separately admitted Stage 2b Rust switch.
+BOTH's packet-order selection supersedes the unified future sequence; it grants
+no execution authority. Rust remains parked and all non-order gates persist.
+The following 2a sequence requires its own checked Stage1 bundle and separate
+joint admission before any operational step.
 
 1. Freeze the final source/image/config/host/client tuple and full predecessor,
-   installed-matrix and equivalence joins. Obtain independent review, verify
-   cited symbols/ranges/raw receipts under `00facf60/v1`, reconcile findings,
-   land/push and verify exact landed readiness. Require the final R07 packet's
-   joint1386+1404 technical admission.
+   installed-matrix and equivalence joins. Obtain sole1415 review of the exact
+   amended four-doc commit and receipts, then Supervisor `00facf60/v1` pre-land
+   spotcheck; reconcile findings before Root lands/pushes and verifies exact
+   landed readiness. Require BOTH's checked 2a Stage1 bundle and separate
+   joint1386+1404 technical execution admission.
 2. Make the **fresh checkpoint header and recovery export the first admitted
    operational step**, using the exact procedure above, before any Rust or
    `/3` step. Retain trusted expectations/checksums externally in owned0700
@@ -1238,14 +1304,15 @@ requirements. It grants no execution authority.
    selected immutable forward/reverse closures through the existing private
    operator mechanism. Qualify restoration in disposable homes/databases. No
    credential contents or hashes enter this document or the hosted packet.
-4. Resolve the exact safe-ancestry/bootstrap preconditions and stage/verify
-   **both executable reverses**: retained `/2` lifecycle and the production-path
-   S04R Python payload/control/HOME/runtime closure. Complete Step A's Python
-   selected-file publication/two verifications and Rust staging/verification,
-   then the already-supported Step B Go-supervisor smoke on all six relocated
-   launchers. Actual runtime/ABI holds must pass before the Rust API switch.
-   File stages do not adopt a consumer; no `/3` activation is allowed at this
-   stage. Any resolution that
+4. Resolve the exact safe-ancestry/bootstrap preconditions and retain/verify
+   **both executable reverses**: retained `/2` lifecycle and the earlier staged/
+   verified production-path S04R Python payload/control/HOME/runtime closure.
+   Keep that Python semantic reverse intact as a 2a prerequisite. The semantic
+   service stays exactly on its current retained Python route; Rust staging,
+   six-case runtime qualification and Rust activation belong to separately
+   admitted 2b. Existing Rust material stays unused, not deleted. File stages
+   do not adopt a consumer; no `/3` activation is allowed at this step. Any
+   resolution that
    changes installed paths/modes must first satisfy its supported stopped/joined
    boundary and complete fences from step5; numbering cannot bypass them.
 5. At supported same-history idle boundaries, publish the qualified immutable
@@ -1262,17 +1329,31 @@ requirements. It grants no execution authority.
    Repeat final facts immediately before exchange. Reconcile every
    Published=true result and later error against actual pins/services. Refusal
    preserves the complete old or disabled recoverable selection.
-7. Adopt and read back the forward lifecycle and selected Rust generation,
-   including real executables, fixed launchers, active connections, effective
-   hooks, supported effects and refusals for every affected lane. Keep the
-   retained `/2` and S04R closures and issued absolute references intact.
-8. After the **last qualified cutover** of the selected hosts/shared units,
-   run the complete selected Rust rebuild concurrently inside the required
-   R08 observation window and run its completion gate. Reconcile HC02/CAIRN-330
-   with Semantic using the exact post-fence eligible-version population. Both
-   rebuild completion and the continuous >=24h requirement must pass; neither
-   substitutes for the other. Do not infer deployment or a clock start from
-   this plan.
+7. Adopt and read back only the forward Go `/3` lifecycle selectors, in order
+   proximal → archon → talos, including real executables, fixed launchers,
+   active connections, effective hooks, supported effects and refusals for
+   every affected lane. Leave semantic exactly on current retained Python.
+   Keep the retained `/2` and S04R closures and issued absolute references intact.
+8. Record 2a lifecycle observations: each lane needs >=24 continuous hours since
+   its last relevant change, beginning only at actual admitted 2a cutover. No
+   Rust semantic switch or Rust rebuild is part of 2a. No clock starts here.
+
+Stage 2b requires separate later admission after all three Rust worker cases
+qualify, Root's original raw write-open/connect-row and count review, sole1415
+Rust adequacy, any helper redesign's mise tests/sole1415 review/Supervisor00fac
+spotcheck/trunk landing, and the Rust binding activation plan. Preserve fresh
+checkpoint/backup, both reverse closures, the stopped semantic read, full writer/
+restart graph, D1–D7 and execution-time fences for that transition too. Only
+then may the selected Rust consumer be adopted and read back. A 2b semantic
+change resets semantic and dependent lifecycle lanes to fresh >=24h observation;
+run the full proximal selected Rust semantic rebuild concurrently inside that
+window and its completion gate. Reconcile HC02/CAIRN-330 with Semantic using
+the exact post-fence eligible-version population. Rebuild completion and the
+continuous observation requirement must both pass; neither substitutes for
+the other. R09 remains unselected and defaults to waiting for both records
+and the separately admitted Go-watcher observation. If Rust is still parked
+when 2a windows end, return the current facts to BOTH; no automatic waiver or
+retirement follows.
 
 Before any required restore: stop dispatch/consumers, restore into isolation,
 perform the current restore-admission/reconciliation/verification procedure,
@@ -1283,9 +1364,12 @@ exact restore qualification; normal S05 reverse derivation rebuild is not a
 schema downgrade.
 
 Reverse requires the same complete supported stopped-boundary inventory, supported refresh and D1–D7 facts,
-plus joined semantic writers. Restore the exact retained Python `/2` executor
-and compatible selection/state, then the selected S04R Python generation and
-reverse rebuild/readback. An older Go/Rust release is not an implicit rollback
+plus joined semantic writers. For a 2a lifecycle reverse, restore the exact
+retained Python `/2` lifecycle executor and compatible selection/state while
+leaving the semantic route unchanged. If separately admitted 2b changed semantic,
+restore the selected S04R Python generation and its reverse rebuild/readback
+under that scope; retain both closures throughout. An older Go/Rust release
+is not an implicit rollback
 target. Missing reverse closure, backup, identity, grant/journal/lease fact,
 refresh or member leaves the phase blocked; preserve evidence and ask the
 responsible technical owner for the exact missing proof.
@@ -1403,15 +1487,31 @@ minimum supported memory/request/reply/recovery cycles, applicable
 idle/busy/restart/refusal/cancellation cases and unexplained anomalies.
 Unsupported operations retain their actual no-op/refusal expectations.
 
-Each affected lane needs **at least 24 continuous hours after its last relevant
-qualified cutover/runtime change**, with the common R08 window after the last
-qualified cutover of the selected affected hosts/shared units. Run the full
-selected Rust rebuild **concurrently inside that window**; both rebuild
-completion/HC02 reconciliation and the continuous observation requirement must
-pass before exit. A runtime/config/launcher/model/service change or relevant
-rollback/roll-forward resets every affected lane, including dependents of a
-shared semantic change. A fixture, source landing or the historical throughput
-estimate does not start or complete this clock.
+Maintain **two observation records with distinct scopes**:
+
+- **2a lifecycle:** each affected lifecycle lane needs **at least 24 continuous
+  hours after its last relevant change**, starting only on actual admitted Go
+  `/3` lifecycle cutover. Semantic stays exactly on current retained Python;
+  2a does not activate Rust or start a Rust semantic observation/rebuild.
+- **2b semantic and dependents:** when separately admitted 2b switches semantic,
+  reset the semantic lane **and every dependent lifecycle lane** for a fresh
+  **>=24h** window. Run the **full proximal selected Rust semantic rebuild
+  concurrently inside that window** and its completion gate. Rebuild completion/
+  HC02 reconciliation and continuous observation must both pass before exit.
+
+This is the reset contract in
+[`release.md`](../plans/hybrid-runtime-contracts/release.md#rollback-observation-and-retirement),
+identified historically as lines879–881 in the selected Co87fd/Supec1865 rulings;
+those locators are not a claim about current mutable line numbering. A relevant
+binary/config/launcher/model/service change or rollback/roll-forward resets all
+affected lanes, including semantic dependents. No clock starts from this docs
+commit, a fixture, source landing or a throughput estimate.
+
+Go-watcher/cairn-presence adoption remains separately admitted under W=A
+Condition2, with **>=24h qualified Go R08 before R09**. **R09/Python retirement
+is not selected** and defaults to waiting for 2a, 2b and Go-watcher observations.
+If Rust is still parked when the 2a windows end, bring current facts to BOTH
+gatekeepers then; no automatic retirement, waiver or clock credit follows.
 
 R08 removal also requires the reference/process/session audit and a qualified
 offline restoration closure with retired dependencies initially absent. Retain

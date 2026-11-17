@@ -155,8 +155,22 @@ Talos's exact two source-parent0755-to0700 changes and recorded, unexecuted
 same-inode0755 inverse leave the current0700 source/data contract intact;
 bindings0755 is unchanged. Broader0755 source-parent support is not implemented.
 Actual staged pins do not fill strict operator plans, owner/callback/Scope or
-future runtime captures. Rust remains parked; aggregate Stage1, final1415
-adequacy, BOTH cutover-split decision, Stage2 and all observation clocks stay open.
+future runtime captures. BOTH selected Stage 2a, Go `/3` lifecycle selectors on
+proximal → archon → talos, leaving semantic exactly on its current retained
+Python route and keeping the earlier staged/verified Python semantic reverse/
+S04R closure intact. Stage 2b remains a separately admitted later Rust switch;
+all three qualified cases, Root raw-row/count review, sole1415 adequacy, any
+helper redesign with mise tests/review/landing and the binding plan remain
+required, off the 2a critical path. Existing host Rust material stays unused,
+not deleted; its failed-stream/unknown-cause limitations remain unchanged.
+The [selected packet order](../verification/r07-execution-packet-draft.md#selected-stage-2a-and-2b-order-with-rust-parked)
+keeps two observation records: each admitted 2a lifecycle lane needs >=24h
+since its last relevant change; 2b resets semantic and dependent lifecycle lanes
+for fresh >=24h and a full proximal semantic rebuild. R09/Python retirement is
+not selected and defaults to waiting for 2a, 2b and separately admitted Go-watcher
+observations. If Rust is still parked at the 2a window end, take current facts
+to BOTH. Aggregate Stage1, final1415 adequacy and Stage2 remain open; no clock
+starts from these data or this packet-order selection.
 
 ## Interim watcher and required Go adoption
 

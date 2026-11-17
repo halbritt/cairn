@@ -40,6 +40,21 @@ are nonexecutable metadata with actual pins; their nine future captures per host
 remain unfilled. Current Go bootstrap inspect, exchange/adoption, native/runtime,
 aggregate Stage1 and Stage2 are not established by these readbacks.
 
+The [selected packet order](r07-execution-packet-draft.md#selected-stage-2a-and-2b-order-with-rust-parked)
+is now Stage 2a, selector-only Go `/3` lifecycle bootstrap/cutover on proximal →
+archon → talos, with semantic unchanged on its current retained Python route.
+The earlier staged/verified Python semantic reverse/S04R closure stays a 2a
+prerequisite. Stage 2b, the Rust semantic switch, needs separate later admission
+and all Rust qualification/raw-row/count/sole1415 adequacy, any helper redesign
+with mise tests/review/landing, and binding-plan requirements. Existing Rust
+stage/binding stays unused, not deleted. This selection grants no execution.
+Keep separate observation records: each admitted 2a lifecycle lane needs >=24h
+after its last relevant change; 2b resets semantic and dependent lifecycle lanes
+for fresh >=24h and the full proximal semantic rebuild. R09/Python retirement
+is not selected and defaults to waiting for 2a, 2b and separately admitted
+Go-watcher observations. Rust still parked at 2a window end goes to BOTH with
+current facts. No observation clock starts here.
+
 The first future post-layout inspect must select the **disabled target** and
 return exit0/schema `cairn.unit-bootstrap-result/1`, `inspected=true`,
 `rechecked=true`, `published=false`, before any exchange. Enabled-original `/2`

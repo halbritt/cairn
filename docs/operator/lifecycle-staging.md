@@ -62,8 +62,22 @@ parents still require0700; wider0755 support is only a nonblocking follow-up.
 All presence90/raw-drop-in,0775/state/PATH, failed-native, installed Agy1.5.9,
 shared-service/PG and production holds persist. Python watcher remains interim;
 later Go adoption needs its own admission and>=24h qualified Go R08 before R09.
-Rust remains parked and BOTH gatekeepers' unified-versus-split decision is OPEN.
-Nothing in these file-data results starts a clock or authorizes an operation.
+BOTH gatekeepers selected Stage 2a: selector-only Go `/3` lifecycle bootstrap
+and cutover, proximal → archon → talos, with the semantic service unchanged on
+its current retained Python route. The earlier staged/verified Python semantic
+reverse/S04R closure stays a prerequisite. Stage 2b is a later, separately
+admitted Rust semantic switch; Rust remains parked, with all qualification,
+raw-row/count review, sole1415 adequacy, any helper redesign/review/landing and
+binding-plan requirements retained off the 2a critical path. Existing Rust
+stage/binding material stays unused and is not deleted. See the
+[selected packet order](../verification/r07-execution-packet-draft.md#selected-stage-2a-and-2b-order-with-rust-parked).
+Each admitted 2a lifecycle lane needs >=24 continuous hours after its last
+relevant change. Stage 2b resets the semantic and dependent lifecycle lanes
+for fresh >=24h observation and the full proximal semantic rebuild. Keep two
+observation records. R09/Python retirement is not selected; by default it waits
+for 2a, 2b and Go-watcher observations. Rust still parked at the end of the 2a
+windows requires current facts to BOTH gatekeepers. Nothing here starts a clock
+or grants Stage2 execution admission.
 
 ## Versioned configuration generations
 
