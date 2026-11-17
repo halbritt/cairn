@@ -77,6 +77,20 @@ race detector. The script stops the cluster on exit; failed runs retain artifact
 and print their location for diagnosis. See [disposable fixtures](../disposable-fixtures.md)
 for the fixture contract.
 
+For one Go package and test regex, reuse that same disposable cluster runner:
+
+```sh
+mise run test:store -- ./core '^TestSessionQuiescence'
+```
+
+This focused command does not replace the full integration check for store changes.
+
+For the explicit installed-Claude control-only qualification, use
+`mise run test:native-slice1 -- /absolute/fresh-report-directory`. It uses the
+same disposable API/PostgreSQL fixture and the pinned installed client; no model
+prompt or installed settings change is made. See the
+[fresh native owner contract](../native-claude-owner.md).
+
 To work on a particular Python integration fixture:
 
 ```sh

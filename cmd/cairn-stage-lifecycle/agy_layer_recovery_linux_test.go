@@ -20,7 +20,7 @@ func TestAgyRecoveryCommandRequiresAnExplicitPinnedSelection(t *testing.T) {
 	}
 }
 
-func TestAgyRecoveryCommandRestoresThroughDispatch(t *testing.T) {
+func TestAgyRecoveryCommandClassifiesCommittedSelectionWithoutMutation(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Chmod(root, 0700); err != nil {
 		t.Fatal(err)
@@ -48,13 +48,22 @@ func TestAgyRecoveryCommandRestoresThroughDispatch(t *testing.T) {
 	if err != nil || published.Recovery == nil {
 		t.Fatal(published, err)
 	}
+	before, err := os.ReadFile(selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := os.Stat(selected)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var out, diagnostic bytes.Buffer
 	args := []string{"recover-agy-layer", "--account-home", account, "--workspace", workspace, "--layer", "project", "--record", published.Recovery.Path, "--record-sha256", published.Recovery.SHA256}
 	if err := runCommand(context.Background(), args, nil, &out, &diagnostic); err != nil {
 		t.Fatal(err, diagnostic.String())
 	}
 	actual, err := os.ReadFile(selected)
-	if err != nil || !bytes.Equal(actual, old) || !bytes.Contains(out.Bytes(), []byte(`"changed":true`)) {
-		t.Fatal("actual recovery dispatch failed", out.String(), err)
+	after, statErr := os.Stat(selected)
+	if err != nil || statErr != nil || !bytes.Equal(actual, before) || !os.SameFile(identity, after) || identity.ModTime() != after.ModTime() || !bytes.Contains(out.Bytes(), []byte(`"changed":false`)) {
+		t.Fatal("recovery dispatch changed a committed selection", out.String(), err, statErr)
 	}
 }

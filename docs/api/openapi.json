@@ -12540,6 +12540,254 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.SessionOrganicNoticeResult"
       },
+      "core.SessionQuiescence": {
+        "properties": {
+          "binding": {
+            "type": "string"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "context_revision": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "coverage": {
+            "type": "string"
+          },
+          "database_generation": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "facts_sha256": {
+            "type": "string"
+          },
+          "hold": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.SessionQuiescenceHold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leases": {
+            "items": {
+              "$ref": "#/components/schemas/core.SessionQuiescenceLease"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "native_session_id": {
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pending": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "poll": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.SessionInboxPoll"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "poll_terminal": {
+            "type": "boolean"
+          },
+          "presence_ends": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "reported_state": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/core.AgentSessionRef"
+          },
+          "stopped": {
+            "type": "boolean"
+          },
+          "wakes": {
+            "items": {
+              "$ref": "#/components/schemas/core.SessionQuiescenceWake"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "binding",
+          "complete",
+          "context_revision",
+          "coverage",
+          "database_generation",
+          "facts_sha256",
+          "hold",
+          "leases",
+          "native_session_id",
+          "observed_at",
+          "pending",
+          "poll_terminal",
+          "presence_ends",
+          "repo",
+          "reported_state",
+          "schema",
+          "session",
+          "stopped",
+          "wakes"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionQuiescence"
+      },
+      "core.SessionQuiescenceHold": {
+        "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "cancel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.SessionCancel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capture_state": {
+            "type": "string"
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "native_turn_id": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/core.AgentSessionRef"
+          },
+          "tool_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "turn_stop": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "capture_state",
+          "delivery_id",
+          "native_turn_id",
+          "session",
+          "tool_count",
+          "turn_stop"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionQuiescenceHold"
+      },
+      "core.SessionQuiescenceLease": {
+        "properties": {
+          "delivery_id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "lease_until": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "delivery_id",
+          "event_id",
+          "lease_until"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionQuiescenceLease"
+      },
+      "core.SessionQuiescenceQuery": {
+        "properties": {
+          "poll_request_id": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/core.AgentSessionRef"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionQuiescenceQuery"
+      },
+      "core.SessionQuiescenceQuery.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "poll_request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionQuiescenceQuery"
+      },
+      "core.SessionQuiescenceWake": {
+        "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/core.AgentSessionRef"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "session",
+          "state"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionQuiescenceWake"
+      },
       "core.SessionTool": {
         "properties": {
           "command": {
@@ -28060,6 +28308,146 @@
         "x-cairn-request-limit-bytes": 131072,
         "x-cairn-requires-local-destination": false,
         "x-cairn-retry": "request-id",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_sessions.go"
+      }
+    },
+    "/v1/session-quiescence": {
+      "post": {
+        "operationId": "session-quiescence",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "poll_request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SessionQuiescenceQuery"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.SessionQuiescence"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.SessionQuiescenceQuery"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.SessionQuiescenceQuery",
+          "response": "github.com/halbritt/cairn/core.SessionQuiescence"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "denied",
+        "x-cairn-remote-roles": [],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "read",
         "x-cairn-session-headers": "optional",
         "x-cairn-source": "agent_sessions.go"
       }

@@ -15,6 +15,9 @@ import (
 )
 
 func runCommand(ctx context.Context, args []string, input io.Reader, out, diagnostic io.Writer) error {
+	if len(args) != 0 && args[0] == "native-claude-owner" {
+		return runNativeClaudeOwner(ctx, args[1:], input, out, diagnostic)
+	}
 	if len(args) != 0 && args[0] == "recover-agy-layer" {
 		return runAgyLayerRecovery(ctx, args[1:], out, diagnostic)
 	}

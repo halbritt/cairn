@@ -77,7 +77,25 @@ func agyReadFile(parent *os.File, name string) ([]byte, agyFileID, error) {
 	return raw, before, nil
 }
 
-func inspectAgyLayer(root, relative string) (snapshot agyLayerSnapshot, err error) {
+func inspectAgyLayer(root, relative string) (agyLayerSnapshot, error) {
+	snapshot, err := inspectAgyLayerBytes(root, relative)
+	if err != nil || !snapshot.Present {
+		return snapshot, err
+	}
+	err = agyStrictJSON(snapshot.Raw)
+	if err == nil {
+		_, _, err = agyObject(snapshot.Raw)
+	}
+	if err != nil {
+		snapshot.Present, snapshot.Raw, snapshot.File = false, nil, agyFileID{}
+	}
+	return snapshot, err
+}
+
+// inspectAgyLayerBytes shares descriptor and ancestry checks with the JSON
+// settings reader. Callers selecting launch scripts or markers validate their
+// own content format; the existing Agy reader still requires a JSON object.
+func inspectAgyLayerBytes(root, relative string) (snapshot agyLayerSnapshot, err error) {
 	snapshot = agyLayerSnapshot{Root: root, Relative: relative, Directories: map[string]agyDirectoryID{}}
 	if !canonical(root) || os.Getuid() != os.Geteuid() {
 		return snapshot, errors.New("Agy roots require canonical absolute paths and unchanged UID")
@@ -136,12 +154,6 @@ func inspectAgyLayer(root, relative string) (snapshot agyLayerSnapshot, err erro
 		return snapshot, nil
 	}
 	if err != nil {
-		return snapshot, err
-	}
-	if err := agyStrictJSON(raw); err != nil {
-		return snapshot, err
-	}
-	if _, _, err := agyObject(raw); err != nil {
 		return snapshot, err
 	}
 	snapshot.Present, snapshot.Raw, snapshot.File = true, raw, id

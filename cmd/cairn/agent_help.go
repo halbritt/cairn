@@ -35,6 +35,7 @@ JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
   session-inbox-ready, session-inbox-claim, session-inbox-advance, session-inbox-reconcile Native host delivery
   session-inbox-pending Native host busy-session inbox counts (read-only)
+  session-quiescence Read exact owned inbox custody; does not establish native quiescence
   session-delivery-observe Native host delivery diagnosis (host-reported)
   session-inbox-control, session-tool-capture, session-tool-stop Native request cancellation
   wake-attempts Inspect current or historical wake attempts
@@ -71,6 +72,10 @@ type agentJSONHelpSpec struct {
 }
 
 var agentJSONHelp = map[string]agentJSONHelpSpec{
+	"session-quiescence": {
+		Detail:  "Native host adapter only, local transport: read complete bounded custody for one owned existing-session inbox, including holds from prior executions and associated worker wakes. Stopped sessions remain readable. Over-limit, inaccessible, stale execution or restore-generation observations refuse. No claims, settlement or native admission authority; repository-wide D4 remains separate.",
+		Example: `{"session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}}`,
+	},
 	"session-inbox-ready": {
 		Detail:  "Native host adapter only: read the first eligible delivery ID for a live idle execution without claiming or changing work. Empty when busy, held or unavailable. This is a snapshot; only the native hook claims ownership.",
 		Example: `{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}`,

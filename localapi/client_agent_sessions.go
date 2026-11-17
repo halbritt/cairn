@@ -6,6 +6,13 @@ import (
 	"github.com/halbritt/cairn/core"
 )
 
+// SessionQuiescence observes one exact owned inbox, never native admission.
+func (c *Client) SessionQuiescence(ctx context.Context, query core.SessionQuiescenceQuery) (core.SessionQuiescence, error) {
+	var out core.SessionQuiescence
+	err := c.Call(ctx, "session-quiescence", query, &out)
+	return out, err
+}
+
 // SessionInboxAttemptStatus reads a retained native attempt through the base
 // profile and its current session. A missing attempt is an error, never a
 // terminal-state result or permission to release a hold.

@@ -52,7 +52,23 @@ run = '''sh -eu -c '
 if [ "$#" -gt 0 ]; then
   exec mise run host:exec -- --timeout 15m --weight 2 -- env "CAIRN_TEST_ONLY=$*" make test-integration
 fi
-exec mise run host:exec -- --timeout 30m --weight 2 -- make test-integration
+exec mise run host:exec -- --timeout 60m --weight 2 -- make test-integration
+' sh'''
+
+[tasks."test:store"]
+description = "Run one Go package/test regex against the existing disposable PostgreSQL fixture"
+run = '''sh -eu -c '
+exec mise run host:exec -- --timeout 15m --weight 2 -- bash scripts/test-postgres.sh --go "$@"
+' sh'''
+
+[tasks."test:native-slice1"]
+description = "Qualify the pinned installed Claude control-only owner against disposable API/PG; optional fresh report directory"
+run = '''sh -eu -c '
+if [ "$#" -gt 1 ]; then
+  echo "usage: mise run test:native-slice1 -- [ABSOLUTE_FRESH_REPORT_DIRECTORY]" >&2
+  exit 2
+fi
+exec mise run host:exec -- --timeout 15m --weight 2 -- env CAIRN_TEST_ONLY=check_native_slice1 "CAIRN_NATIVE_SLICE1_REPORT_DIR=${1:-}" make test-integration
 ' sh'''
 
 [tasks."test:lifecycle"]

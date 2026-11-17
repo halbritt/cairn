@@ -12,9 +12,23 @@
 # Go package suites; use it while developing fixtures.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+only="${CAIRN_TEST_ONLY:-}"
+go_package=""
+go_pattern="."
+if [[ "${1:-}" == "--go" ]]; then
+    shift
+    if [[ "$#" -lt 1 || "$#" -gt 2 || -n "$only" ]]; then
+        echo "usage: test-postgres.sh --go ONE_PACKAGE [TEST_REGEX] (without CAIRN_TEST_ONLY)" >&2
+        exit 2
+    fi
+    go_package="$1"
+    go_pattern="${2:-.}"
+elif [[ "$#" -ne 0 ]]; then
+    echo "unsupported test-postgres.sh arguments" >&2
+    exit 2
+fi
 pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
 test_root="$(mktemp -d /tmp/cairn-postgres.XXXXXXXX)"
-only="${CAIRN_TEST_ONLY:-}"
 cleanup() {
     local check_status=$?
     if [[ -f "$test_root/data/postmaster.pid" ]]; then
@@ -35,6 +49,17 @@ trap cleanup EXIT
 mkdir "$test_root/socket"
 "$pg_bin/pg_ctl" -D "$test_root/data" -l "$test_root/postgres.log" -o "-F -k $test_root/socket -c listen_addresses=''" -w start >/dev/null
 "$pg_bin/createdb" -h "$test_root/socket" cairn_test
+if [[ -n "$go_package" ]]; then
+    go list "$go_package" > "$test_root/packages"
+    if [[ "$(wc -l < "$test_root/packages")" -ne 1 ]]; then
+        echo "focused store check requires exactly one Go package" >&2
+        exit 2
+    fi
+    test_dsn="host=$test_root/socket dbname=cairn_test sslmode=disable"
+    CAIRN_TEST_DATABASE_URL="$test_dsn" CAIRN_DATABASE_URL="$test_dsn" \
+        go test -race -count=1 -timeout=15m -run "$go_pattern" "$go_package"
+    exit
+fi
 if [[ -z "$only" ]]; then
     # Package suites are independent consumers, not one shared database workload.
     # Keep their explicit race tests while preventing unrelated package writes from
@@ -85,6 +110,14 @@ done < <(python3 -B scripts/token_efficiency_panel_controller.py --list-workflow
 disposable scripts/check_panel_process_crash_child.py
 disposable scripts/check_panel_stale_journal.py
 disposable scripts/check_native_notice_batch.py
+# The pinned installed Claude client is an explicit host qualification fixture.
+if [[ -n "${CAIRN_TEST_ONLY:-}" ]]; then
+    native_args=()
+    if [[ -n "${CAIRN_NATIVE_SLICE1_REPORT_DIR:-}" ]]; then
+        native_args+=(--report-directory "$CAIRN_NATIVE_SLICE1_REPORT_DIR")
+    fi
+    disposable scripts/check_native_slice1.py "${native_args[@]}"
+fi
 disposable scripts/check_notice_watcher_eligibility.py
 disposable scripts/check_bound_compact_notice.py
 disposable scripts/check_panel_source_forgotten.py

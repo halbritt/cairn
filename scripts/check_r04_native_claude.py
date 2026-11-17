@@ -196,21 +196,27 @@ class MessagesFixture:
 
 
 class ClaudeSession:
-    def __init__(self, binary, root, account, settings, provider, output, work, *, resume=None, read_paths=()):
+    def __init__(self, binary, root, account, settings, provider, output, work, *, resume=None, read_paths=(), host_environment=False):
         self.root, self.output = root, output
         self.identity = resume or str(uuid.uuid4())
         root.mkdir(mode=0o700)
         home = root / 'home'
-        home.mkdir(mode=0o700)
-        env = dict(PATH='/usr/bin:/bin', LANG='C.UTF-8', HOME=str(home), CLAUDE_CONFIG_DIR=str(account),
-                   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1', ENABLE_TOOL_SEARCH='false',
-                   ANTHROPIC_API_KEY='r04-synthetic-unused', ANTHROPIC_BASE_URL=provider.url,
-                   CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS='150000',
-                   CAIRN_DATABASE_URL='host=/absent-r04-native-db dbname=denied')
-        for key in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME'):
-            directory = root / key.lower()
-            directory.mkdir(mode=0o700)
-            env[key] = str(directory)
+        if host_environment:
+            env = os.environ.copy()
+            env.update(CLAUDE_CONFIG_DIR=str(account), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1',
+                       ENABLE_TOOL_SEARCH='false', CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS='150000',
+                       CAIRN_DATABASE_URL='host=/absent-r04-native-db dbname=denied')
+        else:
+            home.mkdir(mode=0o700)
+            env = dict(PATH='/usr/bin:/bin', LANG='C.UTF-8', HOME=str(home), CLAUDE_CONFIG_DIR=str(account),
+                       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1', ENABLE_TOOL_SEARCH='false',
+                       ANTHROPIC_API_KEY='r04-synthetic-unused', ANTHROPIC_BASE_URL=provider.url,
+                       CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS='150000',
+                       CAIRN_DATABASE_URL='host=/absent-r04-native-db dbname=denied')
+            for key in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME'):
+                directory = root / key.lower()
+                directory.mkdir(mode=0o700)
+                env[key] = str(directory)
         self.trace = output / (root.name + '.exec')
         self.diagnostics = output / (root.name + '.stderr')
         self.stderr = open(self.diagnostics, 'wb')
