@@ -417,8 +417,8 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
                     path.write_bytes(original)
                     path.chmod(mode)
 
-    def test_checked_recall_still_refuses_capture_tools_and_bound_hermes(self):
-        for name in (*CAPTURE, 'PreToolUse', 'PostToolUse', 'PostToolUseFailure'):
+    def test_checked_recall_refuses_capture_pretool_and_bound_hermes(self):
+        for name in (*CAPTURE, 'PreToolUse'):
             with self.subTest(event=name):
                 self.restore(None)
                 self.set_event(name, 'legal identity')

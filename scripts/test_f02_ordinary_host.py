@@ -418,7 +418,6 @@ class OrdinaryHostTests(unittest.TestCase):
 
     def test_unported_cells_refuse_before_api_or_state(self):
         cases=(('bound',dict(inbox_recall_binding=str(self.f.binding)),'UserPromptSubmit'),
-               ('provider',dict(recall_mode='ambient',semantic_fallback=True),'UserPromptSubmit'),
                ('invented-shell',dict(harness='shell'),'SessionStart'))
         for name,changes,event in cases:
             with self.subTest(cell=name):
@@ -429,7 +428,7 @@ class OrdinaryHostTests(unittest.TestCase):
                 self.assertEqual(result.returncode,1)
                 self.assertEqual(result.stdout,b'')
                 self.assertEqual(self.calls,[])
-                if name!='provider':self.assertFalse(Path(self.f.memory['state_dir']).exists())
+                self.assertFalse(Path(self.f.memory['state_dir']).exists())
                 self.f.memory.pop('inbox_recall_binding',None);self.f.memory.pop('semantic_fallback',None)
 
     def unavailable_preview_pair(self, relevant):

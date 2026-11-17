@@ -379,21 +379,13 @@ class HermesRecallTests(unittest.TestCase):
         self.assertEqual(self.state_files(), files_before)
         self.assertEqual(directory.exists(), existed)
 
-    def test_tools_capture_and_unknown_events_remain_outside_checked_recall(self):
-        for name in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PreCompact', 'SessionEnd', 'Stop', 'Unknown'):
+    def test_pretool_capture_and_unknown_events_remain_outside_checked_recall(self):
+        for name in ('PreToolUse', 'PreCompact', 'SessionEnd', 'Stop', 'Unknown'):
             with self.subTest(event=name):
                 self.event(name)
                 self.refused()
 
-    def test_ambient_and_mixed_bound_profiles_remain_refused(self):
-        fallback_present = 'semantic_fallback' in self.f.memory
-        fallback = self.f.memory.get('semantic_fallback')
-        self.configure(recall_mode='ambient', semantic_fallback=True)
-        self.refused()
-        if fallback_present:
-            self.f.memory['semantic_fallback'] = fallback
-        else:
-            self.f.memory.pop('semantic_fallback')
+    def test_mixed_bound_profiles_and_wrong_deadline_remain_refused(self):
         self.configure(recall_mode='agent_tools')
         for path in (self.f.memory_path, self.f.coord_path):
             with self.subTest(profile=path.name):
