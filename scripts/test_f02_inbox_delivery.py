@@ -248,6 +248,36 @@ class InboxDeliveryProcesses(unittest.TestCase):
         self.assertIn('source_exceeds_delivery_budget_read_exact_source',result['message'])
         self.assertEqual([op for op,_,_ in self.calls],['version','index','history','event-renew'])
 
+    def test_source_plus_allowance_suffix_window_switches_cleanly_without_refusal(self):
+        # Regression for CAIRN-724: bodies whose inline render fits within budget
+        # before the ~470-byte Automatic exact-source read allowance suffix, or
+        # sits right across the inline-vs-fallback boundary, must never fail with
+        # final_render/output_budget in either Go or Python.
+        seen_delegated, seen_inline_allowance, seen_fallback = False, False, False
+        for size in (6000, 7200, 8000, 8250, 8400, 8600):
+            with self.subTest(size=size):
+                case = InboxDeliveryProcesses()
+                case.setUp()
+                self.addCleanup(case.doCleanups)
+                case.body = 'A' * size
+                case.configure(kind='request')
+                result = case.pair()
+                self.assertTrue(result['ok'], result)
+                if case.body[:64] in result['message']:
+                    if '"status":"task_source"' in result['message']:
+                        seen_delegated = True
+                        self.assertIn('"remaining_memory_bytes":', result['message'])
+                    else:
+                        seen_inline_allowance = True
+                        self.assertIn('optional_recall_unavailable', result['message'])
+                        self.assertIn('Automatic exact-source read allowance:', result['message'])
+                else:
+                    seen_fallback = True
+                    self.assertIn('source_exceeds_delivery_budget_read_exact_source', result['message'])
+                    self.assertIn('Automatic exact-source read allowance:', result['message'])
+        self.assertTrue(seen_delegated and seen_inline_allowance and seen_fallback,
+                        (seen_delegated, seen_inline_allowance, seen_fallback))
+
     def test_changed_source_and_command_identity_refuse_before_grant(self):
         for fault in ('hash','span','context'):
             with self.subTest(fault=fault):

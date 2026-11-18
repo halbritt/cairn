@@ -703,6 +703,33 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertEqual([c['op'] for c in self.calls()],['search','history'])
         self.assertLessEqual(len(memory.encoded(result).encode()),9500)
 
+    def test_suffix_window_source_falls_back_instead_of_refusing_wake(self):
+        # CAIRN-724: sweep across the 6,000-8,800 byte range where cost(required_text) <= 9500
+        # before the read-allowance suffix, verifying every size delivers <= 9500 bytes.
+        seen_inline, seen_fallback = False, False
+        for size in (6000, 6800, 7200, 7600, 8000, 8500):
+            with self.subTest(size=size):
+                case = InboxRecallBridgeTests()
+                case.setUp()
+                self.addCleanup(case.doCleanups)
+                case.body = 'B' * size
+                case.fixture['history']['versions'][0].update(
+                    body=case.body, body_bytes=size,
+                    body_sha256=hashlib.sha256(case.body.encode()).hexdigest(),
+                )
+                case.freeze()
+                result = case.invoke()
+                wire_len = 1 + len(memory.encoded(result).encode())
+                self.assertLessEqual(wire_len, 9500)
+                text = result['hookSpecificOutput']['additionalContext']
+                if case.body[:64] in text:
+                    seen_inline = True
+                else:
+                    seen_fallback = True
+                    self.assertIn('source_exceeds_delivery_budget_read_exact_source', text)
+                    self.assertEqual([c['op'] for c in case.calls()], ['search', 'history'])
+        self.assertTrue(seen_inline and seen_fallback, (seen_inline, seen_fallback))
+
     def test_refused_history_budget_uses_labelled_original_workflow(self):
         self.fixture['fail_history']='BUDGET_REFUSED'; self.freeze()
         result=self.invoke()
