@@ -440,6 +440,28 @@ or switch a watcher. Those require the supported native operation and the
 separately authorized R-06/R-07 transition. Reversing a file selection alone
 does not prove that a running client returned to its previous configuration.
 
+To apply a staged hook generation onto a live Claude, Codex, Agy or OpenCode
+JSON settings target without clobbering intervening foreign edits, use
+`publish-settings` (backed by `cairn-stage-lifecycle settings-publish`):
+
+```sh
+/usr/bin/python3 -I -S -B /package/stage_lifecycle_hooks.py publish-settings \
+  --stager /package/cairn-stage-lifecycle --stager-sha256 STAGER_SHA256 \
+  --target /account/settings.json < publish-plan.json
+```
+
+`publish-plan.json` supplies `schema: "cairn.hook-settings-publish/1"`, the
+staged hook `selection` (`{path, sha256}`), and `replace_commands`
+(`{"memory": [...], "coordination": [...]}`). OpenCode targets additionally pass
+`--role memory` (`cairn-lifecycle.json`) or `--role coordination`
+(`cairn-coordination.json`) with empty `replace_commands`. At publication time,
+`settings-publish` snapshots the current live target, merges only the staged
+Cairn rows onto those current bytes (preserving intervening edits to foreign
+hooks and non-hook fields), and commits via `RENAME_EXCHANGE` after rechecking
+that the target did not change mid-write. `reverse-settings` (`--record PATH
+--record-sha256 HEX`) restores the exchanged preimage and refuses if the target
+drifted after publication.
+
 The installed renderer tests are `test_r04_hook_settings.py`; the standalone
 package check above also executes every rendered Codex and Claude row without
 a checkout. `test_r02_installed_contracts.py` applies the existing F-04 ledger,

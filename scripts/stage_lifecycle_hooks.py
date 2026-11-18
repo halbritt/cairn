@@ -379,10 +379,65 @@ def publish_agy(argv, raw):
         return installation.decoded(result.stdout)
 
 
+def publish_settings(argv, raw):
+    """Merge staged Cairn hook rows into live settings and exchange atomically."""
+    parser = argparse.ArgumentParser(prog='stage_lifecycle_hooks.py publish-settings')
+    parser.add_argument('--stager', required=True)
+    parser.add_argument('--stager-sha256', required=True)
+    parser.add_argument('--target', required=True)
+    parser.add_argument('--role', choices=('memory', 'coordination'))
+    args = parser.parse_args(argv)
+    for path in (args.stager, args.target):
+        if not installation.canonical(path):
+            raise ValueError('canonical tool and target settings path required')
+    image = installation.read_selected(
+        dict(path=args.stager, sha256=args.stager_sha256), 128 * 1024 * 1024)
+    with tempfile.TemporaryDirectory(prefix='cairn-settings-publisher-') as temporary:
+        executable = Path(temporary) / 'cairn-stage-lifecycle'
+        executable.write_bytes(image)
+        executable.chmod(0o500)
+        result = installation.run_owned([str(executable),
+            'settings-publish', '--target', args.target,
+            *(['--role', args.role] if args.role else []),
+        ], payload=installation.encoded(installation.decoded(raw)), timeout=120)
+        if result.returncode:
+            raise RuntimeError('settings publication refused; reconcile target settings: ' +
+                               result.stderr.decode(errors='replace'))
+        return installation.decoded(result.stdout)
+
+
+def reverse_settings(argv):
+    """Reverse one published settings exchange when no post-publication edit occurred."""
+    parser = argparse.ArgumentParser(prog='stage_lifecycle_hooks.py reverse-settings')
+    parser.add_argument('--stager', required=True)
+    parser.add_argument('--stager-sha256', required=True)
+    parser.add_argument('--record', required=True)
+    parser.add_argument('--record-sha256', required=True)
+    args = parser.parse_args(argv)
+    for path in (args.stager, args.record):
+        if not installation.canonical(path):
+            raise ValueError('canonical tool and recovery record path required')
+    image = installation.read_selected(
+        dict(path=args.stager, sha256=args.stager_sha256), 128 * 1024 * 1024)
+    with tempfile.TemporaryDirectory(prefix='cairn-settings-reverser-') as temporary:
+        executable = Path(temporary) / 'cairn-stage-lifecycle'
+        executable.write_bytes(image)
+        executable.chmod(0o500)
+        result = installation.run_owned([str(executable),
+            'settings-reverse', '--record', args.record, '--record-sha256', args.record_sha256,
+        ], timeout=120)
+        if result.returncode:
+            raise RuntimeError('settings reverse refused; reconcile target settings: ' +
+                               result.stderr.decode(errors='replace'))
+        return installation.decoded(result.stdout)
+
+
 def main():
     def interrupted(*args):
         if sys.argv[1:2] == ['publish-agy']:
             raise installation.InstallationInterrupted('Agy publication interrupted; reconcile both hook layers')
+        if sys.argv[1:2] in (['publish-settings'], ['reverse-settings']):
+            raise installation.InstallationInterrupted('settings publication interrupted; reconcile recovery record')
         raise installation.InstallationInterrupted('hook staging interrupted; reconcile selected generation')
     signal.signal(signal.SIGTERM, interrupted)
     if sys.argv[1:2] == ['publish-agy']:
@@ -390,6 +445,17 @@ def main():
         if len(raw) > 1024 * 1024:
             raise ValueError('Agy publication plan exceeds 1 MiB')
         result = publish_agy(sys.argv[2:], raw)
+        sys.stdout.buffer.write(installation.encoded(result) + b'\n')
+        return
+    if sys.argv[1:2] == ['publish-settings']:
+        raw = sys.stdin.buffer.read(1024 * 1024 + 1)
+        if len(raw) > 1024 * 1024:
+            raise ValueError('settings publication plan exceeds 1 MiB')
+        result = publish_settings(sys.argv[2:], raw)
+        sys.stdout.buffer.write(installation.encoded(result) + b'\n')
+        return
+    if sys.argv[1:2] == ['reverse-settings']:
+        result = reverse_settings(sys.argv[2:])
         sys.stdout.buffer.write(installation.encoded(result) + b'\n')
         return
     parser = argparse.ArgumentParser(description=__doc__)

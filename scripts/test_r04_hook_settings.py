@@ -353,6 +353,75 @@ class R04HookSettingsTests(InstalledTools, unittest.TestCase):
             self.assertEqual(list(ledger['inbox_activation'].values()), [expected])
         self.assertEqual(Path(old['settings']['path']).read_bytes(), previous_settings)
 
+    def test_publish_settings_preserves_intervening_edits_and_reverses_cleanly(self):
+        for harness in ('codex', 'claude'):
+            with self.subTest(harness=harness):
+                initial = {
+                    'opaque': [900719925474099312345, 'keep'],
+                    'hooks': {
+                        'SessionStart': [dict(matcher='startup', hooks=[
+                            dict(type='command', command='/foreign/keep', timeout=10),
+                            dict(type='command', command='old memory', timeout=1),
+                        ])],
+                    },
+                }
+                f = self.fixture('pub-' + harness, harness, initial)
+                self.root.chmod(0o700)
+                f.root.chmod(0o700)
+                pinned_stager = f.package / 'cairn-stage-lifecycle'
+                shutil.copyfile(self.stager, pinned_stager)
+                pinned_stager.chmod(0o500)
+                stager_sha = hashlib.sha256(pinned_stager.read_bytes()).hexdigest()
+                original_raw = b'  ' + json.dumps(initial, indent=2).encode() + b'\n'
+                f.settings.write_bytes(original_raw)
+                f.hook_plan['settings'] = pin(f.settings)
+                selected, _, _ = self.selected(f)
+                pub_plan = dict(
+                    schema='cairn.hook-settings-publish/1',
+                    selection=selected['selection'],
+                    replace_commands=f.hook_plan['replace_commands'],
+                )
+
+                def run_pub():
+                    return subprocess.run(
+                        [sys.executable, '-I', '-S', '-B', str(f.renderer), 'publish-settings',
+                         '--stager', str(pinned_stager), '--stager-sha256', stager_sha,
+                         '--target', str(f.settings)],
+                        input=encoded(pub_plan), capture_output=True, timeout=40, cwd=f.root, env=f.env())
+
+                # 1. Ordinary no-edit case + clean reverse.
+                res1 = run_pub()
+                self.assertEqual((res1.returncode, res1.stderr), (0, b''), res1.stderr)
+                out1 = json.loads(res1.stdout)
+                self.assertTrue(out1['changed'])
+                rec1 = out1['exchange']['recovery']
+                rev1 = subprocess.run(
+                    [sys.executable, '-I', '-S', '-B', str(f.renderer), 'reverse-settings',
+                     '--stager', str(pinned_stager), '--stager-sha256', stager_sha,
+                     '--record', rec1['path'], '--record-sha256', rec1['sha256']],
+                    capture_output=True, timeout=40, cwd=f.root, env=f.env())
+                self.assertEqual((rev1.returncode, rev1.stderr), (0, b''), rev1.stderr)
+                self.assertEqual(f.settings.read_bytes(), original_raw)
+
+                # 2. Intervening edit to both a foreign hook and a top-level field after staging.
+                intervening = copy.deepcopy(initial)
+                intervening['user_added_after_snapshot'] = {'preserve': True}
+                intervening['hooks']['SessionStart'][0]['hooks'].append(
+                    dict(type='command', command='/foreign/intervening --flag', timeout=42))
+                intervening['hooks']['PreToolUse'] = [dict(hooks=[
+                    dict(type='command', command='/foreign/pretool', timeout=5)])]
+                f.settings.write_bytes(json.dumps(intervening, indent=2).encode() + b'\n')
+                res2 = run_pub()
+                self.assertEqual((res2.returncode, res2.stderr), (0, b''), res2.stderr)
+                live = json.loads(f.settings.read_bytes())
+                self.assertEqual(live['user_added_after_snapshot'], {'preserve': True})
+                self.assertEqual(live['opaque'], initial['opaque'])
+                self.assertEqual(live['hooks']['PreToolUse'], intervening['hooks']['PreToolUse'])
+                cmds = [h['command'] for g in live['hooks']['SessionStart'] for h in g['hooks']]
+                self.assertIn('/foreign/keep', cmds)
+                self.assertIn('/foreign/intervening --flag', cmds)
+                self.assertNotIn('old memory', cmds)
+
 
 if __name__ == '__main__':
     unittest.main()

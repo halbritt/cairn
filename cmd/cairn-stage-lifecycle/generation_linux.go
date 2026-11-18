@@ -24,6 +24,12 @@ func runCommand(ctx context.Context, args []string, input io.Reader, out, diagno
 	if len(args) != 0 && args[0] == "agy-layer" {
 		return runAgyLayer(ctx, args[1:], input, out, diagnostic)
 	}
+	if len(args) != 0 && args[0] == "settings-publish" {
+		return runSettingsPublish(ctx, args[1:], input, out, diagnostic)
+	}
+	if len(args) != 0 && args[0] == "settings-reverse" {
+		return runSettingsReverse(ctx, args[1:], out, diagnostic)
+	}
 	if len(args) == 0 || args[0] != "generation" && args[0] != "inspect-generation" && args[0] != "directory" && args[0] != "inspect-directory" {
 		return run(ctx, args, out, diagnostic)
 	}
