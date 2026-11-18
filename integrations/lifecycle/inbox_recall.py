@@ -634,7 +634,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             control = fallback_control
             label = 'source_exceeds_delivery_budget_read_exact_source'
             body = None
-        if cost(required_text) > budget:
+        if cost(with_allowance(required_text)[0]) > budget:
             raise _grant_ledger.inbox_refusal('whole required inbox context exceeds delivery budget', 'required_render', 'required_context',
                 configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)
         text = required_text
@@ -665,13 +665,23 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             else:
                 metrics['refusal_stage'] = 'optional_render'
                 selected = found.get('selected', [])
-                if cost(engine.render_recall(selected, [])) > budget:
-                    raise _grant_ledger.inbox_refusal('whole required task context exceeds delivery budget', 'optional_render', 'task_context',
-                        configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)
-                engine.trace_phase(memory, 'expansion') if hasattr(engine, 'trace_phase') else None
-                text = engine.eager_agent_candidates(memory, found, budget, status, deadline, measure=cost)
-                if status.get('outcome') != 'delegated':
-                    label = 'optional_recall_unavailable'
+                required_candidate = engine.render_recall(selected, []) if selected else ''
+                if source is not None and cost(with_allowance(required_candidate, 'optional_recall_unavailable')[0], 'optional_recall_unavailable') > budget:
+                    source = None
+                    control = fallback_control
+                    label = 'source_exceeds_delivery_budget_read_exact_source'
+                    if cost(with_allowance(required_candidate)[0]) > budget:
+                        raise _grant_ledger.inbox_refusal('whole required task context exceeds delivery budget', 'optional_render', 'task_context',
+                            configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)
+                    text = required_candidate
+                else:
+                    if cost(required_candidate) > budget:
+                        raise _grant_ledger.inbox_refusal('whole required task context exceeds delivery budget', 'optional_render', 'task_context',
+                            configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)
+                    engine.trace_phase(memory, 'expansion') if hasattr(engine, 'trace_phase') else None
+                    text = engine.eager_agent_candidates(memory, found, budget, status, deadline, measure=cost)
+                    if status.get('outcome') != 'delegated':
+                        label = 'optional_recall_unavailable'
         metrics['refusal_stage'] = 'final_render'
         engine.trace_phase(memory, 'final_persistence') if hasattr(engine, 'trace_phase') else None
         if status.get('outcome') != 'delegated':

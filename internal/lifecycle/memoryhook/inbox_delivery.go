@@ -387,7 +387,8 @@ func (d *inboxDelivery) deliver(directory string) error {
 		}
 		return e
 	}
-	if cost(requiredText) > budget {
+	withRequiredAllowance, _ := withAllowanceForLabel(requiredText, label)
+	if cost(withRequiredAllowance) > budget {
 		return refuseBudget("whole required inbox context exceeds delivery budget", "required_render", "required_context", nil)
 	}
 	body := requiredText
@@ -430,22 +431,34 @@ func (d *inboxDelivery) deliver(directory string) error {
 			if e != nil {
 				return e
 			}
-			if cost(requiredCandidate) > budget {
-				return refuseBudget("whole required task context exceeds delivery budget", "optional_render", "task_context", nil)
-			}
-			d.observed.phase("expansion")
-			limited, cancel := context.WithDeadline(d.ctx, optionalDeadline)
-			var observers []candidateObserver
-			if d.observed.data != nil {
-				observers = []candidateObserver{d.observed}
-			}
-			body, e = eagerCandidates(limited, d.memory, in.Memory, selected, foundValue, found.Index, budget, status, cost, observers...)
-			cancel()
-			if e != nil {
-				return inboxClassify(e)
-			}
-			if !value.SameText(status.Get("outcome"), "delegated") {
-				label = "optional_recall_unavailable"
+			withCandidateSuffix, _ := withAllowanceForLabel(requiredCandidate, "optional_recall_unavailable")
+			if source != nil && costForLabel(withCandidateSuffix, "optional_recall_unavailable") > budget {
+				source = nil
+				control = fallbackControl
+				label = "source_exceeds_delivery_budget_read_exact_source"
+				withFallbackSuffix, _ := withAllowanceForLabel(requiredCandidate, label)
+				if cost(withFallbackSuffix) > budget {
+					return refuseBudget("whole required task context exceeds delivery budget", "optional_render", "task_context", nil)
+				}
+				body = requiredCandidate
+			} else {
+				if cost(requiredCandidate) > budget {
+					return refuseBudget("whole required task context exceeds delivery budget", "optional_render", "task_context", nil)
+				}
+				d.observed.phase("expansion")
+				limited, cancel := context.WithDeadline(d.ctx, optionalDeadline)
+				var observers []candidateObserver
+				if d.observed.data != nil {
+					observers = []candidateObserver{d.observed}
+				}
+				body, e = eagerCandidates(limited, d.memory, in.Memory, selected, foundValue, found.Index, budget, status, cost, observers...)
+				cancel()
+				if e != nil {
+					return inboxClassify(e)
+				}
+				if !value.SameText(status.Get("outcome"), "delegated") {
+					label = "optional_recall_unavailable"
+				}
 			}
 		}
 	}

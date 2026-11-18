@@ -1,4 +1,5 @@
 """Opt-in inbox recall through both actual public hook handlers, no provider."""
+import copy
 import hashlib
 import contextlib
 import io
@@ -729,6 +730,77 @@ class InboxRecallBridgeTests(unittest.TestCase):
                     self.assertIn('source_exceeds_delivery_budget_read_exact_source', text)
                     self.assertEqual([c['op'] for c in case.calls()], ['search', 'history'])
         self.assertTrue(seen_inline and seen_fallback, (seen_inline, seen_fallback))
+
+    def test_cairn_365_incident_sources_and_optional_task_context_admit_with_grant(self):
+        # Reconstruct both CAIRN-365 incident geometries (7862-byte a9fe740b@1 and
+        # 7598-byte eea614df@1 under 9500-byte context_bytes) plus the optional_render
+        # mandatory-task-context overflow path through the real coordination hook main.
+        for target_bytes, task_mandatory in ((7862, []), (7598, []), (6800, ['Mandatory task rule. ' * 45])):
+            with self.subTest(target_bytes=target_bytes, has_task_mandatory=bool(task_mandatory)):
+                case = InboxRecallBridgeTests()
+                case.setUp()
+                self.addCleanup(case.doCleanups)
+                seed = ('AGENTEE-623 portable-placement tranche — preserve agent’s "quoted" mapping.\n')
+                body = (seed * ((target_bytes // len(seed.encode())) + 1)).encode()[:target_bytes].decode('utf-8', errors='ignore')
+                while len(body.encode()) < target_bytes:
+                    body += 'x'
+                case.body = body
+                case.fixture['history']['versions'][0].update(
+                    body=body,
+                    body_bytes=len(body.encode()),
+                    body_sha256=hashlib.sha256(body.encode()).hexdigest(),
+                )
+                if task_mandatory:
+                    case.fixture['task_search'] = copy.deepcopy(case.fixture['search'])
+                    case.fixture['task_search']['selected'] = [
+                        dict(mandatory=True, record=dict(body=m)) for m in task_mandatory
+                    ]
+                case.freeze()
+                res = case.invoke(main=True)
+                self.assertEqual(res['code'], 0, res)
+                text = json.loads(res['stdout'])['hookSpecificOutput']['additionalContext']
+                self.assertLessEqual(len(res['stdout'].encode()), 9500)
+                self.assertIn('source_exceeds_delivery_budget_read_exact_source', text)
+                for m in task_mandatory:
+                    self.assertIn(m, text)
+                state = json.loads(coord.state_path(case.cc, SESSION).read_text())
+                self.assertIsNone(state.get('wake_refusal_diagnostic'))
+                cmd = json.loads((Path(case.cc['state_dir']) / 'inbox' / f'{ATTEMPT}.json').read_text())
+                self.assertEqual(cmd['attempt_id'], ATTEMPT)
+                self.assertEqual(cmd['delivery_id'], DELIVERY)
+                self.assertTrue(cmd['finish_reply'] and cmd['completion'] and cmd['response'])
+                grants = json.loads((case.root / 'memory' / f'{SESSION}.inbox-recall.json').read_text())['grants']
+                self.assertEqual(len(grants), 1)
+                only_grant = next(iter(grants.values()))
+                self.assertEqual(only_grant['identity']['attempt_id'], ATTEMPT)
+                self.assertEqual(only_grant['identity']['delivery_id'], DELIVERY)
+                self.assertEqual(only_grant['identity']['native_owner'], TURN)
+
+                # Positive subsequent-message progression after explicit completion of the first request.
+                delivery_2 = '88888888-8888-4888-8888-888888888888'
+                attempt_2 = '99999999-9999-4999-8999-999999999999'
+                turn_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+                case.delivery = dict(case.delivery, delivery_id=delivery_2, lease_id=attempt_2,
+                                     event=dict(case.delivery['event'], event_id=turn_2))
+                case.state = json.loads(coord.state_path(case.cc, SESSION).read_text())
+                case.state.pop('inbox_completion', None)
+                case.state.pop('inbox_response', None)
+                case.state['delivered_since_idle'] = False
+                case.state['inbox_intent'] = dict(session=dict(agent_id=AGENT, execution_id=EXEC),
+                                                  request_id=attempt_2, native_turn_id=turn_2)
+                case.state['inbox_attempt'] = dict(attempt_id=attempt_2,
+                                                   session=dict(agent_id=AGENT, execution_id=EXEC),
+                                                   native_turn_id=turn_2, delivery=case.delivery)
+                case.event['turn_id'] = turn_2
+                case.freeze()
+                case.event['prompt'] = coord.wake_message(
+                    dict(session=dict(agent_id=AGENT, execution_id=EXEC), delivery_id=delivery_2))
+                (case.root / 'calls.jsonl').unlink(missing_ok=True)
+                res_2 = case.invoke(main=True)
+                self.assertEqual(res_2['code'], 0, res_2)
+                grants_after = json.loads((case.root / 'memory' / f'{SESSION}.inbox-recall.json').read_text())['grants']
+                self.assertEqual(len(grants_after), 2)
+                self.assertEqual({g['identity']['attempt_id'] for g in grants_after.values()}, {ATTEMPT, attempt_2})
 
     def test_refused_history_budget_uses_labelled_original_workflow(self):
         self.fixture['fail_history']='BUDGET_REFUSED'; self.freeze()

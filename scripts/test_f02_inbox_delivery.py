@@ -72,6 +72,7 @@ class InboxDeliveryProcesses(unittest.TestCase):
         self.calls = []
         self.body = 'Implement the selected inbox consumer in internal/lifecycle/inboxipc/run.go. 日本語 😀'
         self.selected = []
+        self.task_selected = None
         self.optional = []
         self.destination = dict(name='hosted',allow_local=False)
         self.index_refusals = []
@@ -94,10 +95,11 @@ class InboxDeliveryProcesses(unittest.TestCase):
                 elif operation=='index':
                     if owner.index_refusals:refusal=owner.index_refusals.pop(0)
                     optional=[] if request.get('kinds') else owner.optional
+                    selected=owner.selected if request.get('kinds') or owner.task_selected is None else owner.task_selected
                     data=dict(package=dict(receipt_id=SESSION,nonce='',seal='blake3:'+'a'*64,
                         semantic=dict(schema='cairn.semantic/17',mode='index',status='READY',scope=request['scope'],purpose='context',
                         destination=owner.destination,query='sha256:fixture-query',available_tokens=32000,
-                        selected=owner.selected,omitted={},index=[n['entry'] for n in optional])),
+                        selected=selected,omitted={},index=[n['entry'] for n in optional])),
                         handles=[dict(record_id=n['entry']['record_id'],version=n['entry']['version'],handle='optional-'+str(i)) for i,n in enumerate(optional)],
                         expires_at='2030-01-01T00:00:00Z',credits_remaining=4,bytes_remaining=24000)
                 elif operation=='history':
@@ -277,6 +279,47 @@ class InboxDeliveryProcesses(unittest.TestCase):
                     self.assertIn('Automatic exact-source read allowance:', result['message'])
         self.assertTrue(seen_delegated and seen_inline_allowance and seen_fallback,
                         (seen_delegated, seen_inline_allowance, seen_fallback))
+
+    def test_optional_task_selection_overflow_drops_inline_source_before_refusing(self):
+        # Regression for CAIRN-365: a request source that fits required_render
+        # (e.g. 6800 bytes) can exceed the 9500-byte wire budget once
+        # optional_search returns additional mandatory task-scoped context.
+        # Both Go and Python must fall back to source_exceeds_delivery_budget_read_exact_source
+        # while retaining the mandatory task context and writing one grant,
+        # only refusing task_context when mandatory task context alone exceeds budget.
+        self.body = 'Task assignment with tests/test_placement_job.py.\n' + ('portable fixture mapping\n' * 230)
+        self.configure(kind='request')
+        mandatory_note = 'Mandatory entity-pinned task instruction. ' * 65
+        self.task_selected = [dict(
+            record=dict(record_id=RECORD, version=1, body=mandatory_note),
+            mandatory=True, reason='entity_instruction', evidence=[], authority=[],
+        )]
+        result = self.pair()
+        self.assertTrue(result['ok'], result)
+        self.assertNotIn('portable fixture mapping', result['message'])
+        self.assertIn(mandatory_note, result['message'])
+        self.assertIn('source_exceeds_delivery_budget_read_exact_source', result['message'])
+        self.assertIn('Automatic exact-source read allowance:', result['message'])
+        self.assertEqual(len(self.state()[SESSION + '.inbox-recall.json']['grants']), 1)
+
+        # Negative control: mandatory task context that exceeds budget (including across the
+        # ~470-byte allowance-suffix window) even without inline source still refuses task_context.
+        for reps in (260, 400):
+            with self.subTest(oversized_reps=reps):
+                oversized = InboxDeliveryProcesses()
+                oversized.setUp()
+                self.addCleanup(oversized.doCleanups)
+                oversized.body = self.body
+                oversized.configure(kind='request')
+                oversized.task_selected = [dict(
+                    record=dict(record_id=RECORD, version=1, body='Oversized mandatory task rule. ' * reps),
+                    mandatory=True, reason='entity_instruction', evidence=[], authority=[],
+                )]
+                refused = oversized.pair()
+                self.assertFalse(refused['ok'])
+                self.assertEqual(refused['error']['cairn_inbox_refusal']['refusal_stage'], 'optional_render')
+                self.assertEqual(refused['error']['cairn_inbox_refusal']['refusal_reason'], 'task_context')
+                self.assertFalse(oversized.state()[SESSION + '.inbox-recall.json']['grants'])
 
     def test_changed_source_and_command_identity_refuse_before_grant(self):
         for fault in ('hash','span','context'):
