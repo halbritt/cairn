@@ -390,6 +390,9 @@ func captureBody(ctx context.Context, config, event, state, observed *value.Valu
 			return nil, e
 		}
 		messages, offsets, err = captureConversation(path)
+		if errors.Is(err, os.ErrNotExist) && value.SameText(event.Get("hook_event_name"), "SessionEnd") && !value.Truth(state.Get("capture_pending")) {
+			messages, offsets, err = array(), nil, nil
+		}
 	}
 	if err != nil {
 		return nil, err

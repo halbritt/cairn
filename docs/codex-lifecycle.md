@@ -238,7 +238,7 @@ failure metadata for diagnosis; restored trust alone does not prove delivery.
 
 ## Optional invocation trace (diagnostic window)
 
-The lifecycle engine (`integrations/lifecycle/memory.py`, used by every harness) can record each invocation's fixed metadata before it reads its configuration or takes the session lock. Tracing is **off** unless the directory `invocation-trace/` exists beside the configuration file passed with `--config`, owned by you, with mode `0700`. The engine never creates it.
+The lifecycle engine (`integrations/lifecycle/memory.py`, used by every harness) can record each invocation's fixed metadata before it reads its configuration or takes the session lock. Tracing is **off** unless the directory `invocation-trace/` exists beside the configuration file passed with `--config` (or `<state_dir>.invocation-trace` when `--config` lives inside an immutable staged `selection-*` generation), owned by you, with mode `0700`. The engine never creates it.
 
 - **Enable for a bounded window only.** Run `mkdir -m 0700 <config dir>/invocation-trace`, and write down the time you enabled and removed it. Nothing else records that tracing was on.
 - **One file for every session using that configuration.** `trace.jsonl` (mode `0600`) has `entry`, `parsed` and `exit` lines joined by a random `inv`. When reporting, filter to your own session and turn, and do not copy other sessions' lines.

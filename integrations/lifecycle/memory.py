@@ -518,20 +518,37 @@ class _InvocationTrace:
         self.started = time.monotonic()
         self.fields = {}
         self.entry_recorded = False
-        try:
-            dfd = os.open(Path(config_path).parent / "invocation-trace",
-                          os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
-        except Exception:
-            return
-        try:
-            info = os.fstat(dfd)
-            if stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077:
-                self.dfd, dfd = dfd, None
-        except Exception:
-            pass
-        finally:
-            if dfd is not None:
-                os.close(dfd)
+        candidates = [Path(config_path).parent / "invocation-trace"]
+        if Path(config_path).parent.name.startswith("selection-"):
+            try:
+                cfg_fd = os.open(config_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+                try:
+                    raw_cfg = os.read(cfg_fd, 65536)
+                finally:
+                    os.close(cfg_fd)
+                sdir = json.loads(raw_cfg.decode("utf-8")).get("state_dir")
+                if isinstance(sdir, str) and sdir.startswith("/") and os.path.normpath(sdir) == sdir and "\0" not in sdir:
+                    candidates.append(Path(sdir + ".invocation-trace"))
+            except Exception:
+                pass
+        for candidate in candidates:
+            dfd = None
+            try:
+                dfd = os.open(candidate, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            except FileNotFoundError:
+                continue
+            except Exception:
+                return
+            try:
+                info = os.fstat(dfd)
+                if stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077:
+                    self.dfd, dfd = dfd, None
+                return
+            except Exception:
+                return
+            finally:
+                if dfd is not None:
+                    os.close(dfd)
 
     def write(self, record):
         """Append one complete line under a non-blocking trace-file lock, or drop it."""
@@ -3058,7 +3075,12 @@ def capture(memory, event, state=None):
             raise HookError("Codex transcript is unavailable")
         messages, offsets = conversation(transcript_path, with_offsets=True)
     else:
-        messages = conversation(event["transcript_path"])
+        try:
+            messages = conversation(event["transcript_path"])
+        except FileNotFoundError:
+            if event.get("hook_event_name") != "SessionEnd" or state.get("capture_pending"):
+                raise
+            messages = []
     if not messages:
         record_capture_status(state, "empty")
         return {}

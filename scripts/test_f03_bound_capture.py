@@ -113,6 +113,24 @@ class BoundCaptureTests(BoundMemoryCase):
                 self.assertEqual(set(self.state()), {SESSION + '.json'})
                 self.assertEqual(self.calls[-1][1]['outcome'], 'empty')
 
+    def test_session_end_missing_transcript_file_is_empty_unless_pending(self):
+        for config in (self.f.memory, self.f.coord):
+            config['harness'] = 'claude'
+        self.f.publish_configuration()
+        missing = str(self.root / 'uncreated-zero-prompt-session.jsonl')
+        self.reset_state({})
+        self.event('SessionEnd', transcript_path=missing)
+        self.assertEqual(self.pair().returncode, 0)
+        self.assertEqual(self.calls[-1][1]['outcome'], 'empty')
+        self.assertEqual(self.state()[SESSION + '.json']['last_capture']['outcome'], 'empty')
+        pending_doc = dict(capture_pending=dict(reason='transcript_unavailable', hook_event='PreCompact'))
+        self.reset_state({SESSION + '.json': encoded(pending_doc)})
+        self.assertEqual(self.pair().returncode, 1)
+        self.assertEqual(self.state(), {SESSION + '.json': pending_doc})
+        self.reset_state({})
+        self.event('PreCompact', transcript_path=missing)
+        self.assertEqual(self.pair().returncode, 1)
+
     def test_changed_capture_fields_and_binding_refuse_cas_before_marker(self):
         self.scheduled()
         directory = Path(self.f.memory['state_dir'])

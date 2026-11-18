@@ -102,7 +102,7 @@ func RunCheckedCapture(parent context.Context, args []string, input io.Reader, o
 	if err != nil {
 		return checkedEmit(memoryhook.HostFailure(phase, err), out, diagnostic)
 	}
-	trace = newTrace(selection.ConfigPath)
+	trace = newTrace(selection.ConfigPath, stateTraceDir(snapshot.Config))
 	trace.entry()
 	trace.parsed(event)
 	trace.fields["stage"] = "activation"

@@ -117,7 +117,7 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	if err != nil {
 		return checkedEmit(memoryhook.HostFailure("handle", err), out, diagnostic)
 	}
-	trace := newTrace(selection.ConfigPath)
+	trace := newTrace(selection.ConfigPath, stateTraceDir(snapshot.Config()))
 	trace.entry()
 	trace.parsed(event)
 	if name := event.Get("hook_event_name"); !snapshot.Bound() || value.SameText(name, "PreToolUse") || value.SameText(name, "PostToolUse") || value.SameText(name, "PostToolUseFailure") {

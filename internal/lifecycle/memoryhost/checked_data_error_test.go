@@ -115,3 +115,38 @@ func TestCheckedDataFailureKeepsOptionalObserverFailuresHarmless(t *testing.T) {
 		})
 	}
 }
+
+func TestStateTraceDirAllowsImmutableGenerationTracing(t *testing.T) {
+	root := t.TempDir()
+	genDir := filepath.Join(root, "selection-11111111-2222-3333-4444-555555555555")
+	if err := os.Mkdir(genDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(root, "state")
+	traceDir := stateDir + ".invocation-trace"
+	if err := os.Mkdir(traceDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := value.Mapping(value.Field("state_dir", value.Text(stateDir)))
+	tr := newTrace(filepath.Join(genDir, "memory.json"), stateTraceDir(cfg))
+	tr.entry()
+	tr.finish(0, "handle")
+	if entries, err := os.ReadDir(genDir); err != nil || len(entries) != 0 {
+		t.Fatalf("generation directory mutated: %+v %v", entries, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(traceDir, "trace.jsonl"))
+	if err != nil || len(bytes.Split(bytes.TrimSpace(raw), []byte{'\n'})) != 2 {
+		t.Fatalf("expected entry and exit records in state trace dir: %q %v", raw, err)
+	}
+	if err := os.Mkdir(filepath.Join(genDir, "invocation-trace"), 0777); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chmod(filepath.Join(genDir, "invocation-trace"), 0777)
+	_ = os.Remove(filepath.Join(traceDir, "trace.jsonl"))
+	blocked := newTrace(filepath.Join(genDir, "memory.json"), stateTraceDir(cfg))
+	blocked.entry()
+	blocked.finish(0, "handle")
+	if _, err := os.Stat(filepath.Join(traceDir, "trace.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe primary trace dir must not fall through to fallback: %v", err)
+	}
+}

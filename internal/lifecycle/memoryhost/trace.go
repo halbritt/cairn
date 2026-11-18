@@ -22,19 +22,44 @@ type invocationTrace struct {
 	fields        map[string]any
 }
 
-func newTrace(config string) *invocationTrace {
+func newTrace(config string, fallbacks ...string) *invocationTrace {
 	t := &invocationTrace{directory: -1, invocation: strings.ReplaceAll(uuid.NewString(), "-", ""), started: time.Now(), fields: map[string]any{}}
-	fd, err := unix.Open(filepath.Join(filepath.Dir(config), "invocation-trace"), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-	if err != nil {
+	candidates := append([]string{filepath.Join(filepath.Dir(config), "invocation-trace")}, fallbacks...)
+	for _, candidate := range candidates {
+		if candidate == "" || !filepath.IsAbs(candidate) || filepath.Clean(candidate) != candidate || strings.IndexByte(candidate, 0) >= 0 {
+			continue
+		}
+		fd, err := unix.Open(candidate, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err != nil {
+			if err == unix.ENOENT || err == unix.ENOTDIR {
+				continue
+			}
+			return t
+		}
+		var info unix.Stat_t
+		if unix.Fstat(fd, &info) != nil || info.Mode&unix.S_IFMT != unix.S_IFDIR || info.Uid != uint32(os.Geteuid()) || info.Mode&0077 != 0 {
+			unix.Close(fd)
+			return t
+		}
+		t.directory = fd
 		return t
 	}
-	var info unix.Stat_t
-	if unix.Fstat(fd, &info) != nil || info.Mode&unix.S_IFMT != unix.S_IFDIR || info.Uid != uint32(os.Geteuid()) || info.Mode&0077 != 0 {
-		unix.Close(fd)
-		return t
-	}
-	t.directory = fd
 	return t
+}
+
+func stateTraceDir(config *value.Value) string {
+	if config == nil || config.Kind != value.Object {
+		return ""
+	}
+	v := config.Get("state_dir")
+	if v == nil || v.Kind != value.String || len(v.String) == 0 {
+		return ""
+	}
+	dir := string(v.String)
+	if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir || strings.IndexByte(dir, 0) >= 0 {
+		return ""
+	}
+	return dir + ".invocation-trace"
 }
 func (t *invocationTrace) write(record map[string]any) bool {
 	if t == nil || t.directory < 0 {
