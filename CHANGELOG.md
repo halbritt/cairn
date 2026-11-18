@@ -13,6 +13,16 @@ See the [implementation log](docs/history/implementation-log.md) for dated deplo
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+## 2026-11-17
+
+- `git-land --evidence` compares optional development evidence against the final
+  rebased candidate under the existing lock. Freshness remains advisory and
+  separate from review outcome; missing tooling or malformed results report
+  unknown. No mandatory evidence gate is enabled.
+- Landing now refuses check commands that change HEAD or leave tracked/untracked
+  files behind, including the final rerun after a concurrent trunk update.
+  Cleanliness checks include untracked files hidden by Git display configuration.
+
 ## 2026-11-07
 
 - Clarified the current Python lifecycle and semantic-worker implementation and

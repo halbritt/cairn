@@ -68,7 +68,7 @@ def inspect_hygiene(cwd: Path | str) -> dict[str, object]:
     trunk = detect_trunk_branch(root)
     primary = primary_worktree(root)
     is_secondary = root != primary
-    status_out = _run_git(root, "status", "--porcelain", check=False, timeout=10).stdout
+    status_out = _run_git(root, "status", "--porcelain", "--untracked-files=all", check=False, timeout=10).stdout
     dirty_lines = [line for line in status_out.splitlines() if line.strip()]
     branch = _run_git(root, "symbolic-ref", "--quiet", "--short", "HEAD", check=False, timeout=5).stdout.strip()
     head = _run_git(root, "rev-parse", "HEAD", check=False, timeout=5).stdout.strip()
@@ -114,6 +114,46 @@ def inspect_hygiene(cwd: Path | str) -> dict[str, object]:
     }
 
 
+def _assert_candidate(root: Path, expected_head: str, phase: str) -> None:
+    status = _run_git(root, "status", "--porcelain", "--untracked-files=all", timeout=10).stdout
+    if status.strip():
+        raise RuntimeError(f"{phase} left uncommitted/untracked changes in {root}; preserve them and rerun git-land after committing or discarding")
+    if _run_git(root, "rev-parse", "HEAD").stdout.strip() != expected_head:
+        raise RuntimeError(f"{phase} changed HEAD in {root}; rerun git-land to check the new candidate")
+
+
+def _compare_evidence(root: Path, record: Path, base: str) -> dict[str, object]:
+    """Unavailable evidence remains advisory and cannot masquerade as current."""
+    unknown: dict[str, object] = {"record": str(record), "freshness": "unknown"}
+    try:
+        result = subprocess.run(
+            ["development-evidence", "compare", str(record), "--repo", str(root),
+             "--base", base, "--json"],
+            cwd=root, capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
+        return {**unknown, "reasons": [f"evidence comparator unavailable: {exc}"]}
+    try:
+        assessment = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {**unknown, "reasons": [f"invalid comparator JSON (exit {result.returncode})"]}
+    if (not isinstance(assessment, dict)
+            or assessment.get("schema") != "development-evidence-comparison/1"
+            or assessment.get("freshness") not in ("current", "stale", "missing", "unknown")
+            or assessment.get("outcome") not in (None, "clear-within-scope", "findings-open", "failed-check", "incomplete")
+            or not isinstance(assessment.get("reasons"), list)
+            or not isinstance(assessment.get("limits"), list)):
+        return {**unknown, "reasons": [f"invalid comparator assessment (exit {result.returncode})"]}
+    if assessment["freshness"] == "current" and (
+            assessment.get("outcome") is None or assessment["reasons"]
+            or not re.fullmatch(r"[0-9a-f]{64}", str(assessment.get("receipt_sha256", "")))):
+        return {**unknown, "reasons": ["current assessment lacks receipt identity or contradicts its reasons"]}
+    expected_exit = {"current": 0, "stale": 1, "unknown": 2, "missing": 3}[assessment["freshness"]]
+    if result.returncode != expected_exit:
+        return {**unknown, "reasons": [f"comparator exit {result.returncode} conflicts with {assessment['freshness']} assessment"]}
+    return {**assessment, "record": str(record)}
+
+
 def git_land(
     cwd: Path | str,
     *,
@@ -121,11 +161,14 @@ def git_land(
     keep_worktree: bool = False,
     no_push: bool = False,
     lock_timeout: int = 300,
+    evidence_paths: tuple[str, ...] = (),
 ) -> dict[str, object]:
     root = find_git_root(cwd)
     if root is None:
         raise RuntimeError(f"{cwd} is not inside a git repository")
-    status_out = _run_git(root, "status", "--porcelain", check=True, timeout=10).stdout
+    evidence = [(root / Path(path).expanduser()).resolve() for path in evidence_paths]
+    assessments: list[dict[str, object]] = []
+    status_out = _run_git(root, "status", "--porcelain", "--untracked-files=all", check=True, timeout=10).stdout
     if status_out.strip():
         raise RuntimeError(f"working tree {root} has uncommitted/untracked changes; commit or discard before git-land")
 
@@ -147,6 +190,7 @@ def git_land(
     checked_head = _run_git(root, "rev-parse", "HEAD").stdout.strip()
     if check_cmd:
         subprocess.run(check_cmd, shell=True, cwd=root, check=True)
+        _assert_candidate(root, checked_head, "check command")
 
     lock_file = common_git_dir(root) / "git-land.lock"
     deadline = time.monotonic() + lock_timeout
@@ -171,13 +215,21 @@ def git_land(
         landed_head = _run_git(root, "rev-parse", "HEAD").stdout.strip()
         if check_cmd and landed_head != checked_head:
             subprocess.run(check_cmd, shell=True, cwd=root, check=True)
+        _assert_candidate(root, landed_head, "final check")
+
+        if evidence:
+            base = _run_git(root, "rev-parse", target_ref).stdout.strip()
+            assessments = [_compare_evidence(root, record, base) for record in evidence]
+            _assert_candidate(root, landed_head, "evidence comparison")
+            for assessment in assessments:
+                print(f"git-land evidence (advisory): {assessment['freshness']} - {assessment['record']}", file=sys.stderr)
 
         if has_origin and not no_push:
             _run_git(root, "push", "origin", f"HEAD:refs/heads/{trunk}", timeout=120)
 
         if is_secondary:
             primary_branch = _run_git(primary, "symbolic-ref", "--quiet", "--short", "HEAD", check=False).stdout.strip()
-            primary_dirty = _run_git(primary, "status", "--porcelain", check=False).stdout.strip()
+            primary_dirty = _run_git(primary, "status", "--porcelain", "--untracked-files=all", check=False).stdout.strip()
             if primary_branch == trunk and not primary_dirty:
                 _run_git(primary, "merge", "--ff-only", landed_head, check=False)
             else:
@@ -201,6 +253,7 @@ def git_land(
         "head": landed_head,
         "pushed": bool(has_origin and not no_push),
         "worktree_removed": bool(is_secondary and not keep_worktree),
+        "evidence": assessments,
     }
 
 
@@ -348,7 +401,7 @@ def git_wt_gc(
                 protected_worktrees.append(str(wt_path))
                 continue
             is_merged = _run_git(primary, "merge-base", "--is-ancestor", lines.get("HEAD", "HEAD"), trunk, check=False).returncode == 0
-            status_lines = _run_git(wt_path, "status", "--porcelain", check=False).stdout.splitlines() if wt_path.is_dir() else []
+            status_lines = _run_git(wt_path, "status", "--porcelain", "--untracked-files=all", check=False).stdout.splitlines() if wt_path.is_dir() else []
             non_deleted_dirty = [ln for ln in status_lines if not ln.startswith(" D ")]
             if not is_merged or non_deleted_dirty:
                 if status_lines or not is_merged:
@@ -469,6 +522,8 @@ def main(argv: list[str] | None = None) -> int:
     p_land.add_argument("--keep-worktree", action="store_true")
     p_land.add_argument("--no-push", action="store_true")
     p_land.add_argument("--timeout", type=int, default=300)
+    p_land.add_argument("--evidence", action="append", default=[],
+                        help="Compare this evidence record against the final candidate (advisory; repeatable)")
 
     p_wt = sub.add_parser("wt", help="Manage isolated agent worktrees outside /tmp")
     wt_sub = p_wt.add_subparsers(dest="wt_cmd", required=True)
@@ -488,6 +543,7 @@ def main(argv: list[str] | None = None) -> int:
             keep_worktree=args.keep_worktree,
             no_push=args.no_push,
             lock_timeout=args.timeout,
+            evidence_paths=tuple(args.evidence),
         )
         print(json.dumps(res))
         return 0

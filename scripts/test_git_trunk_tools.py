@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -13,6 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from git_trunk_tools import (
+    _compare_evidence,
     git_land,
     git_wt_create,
     git_wt_gc,
@@ -98,6 +101,159 @@ class GitTrunkToolsTests(unittest.TestCase):
         self.assertTrue(inspect_hygiene(self.repo)["clean"])
         branches = _git(self.repo, "branch").splitlines()
         self.assertEqual([b.strip().lstrip("* ") for b in branches], ["main"])
+
+    def test_check_cannot_push_a_dirty_candidate_or_discard_its_output(self) -> None:
+        wt = git_wt_create(self.repo, "dirty-check", base_dir=self.wt_base)
+        (wt / "change.txt").write_text("candidate\n")
+        _git(wt, "add", "change.txt")
+        _git(wt, "commit", "-m", "candidate")
+        before = _git(self.repo, "rev-parse", "origin/main")
+        with self.assertRaisesRegex(RuntimeError, "check.*uncommitted|uncommitted.*check"):
+            git_land(wt, check_cmd="printf 'modified\\n' >> change.txt")
+        self.assertEqual(_git(self.repo, "ls-remote", "origin", "refs/heads/main").split()[0], before)
+        self.assertEqual((wt / "change.txt").read_text(), "candidate\nmodified\n")
+
+    def test_check_that_changes_head_requires_a_new_land_attempt(self) -> None:
+        wt = git_wt_create(self.repo, "head-check", base_dir=self.wt_base)
+        before = _git(self.repo, "rev-parse", "origin/main")
+        with self.assertRaisesRegex(RuntimeError, "check.*HEAD|HEAD.*check"):
+            git_land(wt, check_cmd="git -c core.hooksPath=/dev/null commit --allow-empty -m changed-by-check")
+        self.assertNotEqual(_git(wt, "rev-parse", "HEAD"), before)
+        self.assertEqual(_git(self.repo, "ls-remote", "origin", "refs/heads/main").split()[0], before)
+        self.assertTrue(wt.is_dir())
+
+    def test_hidden_untracked_check_output_is_preserved(self) -> None:
+        wt = git_wt_create(self.repo, "hidden-output", base_dir=self.wt_base)
+        _git(wt, "config", "status.showUntrackedFiles", "no")
+        before = _git(self.repo, "rev-parse", "origin/main")
+        with self.assertRaisesRegex(RuntimeError, "check.*uncommitted"):
+            git_land(wt, check_cmd="printf 'diagnostic\\n' > diagnostic.txt")
+        self.assertEqual((wt / "diagnostic.txt").read_text(), "diagnostic\n")
+        self.assertEqual(_git(self.repo, "ls-remote", "origin", "refs/heads/main").split()[0], before)
+        self.assertEqual(inspect_hygiene(wt)["dirty_count"], 1)
+
+    def test_final_rebased_check_cannot_dirty_the_pushed_candidate(self) -> None:
+        wt = git_wt_create(self.repo, "final-check", base_dir=self.wt_base)
+        (wt / "candidate.txt").write_text("candidate\n")
+        _git(wt, "add", "candidate.txt")
+        _git(wt, "commit", "-m", "candidate")
+        marker = self.root / "checked-once"
+        script = self.root / "check.py"
+        script.write_text(
+            "from pathlib import Path\nimport subprocess\n"
+            f"marker = Path({str(marker)!r})\n"
+            "if marker.exists():\n"
+            "    Path('candidate.txt').write_text('dirty after rebase\\n')\n"
+            "else:\n"
+            "    marker.touch()\n"
+            f"    repo = {str(self.repo)!r}\n"
+            "    subprocess.run(['git', '-C', repo, 'commit', '--allow-empty', '-m', 'concurrent'], check=True)\n"
+            "    subprocess.run(['git', '-C', repo, 'push', 'origin', 'main'], check=True)\n"
+        )
+        with self.assertRaisesRegex(RuntimeError, "final check.*uncommitted"):
+            git_land(wt, check_cmd=f"{shlex.quote(sys.executable)} {shlex.quote(str(script))}")
+        self.assertEqual(_git(self.repo, "ls-remote", "origin", "refs/heads/main").split()[0],
+                         _git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual((wt / "candidate.txt").read_text(), "dirty after rebase\n")
+
+    def test_advisory_compares_final_candidate_under_lock_after_checks(self) -> None:
+        wt = git_wt_create(self.repo, "evidence", base_dir=self.wt_base)
+        (wt / "candidate.txt").write_text("candidate\n")
+        _git(wt, "add", "candidate.txt")
+        _git(wt, "commit", "-m", "candidate")
+        original = _git(wt, "rev-parse", "HEAD")
+        checks = self.root / "check-count"
+        check = self.root / "check.py"
+        check.write_text(
+            "from pathlib import Path\nimport subprocess\n"
+            f"counter = Path({str(checks)!r})\n"
+            "count = int(counter.read_text()) if counter.exists() else 0\n"
+            "counter.write_text(str(count + 1))\n"
+            "if count == 0:\n"
+            f"    repo = {str(self.repo)!r}\n"
+            "    subprocess.run(['git', '-C', repo, 'commit', '--allow-empty', '-m', 'concurrent'], check=True)\n"
+            "    subprocess.run(['git', '-C', repo, 'push', 'origin', 'main'], check=True)\n"
+        )
+        captured = self.root / "compared.json"
+        comparator = self.root / "development-evidence"
+        comparator.write_text(
+            f"#!{sys.executable}\n"
+            "import fcntl,json,sys,subprocess\nfrom pathlib import Path\n"
+            f"lock = open({str(self.repo / '.git/git-land.lock')!r}, 'a+')\n"
+            "locked = False\n"
+            "try:\n    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+            "except BlockingIOError:\n    locked = True\n"
+            f"Path({str(captured)!r}).write_text(json.dumps({{'argv': sys.argv[1:], 'locked': locked, 'checks': Path({str(checks)!r}).read_text(), 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()}}))\n"
+            "print(json.dumps({'schema': 'development-evidence-comparison/1', 'freshness': 'stale', 'outcome': 'clear-within-scope', 'reasons': ['candidate changed'], 'limits': []}))\n"
+            "sys.exit(1)\n"
+        )
+        comparator.chmod(0o755)
+        receipt = self.root / "review.json"
+        receipt.write_text('{}\n')
+        with patch.dict(os.environ, {"PATH": str(self.root) + os.pathsep + os.environ["PATH"]}):
+            result = git_land(wt, check_cmd=f"{shlex.quote(sys.executable)} {shlex.quote(str(check))}",
+                              evidence_paths=(str(receipt),))
+        seen = json.loads(captured.read_text())
+        self.assertTrue(seen["locked"])
+        self.assertEqual(seen["checks"], "2")
+        final = result["head"]
+        self.assertNotEqual(final, original)
+        self.assertEqual(seen["head"], final)
+        self.assertEqual(seen["argv"], ["compare", str(receipt), "--repo", str(wt),
+                                      "--base", _git(self.repo, "rev-parse", "HEAD^"), "--json"])
+        self.assertEqual(result["evidence"][0]["freshness"], "stale")
+        self.assertEqual(result["evidence"][0]["outcome"], "clear-within-scope")
+        self.assertEqual(_git(self.repo, "rev-parse", "origin/main"), final)
+        self.assertTrue(result["pushed"])
+        self.assertFalse(wt.exists())
+
+    def test_unavailable_or_invalid_comparator_is_unknown(self) -> None:
+        with patch.dict(os.environ, {"PATH": str(self.root / "absent")}):
+            result = _compare_evidence(self.repo, self.root / "review.json", "base")
+        self.assertEqual(result["freshness"], "unknown")
+        for output in ('{}', 'not json', '[]', '{"freshness":"approved"}',
+                       '{"schema":"development-evidence-comparison/1","freshness":[]}',
+                       '{"schema":"development-evidence-comparison/1","freshness":{}}',
+                       '{"schema":"development-evidence-comparison/1","freshness":"current","outcome":[]}'):
+            with self.subTest(output=output), patch("git_trunk_tools.subprocess.run", return_value=
+                    subprocess.CompletedProcess([], 0, output, "")):
+                result = _compare_evidence(self.repo, self.root / "review.json", "base")
+            self.assertEqual(result["freshness"], "unknown")
+
+    def test_invalid_comparator_encoding_does_not_block_landing(self) -> None:
+        comparator = self.root / "development-evidence"
+        comparator.write_text(f"#!{sys.executable}\nimport os\nos.write(1, bytes([255]))\n")
+        comparator.chmod(0o755)
+        with patch.dict(os.environ, {"PATH": str(self.root) + os.pathsep + os.environ["PATH"]}):
+            result = git_land(self.repo, evidence_paths=(str(self.root / "review.json"),))
+        self.assertTrue(result["pushed"])
+        self.assertEqual(result["evidence"][0]["freshness"], "unknown")
+
+    def test_comparator_failure_cannot_claim_current(self) -> None:
+        with patch("git_trunk_tools.subprocess.run", return_value=
+                   subprocess.CompletedProcess([], 2,
+                       json.dumps({"schema": "development-evidence-comparison/1", "freshness": "current",
+                                   "outcome": "findings-open", "reasons": [], "limits": [],
+                                   "receipt_sha256": "a" * 64}), "failed")):
+            result = _compare_evidence(self.repo, self.root / "review.json", "base")
+        self.assertEqual(result["freshness"], "unknown")
+
+    def test_comparison_cannot_change_the_candidate_before_push(self) -> None:
+        wt = git_wt_create(self.repo, "mutating-comparator", base_dir=self.wt_base)
+        before = _git(self.repo, "rev-parse", "origin/main")
+        comparator = self.root / "development-evidence"
+        comparator.write_text(
+            f"#!{sys.executable}\nfrom pathlib import Path\nimport json\n"
+            "Path('README.md').write_text('modified by comparator\\n')\n"
+            "print(json.dumps({'schema': 'development-evidence-comparison/1', 'freshness': 'current', "
+            "'outcome': 'findings-open', 'reasons': [], 'limits': [], 'receipt_sha256': 'a' * 64}))\n"
+        )
+        comparator.chmod(0o755)
+        with patch.dict(os.environ, {"PATH": str(self.root) + os.pathsep + os.environ["PATH"]}):
+            with self.assertRaisesRegex(RuntimeError, "evidence comparison.*uncommitted"):
+                git_land(wt, evidence_paths=(str(self.root / "review.json"),))
+        self.assertEqual((wt / "README.md").read_text(), "modified by comparator\n")
+        self.assertEqual(_git(self.repo, "ls-remote", "origin", "refs/heads/main").split()[0], before)
 
     def test_gc_removes_merged_inactive_and_preserves_active(self) -> None:
         wt_merged = git_wt_create(self.repo, "merged-wt", base_dir=self.wt_base)

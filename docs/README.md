@@ -18,6 +18,8 @@ or the [quickstart](quickstart.md) to try it with a local PostgreSQL store.
   review to exact recipients, wait for replies, link selected results and tear down.
 - [Operate work coordination](operator/work-coordination.md): inspect Plane work,
   link exact deliverables, wait for responses and manage quiet notices.
+- [Integrate a Git candidate](git-integration.md): land checked changes and
+  compare optional development evidence against the final candidate.
 
 ## Connect your client
 
