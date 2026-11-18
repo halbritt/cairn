@@ -149,4 +149,72 @@ func TestStateTraceDirAllowsImmutableGenerationTracing(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(traceDir, "trace.jsonl")); !os.IsNotExist(err) {
 		t.Fatalf("unsafe primary trace dir must not fall through to fallback: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(genDir, "invocation-trace", "trace.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe primary trace dir must not receive trace writes: %v", err)
+	}
+	_ = os.RemoveAll(filepath.Join(genDir, "invocation-trace"))
+
+	// Regular file, symlink to directory, symlink to file, dangling symlink, and 0755 dir at primary must all refuse both paths.
+	symTargetDir := filepath.Join(root, "sym-dir")
+	if err := os.Mkdir(symTargetDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	symTargetFile := filepath.Join(root, "sym-file")
+	if err := os.WriteFile(symTargetFile, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	primary := filepath.Join(genDir, "invocation-trace")
+	for _, tc := range []struct {
+		name  string
+		setup func()
+	}{
+		{"regular-file", func() {
+			if err := os.WriteFile(primary, []byte("not-a-dir"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"symlink-dir", func() {
+			if err := os.Symlink(symTargetDir, primary); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"symlink-file", func() {
+			if err := os.Symlink(symTargetFile, primary); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"symlink-dangling", func() {
+			if err := os.Symlink(filepath.Join(root, "absent-target"), primary); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"dir-0755", func() {
+			if err := os.Mkdir(primary, 0755); err != nil {
+				t.Fatal(err)
+			}
+			_ = os.Chmod(primary, 0755)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_ = os.RemoveAll(primary)
+			_ = os.Remove(filepath.Join(traceDir, "trace.jsonl"))
+			_ = os.Remove(filepath.Join(symTargetDir, "trace.jsonl"))
+			tc.setup()
+			defer os.RemoveAll(primary)
+			tr := newTrace(filepath.Join(genDir, "memory.json"), stateTraceDir(cfg))
+			tr.entry()
+			tr.finish(0, "handle")
+			if _, err := os.Stat(filepath.Join(traceDir, "trace.jsonl")); !os.IsNotExist(err) {
+				t.Fatalf("%s wrote external fallback trace: %v", tc.name, err)
+			}
+			if _, err := os.Stat(filepath.Join(symTargetDir, "trace.jsonl")); !os.IsNotExist(err) {
+				t.Fatalf("%s wrote symlink target trace: %v", tc.name, err)
+			}
+			if tc.name == "dir-0755" {
+				if _, err := os.Stat(filepath.Join(primary, "trace.jsonl")); !os.IsNotExist(err) {
+					t.Fatalf("dir-0755 wrote primary trace: %v", err)
+				}
+			}
+		})
+	}
 }

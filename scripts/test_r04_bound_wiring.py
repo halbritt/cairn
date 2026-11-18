@@ -266,6 +266,75 @@ print(json.dumps(dict(structured_output=json.loads((root/'selection.json').read_
     def test_claude_bound_rows_refuse_changed_code_before_effects(self):
         self.refuse_changed_code('claude')
 
+    def test_checked_launcher_external_trace_refuses_file_symlink_and_unsafe_primary(self):
+        self.stage_rows('codex')
+        gen_manifest = Path(self.f.selected['path'])
+        gen_dir = gen_manifest.parent
+        primary = gen_dir / 'invocation-trace'
+        state_dir = Path(self.f.memory['state_dir'])
+        external = Path(str(state_dir) + '.invocation-trace')
+        external.mkdir(mode=0o700)
+        sym_dir = self.f.root / 'sym-trace-dir'
+        sym_dir.mkdir(mode=0o700)
+        sym_file = self.f.root / 'sym-trace-file'
+        sym_file.write_bytes(b'keep')
+        sym_file.chmod(0o600)
+        self.event('SessionStart')
+
+        # 1. Absent primary + safe external 0700 directory: external trace written, generation intact.
+        result = self.pair()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace_file = external / 'trace.jsonl'
+        lines = trace_file.read_text().strip().splitlines()
+        # Both source and go ran once via self.pair(), producing 3 lines (entry, parsed, exit) each.
+        self.assertEqual(len(lines), 6, lines)
+        inspect_ok = subprocess.run(
+            [str(self.stager), 'inspect-generation', '--path', str(gen_manifest), '--sha256', self.f.selected['sha256']],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(inspect_ok.returncode, 0, inspect_ok.stderr)
+
+        # 2. Regular file, symlinks (dir, file, dangling), and unsafe-mode directories at primary:
+        #    neither path receives trace records, and hook exit status (0) is preserved.
+        old_mode = gen_dir.stat().st_mode & 0o777
+        try:
+            gen_dir.chmod(0o700)
+            for name, setup in (
+                ('file', lambda: (primary.write_bytes(b'x'), primary.chmod(0o600))),
+                ('symlink-dir', lambda: primary.symlink_to(sym_dir)),
+                ('symlink-file', lambda: primary.symlink_to(sym_file)),
+                ('symlink-dangling', lambda: primary.symlink_to(self.f.root / 'missing-target')),
+                ('dir-0777', lambda: (primary.mkdir(mode=0o777), primary.chmod(0o777))),
+                ('dir-0755', lambda: (primary.mkdir(mode=0o755), primary.chmod(0o755))),
+            ):
+                with self.subTest(primary=name):
+                    if primary.is_symlink() or primary.is_file():
+                        primary.unlink()
+                    elif primary.exists():
+                        shutil.rmtree(primary)
+                    trace_file.unlink(missing_ok=True)
+                    (sym_dir / 'trace.jsonl').unlink(missing_ok=True)
+                    setup()
+                    try:
+                        res = self.pair()
+                        self.assertEqual(res.returncode, 0, res.stderr)
+                        self.assertFalse(trace_file.exists(), f'{name} wrote external trace')
+                        self.assertFalse((sym_dir / 'trace.jsonl').exists(), f'{name} wrote symlink target trace')
+                        if primary.is_dir() and not primary.is_symlink():
+                            self.assertFalse((primary / 'trace.jsonl').exists(), f'{name} wrote primary trace')
+                    finally:
+                        if primary.is_symlink() or primary.is_file():
+                            primary.unlink()
+                        elif primary.exists():
+                            shutil.rmtree(primary)
+        finally:
+            gen_dir.chmod(old_mode)
+        inspect_after = subprocess.run(
+            [str(self.stager), 'inspect-generation', '--path', str(gen_manifest), '--sha256', self.f.selected['sha256']],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(inspect_after.returncode, 0, inspect_after.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

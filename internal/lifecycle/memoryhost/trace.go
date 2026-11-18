@@ -31,7 +31,8 @@ func newTrace(config string, fallbacks ...string) *invocationTrace {
 		}
 		fd, err := unix.Open(candidate, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
-			if err == unix.ENOENT || err == unix.ENOTDIR {
+			var st unix.Stat_t
+			if err == unix.ENOENT && unix.Lstat(candidate, &st) == unix.ENOENT {
 				continue
 			}
 			return t

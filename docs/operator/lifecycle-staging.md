@@ -428,7 +428,10 @@ names its account-wide hooks file; it does not select a workspace
 Read the generation back with `inspect-generation` and the independent pin
 before selecting its files. The input settings file and earlier generations
 remain unchanged. Interrupted publication uses the generation publisher's
-same no-replace, synchronization and reconciliation rules.
+same no-replace, synchronization and reconciliation rules. For bounded
+diagnostic tracing on a staged `selection-*` generation, create the external
+state-adjacent directory `mkdir -m 0700 <state_dir>.invocation-trace`; do not
+create `invocation-trace/` inside the immutable generation directory.
 
 Both the selection metadata and CLI result state `native_trust`, `refresh` and
 `activation` as `not-performed`. This command does not invoke Codex's trust
