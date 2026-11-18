@@ -23,6 +23,48 @@ from unittest.mock import patch
 import check_r06_agy_native_unit as driver
 
 
+_CONTROLLED_SOURCES = None
+_ORIGINAL_DRIVER_PATHS = (driver.SOURCE_ROOT, driver.DRIVER_PATH)
+
+
+def setUpModule():
+    global _CONTROLLED_SOURCES
+    _CONTROLLED_SOURCES = tempfile.TemporaryDirectory(
+        prefix='cairn-r06-controlled-sources-', dir=Path.home() / '.cache')
+    root = Path(_CONTROLLED_SOURCES.name)
+    root.chmod(0o700)
+    rels = set(driver.REUSED) | {
+        'scripts/check_r06_agy_native_unit.py',
+        'scripts/test_r06_agy_native_unit_driver.py',
+        'docs/verification/r06-agy-native-unit.md',
+    }
+    for sub in ('scripts', 'integrations/lifecycle'):
+        for item in (driver.ROOT / sub).glob('*.py'):
+            rels.add(f'{sub}/{item.name}')
+    for rel in sorted(rels):
+        src = driver.ROOT / rel
+        if not src.is_file():
+            continue
+        dst = root / rel
+        cur = root
+        for part in Path(rel).parts[:-1]:
+            cur = cur / part
+            cur.mkdir(mode=0o700, exist_ok=True)
+            cur.chmod(0o700)
+        shutil.copyfile(src, dst)
+        dst.chmod(0o400)
+    driver.SOURCE_ROOT = root
+    driver.DRIVER_PATH = root / 'scripts/check_r06_agy_native_unit.py'
+
+
+def tearDownModule():
+    global _CONTROLLED_SOURCES
+    driver.SOURCE_ROOT, driver.DRIVER_PATH = _ORIGINAL_DRIVER_PATHS
+    if _CONTROLLED_SOURCES is not None:
+        _CONTROLLED_SOURCES.cleanup()
+        _CONTROLLED_SOURCES = None
+
+
 class ClientDirectoryProbeTests(unittest.TestCase):
     def setUp(self):
         temporary=tempfile.TemporaryDirectory(prefix='cairn-probe-audit-',dir=Path.home()/'.cache')
@@ -1784,9 +1826,13 @@ class AgyPreparationTests(unittest.TestCase):
                     strace_sha256=driver.tool_pin(Path(shutil.which('strace')).resolve())['SHA256'])
 
     def test_import_never_launches_a_process(self):
-        with patch('subprocess.Popen', side_effect=AssertionError('process on import')), \
-                patch.object(driver.r04, 'AgySession', side_effect=AssertionError('Agy on import')):
-            importlib.reload(driver)
+        saved = (driver.SOURCE_ROOT, driver.DRIVER_PATH)
+        try:
+            with patch('subprocess.Popen', side_effect=AssertionError('process on import')), \
+                    patch.object(driver.r04, 'AgySession', side_effect=AssertionError('Agy on import')):
+                importlib.reload(driver)
+        finally:
+            driver.SOURCE_ROOT, driver.DRIVER_PATH = saved
 
     def test_native_entry_refuses_before_any_process_or_file(self):
         with patch.object(driver.r04, 'TracedProcess', side_effect=AssertionError('trace launch')), \
@@ -1890,6 +1936,18 @@ class AgyPreparationTests(unittest.TestCase):
         self.assertEqual(generation['Before'], generation['After'])
         with self.assertRaisesRegex(driver.Refused, 'fresh empty'):
             driver.prepare_stubbed(self.root, **self.pins())
+
+    def test_umask_0002_checkout_sources_use_controlled_fixture_copies(self):
+        uncontrolled = self.root.parent / ('umask0002-' + str(uuid.uuid4()) + '.py')
+        uncontrolled.write_bytes((driver.ROOT / 'scripts/check_r06_agy_native_unit.py').read_bytes())
+        uncontrolled.chmod(0o664)
+        self.addCleanup(lambda: uncontrolled.unlink(missing_ok=True))
+        with self.assertRaises(ValueError):
+            driver.checked_pin(uncontrolled)
+        self.assertEqual(stat.S_IMODE(driver.DRIVER_PATH.stat().st_mode), 0o400)
+        with patch.object(driver.r04, 'AgySession', side_effect=AssertionError('actual native launch')):
+            result = driver.prepare_stubbed(self.root, **self.pins())
+        self.assertEqual(result['state'], 'passed')
 
 
 class AuthenticatedPreparationBoundaries(unittest.TestCase):

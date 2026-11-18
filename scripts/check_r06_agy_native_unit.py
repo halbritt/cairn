@@ -40,7 +40,9 @@ from disposable_host import DisposableHost, OwnedCluster, pg_bindir, stop_postgr
 from test_r04_host_wiring import UnboundFixture
 
 
-ROOT = Path(__file__).resolve().parents[1]
+DRIVER_PATH = Path(__file__).resolve()
+ROOT = DRIVER_PATH.parents[1]
+SOURCE_ROOT = ROOT
 BASE = '15080de3b1205b161faa66f60b8faf93c30f18da'
 BASE_TREE = '11ec0c51352505930e64236a99b929767e71cc2c'
 ROLES = ('api', 'control', 'stager', 'helper', 'observer')
@@ -427,7 +429,7 @@ class OwnedKernelTrace:
         os.fchmod(self.stderr.fileno(),0o600)
         try:
             self.network_policy=dict(schema='cairn.r06-kernel-network/1',tcp_ports=sorted(ports))
-            command=[sys.executable,'-B',str(Path(__file__).resolve()),'--confined-exec',
+            command=[sys.executable,'-B',str(DRIVER_PATH),'--confined-exec',
                 json.dumps(self.network_policy),str(self.root/'kernel-policy.json'),'--',*self.command(self.trace,argv)]
             self.process = subprocess.Popen(command,
                 cwd=work or self.root, env=dict(os.environ) if env is None else env,
@@ -472,7 +474,7 @@ class OwnedKernelTrace:
             self._kernel_capture=copy.deepcopy(self.generation)
             self._kernel_policy_pin=checked_pin(policy_path)
             self._kernel_policy_identity=policy_identity(policy_path)
-            self._kernel_installer=checked_pin(Path(__file__).resolve())
+            self._kernel_installer=checked_pin(DRIVER_PATH)
             info=self.trace.lstat()
             self._kernel_trace_identity=(info.st_dev,info.st_ino,info.st_uid,info.st_nlink)
             require(self.generation['Client'] == self.image and self.generation['ClientArgv'] == argv,
@@ -927,7 +929,7 @@ def verified_kernel_policy(owner,raw,capture,root,ports):
     path=root/'kernel-policy.json'
     require(checked_pin(path)==owner._kernel_policy_pin
             and policy_identity(path)==owner._kernel_policy_identity
-            and checked_pin(Path(__file__).resolve())==owner._kernel_installer,
+            and checked_pin(DRIVER_PATH)==owner._kernel_installer,
             'stale or altered kernel policy/installer binding')
     info=owner.trace.lstat()
     require(stat.S_ISREG(info.st_mode) and
@@ -1469,7 +1471,7 @@ class NativeUnitFixture:
             self.host_dsn=self.host.dsn
             self.bridge=AuthenticatedAPIBridge(f.root,self.host,images['api'],evidence)
             f.api.chmod(0o700)
-            f.api.write_text('#!/bin/sh\nexec '+shlex.join([sys.executable,'-B',str(Path(__file__).resolve()),
+            f.api.write_text('#!/bin/sh\nexec '+shlex.join([sys.executable,'-B',str(DRIVER_PATH),
                 '--api-bridge-client',str(self.bridge.path)])+' "$@"\n')
             f.api.chmod(0o500)
             for config in (f.memory,f.coord):
@@ -2542,7 +2544,7 @@ def native_preflight(approved):
         require({key:selected[key] for key in ('source_head','source_tree')}==native_source_identity(),
                 'driver source changed before reservation')
         for pin in selected['tools'].values():tool_pin(pin['Path'],pin['SHA256'])
-        source_pins={name:checked_pin(ROOT/name) for name in (*REUSED,'scripts/check_r06_agy_native_unit.py')}
+        source_pins={name:checked_pin(SOURCE_ROOT/name) for name in (*REUSED,'scripts/check_r06_agy_native_unit.py')}
         require(read_admission(approved['pin']['Path'],approved['pin']['SHA256'])==selected,'admission changed during preflight')
         native_admission_window(selected)
         approved['preflight']=dict(pg=str(pg),pg_pins=pg_pins,source_pins=source_pins,
@@ -2615,7 +2617,7 @@ def run_session_sequence(approved,fixture,session,client,provider,evidence):
         client['runtime_final']=roundtrip.write(root/'scripted-runtime-final.json',
             dict(kind='SCRIPTED_NONNATIVE',images=session.child._scripted_runtime_pins,
                  scope='Executable file mappings observed at live boundaries; pinned files rechecked after join'))
-    require(all(checked_pin(ROOT/name)==pin for name,pin in source_pins.items()),'maintained source changed during run')
+    require(all(checked_pin(SOURCE_ROOT/name)==pin for name,pin in source_pins.items()),'maintained source changed during run')
     roundtrip.write(evidence/'provider-requests.json',provider.requests)
     roundtrip.write(evidence/'native-cleanup.json',session.child.cleanup)
     return dict(native_session=session.identity,client=client,
@@ -2698,7 +2700,7 @@ def execute_owned_case(approved,*,rehearsal):
             require(all(checked_pin(pin['Path'])==pin for pin in approved['packet'].values()),'image packet changed')
             verify_tool_provenance(Path(approved['packet']['manifest']['Path']).parent)
             for pin in selected['tools'].values():tool_pin(pin['Path'],pin['SHA256'])
-            require(all(checked_pin(ROOT/name)==pin for name,pin in approved['preflight']['source_pins'].items()),
+            require(all(checked_pin(SOURCE_ROOT/name)==pin for name,pin in approved['preflight']['source_pins'].items()),
                     'maintained source changed during case')
             if not rehearsal:
                 require({key:selected[key] for key in ('source_head','source_tree')}==native_source_identity(),
@@ -3008,7 +3010,7 @@ def real_unit(images, cluster, runtime, evidence, *, final_drift=False):
             credential=str(host.token('worker')), api_home=str(host.home)))
         f.api.chmod(0o700)
         f.api.write_text('#!/bin/sh\nexec ' + shlex.join([sys.executable, '-B',
-            str(ROOT/'scripts/check_r06_unbound_roundtrip.py'), '--forward-api',
+            str(SOURCE_ROOT/'scripts/check_r06_unbound_roundtrip.py'), '--forward-api',
             str(evidence/'transport.json')]) + ' "$@"\n')
         f.api.chmod(0o500)
         for config in (f.coord, f.memory):
@@ -3210,7 +3212,7 @@ def prepare_sequence_rehearsal(evidence,*,python_sha256,strace_sha256,manifest,
         complete,complete_sha256,native=True)
     pg=pg_bindir()
     pg_pins={name:tool_pin((pg/name).resolve()) for name in ('initdb','pg_ctl','postgres','createdb','psql')}
-    source_pins={name:checked_pin(ROOT/name) for name in (*REUSED,
+    source_pins={name:checked_pin(SOURCE_ROOT/name) for name in (*REUSED,
         'scripts/check_r06_agy_native_unit.py','scripts/test_r06_agy_native_unit_driver.py',
         'docs/verification/r06-agy-native-unit.md')}
     root=evidence/'catalog';root.mkdir(mode=0o700)
@@ -3247,8 +3249,8 @@ def prepare_stubbed(evidence, *, python_sha256, strace_sha256):
     tracer = Path(tracer_path).resolve()
     pins = dict(python=tool_pin(python, python_sha256),
                 strace=tool_pin(tracer, strace_sha256),
-                sources={name: checked_pin(ROOT / name) for name in REUSED},
-                driver=checked_pin(Path(__file__).resolve()))
+                sources={name: checked_pin(SOURCE_ROOT / name) for name in REUSED},
+                driver=checked_pin(DRIVER_PATH))
     require(not list(evidence.iterdir()), 'fresh empty evidence directory required; attempt is not replayable')
     ledger = reserve_ledger(evidence / 'stub-ledger.json', pins)
     child = None
@@ -3309,8 +3311,8 @@ def prepare_stubbed(evidence, *, python_sha256, strace_sha256):
         require(tool_pin(python) == pins['python'] and tool_pin(tracer) == pins['strace']
                 and checked_pin(stub_image) == stub_pin,
                 'tool image changed during preparation')
-        require(all(checked_pin(ROOT / name) == selected for name, selected in pins['sources'].items())
-                and checked_pin(Path(__file__).resolve()) == pins['driver'],
+        require(all(checked_pin(SOURCE_ROOT / name) == selected for name, selected in pins['sources'].items())
+                and checked_pin(DRIVER_PATH) == pins['driver'],
                 'source changed during preparation')
         result.update(state='passed', owned_pids=pids, generation=generation, interval=interval,
                       stub_image=stub_pin,
