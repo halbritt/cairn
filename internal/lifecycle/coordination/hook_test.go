@@ -1066,3 +1066,95 @@ func TestHookAgyStopBusyAndIdleFormatting(t *testing.T) {
 		t.Fatalf("expected empty idle Stop, got %v state=%v", idle, currentAgent.Get("metadata").Get("state"))
 	}
 }
+
+func TestStopHookWaitsForHeldSessionLockAndUnblocksIdleWake(t *testing.T) {
+	root := t.TempDir()
+	cli, _ := newTestHookCLI(t, root)
+	stateDir := filepath.Join(root, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(root, "claude.json")
+	cfgData := `{"binding":"claude-one","harness":"claude","repo":"/repo","state_dir":"` + stateDir + `","cairn":"/bin/true","socket":"/tmp/s.sock","token_file":"/tmp/t.tok","native_delivery":true}`
+	if err := os.WriteFile(cfgPath, []byte(cfgData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cli.Host.OwnerProcess = func(_, _ *value.Value) (*value.Value, error) {
+		return nativeMap("pid", 4321, "start", 9876, "state", "S", "parent", 1, "boot", "boot-1"), nil
+	}
+	agentID := "405d84cd-837a-4775-bef2-2d4304e8f1b0"
+	execID := "2c38907d-e586-43ce-aac4-643e4efd914f"
+	nativeID := "17a6c98e-83cb-429a-be4b-b202252321b7"
+	rev := int64(1)
+	agentVal := func(st string, r int64) *value.Value {
+		return nativeMap(
+			"agent_id", agentID, "execution_id", execID, "display_name", "agent-1279",
+			"inbox", "agent/"+agentID, "native_session_id", nativeID, "context_revision", nativeInt64(r),
+			"metadata", nativeMap("harness", "claude", "project", filepath.Base(root), "workspace", root, "delivery_mode", "existing-session", "state", st),
+		)
+	}
+	currentAgent := agentVal("busy", rev)
+	cli.Host.Call = func(_ context.Context, _ *value.Value, op string, body *value.Value, _ NativeCallOptions) (*value.Value, error) {
+		switch op {
+		case "agent-register":
+			currentAgent = agentVal("busy", rev)
+			return currentAgent, nil
+		case "agent-heartbeat":
+			return currentAgent, nil
+		case "agent-context":
+			rev++
+			currentAgent = agentVal(nativeText(body.Get("metadata").Get("state")), rev)
+			return currentAgent, nil
+		case "session-inbox-claim":
+			return nativeMap("attempt", nil), nil
+		default:
+			t.Fatalf("unexpected call op: %s", op)
+			return nil, nil
+		}
+	}
+
+	// 1. UserPromptSubmit marks session busy.
+	var out, errOut bytes.Buffer
+	promptEv := fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"cwd":%q,"prompt":"work"}`, nativeID, root)
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(promptEv), &out, &errOut); err != nil || code != 0 {
+		t.Fatalf("UserPromptSubmit failed: code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	if !value.SameText(currentAgent.Get("metadata").Get("state"), "busy") {
+		t.Fatalf("expected busy after UserPromptSubmit, got %v", currentAgent.Get("metadata").Get("state"))
+	}
+
+	// 2. Hold session lock for 80ms (simulating presence watcher mid-cycle) while Stop runs.
+	statePath := SessionStatePath(stateDir, "claude-one", nativeID)
+	held, err := AcquireSessionLock(statePath)
+	if err != nil {
+		t.Fatalf("failed to acquire contender lock: %v", err)
+	}
+	go func() {
+		time.Sleep(80 * time.Millisecond)
+		_ = held.Release()
+	}()
+	out.Reset()
+	errOut.Reset()
+	stopEv := fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q,"cwd":%q}`, nativeID, root)
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(stopEv), &out, &errOut); err != nil || code != 0 {
+		t.Fatalf("Stop under brief contention failed: code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	if !value.SameText(currentAgent.Get("metadata").Get("state"), "idle") {
+		t.Fatalf("expected idle after contended Stop, got %v", currentAgent.Get("metadata").Get("state"))
+	}
+
+	// 3. When lock remains held past ctx deadline, Stop still fails cleanly with SESSION_BUSY.
+	held2, err := AcquireSessionLock(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held2.Release() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	out.Reset()
+	errOut.Reset()
+	code, _ := cli.RunCLI(ctx, []string{"hook", "--config", cfgPath}, strings.NewReader(stopEv), &out, &errOut)
+	if code != 1 || !strings.Contains(errOut.String(), "SESSION_BUSY") {
+		t.Fatalf("expected SESSION_BUSY when deadline expires, got code=%d stderr=%q", code, errOut.String())
+	}
+}

@@ -138,6 +138,13 @@ func NewFileHost(options FileHostOptions) *Host {
 		}
 		return sessionLease{lease}, nil
 	}
+	h.LockWait = func(ctx context.Context, path string, wait time.Duration) (io.Closer, error) {
+		lease, err := AcquireSessionLockWait(ctx, path, wait)
+		if err != nil {
+			return nil, err
+		}
+		return sessionLease{lease}, nil
+	}
 	h.Exists = func(path string) (bool, error) {
 		if options.Profile == nil || options.Profile.Routes == nil || options.Profile.Routes.Filesystem() == nil {
 			return false, &value.ProfileUnavailable{}

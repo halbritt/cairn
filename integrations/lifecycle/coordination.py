@@ -41,6 +41,8 @@ class NativePromptRefused(CoordinationError):
 HERDR_OUTPUT_BYTES = 1024 * 1024
 WATCH_INTERVAL = 30  # seconds between full presence, renewal and wake cycles
 CANCEL_POLL_INTERVAL = 2  # seconds between cancellation-only passes while one is pending
+HOOK_LOCK_WAIT_SECONDS = 3.0
+IDLE_HOOK_LOCK_WAIT_SECONDS = 8.0
 
 
 def _runtime_bundle():
@@ -1488,12 +1490,15 @@ def write_state(path, state):
 
 
 @contextmanager
-def session_lock(path):
+def session_lock(path, *, wait_seconds=0.0, deadline=None):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    if wait_seconds > 0 and compatibility is not None and compatibility.hook:
+        deadline = compatibility.deadline if deadline is None else compatibility.cap_deadline(deadline)
     fd = os.open(str(path.with_suffix(".lock")), os.O_CREAT | os.O_RDWR, 0o600)
     with os.fdopen(fd, "a") as file:
         try:
-            fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _grant_ledger.acquire_session_lock(file, deadline, wait_seconds=wait_seconds)
         except BlockingIOError as exc:
             raise CoordinationError("SESSION_BUSY", "another lifecycle operation is active") from exc
         yield
@@ -3981,7 +3986,13 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
         observe_provider(config, wake, event)
         return {}
     path = state_path(config, observation["native_id"])
-    with session_lock(path):
+    if observation["phase"] in ("idle", "leave"):
+        lock_wait = IDLE_HOOK_LOCK_WAIT_SECONDS
+    elif observation["phase"] == "interrupted":
+        lock_wait = 1.5
+    else:
+        lock_wait = HOOK_LOCK_WAIT_SECONDS
+    with session_lock(path, wait_seconds=lock_wait, deadline=bridge_deadline):
         state = json.loads(path.read_text()) if path.exists() else {}
         if state.get('ending') and not state.get('retired'):
             finish_presence(config, state, path)

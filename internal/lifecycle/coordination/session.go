@@ -55,6 +55,7 @@ type Host struct {
 	Log               func(string) error
 	Locate            func(*value.Value, string) (string, error)
 	Lock              func(string) (io.Closer, error)
+	LockWait          func(context.Context, string, time.Duration) (io.Closer, error)
 	Exists            func(string) (bool, error)
 	Load              func(string) (*value.Value, error)
 	Recover           func(context.Context, *NativeSession) (*value.Value, error)
@@ -1040,6 +1041,10 @@ func (s *NativeSession) retirementOrganicControl(ctx context.Context) error {
 }
 
 func OpenSession(config *value.Value, nativeID string, host *Host, create bool) (session *NativeSession, release func() error, err error) {
+	return OpenSessionWait(context.Background(), config, nativeID, host, create, 0)
+}
+
+func OpenSessionWait(ctx context.Context, config *value.Value, nativeID string, host *Host, create bool, wait time.Duration) (session *NativeSession, release func() error, err error) {
 	if host == nil || host.Locate == nil {
 		return nil, nil, &value.ProfileUnavailable{}
 	}
@@ -1047,10 +1052,15 @@ func OpenSession(config *value.Value, nativeID string, host *Host, create bool) 
 	if e != nil {
 		return nil, nil, e
 	}
-	if host.Lock == nil {
-		return nil, nil, &value.ProfileUnavailable{}
+	var lock io.Closer
+	if wait > 0 && host.LockWait != nil {
+		lock, e = host.LockWait(ctx, path, wait)
+	} else {
+		if host.Lock == nil {
+			return nil, nil, &value.ProfileUnavailable{}
+		}
+		lock, e = host.Lock(path)
 	}
-	lock, e := host.Lock(path)
 	if e != nil {
 		return nil, nil, e
 	}

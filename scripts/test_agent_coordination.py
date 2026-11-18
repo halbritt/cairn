@@ -273,6 +273,72 @@ class CoordinationNormalization(unittest.TestCase):
                 self.assertEqual(json.loads(result.stdout), {})
                 self.assertFalse((root / 'state').exists())
 
+    def test_stop_hook_waits_for_contended_session_lock_and_applies_idle_transition(self):
+        import fcntl
+        import threading
+        import time
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_dir = root / "state"
+            state_dir.mkdir(mode=0o700)
+            config = dict(
+                cairn="/fixture/cairn", socket="/fixture/api.sock", token_file="/fixture/tok",
+                repo="fixture", harness="claude", binding="claude-one",
+                state_dir=str(state_dir), native_delivery=True,
+            )
+            native_id = "17a6c98e-83cb-429a-be4b-b202252321b7"
+            proc = dict(pid=os.getpid(), start=1, state="S", parent=1, boot="boot-1")
+            agent_state = dict(
+                agent_id="405d84cd-837a-4775-bef2-2d4304e8f1b0",
+                execution_id="2c38907d-e586-43ce-aac4-643e4efd914f",
+                display_name="agent-1279", inbox="agent/405d84cd-837a-4775-bef2-2d4304e8f1b0",
+                native_session_id=native_id, context_revision=1,
+                metadata=dict(harness="claude", project=root.name, workspace=str(root),
+                              delivery_mode="existing-session", state="busy"),
+            )
+            path = coordination.state_path(config, native_id)
+            coordination.write_state(path, dict(
+                schema="cairn.native-session/1", process=proc, agent=dict(agent_state),
+                workspace=str(root), delivered_since_idle=True,
+            ))
+
+            def fake_call(_cfg, op, req, **_kw):
+                if op == "agent-heartbeat":
+                    return dict(agent_state)
+                if op == "agent-context":
+                    agent_state["context_revision"] += 1
+                    agent_state["metadata"] = dict(req["metadata"])
+                    return dict(agent_state)
+                if op == "session-inbox-claim":
+                    return dict(attempt=None)
+                if op == "session-inbox-ready":
+                    return dict(delivery_id="55555555-5555-4555-8555-555555555555")
+                raise AssertionError(f"unexpected op: {op}")
+
+            lock_file = path.with_suffix(".lock").open("a+")
+            self.addCleanup(lock_file.close)
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            timer = threading.Timer(0.08, lambda: fcntl.flock(lock_file, fcntl.LOCK_UN))
+            timer.start()
+            self.addCleanup(lambda: timer.join(timeout=1))
+            with patch.object(coordination, "owner_process", return_value=proc), \
+                    patch.object(coordination, "process_alive", return_value=True), \
+                    patch.object(coordination, "call", side_effect=fake_call), \
+                    patch.object(coordination._wake_transport, "prepare_native_wake",
+                                 side_effect=lambda *_a, **_k: dict(delivery_id="55555555-5555-4555-8555-555555555555")):
+                out = coordination._handle(config, dict(
+                    hook_event_name="Stop", session_id=native_id, cwd=str(root)))
+                self.assertEqual(out, {})
+                saved = json.loads(path.read_text())
+                self.assertEqual(saved["agent"]["metadata"]["state"], "idle")
+                self.assertFalse(saved["delivered_since_idle"])
+                cycle = {}
+                prepared = coordination.prepare_idle_wake(dict(config, idle_wakeup=True), saved, path, cycle)
+                self.assertEqual(cycle.get("ready_delivery"), "55555555-5555-4555-8555-555555555555")
+                self.assertEqual(prepared, dict(delivery_id="55555555-5555-4555-8555-555555555555"))
+
 
 class CoordinationInstall(unittest.TestCase):
     def test_reinstall_preserves_other_hooks_and_settings(self):

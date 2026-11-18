@@ -35,7 +35,11 @@ func IsSessionBusy(err error) bool {
 	return errors.As(err, &busy) && busy.Code == "SESSION_BUSY"
 }
 
-const DefaultLedgerLockWait = 1500 * time.Millisecond
+const (
+	DefaultLedgerLockWait      = 1500 * time.Millisecond
+	DefaultHookSessionLockWait = 3 * time.Second
+	IdleHookSessionLockWait    = 8 * time.Second
+)
 
 // LockLease owns one open file description, including its BSD flock. Release
 // closes it even if explicit unlock fails, and repeated releases return the
@@ -115,10 +119,13 @@ func acquireLock(ctx context.Context, path string, perm os.FileMode, wait time.D
 }
 
 func AcquireSessionLock(statePath string) (*LockLease, error) {
+	return AcquireSessionLockWait(context.Background(), statePath, 0)
+}
+func AcquireSessionLockWait(ctx context.Context, statePath string, wait time.Duration) (*LockLease, error) {
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
 		return nil, err
 	}
-	return acquireLock(context.Background(), SessionLockPath(statePath), 0o600, 0, "another lifecycle operation is active")
+	return acquireLock(ctx, SessionLockPath(statePath), 0o600, wait, "another lifecycle operation is active")
 }
 func TryAcquireGrantLedgerLock(memoryStateDir, nativeSessionID string) (*LockLease, error) {
 	return AcquireGrantLedgerLock(context.Background(), memoryStateDir, nativeSessionID, 0)

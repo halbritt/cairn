@@ -386,7 +386,17 @@ func (c *CLI) processAlive(proc *value.Value) (bool, error) {
 }
 
 func (c *CLI) handleHookWithLock(ctx context.Context, config, event, observation, process, wakeVal *value.Value, hookConfigPath string, bridgeDeadline float64, reports *[]InboxRecallReport) (*value.Value, error) {
-	ns, release, err := OpenSession(config, nativeText(observation.Get("native_id")), c.newNativeSession(config, nil, "").Host, true)
+	lockWait := DefaultHookSessionLockWait
+	switch nativeText(observation.Get("phase")) {
+	case "idle", "leave":
+		lockWait = IdleHookSessionLockWait
+	case "interrupted":
+		lockWait = DefaultLedgerLockWait
+	}
+	if rem := bridgeDeadline - c.monotonicSeconds(); rem < lockWait.Seconds() {
+		lockWait = max(0, time.Duration(rem*float64(time.Second)))
+	}
+	ns, release, err := OpenSessionWait(ctx, config, nativeText(observation.Get("native_id")), c.newNativeSession(config, nil, "").Host, true, lockWait)
 	if err != nil {
 		return nil, err
 	}
