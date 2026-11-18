@@ -132,6 +132,87 @@ class MarkerScan(unittest.TestCase):
             with self.assertRaises(ValueError):
                 process_scan.markers(name, value)
 
+    def test_mid_execve_kernel_empty_env_and_fork_behind_cursor(self):
+        import shutil
+        import threading
+        from unittest.mock import patch
+
+        def full_stat(pid, state='S', flags=0x400000, start=500, env_start=0, env_end=0):
+            fields = ['0'] * 50
+            fields[0], fields[1], fields[2], fields[3] = state, '1', str(pid), str(pid)
+            fields[6], fields[19] = str(flags), str(start)
+            fields[47], fields[48] = str(env_start), str(env_end)
+            return f'{pid} (proc) ' + ' '.join(fields) + '\n'
+
+        with tempfile.TemporaryDirectory() as proc:
+            root = Path(proc)
+            # 1. Kernel thread + empty-env user process -> clear & complete (never unknown).
+            for pid, flags, es, ee in ((501, process_scan.PF_KTHREAD, 0, 0),
+                                       (502, 0x400000, 0x7fff1000, 0x7fff1000)):
+                d = root / str(pid)
+                d.mkdir()
+                (d / 'stat').write_text(full_stat(pid, flags=flags, env_start=es, env_end=ee))
+                (d / 'environ').write_bytes(b'')
+                (d / 'cmdline').write_bytes(b'worker\0')
+            res = process_scan.markers(MARKER, 'm1', since=100, proc=proc)
+            self.assertEqual((res['clear'], res['coverage'], res['unknown']), (True, 'complete', []))
+
+            # 2. Transient 0-byte mid-execve environ resolves within retry window.
+            d503 = root / '503'
+            d503.mkdir()
+            (d503 / 'stat').write_text(full_stat(503, state='R', env_start=0, env_end=0))
+            (d503 / 'environ').write_bytes(b'')
+            (d503 / 'cmdline').write_bytes(b'child\0')
+
+            def finish_exec():
+                time.sleep(0.003)
+                (d503 / 'environ').write_bytes(f'{MARKER}=m2\0'.encode())
+                (d503 / 'stat').write_text(full_stat(503, env_start=0x7fff1000, env_end=0x7fff1020))
+
+            t = threading.Thread(target=finish_exec)
+            t.start()
+            try:
+                res2 = process_scan.markers(MARKER, 'm2', since=100, proc=proc)
+            finally:
+                t.join(timeout=1)
+            self.assertEqual([p['pid'] for p in res2['processes']], [503])
+            self.assertEqual((res2['clear'], res2['coverage']), (False, 'complete'))
+            shutil.rmtree(d503)
+
+            # 3. Stalled mid-execve stays unknown rather than false clear.
+            d504 = root / '504'
+            d504.mkdir()
+            (d504 / 'stat').write_text(full_stat(504, state='D', env_start=0, env_end=0))
+            (d504 / 'environ').write_bytes(b'')
+            (d504 / 'cmdline').write_bytes(b'')
+            res3 = process_scan.markers(MARKER, 'm3', since=100, proc=proc)
+            self.assertEqual((res3['clear'], res3['coverage'], res3['unknown']), (False, 'unknown', [504]))
+            shutil.rmtree(d504)
+
+            # 4. Parent forks child 500 behind Pass-0 cursor and vanishes before inspection.
+            d505 = root / '505'
+            d505.mkdir()
+            (d505 / 'stat').write_text(full_stat(505, env_start=0x7fff1000, env_end=0x7fff1020))
+            (d505 / 'environ').write_bytes(f'{MARKER}=m4\0'.encode())
+            (d505 / 'cmdline').write_bytes(b'parent\0')
+            orig_read = process_scan._read_environ
+
+            def fork_and_exit(p_root, pid, since):
+                if pid == 505:
+                    d500 = root / '500'
+                    d500.mkdir()
+                    (d500 / 'stat').write_text(full_stat(500, env_start=0x7fff1000, env_end=0x7fff1020))
+                    (d500 / 'environ').write_bytes(f'{MARKER}=m4\0'.encode())
+                    (d500 / 'cmdline').write_bytes(b'forked-child\0')
+                    shutil.rmtree(d505)
+                    return None, 'gone'
+                return orig_read(p_root, pid, since)
+
+            with patch.object(process_scan, '_read_environ', side_effect=fork_and_exit):
+                res4 = process_scan.markers(MARKER, 'm4', since=100, proc=proc)
+            self.assertEqual([p['pid'] for p in res4['processes']], [500])
+            self.assertFalse(res4['clear'])
+
 
 if __name__ == '__main__':
     unittest.main()

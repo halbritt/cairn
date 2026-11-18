@@ -13,6 +13,11 @@ older than the marked work cannot descend from it.
 """
 import os
 from pathlib import Path
+import time
+
+PF_KTHREAD = 0x00200000
+MAX_MARKER_PASSES = 5
+EXECVE_RETRY_DELAYS = (0.0, 0.001, 0.002, 0.004, 0.008, 0.010)
 
 
 def _stat(pid):
@@ -24,6 +29,72 @@ def _stat_at(proc, pid):
     fields = raw[raw.rindex(')') + 2:].split()
     # fields[0] is state (field 3); pgrp, session and start time are fields 5, 6 and 22.
     return dict(state=fields[0], pgid=int(fields[2]), sid=int(fields[3]), start=int(fields[19]))
+
+
+def _check_zero_environ(proc, pid, since):
+    """Classify a 0-byte environ read: ('mid_exec' | 'clear' | 'gone' | 'unknown')."""
+    try:
+        raw = Path(f'{proc}/{pid}/stat').read_text()
+        end = raw.rindex(')')
+        fields = raw[end + 2:].split()
+        if len(fields) < 20:
+            return 'unknown'
+        start = int(fields[19])
+        if fields[0] == 'Z' or (since >= 0 and start < since) or len(fields) < 49:
+            return 'clear'
+        flags = int(fields[6])
+        env_start = int(fields[47])
+        env_end = int(fields[48])
+        if (flags & PF_KTHREAD) or (env_start != 0 and env_start == env_end):
+            return 'clear'
+        return 'mid_exec'
+    except (FileNotFoundError, ProcessLookupError):
+        return 'gone'
+    except PermissionError:
+        return 'unknown'
+    except (ValueError, IndexError):
+        return 'unknown'
+
+
+def _read_environ(proc, pid, since):
+    """Read /proc/PID/environ, retrying brief mid-execve 0-byte windows."""
+    path = f'{proc}/{pid}/environ'
+    try:
+        with open(path, 'rb') as source:
+            raw = source.read()
+    except (FileNotFoundError, ProcessLookupError):
+        return None, 'gone'
+    except PermissionError:
+        try:
+            status = _stat_at(proc, pid)
+            if status['state'] != 'Z' and (since < 0 or status['start'] >= since):
+                return None, 'unknown'
+            return b'', 'ok'
+        except (FileNotFoundError, ProcessLookupError):
+            return None, 'gone'
+        except (PermissionError, ValueError, IndexError):
+            return None, 'unknown'
+    if raw:
+        return raw, 'ok'
+    verdict = _check_zero_environ(proc, pid, since)
+    if verdict != 'mid_exec':
+        return (b'', 'ok') if verdict == 'clear' else (None, verdict)
+    for delay in EXECVE_RETRY_DELAYS:
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            with open(path, 'rb') as source:
+                raw = source.read()
+        except (FileNotFoundError, ProcessLookupError):
+            return None, 'gone'
+        except PermissionError:
+            return None, 'unknown'
+        if raw:
+            return raw, 'ok'
+        verdict = _check_zero_environ(proc, pid, since)
+        if verdict != 'mid_exec':
+            return (b'', 'ok') if verdict == 'clear' else (None, verdict)
+    return None, 'unknown'
 
 
 def start_ticks(pid='self'):
@@ -44,36 +115,75 @@ def markers(name, value, since=0, proc='/proc'):
     needle = f'{name}={value}'.encode()
     uid = os.getuid()
     boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-    processes, unknown = [], []
-    for entry in os.scandir(proc):
-        if not entry.name.isdigit():
-            continue
-        pid = int(entry.name)
-        try:
-            if entry.stat(follow_symlinks=False).st_uid != uid:
+    processes = []
+    seen_clear, seen_matched, seen_unknown = set(), set(), set()
+    for attempt in range(MAX_MARKER_PASSES):
+        new_unseen = False
+        for entry in os.scandir(proc):
+            if not (entry.name.isascii() and entry.name.isdigit()):
                 continue
-            with open(f'{proc}/{pid}/environ', 'rb') as source:
-                environment = source.read().split(b'\0')
-            if needle not in environment:
+            pid = int(entry.name)
+            if pid in seen_clear or pid in seen_matched or pid in seen_unknown:
                 continue
-            status = _stat_at(proc, pid)
-            if status['state'] == 'Z':
-                continue
-            cmd = Path(f'{proc}/{pid}/cmdline').read_bytes().replace(b'\0', b' ').strip()
-            processes.append(dict(pid=pid, start=status['start'], boot=boot, pgid=status['pgid'],
-                                  sid=status['sid'], cmd=cmd.decode('utf-8', 'replace')[:200]))
-        except (FileNotFoundError, ProcessLookupError):
-            continue  # exited during the scan
-        except PermissionError:
-            # A zombie's environ is unreadable too, but it has already exited.
             try:
-                status = _stat_at(proc, pid)
-                if status['state'] != 'Z' and status['start'] >= since:
-                    unknown.append(pid)
+                if entry.stat(follow_symlinks=False).st_uid != uid:
+                    seen_clear.add(pid)
+                    continue
             except (FileNotFoundError, ProcessLookupError):
                 continue
-            except (PermissionError, ValueError, IndexError):
-                unknown.append(pid)
+            except PermissionError:
+                try:
+                    status = _stat_at(proc, pid)
+                    if status['state'] != 'Z' and (since < 0 or status['start'] >= since):
+                        seen_unknown.add(pid)
+                    else:
+                        seen_clear.add(pid)
+                except (FileNotFoundError, ProcessLookupError):
+                    continue
+                except (PermissionError, ValueError, IndexError):
+                    seen_unknown.add(pid)
+                continue
+            if attempt > 0:
+                new_unseen = True
+            raw_env, state = _read_environ(proc, pid, since)
+            if state == 'unknown':
+                seen_unknown.add(pid)
+                continue
+            if state == 'gone':
+                if attempt == MAX_MARKER_PASSES - 1:
+                    seen_unknown.add(pid)
+                else:
+                    new_unseen = True
+                continue
+            if needle not in raw_env.split(b'\0'):
+                seen_clear.add(pid)
+                continue
+            try:
+                status = _stat_at(proc, pid)
+                if status['state'] == 'Z':
+                    seen_clear.add(pid)
+                    continue
+                cmd = Path(f'{proc}/{pid}/cmdline').read_bytes().replace(b'\0', b' ').strip()
+                seen_matched.add(pid)
+                processes.append(dict(pid=pid, start=status['start'], boot=boot, pgid=status['pgid'],
+                                      sid=status['sid'], cmd=cmd.decode('utf-8', 'replace')[:200]))
+            except (FileNotFoundError, ProcessLookupError):
+                if attempt == MAX_MARKER_PASSES - 1:
+                    seen_unknown.add(pid)
+                else:
+                    new_unseen = True
+            except PermissionError:
+                try:
+                    status = _stat_at(proc, pid)
+                    if status['state'] != 'Z' and (since < 0 or status['start'] >= since):
+                        seen_unknown.add(pid)
+                except (FileNotFoundError, ProcessLookupError):
+                    continue
+                except (PermissionError, ValueError, IndexError):
+                    seen_unknown.add(pid)
+        if attempt > 0 and not new_unseen:
+            break
+    unknown = sorted(seen_unknown)
     coverage = 'unknown' if unknown else 'complete'
     return dict(clear=coverage == 'complete' and not processes, coverage=coverage,
                 processes=processes, unknown=unknown)
