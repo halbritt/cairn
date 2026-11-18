@@ -4096,6 +4096,8 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
                 write_state(path, state)
                 return dict(decision='continue' if config['harness'] == 'agy' else 'block', reason=inbox)
             return {}
+        if observation["event"] == "Stop":
+            return {}
         agent = state["agent"]
         message = (f"Cairn session {agent['display_name']} has inbox {agent['inbox']}. "
                    f"Use agent UUID {agent['agent_id']} and execution UUID {agent['execution_id']} "

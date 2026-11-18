@@ -940,3 +940,129 @@ func TestHookCompatibilityInboxRecallAndReportFlush(t *testing.T) {
 		}
 	}
 }
+
+func TestHookAgyStopBusyAndIdleFormatting(t *testing.T) {
+	root := t.TempDir()
+	cli, _ := newTestHookCLI(t, root)
+	stateDir := filepath.Join(root, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(root, "agy.json")
+	cfgData := `{"binding":"agy-one","harness":"agy","repo":"/repo","state_dir":"` + stateDir + `","cairn":"/bin/true","socket":"/tmp/s.sock","token_file":"/tmp/t.tok","native_delivery":true}`
+	if err := os.WriteFile(cfgPath, []byte(cfgData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cli.Host.OwnerProcess = func(_, _ *value.Value) (*value.Value, error) {
+		return nativeMap("pid", 4321, "start", 9876, "state", "S", "parent", 1, "boot", "boot-1"), nil
+	}
+
+	agentID := "767f45f2-9a3e-4171-833d-34c44100d60b"
+	execID := "9d124ee1-bde5-418b-a05e-6fe03f25c772"
+	nativeID := "87122e6e-dcaf-45e1-98c4-ec0fd318b5a0"
+	deliveryID := "55555555-5555-4555-8555-555555555555"
+	leaseID := "66666666-6666-4666-8666-666666666666"
+	recordID := "77777777-7777-4777-8777-777777777777"
+
+	rev := int64(1)
+	agentVal := func(state string, r int64) *value.Value {
+		return nativeMap(
+			"agent_id", agentID, "execution_id", execID, "display_name", "agent-2228",
+			"inbox", "agent/"+agentID, "native_session_id", nativeID, "context_revision", nativeInt64(r),
+			"metadata", nativeMap("harness", "agy", "project", filepath.Base(root), "workspace", root, "delivery_mode", "existing-session", "state", state),
+		)
+	}
+	currentAgent := agentVal("busy", rev)
+	pendingDeliveries := 0
+	claimCalls := 0
+	cli.Host.Call = func(_ context.Context, _ *value.Value, op string, body *value.Value, _ NativeCallOptions) (*value.Value, error) {
+		switch op {
+		case "agent-register":
+			currentAgent = agentVal("busy", rev)
+			return currentAgent, nil
+		case "agent-heartbeat":
+			return currentAgent, nil
+		case "agent-context":
+			rev++
+			currentAgent = agentVal(nativeText(body.Get("metadata").Get("state")), rev)
+			return currentAgent, nil
+		case "session-inbox-claim":
+			claimCalls++
+			if pendingDeliveries == 0 {
+				return nativeMap("attempt", nil), nil
+			}
+			pendingDeliveries--
+			return nativeMap("attempt", nativeMap(
+				"attempt_id", body.Get("request_id"),
+				"session", nativeMap("agent_id", agentID, "execution_id", execID),
+				"delivery", nativeMap("delivery_id", deliveryID, "lease_id", leaseID, "state", "leased",
+					"event", nativeMap("event_id", deliveryID, "kind", "request", "from", "agent/sender", "ref", nativeMap("record_id", recordID, "version", 1))),
+			)), nil
+		case "session-inbox-pending":
+			return nativeMap("requests", pendingDeliveries, "notices", 0, "responses", 0, "latest_position", 1, "truncated", false), nil
+		case "event-renew":
+			return nativeMap("delivery_id", deliveryID, "lease_id", leaseID, "state", "leased",
+				"event", nativeMap("event_id", deliveryID, "kind", "request", "from", "agent/sender", "ref", nativeMap("record_id", recordID, "version", 1))), nil
+		case "session-inbox-reconcile":
+			if value.SameText(body.Get("reason"), "delivery_completed") {
+				return nil, &CoordinationError{Code: "DELIVERY_ACTIVE", Message: "delivery is still active"}
+			}
+			return nativeMap("released", true), nil
+		default:
+			t.Fatalf("unexpected call op: %s", op)
+			return nil, nil
+		}
+	}
+
+	runHook := func(evName string, payload string) map[string]any {
+		t.Helper()
+		var out, errOut bytes.Buffer
+		code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath, "--event", evName}, strings.NewReader(payload), &out, &errOut)
+		if err != nil || code != 0 {
+			t.Fatalf("%s failed: code=%d err=%v stderr=%q", evName, code, err, errOut.String())
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+			t.Fatalf("%s invalid JSON %q: %v", evName, out.String(), err)
+		}
+		return parsed
+	}
+
+	// 1. PreInvocation injects ephemeralMessage and leaves state busy.
+	pre := runHook("PreInvocation", fmt.Sprintf(`{"conversationId":%q,"workspacePaths":[%q],"modelName":"m"}`, nativeID, root))
+	steps, ok := pre["injectSteps"].([]any)
+	if !ok || len(steps) != 1 || !value.SameText(currentAgent.Get("metadata").Get("state"), "busy") {
+		t.Fatalf("unexpected PreInvocation output/state: %v state=%v", pre, currentAgent.Get("metadata").Get("state"))
+	}
+
+	// 2. Stop with fullyIdle=false and absent fullyIdle return {} (no injectSteps), preserve busy, and do not claim pending work.
+	pendingDeliveries = 1
+	claimsBefore := claimCalls
+	for _, stopPayload := range []string{
+		fmt.Sprintf(`{"conversationId":%q,"workspacePaths":[%q],"modelName":"m","fullyIdle":false}`, nativeID, root),
+		fmt.Sprintf(`{"conversationId":%q,"workspacePaths":[%q],"modelName":"m"}`, nativeID, root),
+	} {
+		got := runHook("Stop", stopPayload)
+		if len(got) != 0 {
+			t.Fatalf("expected empty Stop reply when busy, got %v", got)
+		}
+		if !value.SameText(currentAgent.Get("metadata").Get("state"), "busy") {
+			t.Fatalf("expected busy state preserved, got %v", currentAgent.Get("metadata").Get("state"))
+		}
+		if claimCalls != claimsBefore || pendingDeliveries != 1 {
+			t.Fatalf("busy Stop must not claim pending delivery: claimCalls=%d pending=%d", claimCalls, pendingDeliveries)
+		}
+	}
+
+	// 3. Stop with fullyIdle=true claims pending work, returns decision=continue, and restores busy state.
+	cont := runHook("Stop", fmt.Sprintf(`{"conversationId":%q,"workspacePaths":[%q],"modelName":"m","fullyIdle":true}`, nativeID, root))
+	if cont["decision"] != "continue" || !strings.Contains(fmt.Sprint(cont["reason"]), "Cairn has a request from agent/sender") || !value.SameText(currentAgent.Get("metadata").Get("state"), "busy") {
+		t.Fatalf("expected Stop continue with delivery, got %v state=%v", cont, currentAgent.Get("metadata").Get("state"))
+	}
+
+	// 4. Subsequent fullyIdle=true Stop with no pending work settles idle and returns {}.
+	idle := runHook("Stop", fmt.Sprintf(`{"conversationId":%q,"workspacePaths":[%q],"modelName":"m","fullyIdle":true}`, nativeID, root))
+	if len(idle) != 0 || !value.SameText(currentAgent.Get("metadata").Get("state"), "idle") {
+		t.Fatalf("expected empty idle Stop, got %v state=%v", idle, currentAgent.Get("metadata").Get("state"))
+	}
+}

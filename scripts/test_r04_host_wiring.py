@@ -165,19 +165,38 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
             for suffix in ('.calls', '.jsonl'):
                 f.api.with_suffix(suffix).unlink(missing_ok=True)
             outputs = []
-            for row, fully_idle in ((record['rows'][0], False), (record['rows'][1], False), (record['rows'][1], True)):
+            cases = (
+                (record['rows'][0], False),
+                (record['rows'][1], False),
+                (record['rows'][1], None),
+                (record['rows'][1], True),
+            )
+            for row, fully_idle in cases:
                 # The selected event flag supplies the native Agy event name.
-                raw = encoded(dict(conversationId=SESSION, workspacePaths=[str(f.root)], modelName='fixture-model',
-                                   fullyIdle=fully_idle, host_pid=os.getpid(), prompt_id='agy-turn'))
+                payload = dict(conversationId=SESSION, workspacePaths=[str(f.root)], modelName='fixture-model',
+                               host_pid=os.getpid(), prompt_id='agy-turn')
+                if fully_idle is not None:
+                    payload['fullyIdle'] = fully_idle
+                raw = encoded(payload)
                 argv = row['argv'] if side == 'go' else [*row['retained_launcher'], 'hook',
                                                         '--config', str(f.coord_path), '--event', row['event']]
                 result = subprocess.run(['/bin/sh', '-c', shlex.join(argv)], input=raw, cwd=f.root,
                                         env=environment, capture_output=True, timeout=20)
                 self.assertEqual(result.returncode, 0, result.stderr)
+                decoded = json.loads(result.stdout)
+                if row['event'] == 'PreInvocation':
+                    self.assertEqual(set(decoded), {'injectSteps'})
+                    self.assertEqual(len(decoded['injectSteps']), 1)
+                    self.assertEqual(set(decoded['injectSteps'][0]), {'ephemeralMessage'})
+                else:
+                    self.assertEqual(row['event'], 'Stop')
+                    self.assertNotIn('injectSteps', decoded)
+                    self.assertNotIn('hookSpecificOutput', decoded)
+                    self.assertEqual(decoded, {})
                 outputs.append((result.returncode, result.stdout, result.stderr))
                 reported = [json.loads(call['input'])['metadata']['state'] for call in f.api_calls()
                             if call['operation'] in ('agent-register', 'agent-context')]
-                self.assertEqual(reported[-1], 'idle' if row['event'] == 'Stop' and fully_idle else 'busy')
+                self.assertEqual(reported[-1], 'idle' if row['event'] == 'Stop' and fully_idle is True else 'busy')
             key = hashlib.sha256((f.coord['binding']+'\0'+SESSION).encode()).hexdigest()
             state = json.loads((Path(f.coord['state_dir'])/(key+'.json')).read_bytes())
             self.assertEqual(state['agent']['agent_id'], issued.AGENT)

@@ -689,6 +689,9 @@ func (c *CLI) handleHookInboxAndOutput(ctx context.Context, ns *NativeSession, c
 		}
 		return value.Mapping(), nil
 	}
+	if value.SameText(observation.Get("event"), "Stop") {
+		return value.Mapping(), nil
+	}
 	return c.formatHookTurnOutput(ctx, ns, config, event, observation, wakeVal, inbox, bridgeDeadline, reports)
 }
 
