@@ -163,10 +163,15 @@ Each tool acts as the caller's registered session. The session is the online
 directory entry whose native session ID equals the host conversation:
 `--native-session ID`, or `CLAUDE_CODE_SESSION_ID` from the launching harness
 when the flag is absent, or the tool-call `_meta.threadId` with `--codex-thread`.
-When no single online session matches, the tool refuses with `IDENTITY_UNKNOWN`
-or `IDENTITY_AMBIGUOUS`; pass `agent_id` and `execution_id` from the session
-context instead. The UUIDs select a session within the profile and are not
-credentials; the API checks them on every call.
+When the host supplies no native session ID (such as Agy or Hermes), `cairn mcp`
+resolves a unique online session whose coordination state under
+`$CAIRN_HOME/coordination/state` (or `--coordination-state-root`) matches the
+closest ancestor host process (`pid`, kernel `start` ticks, and `boot_id`).
+When no single online session matches (for example when several conversations or
+subagents are active inside one host process), the tool refuses with
+`IDENTITY_UNKNOWN` or `IDENTITY_AMBIGUOUS`; pass `agent_id` and `execution_id`
+from the session context instead. The UUIDs select a session within the profile
+and are not credentials; the API checks them on every call.
 
 | Tool | Purpose |
 | --- | --- |

@@ -82,7 +82,14 @@ matching Cairn CLI. Search refuses a CLI result without structured pull argument
 
 The names are `cairn_search`, `cairn_pull`, `cairn_pull_evidence`,
 `cairn_prepare_note`, `cairn_remember`, `cairn_edit`, `cairn_history`, `cairn_assessments` and
-`cairn_assess`. OpenCode's tool permissions apply, including
+`cairn_assess`. Optional `--messaging` on `cairn opencode-install` (using
+`--project DIRECTORY` or `--config-dir DIRECTORY`) also exports `cairn_agents`,
+`cairn_send`, `cairn_inbox`, `cairn_ack`, `cairn_complete`, `cairn_renew` and
+`cairn_event_status` (from [messaging.ts](../integrations/opencode/messaging.ts)),
+resolving the caller's registered session from OpenCode's `context.sessionID`
+with optional explicit `agent_id` and `execution_id` fallback. Without
+`--messaging` the installed adapter and declarations are unchanged. OpenCode's
+tool permissions apply, including
 explicit requests through the native permission context. Choose permissions for
 the intended task. These names differ from the `cairn_cairn_*` MCP names; an
 existing MCP-only permission entry does not automatically allow native tools.

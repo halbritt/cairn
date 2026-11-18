@@ -36,7 +36,7 @@ Everyday commands:
   lifecycle (DISABLED; no activation or hook execution)
   version | agent [--token-file FILE] [--socket PATH] version
   clients [--profile NAME | --token-file FILE] [--socket PATH] [--limit N] (observed client declarations for your own principal; use --help)
-  opencode-install --project DIRECTORY --socket PATH --token-file FILE --repo REPO [--tokens N] [--max-tokens N] [--task TASK] [--run RUN] [--recent-files] [--replace] [--revision REV] [--workspace-sha256 SHA] [--task-class CLASS] [--task-phase PHASE] [--binding BIND] [--capability CAP]
+  opencode-install (--project DIRECTORY | --config-dir DIRECTORY) --socket PATH --token-file FILE --repo REPO [--tokens N] [--max-tokens N] [--task TASK] [--run RUN] [--messaging] [--recent-files] [--replace] [--revision REV] [--workspace-sha256 SHA] [--task-class CLASS] [--task-phase PHASE] [--binding BIND] [--capability CAP]
   opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only]
   codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required] [--tool-profile compact/1|compact/2]
   claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N] [--tool-profile compact/1|compact/2]

@@ -26,6 +26,7 @@ type openCodeSettings struct {
 	MaxTokens  int               `json:"max_tokens"`
 	TaskID     string            `json:"task_id,omitempty"`
 	RunID      string            `json:"run_id,omitempty"`
+	Messaging  bool              `json:"messaging,omitempty"`
 	Context    map[string]string `json:"context,omitempty"`
 }
 
@@ -50,6 +51,7 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	result := openCodeInstallation{Files: []installedFile{}}
 	f := flags("opencode-install")
 	project := f.String("project", ".", "existing target project directory")
+	configDir := f.String("config-dir", "", "existing OpenCode configuration directory (instead of --project)")
 	replace := f.Bool("replace", false, "replace differing Cairn adapter and connection files")
 	recentFiles := f.Bool("recent-files", false, "install optional session-local recent-file search hints")
 	settings := openCodeSettings{Executable: executable}
@@ -60,6 +62,7 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	f.IntVar(&settings.MaxTokens, "max-tokens", 1000000, "maximum explicit search input room and tool output; --tokens remains the default")
 	f.StringVar(&settings.TaskID, "task", "", "optional declared task scope shared across native sessions")
 	f.StringVar(&settings.RunID, "run", "", "optional declared run scope; requires --task, otherwise use each native session ID")
+	f.BoolVar(&settings.Messaging, "messaging", false, "also install session inbox tools (agents, send, inbox, ack, complete, renew, event_status)")
 	pins := map[string]*string{}
 	for _, name := range []string{"revision", "workspace-sha256", "task-class", "task-phase", "binding", "capability"} {
 		pins[name] = f.String(name, "", "declared context pin; validated by the API on retrieval")
@@ -67,8 +70,20 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	if err := f.Parse(args); err != nil {
 		return result, invalid(err.Error())
 	}
-	if f.NArg() != 0 || *project == "" || settings.Socket == "" || settings.TokenFile == "" || strings.TrimSpace(settings.Repo) == "" || settings.Repo == "*" || len(settings.Repo) > 256 {
-		return result, invalid("opencode-install requires --socket, --token-file and --repo, a project directory, and no positional arguments")
+	projectProvided, configDirProvided := false, false
+	f.Visit(func(option *flag.Flag) {
+		projectProvided = projectProvided || option.Name == "project"
+		configDirProvided = configDirProvided || option.Name == "config-dir"
+	})
+	if projectProvided && configDirProvided {
+		return result, invalid("supply --project or --config-dir, not both")
+	}
+	target := project
+	if configDirProvided {
+		target = configDir
+	}
+	if f.NArg() != 0 || *target == "" || settings.Socket == "" || settings.TokenFile == "" || strings.TrimSpace(settings.Repo) == "" || settings.Repo == "*" || len(settings.Repo) > 256 {
+		return result, invalid("opencode-install requires --socket, --token-file and --repo, a target directory, and no positional arguments")
 	}
 	if settings.Tokens < 256 || settings.Tokens > 1000000 {
 		return result, invalid("memory input room must be between 256 and 1000000")
@@ -94,36 +109,39 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 			settings.Context[strings.ReplaceAll(name, "-", "_")] = *value
 		}
 	}
-	text := []string{settings.Executable, settings.Socket, settings.TokenFile, settings.Repo, *project}
+	text := []string{settings.Executable, settings.Socket, settings.TokenFile, settings.Repo, *target}
 	for _, value := range settings.Context {
 		text = append(text, value)
 	}
 	if err := validateHarnessText(text...); err != nil {
 		return result, err
 	}
-	for _, path := range []*string{&settings.Executable, &settings.Socket, &settings.TokenFile, project} {
+	for _, path := range []*string{&settings.Executable, &settings.Socket, &settings.TokenFile, target} {
 		absolute, err := filepath.Abs(*path)
 		if err != nil {
 			return result, installationError(*path, err)
 		}
 		*path = absolute
 	}
-	resolved, err := filepath.EvalSymlinks(*project)
+	resolved, err := filepath.EvalSymlinks(*target)
 	if err != nil {
-		return result, installationError(*project, err)
+		return result, installationError(*target, err)
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return result, installationError(resolved, err)
 	}
 	if !info.IsDir() {
-		return result, invalid("project must be an existing directory")
+		return result, invalid("target must be an existing directory")
 	}
 	if err := validateHarnessText(settings.Executable, settings.Socket, settings.TokenFile, resolved); err != nil {
 		return result, err
 	}
 	result.Project = resolved
 	directory := filepath.Join(resolved, ".opencode")
+	if configDirProvided {
+		directory = resolved
+	}
 	tools := filepath.Join(directory, "tools")
 	plugins := filepath.Join(directory, "plugins")
 	directories := []string{directory, tools}
@@ -146,13 +164,17 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	if err != nil {
 		return result, installationError(directory, err)
 	}
+	adapterBody := opencode.Adapter()
+	if settings.Messaging {
+		adapterBody = opencode.MessagingAdapter()
+	}
 	files := []struct {
 		path string
 		body []byte
 		same bool
 	}{
 		{path: filepath.Join(directory, "cairn.json"), body: append(config, '\n')},
-		{path: filepath.Join(tools, "cairn.ts"), body: []byte(opencode.Adapter())},
+		{path: filepath.Join(tools, "cairn.ts"), body: []byte(adapterBody)},
 	}
 	if *recentFiles {
 		files = append(files, struct {

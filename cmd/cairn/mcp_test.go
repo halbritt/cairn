@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestMCPScopeOptions(t *testing.T) {
 	for _, tc := range []struct {
@@ -24,8 +28,11 @@ func TestMCPScopeOptions(t *testing.T) {
 		{[]string{"--codex-thread", "--tool-profile", "compact/3"}, false},
 		{[]string{"--codex-thread", "--messaging"}, true},
 		{[]string{"--task", "task", "--run", "run", "--messaging", "--native-session", "native"}, true},
+		{[]string{"--task", "task", "--run", "run", "--messaging", "--coordination-state-root", "/state"}, true},
 		{[]string{"--task", "task", "--run", "run", "--native-session", "native"}, false},
+		{[]string{"--task", "task", "--run", "run", "--coordination-state-root", "/state"}, false},
 		{[]string{"--codex-thread", "--messaging", "--native-session", "native"}, false},
+		{[]string{"--codex-thread", "--messaging", "--coordination-state-root", "/state"}, false},
 	} {
 		f := flags("mcp")
 		o := mcpFlags(f)
@@ -115,5 +122,31 @@ func TestMessagingPropagatesToMCPCommand(t *testing.T) {
 				t.Fatalf("%v generated %q", tc.args, command)
 			}
 		}
+	}
+}
+
+func TestDefaultCoordinationStateRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CAIRN_HOME", "")
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "xdg"))
+	t.Setenv("HOME", home)
+	if got := defaultCoordinationStateRoot(); got != "" {
+		t.Fatalf("missing state root returned %q", got)
+	}
+	xdgState := filepath.Join(home, "xdg", "cairn", "coordination", "state")
+	if err := os.MkdirAll(xdgState, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if got := defaultCoordinationStateRoot(); got != xdgState {
+		t.Fatalf("got %q, want %q", got, xdgState)
+	}
+	cairnHome := filepath.Join(home, "custom-cairn")
+	customState := filepath.Join(cairnHome, "coordination", "state")
+	if err := os.MkdirAll(customState, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CAIRN_HOME", cairnHome)
+	if got := defaultCoordinationStateRoot(); got != customState {
+		t.Fatalf("CAIRN_HOME override: got %q, want %q", got, customState)
 	}
 }

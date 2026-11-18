@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -28,9 +29,20 @@ type Config struct {
 	ToolProfile     string
 	// Messaging adds the opt-in session inbox tools. NativeSessionID is the
 	// host conversation they resolve to a registered session; with CodexThread
-	// the tool-call thread is used instead.
-	Messaging       bool
-	NativeSessionID string
+	// the tool-call thread is used instead. When NativeSessionID is empty,
+	// CoordinationStateRoot optionally resolves a unique live session bound to
+	// the closest ancestor host process (such as Agy or Hermes).
+	Messaging             bool
+	NativeSessionID       string
+	CoordinationStateRoot string
+	HostAncestors         func() ([]HostProcess, error)
+}
+
+// HostProcess identifies one live ancestor process in the MCP server's chain.
+type HostProcess struct {
+	PID   int
+	Start uint64
+	Boot  string
 }
 
 // Validate checks startup scope, text integrity and room; the API validates pin semantics on retrieval.
@@ -46,6 +58,15 @@ func (c Config) Validate() error {
 	}
 	if len(c.NativeSessionID) > 256 || !utf8.ValidString(c.NativeSessionID) || strings.ContainsRune(c.NativeSessionID, 0) {
 		return fmt.Errorf("native session ID requires at most 256 UTF-8 bytes without NUL")
+	}
+	if c.CoordinationStateRoot != "" && (!c.Messaging || c.CodexThread) {
+		return fmt.Errorf("a coordination state root requires --messaging and cannot be combined with --codex-thread")
+	}
+	if len(c.CoordinationStateRoot) > 4096 || !utf8.ValidString(c.CoordinationStateRoot) || strings.ContainsRune(c.CoordinationStateRoot, 0) {
+		return fmt.Errorf("coordination state root requires at most 4096 UTF-8 bytes without NUL")
+	}
+	if c.CoordinationStateRoot != "" && !filepath.IsAbs(c.CoordinationStateRoot) {
+		return fmt.Errorf("coordination state root must be an absolute path")
 	}
 	if strings.TrimSpace(c.Scope.Repo) == "" || c.Scope.Repo == "*" {
 		return fmt.Errorf("MCP requires an explicit repository")

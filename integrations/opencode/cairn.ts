@@ -1,6 +1,7 @@
 // Install as .opencode/tools/cairn.ts; connection settings belong in .opencode/cairn.json.
 import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { execFile } from "node:child_process"
+import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { isAbsolute } from "node:path"
 import type { ZodRawShape } from "zod"
@@ -44,6 +45,7 @@ const settingsSchema = z.object({
   max_tokens: z.number().int().min(256).max(1000000).default(1000000),
   task_id: declaredScope.optional(),
   run_id: declaredScope.optional(),
+  messaging: z.boolean().optional(),
   context: z.object({
     revision: z.string().optional(),
     workspace_sha256: z.string().optional(),
@@ -71,8 +73,11 @@ function searchScope(config: Settings, context: ToolContext) {
   return { repo: config.repo, task_id: config.task_id ?? "opencode/" + session, run_id: config.run_id ?? session }
 }
 
-function call(config: Settings, context: ToolContext, args: string[], input?: unknown): Promise<unknown> {
-  const command = ["agent", "--socket", config.socket, "--token-file", config.token_file, ...args]
+type SessionRef = { agent_id: string, execution_id: string }
+
+function call(config: Settings, context: ToolContext, args: string[], input?: unknown, session?: SessionRef): Promise<unknown> {
+  const command = ["agent", ...(session ? ["--agent-id", session.agent_id, "--execution-id", session.execution_id] : []),
+    "--socket", config.socket, "--token-file", config.token_file, ...args]
   // Process arguments replace lone UTF-16 surrogates before Cairn can inspect them.
   if ([config.executable, ...command].some(value => /[\uD800-\uDFFF]/u.test(value))) {
     return Promise.reject(new Error("INVALID_REQUEST: CLI arguments require well-formed Unicode"))

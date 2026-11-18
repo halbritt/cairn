@@ -8,6 +8,7 @@ import (
 	"github.com/halbritt/cairn/mcpapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"os"
+	"path/filepath"
 )
 
 type mcpOptions struct {
@@ -32,6 +33,7 @@ func mcpFlags(f *flag.FlagSet) *mcpOptions {
 	f.StringVar(&o.config.ToolProfile, "tool-profile", "", "optional shorter model-facing tool descriptions: compact/1 (search/pull), compact/2 (all tools)")
 	f.BoolVar(&o.config.Messaging, "messaging", false, "also expose session inbox tools (agents, send, inbox, ack, complete, renew, event status)")
 	f.StringVar(&o.config.NativeSessionID, "native-session", "", "native conversation ID registered for this session (requires --messaging; defaults to CLAUDE_CODE_SESSION_ID)")
+	f.StringVar(&o.config.CoordinationStateRoot, "coordination-state-root", "", "coordination state directory for host-process session lookup (requires --messaging)")
 	f.StringVar(&o.pins.Revision, "revision", "", "declared repository revision")
 	f.StringVar(&o.pins.WorkspaceSHA256, "workspace-sha256", "", "declared workspace digest")
 	f.StringVar(&o.pins.TaskClass, "task-class", "", "task category")
@@ -46,8 +48,15 @@ func (o *mcpOptions) validate(positional int) error {
 	if positional != 0 || o.socket == "" || o.token == "" {
 		return invalid("MCP requires --socket and --token-file and accepts no positional arguments")
 	}
-	if err := validateHarnessText(o.socket, o.token); err != nil {
+	if err := validateHarnessText(o.socket, o.token, o.config.CoordinationStateRoot); err != nil {
 		return err
+	}
+	if o.config.CoordinationStateRoot != "" {
+		absolute, err := filepath.Abs(o.config.CoordinationStateRoot)
+		if err != nil {
+			return err
+		}
+		o.config.CoordinationStateRoot = absolute
 	}
 	if o.harness != "" && !map[string]bool{"codex": true, "claude": true, "opencode": true, "hermes": true, "agy": true, "other": true}[o.harness] {
 		return invalid("--client-harness must be one of codex, claude, opencode, hermes, agy, other")
@@ -84,6 +93,9 @@ func serveMCP(ctx context.Context, args []string) error {
 	// configuration never captures the generating shell's conversation.
 	if o.config.Messaging && !o.config.CodexThread && o.config.NativeSessionID == "" {
 		o.config.NativeSessionID = os.Getenv("CLAUDE_CODE_SESSION_ID")
+		if o.config.NativeSessionID == "" && o.config.CoordinationStateRoot == "" {
+			o.config.CoordinationStateRoot = defaultCoordinationStateRoot()
+		}
 	}
 	client, err := localapi.NewClient(o.socket, o.token)
 	if err != nil {
@@ -98,4 +110,32 @@ func serveMCP(ctx context.Context, args []string) error {
 		return err
 	}
 	return server.Run(ctx, &mcp.StdioTransport{})
+}
+
+func defaultCoordinationStateRoot() string {
+	var base string
+	if configured := os.Getenv("CAIRN_HOME"); configured != "" {
+		abs, err := filepath.Abs(configured)
+		if err != nil {
+			return ""
+		}
+		base = abs
+	} else if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" && filepath.IsAbs(xdg) {
+		base = filepath.Join(xdg, "cairn")
+	} else {
+		dir, err := dataDirectory()
+		if err != nil {
+			return ""
+		}
+		base = dir
+	}
+	root := filepath.Join(base, "coordination", "state")
+	if !filepath.IsAbs(root) {
+		return ""
+	}
+	info, err := os.Lstat(root)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return ""
+	}
+	return root
 }

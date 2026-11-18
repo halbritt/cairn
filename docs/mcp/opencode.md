@@ -16,8 +16,13 @@ cairn opencode-install --project "$PWD" \
   --repo "$CAIRN_COLLECTION"
 ```
 
-The installer writes `.opencode/tools/cairn.ts` and `.opencode/cairn.json`.
-The project directory must already exist. Identical reruns are safe; differing
+The installer writes `.opencode/tools/cairn.ts` and `.opencode/cairn.json` (or
+`cairn.json` and `tools/cairn.ts` directly inside `--config-dir DIRECTORY` for a
+user-scope OpenCode configuration directory). Add `--messaging` to also install
+the seven session inbox tools (`cairn_agents`, `cairn_send`, `cairn_inbox`,
+`cairn_ack`, `cairn_complete`, `cairn_renew`, `cairn_event_status`), which
+resolve `self` from `context.sessionID`.
+The target directory must already exist. Identical reruns are safe; differing
 existing files require explicit `--replace` after you inspect them. The adapter
 still needs the Cairn API service.
 

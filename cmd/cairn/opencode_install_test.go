@@ -255,3 +255,44 @@ func TestOpenCodeInstallRecentFilesRefusesPluginSymlinks(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenCodeInstallMessagingAndConfigDir(t *testing.T) {
+	project := t.TempDir()
+	args := installArgs(project)
+	if _, err := installOpenCode(args, "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(project, ".opencode/cairn.json"))
+	if err != nil || strings.Contains(string(raw), `"messaging"`) {
+		t.Fatalf("default install wrote messaging field: %s (%v)", raw, err)
+	}
+	if _, err := installOpenCode(append(args, "--messaging"), "/cairn"); core.Code(err) != "INVALID_REQUEST" {
+		t.Fatalf("messaging upgrade without --replace was not refused: %v", err)
+	}
+	if _, err := installOpenCode(append(args, "--messaging", "--replace"), "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := os.ReadFile(filepath.Join(project, ".opencode/tools/cairn.ts"))
+	if err != nil || string(adapter) != opencode.MessagingAdapter() {
+		t.Fatal("messaging adapter not installed", err)
+	}
+	for _, exportName := range []string{"export const agents =", "export const send =", "export const inbox =", "export const ack =", "export const complete =", "export const renew =", "export const event_status ="} {
+		if !strings.Contains(string(adapter), exportName) {
+			t.Fatalf("missing %s in messaging adapter", exportName)
+		}
+	}
+
+	userConfig := t.TempDir()
+	if _, err := installOpenCode([]string{"--project", project, "--config-dir", userConfig, "--socket", "/s", "--token-file", "/t", "--repo", "r"}, "/cairn"); core.Code(err) != "INVALID_REQUEST" {
+		t.Fatalf("accepted both --project and --config-dir: %v", err)
+	}
+	if _, err := installOpenCode([]string{"--config-dir", userConfig, "--socket", "/s", "--token-file", "/t", "--repo", "r", "--messaging"}, "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(userConfig, "cairn.json")); err != nil {
+		t.Fatalf("config-dir cairn.json missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(userConfig, "tools/cairn.ts")); err != nil {
+		t.Fatalf("config-dir tools/cairn.ts missing: %v", err)
+	}
+}

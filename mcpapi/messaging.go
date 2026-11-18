@@ -98,6 +98,9 @@ func (t messagingTools) self(ctx context.Context, request *mcp.CallToolRequest, 
 	}
 	native := t.nativeSession(request)
 	if native == "" {
+		if !t.config.CodexThread && t.config.CoordinationStateRoot != "" {
+			return t.selfByHostProcess(ctx)
+		}
 		return core.AgentSessionRef{}, nil, messagingError("IDENTITY_UNKNOWN", "this MCP process has no native session ID; pass agent_id and execution_id from your Cairn session context")
 	}
 	var found []core.AgentInstance

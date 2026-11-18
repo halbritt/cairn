@@ -314,7 +314,14 @@ func TestMessagingToolsAreOptIn(t *testing.T) {
 			t.Fatalf("%s is not declared read-only", name)
 		}
 	}
-	for _, config := range []Config{{NativeSessionID: "native"}, {Messaging: true, CodexThread: true, NativeSessionID: "native"}, {Messaging: true, NativeSessionID: strings.Repeat("x", 257)}} {
+	for _, config := range []Config{
+		{NativeSessionID: "native"},
+		{Messaging: true, CodexThread: true, NativeSessionID: "native"},
+		{Messaging: true, NativeSessionID: strings.Repeat("x", 257)},
+		{CoordinationStateRoot: "/state"},
+		{Messaging: true, CodexThread: true, CoordinationStateRoot: "/state"},
+		{Messaging: true, CoordinationStateRoot: "relative/state"},
+	} {
 		config.Scope = core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}
 		if config.CodexThread {
 			config.Scope = core.Scope{Repo: "repo"}
@@ -737,5 +744,136 @@ func TestMessagingAgainstStore(t *testing.T) {
 		if rest := f.ok(t, "cairn_inbox", map[string]any{}); rest["delivery"] != nil {
 			t.Fatalf("inbox not empty: %v", rest)
 		}
+	}
+}
+
+func writeCoordinationState(t *testing.T, root, binding, native, agentID, executionID string, proc HostProcess, retired any) string {
+	t.Helper()
+	dir := filepath.Join(root, binding)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(binding + "\x00" + native))
+	path := filepath.Join(dir, hex.EncodeToString(digest[:])+".json")
+	payload := map[string]any{
+		"schema":  "cairn.native-session/1",
+		"process": map[string]any{"pid": proc.PID, "start": proc.Start, "boot": proc.Boot},
+		"agent":   map[string]any{"agent_id": agentID, "execution_id": executionID, "native_session_id": native},
+	}
+	if retired != nil {
+		payload["retired"] = retired
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestHostProcessIdentityResolution(t *testing.T) {
+	root := t.TempDir()
+	agyProc := HostProcess{PID: 2001, Start: 500, Boot: "boot-1"}
+	hermesProc := HostProcess{PID: 3001, Start: 600, Boot: "boot-1"}
+	writeCoordinationState(t, root, "agy-one", "native-self", selfAgent, selfExecution, agyProc, nil)
+	writeCoordinationState(t, root, "hermes-one", "native-peer", peerAgent, peerExecution, hermesProc, nil)
+
+	t.Run("agy and hermes parent process lookup", func(t *testing.T) {
+		agy := newMessagingFixture(t, Config{
+			CoordinationStateRoot: root,
+			HostAncestors:         func() ([]HostProcess, error) { return []HostProcess{agyProc}, nil },
+		})
+		self := agy.ok(t, "cairn_agents", map[string]any{"agent": "self"})["agents"].([]any)[0].(map[string]any)
+		if self["agent_id"] != selfAgent || self["execution_id"] != selfExecution {
+			t.Fatalf("agy self: %v", self)
+		}
+		hermes := newMessagingFixture(t, Config{
+			CoordinationStateRoot: root,
+			HostAncestors: func() ([]HostProcess, error) {
+				return []HostProcess{{PID: 4000, Start: 700, Boot: "boot-1"}, hermesProc, agyProc}, nil
+			},
+		})
+		hermesSelf := hermes.ok(t, "cairn_agents", map[string]any{"agent": "self"})["agents"].([]any)[0].(map[string]any)
+		if hermesSelf["agent_id"] != peerAgent || hermesSelf["execution_id"] != peerExecution {
+			t.Fatalf("closest ancestor did not win: %v", hermesSelf)
+		}
+	})
+
+	t.Run("multiple online conversations in one host process refuse as ambiguous", func(t *testing.T) {
+		subAgent, subExec := uuid.NewString(), uuid.NewString()
+		writeCoordinationState(t, root, "agy-one", "native-subagent", subAgent, subExec, agyProc, nil)
+		f := newMessagingFixture(t, Config{
+			CoordinationStateRoot: root,
+			HostAncestors:         func() ([]HostProcess, error) { return []HostProcess{agyProc}, nil },
+		})
+		f.agents = append(f.agents, fixtureAgent(15, subAgent, subExec, "native-subagent", true, false))
+		f.refused(t, "cairn_inbox", map[string]any{"peek": true}, "IDENTITY_AMBIGUOUS")
+		// Explicit UUIDs still select the caller's session unambiguously.
+		f.ok(t, "cairn_inbox", map[string]any{"peek": true, "agent_id": subAgent, "execution_id": subExec})
+	})
+
+	t.Run("retired, mismatched boot or execution, and symlinked state do not match", func(t *testing.T) {
+		isolated := t.TempDir()
+		writeCoordinationState(t, isolated, "agy-one", "native-self", selfAgent, selfExecution, agyProc, map[string]any{"at": 1})
+		writeCoordinationState(t, isolated, "hermes-one", "native-peer", peerAgent, uuid.NewString(), hermesProc, nil)
+		for _, anc := range [][]HostProcess{{agyProc}, {hermesProc}, {{PID: 2001, Start: 500, Boot: "boot-other"}}} {
+			anc := anc
+			f := newMessagingFixture(t, Config{
+				CoordinationStateRoot: isolated,
+				HostAncestors:         func() ([]HostProcess, error) { return anc, nil },
+			})
+			f.refused(t, "cairn_inbox", map[string]any{"peek": true}, "IDENTITY_UNKNOWN")
+		}
+		symlinkRoot := filepath.Join(t.TempDir(), "linked-state")
+		if err := os.Symlink(root, symlinkRoot); err != nil {
+			t.Fatal(err)
+		}
+		f := newMessagingFixture(t, Config{
+			CoordinationStateRoot: symlinkRoot,
+			HostAncestors:         func() ([]HostProcess, error) { return []HostProcess{agyProc}, nil },
+		})
+		f.refused(t, "cairn_inbox", map[string]any{"peek": true}, "IDENTITY_UNKNOWN")
+	})
+}
+
+func TestHostAncestorsAtProcParsing(t *testing.T) {
+	proc := t.TempDir()
+	bootPath := filepath.Join(proc, "boot_id")
+	if err := os.WriteFile(bootPath, []byte("7136ae52-6787-4f54-ba4a-385654b10433\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	writeStat := func(pid, ppid int, state, comm string, start uint64) {
+		dir := filepath.Join(proc, itoa(int64(pid)))
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		fields := make([]string, 22)
+		fields[0] = state
+		fields[1] = itoa(int64(ppid))
+		for i := 2; i < len(fields); i++ {
+			fields[i] = "0"
+		}
+		fields[19] = itoa(int64(start))
+		line := itoa(int64(pid)) + " (" + comm + ") " + strings.Join(fields, " ") + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "stat"), []byte(line), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeStat(400, 300, "S", "cairn-wrapper", 900)
+	writeStat(300, 200, "S", "agy (main)", 800)
+	writeStat(200, 1, "Z", "defunct-parent", 700)
+
+	got, err := hostAncestorsAt(proc, bootPath, 400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []HostProcess{
+		{PID: 400, Start: 900, Boot: "7136ae52-6787-4f54-ba4a-385654b10433"},
+		{PID: 300, Start: 800, Boot: "7136ae52-6787-4f54-ba4a-385654b10433"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }

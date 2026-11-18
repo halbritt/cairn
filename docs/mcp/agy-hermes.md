@@ -47,7 +47,12 @@ lifecycle adapter. Neither label grants authority to act.
 ## Coordinate work separately
 
 Native coordination hooks manage session registration, presence, and supported
-inbox delivery. Use their supplied agent and execution UUIDs. Do not substitute
+inbox delivery. When `cairn mcp --messaging` runs alongside coordination on the
+same host, messaging tools resolve `self` automatically through the closest
+ancestor host process recorded in `$CAIRN_HOME/coordination/state` (or
+`--coordination-state-root`). If several online conversations or subagents share
+one host process, lookup refuses with `IDENTITY_AMBIGUOUS`; pass the session's
+supplied `agent_id` and `execution_id` UUIDs explicitly. Do not substitute
 a display name such as `agent-12` for a UUID or register a second session to
 handle an existing native delivery. See
 [session coordination](../guides/session-coordination.md) and
