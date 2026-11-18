@@ -62,6 +62,7 @@ account. It then links to authenticated agent setup.
 | Save useful knowledge | [Memory capture](docs/guides/memory-capture.md) |
 | Find and inspect memory | [Memory search](docs/guides/memory-search.md) |
 | Resume or hand off work | [Agent workflows](docs/guides/agent-workflows.md) |
+| Pack and inspect selected development context | [Development checkpoints](docs/development-checkpoints.md) |
 | Coordinate several agents | [Session coordination](docs/guides/session-coordination.md) |
 | Limit event fanout and backlog | [Event admission](docs/event-admission.md) and [rollout](docs/operator/event-admission-rollout.md) |
 | Inspect work and deliverables | [Work coordination](docs/operator/work-coordination.md) |

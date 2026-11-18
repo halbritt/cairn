@@ -1,6 +1,6 @@
 # Inspect a development checkpoint
 
-`scripts/development_checkpoint.py` packages selected references for an unfinished
+`cairn-development-checkpoint` packages selected references for an unfinished
 development task. It verifies file digests and exact Cairn source versions, then
 projects those observations alongside the checkpoint's declared owner, findings,
 uncertain effects and next action. It does not create task state in Cairn, claim an
@@ -10,15 +10,39 @@ The checkpoint is an ordinary JSON file. Existing handoffs and assignments retai
 ownership, authorization and lifecycle. A prose handoff remains sufficient when
 there is no need to inspect references mechanically.
 
-## Commands
+## Install and check
 
-From a Cairn checkout, use the existing Python entry point:
+From a Cairn checkout with Python 3.10 or newer, install the standalone command:
 
 ```sh
-python3 scripts/development_checkpoint.py pack spec.json --output checkpoint.json
-python3 scripts/development_checkpoint.py inspect checkpoint.json
-python3 scripts/development_checkpoint.py status checkpoint.json --text
+python3 scripts/install-development-checkpoint.py
+python3 scripts/install-development-checkpoint.py --check
+"$HOME/.local/bin/cairn-development-checkpoint" --help
 ```
+
+The installer copies `scripts/development_checkpoint.py` atomically to
+`~/.local/bin/cairn-development-checkpoint` and makes it executable. Repeating it
+leaves an identical executable unchanged. `--check` reads without changing the
+installation: exit 0 means the bytes match this checkout and the file is executable,
+1 means missing or different, and 2 means a filesystem error. `--target PATH`
+selects another install location. An existing symlink is replaced, not followed.
+
+Keep `~/.local/bin` on PATH. The installed copy does not depend on the checkout's
+location; rerun the installer after a source update. To roll back, install from
+the earlier Cairn revision. Remove the installed file to uninstall. This installs
+only the checkpoint command; `cairn` and `development-evidence` are separate
+prerequisites for their respective reference kinds.
+
+## Commands
+
+```sh
+cairn-development-checkpoint pack spec.json --output checkpoint.json
+cairn-development-checkpoint inspect checkpoint.json
+cairn-development-checkpoint status checkpoint.json --text
+```
+
+Without installing, use `python3 scripts/development_checkpoint.py` from a Cairn
+checkout with the same arguments.
 
 `pack` accepts a declaration, hashes its selected references, and creates a new
 file. It refuses an existing output file and refuses unavailable sources or a
@@ -134,14 +158,16 @@ engine or an idempotency mechanism.
 Run the focused host task:
 
 ```sh
-mise run test:unit -- test_development_checkpoint -v
+mise run test:unit -- test_development_checkpoint test_install_development_checkpoint -v
 ```
 
 Tests use disposable files and controlled CLI responses at the external boundary.
 They cover changed/missing files, exact source identity and digest checks, missing
 or superseded Cairn versions, unavailable evidence, receipt changes between reads,
-malformed input and command text that must stay inert. Native source and shared
-tool integration should be checked separately against selected authorized inputs.
+malformed input and command text that must stay inert. Installer tests check
+idempotence, mismatch detection, repair and the installed command on local files.
+Native source and shared tool integration should be checked separately against
+selected authorized inputs.
 
 The caller selects material references; the inspector cannot prove the selection
 is complete or secret-free. Keep credentials and raw sessions out of declarations

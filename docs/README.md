@@ -20,6 +20,8 @@ or the [quickstart](quickstart.md) to try it with a local PostgreSQL store.
   link exact deliverables, wait for responses and manage quiet notices.
 - [Integrate a Git candidate](git-integration.md): land checked changes and
   compare optional development evidence against the final candidate.
+- [Inspect a development checkpoint](development-checkpoints.md): install the
+  command, pack selected references and inspect their current availability.
 
 ## Connect your client
 

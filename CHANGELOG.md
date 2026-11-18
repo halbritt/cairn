@@ -15,6 +15,12 @@ and MCP processes.
 
 ## 2026-11-17
 
+- Added [development checkpoints](docs/development-checkpoints.md) for selected
+  file digests, exact Cairn record versions and shared development evidence.
+  The installable `cairn-development-checkpoint` command packs, inspects and
+  displays these references without executing saved commands or creating task
+  state. Declared findings and effects remain separate from observed availability;
+  stale or unreadable sources do not imply completion.
 - `git-land --evidence` compares optional development evidence against the final
   rebased candidate under the existing lock. Freshness remains advisory and
   separate from review outcome; missing tooling or malformed results report
