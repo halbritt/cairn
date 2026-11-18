@@ -17,17 +17,21 @@ import (
 // opened reuses build bytes only when the enclosing observation owns a pass.
 // Standalone readers retain their ordinary fresh-read behavior.
 func (r *watchDrainRead) opened(path string, limit int64, image bool) ([]byte, string, error) {
+	return r.openedModes(path, limit, image, 0o700)
+}
+
+func (r *watchDrainRead) openedModes(path string, limit int64, image bool, modes ...uint32) ([]byte, string, error) {
 	if r.tokenPaths[path] {
 		return nil, "", errors.New("drain scope overlaps a credential selector; visibility is unknown")
 	}
 	if r.verified != nil {
-		return r.verified.Read(path, limit, image)
+		return r.verified.ReadOwnedModes(path, limit, image, modes...)
 	}
 	if image {
 		digest, err := compatibilityOpenedBinary(path, uint32(os.Getuid()))
 		return nil, digest, err
 	}
-	return compatibilityOpened(path, limit, uint32(os.Getuid()))
+	return compatibilityOpenedModes(path, limit, uint32(os.Getuid()), modes...)
 }
 
 func (r *watchDrainRead) file(path string) (*value.Value, error) {

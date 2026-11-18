@@ -42,7 +42,11 @@ func newUnitVerifiedFiles(ctx context.Context) *unitVerifiedFiles {
 }
 
 func (p *unitVerifiedFiles) Read(path string, limit int64, binary bool) ([]byte, string, error) {
-	entry, err := p.read(path, limit, binary)
+	return p.ReadOwnedModes(path, limit, binary, 0700)
+}
+
+func (p *unitVerifiedFiles) ReadOwnedModes(path string, limit int64, binary bool, modes ...uint32) ([]byte, string, error) {
+	entry, err := p.readModes(path, limit, binary, modes...)
 	if err != nil {
 		return nil, "", errors.Join(err, p.Close())
 	}
@@ -53,6 +57,10 @@ func (p *unitVerifiedFiles) Read(path string, limit int64, binary bool) ([]byte,
 }
 
 func (p *unitVerifiedFiles) read(path string, limit int64, binary bool) (*unitVerifiedFile, error) {
+	return p.readModes(path, limit, binary, 0700)
+}
+
+func (p *unitVerifiedFiles) readModes(path string, limit int64, binary bool, modes ...uint32) (*unitVerifiedFile, error) {
 	if p.closed {
 		return nil, errors.New("verified file observation is closed")
 	}
@@ -60,7 +68,7 @@ func (p *unitVerifiedFiles) read(path string, limit int64, binary bool) (*unitVe
 		return nil, err
 	}
 	if entry := p.files[path]; entry != nil {
-		current, err := unitVerifiedPathStat(path)
+		current, err := unitVerifiedPathStatModes(path, modes...)
 		var held unix.Stat_t
 		heldErr := unix.Fstat(int(entry.file.Fd()), &held)
 		if err != nil || heldErr != nil || !unitVerifiedSame(entry.stat, current) || !unitVerifiedSame(entry.stat, held) {
@@ -80,7 +88,7 @@ func (p *unitVerifiedFiles) read(path string, limit int64, binary bool) (*unitVe
 		}
 		return entry, nil
 	}
-	parent, name, err := unitVerifiedParent(path)
+	parent, name, err := unitVerifiedParentModes(path, modes...)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +116,7 @@ func (p *unitVerifiedFiles) read(path string, limit int64, binary bool) (*unitVe
 	if err != nil {
 		return nil, errors.Join(err, file.Close())
 	}
-	current, err := unitVerifiedPathStat(path)
+	current, err := unitVerifiedPathStatModes(path, modes...)
 	if err != nil || !unitVerifiedSame(before, current) {
 		return nil, errors.Join(err, fmt.Errorf("verified file path changed: %s", path), file.Close())
 	}
@@ -225,6 +233,10 @@ func unitVerifiedSame(a, b unix.Stat_t) bool {
 }
 
 func unitVerifiedParent(path string) (int, string, error) {
+	return unitVerifiedParentModes(path, 0700)
+}
+
+func unitVerifiedParentModes(path string, modes ...uint32) (int, string, error) {
 	if !compatibilityCanonical(path) {
 		return -1, "", &value.Error{Class: "ValueError", Message: "path"}
 	}
@@ -247,14 +259,18 @@ func unitVerifiedParent(path string) (int, string, error) {
 		}
 	}
 	var s unix.Stat_t
-	if err := unix.Fstat(parent, &s); err != nil || s.Uid != uint32(os.Getuid()) || s.Mode&07777 != 0700 {
+	if err := unix.Fstat(parent, &s); err != nil || s.Uid != uint32(os.Getuid()) || !slices.Contains(modes, s.Mode&07777) {
 		return -1, "", errors.Join(err, &value.Error{Class: "ValueError", Message: "private directory"}, unix.Close(parent))
 	}
 	return parent, parts[len(parts)-1], nil
 }
 
 func unitVerifiedPathStat(path string) (unix.Stat_t, error) {
-	parent, name, err := unitVerifiedParent(path)
+	return unitVerifiedPathStatModes(path, 0700)
+}
+
+func unitVerifiedPathStatModes(path string, modes ...uint32) (unix.Stat_t, error) {
+	parent, name, err := unitVerifiedParentModes(path, modes...)
 	if err != nil {
 		return unix.Stat_t{}, err
 	}

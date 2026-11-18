@@ -61,7 +61,7 @@ def canonical(path):
 
 
 @contextlib.contextmanager
-def directory(path, private=False):
+def directory(path, private=False, *, owned_modes=None):
     if not canonical(path):
         raise ValueError('canonical absolute installation path required')
     fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
@@ -76,18 +76,19 @@ def directory(path, private=False):
             if info.st_uid not in (0, os.getuid()) or info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX:
                 raise ValueError('unsafe installation ancestor')
         info = os.fstat(fd)
-        if private and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700):
-            raise ValueError('private installation directory must be owned mode 0700')
+        required = (0o700,) if private else owned_modes
+        if required is not None and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) not in required):
+            raise ValueError('private installation directory must be owned mode ' + '/'.join(f'{m:04o}' for m in required))
         yield fd
     finally:
         os.close(fd)
 
 
-def read_selected(descriptor, limit, *, private=False, modes=None):
+def read_selected(descriptor, limit, *, private=False, owned_modes=None, modes=None):
     if set(descriptor) != {'path', 'sha256'} or not canonical(descriptor['path']):
         raise ValueError('invalid selected input descriptor')
     path = Path(descriptor['path'])
-    with directory(str(path.parent), private=private) as parent:
+    with directory(str(path.parent), private=private, owned_modes=owned_modes) as parent:
         fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
     with os.fdopen(fd, 'rb') as source:
         before = os.fstat(source.fileno())
@@ -106,6 +107,10 @@ def read_selected(descriptor, limit, *, private=False, modes=None):
 
 def read_retained_data(descriptor, limit):
     return read_selected(descriptor, limit, private=True)
+
+
+def read_retained_source(descriptor, limit):
+    return read_selected(descriptor, limit, owned_modes=(0o700, 0o755))
 
 
 def read_retained_profile(descriptor, limit):
@@ -505,7 +510,7 @@ def package_evidence(package, files, read, pins):
                 package_native_claims(variant, pins, [package['members'][name]['argv'][role]], package['harness'])
 
 
-def validate_retained_package(package, files, read=read_retained_data, read_profile=read_retained_profile):
+def validate_retained_package(package, files, read=read_retained_data, read_profile=read_retained_profile, read_source=read_retained_source):
     package_fields(package, ('schema', 'host', 'harness', 'multiplicity', 'primary', 'binding', 'profiles', 'closures', 'members', 'evidence', 'files'))
     for name in ('profiles', 'closures', 'members', 'evidence', 'files'):
         if type(package[name]) is not dict or not 1 <= len(package[name]) <= 128:
@@ -553,13 +558,13 @@ def validate_retained_package(package, files, read=read_retained_data, read_prof
             raise ValueError('retained complete closure identity differs')
         package_pin(bundle['manifest'])
         if (bundle['manifest']['path'] != str(Path(root) / 'lifecycle-bundle.json')
-                or decoded(read(bundle['manifest'], 1024 * 1024)) != {key: bundle[key] for key in ('schema', 'sha256', 'files')}):
+                or decoded(read_source(bundle['manifest'], 1024 * 1024)) != {key: bundle[key] for key in ('schema', 'sha256', 'files')}):
             raise ValueError('retained installed sidecar is unpinned or disagrees with closure')
         pins[bundle['manifest']['path']] = bundle['manifest']['sha256']
         for name, digest in bundle['files'].items():
             descriptor = dict(path=str(Path(root) / name), sha256=digest)
             package_pin(descriptor)
-            read(descriptor, 1024 * 1024)
+            read_source(descriptor, 1024 * 1024)
             pins[descriptor['path']] = digest
     for role, entry in (('engine', 'memory.py'), ('bridge', 'inbox_recall.py')):
         descriptor = binding[role]
@@ -580,7 +585,7 @@ def validate_retained_package(package, files, read=read_retained_data, read_prof
             raise ValueError('retained member role/profile differs')
         configs.append(member['config'])
         for role in roles:
-            package_runtime(member['runtime'][role], role, package['closures'], read)
+            package_runtime(member['runtime'][role], role, package['closures'], read_source)
             entry = member['runtime'][role]['entry']
             pins[entry['path']] = entry['sha256']
             retained_vector(files, member['argv'][role], role, [profiles[0], member['config']], member['runtime'][role])
@@ -594,7 +599,7 @@ def validate_retained_package(package, files, read=read_retained_data, read_prof
 
 def inspect_retained_package(files, selected, coordination_index):
     pin = {key: files['retained-package.json'][key] for key in ('path', 'sha256')}
-    package = decoded(read_selected(pin, 1024 * 1024))
+    package = decoded(read_retained_data(pin, 1024 * 1024))
     binding = validate_retained_package(package, files)
     if type(coordination_index) is not int or not 0 <= coordination_index < len(binding['coordination_configs']):
         raise ValueError('retained package has no selected coordination configuration')
@@ -618,13 +623,16 @@ def stage_retained_package(stager, root, plan):
     package = plan['package']
     if set(plan['material']) != set(package['files']):
         raise ValueError('retained producer material is not exactly declared')
+    profiles_map = package.get('profiles') if type(package.get('profiles')) is dict else {}
     final = Path(root) / ('selection-' + identity)
     files, payloads = {}, {}
     for name, pin in plan['material'].items():
         package_pin(pin)
         if pin['sha256'] != package['files'][name] or Path(name).name != name or name in ('.', '..') or '\\' in name:
             raise ValueError('retained producer material digest/name differs')
-        payloads[name] = read_selected(pin, 1024 * 1024)
+        reader = (read_retained_source if name in RETAINED_MEMBERS else
+                  read_retained_profile if name in profiles_map else read_retained_data)
+        payloads[name] = reader(pin, 1024 * 1024)
         files[name] = dict(path=str(final / name), sha256=pin['sha256'])
     payloads['retained-package.json'] = encoded(package)
     files['retained-package.json'] = dict(path=str(final / 'retained-package.json'), sha256=sha(payloads['retained-package.json']))
@@ -638,7 +646,7 @@ def stage_retained_package(stager, root, plan):
             return raw
         return read_retained_data(pin, limit)
 
-    validate_retained_package(package, files, planned_read)
+    validate_retained_package(package, files, planned_read, read_source=read_retained_source)
     with tempfile.TemporaryDirectory(prefix='cairn-retained-package-') as temporary:
         selected = []
         for name, raw in sorted(payloads.items()):

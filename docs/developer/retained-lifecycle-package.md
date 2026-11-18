@@ -26,9 +26,11 @@ Inputs retain the existing bounded regular-file, ownership, no-follow ancestry
 and stable-read checks. No credential content is a package input.
 The outer generation remains inside the bootstrap plan root. Explicit original
 profile and source pins can be external, retaining credential-alias exclusion,
-safe ancestry and complete closure checks. Source/data parents remain private
-`0700`; original `0600`/`0400` profiles retain the existing safe `0755` parent
-support. This does
+safe ancestry and complete closure checks. Generated package/data and original
+binding parents remain private `0700`; authenticated original closure members,
+their selected sidecar, closure-bound runtime entry/delegate sources, and
+original `0600`/`0400` profiles admit owned `0700` or `0755` immediate parents.
+This does
 not widen the placement of the original binding, target images or state.
 
 ```sh

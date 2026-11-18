@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -501,15 +502,23 @@ func sameDataIdentity(a, b syscall.Stat_t) bool {
 }
 
 func compatibilityOpened(path string, limit int64, uid uint32) ([]byte, string, error) {
-	return compatibilityOpen(path, limit, false, uid)
+	return compatibilityOpenModes(path, limit, false, uid, 0o700)
+}
+
+func compatibilityOpenedModes(path string, limit int64, uid uint32, modes ...uint32) ([]byte, string, error) {
+	return compatibilityOpenModes(path, limit, false, uid, modes...)
 }
 
 func compatibilityOpenedBinary(path string, uid uint32) (string, error) {
-	_, sha, err := compatibilityOpen(path, -1, true, uid)
+	_, sha, err := compatibilityOpenModes(path, -1, true, uid, 0o700)
 	return sha, err
 }
 
 func compatibilityOpen(path string, limit int64, binary bool, uid uint32) ([]byte, string, error) {
+	return compatibilityOpenModes(path, limit, binary, uid, 0o700)
+}
+
+func compatibilityOpenModes(path string, limit int64, binary bool, uid uint32, modes ...uint32) ([]byte, string, error) {
 	if !compatibilityCanonical(path) {
 		return nil, "", &value.Error{Class: "ValueError", Message: "path"}
 	}
@@ -542,7 +551,7 @@ func compatibilityOpen(path string, limit int64, binary bool, uid uint32) ([]byt
 	if err := syscall.Fstat(parent, &s); err != nil {
 		return nil, "", &os.PathError{Op: "fstat", Path: path, Err: err}
 	}
-	if s.Uid != uid || s.Mode&0o7777 != 0o700 {
+	if s.Uid != uid || !slices.Contains(modes, s.Mode&0o7777) {
 		return nil, "", &value.Error{Class: "ValueError", Message: "private directory"}
 	}
 	fd, err := syscall.Openat(parent, parts[len(parts)-1], syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)

@@ -89,12 +89,13 @@ def fixture(root, host='proximal', harness='codex', count=3, source_sets=None, s
     material['lifecycle-bundle.json'] = write(root / 'material' / 'lifecycle-bundle.json', sidecar_sets['base'] if sidecar_sets else base_bundle)
     for name in product.RETAINED_MEMBERS:
         material[name] = pin(Path(base) / name)
-    if host == 'talos':
-        # Original controlled profiles may retain their existing 0755 parent.
-        profile_root.chmod(0o755)
     alias = write(Path(other) / 'lifecycle.py', (Path(other) / 'memory.py').read_bytes())
     delegate = pin(Path(hotfix) / 'coordination.py')
     facade = write(root / 'installed' / 'coordination' / 'coordination.py', product.package_facade(delegate['path']))
+    if host == 'talos':
+        # Original controlled profiles, closures, sidecars and runtime entries admit owned 0755 parents.
+        for parent_dir in (profile_root, Path(base), Path(hotfix), Path(other), Path(facade['path']).parent):
+            parent_dir.chmod(0o755)
     members = {}
     for name, coord in zip(names, coords):
         argv = dict(coordination=[sys.executable, facade['path'], 'hook', '--config', coord['path']])
@@ -185,8 +186,10 @@ def mutate(plan, kind, root):
     elif kind == 'source-changed':
         source = root / 'installed' / 'other' / 'native_session.py'
         source.write_bytes(source.read_bytes() + b'\n# changed after pins\n')
-    elif kind == 'source-parent-not-private':
-        (root / 'installed' / 'other').chmod(0o755)
+    elif kind == 'source-parent-writable':
+        (root / 'installed' / 'other').chmod(0o775)
+    elif kind == 'generated-parent-not-private':
+        (root / 'original').chmod(0o755)
     elif kind == 'profile-parent-writable':
         (root / 'profiles').chmod(0o775)
     elif kind == 'source-hardlink':
@@ -258,7 +261,7 @@ CASES = ['none', 'extra', 'declared-extra', 'evidence-digest', 'wrong-closure', 
          'wrong-delegate', 'wrong-argv', 'unsupported-multiplicity', 'wrong-binding', 'source-changed',
          'member-mismatch', 'evidence-disagreement', 'native-member-disagreement', 'missing-runtime-field',
          'missing-sidecar', 'sidecar-changed', 'sidecar-map-disagreement', 'native-profile-disagreement', 'wrong-alias-root', 'executable-data',
-         'source-parent-not-private', 'profile-parent-writable', 'source-hardlink', 'source-special-mode']
+         'source-parent-writable', 'generated-parent-not-private', 'profile-parent-writable', 'source-hardlink', 'source-special-mode']
 CASES += list(MALFORMED_EVIDENCE)
 
 

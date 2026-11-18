@@ -271,10 +271,18 @@ func censusSameStrings(a, b []string) bool {
 }
 
 func (r *watchCensusRead) directory(path string) ([]string, error) {
+	return r.directoryModes(path, 0700)
+}
+
+func (r *watchCensusRead) retainedSourceDirectory(path string) ([]string, error) {
+	return r.directoryModes(path, 0700, 0755)
+}
+
+func (r *watchCensusRead) directoryModes(path string, modes ...os.FileMode) ([]string, error) {
 	if !censusWithin(r.catalog.Root, path) {
 		return nil, fmt.Errorf("census directory outside the pinned universe: %s", path)
 	}
-	if err := r.safePath(path, true); err != nil {
+	if err := r.safePathModes(path, true, modes...); err != nil {
 		return nil, err
 	}
 	entries, err := os.ReadDir(path)

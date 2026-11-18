@@ -32,6 +32,10 @@ func censusDecode(raw []byte, dst any) error {
 }
 
 func (r *watchCensusRead) safePath(path string, directory bool) error {
+	return r.safePathModes(path, directory, 0700)
+}
+
+func (r *watchCensusRead) safePathModes(path string, directory bool, dirModes ...os.FileMode) error {
 	if !compatibilityCanonical(path) {
 		return errors.New("census requires canonical absolute paths")
 	}
@@ -52,7 +56,7 @@ func (r *watchCensusRead) safePath(path string, directory bool) error {
 			return errors.New("census path ancestor is not a directory")
 		}
 		if i == len(parts)-1 {
-			if directory && (!info.IsDir() || stat.Uid != uint32(os.Getuid()) || info.Mode().Perm() != 0700) {
+			if directory && (!info.IsDir() || stat.Uid != uint32(os.Getuid()) || !slices.Contains(dirModes, info.Mode().Perm())) {
 				return fmt.Errorf("census requires a private owned directory: %s", path)
 			}
 			key := fmt.Sprintf("%d:%d", stat.Dev, stat.Ino)
@@ -401,7 +405,7 @@ func (r *watchCensusRead) runtime(node *WatchCensusMember, manifest *value.Value
 		// entry/delegate. Different roles may intentionally select different ones.
 		for _, closure := range pkg.Object.Get("closures").Members {
 			root := string(closure.Key)
-			if _, err := r.directory(root); err != nil {
+			if _, err := r.retainedSourceDirectory(root); err != nil {
 				return err
 			}
 			node.Resources = append(node.Resources, root)
@@ -418,7 +422,7 @@ func (r *watchCensusRead) runtime(node *WatchCensusMember, manifest *value.Value
 				closure := pkg.Object.Get("closures").Get(nativeText(role.Value.Get("closure")))
 				identity.Set(string(role.Key), closure.Get("sha256"))
 				directory := filepath.Dir(nativeText(role.Value.Get("entry").Get("path")))
-				if _, err := r.directory(directory); err != nil {
+				if _, err := r.retainedSourceDirectory(directory); err != nil {
 					return err
 				}
 				node.Resources = append(node.Resources, directory)

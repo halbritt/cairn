@@ -77,11 +77,19 @@ func retainedPackageMembers() []string {
 }
 
 func retainedPackageDataReader(ctx context.Context, read retainedPackageRead) retainedPackageRead {
+	return retainedPackageParentReader(ctx, read, 0700)
+}
+
+func retainedPackageSourceReader(ctx context.Context, read retainedPackageRead) retainedPackageRead {
+	return retainedPackageParentReader(ctx, read, 0700, 0755)
+}
+
+func retainedPackageParentReader(ctx context.Context, read retainedPackageRead, modes ...uint32) retainedPackageRead {
 	return func(pin WatchCensusPin) ([]byte, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		before, err := unitVerifiedPathStat(pin.Path)
+		before, err := unitVerifiedPathStatModes(pin.Path, modes...)
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +100,7 @@ func retainedPackageDataReader(ctx context.Context, read retainedPackageRead) re
 		if err != nil {
 			return nil, err
 		}
-		after, err := unitVerifiedPathStat(pin.Path)
+		after, err := unitVerifiedPathStatModes(pin.Path, modes...)
 		if err != nil || !unitVerifiedSame(before, after) || ctx.Err() != nil {
 			return nil, errors.Join(err, ctx.Err(), retainedPackageError())
 		}
@@ -100,8 +108,9 @@ func retainedPackageDataReader(ctx context.Context, read retainedPackageRead) re
 	}
 }
 
-func readRetainedPackage(ctx context.Context, pin WatchCensusPin, read, readProfile retainedPackageRead) (*retainedDataPackage, error) {
+func readRetainedPackage(ctx context.Context, pin WatchCensusPin, read, readProfile, readSource retainedPackageRead) (*retainedDataPackage, error) {
 	read = retainedPackageDataReader(ctx, read)
+	readSource = retainedPackageSourceReader(ctx, readSource)
 	if _, err := read(pin); err != nil {
 		return nil, err
 	}
@@ -154,10 +163,14 @@ func readRetainedPackage(ctx context.Context, pin WatchCensusPin, read, readProf
 	if err := r.profiles(readProfile, pins); err != nil {
 		return nil, err
 	}
-	for _, check := range []func(retainedPackageRead, map[string]string) error{r.closures, r.runtime, r.evidence} {
-		if err := check(read, pins); err != nil {
-			return nil, err
-		}
+	if err := r.closures(read, readSource, pins); err != nil {
+		return nil, err
+	}
+	if err := r.runtime(readSource, pins); err != nil {
+		return nil, err
+	}
+	if err := r.evidence(read, pins); err != nil {
+		return nil, err
 	}
 	return r, nil
 }
@@ -248,7 +261,7 @@ func (r *retainedDataPackage) profiles(read retainedPackageRead, pins map[string
 	return nil
 }
 
-func (r *retainedDataPackage) closures(read retainedPackageRead, pins map[string]string) error {
+func (r *retainedDataPackage) closures(read, readSource retainedPackageRead, pins map[string]string) error {
 	for _, selected := range r.Object.Get("closures").Members {
 		root, bundle := string(selected.Key), selected.Value
 		if !exactReceiptObject(bundle, "schema", "sha256", "files", "manifest") {
@@ -262,7 +275,7 @@ func (r *retainedDataPackage) closures(read retainedPackageRead, pins map[string
 		if err != nil || manifest.Path != filepath.Join(root, "lifecycle-bundle.json") {
 			return retainedPackageError()
 		}
-		sidecar, err := retainedPackageValue(read, manifest)
+		sidecar, err := retainedPackageValue(readSource, manifest)
 		if err != nil || !nativeEqual(sidecar, retainedClosureBundle(bundle)) {
 			return errors.Join(err, retainedPackageError())
 		}
@@ -272,7 +285,7 @@ func (r *retainedDataPackage) closures(read retainedPackageRead, pins map[string
 			if !censusDigest(pin.SHA256) {
 				return retainedPackageError()
 			}
-			if _, err := read(pin); err != nil {
+			if _, err := readSource(pin); err != nil {
 				return err
 			}
 			pins[pin.Path] = pin.SHA256
@@ -600,6 +613,14 @@ func (r *retainedDataPackage) member(config string) (string, *value.Value, error
 }
 
 func (b *bootstrapRead) retainedBytes(pin WatchCensusPin) ([]byte, error) {
+	return b.retainedBytesModes(pin, 0o700)
+}
+
+func (b *bootstrapRead) retainedSourceBytes(pin WatchCensusPin) ([]byte, error) {
+	return b.retainedBytesModes(pin, 0o700, 0o755)
+}
+
+func (b *bootstrapRead) retainedBytesModes(pin WatchCensusPin, modes ...uint32) ([]byte, error) {
 	if !censusDigest(pin.SHA256) {
 		return nil, retainedPackageError()
 	}
@@ -612,9 +633,9 @@ func (b *bootstrapRead) retainedBytes(pin WatchCensusPin) ([]byte, error) {
 	var digest string
 	var err error
 	if b.files != nil {
-		raw, digest, err = b.files.Read(pin.Path, 1048576, false)
+		raw, digest, err = b.files.ReadOwnedModes(pin.Path, 1048576, false, modes...)
 	} else {
-		raw, digest, err = compatibilityOpened(pin.Path, 1048576, uint32(os.Getuid()))
+		raw, digest, err = compatibilityOpenedModes(pin.Path, 1048576, uint32(os.Getuid()), modes...)
 	}
 	if err != nil || digest != pin.SHA256 {
 		return nil, errors.Join(err, retainedPackageError())
@@ -642,7 +663,7 @@ func (b *bootstrapRead) retainedPackage(selected BootstrapRetainedAssociation, c
 		}
 		b.drain.facts["retained-source:"+pin.Path] = observed.SHA256
 		return observed.Raw, nil
-	})
+	}, b.retainedSourceBytes)
 	if err != nil {
 		return err
 	}
@@ -678,7 +699,7 @@ func (r *watchCensusRead) retainedPackage(node *WatchCensusMember, members map[s
 	if r.local.verified != nil {
 		ctx = r.local.verified.ctx
 	}
-	pkg, err := readRetainedPackage(ctx, selected, func(pin WatchCensusPin) ([]byte, error) { return r.pin(pin, false) }, r.retainedProfileBytes)
+	pkg, err := readRetainedPackage(ctx, selected, func(pin WatchCensusPin) ([]byte, error) { return r.pin(pin, false) }, r.retainedProfileBytes, r.retainedSourceBytes)
 	if err != nil {
 		return err
 	}
@@ -735,6 +756,25 @@ func (r *watchCensusRead) retainedPackage(node *WatchCensusMember, members map[s
 	}
 	r.retainedProfiles[node.Config.Path] = node.Config
 	return nil
+}
+
+func (r *watchCensusRead) retainedSourceBytes(pin WatchCensusPin) ([]byte, error) {
+	if !censusDigest(pin.SHA256) || r.local.tokenPaths[pin.Path] {
+		return nil, retainedPackageError()
+	}
+	if err := r.safePath(pin.Path, false); err != nil {
+		return nil, err
+	}
+	raw, digest, err := r.local.openedModes(pin.Path, 1048576, false, 0o700, 0o755)
+	if err != nil || digest != pin.SHA256 {
+		return nil, errors.Join(err, retainedPackageError())
+	}
+	if old := r.files[pin.Path]; old != "" && old != digest {
+		return nil, retainedPackageError()
+	}
+	r.files[pin.Path] = digest
+	r.report.Facts["file:"+pin.Path] = digest
+	return raw, nil
 }
 
 func (r *watchCensusRead) retainedProfileBytes(pin WatchCensusPin) ([]byte, error) {

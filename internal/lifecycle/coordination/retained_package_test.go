@@ -64,7 +64,7 @@ func TestRetainedPackageProducerReaderParity(t *testing.T) {
 	if err := json.Unmarshal(raw, &cases); err != nil {
 		t.Fatal(err)
 	}
-	expectedCases := 42
+	expectedCases := 43
 	if os.Getenv("CAIRN_RETAINED_PACKAGE_SIDECAR_FIXTURE") != "" {
 		expectedCases++
 	}
@@ -90,7 +90,14 @@ func TestRetainedPackageProducerReaderParity(t *testing.T) {
 				}
 				return observed.Raw, err
 			}
-			pkg, err := readRetainedPackage(context.Background(), tc.Selection, read, profileRead)
+			sourceRead := func(pin WatchCensusPin) ([]byte, error) {
+				raw, digest, err := compatibilityOpenedModes(pin.Path, 1048576, uint32(os.Getuid()), 0o700, 0o755)
+				if err == nil && digest != pin.SHA256 {
+					return nil, retainedPackageError()
+				}
+				return raw, err
+			}
+			pkg, err := readRetainedPackage(context.Background(), tc.Selection, read, profileRead, sourceRead)
 			if (err == nil) != tc.Expected {
 				t.Fatalf("shared Go validator: %v; expected acceptance %t", err, tc.Expected)
 			}
@@ -102,8 +109,13 @@ func TestRetainedPackageProducerReaderParity(t *testing.T) {
 					calls++
 					return nil, errors.New("canceled validation performed a content read")
 				}
-				if _, err := readRetainedPackage(ctx, tc.Selection, forbiddenRead, forbiddenRead); !errors.Is(err, context.Canceled) || calls != 0 {
+				if _, err := readRetainedPackage(ctx, tc.Selection, forbiddenRead, forbiddenRead, forbiddenRead); !errors.Is(err, context.Canceled) || calls != 0 {
 					t.Errorf("canceled observation: reads=%d error=%v", calls, err)
+				}
+				if !memoryAbsent(pkg.Binding.Get("memory_config")) {
+					if _, err := InspectRetainedPackage(context.Background(), install.Generation{Path: tc.Selection.Path, SHA256: tc.Selection.SHA256}); err != nil {
+						t.Errorf("InspectRetainedPackage failed: %v", err)
+					}
 				}
 			}
 			files, err := install.ReadGeneration(context.Background(), install.Generation{Path: tc.Selection.Path, SHA256: tc.Selection.SHA256})
@@ -139,7 +151,7 @@ func TestRetainedPackageProducerReaderParity(t *testing.T) {
 				facts := map[string]string{}
 				r := &watchCensusRead{
 					catalog: WatchCensusCatalog{Root: tc.Root}, local: &watchDrainRead{cli: &CLI{Profile: profile}, tokenPaths: map[string]bool{}, facts: facts},
-					report: WatchUnitCensus{Facts: facts}, files: map[string]string{}, inodes: map[string]string{}, images: map[string]bool{},
+					report: WatchUnitCensus{Facts: facts}, files: map[string]string{}, directories: map[string][]string{}, inodes: map[string]string{}, images: map[string]bool{},
 				}
 				producerRaw, err := json.Marshal(map[string]any{"lifecycle_selection": map[string]string{"path": tc.Selection.Path, "sha256": tc.Selection.SHA256}, "retained_python": member.Proof})
 				if err != nil {
@@ -150,8 +162,26 @@ func TestRetainedPackageProducerReaderParity(t *testing.T) {
 					t.Fatal(err)
 				}
 				node := &WatchCensusMember{Config: member.Config, Binding: member.Binding, Mode: "cairn.inbox-recall-binding/2"}
-				if err := r.claudeRetainedMembers(node, members, producer); (err == nil) != tc.Expected {
-					t.Errorf("native reader member %s: %v; expected acceptance %t", member.Name, err, tc.Expected)
+				hasExternal := false
+				if pkg != nil {
+					for _, cl := range pkg.Object.Get("closures").Members {
+						if !censusWithin(tc.Root, string(cl.Key)) {
+							hasExternal = true
+						}
+					}
+				}
+				if !hasExternal {
+					if err := r.claudeRetainedMembers(node, members, producer); (err == nil) != tc.Expected {
+						t.Errorf("native reader member %s: %v; expected acceptance %t", member.Name, err, tc.Expected)
+					} else if tc.Expected {
+						if err := r.runtime(node, pkg.Binding); err != nil {
+							t.Errorf("census runtime member %s: %v", member.Name, err)
+						}
+					}
+				} else {
+					if err := r.claudeRetainedMembers(node, members, producer); (err == nil) != tc.Expected {
+						t.Errorf("native reader member %s: %v; expected acceptance %t", member.Name, err, tc.Expected)
+					}
 				}
 				if tc.Expected {
 					originalRoot := b.plan.Root

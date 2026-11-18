@@ -51,7 +51,18 @@ func InspectRetainedPackage(ctx context.Context, selection install.Generation) (
 		pins[pin.Path] = pin
 		return observed.Raw, nil
 	}
-	pkg, err := readRetainedPackage(ctx, WatchCensusPin{Path: selection.Path, SHA256: selection.SHA256}, read, profileRead)
+	sourceRead := func(pin WatchCensusPin) ([]byte, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		raw, digest, err := compatibilityOpenedModes(pin.Path, 1048576, uint32(os.Getuid()), 0o700, 0o755)
+		if err != nil || digest != pin.SHA256 {
+			return nil, errors.Join(err, retainedPackageError())
+		}
+		pins[pin.Path] = pin
+		return raw, nil
+	}
+	pkg, err := readRetainedPackage(ctx, WatchCensusPin{Path: selection.Path, SHA256: selection.SHA256}, read, profileRead, sourceRead)
 	if err != nil {
 		return out, err
 	}
