@@ -16,6 +16,7 @@ type MessageHeader struct {
 	ActionNeeded string     `json:"action_needed"`
 	Due          *time.Time `json:"due,omitempty"`
 	Supersedes   string     `json:"supersedes,omitempty"`
+	Blocker      bool       `json:"blocker,omitempty"`
 }
 
 func hasDisallowedSummaryRune(s string) bool {
@@ -53,7 +54,8 @@ func (e AgentEvent) Header() *MessageHeader {
 	if due == nil {
 		due = e.TaskDeadline
 	}
-	if e.Summary == "" && e.Action == "" && due == nil && e.Supersedes == "" {
+	isBlocker := e.Blocker || e.Kind == "blocker"
+	if e.Summary == "" && e.Action == "" && due == nil && e.Supersedes == "" && !isBlocker {
 		return nil
 	}
 	action := e.Action
@@ -61,8 +63,14 @@ func (e AgentEvent) Header() *MessageHeader {
 		switch e.Kind {
 		case "request":
 			action = "complete"
+		case "decide":
+			action = "decide"
 		default:
-			action = "review"
+			if isBlocker {
+				action = "decide"
+			} else {
+				action = "review"
+			}
 		}
 	}
 	return &MessageHeader{
@@ -70,6 +78,7 @@ func (e AgentEvent) Header() *MessageHeader {
 		ActionNeeded: action,
 		Due:          due,
 		Supersedes:   e.Supersedes,
+		Blocker:      isBlocker,
 	}
 }
 

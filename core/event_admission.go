@@ -393,12 +393,17 @@ func (s *Store) eventPressure(ctx context.Context, req EventPressureQuery, dest 
 type EventAdmissionPreviewRequest struct {
 	Repo        string           `json:"repo,omitempty"`
 	Destination EventDestination `json:"destination"`
+	Kind        string           `json:"kind,omitempty"`
+	Action      string           `json:"action,omitempty"`
+	Urgency     string           `json:"urgency,omitempty"`
+	Blocker     bool             `json:"blocker,omitempty"`
 }
 type EventAdmissionPreview struct {
 	Schema              string           `json:"schema"`
 	PolicyRevision      int64            `json:"policy_revision"`
 	Mode                string           `json:"mode"`
 	Producer            PressureIdentity `json:"producer"`
+	Routing             *EventRouting    `json:"routing,omitempty"`
 	RecipientCount      *int64           `json:"recipient_count"`
 	RecipientCountExact bool             `json:"recipient_count_exact"`
 	RecipientCountState string           `json:"recipient_count_state"`
@@ -451,10 +456,37 @@ func (s *Store) PreviewEventAdmission(ctx context.Context, req EventAdmissionPre
 	}
 	// Only a bounded recipient snapshot is inspected. Stopped sessions stay in
 	// the snapshot; expiry of presence never silently unsubscribes a recipient.
-	recipients := []string{req.Destination.Name}
+	previewEvSens := "shareable"
+	if dest.AllowLocal {
+		previewEvSens = "local"
+	}
+	effectiveDest := req.Destination
+	if !s.channel.Operator && req.Destination.Type == "agent" {
+		routing, rErr := evaluateHierarchyRoutingTx(ctx, tx, repo, s.channel.Principal, req.Kind, previewEvSens, req.Destination)
+		if rErr != nil {
+			return out, rErr
+		}
+		if routing != nil && (!routing.LocalOnly || dest.AllowLocal) {
+			if routing.Rerouted {
+				effectiveDest = routing.EffectiveDestination
+			}
+			routing.LocalOnly = false
+			out.Routing = routing
+		}
+	}
+	recipients := []string{effectiveDest.Name}
 	if req.Destination.Type == "topic" {
 		recipients = []string{}
-		rows, err := tx.Query(ctx, `SELECT consumer FROM cairn.agent_subscription WHERE repo=$1 AND topic=$2 AND active ORDER BY consumer LIMIT $3`, repo, req.Destination.Name, limits.MaxTopicRecipients+1)
+		var rows pgx.Rows
+		if req.Kind != "" || req.Action != "" || req.Urgency != "" || req.Blocker {
+			previewKind := req.Kind
+			if previewKind == "" {
+				previewKind = "notice"
+			}
+			rows, err = tx.Query(ctx, `SELECT consumer FROM cairn.agent_subscription WHERE repo=$1 AND topic=$2 AND active AND cairn.subscription_matches_event(filter,$1,consumer,$4,$5,$6,$7,$8,$9) ORDER BY consumer LIMIT $3`, repo, req.Destination.Name, limits.MaxTopicRecipients+1, s.channel.Principal, previewKind, req.Action, req.Urgency, req.Blocker, previewEvSens)
+		} else {
+			rows, err = tx.Query(ctx, `SELECT consumer FROM cairn.agent_subscription WHERE repo=$1 AND topic=$2 AND active AND cairn.subscription_matches_event(CASE WHEN filter IS NULL THEN NULL ELSE jsonb_build_object('direct_reports_only',COALESCE(filter->'direct_reports_only','false'::jsonb),'subtree_only',COALESCE(filter->'subtree_only','false'::jsonb)) END,$1,consumer,$4,'notice','','',false,$5) ORDER BY consumer LIMIT $3`, repo, req.Destination.Name, limits.MaxTopicRecipients+1, s.channel.Principal, previewEvSens)
+		}
 		if err != nil {
 			return out, err
 		}

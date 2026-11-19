@@ -395,6 +395,12 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 			native.Set(k, v)
 		}
 	}
+	if exactTrue(event.Get("blocker")) {
+		native.Set("blocker", value.Boolean(true))
+	}
+	if rt := event.Get("routing"); rt != nil && rt.Kind == value.Object && value.Truth(rt) {
+		native.Set("routing", rt)
+	}
 	if hdr := nativeMessageHeaderValue(event); hdr != nil {
 		native.Set("header", hdr)
 	}

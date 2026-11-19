@@ -157,6 +157,7 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
 		if err = rows.Scan(fields...); err != nil {
 			return out, err
 		}
+		redactEventRouting(&d.Event, true)
 		if resultID != nil {
 			d.Result = &RecordVersionRef{*resultID, *resultVersion}
 		}
@@ -248,6 +249,7 @@ func (s *Store) reviewUnassignedPool(ctx context.Context, repo string, after int
 		if err := rows.Scan(append(eventScanFields(&e.AgentEvent), &e.Control)...); err != nil {
 			return out, err
 		}
+		redactEventRouting(&e.AgentEvent, true)
 		out.Events = append(out.Events, e)
 		out.NextAfter = e.Position
 	}

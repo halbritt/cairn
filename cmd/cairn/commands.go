@@ -162,6 +162,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	if args[0] == "status" {
 		return statusCommand(ctx, args[1:], input, nil, nil)
 	}
+	if args[0] == "team" {
+		return teamCommand(ctx, args[1:], input, nil, nil)
+	}
 	if args[0] == "machine" {
 		return machineCommand(ctx, args[1:])
 	}

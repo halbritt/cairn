@@ -25,13 +25,17 @@ func nativeMessageHeaderValue(ev *value.Value) *value.Value {
 	if due == "" {
 		due = nativeText(ev.Get("task_deadline"))
 	}
-	if summary == "" && action == "" && due == "" && supersedes == "" {
+	isBlocker := exactTrue(ev.Get("blocker")) || nativeText(ev.Get("kind")) == "blocker"
+	if summary == "" && action == "" && due == "" && supersedes == "" && !isBlocker {
 		return nil
 	}
 	actionNeeded := action
 	if actionNeeded == "" {
-		if nativeText(ev.Get("kind")) == "request" {
+		evKind := nativeText(ev.Get("kind"))
+		if evKind == "request" {
 			actionNeeded = "complete"
+		} else if evKind == "decide" || isBlocker {
+			actionNeeded = "decide"
 		} else {
 			actionNeeded = "review"
 		}
@@ -46,6 +50,9 @@ func nativeMessageHeaderValue(ev *value.Value) *value.Value {
 	}
 	if supersedes != "" {
 		hdr.Set("supersedes", value.Text(supersedes))
+	}
+	if isBlocker {
+		hdr.Set("blocker", value.Boolean(true))
 	}
 	return hdr
 }
@@ -81,6 +88,12 @@ func nativeHeaderCompactJSON(ev *value.Value) string {
 		out.Write(bytes.TrimSuffix(kb.Bytes(), []byte("\n")))
 		out.WriteByte(':')
 		out.Write(bytes.TrimSuffix(vb.Bytes(), []byte("\n")))
+	}
+	if bVal := hdr.Get("blocker"); exactTrue(bVal) {
+		if len(fields) > 0 {
+			out.WriteByte(',')
+		}
+		out.WriteString(`"blocker":true`)
 	}
 	out.WriteByte('}')
 	return out.String()

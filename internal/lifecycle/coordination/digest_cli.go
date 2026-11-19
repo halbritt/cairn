@@ -382,6 +382,12 @@ func (c *CLI) compactDigestRead(ctx context.Context, config, attempt *value.Valu
 				readOut.Set(k, v)
 			}
 		}
+		if exactTrue(ev.Get("blocker")) {
+			readOut.Set("blocker", value.Boolean(true))
+		}
+		if rt := ev.Get("routing"); rt != nil && rt.Kind == value.Object && value.Truth(rt) {
+			readOut.Set("routing", rt)
+		}
 		return 0, c.output(out, readOut, false)
 	}
 	outItems := &value.Value{Kind: value.Array, Items: make([]*value.Value, 0, len(items))}
@@ -405,6 +411,12 @@ func (c *CLI) compactDigestRead(ctx context.Context, config, attempt *value.Valu
 			if v := ev.Get(k); value.Truth(v) {
 				entry.Set(k, v)
 			}
+		}
+		if exactTrue(ev.Get("blocker")) {
+			entry.Set("blocker", value.Boolean(true))
+		}
+		if rt := ev.Get("routing"); rt != nil && rt.Kind == value.Object && value.Truth(rt) {
+			entry.Set("routing", rt)
 		}
 		body, err := c.exactInboxSource(ctx, config, attempt, ev.Get("ref"))
 		if err != nil {

@@ -100,7 +100,7 @@ func (s *Store) AdvanceSessionInbox(ctx context.Context, req SessionInboxAdvance
 			// batched model step delaying that request or urgent notice.
 			var priority bool
 			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1`+sessionInboxEligibleBase+
-				` AND (e.kind='request' OR e.notice_policy->>'urgency'='urgent'))`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&priority)
+				` AND (e.kind='request' OR e.blocker OR e.notice_policy->>'urgency'='urgent'))`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&priority)
 			if err != nil {
 				return empty, err
 			}
@@ -117,22 +117,23 @@ func (s *Store) AdvanceSessionInbox(ctx context.Context, req SessionInboxAdvance
 			// The root attempt timestamp freezes the burst. A routine notice
 			// published during handling waits for its own turn.
 			var nextID, eventID, kind, urgency, action string
+			var isBlocker bool
 			limit := 1
 			if req.AutoSettleActionNone {
 				limit = maxAutoSettleBatch + 1
 			}
 			for i := 0; i < limit; i++ {
-				err = tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.event_id::text,e.kind,COALESCE(e.notice_policy->>'urgency',''),COALESCE(e.notice_action,'')`+
+				err = tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.event_id::text,e.kind,COALESCE(e.notice_policy->>'urgency',''),COALESCE(e.notice_action,''),e.blocker`+
 					sessionInboxEligibleBase+` AND e.created_at<=$4 AND d.available_at<=$4`+
 					` AND (d.state='pending' OR d.lease_until<=$4) ORDER BY e.position FOR UPDATE OF d LIMIT 1`,
-					a.Repo, a.Inbox, dest.AllowLocal, cutoff).Scan(&nextID, &eventID, &kind, &urgency, &action)
+					a.Repo, a.Inbox, dest.AllowLocal, cutoff).Scan(&nextID, &eventID, &kind, &urgency, &action, &isBlocker)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return endBatch("empty")
 				}
 				if err != nil {
 					return empty, err
 				}
-				if kind != "notice" || urgency == "urgent" {
+				if kind != "notice" || urgency == "urgent" || isBlocker {
 					return endBatch("priority_waiting")
 				}
 				if req.AutoSettleActionNone && action == "none" {

@@ -501,6 +501,12 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 				readOut.Set(k, v)
 			}
 		}
+		if exactTrue(event.Get("blocker")) {
+			readOut.Set("blocker", value.Boolean(true))
+		}
+		if rt := event.Get("routing"); rt != nil && rt.Kind == value.Object && value.Truth(rt) {
+			readOut.Set("routing", rt)
+		}
 		return 0, c.output(out, readOut, false)
 	}
 	if op == "inspect" {

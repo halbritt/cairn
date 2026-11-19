@@ -2850,6 +2850,10 @@ def compact_inbox_command(argv):
         for key in ('summary', 'action', 'supersedes', 'expect_next_by', 'expect_by', 'task_deadline'):
             if event.get(key):
                 read_out[key] = event[key]
+        if event.get('blocker') is True:
+            read_out['blocker'] = True
+        if isinstance(event.get('routing'), dict) and event['routing']:
+            read_out['routing'] = event['routing']
         print(json.dumps(read_out))
         return 0
     if args.operation == 'inspect':
@@ -2993,6 +2997,10 @@ def _compact_digest_read(config, attempt, items, selector):
         for key in ('summary', 'action', 'supersedes', 'expect_next_by'):
             if ev.get(key):
                 out[key] = ev[key]
+        if ev.get('blocker') is True:
+            out['blocker'] = True
+        if isinstance(ev.get('routing'), dict) and ev['routing']:
+            out['routing'] = ev['routing']
         print(json.dumps(out))
         return 0
     out_items = []
@@ -3009,6 +3017,10 @@ def _compact_digest_read(config, attempt, items, selector):
         for key in ('summary', 'action', 'supersedes', 'expect_next_by'):
             if ev.get(key):
                 entry[key] = ev[key]
+        if ev.get('blocker') is True:
+            entry['blocker'] = True
+        if isinstance(ev.get('routing'), dict) and ev['routing']:
+            entry['routing'] = ev['routing']
         try:
             entry['body'] = exact_inbox_source(config, attempt, ev['ref'])
         except CoordinationError as exc:
@@ -3492,6 +3504,10 @@ def inbox_handoff(config, session, delivery, attempt_id, request_ids, *, scope=(
     for key in ('summary', 'action', 'supersedes', 'expect_next_by', 'expect_by', 'task_deadline'):
         if event.get(key):
             context[key] = event[key]
+    if event.get('blocker') is True:
+        context['blocker'] = True
+    if isinstance(event.get('routing'), dict) and event['routing']:
+        context['routing'] = event['routing']
     hdr_dict = _native_message_header_dict(event)
     if hdr_dict is not None:
         context['header'] = hdr_dict
@@ -3514,9 +3530,11 @@ def _native_message_header_dict(ev):
     action = _str_field(ev, 'action')
     supersedes = _str_field(ev, 'supersedes')
     due = _str_field(ev, 'expect_next_by') or _str_field(ev, 'expect_by') or _str_field(ev, 'task_deadline')
-    if not summary and not action and not due and not supersedes:
+    is_blocker = (ev.get('blocker') is True) or (_str_field(ev, 'kind') == 'blocker')
+    if not summary and not action and not due and not supersedes and not is_blocker:
         return None
-    action_needed = action or ('complete' if _str_field(ev, 'kind') == 'request' else 'review')
+    kind = _str_field(ev, 'kind')
+    action_needed = action or ('complete' if kind == 'request' else ('decide' if (kind == 'decide' or is_blocker) else 'review'))
     out = {}
     if summary:
         out['summary'] = summary
@@ -3525,6 +3543,8 @@ def _native_message_header_dict(ev):
         out['due'] = due
     if supersedes:
         out['supersedes'] = supersedes
+    if is_blocker:
+        out['blocker'] = True
     return out
 
 
@@ -3872,6 +3892,9 @@ def inbox_context(config, state, path, observation, wake_binding=None, *, joined
         intent_parts = [f"{k}={event[k]}" for k in ('action', 'supersedes', 'expect_next_by', 'expect_by') if event.get(k)]
         if intent_parts:
             header += f"Intent: {', '.join(intent_parts)}. "
+        rt = event.get('routing') if isinstance(event.get('routing'), dict) else {}
+        if rt.get('rerouted') is True and isinstance(rt.get('original_destination'), dict) and _str_field(rt['original_destination'], 'name'):
+            header += f"Rerouted via hierarchy from {_str_field(rt['original_destination'], 'name')}. "
         hdr_line = _format_sender_header_line(event)
         try:
             body = exact_inbox_source(config, attempt, source)

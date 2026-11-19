@@ -23,7 +23,7 @@ const sendHelp = `cairn agent [connection flags] send --journal ABSOLUTE_PATH --
   --stdin --kind EVENT_KIND [--shareable] [--source-kind NOTE_KIND]
   (--to PRINCIPAL | --resolution FILE | --topic TOPIC | --pool POOL)
   [--workspace PATH --harness NAME --model NAME --capability NAME]
-  [--summary TEXT] [--action none|review|decide] [--supersedes TOPIC_KEY] [--expect-next-by RFC3339]
+  [--summary TEXT] [--blocker] [--action none|review|decide] [--supersedes TOPIC_KEY] [--expect-next-by RFC3339]
   [--expect-by RFC3339]
 
 Save selected stdin text under coordination/<publication-request-UUID>, then
@@ -56,6 +56,7 @@ type sendIntent struct {
 	Session          *core.AgentSessionRef  `json:"session,omitempty"`
 	Action           string                 `json:"action,omitempty"`
 	Supersedes       string                 `json:"supersedes,omitempty"`
+	Blocker          bool                   `json:"blocker,omitempty"`
 	ExpectNextBy     *time.Time             `json:"expect_next_by,omitempty"`
 	ExpectBy         *time.Time             `json:"expect_by,omitempty"`
 }
@@ -67,6 +68,7 @@ type sendJournal struct {
 	PublicationRequestID string                `json:"publication_request_id"`
 	Source               core.RecordVersionRef `json:"source"`
 	EventID              string                `json:"event_id,omitempty"`
+	Routing              *core.EventRouting    `json:"routing,omitempty"`
 }
 
 type sendResult struct {
@@ -75,12 +77,13 @@ type sendResult struct {
 	PublicationPending   bool                   `json:"publication_pending"`
 	Source               *core.RecordVersionRef `json:"source,omitempty"`
 	EventID              string                 `json:"event_id,omitempty"`
+	Routing              *core.EventRouting     `json:"routing,omitempty"`
 	SourceRequestID      string                 `json:"source_request_id"`
 	PublicationRequestID string                 `json:"publication_request_id"`
 }
 
 func sendState(j sendJournal) sendResult {
-	result := sendResult{Schema: "cairn.send-result/1", PublicationPending: j.EventID == "", SourceRequestID: j.SourceRequestID, PublicationRequestID: j.PublicationRequestID, EventID: j.EventID}
+	result := sendResult{Schema: "cairn.send-result/1", PublicationPending: j.EventID == "", SourceRequestID: j.SourceRequestID, PublicationRequestID: j.PublicationRequestID, EventID: j.EventID, Routing: j.Routing}
 	if j.Source.RecordID != "" {
 		confirmed := true
 		result.SourceSaved = &confirmed
@@ -146,6 +149,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	harness := f.String("harness", "", "pool harness")
 	model := f.String("model", "", "pool model")
 	eventSummary := f.String("summary", "", "concise single-line header summarizing what changed or is requested (1-280 UTF-8 bytes)")
+	eventBlocker := f.Bool("blocker", false, "mark event as a blocker")
 	noticeAction := f.String("action", "", "notice intent action (none|review|decide)")
 	noticeSupersedes := f.String("supersedes", "", "sender-scoped notice topic key superseded by this notice")
 	noticeExpectNextBy := f.String("expect-next-by", "", "expected next update instant for notice (RFC3339)")
@@ -170,6 +174,9 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 		if err := core.ValidateEventSummary(*eventSummary); err != nil {
 			return nil, err
 		}
+	}
+	if *eventBlocker && *noticeAction == "none" {
+		return nil, invalid("--blocker cannot combine with --action none")
 	}
 	var parsedExpectNextBy *time.Time
 	if provided["action"] || provided["supersedes"] || provided["expect-next-by"] {
@@ -283,7 +290,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 		sumHash := sha256.Sum256([]byte(*eventSummary))
 		summaryHashHex = hex.EncodeToString(sumHash[:])
 	}
-	intent := sendIntent{BodySHA256: hex.EncodeToString(bodyHash[:]), SummarySHA256: summaryHashHex, CredentialSHA256: client.CredentialFingerprint(), Repo: *repo, Kind: *kind, SourceKind: *sourceKind, Shareable: *shareable, Destination: dest, Resolution: resolution, Pool: needs, Session: session, Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy}
+	intent := sendIntent{BodySHA256: hex.EncodeToString(bodyHash[:]), SummarySHA256: summaryHashHex, CredentialSHA256: client.CredentialFingerprint(), Repo: *repo, Kind: *kind, SourceKind: *sourceKind, Shareable: *shareable, Destination: dest, Resolution: resolution, Pool: needs, Session: session, Action: *noticeAction, Supersedes: *noticeSupersedes, Blocker: *eventBlocker, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy}
 	intentHash, err := sendHash(intent)
 	if err != nil {
 		return nil, err
@@ -320,17 +327,19 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 			}
 		}
 		if journal.EventID == "" {
-			publish := core.PublishEventRequest{Summary: *eventSummary, Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy, RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
+			publish := core.PublishEventRequest{Summary: *eventSummary, Action: *noticeAction, Supersedes: *noticeSupersedes, Blocker: *eventBlocker, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy, RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
 			var event core.AgentEvent
 			if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 				out = sendState(journal)
 				return journal, false, err
 			}
-			if uuid.Validate(event.EventID) != nil || event.Ref != journal.Source || event.Destination != dest || event.Repo != *repo || event.Kind != *kind || event.From == "" {
+			destValid := event.Destination == dest || (event.Routing != nil && event.Routing.Rerouted && event.Routing.OriginalDestination != nil && *event.Routing.OriginalDestination == dest && event.Destination == event.Routing.EffectiveDestination)
+			if uuid.Validate(event.EventID) != nil || event.Ref != journal.Source || !destValid || event.Repo != *repo || event.Kind != *kind || event.From == "" {
 				out = sendState(journal)
 				return journal, false, &core.Error{Code: "SCHEMA_MISMATCH", Message: "publish returned a different source or destination"}
 			}
 			journal.EventID = event.EventID
+			journal.Routing = event.Routing
 			if err := save(journal); err != nil {
 				out = sendState(journal)
 				return journal, false, err

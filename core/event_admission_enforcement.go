@@ -136,7 +136,15 @@ func (s *Store) checkEventAdmissionTx(ctx context.Context, tx pgx.Tx, req Publis
 	case "agent":
 		out.Consumers = []string{req.Destination.Name}
 	case "topic":
-		rows, err := tx.Query(ctx, `SELECT consumer FROM cairn.agent_subscription WHERE repo=$1 AND topic=$2 AND active ORDER BY consumer LIMIT $3`, req.Repo, req.Destination.Name, limits.MaxTopicRecipients+1)
+		urgencyStr := ""
+		if req.NoticePolicy != nil {
+			urgencyStr = req.NoticePolicy.Urgency
+		}
+		evSens := "shareable"
+		if req.Ref.RecordID != "" {
+			_ = tx.QueryRow(ctx, `SELECT sensitivity FROM cairn.memory_record WHERE record_id=$1`, req.Ref.RecordID).Scan(&evSens)
+		}
+		rows, err := tx.Query(ctx, `SELECT consumer FROM cairn.agent_subscription WHERE repo=$1 AND topic=$2 AND active AND cairn.subscription_matches_event(filter,$1,consumer,$4,$5,$6,$7,$8,$9) ORDER BY consumer LIMIT $3`, req.Repo, req.Destination.Name, limits.MaxTopicRecipients+1, identity.Principal, req.Kind, req.Action, urgencyStr, req.Blocker, evSens)
 		if err != nil {
 			return nil, err
 		}

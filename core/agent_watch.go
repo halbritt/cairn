@@ -96,6 +96,7 @@ func (s *Store) InboxEvents(ctx context.Context, req InboxWatchRequest, dest Des
 		if err = rows.Scan(fields...); err != nil {
 			return out, err
 		}
+		redactEventRouting(&arrival.Event, dest.AllowLocal)
 		out.Deliveries = append(out.Deliveries, arrival)
 		cursor.Position = arrival.Position
 	}

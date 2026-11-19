@@ -222,6 +222,7 @@ type sendArgs struct {
 	CorrelationID string                 `json:"correlation_id,omitempty" jsonschema:"Interaction UUID shared by related events."`
 	Urgency       string                 `json:"urgency,omitempty" jsonschema:"Notice wake policy: routine or urgent. Notices only."`
 	Summary       string                 `json:"summary,omitempty" jsonschema:"Short single-line header summarizing what changed or what is requested (1-280 UTF-8 bytes, separate from body; required when body exceeds 280 bytes)."`
+	Blocker       bool                   `json:"blocker,omitempty" jsonschema:"Mark this message as a blocker so filtered coordinator subscriptions and priority queues surface it immediately."`
 	Action        string                 `json:"action,omitempty" jsonschema:"Notice intent action: none, review or decide. Notices only."`
 	Supersedes    string                 `json:"supersedes,omitempty" jsonschema:"Sender-scoped topic key superseded by this notice. Notices only."`
 	ExpectNextBy  string                 `json:"expect_next_by,omitempty" jsonschema:"Optional RFC3339 time when the next update is expected. Notices only."`
@@ -235,8 +236,10 @@ type sendResult struct {
 	From         string                `json:"from"`
 	To           core.EventDestination `json:"to"`
 	Recipient    *agentView            `json:"recipient,omitempty"`
+	Routing      *core.EventRouting    `json:"routing,omitempty"`
 	Kind         string                `json:"kind"`
 	Summary      string                `json:"summary,omitempty"`
+	Blocker      bool                  `json:"blocker,omitempty"`
 	Action       string                `json:"action,omitempty"`
 	Supersedes   string                `json:"supersedes,omitempty"`
 	ExpectNextBy *time.Time            `json:"expect_next_by,omitempty"`
@@ -297,6 +300,9 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 	}
 	if args.Body != "" && len(args.Body) > core.MaxEventSummaryBytes && args.Summary == "" {
 		return toolResult(nil, messagingError("INVALID_REQUEST", "summary (1-280 single-line UTF-8 bytes) is required when body exceeds 280 bytes; state what changed in summary and keep uncompressed details in body"), 0)
+	}
+	if args.Blocker && args.Action == "none" {
+		return toolResult(nil, messagingError("INVALID_REQUEST", "blocker cannot combine with action none"), 0)
 	}
 	var policy *core.NoticeWakePolicyRequest
 	if args.Urgency != "" {
@@ -369,15 +375,19 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 		}
 		source = core.RecordVersionRef{RecordID: record.RecordID, Version: record.Version}
 	}
-	publish := core.PublishEventRequest{Summary: args.Summary, Action: args.Action, Supersedes: args.Supersedes, ExpectNextBy: expectNextBy, ExpectBy: expectBy, RequestID: args.RequestID, Repo: repo, Kind: args.Kind, Ref: source, Destination: destination, CausationID: args.CausationID, CorrelationID: args.CorrelationID, NoticePolicy: policy}
+	publish := core.PublishEventRequest{Summary: args.Summary, Blocker: args.Blocker, Action: args.Action, Supersedes: args.Supersedes, ExpectNextBy: expectNextBy, ExpectBy: expectBy, RequestID: args.RequestID, Repo: repo, Kind: args.Kind, Ref: source, Destination: destination, CausationID: args.CausationID, CorrelationID: args.CorrelationID, NoticePolicy: policy}
 	var event core.AgentEvent
 	if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 		return toolResult(nil, err, 0)
 	}
-	if uuid.Validate(event.EventID) != nil || event.Ref != source || event.Destination != destination {
+	destValid := event.Destination == destination || (event.Routing != nil && event.Routing.Rerouted && event.Routing.OriginalDestination != nil && *event.Routing.OriginalDestination == destination && event.Destination == event.Routing.EffectiveDestination)
+	if uuid.Validate(event.EventID) != nil || event.Ref != source || !destValid {
 		return toolResult(nil, messagingError("SCHEMA_MISMATCH", "publish returned a different source or destination"), 0)
 	}
-	return toolResult(sendResult{EventID: event.EventID, From: event.From, To: event.Destination, Recipient: recipient, Kind: event.Kind, Summary: event.Summary, Action: event.Action, Supersedes: event.Supersedes, ExpectNextBy: event.ExpectNextBy, ExpectBy: event.ExpectBy, Header: event.Header(), Source: source, RequestID: args.RequestID}, nil, t.config.AvailableTokens)
+	if event.Routing != nil && event.Routing.Rerouted {
+		recipient = nil
+	}
+	return toolResult(sendResult{EventID: event.EventID, From: event.From, To: event.Destination, Recipient: recipient, Routing: event.Routing, Kind: event.Kind, Summary: event.Summary, Blocker: event.Blocker, Action: event.Action, Supersedes: event.Supersedes, ExpectNextBy: event.ExpectNextBy, ExpectBy: event.ExpectBy, Header: event.Header(), Source: source, RequestID: args.RequestID}, nil, t.config.AvailableTokens)
 }
 
 type inboxArgs struct {
@@ -396,11 +406,13 @@ type deliveryView struct {
 	EventID       string                 `json:"event_id"`
 	Kind          string                 `json:"kind"`
 	Summary       string                 `json:"summary,omitempty"`
+	Blocker       bool                   `json:"blocker,omitempty"`
 	Action        string                 `json:"action,omitempty"`
 	Supersedes    string                 `json:"supersedes,omitempty"`
 	ExpectNextBy  *time.Time             `json:"expect_next_by,omitempty"`
 	ExpectBy      *time.Time             `json:"expect_by,omitempty"`
 	Header        *core.MessageHeader    `json:"header,omitempty"`
+	Routing       *core.EventRouting     `json:"routing,omitempty"`
 	SupersededBy  string                 `json:"superseded_by,omitempty"`
 	From          string                 `json:"from"`
 	CreatedAt     time.Time              `json:"created_at"`
@@ -412,7 +424,7 @@ type deliveryView struct {
 }
 
 func viewDelivery(d core.AgentDelivery) deliveryView {
-	return deliveryView{DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, LeaseUntil: d.LeaseUntil, State: d.State, Attempts: d.Attempts, EventID: d.Event.EventID, Kind: d.Event.Kind, Summary: d.Event.Summary, Action: d.Event.Action, Supersedes: d.Event.Supersedes, ExpectNextBy: d.Event.ExpectNextBy, ExpectBy: d.Event.ExpectBy, Header: d.Event.Header(), SupersededBy: d.SupersededBy, From: d.Event.From, CreatedAt: d.Event.CreatedAt, CausationID: d.Event.CausationID, CorrelationID: d.Event.CorrelationID, Source: d.Event.Ref, Result: d.Result, Code: d.Code}
+	return deliveryView{DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, LeaseUntil: d.LeaseUntil, State: d.State, Attempts: d.Attempts, EventID: d.Event.EventID, Kind: d.Event.Kind, Summary: d.Event.Summary, Blocker: d.Event.Blocker, Action: d.Event.Action, Supersedes: d.Event.Supersedes, ExpectNextBy: d.Event.ExpectNextBy, ExpectBy: d.Event.ExpectBy, Header: d.Event.Header(), Routing: d.Event.Routing, SupersededBy: d.SupersededBy, From: d.Event.From, CreatedAt: d.Event.CreatedAt, CausationID: d.Event.CausationID, CorrelationID: d.Event.CorrelationID, Source: d.Event.Ref, Result: d.Result, Code: d.Code}
 }
 
 type historyPullArgs struct {
@@ -698,11 +710,13 @@ type eventStatusResult struct {
 	EventID      string                `json:"event_id"`
 	Kind         string                `json:"kind"`
 	Summary      string                `json:"summary,omitempty"`
+	Blocker      bool                  `json:"blocker,omitempty"`
 	Action       string                `json:"action,omitempty"`
 	Supersedes   string                `json:"supersedes,omitempty"`
 	ExpectNextBy *time.Time            `json:"expect_next_by,omitempty"`
 	ExpectBy     *time.Time            `json:"expect_by,omitempty"`
 	Header       *core.MessageHeader   `json:"header,omitempty"`
+	Routing      *core.EventRouting    `json:"routing,omitempty"`
 	From         string                `json:"from"`
 	To           core.EventDestination `json:"to"`
 	CreatedAt    time.Time             `json:"created_at"`
@@ -734,7 +748,7 @@ func (t messagingTools) eventStatus(ctx context.Context, request *mcp.CallToolRe
 	if err != nil {
 		return toolResult(nil, err, 0)
 	}
-	result := eventStatusResult{EventID: status.Event.EventID, Kind: status.Event.Kind, Summary: status.Event.Summary, Action: status.Event.Action, Supersedes: status.Event.Supersedes, ExpectNextBy: status.Event.ExpectNextBy, ExpectBy: status.Event.ExpectBy, Header: status.Event.Header(), From: status.Event.From, To: status.Event.Destination, CreatedAt: status.Event.CreatedAt, Deliveries: make([]eventDeliveryStatus, 0, len(status.Deliveries)), NextAfter: status.NextAfter, More: status.More}
+	result := eventStatusResult{EventID: status.Event.EventID, Kind: status.Event.Kind, Summary: status.Event.Summary, Blocker: status.Event.Blocker, Action: status.Event.Action, Supersedes: status.Event.Supersedes, ExpectNextBy: status.Event.ExpectNextBy, ExpectBy: status.Event.ExpectBy, Header: status.Event.Header(), Routing: status.Event.Routing, From: status.Event.From, To: status.Event.Destination, CreatedAt: status.Event.CreatedAt, Deliveries: make([]eventDeliveryStatus, 0, len(status.Deliveries)), NextAfter: status.NextAfter, More: status.More}
 	for _, d := range status.Deliveries {
 		entry := eventDeliveryStatus{DeliveryID: d.DeliveryID, Consumer: d.Consumer, State: d.State, Attempts: d.Attempts, LeaseUntil: d.LeaseUntil, CompletedAt: d.CompletedAt, Code: d.Code, SupersededBy: d.SupersededBy, Result: d.Result}
 		if d.Diagnosis != nil {

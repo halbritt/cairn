@@ -215,6 +215,62 @@ session keeps its inbox address and can unsubscribe with its new execution UUID.
 Cancel any waits you no longer need with `cairn wait cancel`. Cancelling a wait does not
 withdraw the request.
 
+## Team hierarchy routing and filtered topic subscriptions
+
+For multi-lead campaigns where workers report to sub-leads instead of waking the root
+coordinator on every routine update (schema 091), configure a campaign hierarchy and
+filtered topic subscriptions:
+
+```sh
+cairn team set-campaign --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME --root-agent "agent/$COORD_AGENT" \
+  --out-of-chain-policy reroute
+
+cairn team set-member --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME --member "agent/$LEAD_AGENT" \
+  --lead "agent/$COORD_AGENT" --role lead
+
+cairn team set-member --token-file "$WORKER_TOKEN_FILE" \
+  --agent-id "$WORKER_AGENT" --execution-id "$WORKER_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME --member "agent/$WORKER_AGENT" \
+  --lead "agent/$LEAD_AGENT" --role worker
+```
+
+- Enrolling a new subordinate requires the campaign `root_agent`, an operator, or the
+  worker self-enrolling under an active lead (`--member "agent/$WORKER_AGENT"`). Once a
+  member is enrolled in a lead's subtree, that lead can reorganize or deactivate it
+  without being able to conscript unrelated sessions.
+- `--out-of-chain-policy warn` delivers a direct message addressed outside the sender's
+  immediate parent/child link while recording `routing.out_of_chain: true` and a warning.
+- `--out-of-chain-policy reroute` rewrites an out-of-chain direct `notice` report to the
+  sender's immediate hierarchy hop (for example, a worker addressing the root is rerouted
+  to its lead, with `routing.rerouted: true` and `routing.original_destination` preserved).
+  Direct `request` events warn without rewriting `destination`, and validated reply
+  closures answering an explicit request are never rerouted.
+- Sub-leads and coordinators can narrow topic subscriptions by event kind, effective
+  action (`none`, `review`, `decide`, `complete`), urgency, blocker flag (`--blocker` on
+  `publish` / `send`, `--blockers` on `subscribe`), and hierarchy relationship
+  (`--direct-reports-only` or `--subtree-only`). `subscribe` sets the full filter state
+  (omitting filter flags configures an unfiltered subscription):
+
+```sh
+cairn subscribe --token-file "$LEAD_TOKEN_FILE" \
+  --agent-id "$LEAD_AGENT" --execution-id "$LEAD_EXEC" \
+  --repo "$COLLECTION" --request-id LEAD_SUB_UUID \
+  --topic campaign.CAMPAIGN_NAME --direct-reports-only
+
+cairn subscribe --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" \
+  --repo "$COLLECTION" --request-id ROOT_SUB_UUID \
+  --topic campaign.CAMPAIGN_NAME --actions decide,complete --blockers
+```
+
+With these subscriptions, a worker's routine notice on `campaign.CAMPAIGN_NAME` reaches its
+lead and not the root coordinator; a blocker reaches the root only when the lead escalates
+it or when the root's subscription matches (`--blockers`).
+
 ## Verified behavior
 
 `scripts/check_scoped_coordination_recipe.py` runs this recipe end to end with real CLI

@@ -1124,7 +1124,7 @@ func (s *Store) revalidateAndEmitOverdueBatchesTx(ctx context.Context, tx pgx.Tx
 				Ref:         RecordVersionRef{RecordID: noticeRecordID, Version: 1},
 				Destination: EventDestination{Type: "agent", Name: k.subscriber},
 			}
-			_, err = s.publishEventTx(ctx, nested, pubReq, Destination{Name: "local", AllowLocal: true}, noticeEventID)
+			_, err = s.publishDaemonEventTx(ctx, nested, pubReq, Destination{Name: "local", AllowLocal: true}, noticeEventID)
 		}
 		if err != nil {
 			if rbErr := nested.Rollback(ctx); rbErr != nil {

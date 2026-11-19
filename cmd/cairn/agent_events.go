@@ -28,7 +28,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
 
   publish --request-id UUID (--to PRINCIPAL | --topic TOPIC | --resolution FILE | --pool POOL) --kind KIND --version N RECORD_UUID
     [--workspace /PATH --capability NAME --harness NAME --model NAME] (pool selectors)
-    [--causation-id UUID] [--correlation-id UUID] [--summary TEXT]
+    [--causation-id UUID] [--correlation-id UUID] [--summary TEXT] [--blocker]
     [--admission-expires-at RFC3339] [--task-deadline RFC3339] [--expect-by RFC3339]
     [--response-deadline RFC3339 --response-policy all|partial]
     [--notice-urgency routine|urgent --notice-defer-seconds 0..60] (notice only)
@@ -41,7 +41,8 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
   complete --request-id UUID --lease UUID --stdin [--shareable] [--kind note] [--task TASK] [--run RUN] DELIVERY_UUID
   retry --lease UUID DELIVERY_UUID
   renew --lease UUID [--lease-seconds N] DELIVERY_UUID
-  subscribe --request-id UUID --topic TOPIC
+  subscribe --request-id UUID --topic TOPIC [--kinds K1,K2] [--actions A1,A2] [--urgencies U1,U2] [--blockers] [--direct-reports-only | --subtree-only]
+      (sets the full subscription filter state; omitting filter flags configures an unfiltered subscription)
   unsubscribe --request-id UUID --topic TOPIC
   subscriptions [--topic AFTER_TOPIC]
   events [--after POSITION] [--topic TOPIC] [--limit N]
@@ -130,11 +131,18 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	noticeUrgency := f.String("notice-urgency", "", "opt-in notice wake policy (routine|urgent)")
 	noticeDeferSeconds := f.Int("notice-defer-seconds", 0, "routine notice wake delay, 0-60 seconds")
 	eventSummary := f.String("summary", "", "concise single-line header summarizing what changed or is requested (1-280 UTF-8 bytes)")
+	eventBlocker := f.Bool("blocker", false, "mark event as a blocker")
 	noticeAction := f.String("action", "", "notice intent action (none|review|decide)")
 	noticeSupersedes := f.String("supersedes", "", "sender-scoped notice topic key superseded by this notice")
 	noticeExpectNextBy := f.String("expect-next-by", "", "expected next update instant for notice (RFC3339)")
 	noticeDelivery := f.String("notice-delivery", "", "quiet notice delivery strategy (e.g. next_organic_turn)")
 	noticeExpiresAt := f.String("notice-expires-at", "", "expiration instant for quiet notice (RFC3339)")
+	subKinds := f.String("kinds", "", "comma-separated event kinds for subscription filter")
+	subActions := f.String("actions", "", "comma-separated effective actions (none|review|decide|complete) for subscription filter")
+	subUrgencies := f.String("urgencies", "", "comma-separated urgencies (routine|urgent) for subscription filter")
+	subBlockers := f.Bool("blockers", false, "include or match blocker events in subscription filter")
+	subDirectReports := f.Bool("direct-reports-only", false, "only deliver topic events from direct campaign reports")
+	subSubtree := f.Bool("subtree-only", false, "only deliver topic events from campaign subtree subordinates")
 	state := f.String("state", "", "response group state filter (open|collected|partial|incomplete); closure state filter (reserved|delivered|released)")
 	obligation := f.String("obligation", "", "closure obligation filter (request_reply|group_reply|pool_reply|wait_notice)")
 	afterReservation := f.String("after-reservation", "", "exclusive closure reservation UUID cursor")
@@ -152,9 +160,9 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	case "event-pressure":
 		allowed += "repo after-recipient limit "
 	case "event-admission-preview":
-		allowed += "repo to topic "
+		allowed += "repo to topic kind action notice-urgency blocker "
 	case "publish":
-		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id summary admission-expires-at task-deadline expect-by response-deadline response-policy notice-urgency notice-defer-seconds action supersedes expect-next-by notice-delivery notice-expires-at "
+		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id summary blocker admission-expires-at task-deadline expect-by response-deadline response-policy notice-urgency notice-defer-seconds action supersedes expect-next-by notice-delivery notice-expires-at "
 	case "notice-flush":
 		allowed += "request-id "
 	case "notice-pending":
@@ -169,7 +177,9 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		allowed += "lease "
 	case "renew":
 		allowed += "lease lease-seconds "
-	case "subscribe", "unsubscribe":
+	case "subscribe":
+		allowed += "repo agent request-id topic kinds actions urgencies blockers direct-reports-only subtree-only "
+	case "unsubscribe":
 		allowed += "repo agent request-id topic "
 	case "subscriptions":
 		allowed += "repo agent topic limit "
@@ -256,7 +266,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 			destination = core.EventDestination{Type: "topic", Name: *topic}
 		}
 		operation = "event-admission-preview"
-		req = core.EventAdmissionPreviewRequest{Repo: *repo, Destination: destination}
+		req = core.EventAdmissionPreviewRequest{Repo: *repo, Destination: destination, Kind: *kind, Action: *noticeAction, Urgency: *noticeUrgency, Blocker: *eventBlocker}
 	case "notice-flush":
 		operation = "event-notice-flush"
 		req = core.NoticeFlushRequest{RequestID: *request, EventID: strings.TrimPrefix(f.Arg(0), "cairn:")}
@@ -428,11 +438,15 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 				return nil, err
 			}
 		}
+		if *eventBlocker && *noticeAction == "none" {
+			return nil, invalid("--blocker cannot combine with --action none")
+		}
 		operation = "event-publish"
 		req = core.PublishEventRequest{
 			Summary:            *eventSummary,
 			Action:             *noticeAction,
 			Supersedes:         *noticeSupersedes,
+			Blocker:            *eventBlocker,
 			ExpectNextBy:       parsedExpectNextBy,
 			ExpectBy:           parsedExpectBy,
 			RequestID:          *request,
@@ -458,8 +472,59 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		operation = "event-next"
 		req = core.NextEventRequest{Repo: *repo, Agent: *agent, LeaseSeconds: *seconds}
 	case "subscribe", "unsubscribe":
+		var filter *core.SubscriptionFilter
+		if command == "subscribe" {
+			splitCSV := func(raw string) ([]string, error) {
+				if raw == "" {
+					return nil, nil
+				}
+				parts := strings.Split(raw, ",")
+				out := make([]string, 0, len(parts))
+				for _, p := range parts {
+					trimmed := strings.TrimSpace(p)
+					if trimmed == "" {
+						return nil, invalid("empty item in comma-separated subscription filter")
+					}
+					out = append(out, trimmed)
+				}
+				return out, nil
+			}
+			var subFilterFlags bool
+			f.Visit(func(fl *flag.Flag) {
+				switch fl.Name {
+				case "kinds", "actions", "urgencies", "blockers", "direct-reports-only", "subtree-only":
+					subFilterFlags = true
+				}
+			})
+			if subFilterFlags {
+				ks, err := splitCSV(*subKinds)
+				if err != nil {
+					return nil, err
+				}
+				as, err := splitCSV(*subActions)
+				if err != nil {
+					return nil, err
+				}
+				us, err := splitCSV(*subUrgencies)
+				if err != nil {
+					return nil, err
+				}
+				cand := &core.SubscriptionFilter{
+					Kinds:             ks,
+					Actions:           as,
+					Urgencies:         us,
+					IncludeBlockers:   *subBlockers,
+					DirectReportsOnly: *subDirectReports,
+					SubtreeOnly:       *subSubtree,
+				}
+				filter, err = core.NormalizeSubscriptionFilter(cand)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
 		operation = "event-subscribe"
-		req = core.SubscriptionRequest{RequestID: *request, Repo: *repo, Agent: *agent, Topic: *topic, Active: command == "subscribe"}
+		req = core.SubscriptionRequest{RequestID: *request, Repo: *repo, Agent: *agent, Topic: *topic, Active: command == "subscribe", Filter: filter}
 	case "subscriptions", "events", "event-stats":
 		operation = "event-list"
 		if command == "event-stats" {

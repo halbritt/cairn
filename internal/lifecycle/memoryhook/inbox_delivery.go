@@ -635,7 +635,8 @@ func inboxRequestHeaderValue(pub *value.Value) *value.Value {
 	if due == "" {
 		due = text(pub.Get("task_deadline"))
 	}
-	if summary == "" && due == "" {
+	isBlocker := pub.Get("blocker") != nil && pub.Get("blocker").Kind == value.Bool && pub.Get("blocker").Boolean
+	if summary == "" && due == "" && !isBlocker {
 		return nil
 	}
 	hdr := value.Mapping()
@@ -645,6 +646,9 @@ func inboxRequestHeaderValue(pub *value.Value) *value.Value {
 	hdr.Set("action_needed", value.Text("complete"))
 	if due != "" {
 		hdr.Set("due", value.Text(due))
+	}
+	if isBlocker {
+		hdr.Set("blocker", value.Boolean(true))
 	}
 	return hdr
 }

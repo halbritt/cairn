@@ -154,6 +154,10 @@ func buildOperatorOperations() map[string]operatorOperation {
 		sharedOperation("status-authorize", "status-authorize"),
 		sharedOperation("status-get", "status-get"),
 		sharedOperation("status-history", "status-history"),
+		sharedOperation("team-campaign-set", "team-campaign-set"),
+		sharedOperation("team-member-set", "team-member-set"),
+		sharedOperation("team-campaign-get", "team-campaign-get"),
+		sharedOperation("team-campaign-list", "team-campaign-list"),
 
 		// Operator-only authority, policy and proposal mutations. localapi has no
 		// route for these; the operator channel from core.Open is the authority.

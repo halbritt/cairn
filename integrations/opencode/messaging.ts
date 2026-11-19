@@ -14,11 +14,18 @@ type DirectoryAgent = {
 }
 type DirectoryPage = { agents: DirectoryAgent[], next_after?: number, more?: boolean }
 type RecordRef = { record_id: string, version: number }
+type EventRoutingView = {
+  campaign?: string, policy: string, out_of_chain: boolean, rerouted?: boolean,
+  original_destination?: { type: string, name: string },
+  effective_destination: { type: string, name: string },
+  lead?: string, warning?: string,
+}
 type DeliveryRecord = {
   delivery_id: string, lease_id?: string, lease_until?: string, state: string, attempts?: number,
   result?: RecordRef, code?: string, superseded_by?: string, consumer?: string, completed_at?: string, diagnosis?: unknown,
   event: {
-    event_id: string, kind: string, summary?: string, action?: string, supersedes?: string,
+    event_id: string, kind: string, summary?: string, blocker?: boolean, action?: string, supersedes?: string,
+    routing?: EventRoutingView,
     expect_next_by?: string, expect_by?: string, task_deadline?: string,
     from: string, created_at: string,
     causation_id?: string, correlation_id?: string, ref: RecordRef,
@@ -28,13 +35,15 @@ type DeliveryRecord = {
 
 function viewMessageHeader(e: DeliveryRecord["event"]) {
   const due = e.expect_next_by || e.expect_by || e.task_deadline
-  if (!e.summary && !e.action && !due && !e.supersedes) return undefined
-  const action_needed = e.action || (e.kind === "request" ? "complete" : "review")
+  const isBlocker = Boolean(e.blocker) || e.kind === "blocker"
+  if (!e.summary && !e.action && !due && !e.supersedes && !isBlocker) return undefined
+  const action_needed = e.action || (e.kind === "request" ? "complete" : ((e.kind === "decide" || isBlocker) ? "decide" : "review"))
   return {
     ...(e.summary ? { summary: e.summary } : {}),
     action_needed,
     ...(due ? { due } : {}),
     ...(e.supersedes ? { supersedes: e.supersedes } : {}),
+    ...(isBlocker ? { blocker: true } : {}),
   }
 }
 
@@ -115,11 +124,13 @@ function viewDelivery(d: DeliveryRecord) {
     ...(d.attempts ? { attempts: d.attempts } : {}),
     event_id: d.event.event_id, kind: d.event.kind,
     ...(d.event.summary ? { summary: d.event.summary } : {}),
+    ...(d.event.blocker ? { blocker: true } : {}),
     ...(d.event.action ? { action: d.event.action } : {}),
     ...(d.event.supersedes ? { supersedes: d.event.supersedes } : {}),
     ...(d.event.expect_next_by ? { expect_next_by: d.event.expect_next_by } : {}),
     ...(d.event.expect_by ? { expect_by: d.event.expect_by } : {}),
     ...(viewMessageHeader(d.event) ? { header: viewMessageHeader(d.event) } : {}),
+    ...(d.event.routing ? { routing: d.event.routing } : {}),
     ...(d.superseded_by ? { superseded_by: d.superseded_by } : {}),
     from: d.event.from, created_at: d.event.created_at,
     ...(d.event.causation_id ? { causation_id: d.event.causation_id } : {}),
@@ -273,6 +284,7 @@ export const send = validatedTool({
     correlation_id: z.string().optional().describe("Interaction UUID shared by related events."),
     urgency: z.string().optional().describe("Notice wake policy: routine or urgent. Notices only."),
     summary: z.string().optional().describe("Short single-line header summarizing what changed or what is requested (1-280 UTF-8 bytes, separate from body; required when body exceeds 280 bytes)."),
+    blocker: z.boolean().optional().describe("Mark this message as a blocker so filtered coordinator subscriptions and priority queues surface it immediately."),
     action: z.string().optional().describe("Notice action intent: none, review or decide. Notices only."),
     supersedes: z.string().optional().describe("Sender-scoped topic key (1-128 ASCII letters, digits or _.:/-) that supersedes older pending notices from you. Notices only."),
     expect_next_by: z.string().optional().describe("Optional RFC3339 timestamp when the next update is expected. Notices only."),
@@ -296,6 +308,9 @@ export const send = validatedTool({
       }
     }
     validateEventSummary(args.summary)
+    if (args.blocker && args.action === "none") {
+      throw new Error("INVALID_REQUEST: blocker cannot combine with action none")
+    }
     let notice_policy: { version: number, urgency: string } | undefined
     if (args.urgency) {
       if (kind !== "notice" || (args.urgency !== "routine" && args.urgency !== "urgent")) {
@@ -359,24 +374,33 @@ export const send = validatedTool({
       ...(args.correlation_id ? { correlation_id: args.correlation_id } : {}),
       ...(notice_policy ? { notice_policy } : {}),
       ...(args.summary ? { summary: args.summary } : {}),
+      ...(args.blocker ? { blocker: true } : {}),
       ...(args.action ? { action: args.action } : {}),
       ...(args.supersedes ? { supersedes: args.supersedes } : {}),
       ...(args.expect_next_by ? { expect_next_by: args.expect_next_by } : {}),
       ...(args.expect_by ? { expect_by: args.expect_by } : {}),
-    }, ref) as { event_id?: string, from?: string, kind?: string, summary?: string, action?: string, supersedes?: string, expect_next_by?: string, expect_by?: string, ref?: RecordRef, destination?: { type: string, name: string } }
-    if (!isUUID(published.event_id) || published.ref?.record_id !== source.record_id || published.ref?.version !== source.version ||
-        published.destination?.type !== destination.type || published.destination?.name !== destination.name) {
+    }, ref) as { event_id?: string, from?: string, kind?: string, summary?: string, blocker?: boolean, routing?: EventRoutingView, action?: string, supersedes?: string, expect_next_by?: string, expect_by?: string, ref?: RecordRef, destination?: { type: string, name: string } }
+    const destMatches = (published.destination?.type === destination.type && published.destination?.name === destination.name) ||
+      Boolean(published.routing?.rerouted && published.routing.original_destination?.type === destination.type &&
+              published.routing.original_destination?.name === destination.name &&
+              published.destination?.type === published.routing.effective_destination.type &&
+              published.destination?.name === published.routing.effective_destination.name)
+    if (!isUUID(published.event_id) || published.ref?.record_id !== source.record_id || published.ref?.version !== source.version || !destMatches) {
       throw new Error("SCHEMA_MISMATCH: publish returned a different source or destination")
     }
     const header = viewMessageHeader({
-      event_id: published.event_id, kind: published.kind ?? kind, summary: published.summary,
+      event_id: published.event_id, kind: published.kind ?? kind, summary: published.summary, blocker: published.blocker,
       action: published.action, supersedes: published.supersedes, expect_next_by: published.expect_next_by,
-      expect_by: published.expect_by, from: published.from ?? "", created_at: "", ref: source, destination,
+      expect_by: published.expect_by, from: published.from ?? "", created_at: "", ref: source, destination: published.destination ?? destination,
     })
+    const effectiveRecipient = published.routing?.rerouted ? undefined : recipient
     return render({
       event_id: published.event_id, from: published.from, to: published.destination,
-      ...(recipient ? { recipient } : {}), kind: published.kind,
+      ...(effectiveRecipient ? { recipient: effectiveRecipient } : {}),
+      ...(published.routing ? { routing: published.routing } : {}),
+      kind: published.kind,
       ...(published.summary ? { summary: published.summary } : {}),
+      ...(published.blocker ? { blocker: true } : {}),
       ...(published.action ? { action: published.action } : {}),
       ...(published.supersedes ? { supersedes: published.supersedes } : {}),
       ...(published.expect_next_by ? { expect_next_by: published.expect_next_by } : {}),
@@ -610,11 +634,13 @@ export const event_status = validatedTool({
     return render({
       event_id: status.event.event_id, kind: status.event.kind,
       ...(status.event.summary ? { summary: status.event.summary } : {}),
+      ...(status.event.blocker ? { blocker: true } : {}),
       ...(status.event.action ? { action: status.event.action } : {}),
       ...(status.event.supersedes ? { supersedes: status.event.supersedes } : {}),
       ...(status.event.expect_next_by ? { expect_next_by: status.event.expect_next_by } : {}),
       ...(status.event.expect_by ? { expect_by: status.event.expect_by } : {}),
       ...(viewMessageHeader(status.event) ? { header: viewMessageHeader(status.event) } : {}),
+      ...(status.event.routing ? { routing: status.event.routing } : {}),
       from: status.event.from,
       to: status.event.destination, created_at: status.event.created_at,
       deliveries: (status.deliveries ?? []).map(d => ({

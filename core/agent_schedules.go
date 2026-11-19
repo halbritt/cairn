@@ -242,7 +242,7 @@ func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (Sch
 			if e != nil {
 				return out, e
 			}
-			_, e = s.publishEventTx(ctx, nested, item.Publication, Destination{Name: "local", AllowLocal: true}, item.OccurrenceID)
+			_, e = s.publishDaemonEventTx(ctx, nested, item.Publication, Destination{Name: "local", AllowLocal: true}, item.OccurrenceID)
 			if e == nil {
 				if err = nested.Commit(ctx); err != nil {
 					return out, err

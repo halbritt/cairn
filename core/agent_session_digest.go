@@ -73,9 +73,9 @@ type SessionInboxDigestSettleResult struct {
 	Remaining int                        `json:"remaining"`
 }
 
-const sessionInboxPriorityFilter = ` AND (e.kind<>'notice' OR COALESCE(e.notice_policy->>'urgency','')='urgent' OR COALESCE(e.notice_action,'')='decide')`
+const sessionInboxPriorityFilter = ` AND (e.kind<>'notice' OR e.blocker OR COALESCE(e.notice_policy->>'urgency','')='urgent' OR COALESCE(e.notice_action,'')='decide')`
 
-const sessionInboxFYIFilter = ` AND e.kind='notice' AND COALESCE(e.notice_policy->>'urgency','')<>'urgent' AND COALESCE(e.notice_action,'')<>'decide'`
+const sessionInboxFYIFilter = ` AND e.kind='notice' AND NOT e.blocker AND COALESCE(e.notice_policy->>'urgency','')<>'urgent' AND COALESCE(e.notice_action,'')<>'decide'`
 
 const digestTopicKeyExpr = `CASE WHEN COALESCE(e.notice_supersedes,'')<>'' THEN e.notice_supersedes WHEN e.destination_type='topic' THEN 'topic/'||e.destination_name ELSE '' END`
 
@@ -252,7 +252,7 @@ func digestDueTx(ctx context.Context, tx pgx.Tx, repo, inbox string, allowLocal 
 		minCreated = *linMinCreated
 	}
 	var due bool
-	err := tx.QueryRow(ctx, `SELECT ($4::timestamptz + make_interval(secs => $5) <= clock_timestamp()) OR EXISTS(SELECT 1 FROM cairn.agent_delivery ud JOIN cairn.agent_event ue USING(event_id) WHERE ue.repo=$1 AND ud.consumer=$2 AND (ue.sensitivity='shareable' OR $3) AND ue.created_at>=$6 AND (ue.kind='request' OR COALESCE(ue.notice_policy->>'urgency','')='urgent' OR COALESCE(ue.notice_action,'')='decide'))`, repo, inbox, allowLocal, minAvail, float64(windowSeconds), minCreated).Scan(&due)
+	err := tx.QueryRow(ctx, `SELECT ($4::timestamptz + make_interval(secs => $5) <= clock_timestamp()) OR EXISTS(SELECT 1 FROM cairn.agent_delivery ud JOIN cairn.agent_event ue USING(event_id) WHERE ue.repo=$1 AND ud.consumer=$2 AND (ue.sensitivity='shareable' OR $3) AND ue.created_at>=$6 AND (ue.kind='request' OR ue.blocker OR ue.kind='blocker' OR COALESCE(ue.notice_policy->>'urgency','')='urgent' OR COALESCE(ue.notice_action,'')='decide'))`, repo, inbox, allowLocal, minAvail, float64(windowSeconds), minCreated).Scan(&due)
 	return due, err
 }
 

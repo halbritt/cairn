@@ -576,7 +576,7 @@ func (s *Store) ClaimOrganicNotice(ctx context.Context, req SessionOrganicNotice
 		// Check for ready request or urgent notice:
 		var priority bool
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1`+sessionInboxEligibleBase+
-			` AND (e.kind='request' OR e.notice_policy->>'urgency'='urgent'))`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&priority)
+			` AND (e.kind='request' OR e.blocker OR e.kind='blocker' OR COALESCE(e.notice_action,'')='decide' OR e.notice_policy->>'urgency'='urgent'))`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&priority)
 		if err != nil {
 			return empty, err
 		}
@@ -863,7 +863,7 @@ func (s *Store) AdvanceOrganicNotice(ctx context.Context, req SessionOrganicNoti
 		// Priority arrivals end the batch:
 		var priority bool
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1`+sessionInboxEligibleBase+
-			` AND (e.kind='request' OR e.notice_policy->>'urgency'='urgent'))`, s.channel.Repo, "agent/"+req.Session.AgentID, dest.AllowLocal).Scan(&priority)
+			` AND (e.kind='request' OR e.blocker OR e.kind='blocker' OR COALESCE(e.notice_action,'')='decide' OR e.notice_policy->>'urgency'='urgent'))`, s.channel.Repo, "agent/"+req.Session.AgentID, dest.AllowLocal).Scan(&priority)
 		if err != nil {
 			return empty, err
 		}

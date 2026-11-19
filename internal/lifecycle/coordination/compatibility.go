@@ -2286,6 +2286,11 @@ func (c *CLI) renderCompactAttemptContext(ctx context.Context, config *value.Val
 	if len(intentParts) > 0 {
 		header += "Intent: " + strings.Join(intentParts, ", ") + ". "
 	}
+	if rt := event.Get("routing"); rt != nil && rt.Kind == value.Object && exactTrue(rt.Get("rerouted")) {
+		if orig := rt.Get("original_destination"); orig != nil && orig.Kind == value.Object && nativeText(orig.Get("name")) != "" {
+			header += "Rerouted via hierarchy from " + nativeText(orig.Get("name")) + ". "
+		}
+	}
 	hdrLine := formatSenderHeaderLine(event)
 	handle := nativeText(native.Get("compact_handle"))
 	bodyVal, err := c.exactInboxSource(ctx, config, attempt, source)

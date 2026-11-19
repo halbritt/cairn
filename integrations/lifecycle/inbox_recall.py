@@ -69,7 +69,8 @@ def _inbox_request_header_dict(pub):
     expect_by = pub.get('expect_by') if isinstance(pub.get('expect_by'), str) else ''
     task_dl = pub.get('task_deadline') if isinstance(pub.get('task_deadline'), str) else ''
     due = expect_by or task_dl
-    if not summary and not due:
+    is_blocker = pub.get('blocker') is True
+    if not summary and not due and not is_blocker:
         return None
     out = {}
     if summary:
@@ -77,6 +78,8 @@ def _inbox_request_header_dict(pub):
     out['action_needed'] = 'complete'
     if due:
         out['due'] = due
+    if is_blocker:
+        out['blocker'] = True
     return out
 
 

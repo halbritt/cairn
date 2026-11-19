@@ -17,6 +17,8 @@ type AgentEvent struct {
 	Summary            string             `json:"summary,omitempty"`
 	Action             string             `json:"action,omitempty"`
 	Supersedes         string             `json:"supersedes,omitempty"`
+	Blocker            bool               `json:"blocker,omitempty"`
+	Routing            *EventRouting      `json:"routing,omitempty"`
 	ExpectNextBy       *time.Time         `json:"expect_next_by,omitempty"`
 	ExpectBy           *time.Time         `json:"expect_by,omitempty"`
 	NoticePolicy       *NoticeWakePolicy  `json:"notice_policy,omitempty"`
@@ -61,6 +63,7 @@ type PublishEventRequest struct {
 	Summary            string                   `json:"summary,omitempty"`
 	Action             string                   `json:"action,omitempty"`
 	Supersedes         string                   `json:"supersedes,omitempty"`
+	Blocker            bool                     `json:"blocker,omitempty"`
 	ExpectNextBy       *time.Time               `json:"expect_next_by,omitempty"`
 	ExpectBy           *time.Time               `json:"expect_by,omitempty"`
 	NoticePolicy       *NoticeWakePolicyRequest `json:"notice_policy,omitempty"`
@@ -92,17 +95,19 @@ type EventPage struct {
 	More      bool         `json:"more"`
 }
 type SubscriptionRequest struct {
-	RequestID string `json:"request_id"`
-	Repo      string `json:"repo,omitempty"`
-	Agent     string `json:"agent,omitempty"`
-	Topic     string `json:"topic"`
-	Active    bool   `json:"active"`
+	RequestID string              `json:"request_id"`
+	Repo      string              `json:"repo,omitempty"`
+	Agent     string              `json:"agent,omitempty"`
+	Topic     string              `json:"topic"`
+	Active    bool                `json:"active"`
+	Filter    *SubscriptionFilter `json:"filter,omitempty"`
 }
 type AgentSubscription struct {
-	Consumer  string    `json:"consumer"`
-	Topic     string    `json:"topic"`
-	Active    bool      `json:"active"`
-	ChangedAt time.Time `json:"changed_at"`
+	Consumer  string              `json:"consumer"`
+	Topic     string              `json:"topic"`
+	Active    bool                `json:"active"`
+	Filter    *SubscriptionFilter `json:"filter,omitempty"`
+	ChangedAt time.Time           `json:"changed_at"`
 }
 type NextEventRequest struct {
 	Repo         string `json:"repo,omitempty"`
@@ -217,8 +222,19 @@ func leaseSeconds(seconds int) (int, error) {
 	return seconds, nil
 }
 
-const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id),e.notice_policy,(SELECT jsonb_build_object('event_id',f.event_id,'request_id',f.request_id,'flushed_at',f.flushed_at,'flushed_by',f.flushed_by,'released',f.released,'already_ready',f.already_ready,'leased',f.leased,'terminal',f.terminal) FROM cairn.agent_notice_flush f WHERE f.event_id=e.event_id),COALESCE(e.notice_delivery,''),e.notice_expires_at,COALESCE(e.notice_action,''),COALESCE(e.notice_supersedes,''),e.notice_expect_next_by,e.request_expect_by,COALESCE(e.summary,'')`
+const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id),e.notice_policy,(SELECT jsonb_build_object('event_id',f.event_id,'request_id',f.request_id,'flushed_at',f.flushed_at,'flushed_by',f.flushed_by,'released',f.released,'already_ready',f.already_ready,'leased',f.leased,'terminal',f.terminal) FROM cairn.agent_notice_flush f WHERE f.event_id=e.event_id),COALESCE(e.notice_delivery,''),e.notice_expires_at,COALESCE(e.notice_action,''),COALESCE(e.notice_supersedes,''),e.notice_expect_next_by,e.request_expect_by,COALESCE(e.summary,''),e.blocker,e.routing_info`
 const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=$2) OR EXISTS(SELECT 1 FROM cairn.agent_organic_notice q WHERE q.event_id=e.event_id AND q.recipient_inbox=$2))`
+
+func redactEventRouting(e *AgentEvent, allowLocal bool) {
+	if e.Routing == nil {
+		return
+	}
+	if e.Routing.LocalOnly && !allowLocal {
+		e.Routing = nil
+		return
+	}
+	e.Routing.LocalOnly = false
+}
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
 	var e AgentEvent
@@ -226,9 +242,9 @@ func scanEvent(row pgx.Row) (AgentEvent, error) {
 	return e, err
 }
 func eventScanFields(e *AgentEvent) []any {
-	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup, &e.NoticePolicy, &e.NoticeFlush, &e.NoticeDelivery, &e.NoticeExpiresAt, &e.Action, &e.Supersedes, &e.ExpectNextBy, &e.ExpectBy, &e.Summary}
+	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup, &e.NoticePolicy, &e.NoticeFlush, &e.NoticeDelivery, &e.NoticeExpiresAt, &e.Action, &e.Supersedes, &e.ExpectNextBy, &e.ExpectBy, &e.Summary, &e.Blocker, &e.Routing}
 }
-func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
+func (s *Store) readEventRaw(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))
 	if errors.Is(err, pgx.ErrNoRows) && s.session != nil {
 		preds, grantErr := s.successorAuthorizedPredecessorsTx(ctx, tx, id)
@@ -248,9 +264,20 @@ func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destin
 	return e, err
 }
 
+func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
+	e, err := s.readEventRaw(ctx, tx, id, dest)
+	if err == nil {
+		redactEventRouting(&e, dest.AllowLocal)
+	}
+	return e, err
+}
+
 func (s *Store) normalizePublication(req PublishEventRequest, dest Destination) (PublishEventRequest, error) {
 	if err := ValidateEventSummary(req.Summary); err != nil {
 		return req, err
+	}
+	if req.Blocker && req.Action == "none" {
+		return req, failure("INVALID_REQUEST", "blocker events cannot combine with notice action none")
 	}
 	if req.Action != "" || req.Supersedes != "" || req.ExpectNextBy != nil {
 		if req.Kind != "notice" {
@@ -395,8 +422,52 @@ func (s *Store) eventSource(ctx context.Context, tx pgx.Tx, req PublishEventRequ
 	return sensitivity, nil
 }
 
+func (s *Store) recipientSupportsNextOrganicTurnTx(ctx context.Context, tx pgx.Tx, repo, inbox string) (bool, error) {
+	if err := s.checkFeatureEnabledTx(ctx, tx, "next-turn-notices/1"); err != nil {
+		return false, nil
+	}
+	agentID := strings.TrimPrefix(inbox, "agent/")
+	if validID(agentID) != nil {
+		return false, nil
+	}
+	var metaRaw []byte
+	var stopped bool
+	var executionID string
+	var dbGen int64
+	err := tx.QueryRow(ctx, `SELECT execution_id::text, database_generation, metadata, stopped FROM cairn.agent_session WHERE repo=$1 AND agent_id=$2`, repo, agentID).Scan(&executionID, &dbGen, &metaRaw, &stopped)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var meta AgentMetadata
+	if err = json.Unmarshal(metaRaw, &meta); err != nil {
+		return false, err
+	}
+	if meta.DeliveryMode != "existing-session" || meta.Harness != "codex" {
+		return false, nil
+	}
+	var activeBindingExists bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1 FROM cairn.agent_native_owner_session_binding b
+		JOIN cairn.agent_native_owner_launch l ON l.launch_id = b.launch_id
+		WHERE b.repo = $1 AND b.agent_id = $2 AND b.execution_id = $3 AND b.restore_generation = $4
+		  AND b.state = 'active' AND l.status = 'active'
+	)`, repo, agentID, executionID, dbGen).Scan(&activeBindingExists)
+	return activeBindingExists, err
+}
+
 // publishEventTx keeps source checks, pool admission, publication and fanout in the caller transaction.
 func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string) (AgentEvent, error) {
+	return s.publishEventInternalTx(ctx, tx, req, dest, id, false)
+}
+
+func (s *Store) publishDaemonEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string) (AgentEvent, error) {
+	return s.publishEventInternalTx(ctx, tx, req, dest, id, true)
+}
+
+func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string, bypassHierarchy bool) (AgentEvent, error) {
 	if _, err := retrievalGeneration(ctx, tx); err != nil {
 		return AgentEvent{}, err
 	}
@@ -418,6 +489,30 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 	if err != nil {
 		return AgentEvent{}, err
 	}
+	var routing *EventRouting
+	if !bypassHierarchy && !s.channel.Operator && closure == nil && req.Destination.Type == "agent" {
+		routing, err = evaluateHierarchyRoutingTx(ctx, tx, req.Repo, s.channel.Principal, req.Kind, sensitivity, req.Destination)
+		if err != nil {
+			return AgentEvent{}, err
+		}
+		if routing != nil && routing.Rerouted {
+			req.Destination = routing.EffectiveDestination
+			req.Resolution = nil
+			if req.NoticeDelivery == "next_organic_turn" {
+				supported, supErr := s.recipientSupportsNextOrganicTurnTx(ctx, tx, req.Repo, req.Destination.Name)
+				if supErr != nil {
+					return AgentEvent{}, supErr
+				}
+				if !supported {
+					req.NoticeDelivery = ""
+					req.NoticeExpiresAt = nil
+					if req.NoticePolicy == nil {
+						req.NoticePolicy = &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}
+					}
+				}
+			}
+		}
+	}
 	admission, err := s.prepareEventAdmissionTx(ctx, tx, req, closure)
 	if err != nil {
 		return AgentEvent{}, err
@@ -429,15 +524,17 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 		req.CorrelationID = id
 	}
 	var policy *NoticeWakePolicy
+	urgencyStr := ""
 	delay := 0
 	if req.NoticePolicy != nil {
 		policy = &NoticeWakePolicy{Version: req.NoticePolicy.Version, Urgency: req.NoticePolicy.Urgency,
 			DeferSeconds: req.NoticePolicy.DeferSeconds, Owner: s.channel.Principal}
+		urgencyStr = policy.Urgency
 		if policy.Urgency == "routine" {
 			delay = policy.DeferSeconds
 		}
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline,notice_policy,notice_delivery,notice_expires_at,notice_action,notice_supersedes,notice_expect_next_by,request_expect_by,summary,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''),NULLIF($19,''),$20,$21,NULLIF($22,''),clock_timestamp())`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline, policy, req.NoticeDelivery, req.NoticeExpiresAt, req.Action, req.Supersedes, req.ExpectNextBy, req.ExpectBy, req.Summary)
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline,notice_policy,notice_delivery,notice_expires_at,notice_action,notice_supersedes,notice_expect_next_by,request_expect_by,summary,blocker,routing_info,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''),NULLIF($19,''),$20,$21,NULLIF($22,''),$23,$24,clock_timestamp())`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline, policy, req.NoticeDelivery, req.NoticeExpiresAt, req.Action, req.Supersedes, req.ExpectNextBy, req.ExpectBy, req.Summary, req.Blocker, routing)
 	if err != nil {
 		return AgentEvent{}, err
 	}
@@ -534,9 +631,9 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 		}
 	} else {
 		if delay > 0 {
-			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer,available_at) SELECT gen_random_uuid(),$1,s.consumer,e.created_at+make_interval(secs=>$4) FROM cairn.agent_subscription s JOIN cairn.agent_event e ON e.event_id=$1 WHERE s.repo=$2 AND s.topic=$3 AND s.active`, id, req.Repo, req.Destination.Name, delay)
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer,available_at) SELECT gen_random_uuid(),$1,s.consumer,e.created_at+make_interval(secs=>$4) FROM cairn.agent_subscription s JOIN cairn.agent_event e ON e.event_id=$1 WHERE s.repo=$2 AND s.topic=$3 AND s.active AND cairn.subscription_matches_event(s.filter,$2,s.consumer,$5,$6,$7,$8,$9,$10)`, id, req.Repo, req.Destination.Name, delay, s.channel.Principal, req.Kind, req.Action, urgencyStr, req.Blocker, sensitivity)
 		} else {
-			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) SELECT gen_random_uuid(),$1,consumer FROM cairn.agent_subscription WHERE repo=$2 AND topic=$3 AND active`, id, req.Repo, req.Destination.Name)
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) SELECT gen_random_uuid(),$1,s.consumer FROM cairn.agent_subscription s WHERE s.repo=$2 AND s.topic=$3 AND s.active AND cairn.subscription_matches_event(s.filter,$2,s.consumer,$4,$5,$6,$7,$8,$9)`, id, req.Repo, req.Destination.Name, s.channel.Principal, req.Kind, req.Action, urgencyStr, req.Blocker, sensitivity)
 		}
 	}
 	if err != nil {
@@ -566,7 +663,7 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 			return AgentEvent{}, err
 		}
 	}
-	event, err := s.readEvent(ctx, tx, id, dest)
+	event, err := s.readEventRaw(ctx, tx, id, dest)
 	if err != nil {
 		return event, err
 	}
@@ -608,6 +705,7 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 	if err != nil {
 		return out, s.retainEventAdmissionRefusal(ctx, req.Repo, err)
 	}
+	redactEventRouting(&out, dest.AllowLocal)
 	return out, nil
 }
 
@@ -619,22 +717,36 @@ func (s *Store) SetSubscription(ctx context.Context, req SubscriptionRequest) (A
 	if !eventName.MatchString(req.Topic) {
 		return AgentSubscription{}, failure("INVALID_REQUEST", "invalid topic")
 	}
+	normFilter, err := NormalizeSubscriptionFilter(req.Filter)
+	if err != nil {
+		return AgentSubscription{}, err
+	}
+	if !req.Active && normFilter != nil {
+		return AgentSubscription{}, failure("INVALID_REQUEST", "subscription filter requires active=true")
+	}
+	req.Filter = normFilter
 	return mutate(ctx, s, "event-subscribe", req.RequestID, req, func(tx pgx.Tx) (AgentSubscription, error) {
 		if err := lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
 			return AgentSubscription{}, err
 		}
 		var old bool
-		err := tx.QueryRow(ctx, `SELECT active FROM cairn.agent_subscription WHERE repo=$1 AND consumer=$2 AND topic=$3`, req.Repo, s.channel.Principal, req.Topic).Scan(&old)
+		var oldFilter *SubscriptionFilter
+		err := tx.QueryRow(ctx, `SELECT active, filter FROM cairn.agent_subscription WHERE repo=$1 AND consumer=$2 AND topic=$3`, req.Repo, s.channel.Principal, req.Topic).Scan(&old, &oldFilter)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return AgentSubscription{}, err
 		}
-		if errors.Is(err, pgx.ErrNoRows) || old != req.Active {
-			if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_subscription_change(repo,topic,active) VALUES($1,$2,$3)`, req.Repo, req.Topic, req.Active); err != nil {
+		changed := errors.Is(err, pgx.ErrNoRows) || old != req.Active || !subscriptionFilterEqual(oldFilter, req.Filter)
+		filterBytes, err := encodeSubscriptionFilter(req.Filter)
+		if err != nil {
+			return AgentSubscription{}, err
+		}
+		if changed {
+			if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_subscription_change(repo,topic,active,filter) VALUES($1,$2,$3,$4::jsonb)`, req.Repo, req.Topic, req.Active, filterBytes); err != nil {
 				return AgentSubscription{}, err
 			}
 		}
 		var result AgentSubscription
-		err = tx.QueryRow(ctx, `INSERT INTO cairn.agent_subscription(repo,topic,active) VALUES($1,$2,$3) ON CONFLICT(repo,consumer,topic) DO UPDATE SET active=excluded.active,changed_at=CASE WHEN agent_subscription.active<>excluded.active THEN clock_timestamp() ELSE agent_subscription.changed_at END RETURNING consumer,topic,active,changed_at`, req.Repo, req.Topic, req.Active).Scan(&result.Consumer, &result.Topic, &result.Active, &result.ChangedAt)
+		err = tx.QueryRow(ctx, `INSERT INTO cairn.agent_subscription(repo,topic,active,filter) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(repo,consumer,topic) DO UPDATE SET active=excluded.active,filter=excluded.filter,changed_at=CASE WHEN $5 THEN clock_timestamp() ELSE agent_subscription.changed_at END RETURNING consumer,topic,active,filter,changed_at`, req.Repo, req.Topic, req.Active, filterBytes, changed).Scan(&result.Consumer, &result.Topic, &result.Active, &result.Filter, &result.ChangedAt)
 		return result, err
 	})
 }
@@ -663,14 +775,14 @@ func (s *Store) EventSubscriptions(ctx context.Context, req EventQuery) (EventSu
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT consumer,topic,active,changed_at FROM cairn.agent_subscription WHERE repo=$1 AND consumer=$2 AND topic>$3 ORDER BY topic LIMIT $4`, repo, s.channel.Principal, req.Topic, limit+1)
+	rows, err := tx.Query(ctx, `SELECT consumer,topic,active,filter,changed_at FROM cairn.agent_subscription WHERE repo=$1 AND consumer=$2 AND topic>$3 ORDER BY topic LIMIT $4`, repo, s.channel.Principal, req.Topic, limit+1)
 	if err != nil {
 		return out, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var sub AgentSubscription
-		if err = rows.Scan(&sub.Consumer, &sub.Topic, &sub.Active, &sub.ChangedAt); err != nil {
+		if err = rows.Scan(&sub.Consumer, &sub.Topic, &sub.Active, &sub.Filter, &sub.ChangedAt); err != nil {
 			return out, err
 		}
 		if len(out.Subscriptions) == limit {
@@ -716,6 +828,7 @@ func (s *Store) Events(ctx context.Context, req EventQuery, dest Destination) (E
 		if err != nil {
 			return out, err
 		}
+		redactEventRouting(&e, dest.AllowLocal)
 		if len(out.Events) == limit {
 			out.More = true
 			break
