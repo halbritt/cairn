@@ -23,6 +23,7 @@ Everyday operations:
   subscribe, unsubscribe, subscriptions, events, event-status, event-stats
   event-pressure, event-fanout, event-admission-preview: observe event load (--help)
   closures, close-replies: inspect and close reply reservations (--help)
+  status       Read or update the bounded workstream status board (--help)
   remember     Save a selected note using text, --stdin or a JSON draft
   send         Journal selected assignment source and explicit publication (--help)
   search       Find relevant notes using a query or --browse

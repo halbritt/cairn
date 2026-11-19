@@ -95,11 +95,12 @@ var (
 )
 
 func init() {
-	all := make([]OperationSpec, 0, len(serverOperations)+len(agentSessionOperations)+len(agentEventOperations)+len(agentWaitOperations))
+	all := make([]OperationSpec, 0, len(serverOperations)+len(agentSessionOperations)+len(agentEventOperations)+len(agentWaitOperations)+len(agentStatusOperations))
 	all = append(all, serverOperations...)
 	all = append(all, agentSessionOperations...)
 	all = append(all, agentEventOperations...)
 	all = append(all, agentWaitOperations...)
+	all = append(all, agentStatusOperations...)
 	operationCatalog = all
 	operationsByName = make(map[string]OperationSpec, len(all))
 	operationsByPath = make(map[string]OperationSpec, len(all))

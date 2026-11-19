@@ -138,6 +138,7 @@ The feature references below cover behavior, configuration, and failure paths.
 - [Event pressure, admission limits and rates](event-admission.md)
 - [Closure reservations for replies and wait notices](closure-reservations.md)
 - [Operator review and explicit reissue](event-recovery.md)
+- [Workstream status board](workstream-status-board.md)
 - [Worker provider failures](provider-failures.md)
 - [Multiple machines](multi-machine.md)
 

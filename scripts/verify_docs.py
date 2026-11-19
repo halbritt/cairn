@@ -294,7 +294,8 @@ def discover_cli_schema(repo_root):
         "supersession", "authorize-scope", "scope-authorization", "policy-revise",
         "policy", "policy-revision", "instruction-policy", "runs", "grants",
         "run-status", "recover-run", "set-sections", "cite", "worker-pool-configure",
-        "candidate-retention", "candidate-reclaim", "work", "wait",
+        "candidate-retention", "candidate-reclaim", "work", "wait", "status",
+        "status-set", "status-authorize", "status-get", "status-history",
         "event-pressure", "event-fanout", "event-admission-preview",
         "event-pressure-collection", "event-fanout-collection", "event-admission-policy",
         "event-admission-configure", "event-admission-preview-collection",
@@ -308,9 +309,10 @@ def discover_cli_schema(repo_root):
         "wake": {"check", "serve", "worker"},
         "agent": {"search", "pull", "pull-evidence", "remember", "start", "run", "clients",
                   "version", "evidence", "send", "publish", "inbox", "ack", "complete",
-                  "retry", "renew", "wake-attempts"},
+                  "retry", "renew", "wake-attempts", "wait", "status"},
         "work": {"project", "refresh", "list", "show", "associate", "unassociate", "progress", "blocker", "metadata", "artifact", "advice", "features", "serve"},
         "wait": {"create", "get", "list", "cancel"},
+        "status": {"set", "get", "history", "authorize"},
     }
 
     # Extract all flags from cmd/cairn/*.go
