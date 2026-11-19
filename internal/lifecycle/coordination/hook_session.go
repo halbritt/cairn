@@ -478,7 +478,7 @@ func (c *CLI) wakeBinding(config, state, event *value.Value, joined bool) (*valu
 	harness := nativeText(config.Get("harness"))
 	switch harness {
 	case "codex":
-		if ev.Prompt != "" && event.Get("prompt").Kind == value.String && event.Get("turn_id") != nil && event.Get("turn_id").Kind == value.String {
+		if !joined && ev.Prompt != "" && event.Get("prompt").Kind == value.String && event.Get("turn_id") != nil && event.Get("turn_id").Kind == value.String {
 			if b, ok := wake.BindCodexQueuedWake(sessRef, idleWake, ev); ok {
 				return nativeMap("delivery_id", b.DeliveryID, "native_turn_id", b.NativeTurnID), nil
 			}
@@ -506,6 +506,132 @@ func (c *CLI) wakeBinding(config, state, event *value.Value, joined bool) (*valu
 		}
 	}
 	return value.Mapping(), nil
+}
+
+func (c *CLI) codexPromptAdmission(state, observation, event *value.Value) (*value.Value, error) {
+	key := nativeText(observation.Get("native_turn_id"))
+	if !value.SameText(observation.Get("event"), "UserPromptSubmit") || key == "" {
+		return nil, nil
+	}
+	var seen []string
+	if seenVal := state.Get("seen_codex_turns"); seenVal != nil && seenVal.Kind == value.Array {
+		for _, it := range seenVal.Items {
+			if it != nil && it.Kind == value.String {
+				seen = append(seen, string(it.String))
+			}
+		}
+	}
+	reused := false
+	for _, s := range seen {
+		if s == key {
+			reused = true
+			break
+		}
+	}
+	if !reused {
+		seen = append(seen, key)
+		if len(seen) > SeenPromptLimit {
+			seen = seen[len(seen)-SeenPromptLimit:]
+		}
+		items := make([]*value.Value, len(seen))
+		for i, s := range seen {
+			items[i] = value.Text(s)
+		}
+		state.Set("seen_codex_turns", &value.Value{Kind: value.Array, Items: items})
+		return nativeMap("joined", false, "refused_delivery", nil), nil
+	}
+	wakeObj, err := nativeDefaultObj(state.Get("idle_wake"), "idle_wake")
+	if err != nil {
+		return nil, err
+	}
+	agent, err := nativeRequired(state, "agent")
+	if err != nil {
+		return nil, err
+	}
+	ref, err := c.sessionRef(agent)
+	if err != nil {
+		return nil, err
+	}
+	var refusal *value.Value
+	if value.SameText(wakeObj.Get("transport"), "codex-queue") && nativeEqual(wakeObj.Get("session"), ref) &&
+		event.Get("prompt") != nil && event.Get("prompt").Kind == value.String {
+		msgs, err := wakeMessagesValue(wakeObj)
+		if err != nil {
+			return nil, err
+		}
+		promptStr := nativeText(event.Get("prompt"))
+		if promptStr == msgs[0] || promptStr == msgs[1] {
+			nativePop(state, "idle_wake")
+			refusal = wakeObj.Get("delivery_id")
+			now := c.clock()
+			nowFloat := float64(now.Unix()) + float64(now.Nanosecond())/1e9
+			state.Set("wake_preclaim_refusal", nativeMap("phase", "before_claim", "reason", "seen_turn", "delivery_id", refusal, "native_turn_id", key, "at", nowFloat))
+		}
+	}
+	return nativeMap("joined", true, "refused_delivery", refusal), nil
+}
+
+func (c *CLI) restoreIdleAfterPreclaimRefusal(ctx context.Context, config, state *value.Value) {
+	if value.Truth(state.Get("inbox_intent")) || value.Truth(state.Get("inbox_attempt")) || value.Truth(state.Get("inbox_close")) || value.Truth(state.Get("inbox_turn_ended")) {
+		return
+	}
+	current := state.Get("agent")
+	if current == nil || current.Kind != value.Object {
+		return
+	}
+	meta, err := cloneObjectOrEmpty(current.Get("metadata"), "metadata")
+	if err != nil || !value.SameText(meta.Get("state"), "busy") {
+		return
+	}
+	ref, err := c.sessionRef(current)
+	if err != nil {
+		return
+	}
+	meta.Set("state", value.Text("idle"))
+	if updated, err := c.call(ctx, config, "agent-context", nativeMap("request_id", c.newUUID(), "session", ref, "expected_revision", current.Get("context_revision"), "metadata", meta), NativeCallOptions{}); err == nil && updated != nil {
+		state.Set("agent", updated)
+	}
+}
+
+func (c *CLI) refuseConflictingCodexWake(ctx context.Context, config, state *value.Value, statePath string, binding, event *value.Value, restoreIdle bool) error {
+	if !value.Truth(config.Get("inbox_recall_binding")) || value.Truth(state.Get("inbox_intent")) || value.Truth(state.Get("inbox_attempt")) {
+		return nil
+	}
+	owner := binding.Get("native_turn_id")
+	var promptVal *value.Value
+	if event != nil && event.Kind == value.Object {
+		promptVal = event.Get("prompt")
+	}
+	status, kind, err := c.grants().CodexWakeEvidence(ctx, config, state, owner, binding.Get("delivery_id"), promptVal)
+	if err != nil {
+		return err
+	}
+	if status == "absent" || status == "busy" {
+		return nil
+	}
+	nativePop(state, "idle_wake")
+	grantKind := kind
+	if !value.Truth(grantKind) {
+		grantKind = value.Text("unknown")
+	}
+	now := c.clock()
+	nowFloat := float64(now.Unix()) + float64(now.Nanosecond())/1e9
+	state.Set("wake_preclaim_refusal", nativeMap(
+		"phase", "before_claim",
+		"reason", "ledger_grant",
+		"grant", status,
+		"grant_kind", grantKind,
+		"delivery_id", binding.Get("delivery_id"),
+		"native_turn_id", owner,
+		"at", nowFloat,
+	))
+	if restoreIdle {
+		c.restoreIdleAfterPreclaimRefusal(ctx, config, state)
+	}
+	if err := c.writeState(statePath, state); err != nil {
+		return err
+	}
+	return nativePromptRefused("queued wake turn already holds a recall grant; nothing claimed, a fresh copy retries when idle")
 }
 
 func (c *CLI) refuseConflictingClaudeWake(ctx context.Context, config, state *value.Value, statePath string, binding *value.Value) error {
@@ -549,6 +675,152 @@ func (c *CLI) refuseConflictingClaudeWake(ctx context.Context, config, state *va
 		return err
 	}
 	return nativePromptRefused("channel wake prompt already holds a recall grant; nothing claimed, a fresh copy retries when idle")
+}
+
+func (c *CLI) preclaimCodexWakeCheck(ctx context.Context, config, state *value.Value, statePath string, event, observation, binding *value.Value, restoreIdle bool) error {
+	if !value.SameText(config.Get("harness"), "codex") || !value.SameText(observation.Get("event"), "UserPromptSubmit") {
+		return nil
+	}
+	if event == nil || event.Kind != value.Object || event.Get("prompt") == nil || event.Get("prompt").Kind != value.String {
+		return nil
+	}
+	promptSess, delivID, ok := wake.WakePromptIdentity(promptEventFromValue(event))
+	if !ok {
+		return nil
+	}
+	agent, err := nativeRequired(state, "agent")
+	if err != nil {
+		return err
+	}
+	ref, err := c.sessionRef(agent)
+	if err != nil {
+		return err
+	}
+	turnID := observation.Get("native_turn_id")
+	now := c.clock()
+	nowFloat := float64(now.Unix()) + float64(now.Nanosecond())/1e9
+	if promptSess.AgentID != nativeText(ref.Get("agent_id")) || promptSess.ExecutionID != nativeText(ref.Get("execution_id")) {
+		state.Set("wake_preclaim_refusal", nativeMap("phase", "before_claim", "reason", "wake_session_mismatch", "delivery_id", delivID, "native_turn_id", turnID, "at", nowFloat))
+		if restoreIdle {
+			c.restoreIdleAfterPreclaimRefusal(ctx, config, state)
+		}
+		if err := c.writeState(statePath, state); err != nil {
+			return err
+		}
+		return nativePromptRefused("reserved wake belongs to another registered execution; refused before model execution")
+	}
+	attempt := state.Get("inbox_attempt")
+	heldExtra := value.Truth(state.Get("inbox_close")) || value.Truth(state.Get("inbox_turn_ended")) ||
+		value.Truth(state.Get("organic_claim_intent")) || value.Truth(state.Get("organic_advance_intent")) || value.Truth(state.Get("batch_advance_intent"))
+	heldAny := heldExtra || value.Truth(state.Get("inbox_intent")) || value.Truth(attempt)
+	if heldAny {
+		matching := !heldExtra && attempt != nil && attempt.Kind == value.Object &&
+			!value.Truth(attempt.Get("finished_at")) && !value.Truth(attempt.Get("cancel")) &&
+			nativeEqual(attempt.Get("session"), ref) && value.Truth(turnID) && nativeEqual(attempt.Get("native_turn_id"), turnID) &&
+			attempt.Get("delivery") != nil && attempt.Get("delivery").Kind == value.Object &&
+			nativeText(attempt.Get("delivery").Get("delivery_id")) == delivID
+		if matching {
+			return nil
+		}
+		iw, iwErr := nativeDefaultObj(state.Get("idle_wake"), "idle_wake")
+		if iwErr != nil {
+			return iwErr
+		}
+		if value.Truth(binding) && nativeEqual(iw.Get("delivery_id"), binding.Get("delivery_id")) {
+			nativePop(state, "idle_wake")
+		}
+		state.Set("wake_preclaim_refusal", nativeMap("phase", "before_claim", "reason", "prior_held_work", "delivery_id", delivID, "native_turn_id", turnID, "at", nowFloat))
+		if err := c.writeState(statePath, state); err != nil {
+			return err
+		}
+		return nativePromptRefused("Codex wake conflicts with held or non-matching inbox state; refused before model execution")
+	}
+	endpoint, err := c.codexQueueEndpoint(config, state.Get("process"))
+	if err != nil {
+		return err
+	}
+	queueOwned := value.Truth(config.Get("idle_wakeup")) && value.Truth(endpoint)
+	if queueOwned && !value.Truth(binding) {
+		iw, iwErr := nativeDefaultObj(state.Get("idle_wake"), "idle_wake")
+		if iwErr != nil {
+			return iwErr
+		}
+		if nativeEqual(iw.Get("session"), ref) && nativeText(iw.Get("delivery_id")) == delivID {
+			nativePop(state, "idle_wake")
+		}
+		state.Set("wake_preclaim_refusal", nativeMap("phase", "before_claim", "reason", "unbound_wake_prompt", "delivery_id", delivID, "native_turn_id", turnID, "at", nowFloat))
+		if restoreIdle {
+			c.restoreIdleAfterPreclaimRefusal(ctx, config, state)
+		}
+		if err := c.writeState(statePath, state); err != nil {
+			return err
+		}
+		return nativePromptRefused("Codex queued wake lacks matching wake binding (unbound_wake_prompt); refused before model execution")
+	}
+	return nil
+}
+
+func (c *CLI) postclaimCodexWakeCheck(ctx context.Context, ns *NativeSession, config, state *value.Value, statePath string, event, observation, binding *value.Value, inbox string, restoreIdle bool) error {
+	if !value.SameText(config.Get("harness"), "codex") || !value.SameText(observation.Get("event"), "UserPromptSubmit") {
+		return nil
+	}
+	if event == nil || event.Kind != value.Object || event.Get("prompt") == nil || event.Get("prompt").Kind != value.String {
+		return nil
+	}
+	_, delivID, ok := wake.WakePromptIdentity(promptEventFromValue(event))
+	if !ok {
+		return nil
+	}
+	agent, err := nativeRequired(state, "agent")
+	if err != nil {
+		return err
+	}
+	ref, err := c.sessionRef(agent)
+	if err != nil {
+		return err
+	}
+	turnID := observation.Get("native_turn_id")
+	attempt := state.Get("inbox_attempt")
+	endpoint, err := c.codexQueueEndpoint(config, state.Get("process"))
+	if err != nil {
+		return err
+	}
+	queueOwned := value.Truth(config.Get("idle_wakeup")) && value.Truth(endpoint)
+	if !value.Truth(attempt) {
+		if value.Truth(binding) || queueOwned {
+			reason := "unbound_wake_prompt"
+			if value.Truth(binding) {
+				reason = "unclaimed_bound_wake"
+			}
+			nativePop(state, "idle_wake")
+			now := c.clock()
+			nowFloat := float64(now.Unix()) + float64(now.Nanosecond())/1e9
+			state.Set("wake_preclaim_refusal", nativeMap("phase", "before_claim", "reason", reason, "delivery_id", delivID, "native_turn_id", turnID, "at", nowFloat))
+			if restoreIdle {
+				c.restoreIdleAfterPreclaimRefusal(ctx, config, state)
+			}
+			if err := c.writeState(statePath, state); err != nil {
+				return err
+			}
+			return nativePromptRefused("Codex queued wake lacks matching admitted inbox context (" + reason + "); refused before model execution")
+		}
+		return nil
+	}
+	if value.Truth(config.Get("inbox_recall_binding")) {
+		return nil
+	}
+	matching := attempt != nil && attempt.Kind == value.Object &&
+		!value.Truth(attempt.Get("finished_at")) && !value.Truth(attempt.Get("lease_lapsed")) && !value.Truth(attempt.Get("cancel")) &&
+		nativeEqual(attempt.Get("session"), ref) && value.Truth(turnID) && nativeEqual(attempt.Get("native_turn_id"), turnID) &&
+		attempt.Get("delivery") != nil && attempt.Get("delivery").Kind == value.Object &&
+		nativeText(attempt.Get("delivery").Get("delivery_id")) == delivID && inbox != ""
+	if !matching {
+		if value.Truth(state.Get("inbox_intent")) && c.engine() != nil {
+			_, _ = c.engine().SettleRefusedClaudeWakeWithError(ctx, ns, nativeText(turnID), &value.Error{Class: "ValueError", Message: "admitted inbox attempt does not match wake prompt"}, "hook", true, nil)
+		}
+		return nativePromptRefused("admitted Codex wake context does not match wake prompt; refused before model execution")
+	}
+	return nil
 }
 
 func (c *CLI) claudeChannelEnabled(config, process *value.Value) bool {

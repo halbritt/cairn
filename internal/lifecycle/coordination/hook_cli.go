@@ -587,6 +587,7 @@ func (c *CLI) handleHookPostSession(ctx context.Context, ns *NativeSession, conf
 	if err != nil {
 		return nil, err
 	}
+	wasIdle := value.SameText(metadata.Get("state"), "idle")
 	mode := "existing-session"
 	if value.Truth(wakeVal) {
 		mode = "fresh-worker"
@@ -628,10 +629,10 @@ func (c *CLI) handleHookPostSession(ctx context.Context, ns *NativeSession, conf
 	if value.SameText(observation.Get("phase"), "interrupted") {
 		return value.Mapping(), nil
 	}
-	return c.handleHookInboxAndOutput(ctx, ns, config, event, observation, wakeVal, hookConfigPath, bridgeDeadline, reports)
+	return c.handleHookInboxAndOutput(ctx, ns, config, event, observation, wakeVal, hookConfigPath, bridgeDeadline, reports, wasIdle)
 }
 
-func (c *CLI) handleHookInboxAndOutput(ctx context.Context, ns *NativeSession, config, event, observation, wakeVal *value.Value, _ string, bridgeDeadline float64, reports *[]InboxRecallReport) (*value.Value, error) {
+func (c *CLI) handleHookInboxAndOutput(ctx context.Context, ns *NativeSession, config, event, observation, wakeVal *value.Value, _ string, bridgeDeadline float64, reports *[]InboxRecallReport, wasIdle bool) (*value.Value, error) {
 	state := ns.Record
 	joined := false
 	if value.SameText(config.Get("harness"), "claude") {
@@ -646,6 +647,24 @@ func (c *CLI) handleHookInboxAndOutput(ctx context.Context, ns *NativeSession, c
 		if adm != nil && adm.Kind == value.Object && value.Truth(adm.Get("refused_delivery")) {
 			return nil, nativePromptRefused("joined channel wake rejected; a fresh copy retries when idle")
 		}
+	} else if value.SameText(config.Get("harness"), "codex") && value.SameText(observation.Get("event"), "UserPromptSubmit") {
+		adm, err := c.codexPromptAdmission(state, observation, event)
+		if err != nil {
+			return nil, err
+		}
+		joined = adm != nil && adm.Kind == value.Object && value.Truth(adm.Get("joined"))
+		if adm != nil && adm.Kind == value.Object && value.Truth(adm.Get("refused_delivery")) {
+			if wasIdle {
+				c.restoreIdleAfterPreclaimRefusal(ctx, config, state)
+			}
+			if err := ns.Save(); err != nil {
+				return nil, err
+			}
+			return nil, nativePromptRefused("queued Codex wake joined an already-seen turn; a fresh copy retries when idle")
+		}
+		if err := ns.Save(); err != nil {
+			return nil, err
+		}
 	}
 	binding, err := c.wakeBinding(config, state, event, joined)
 	if err != nil {
@@ -655,12 +674,26 @@ func (c *CLI) handleHookInboxAndOutput(ctx context.Context, ns *NativeSession, c
 		if err := c.refuseConflictingClaudeWake(ctx, config, state, ns.Path, binding); err != nil {
 			return nil, err
 		}
+	} else if value.SameText(config.Get("harness"), "codex") && value.SameText(observation.Get("event"), "UserPromptSubmit") {
+		if err := c.preclaimCodexWakeCheck(ctx, config, state, ns.Path, event, observation, binding, wasIdle); err != nil {
+			return nil, err
+		}
+		if value.Truth(binding) {
+			if err := c.refuseConflictingCodexWake(ctx, config, state, ns.Path, binding, event, wasIdle); err != nil {
+				return nil, err
+			}
+		}
 	}
-	inboxVal, err := c.inboxContext(ctx, config, state, ns.Path, observation, binding)
+	inboxVal, err := c.inboxContext(ctx, config, state, ns.Path, observation, binding, joined)
 	if err != nil {
 		return nil, err
 	}
 	inbox := nativeText(inboxVal)
+	if value.SameText(config.Get("harness"), "codex") && value.SameText(observation.Get("event"), "UserPromptSubmit") {
+		if err := c.postclaimCodexWakeCheck(ctx, ns, config, state, ns.Path, event, observation, binding, inbox, wasIdle); err != nil {
+			return nil, err
+		}
+	}
 	if value.SameText(config.Get("harness"), "opencode") && value.SameText(observation.Get("event"), "TurnStart") && value.Truth(state.Get("inbox_attempt").Get("turn_exclusive")) && nativeEqual(state.Get("inbox_attempt").Get("native_turn_id"), observation.Get("native_turn_id")) {
 		since, err := bootTicksNow()
 		if err != nil {

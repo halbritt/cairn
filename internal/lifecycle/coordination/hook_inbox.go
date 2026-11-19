@@ -352,7 +352,7 @@ func validOpenCodeTurnID(v *value.Value) bool {
 	return true
 }
 
-func (c *CLI) inboxContext(ctx context.Context, config, state *value.Value, statePath string, observation, wakeBinding *value.Value) (*value.Value, error) {
+func (c *CLI) inboxContext(ctx context.Context, config, state *value.Value, statePath string, observation, wakeBinding *value.Value, joined bool) (*value.Value, error) {
 	var err error
 	config, err = c.claudeSessionConfig(config, state.Get("agent").Get("native_session_id"), state.Get("process"))
 	if err != nil {
@@ -409,8 +409,11 @@ func (c *CLI) inboxContext(ctx context.Context, config, state *value.Value, stat
 		return nil, err
 	}
 	if !value.Truth(state.Get("inbox_attempt")) {
-		freshChannel := value.SameText(config.Get("harness"), "claude") && value.Truth(wakeBinding) && value.SameText(observation.Get("event"), "UserPromptSubmit") && nativeEqual(wakeBinding.Get("native_turn_id"), observation.Get("native_turn_id"))
-		if value.Truth(state.Get("delivered_since_idle")) && !freshChannel {
+		if value.SameText(config.Get("harness"), "codex") && joined {
+			return value.Text(""), nil
+		}
+		freshBoundWake := (value.SameText(config.Get("harness"), "claude") || value.SameText(config.Get("harness"), "codex")) && value.Truth(wakeBinding) && value.SameText(observation.Get("event"), "UserPromptSubmit") && nativeEqual(wakeBinding.Get("native_turn_id"), observation.Get("native_turn_id"))
+		if value.Truth(state.Get("delivered_since_idle")) && !freshBoundWake {
 			return value.Text(""), nil
 		}
 		binding := c.selectAdmissionBinding(config, state, observation, wakeBinding, opencodeReplay)

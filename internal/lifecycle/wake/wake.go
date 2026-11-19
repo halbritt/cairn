@@ -153,27 +153,31 @@ func FormatClaudeChannelPrompt(meta ClaudeChannelMeta, body string) string {
 	)
 }
 
-// InboxRecallWake recognizes only the producer's complete reserved wake text
-// (or exact Claude channel envelope) across current and legacy closing wordings.
-func InboxRecallWake(event PromptEvent) bool {
+// WakePromptIdentity parses and validates the producer's complete reserved wake text
+// (or exact Claude channel envelope) and returns (sessionRef, deliveryID, true).
+func WakePromptIdentity(event PromptEvent) (SessionRef, string, bool) {
 	if event.HookEventName != "UserPromptSubmit" || event.Prompt == "" {
-		return false
+		return SessionRef{}, "", false
 	}
 	ids := wakeHeaderRE.FindStringSubmatch(event.Prompt)
 	if len(ids) != 4 {
-		return false
+		return SessionRef{}, "", false
 	}
 	session := SessionRef{AgentID: ids[1], ExecutionID: ids[2]}
 	deliveryID := ids[3]
 	for _, body := range WakeMessages(session, deliveryID) {
-		if event.Prompt == body {
-			return true
-		}
-		if matchesClaudeChannelEnvelope(event.Prompt, session, deliveryID, body) {
-			return true
+		if event.Prompt == body || matchesClaudeChannelEnvelope(event.Prompt, session, deliveryID, body) {
+			return session, deliveryID, true
 		}
 	}
-	return false
+	return SessionRef{}, "", false
+}
+
+// InboxRecallWake recognizes only the producer's complete reserved wake text
+// (or exact Claude channel envelope) across current and legacy closing wordings.
+func InboxRecallWake(event PromptEvent) bool {
+	_, _, ok := WakePromptIdentity(event)
+	return ok
 }
 
 func matchesClaudeChannelEnvelope(prompt string, session SessionRef, deliveryID, body string) bool {
@@ -209,6 +213,9 @@ func validTurnIdentifier(id string) bool {
 func BindCodexQueuedWake(agent SessionRef, idleWake WakeEnvelope, event PromptEvent) (BoundWake, bool) {
 	if idleWake.Transport != TransportCodexQueue || idleWake.Session != agent ||
 		event.HookEventName != "UserPromptSubmit" || !validTurnIdentifier(event.TurnID) {
+		return BoundWake{}, false
+	}
+	if idleWake.NativeID != "" && event.SessionID != nil && *event.SessionID != "" && *event.SessionID != idleWake.NativeID {
 		return BoundWake{}, false
 	}
 	msgs := WakeMessages(idleWake.Session, idleWake.DeliveryID)

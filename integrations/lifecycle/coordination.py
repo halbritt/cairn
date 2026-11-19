@@ -1008,6 +1008,18 @@ def prepare_idle_wake(config, state, path, cycle=None):
     delivery = ready.get('delivery_id')
     if cycle is not None:
         cycle['ready_delivery'] = delivery
+    prior = state.get('idle_wake', {})
+    if (config.get('harness') == 'codex' and prior.get('session') == session_ref(agent) and
+            prior.get('transport') == 'codex-queue' and prior.get('status') == 'queued' and
+            prior.get('queued_submission_id') and prior.get('delivery_id') != delivery and
+            not state.get('inbox_intent') and not state.get('inbox_attempt')):
+        health = probe_codex_native_health(config, state, force=True)
+        if (health and health.get('session') == session_ref(agent) and
+                health.get('status_type') == 'idle' and health.get('queued_present') is False):
+            prior['status'] = 'refused'
+            prior['last_start'] = 'missing'
+            prior['reconciliation_required'] = 'queue_item_missing'
+            write_state(path, state)
     if not delivery:
         state.pop('wake_refusal', None)
         state.pop('opencode_replay', None)
@@ -1045,6 +1057,11 @@ def prepare_idle_wake(config, state, path, cycle=None):
             f"a {prior.get('transport') or 'terminal'} wake for this delivery is already {prior.get('status')}; "
             "only native handling of that wake permits another",
             'wake_retained' if prior.get('status') in ('submitted', 'uncertain', 'queued', 'refused') else 'unknown', cycle)
+    if (prior.get('session') == session_ref(agent) and prior.get('transport') == 'codex-queue' and
+            prior.get('status') == 'queued' and prior.get('queued_submission_id')):
+        return note_wake_refusal(config, state, delivery,
+            'a codex-queue wake for an earlier delivery is still queued; resolve or start that wake before replacing it',
+            'unknown', cycle)
     request_id = ready.get('request_id') or str(uuid.uuid4())
     coord_mod = _COORD_NS
     prepared_native = _wake_transport.prepare_native_wake(
@@ -1337,13 +1354,16 @@ def wake_message(wake, closing=WAKE_CLOSING):
             + closing)
 
 
-def queued_wake_binding(state, event):
+def queued_wake_binding(state, event, joined=False):
     wake = state.get('idle_wake', {})
     turn = event.get('turn_id')
+    session_id = event.get('session_id')
     if (wake.get('transport') != 'codex-queue' or wake.get('session') != session_ref(state['agent']) or
-            event.get('hook_event_name') != 'UserPromptSubmit' or not isinstance(turn, str) or
+            event.get('hook_event_name') != 'UserPromptSubmit' or joined or not isinstance(turn, str) or
             not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
             event.get('prompt') not in wake_messages(wake)):
+        return {}
+    if wake.get('native_id') and isinstance(session_id, str) and session_id and session_id != wake['native_id']:
         return {}
     return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
 
@@ -1429,6 +1449,64 @@ def claude_prompt_admission(state, observation, event):
     return None
 
 
+def codex_prompt_admission(state, observation, event):
+    """Record first sighting of each Codex turn_id and refuse queued wakes joining a seen turn (CAIRN-364)."""
+    key = observation.get('native_turn_id') or ''
+    if observation['event'] != 'UserPromptSubmit' or not key:
+        return None
+    seen = state.get('seen_codex_turns')
+    seen = [item for item in seen if isinstance(item, str)] if isinstance(seen, list) else []
+    reused = key in seen
+    if not reused:
+        state['seen_codex_turns'] = (seen + [key])[-SEEN_PROMPT_LIMIT:]
+        return dict(joined=False, refused_delivery=None)
+    wake = state.get('idle_wake', {})
+    refusal = None
+    if (wake.get('transport') == 'codex-queue' and
+            wake.get('session') == session_ref(state['agent']) and
+            event.get('prompt') in wake_messages(wake)):
+        state.pop('idle_wake', None)
+        refusal = wake['delivery_id']
+        state['wake_preclaim_refusal'] = dict(phase='before_claim', reason='seen_turn',
+            delivery_id=refusal, native_turn_id=key, at=time.time())
+    return dict(joined=True, refused_delivery=refusal)
+
+
+def _restore_idle_after_preclaim_refusal(config, state):
+    if any(state.get(k) for k in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_turn_ended')):
+        return
+    current = state.get('agent')
+    if not isinstance(current, dict) or (current.get('metadata') or {}).get('state') != 'busy':
+        return
+    try:
+        state['agent'] = call(config, 'agent-context', dict(
+            request_id=str(uuid.uuid4()), session=session_ref(current),
+            expected_revision=current['context_revision'],
+            metadata=dict(current['metadata'], state='idle')))
+    except CoordinationError:
+        pass
+
+
+def refuse_conflicting_codex_wake(config, state, path, binding, event, *, restore_idle=False):
+    """Refuse a bound Codex queued wake, before any claim, whose turn or wake hash holds a recall grant."""
+    if not config.get('inbox_recall_binding') or state.get('inbox_intent') or state.get('inbox_attempt'):
+        return
+    owner = binding.get('native_turn_id')
+    status, kind = _grant_ledger.codex_wake_grant_evidence(
+        config, state, native_owner=owner, delivery_id=binding['delivery_id'],
+        wake_prompt=event.get('prompt'), coord=_COORD_NS)
+    if status in ('absent', 'busy'):
+        return
+    state.pop('idle_wake', None)
+    state['wake_preclaim_refusal'] = dict(phase='before_claim', reason='ledger_grant', grant=status,
+        grant_kind=kind or 'unknown', delivery_id=binding['delivery_id'], native_turn_id=owner, at=time.time())
+    if restore_idle:
+        _restore_idle_after_preclaim_refusal(config, state)
+    write_state(path, state)
+    raise NativePromptRefused('queued wake turn already holds a recall grant; '
+                              'nothing claimed, a fresh copy retries when idle')
+
+
 def refuse_conflicting_claude_wake(config, state, path, binding):
     """Refuse a bound Claude channel wake, before any claim, whose prompt already has a recall grant.
 
@@ -1506,15 +1584,20 @@ def submit_idle_wake(config, path, prepared):
     queued_id = outcome['queued_id']
     started = outcome['started']
     start_outcome = outcome['start_outcome']
+    lock_wait = 1.5 if ((queued_id and not started) or start_outcome == 'missing') else 0.0
     try:
-        with session_lock(path):
+        with session_lock(path, wait_seconds=lock_wait):
             state = json.loads(path.read_text())
-            if start_outcome is not None and (
-                    state.get('inbox_intent') or state.get('inbox_attempt') or
-                    session_ref(state['agent']) != wake['session'] or
+            if (session_ref(state['agent']) != wake['session'] or
                     any(state['process'].get(key) != prepared['process'].get(key)
                         for key in ('pid', 'start', 'boot'))):
-                return  # Native admission or process replacement supersedes this start observation.
+                return
+            if start_outcome is not None and (state.get('inbox_intent') or state.get('inbox_attempt')):
+                return  # Native admission supersedes this start observation.
+            held_delivery = ((state.get('inbox_intent') or {}).get('delivery_id') or
+                             ((state.get('inbox_attempt') or {}).get('delivery') or {}).get('delivery_id'))
+            if start_outcome is None and held_delivery == wake['delivery_id']:
+                return
             if state.get('idle_wake') == wake:
                 state['idle_wake']['status'] = 'submitted' if started else 'queued'
                 if start_outcome is not None:
@@ -2902,7 +2985,7 @@ def inbox_handoff(config, session, delivery, attempt_id, request_ids, *, scope=(
     return target, context
 
 
-def inbox_context(config, state, path, observation, wake_binding=None):
+def inbox_context(config, state, path, observation, wake_binding=None, *, joined=False):
     config = claude_session_config(config, state.get('agent', {}).get('native_session_id'), state.get('process'))
     if not config.get('native_delivery'):
         return ''
@@ -2982,13 +3065,16 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         return ''  # This native wake transport owns admission; other prompts do not claim work.
     recover_inbox(config, state, path)
     if not state.get('inbox_attempt'):
+        if config.get('harness') == 'codex' and joined:
+            return ''
         # A settled request can leave its latch behind when its Stop was missed
-        # or belonged to another prompt. Only an exact, freshly bound Claude
-        # channel prompt proves a new delivery boundary without that Stop.
-        fresh_channel = (config.get('harness') == 'claude' and wake_binding and
-                         observation['event'] == 'UserPromptSubmit' and
-                         wake_binding.get('native_turn_id') == observation.get('native_turn_id'))
-        if state.get('delivered_since_idle') and not fresh_channel:
+        # or belonged to another prompt. Only an exact, freshly bound native
+        # wake (Claude channel or unseen Codex queue turn) proves a new delivery
+        # boundary without that Stop.
+        fresh_bound_wake = (config.get('harness') in ('claude', 'codex') and bool(wake_binding) and
+                            observation['event'] == 'UserPromptSubmit' and
+                            wake_binding.get('native_turn_id') == observation.get('native_turn_id'))
+        if state.get('delivered_since_idle') and not fresh_bound_wake:
             return ''
         replay_binding = {}
         if opencode_replay and observation.get('native_turn_id'):
@@ -3316,22 +3402,117 @@ def coordination_excluded(workspace):
     return bool(_hook_admission.privacy_exclusions([Path(workspace)], markers))
 
 
-def inbox_recall_wake(event):
-    """Recognize only the producer's complete reserved text, never authority."""
+def wake_prompt_ids(event):
+    """Return (agent_id, execution_id, delivery_id) for complete reserved wake text, else None."""
     if event.get('hook_event_name') != 'UserPromptSubmit' or not isinstance(event.get('prompt'), str):
-        return False
+        return None
     prompt = event['prompt']
     value = r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}'
     ids = re.search(rf'Current agent ({value}), execution ({value})\. Wake delivery ({value})\.', prompt)
     if not ids:
-        return False
+        return None
     for body in wake_messages(dict(session=dict(agent_id=ids[1], execution_id=ids[2]), delivery_id=ids[3])):
         if prompt == body or re.fullmatch(
                 rf'<channel source="cairn-events" native_session_id="{value}" '
                 + re.escape(f'agent_id="{ids[1]}" execution_id="{ids[2]}" delivery_id="{ids[3]}">\n' + body + '\n</channel>'),
                 prompt) is not None:
-            return True
-    return False
+            return ids[1], ids[2], ids[3]
+    return None
+
+
+def inbox_recall_wake(event):
+    """Recognize only the producer's complete reserved text, never authority."""
+    return wake_prompt_ids(event) is not None
+
+
+def preclaim_codex_wake_check(config, state, path, event, observation, binding, *, restore_idle=False):
+    """Validate Codex wake prompt ownership and pre-existing held state BEFORE inbox_context runs."""
+    if config.get('harness') != 'codex' or observation.get('event') != 'UserPromptSubmit':
+        return
+    ids = wake_prompt_ids(event)
+    if ids is None:
+        return
+    agent_id, execution_id, delivery_id = ids
+    agent = state['agent']
+    turn_id = observation.get('native_turn_id')
+    if (agent_id, execution_id) != (agent['agent_id'], agent['execution_id']):
+        state['wake_preclaim_refusal'] = dict(phase='before_claim', reason='wake_session_mismatch',
+            delivery_id=delivery_id, native_turn_id=turn_id, at=time.time())
+        if restore_idle:
+            _restore_idle_after_preclaim_refusal(config, state)
+        write_state(path, state)
+        raise NativePromptRefused('reserved wake belongs to another registered execution; refused before model execution')
+    attempt = state.get('inbox_attempt')
+    held_extra = any(state.get(k) for k in ('inbox_close', 'inbox_turn_ended', 'organic_claim_intent',
+                                            'organic_advance_intent', 'batch_advance_intent'))
+    held_any = held_extra or bool(state.get('inbox_intent')) or bool(attempt)
+    if held_any:
+        matching = (not held_extra and isinstance(attempt, dict) and not attempt.get('finished_at') and
+                    not attempt.get('cancel') and attempt.get('session') == session_ref(agent) and
+                    bool(turn_id) and attempt.get('native_turn_id') == turn_id and
+                    (attempt.get('delivery') or {}).get('delivery_id') == delivery_id)
+        if matching:
+            return
+        iw = state.get('idle_wake', {})
+        if binding and iw.get('delivery_id') == binding.get('delivery_id'):
+            state.pop('idle_wake', None)
+        state['wake_preclaim_refusal'] = dict(phase='before_claim', reason='prior_held_work',
+            delivery_id=delivery_id, native_turn_id=turn_id, at=time.time())
+        write_state(path, state)
+        raise NativePromptRefused('Codex wake conflicts with held or non-matching inbox state; refused before model execution')
+    queue_owned = bool(config.get('idle_wakeup') and codex_queue_endpoint(config, state['process']))
+    if queue_owned and not binding:
+        iw = state.get('idle_wake', {})
+        if iw.get('session') == session_ref(agent) and iw.get('delivery_id') == delivery_id:
+            state.pop('idle_wake', None)
+        state['wake_preclaim_refusal'] = dict(phase='before_claim', reason='unbound_wake_prompt',
+            delivery_id=delivery_id, native_turn_id=turn_id, at=time.time())
+        if restore_idle:
+            _restore_idle_after_preclaim_refusal(config, state)
+        write_state(path, state)
+        raise NativePromptRefused('Codex queued wake lacks matching wake binding (unbound_wake_prompt); '
+                                  'refused before model execution')
+
+
+def postclaim_codex_wake_check(config, state, path, event, observation, binding, inbox, *, restore_idle=False):
+    """Ensure a Codex wake prompt after inbox_context either admitted matching context or refuses cleanly."""
+    if config.get('harness') != 'codex' or observation.get('event') != 'UserPromptSubmit':
+        return
+    ids = wake_prompt_ids(event)
+    if ids is None:
+        return
+    _, _, delivery_id = ids
+    agent = state['agent']
+    turn_id = observation.get('native_turn_id')
+    attempt = state.get('inbox_attempt')
+    queue_owned = bool(config.get('idle_wakeup') and codex_queue_endpoint(config, state['process']))
+    if not attempt:
+        if binding or queue_owned:
+            reason = 'unclaimed_bound_wake' if binding else 'unbound_wake_prompt'
+            state.pop('idle_wake', None)
+            state['wake_preclaim_refusal'] = dict(phase='before_claim', reason=reason,
+                delivery_id=delivery_id, native_turn_id=turn_id, at=time.time())
+            if restore_idle:
+                _restore_idle_after_preclaim_refusal(config, state)
+            write_state(path, state)
+            raise NativePromptRefused(f'Codex queued wake lacks matching admitted inbox context ({reason}); '
+                                      'refused before model execution')
+        return
+    if config.get('inbox_recall_binding'):
+        return
+    matching = (isinstance(attempt, dict) and not attempt.get('finished_at') and
+                not attempt.get('lease_lapsed') and not attempt.get('cancel') and
+                attempt.get('session') == session_ref(agent) and
+                bool(turn_id) and attempt.get('native_turn_id') == turn_id and
+                (attempt.get('delivery') or {}).get('delivery_id') == delivery_id and bool(inbox))
+    if not matching:
+        if state.get('inbox_intent'):
+            try:
+                settle_refused_claude_wake(config, state, path, turn_id,
+                    ValueError('admitted inbox attempt does not match wake prompt'))
+            except Exception:
+                pass
+        raise NativePromptRefused('admitted Codex wake context does not match wake prompt; refused before model execution')
 
 
 def refusal_error_class(exc):
@@ -4237,6 +4418,7 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
         if observation['event'] in ('ToolStart', 'ToolEnd'):
             return opencode_tool_event(config, state, path, observation, event)
         current = state["agent"]
+        was_idle = current["metadata"].get("state") == "idle"
         metadata = dict(current["metadata"])
         metadata['delivery_mode'] = 'fresh-worker' if wake else 'existing-session'
         if observation["workspace"] != state["workspace"]:
@@ -4269,10 +4451,25 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
                 # the joined channel message natively before it reaches the
                 # model. The owner prompt and any other hook output continue.
                 raise NativePromptRefused('joined channel wake rejected; a fresh copy retries when idle')
+        elif config['harness'] == 'codex' and observation['event'] == 'UserPromptSubmit':
+            admission = codex_prompt_admission(state, observation, event) or {}
+            joined = bool(admission.get('joined'))
+            if admission.get('refused_delivery'):
+                if was_idle:
+                    _restore_idle_after_preclaim_refusal(config, state)
+                write_state(path, state)
+                raise NativePromptRefused('queued Codex wake joined an already-seen turn; a fresh copy retries when idle')
+            write_state(path, state)
         binding = wake_binding(config, state, event, joined)
         if config['harness'] == 'claude' and binding:
             refuse_conflicting_claude_wake(config, state, path, binding)
-        inbox = inbox_context(config, state, path, observation, binding)
+        elif config['harness'] == 'codex' and observation['event'] == 'UserPromptSubmit':
+            preclaim_codex_wake_check(config, state, path, event, observation, binding, restore_idle=was_idle)
+            if binding:
+                refuse_conflicting_codex_wake(config, state, path, binding, event, restore_idle=was_idle)
+        inbox = inbox_context(config, state, path, observation, binding, joined=joined)
+        if config['harness'] == 'codex' and observation['event'] == 'UserPromptSubmit':
+            postclaim_codex_wake_check(config, state, path, event, observation, binding, inbox, restore_idle=was_idle)
         if (config['harness'] == 'opencode' and observation['event'] == 'TurnStart' and
                 state.get('inbox_attempt', {}).get('turn_exclusive') and
                 state['inbox_attempt'].get('native_turn_id') == observation['native_turn_id']):

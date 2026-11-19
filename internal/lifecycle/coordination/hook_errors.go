@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/internal/lifecycle/journal"
@@ -118,6 +119,20 @@ func (c *CLI) lockState(path string) (io.Closer, error) {
 		return c.Host.Lock(path)
 	}
 	lease, err := AcquireSessionLock(path)
+	if err != nil {
+		return nil, err
+	}
+	return sessionLease{lease: lease}, nil
+}
+
+func (c *CLI) lockStateWait(ctx context.Context, path string, wait time.Duration) (io.Closer, error) {
+	if wait <= 0 {
+		return c.lockState(path)
+	}
+	if c != nil && c.Host != nil && c.Host.LockWait != nil {
+		return c.Host.LockWait(ctx, path, wait)
+	}
+	lease, err := AcquireSessionLockWait(ctx, path, wait)
 	if err != nil {
 		return nil, err
 	}

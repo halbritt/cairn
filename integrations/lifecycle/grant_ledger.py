@@ -561,6 +561,75 @@ def recall_grant_evidence(config, state, attempt=None, native_owner=None, *, req
         return 'unknown', 'unknown'
 
 
+def codex_wake_grant_evidence(config, state, *, native_owner, delivery_id, wake_prompt, coord=None):
+    """Inspect both .inbox-recall.json (including wake_sha256/folded) and .memory-budget.json for Codex wake conflicts."""
+    try:
+        load_bridge = getattr(coord, 'load_inbox_recall', None)
+        if load_bridge is not None:
+            bridge = load_bridge(config, validate=False)
+            _, memory = bridge.binding(config)
+            load_grants_fn = bridge.load_grants
+        else:
+            load_grants_fn = load_grants
+            memory = config
+        directory = Path(memory['state_dir'])
+        native = state['agent']['native_session_id']
+        if directory.is_absolute() and not os.path.lexists(directory):
+            return 'absent', None
+        info = directory.stat()
+        if not directory.is_absolute() or info.st_uid != os.getuid() or info.st_mode & 0o022:
+            return 'unknown', 'unknown'
+        with (directory / (native + '.lock')).open('a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return 'busy', 'unknown'
+            kinds = set()
+            wake_hash = hashlib.sha256(wake_prompt.encode('utf-8')).hexdigest() if isinstance(wake_prompt, str) else None
+            ledger_path = directory / (native + '.inbox-recall.json')
+            for candidate in (ledger_path, ledger_path.with_suffix('.initialized')):
+                try:
+                    cinfo = os.lstat(candidate)
+                except FileNotFoundError:
+                    continue
+                if not stat.S_ISREG(cinfo.st_mode) or cinfo.st_uid != os.getuid():
+                    return 'unknown', 'unknown'
+            ledger = load_grants_fn(ledger_path, native)
+            for grant in ledger['grants'].values():
+                identity = grant['identity']
+                if delivery_id and identity.get('delivery_id') == delivery_id:
+                    kinds.add('inbox_delivery')
+                elif native_owner and identity.get('native_owner') == native_owner:
+                    kinds.add(recall_grant_kind(identity))
+                elif wake_hash and (grant.get('wake_sha256') == wake_hash or identity.get('wake_sha256') == wake_hash):
+                    kinds.add(recall_grant_kind(identity))
+            if wake_hash and folded_conflict(ledger, key='', wake_sha256=wake_hash, owner=native_owner):
+                kinds.add('unadmitted_wake')
+            budget_path = directory / (native + '.memory-budget.json')
+            budget_init = budget_path.with_suffix('.initialized')
+            for candidate in (budget_path, budget_init):
+                try:
+                    binfo = os.lstat(candidate)
+                except FileNotFoundError:
+                    continue
+                if not stat.S_ISREG(binfo.st_mode) or binfo.st_uid != os.getuid():
+                    return 'unknown', 'unknown'
+            expected_budget = dict(schema=CODEX_LEDGER_SCHEMA, session_id=native)
+            if budget_init.exists():
+                if json.loads(budget_init.read_text()) != expected_budget or not budget_path.exists():
+                    return 'unknown', 'unknown'
+            if budget_path.exists():
+                budget = json.loads(budget_path.read_text())
+                if (not isinstance(budget, dict) or budget.get('schema') != CODEX_LEDGER_SCHEMA or
+                        budget.get('session_id') != native or not isinstance(budget.get('turns'), dict)):
+                    return 'unknown', 'unknown'
+                if native_owner and native_owner in budget['turns']:
+                    kinds.add('ordinary_context')
+            return ('present', summarize_grant_kinds(kinds)) if kinds else ('absent', None)
+    except Exception:
+        return 'unknown', 'unknown'
+
+
 def codex_pre_grant_ledger_absent(config, state, attempt, recorded, *, coord=None):
     """Explicit-recovery proof that a recorded required-lookup refusal left no grant."""
     turn = attempt.get('native_turn_id')

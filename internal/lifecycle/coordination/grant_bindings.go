@@ -2,6 +2,8 @@ package coordination
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"math/big"
 	"os"
@@ -19,6 +21,7 @@ const (
 	InboxLedgerSchema = "cairn.inbox-recall-grants/1"
 	InboxInitSchema   = "cairn.inbox-recall-initialized/1"
 	CodexLedgerSchema = "cairn.codex-memory-grants/1"
+	FoldDomain        = "cairn.inbox-recall-fold/1"
 )
 
 type GrantLedgerError struct{ Message, Stage, Reason string }
@@ -415,6 +418,196 @@ func (g GrantBindings) GrantState(ctx context.Context, config, state, attempt *v
 	}
 	return status, err
 }
+func foldedTokenHex(kind, val string) string {
+	sum := sha256.Sum256([]byte(FoldDomain + "\x00" + kind + "\x00" + val))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+func hasFoldedConflict(ledger *value.Value, wakeHash, owner string) bool {
+	folded := ledger.Get("folded")
+	if folded == nil || folded.Kind != value.Object {
+		return false
+	}
+	tokens := folded.Get("tokens")
+	if tokens == nil || tokens.Kind != value.Array || len(tokens.Items) == 0 {
+		return false
+	}
+	var probes []string
+	if wakeHash != "" {
+		probes = append(probes, foldedTokenHex("wake", wakeHash))
+	}
+	if owner != "" {
+		probes = append(probes, foldedTokenHex("owner", owner))
+	}
+	for _, it := range tokens.Items {
+		if it != nil && it.Kind == value.String && nativeContains(probes, string(it.String)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (g GrantBindings) CodexWakeEvidence(_ context.Context, config, state, nativeOwner, deliveryID, wakePrompt *value.Value) (string, *value.Value, error) {
+	status, kind, err := g.codexWakeEvidence(config, state, nativeOwner, deliveryID, wakePrompt)
+	if err != nil {
+		var profile *value.ProfileUnavailable
+		if errors.As(err, &profile) {
+			return "", nil, err
+		}
+		return "unknown", value.Text("unknown"), nil
+	}
+	return status, kind, nil
+}
+
+func (g GrantBindings) codexWakeEvidence(config, state, owner, deliveryID, wakePrompt *value.Value) (string, *value.Value, error) {
+	dir, err := g.directory(config)
+	if err != nil {
+		return "", nil, err
+	}
+	native, name, err := g.native(state)
+	if err != nil {
+		return "", nil, err
+	}
+	if strings.HasPrefix(dir, "/") {
+		exists, err := sourceExists(dir, true)
+		if err != nil && !sourceOSError(err) {
+			return "", nil, err
+		}
+		if !exists {
+			return "absent", nil, nil
+		}
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return "", nil, err
+	}
+	if !strings.HasPrefix(dir, "/") || !controlledDirectory(info, g.uid()) {
+		return "unknown", value.Text("unknown"), nil
+	}
+	lock, err := os.OpenFile(sourceJoin(dir, name+".lock"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		return "", nil, err
+	}
+	defer lock.Close()
+	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			return "busy", value.Text("unknown"), nil
+		}
+		return "", nil, err
+	}
+	return g.inspectCodexWakeLedgers(dir, name, native, owner, deliveryID, wakePrompt)
+}
+
+func (g GrantBindings) inspectCodexWakeLedgers(dir, name string, native, owner, deliveryID, wakePrompt *value.Value) (string, *value.Value, error) {
+	kinds := map[string]bool{}
+	var wakeHash string
+	if wakePrompt != nil && wakePrompt.Kind == value.String {
+		sum := sha256.Sum256([]byte(string(wakePrompt.String)))
+		wakeHash = hex.EncodeToString(sum[:])
+	}
+	path := sourceJoin(dir, name+".inbox-recall.json")
+	for _, candidate := range []string{path, strings.TrimSuffix(path, ".json") + ".initialized"} {
+		info, err := os.Lstat(candidate)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", nil, err
+		}
+		if !ownerFile(info, g.uid()) {
+			return "unknown", value.Text("unknown"), nil
+		}
+	}
+	loader := g.Loader
+	if loader == nil {
+		loader = g.LoadGrants
+	}
+	ledger, err := loader(path, native)
+	if err != nil {
+		return "", nil, err
+	}
+	grants, err := nativeRequired(ledger, "grants")
+	if err != nil {
+		return "", nil, err
+	}
+	if grants.Kind != value.Object {
+		return "", nil, &journal.NonObjectError{Field: "grants"}
+	}
+	for _, member := range grants.Members {
+		identity, err := nativeRequired(member.Value, "identity")
+		if err != nil {
+			return "", nil, err
+		}
+		if identity.Kind != value.Object {
+			return "", nil, &journal.NonObjectError{Field: "identity"}
+		}
+		if value.Truth(deliveryID) && nativeEqual(identity.Get("delivery_id"), deliveryID) {
+			kinds["inbox_delivery"] = true
+		} else if value.Truth(owner) && nativeEqual(identity.Get("native_owner"), owner) {
+			kinds[grantKind(identity)] = true
+		} else if wakeHash != "" && (value.SameText(member.Value.Get("wake_sha256"), wakeHash) || value.SameText(identity.Get("wake_sha256"), wakeHash)) {
+			kinds[grantKind(identity)] = true
+		}
+	}
+	if wakeHash != "" && hasFoldedConflict(ledger, wakeHash, nativeText(owner)) {
+		kinds["unadmitted_wake"] = true
+	}
+	budgetPath := sourceJoin(dir, name+".memory-budget.json")
+	budgetInit := strings.TrimSuffix(budgetPath, ".json") + ".initialized"
+	for _, candidate := range []string{budgetPath, budgetInit} {
+		info, err := os.Lstat(candidate)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", nil, err
+		}
+		if !ownerFile(info, g.uid()) {
+			return "unknown", value.Text("unknown"), nil
+		}
+	}
+	if initExists, ierr := sourceExists(budgetInit, false); ierr != nil {
+		return "", nil, ierr
+	} else if initExists {
+		initVal, ierr := g.read(budgetInit, SiteCodexBudget)
+		if ierr != nil {
+			return "", nil, ierr
+		}
+		bExists, berr := sourceExists(budgetPath, false)
+		if berr != nil {
+			return "", nil, berr
+		}
+		if !bExists || !nativeEqual(initVal, nativeMap("schema", CodexLedgerSchema, "session_id", native)) {
+			return "unknown", value.Text("unknown"), nil
+		}
+	}
+	if bExists, berr := sourceExists(budgetPath, false); berr != nil {
+		return "", nil, berr
+	} else if bExists {
+		budget, berr := g.read(budgetPath, SiteCodexBudget)
+		if berr != nil {
+			return "", nil, berr
+		}
+		turns := budget.Get("turns")
+		if budget == nil || budget.Kind != value.Object || !value.SameText(budget.Get("schema"), CodexLedgerSchema) || !nativeEqual(budget.Get("session_id"), native) || turns == nil || turns.Kind != value.Object {
+			return "unknown", value.Text("unknown"), nil
+		}
+		if value.Truth(owner) && valueMember(turns, owner) != nil {
+			kinds["ordinary_context"] = true
+		}
+	}
+	if len(kinds) == 0 {
+		return "absent", nil, nil
+	}
+	if len(kinds) > 1 {
+		return "present", value.Text("mixed"), nil
+	}
+	for observed := range kinds {
+		return "present", value.Text(observed), nil
+	}
+	return "present", value.Text("unknown"), nil
+}
+
 func (g GrantBindings) PreGrantLedgerAbsent(_ context.Context, config, state, attempt, recorded *value.Value) (bool, error) {
 	if attempt == nil || attempt.Kind != value.Object {
 		return false, &journal.NonObjectError{Field: "attempt"}

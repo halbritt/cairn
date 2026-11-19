@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 	"github.com/halbritt/cairn/internal/lifecycle/wake"
@@ -592,6 +593,26 @@ func (c *CLI) prepareIdleWakeReady(ctx context.Context, config, state, agent *va
 	if cycle != nil && cycle.Kind == value.Object {
 		cycle.Set("ready_delivery", delivVal)
 	}
+	if prior, perr := nativeDefaultObj(state.Get("idle_wake"), "idle_wake"); perr != nil {
+		return nil, perr
+	} else if nativeText(config.Get("harness")) == "codex" && nativeEqual(prior.Get("session"), sref) &&
+		nativeText(prior.Get("transport")) == "codex-queue" && nativeText(prior.Get("status")) == "queued" &&
+		value.Truth(prior.Get("queued_submission_id")) && !nativeEqual(prior.Get("delivery_id"), delivVal) &&
+		!value.Truth(state.Get("inbox_intent")) && !value.Truth(state.Get("inbox_attempt")) {
+		health, herr := c.probeCodexNativeHealth(ctx, config, state, true)
+		if herr != nil {
+			return nil, herr
+		}
+		if value.Truth(health) && nativeEqual(health.Get("session"), sref) && nativeText(health.Get("status_type")) == "idle" &&
+			health.Get("queued_present") != nil && health.Get("queued_present").Kind == value.Bool && !health.Get("queued_present").Boolean {
+			prior.Set("status", value.Text("refused"))
+			prior.Set("last_start", value.Text("missing"))
+			prior.Set("reconciliation_required", value.Text("queue_item_missing"))
+			if err := c.writeState(path, state); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if !value.Truth(delivVal) {
 		nativePop(state, "wake_refusal", "opencode_replay")
 		return nil, nil
@@ -663,6 +684,10 @@ func (c *CLI) prepareIdleWakeAfterGuards(ctx context.Context, config, state, age
 			cond = "wake_retained"
 		}
 		return nil, c.noteWakeRefusal(config, state, delivery, fmt.Sprintf("a %s wake for this delivery is already %s; only native handling of that wake permits another", tr, pythonRepr(prior.Get("status"), false)), cond, cycle, errOut)
+	}
+	if nativeEqual(prior.Get("session"), sref) && nativeText(prior.Get("transport")) == "codex-queue" &&
+		nativeText(prior.Get("status")) == "queued" && value.Truth(prior.Get("queued_submission_id")) {
+		return nil, c.noteWakeRefusal(config, state, delivery, "a codex-queue wake for an earlier delivery is still queued; resolve or start that wake before replacing it", "unknown", cycle, errOut)
 	}
 	return c.prepareIdleWakeTransport(ctx, config, state, agent, process, sref, ready, endpoint, delivery, path, cycle, refusal, refusalCondition, errOut)
 }
@@ -1076,7 +1101,12 @@ func (c *CLI) submitTerminalWake(ctx context.Context, config, prepared, wakeRec 
 }
 
 func (c *CLI) recordSubmittedIdleWake(path string, prepared, wakeRec, outcome *value.Value) error {
-	lease, err := c.lockState(path)
+	startOutcome := outcome.Get("start_outcome")
+	var wait time.Duration
+	if (value.Truth(outcome.Get("queued_id")) && !value.Truth(outcome.Get("started"))) || nativeText(startOutcome) == "missing" {
+		wait = 1500 * time.Millisecond
+	}
+	lease, err := c.lockStateWait(context.Background(), path, wait)
 	if err != nil {
 		if IsSessionBusy(err) {
 			return nil
@@ -1088,27 +1118,41 @@ func (c *CLI) recordSubmittedIdleWake(path string, prepared, wakeRec, outcome *v
 	if err != nil {
 		return err
 	}
-	startOutcome := outcome.Get("start_outcome")
-	if !nativeNone(startOutcome) {
-		agent, err := nativeRequired(state, "agent")
-		if err != nil {
-			return err
+	agent, err := nativeRequired(state, "agent")
+	if err != nil {
+		return err
+	}
+	sref, err := c.sessionRef(agent)
+	if err != nil {
+		return err
+	}
+	proc, err := nativeRequired(state, "process")
+	if err != nil {
+		return err
+	}
+	sameProc, err := c.sameProcess(proc, prepared.Get("process"))
+	if err != nil {
+		return err
+	}
+	if !nativeEqual(sref, wakeRec.Get("session")) || !sameProc {
+		return nil
+	}
+	if !nativeNone(startOutcome) && (value.Truth(state.Get("inbox_intent")) || value.Truth(state.Get("inbox_attempt"))) {
+		return nil
+	}
+	var heldDelivery *value.Value
+	if ii := state.Get("inbox_intent"); ii != nil && ii.Kind == value.Object {
+		heldDelivery = ii.Get("delivery_id")
+	}
+	if !value.Truth(heldDelivery) {
+		if ia := state.Get("inbox_attempt"); ia != nil && ia.Kind == value.Object {
+			if deliv := ia.Get("delivery"); deliv != nil && deliv.Kind == value.Object {
+				heldDelivery = deliv.Get("delivery_id")
+			}
 		}
-		sref, err := c.sessionRef(agent)
-		if err != nil {
-			return err
-		}
-		proc, err := nativeRequired(state, "process")
-		if err != nil {
-			return err
-		}
-		sameProc, err := c.sameProcess(proc, prepared.Get("process"))
-		if err != nil {
-			return err
-		}
-		if value.Truth(state.Get("inbox_intent")) || value.Truth(state.Get("inbox_attempt")) || !nativeEqual(sref, wakeRec.Get("session")) || !sameProc {
-			return nil
-		}
+	}
+	if nativeNone(startOutcome) && value.Truth(heldDelivery) && nativeEqual(heldDelivery, wakeRec.Get("delivery_id")) {
+		return nil
 	}
 	if nativeEqual(state.Get("idle_wake"), wakeRec) {
 		iw := state.Get("idle_wake")

@@ -136,7 +136,7 @@ class CodexQueueWakeTransport(WakeTransport):
         return dict(queued_id=queued_id, started=started, start_outcome=start_outcome)
 
     def bind_event(self, coord, state, event, joined=False):
-        return coord.queued_wake_binding(state, event)
+        return coord.queued_wake_binding(state, event, joined=joined)
 
 
 class ClaudeChannelWakeTransport(WakeTransport):

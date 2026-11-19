@@ -1158,3 +1158,186 @@ func TestStopHookWaitsForHeldSessionLockAndUnblocksIdleWake(t *testing.T) {
 		t.Fatalf("expected SESSION_BUSY when deadline expires, got code=%d stderr=%q", code, errOut.String())
 	}
 }
+
+func TestCodexQueuedWakeAdmitsAcrossStaleLatchAndRefusesMissingContext(t *testing.T) {
+	root := t.TempDir()
+	cli, _ := newTestHookCLI(t, root)
+	procRoot := procFixtureRoot(t)
+	cli.ProcRoot = procRoot
+	procRef := writeProcessFixture(t, procRoot, processFixture{
+		pid: 6100, parent: 1, start: 54321, comm: "codex", exe: "/usr/bin/codex",
+		argv: []string{"codex", "app-server", "--listen", "unix://" + filepath.Join(root, "q.sock")},
+	})
+	procVal := nativeMap("pid", procRef.PID, "start", int64(procRef.Start), "state", "S", "parent", 1, "boot", procRef.Boot)
+	cli.Host.OwnerProcess = func(_, _ *value.Value) (*value.Value, error) { return procVal, nil }
+
+	stateDir := filepath.Join(root, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	herdrBin := filepath.Join(root, "herdr")
+	writePrivateFile(t, herdrBin, []byte("#!/bin/sh\nexit 1\n"), 0o700)
+	cfgPath := filepath.Join(root, "codex.json")
+	cfgData := `{"binding":"codex-one","harness":"codex","repo":"/repo","state_dir":"` + stateDir + `","cairn":"/bin/true","socket":"/tmp/s.sock","token_file":"/tmp/t.tok","native_delivery":true,"idle_wakeup":"` + herdrBin + `"}`
+	writePrivateFile(t, cfgPath, []byte(cfgData), 0o600)
+
+	agentID := "0748fb32-687d-424c-b684-f1e9870c67dc"
+	execID := "22222222-2222-4222-8222-222222222222"
+	nativeID := "01a1b246-d4f9-7d41-9495-bc77910a8ea2"
+	delivID := "0e413b5b-4b15-48b6-be0a-1262b592096a"
+	leaseID := "66666666-6666-4666-8666-666666666666"
+	recordID := "ec16e586-3afb-45fd-97da-1d0716ab0619"
+
+	rev := int64(1)
+	agentVal := func(st string, r int64) *value.Value {
+		return nativeMap(
+			"agent_id", agentID, "execution_id", execID, "display_name", "agent-1263",
+			"inbox", "agent/"+agentID, "native_session_id", nativeID, "context_revision", nativeInt64(r),
+			"metadata", nativeMap("harness", "codex", "project", filepath.Base(root), "workspace", root, "delivery_mode", "existing-session", "state", st),
+		)
+	}
+	currentAgent := agentVal("idle", rev)
+	claimable := true
+	claims := 0
+	cli.Host.Call = func(_ context.Context, _ *value.Value, op string, body *value.Value, _ NativeCallOptions) (*value.Value, error) {
+		switch op {
+		case "agent-heartbeat":
+			return currentAgent, nil
+		case "agent-context":
+			rev++
+			currentAgent = agentVal(nativeText(body.Get("metadata").Get("state")), rev)
+			return currentAgent, nil
+		case "session-inbox-claim":
+			claims++
+			if !claimable {
+				return nativeMap(), nil
+			}
+			return nativeMap("attempt", nativeMap(
+				"attempt_id", body.Get("request_id"),
+				"session", nativeMap("agent_id", agentID, "execution_id", execID),
+				"native_turn_id", body.Get("native_turn_id"),
+				"delivery", nativeMap("delivery_id", delivID, "lease_id", leaseID, "state", "leased",
+					"event", nativeMap("event_id", "227c4cf2-4fd6-4e99-a63f-04574abd7839", "kind", "notice", "from", "agent/coord", "ref", nativeMap("record_id", recordID, "version", 1))),
+			)), nil
+		case "event-renew":
+			return nativeMap("delivery_id", delivID, "lease_id", leaseID, "state", "leased",
+				"event", nativeMap("event_id", "227c4cf2-4fd6-4e99-a63f-04574abd7839", "kind", "notice", "from", "agent/coord", "ref", nativeMap("record_id", recordID, "version", 1))), nil
+		case "session-inbox-reconcile":
+			if value.SameText(body.Get("reason"), "delivery_completed") {
+				return nil, &CoordinationError{Code: "DELIVERY_ACTIVE", Message: "delivery is still active"}
+			}
+			return nativeMap("released", true), nil
+		default:
+			t.Fatalf("unexpected call op: %s", op)
+			return nil, nil
+		}
+	}
+	msgs, err := wakeMessagesValue(nativeMap("session", nativeMap("agent_id", agentID, "execution_id", execID), "delivery_id", delivID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wakePrompt := msgs[0]
+	sp, err := cli.Host.Locate(nativeMap("state_dir", stateDir, "binding", "codex-one"), nativeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedQueued := func() {
+		currentAgent = agentVal("idle", rev)
+		st := nativeMap(
+			"schema", NativeSessionSchema, "process", procVal, "workspace", root,
+			"agent", currentAgent, "delivered_since_idle", true,
+			"seen_codex_turns", stringArray("turn-prior"),
+			"idle_wake", nativeMap("transport", "codex-queue", "status", "queued", "queued_submission_id", "q-1", "native_id", nativeID, "delivery_id", delivID, "session", nativeMap("agent_id", agentID, "execution_id", execID)),
+		)
+		if err := cli.Host.Persist(sp, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 1. Fresh queued wake turn crosses stale delivered_since_idle, claims notice once, and injects ack command.
+	seedQueued()
+	var out, errOut bytes.Buffer
+	ev1 := fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"turn_id":"turn-fresh","cwd":%q,"prompt":%q}`, nativeID, root, wakePrompt)
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(ev1), &out, &errOut); err != nil || code != 0 {
+		t.Fatalf("fresh queued wake failed: code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	if claims != 1 || !strings.Contains(out.String(), "notice from agent/coord") {
+		t.Fatalf("expected 1 claim and notice context, claims=%d out=%q", claims, out.String())
+	}
+	loaded, _ := cli.Host.Load(sp)
+	if loaded.Get("idle_wake") != nil {
+		t.Fatalf("expected idle_wake cleared after claim, got %v", loaded.Get("idle_wake"))
+	}
+
+	// 2. Reused turn_id refuses pre-claim (exit 2), pops idle_wake, and restores state=idle.
+	seedQueued()
+	out.Reset()
+	errOut.Reset()
+	evSeen := fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"turn_id":"turn-prior","cwd":%q,"prompt":%q}`, nativeID, root, wakePrompt)
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(evSeen), &out, &errOut); err != nil || code != 2 {
+		t.Fatalf("expected exit 2 on reused turn, got code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	loaded, _ = cli.Host.Load(sp)
+	if loaded.Get("idle_wake") != nil || nativeText(loaded.Get("wake_preclaim_refusal").Get("reason")) != "seen_turn" || nativeText(loaded.Get("agent").Get("metadata").Get("state")) != "idle" {
+		t.Fatalf("unexpected state after seen_turn refusal: %v", loaded)
+	}
+
+	// 3. Cancelled/unclaimable bound delivery refuses pre-execution (exit 2) with unclaimed_bound_wake.
+	seedQueued()
+	claimable = false
+	out.Reset()
+	errOut.Reset()
+	evUnclaimed := fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"turn_id":"turn-unclaimed","cwd":%q,"prompt":%q}`, nativeID, root, wakePrompt)
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(evUnclaimed), &out, &errOut); err != nil || code != 2 {
+		t.Fatalf("expected exit 2 on unclaimed bound wake, got code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	loaded, _ = cli.Host.Load(sp)
+	if loaded.Get("idle_wake") != nil || nativeText(loaded.Get("wake_preclaim_refusal").Get("reason")) != "unclaimed_bound_wake" || nativeText(loaded.Get("agent").Get("metadata").Get("state")) != "idle" {
+		t.Fatalf("unexpected state after unclaimed_bound_wake refusal: %v", loaded)
+	}
+
+	// 4. Foreign execution wake refuses BEFORE inboxContext without claiming or popping current session's idle_wake.
+	seedQueued()
+	claimable = true
+	claimsBefore := claims
+	otherMsgs, _ := wakeMessagesValue(nativeMap("session", nativeMap("agent_id", agentID, "execution_id", "dddddddd-4444-4444-8444-dddddddddddd"), "delivery_id", delivID))
+	out.Reset()
+	errOut.Reset()
+	evOtherExec := fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"turn_id":"turn-foreign","cwd":%q,"prompt":%q}`, nativeID, root, otherMsgs[0])
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(evOtherExec), &out, &errOut); err != nil || code != 2 {
+		t.Fatalf("expected exit 2 on foreign execution wake, got code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	loaded, _ = cli.Host.Load(sp)
+	if claims != claimsBefore || loaded.Get("idle_wake") == nil || nativeText(loaded.Get("wake_preclaim_refusal").Get("reason")) != "wake_session_mismatch" {
+		t.Fatalf("unexpected state after wake_session_mismatch: claims=%d state=%v", claims, loaded)
+	}
+
+	// 5. Wrong delivery UUID on codex-queue session refuses pre-claim with unbound_wake_prompt and preserves real idle_wake.
+	wrongDelivMsgs, _ := wakeMessagesValue(nativeMap("session", nativeMap("agent_id", agentID, "execution_id", execID), "delivery_id", "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"))
+	out.Reset()
+	errOut.Reset()
+	evWrongDeliv := fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"turn_id":"turn-wrong-deliv","cwd":%q,"prompt":%q}`, nativeID, root, wrongDelivMsgs[0])
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(evWrongDeliv), &out, &errOut); err != nil || code != 2 {
+		t.Fatalf("expected exit 2 on wrong delivery wake, got code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	loaded, _ = cli.Host.Load(sp)
+	if claims != claimsBefore || loaded.Get("idle_wake") == nil || nativeText(loaded.Get("wake_preclaim_refusal").Get("reason")) != "unbound_wake_prompt" {
+		t.Fatalf("unexpected state after unbound_wake_prompt: claims=%d state=%v", claims, loaded)
+	}
+
+	// 6. Prior held inbox_intent on another turn refuses pre-claim (exit 2) with prior_held_work instead of exit 1 NATIVE_TURN_MISMATCH.
+	loaded.Set("inbox_intent", nativeMap("request_id", "prior-req", "session", nativeMap("agent_id", agentID, "execution_id", execID), "native_turn_id", "turn-prior"))
+	if err := cli.Host.Persist(sp, loaded); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	errOut.Reset()
+	evHeld := fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"turn_id":"turn-held-conflict","cwd":%q,"prompt":%q}`, nativeID, root, wakePrompt)
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(evHeld), &out, &errOut); err != nil || code != 2 {
+		t.Fatalf("expected exit 2 on prior_held_work, got code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	loaded, _ = cli.Host.Load(sp)
+	if nativeText(loaded.Get("wake_preclaim_refusal").Get("reason")) != "prior_held_work" {
+		t.Fatalf("expected prior_held_work, got %v", loaded.Get("wake_preclaim_refusal"))
+	}
+}
