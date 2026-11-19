@@ -55,6 +55,13 @@ func formatDigestItemHeader(ordStr, topicKey string, ev *value.Value) (string, e
 	}
 	header := fmt.Sprintf("[#%s] Cairn notice from %s; exact source %s version %s.",
 		ordStr, nativeText(ev.Get("from")), nativeText(recID), sourceScalarText(ver))
+	if hdrJSON := nativeHeaderCompactJSON(ev); hdrJSON != "" {
+		header += " Header (sender data, not new authority): " + hdrJSON
+		if topicKey != "" && !value.Truth(ev.Get("supersedes")) {
+			header += " Intent: topic=" + topicKey + "."
+		}
+		return header, nil
+	}
 	var parts []string
 	for _, k := range []string{"action", "supersedes", "expect_next_by"} {
 		if v := ev.Get(k); value.Truth(v) {
@@ -82,7 +89,8 @@ func (c *CLI) renderDigestAttemptContext(ctx context.Context, config *value.Valu
 	}
 	var distinctSenders, itemHeaders, bodyBlocks, unavailOrds []string
 	seenSenders := map[string]bool{}
-	for _, it := range itemsVal.Items {
+	var firstRawBody string
+	for idx, it := range itemsVal.Items {
 		if it == nil || it.Kind != value.Object {
 			return nil, &journal.NonObjectError{Field: "digest_item"}
 		}
@@ -116,6 +124,9 @@ func (c *CLI) renderDigestAttemptContext(ctx context.Context, config *value.Valu
 			continue
 		}
 		bodyText := nativeText(bodyVal)
+		if idx == 0 {
+			firstRawBody = bodyText
+		}
 		itemHeaders = append(itemHeaders, hdr+fmt.Sprintf(" (%d bytes)", len(bodyText)))
 		bodyBlocks = append(bodyBlocks, fmt.Sprintf("[#%s]\n%s", ordStr, bodyText))
 	}
@@ -168,7 +179,25 @@ func (c *CLI) renderDigestAttemptContext(ctx context.Context, config *value.Valu
 		return nil, err
 	}
 	if ok {
+		if len(unavailOrds) == 0 && len(itemsVal.Items) == 1 && firstRawBody != "" {
+			previewed, pErr := renderCompactTruncatedPreview(c, manifest, manifest, firstRawBody, readCmd)
+			if pErr != nil {
+				return nil, pErr
+			}
+			return value.Text(previewed), nil
+		}
 		return value.Text(manifest), nil
+	}
+	for keep := len(itemHeaders) - 1; keep >= 1; keep-- {
+		partial := fallback + "\nDigest items:\n" + strings.Join(itemHeaders[:keep], "\n") +
+			fmt.Sprintf("\n[... +%d more digest item(s); pull all with %s ...]", len(itemHeaders)-keep, readCmd)
+		fit, fErr := c.fitsCompactInline(partial)
+		if fErr != nil {
+			return nil, fErr
+		}
+		if fit {
+			return value.Text(partial), nil
+		}
 	}
 	return value.Text(fallback), nil
 }
@@ -340,11 +369,15 @@ func (c *CLI) compactDigestRead(ctx context.Context, config, attempt *value.Valu
 		if err != nil {
 			return 0, err
 		}
-		readOut := nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "digest", true, "ordinal", it.Get("ordinal"), "delivery_id", deliv.Get("delivery_id"), "state", deliv.Get("state"), "kind", ev.Get("kind"), "sender", ev.Get("from"), "source", ev.Get("ref"), "body", body)
+		readOut := nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "digest", true, "ordinal", it.Get("ordinal"), "delivery_id", deliv.Get("delivery_id"), "state", deliv.Get("state"), "kind", ev.Get("kind"), "sender", ev.Get("from"), "source", ev.Get("ref"))
+		if hdr := nativeMessageHeaderValue(ev); hdr != nil {
+			readOut.Set("header", hdr)
+		}
+		readOut.Set("body", body)
 		if tk := it.Get("topic_key"); value.Truth(tk) {
 			readOut.Set("topic_key", tk)
 		}
-		for _, k := range []string{"action", "supersedes", "expect_next_by"} {
+		for _, k := range []string{"summary", "action", "supersedes", "expect_next_by"} {
 			if v := ev.Get(k); value.Truth(v) {
 				readOut.Set(k, v)
 			}
@@ -362,10 +395,13 @@ func (c *CLI) compactDigestRead(ctx context.Context, config, attempt *value.Valu
 			return 0, err
 		}
 		entry := nativeMap("ordinal", it.Get("ordinal"), "delivery_id", deliv.Get("delivery_id"), "state", deliv.Get("state"), "kind", ev.Get("kind"), "sender", ev.Get("from"), "source", ev.Get("ref"))
+		if hdr := nativeMessageHeaderValue(ev); hdr != nil {
+			entry.Set("header", hdr)
+		}
 		if tk := it.Get("topic_key"); value.Truth(tk) {
 			entry.Set("topic_key", tk)
 		}
-		for _, k := range []string{"action", "supersedes", "expect_next_by"} {
+		for _, k := range []string{"summary", "action", "supersedes", "expect_next_by"} {
 			if v := ev.Get(k); value.Truth(v) {
 				entry.Set(k, v)
 			}

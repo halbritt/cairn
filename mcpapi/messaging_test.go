@@ -17,6 +17,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
@@ -942,5 +943,153 @@ func TestSendAndInboxNoticeIntentFields(t *testing.T) {
 	d0 := st["deliveries"].([]any)[0].(map[string]any)
 	if st["action"] != "review" || st["supersedes"] != "stream/build" || d0["superseded_by"] != supID {
 		t.Fatalf("cairn_event_status missing notice intent / superseded_by: %+v", st)
+	}
+}
+
+func TestMessageHeaderRequirementAnd9579ByteTruncationAndPull(t *testing.T) {
+	ctx := context.Background()
+	f := newMessagingFixture(t, Config{NativeSessionID: "native-self"})
+
+	// Build a realistic 9,579-byte uncompressed body with JSON/HTML-escaped and multi-byte runes.
+	line := "IC1 concrete finite API/owner edge: \"quoted\" <tag> &amp;\t日本語 prose.\n"
+	longBody := strings.Repeat(line, (9579/len(line))+2)[:9579]
+	for !utf8.ValidString(longBody) {
+		longBody = longBody[:len(longBody)-1]
+	}
+	for len(longBody) < 9579 {
+		longBody += "z"
+	}
+	if len(longBody) != 9579 {
+		t.Fatalf("expected 9579 bytes, got %d", len(longBody))
+	}
+
+	// Sending >280 bytes without summary refuses before any API write.
+	f.refused(t, "cairn_send", map[string]any{
+		"request_id": uuid.NewString(), "to": "agent-9", "kind": "notice", "body": longBody,
+	}, "summary")
+	if len(f.api.taken()) != 0 {
+		t.Fatal("oversized body without summary wrote before refusing")
+	}
+
+	// Sending 9,579-byte body WITH structured header succeeds and forwards summary/action/due.
+	f.ok(t, "cairn_send", map[string]any{
+		"request_id":     uuid.NewString(),
+		"to":             "agent-9",
+		"kind":           "notice",
+		"summary":        "IC1 requested concrete finite API/owner edge",
+		"action":         "decide",
+		"expect_next_by": "2026-11-20T04:52:00Z",
+		"body":           longBody,
+	})
+	sentCalls := f.api.taken()
+	pub := sentCalls[len(sentCalls)-1]
+	if pub.Operation != "event-publish" || pub.Body["summary"] != "IC1 requested concrete finite API/owner edge" {
+		t.Fatalf("cairn_send did not forward summary: %+v", pub.Body)
+	}
+
+	// Configure a 9,500-byte AvailableTokens MCP server (MaxTokens: 32000) and claim the 9,579-byte message!
+	due := time.Date(2026, 11, 20, 4, 52, 0, 0, time.UTC)
+	api := &fakeAPI{t: t}
+	api.handler = func(call fakeCall) (any, *core.Error) {
+		switch call.Operation {
+		case "agent-directory":
+			return core.AgentDirectoryPage{Agents: []core.AgentInstance{
+				fixtureAgent(5, selfAgent, selfExecution, "native-9500", true, false),
+			}}, nil
+		case "event-next":
+			return core.NextEventResult{Delivery: &core.AgentDelivery{
+				DeliveryID: deliveryID, LeaseID: leaseID, State: "leased",
+				Event: core.AgentEvent{
+					EventID: requestEvent, Kind: "notice",
+					Summary:      "IC1 requested concrete finite API/owner edge",
+					Action:       "decide",
+					ExpectNextBy: &due,
+					From:         "agent/" + peerAgent,
+					Ref:          core.RecordVersionRef{RecordID: sourceRecord, Version: 1},
+					Destination:  core.EventDestination{Type: "agent", Name: "agent/" + selfAgent},
+				},
+			}}, nil
+		case "history":
+			return core.RecordHistory{
+				Historical: true, RecordID: sourceRecord, CurrentVersion: 1,
+				Versions: []core.HistoricalVersion{{
+					Version: 1, PayloadAvailable: true, Body: &longBody, BodyBytes: len(longBody),
+				}},
+			}, nil
+		default:
+			return nil, &core.Error{Code: "INVALID_REQUEST", Message: "unexpected op " + call.Operation}
+		}
+	}
+	client := serveAPI(t, api)
+	server, err := NewServer(client, Config{
+		Scope:           core.Scope{Repo: "repo", TaskID: "task", RunID: "run"},
+		AvailableTokens: 9500,
+		MaxTokens:       32000,
+		Messaging:       true,
+		NativeSessionID: "native-9500",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := connect(t, ctx, server)
+	inboxRes, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_inbox", Arguments: map[string]any{}})
+	if err != nil || inboxRes.IsError {
+		t.Fatalf("9579-byte cairn_inbox against 9500-byte budget failed: %+v %v", inboxRes, err)
+	}
+	rawJSON := inboxRes.Content[0].(*mcp.TextContent).Text
+	// Header must appear before body_preview in serialized output.
+	if strings.Index(rawJSON, `"header":`) < 0 || strings.Index(rawJSON, `"body_preview":`) < 0 ||
+		strings.Index(rawJSON, `"header":`) >= strings.Index(rawJSON, `"body_preview":`) {
+		t.Fatalf("expected header before body_preview in output: %.300s", rawJSON)
+	}
+	var claimed map[string]any
+	if err := json.Unmarshal([]byte(rawJSON), &claimed); err != nil {
+		t.Fatal(err)
+	}
+	if claimed["body"] != nil || claimed["body_truncated"] != true || claimed["total_bytes"] != float64(9579) {
+		t.Fatalf("unexpected truncation metadata: %+v", claimed)
+	}
+	preview := claimed["body_preview"].(string)
+	if !strings.Contains(preview, "of 9579 UTF-8 bytes; pull full source with cairn_history") {
+		t.Fatalf("missing truncation marker in preview: %s", preview)
+	}
+	pullArgs := claimed["pull_source"].(map[string]any)
+	histRes, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_history", Arguments: pullArgs})
+	if err != nil || histRes.IsError {
+		t.Fatalf("pulling full 9579-byte source via pull_source failed: %+v %v", histRes, err)
+	}
+	var pulledHist core.RecordHistory
+	if err := json.Unmarshal([]byte(histRes.Content[0].(*mcp.TextContent).Text), &pulledHist); err != nil {
+		t.Fatal(err)
+	}
+	if len(pulledHist.Versions) != 1 || pulledHist.Versions[0].Body == nil || *pulledHist.Versions[0].Body != longBody {
+		t.Fatal("pulled full source did not match exact 9579-byte body")
+	}
+
+	// Tight MaxTokens (3000) falls back to a clean UTF-8 span pull_source without mid-rune slicing.
+	tightServer, err := NewServer(serveAPI(t, api), Config{
+		Scope:           core.Scope{Repo: "repo", TaskID: "task", RunID: "run"},
+		AvailableTokens: 2200,
+		MaxTokens:       3000,
+		Messaging:       true,
+		NativeSessionID: "native-9500",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tightSess := connect(t, ctx, tightServer)
+	tightRes, err := tightSess.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_inbox", Arguments: map[string]any{}})
+	if err != nil || tightRes.IsError {
+		t.Fatalf("tight MaxTokens cairn_inbox failed: %+v %v", tightRes, err)
+	}
+	var tightClaimed map[string]any
+	if err := json.Unmarshal([]byte(tightRes.Content[0].(*mcp.TextContent).Text), &tightClaimed); err != nil {
+		t.Fatal(err)
+	}
+	spanPull := tightClaimed["pull_source"].(map[string]any)
+	spanMap := spanPull["span"].(map[string]any)
+	off, ln := int(spanMap["offset"].(float64)), int(spanMap["length"].(float64))
+	if !utf8.ValidString(longBody[off : off+ln]) {
+		t.Fatalf("span split multi-byte UTF-8 rune at offset=%d length=%d", off, ln)
 	}
 }

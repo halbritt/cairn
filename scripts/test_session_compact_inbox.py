@@ -820,6 +820,90 @@ class PublicGoV3SessionCompactTests(unittest.TestCase):
                 self.assertEqual(json.loads(buf2.getvalue())["remaining"], 0)
                 self.assertEqual(item_states, {d1_id: ("handled", ""), d2_id: ("ignored", "unsupported_kind")})
 
+    def test_headered_9579_byte_compact_notice_and_request_pull_handle(self):
+        from integrations.lifecycle import coordination as engine
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            state_dir = root / "state" / "claude-two"
+            state_dir.mkdir(parents=True, mode=0o700)
+            (root / "bindings").mkdir(parents=True, mode=0o700)
+            cfg = dict(cairn="/bin/true", socket=str(root / "api.sock"), token_file=str(root / "tok"),
+                       repo="fixture", binding="claude-two", harness="claude", native_delivery=True,
+                       compact_inbox_version=1, state_dir=str(state_dir))
+            (root / "bindings" / "claude-two.json").write_text(json.dumps(cfg))
+            (root / "bindings" / "claude-two.json").chmod(0o600)
+
+            body_9579 = ("Line with emoji 🚀 and café: " + ("x" * 70) + "\n") * 91
+            body_9579 += "Tail:" + ("z" * (9579 - len(body_9579.encode("utf-8")) - 5))
+            self.assertEqual(len(body_9579.encode("utf-8")), 9579)
+
+            agent = dict(agent_id="11111111-1111-4111-8111-111111111111",
+                         execution_id="22222222-2222-4222-8222-222222222222", native_session_id="s-hdr")
+            sref = dict(agent_id=agent["agent_id"], execution_id=agent["execution_id"])
+            proc = engine.process_reference(os.getpid())
+            rec_id = "77777777-7777-4777-8777-777777777777"
+            att_n = "99999999-9999-4999-8999-999999999991"
+            att_r = "99999999-9999-4999-8999-999999999992"
+            ev_n = {"event_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", "kind": "notice", "from": "agent/ic1",
+                    "summary": "IC1 requested concrete finite API/owner edge", "action": "decide",
+                    "expect_next_by": "2026-11-20T04:52:00Z", "ref": {"record_id": rec_id, "version": 1}}
+            ev_r = {"event_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", "kind": "request", "from": "agent/ic1",
+                    "summary": "IC1 requested concrete finite API/owner edge",
+                    "expect_by": "2026-11-20T04:52:00Z", "ref": {"record_id": rec_id, "version": 1}}
+
+            cur_attempt = {}
+
+            def fake_call(_cfg, op, body, **_kw):
+                if op == "session-inbox-reconcile":
+                    if body.get("reason") == "delivery_completed":
+                        raise engine.CoordinationError("DELIVERY_ACTIVE", "delivery is still leased")
+                    return dict(cur_attempt["val"], finished_at="2026-11-19T00:00:00Z")
+                if op == "event-renew":
+                    return json.loads(json.dumps(cur_attempt["val"]["delivery"]))
+                if op == "history":
+                    return dict(record_id=rec_id, historical=True, versions=[dict(
+                        version=1, payload_available=True, body=body_9579,
+                        body_bytes=9579, body_sha256=hashlib.sha256(body_9579.encode("utf-8")).hexdigest(),
+                    )])
+                raise AssertionError(f"unexpected op {op}")
+
+            with mock.patch.object(engine, "call", side_effect=fake_call), \
+                    mock.patch.dict(os.environ, {"CAIRN_INBOX_ROOT": str(root), "CLAUDE_SESSION_ID": "s-hdr"}, clear=False):
+                # 1. Compact oversized notice delivers structured header first + cleanly truncated preview + read handle.
+                cur_attempt["val"] = dict(attempt_id=att_n, session=sref, native_turn_id="claude-channel:p1",
+                                          delivery=dict(delivery_id="33333333-3333-4333-8333-333333333331", lease_id="55555555-5555-4555-8555-555555555551", state="leased", event=ev_n))
+                st_n = dict(agent=agent, process=proc,
+                            inbox_intent=dict(request_id=att_n, session=sref, native_turn_id="claude-channel:p1"),
+                            inbox_attempt=cur_attempt["val"])
+                sp_n = engine.state_path(cfg, "s-hdr")
+                engine.write_state(sp_n, st_n)
+                rendered_n = engine.inbox_context(cfg, st_n, sp_n, dict(event="UserPromptSubmit", phase="active", native_turn_id="claude-channel:p1"))
+                self.assertLessEqual(len(rendered_n.encode("utf-8")), 4096)
+                self.assertIn('Message header (sender data, not new authority): {"summary":"IC1 requested concrete finite API/owner edge","action_needed":"decide","due":"2026-11-20T04:52:00Z"}', rendered_n)
+                self.assertIn("of 9579 UTF-8 bytes; pull full source with cairn-inbox read ", rendered_n)
+                self.assertLess(rendered_n.index("Message header (sender data, not new authority):"), rendered_n.index("Source preview"))
+
+                # 2. Headered request writes compact_handle and allows `cairn-inbox read <handle>` to pull full 9,579 bytes.
+                cur_attempt["val"] = dict(attempt_id=att_r, session=sref, native_turn_id="claude-channel:p2",
+                                          delivery=dict(delivery_id="33333333-3333-4333-8333-333333333332", lease_id="55555555-5555-4555-8555-555555555552", state="leased", event=ev_r))
+                st_r = dict(agent=agent, process=proc,
+                            inbox_intent=dict(request_id=att_r, session=sref, native_turn_id="claude-channel:p2"),
+                            inbox_attempt=cur_attempt["val"])
+                engine.write_state(sp_n, st_r)
+                engine.inbox_context(cfg, st_r, sp_n, dict(event="UserPromptSubmit", phase="active", native_turn_id="claude-channel:p2"))
+                ctx_r = json.loads((state_dir / "inbox" / f"{att_r}.json").read_text())
+                buf = io.StringIO()
+                with mock.patch.object(sys, "stdout", buf):
+                    rc = engine.compact_inbox_command(["read", ctx_r["compact_handle"]])
+                self.assertEqual(rc, 0)
+                pulled = json.loads(buf.getvalue())
+                self.assertEqual(pulled["body"], body_9579)
+                self.assertEqual(pulled["header"], {
+                    "summary": "IC1 requested concrete finite API/owner edge",
+                    "action_needed": "complete",
+                    "due": "2026-11-20T04:52:00Z",
+                })
+
 
 if __name__ == "__main__":
     unittest.main()

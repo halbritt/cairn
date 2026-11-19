@@ -23,7 +23,7 @@ const sendHelp = `cairn agent [connection flags] send --journal ABSOLUTE_PATH --
   --stdin --kind EVENT_KIND [--shareable] [--source-kind NOTE_KIND]
   (--to PRINCIPAL | --resolution FILE | --topic TOPIC | --pool POOL)
   [--workspace PATH --harness NAME --model NAME --capability NAME]
-  [--action none|review|decide] [--supersedes TOPIC_KEY] [--expect-next-by RFC3339]
+  [--summary TEXT] [--action none|review|decide] [--supersedes TOPIC_KEY] [--expect-next-by RFC3339]
   [--expect-by RFC3339]
 
 Save selected stdin text under coordination/<publication-request-UUID>, then
@@ -44,6 +44,7 @@ var (
 
 type sendIntent struct {
 	BodySHA256       string                 `json:"body_sha256"`
+	SummarySHA256    string                 `json:"summary_sha256,omitempty"`
 	CredentialSHA256 string                 `json:"credential_sha256"`
 	Repo             string                 `json:"repo"`
 	Kind             string                 `json:"kind"`
@@ -144,6 +145,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	workspace := f.String("workspace", "", "pool workspace")
 	harness := f.String("harness", "", "pool harness")
 	model := f.String("model", "", "pool model")
+	eventSummary := f.String("summary", "", "concise single-line header summarizing what changed or is requested (1-280 UTF-8 bytes)")
 	noticeAction := f.String("action", "", "notice intent action (none|review|decide)")
 	noticeSupersedes := f.String("supersedes", "", "sender-scoped notice topic key superseded by this notice")
 	noticeExpectNextBy := f.String("expect-next-by", "", "expected next update instant for notice (RFC3339)")
@@ -161,6 +163,14 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	}
 	provided := map[string]bool{}
 	f.Visit(func(fl *flag.Flag) { provided[fl.Name] = true })
+	if provided["summary"] {
+		if strings.TrimSpace(*eventSummary) == "" {
+			return nil, invalid("--summary cannot be explicitly empty")
+		}
+		if err := core.ValidateEventSummary(*eventSummary); err != nil {
+			return nil, err
+		}
+	}
 	var parsedExpectNextBy *time.Time
 	if provided["action"] || provided["supersedes"] || provided["expect-next-by"] {
 		if *kind != "notice" {
@@ -233,6 +243,9 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	if len(body) == 0 || len(body) > 65536 || strings.TrimSpace(string(body)) == "" || !utf8.Valid(body) {
 		return nil, invalid("send source requires 1-65536 bytes of nonblank UTF-8 text")
 	}
+	if len(body) > core.MaxEventSummaryBytes && *eventSummary == "" {
+		return nil, invalid("send requires --summary (1-280 single-line UTF-8 bytes) when body exceeds 280 bytes; state what changed in --summary and keep uncompressed details in body")
+	}
 	dest := core.EventDestination{Type: "agent", Name: *to}
 	var resolution *core.AgentResolution
 	if *resolutionFile != "" {
@@ -265,7 +278,12 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 		return nil, invalid("explicit destination required")
 	}
 	bodyHash := sha256.Sum256(body)
-	intent := sendIntent{BodySHA256: hex.EncodeToString(bodyHash[:]), CredentialSHA256: client.CredentialFingerprint(), Repo: *repo, Kind: *kind, SourceKind: *sourceKind, Shareable: *shareable, Destination: dest, Resolution: resolution, Pool: needs, Session: session, Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy}
+	var summaryHashHex string
+	if *eventSummary != "" {
+		sumHash := sha256.Sum256([]byte(*eventSummary))
+		summaryHashHex = hex.EncodeToString(sumHash[:])
+	}
+	intent := sendIntent{BodySHA256: hex.EncodeToString(bodyHash[:]), SummarySHA256: summaryHashHex, CredentialSHA256: client.CredentialFingerprint(), Repo: *repo, Kind: *kind, SourceKind: *sourceKind, Shareable: *shareable, Destination: dest, Resolution: resolution, Pool: needs, Session: session, Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy}
 	intentHash, err := sendHash(intent)
 	if err != nil {
 		return nil, err
@@ -302,7 +320,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 			}
 		}
 		if journal.EventID == "" {
-			publish := core.PublishEventRequest{Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy, RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
+			publish := core.PublishEventRequest{Summary: *eventSummary, Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy, RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
 			var event core.AgentEvent
 			if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 				out = sendState(journal)

@@ -62,6 +62,24 @@ def _finite_timestamp(value):
         return False
 
 
+def _inbox_request_header_dict(pub):
+    if not isinstance(pub, dict):
+        return None
+    summary = pub.get('summary') if isinstance(pub.get('summary'), str) else ''
+    expect_by = pub.get('expect_by') if isinstance(pub.get('expect_by'), str) else ''
+    task_dl = pub.get('task_deadline') if isinstance(pub.get('task_deadline'), str) else ''
+    due = expect_by or task_dl
+    if not summary and not due:
+        return None
+    out = {}
+    if summary:
+        out['summary'] = summary
+    out['action_needed'] = 'complete'
+    if due:
+        out['due'] = due
+    return out
+
+
 def session_compact_inbox_enabled(config, session):
     capable = config.get('harness') in ('codex', 'claude') and bool(config.get('native_delivery'))
     compact = capable and config.get('compact_inbox_version') == 1
@@ -643,7 +661,11 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                     raise
             else:
                 body = source_body(history, ref)
-                source = dict(**ref, body_sha256=hashlib.sha256(body.encode()).hexdigest(), body=body,
+                req_hdr_init = _inbox_request_header_dict(publication)
+                source = dict(ref)
+                if req_hdr_init is not None:
+                    source['header'] = req_hdr_init
+                source.update(body_sha256=hashlib.sha256(body.encode()).hexdigest(), body=body,
                               historical=True, sender=publication['from'])
                 if hasattr(engine, 'trace_observe'):
                     engine.trace_observe(memory, 'task', source)
@@ -667,11 +689,25 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         metrics['refusal_stage'] = 'command_context'
         compact_enabled = session_compact_inbox_enabled(config, session)
         fallback_control = control
+        full_source_body = body or ''
+        req_header = None
+        non_compact_pull = None
+        compact_handle = ''
+        pull_cue = ''
         if source is not None:
+            req_header = _inbox_request_header_dict(publication)
             context = json.loads((Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')).read_text())
             if (context['delivery_id'] != identity['delivery_id'] or context['event_id'] != identity['event_id']
                     or context['source'] != identity['source']):
                 raise _grant_ledger.inbox_refusal('inbox command context changed', 'command_context', 'source_identity')
+            compact_handle = context.get('compact_handle') if isinstance(context.get('compact_handle'), str) else ''
+            if compact_handle:
+                pull_cue = (context.get('compact_read_text')
+                            if isinstance(context.get('compact_read_text'), str) and context.get('compact_read_text')
+                            else 'cairn-inbox read ' + compact_handle)
+            else:
+                non_compact_pull = dict(read=context.get('read'), read_input=context.get('read_input'))
+                pull_cue = 'pull_handle.read with pull_handle.read_input JSON on stdin'
             if (config['harness'] == 'codex' and memory_config.get('context_lifecycle') == 'compact/1'
                     and isinstance(context.get('finish_reply'), list)):
                 control = ('Cairn request from ' + publication['from'] + '. Read the task data below. '
@@ -715,13 +751,85 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                     context.get('source') != identity['source'] or
                     not isinstance(context.get('compact_fallback_control'), str)):
                 raise _grant_ledger.inbox_refusal('compact inbox fallback differs from admitted source', 'command_context', 'compact_fallback')
-            control = context['compact_fallback_control']
+            fb = context['compact_fallback_control']
+            hdr_line = context.get('compact_header_line') if isinstance(context.get('compact_header_line'), str) else ''
+            if hdr_line:
+                control = fb + '\n' + hdr_line
+                if cost(with_allowance(required_text)[0]) > budget:
+                    control = fb
+            else:
+                control = fb
+        def _truncate_clean_utf8(raw_str, max_bytes):
+            raw = raw_str.encode('utf-8')
+            total = len(raw)
+            if max_bytes <= 0:
+                return '', 0, total
+            if total <= max_bytes:
+                return raw_str, total, 0
+            cut = max_bytes
+            while cut > 0 and (raw[cut] & 0xC0) == 0x80:
+                cut -= 1
+            if cut == 0:
+                return '', 0, total
+            half = cut // 2
+            search_start = max(half, cut - 256)
+            window = raw[search_start:cut]
+            nl = window.rfind(b'\n')
+            if nl >= 0:
+                cand = search_start + nl
+                if cand > 0 and raw[cand - 1] == 0x0D:
+                    cand -= 1
+                if cand > 0:
+                    cut = cand
+            else:
+                ws = max(window.rfind(b' '), window.rfind(b'\t'))
+                if ws >= 0 and search_start + ws > 0:
+                    cut = search_start + ws
+            return raw[:cut].decode('utf-8'), cut, total - cut
+
+        def try_truncate_source(req_text):
+            nonlocal source, label
+            if req_header is None or not full_source_body:
+                return False
+            orig_source, orig_label = source, label
+            total_len = len(full_source_body.encode('utf-8'))
+            body_sha = hashlib.sha256(full_source_body.encode('utf-8')).hexdigest()
+            trunc_label = 'source_truncated_preview_read_exact_source'
+            cap_bytes = min(total_len - 1, 4096)
+            while cap_bytes >= 128:
+                prefix_part, inc, omitted = _truncate_clean_utf8(full_source_body, cap_bytes)
+                if inc == 0:
+                    break
+                cand = dict(publication['ref'])
+                cand['header'] = dict(req_header)
+                cand['body_sha256'] = body_sha
+                cand['total_bytes'] = total_len
+                cand['truncated'] = True
+                cand['preview_bytes'] = inc
+                cand['preview'] = f"{prefix_part}\n[... truncated {omitted} of {total_len} UTF-8 bytes; pull full source with {pull_cue} ...]"
+                if compact_handle:
+                    cand['pull_handle'] = compact_handle
+                elif non_compact_pull is not None:
+                    cand['pull_handle'] = dict(non_compact_pull)
+                cand['historical'] = True
+                cand['sender'] = publication['from']
+                source = cand
+                label = trunc_label
+                if cost(with_allowance(req_text, trunc_label)[0], trunc_label) <= budget:
+                    return True
+                if cap_bytes == 128:
+                    break
+                cap_bytes = (cap_bytes * 3) // 4
+            source, label = orig_source, orig_label
+            return False
+
         if source is not None and cost(with_allowance(required_text, 'optional_recall_unavailable')[0], 'optional_recall_unavailable') > budget:
             # Whole oversized task (including the non-delegated read-allowance
             # suffix) keeps its exact-source read workflow without refusing.
-            source = None
-            control = fallback_control
-            label = 'source_exceeds_delivery_budget_read_exact_source'
+            if not try_truncate_source(required_text):
+                source = None
+                control = fallback_control
+                label = 'source_exceeds_delivery_budget_read_exact_source'
             body = None
         if cost(with_allowance(required_text)[0]) > budget:
             raise _grant_ledger.inbox_refusal('whole required inbox context exceeds delivery budget', 'required_render', 'required_context',
@@ -756,9 +864,10 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 selected = found.get('selected', [])
                 required_candidate = engine.render_recall(selected, []) if selected else ''
                 if source is not None and cost(with_allowance(required_candidate, 'optional_recall_unavailable')[0], 'optional_recall_unavailable') > budget:
-                    source = None
-                    control = fallback_control
-                    label = 'source_exceeds_delivery_budget_read_exact_source'
+                    if not try_truncate_source(required_candidate):
+                        source = None
+                        control = fallback_control
+                        label = 'source_exceeds_delivery_budget_read_exact_source'
                     if cost(with_allowance(required_candidate)[0]) > budget:
                         raise _grant_ledger.inbox_refusal('whole required task context exceeds delivery budget', 'optional_render', 'task_context',
                             configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)

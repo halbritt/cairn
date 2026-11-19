@@ -14,6 +14,7 @@ import (
 
 // Agent events are operational observations, not qualified memory or authority.
 type AgentEvent struct {
+	Summary            string             `json:"summary,omitempty"`
 	Action             string             `json:"action,omitempty"`
 	Supersedes         string             `json:"supersedes,omitempty"`
 	ExpectNextBy       *time.Time         `json:"expect_next_by,omitempty"`
@@ -57,6 +58,7 @@ type NoticeWakePolicyRequest struct {
 	DeferSeconds int    `json:"defer_seconds"`
 }
 type PublishEventRequest struct {
+	Summary            string                   `json:"summary,omitempty"`
 	Action             string                   `json:"action,omitempty"`
 	Supersedes         string                   `json:"supersedes,omitempty"`
 	ExpectNextBy       *time.Time               `json:"expect_next_by,omitempty"`
@@ -215,7 +217,7 @@ func leaseSeconds(seconds int) (int, error) {
 	return seconds, nil
 }
 
-const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id),e.notice_policy,(SELECT jsonb_build_object('event_id',f.event_id,'request_id',f.request_id,'flushed_at',f.flushed_at,'flushed_by',f.flushed_by,'released',f.released,'already_ready',f.already_ready,'leased',f.leased,'terminal',f.terminal) FROM cairn.agent_notice_flush f WHERE f.event_id=e.event_id),COALESCE(e.notice_delivery,''),e.notice_expires_at,COALESCE(e.notice_action,''),COALESCE(e.notice_supersedes,''),e.notice_expect_next_by,e.request_expect_by`
+const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id),e.notice_policy,(SELECT jsonb_build_object('event_id',f.event_id,'request_id',f.request_id,'flushed_at',f.flushed_at,'flushed_by',f.flushed_by,'released',f.released,'already_ready',f.already_ready,'leased',f.leased,'terminal',f.terminal) FROM cairn.agent_notice_flush f WHERE f.event_id=e.event_id),COALESCE(e.notice_delivery,''),e.notice_expires_at,COALESCE(e.notice_action,''),COALESCE(e.notice_supersedes,''),e.notice_expect_next_by,e.request_expect_by,COALESCE(e.summary,'')`
 const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=$2) OR EXISTS(SELECT 1 FROM cairn.agent_organic_notice q WHERE q.event_id=e.event_id AND q.recipient_inbox=$2))`
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
@@ -224,7 +226,7 @@ func scanEvent(row pgx.Row) (AgentEvent, error) {
 	return e, err
 }
 func eventScanFields(e *AgentEvent) []any {
-	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup, &e.NoticePolicy, &e.NoticeFlush, &e.NoticeDelivery, &e.NoticeExpiresAt, &e.Action, &e.Supersedes, &e.ExpectNextBy, &e.ExpectBy}
+	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup, &e.NoticePolicy, &e.NoticeFlush, &e.NoticeDelivery, &e.NoticeExpiresAt, &e.Action, &e.Supersedes, &e.ExpectNextBy, &e.ExpectBy, &e.Summary}
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))
@@ -247,6 +249,9 @@ func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destin
 }
 
 func (s *Store) normalizePublication(req PublishEventRequest, dest Destination) (PublishEventRequest, error) {
+	if err := ValidateEventSummary(req.Summary); err != nil {
+		return req, err
+	}
 	if req.Action != "" || req.Supersedes != "" || req.ExpectNextBy != nil {
 		if req.Kind != "notice" {
 			return req, failure("INVALID_REQUEST", "notice intent fields require notice kind")
@@ -432,7 +437,7 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 			delay = policy.DeferSeconds
 		}
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline,notice_policy,notice_delivery,notice_expires_at,notice_action,notice_supersedes,notice_expect_next_by,request_expect_by,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''),NULLIF($19,''),$20,$21,clock_timestamp())`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline, policy, req.NoticeDelivery, req.NoticeExpiresAt, req.Action, req.Supersedes, req.ExpectNextBy, req.ExpectBy)
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline,notice_policy,notice_delivery,notice_expires_at,notice_action,notice_supersedes,notice_expect_next_by,request_expect_by,summary,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''),NULLIF($19,''),$20,$21,NULLIF($22,''),clock_timestamp())`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline, policy, req.NoticeDelivery, req.NoticeExpiresAt, req.Action, req.Supersedes, req.ExpectNextBy, req.ExpectBy, req.Summary)
 	if err != nil {
 		return AgentEvent{}, err
 	}

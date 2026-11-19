@@ -28,7 +28,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
 
   publish --request-id UUID (--to PRINCIPAL | --topic TOPIC | --resolution FILE | --pool POOL) --kind KIND --version N RECORD_UUID
     [--workspace /PATH --capability NAME --harness NAME --model NAME] (pool selectors)
-    [--causation-id UUID] [--correlation-id UUID]
+    [--causation-id UUID] [--correlation-id UUID] [--summary TEXT]
     [--admission-expires-at RFC3339] [--task-deadline RFC3339] [--expect-by RFC3339]
     [--response-deadline RFC3339 --response-policy all|partial]
     [--notice-urgency routine|urgent --notice-defer-seconds 0..60] (notice only)
@@ -129,6 +129,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	responsePolicy := f.String("response-policy", "", "response group partial collection policy (all|partial)")
 	noticeUrgency := f.String("notice-urgency", "", "opt-in notice wake policy (routine|urgent)")
 	noticeDeferSeconds := f.Int("notice-defer-seconds", 0, "routine notice wake delay, 0-60 seconds")
+	eventSummary := f.String("summary", "", "concise single-line header summarizing what changed or is requested (1-280 UTF-8 bytes)")
 	noticeAction := f.String("action", "", "notice intent action (none|review|decide)")
 	noticeSupersedes := f.String("supersedes", "", "sender-scoped notice topic key superseded by this notice")
 	noticeExpectNextBy := f.String("expect-next-by", "", "expected next update instant for notice (RFC3339)")
@@ -153,7 +154,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	case "event-admission-preview":
 		allowed += "repo to topic "
 	case "publish":
-		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline expect-by response-deadline response-policy notice-urgency notice-defer-seconds action supersedes expect-next-by notice-delivery notice-expires-at "
+		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id summary admission-expires-at task-deadline expect-by response-deadline response-policy notice-urgency notice-defer-seconds action supersedes expect-next-by notice-delivery notice-expires-at "
 	case "notice-flush":
 		allowed += "request-id "
 	case "notice-pending":
@@ -419,8 +420,17 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 				parsedExpectNextBy = &t
 			}
 		}
+		if provided["summary"] {
+			if strings.TrimSpace(*eventSummary) == "" {
+				return nil, invalid("--summary cannot be explicitly empty")
+			}
+			if err := core.ValidateEventSummary(*eventSummary); err != nil {
+				return nil, err
+			}
+		}
 		operation = "event-publish"
 		req = core.PublishEventRequest{
+			Summary:            *eventSummary,
 			Action:             *noticeAction,
 			Supersedes:         *noticeSupersedes,
 			ExpectNextBy:       parsedExpectNextBy,

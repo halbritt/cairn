@@ -535,6 +535,9 @@
               }
             ]
           },
+          "summary": {
+            "type": "string"
+          },
           "supersedes": {
             "type": "string"
           },
@@ -8593,6 +8596,9 @@
               }
             ]
           },
+          "summary": {
+            "type": "string"
+          },
           "supersedes": {
             "type": "string"
           },
@@ -8772,6 +8778,12 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "supersedes": {
@@ -23000,6 +23012,12 @@
                           {
                             "type": "null"
                           }
+                        ]
+                      },
+                      "summary": {
+                        "type": [
+                          "string",
+                          "null"
                         ]
                       },
                       "supersedes": {

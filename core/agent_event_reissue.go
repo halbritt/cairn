@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -61,9 +62,11 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 			destinationType  string
 			destinationName  string
 			poolRequirements *PoolRequirements
+			requestExpectBy  *time.Time
+			summary          *string
 		)
-		err := tx.QueryRow(ctx, `SELECT d.delivery_id::text, d.event_id::text, d.consumer, d.state, e.repo, e.kind, e.record_id::text, e.version, e.sensitivity, e.destination_type, e.destination_name, e.pool_requirements FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE d.delivery_id=$1 FOR UPDATE OF d`, req.DeliveryID).Scan(
-			&deliveryID, &eventID, &consumer, &state, &repo, &kind, &recordID, &version, &sensitivity, &destinationType, &destinationName, &poolRequirements,
+		err := tx.QueryRow(ctx, `SELECT d.delivery_id::text, d.event_id::text, d.consumer, d.state, e.repo, e.kind, e.record_id::text, e.version, e.sensitivity, e.destination_type, e.destination_name, e.pool_requirements, CASE WHEN e.request_expect_by > clock_timestamp() THEN e.request_expect_by END, e.summary FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE d.delivery_id=$1 FOR UPDATE OF d`, req.DeliveryID).Scan(
+			&deliveryID, &eventID, &consumer, &state, &repo, &kind, &recordID, &version, &sensitivity, &destinationType, &destinationName, &poolRequirements, &requestExpectBy, &summary,
 		)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AgentEvent{}, failure("NOT_FOUND", "delivery not found")
@@ -127,8 +130,12 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 			destName = consumer
 		}
 
+		var summaryVal string
+		if summary != nil {
+			summaryVal = *summary
+		}
 		newEventID := uuid.NewString()
-		admissionReq := PublishEventRequest{Repo: req.Repo, Kind: "request", Ref: RecordVersionRef{RecordID: recordID, Version: version}, Destination: EventDestination{Type: destType, Name: destName}, Pool: poolReqs, CausationID: eventID, CorrelationID: req.RequestID}
+		admissionReq := PublishEventRequest{Summary: summaryVal, ExpectBy: requestExpectBy, Repo: req.Repo, Kind: "request", Ref: RecordVersionRef{RecordID: recordID, Version: version}, Destination: EventDestination{Type: destType, Name: destName}, Pool: poolReqs, CausationID: eventID, CorrelationID: req.RequestID}
 		// Reissuing a topic event addresses only its failed snapshotted consumer.
 		if destType != "pool" {
 			admissionReq.Destination = EventDestination{Type: "agent", Name: consumer}
@@ -136,8 +143,8 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 		if _, err = s.prepareEventAdmissionTx(ctx, tx, admissionReq, nil); err != nil {
 			return AgentEvent{}, err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,publisher,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements) VALUES($1,$2,$3,'request',$4,$5,$6,$7,$8,$9::uuid,$10::uuid,NULL,$11)`,
-			newEventID, req.Repo, s.channel.Principal, recordID, version, currentSensitivity, destType, destName, eventID, req.RequestID, poolReqs,
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,publisher,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,request_expect_by,summary) VALUES($1,$2,$3,'request',$4,$5,$6,$7,$8,$9::uuid,$10::uuid,NULL,$11,$12,$13)`,
+			newEventID, req.Repo, s.channel.Principal, recordID, version, currentSensitivity, destType, destName, eventID, req.RequestID, poolReqs, requestExpectBy, summary,
 		)
 		if err != nil {
 			return AgentEvent{}, err

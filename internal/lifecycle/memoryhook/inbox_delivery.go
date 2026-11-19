@@ -253,6 +253,9 @@ func (d *inboxDelivery) deliver(directory string) error {
 			}
 			taskBody = &body
 			source = clone(ref)
+			if reqHdr := inboxRequestHeaderValue(id.publication); reqHdr != nil {
+				source.Set("header", reqHdr)
+			}
 			source.Set("body_sha256", value.Text(hashText(body)))
 			source.Set("body", value.Text(body))
 			source.Set("historical", value.Boolean(true))
@@ -300,10 +303,27 @@ func (d *inboxDelivery) deliver(directory string) error {
 		return err
 	}
 	control, fallbackControl := in.Control, in.Control
+	var fullSourceBody string
+	var reqHeader, nonCompactPull *value.Value
+	var compactHandle, pullCue string
 	if source != nil {
+		if taskBody != nil {
+			fullSourceBody = *taskBody
+		}
+		reqHeader = inboxRequestHeaderValue(id.publication)
 		command, readErr := inboxCommand(in.Config, id, false)
 		if readErr != nil {
 			return readErr
+		}
+		compactHandle = text(command.Get("compact_handle"))
+		if compactHandle != "" {
+			pullCue = text(command.Get("compact_read_text"))
+			if pullCue == "" {
+				pullCue = "cairn-inbox read " + compactHandle
+			}
+		} else {
+			nonCompactPull = value.Mapping(value.Field("read", command.Get("read")), value.Field("read_input", command.Get("read_input")))
+			pullCue = "pull_handle.read with pull_handle.read_input JSON on stdin"
 		}
 		var commands *value.Value
 		if value.SameText(in.Config.Get("harness"), "codex") && value.SameText(in.Memory.Get("context_lifecycle"), "compact/1") && command.Get("finish_reply") != nil && command.Get("finish_reply").Kind == value.Array {
@@ -374,15 +394,66 @@ func (d *inboxDelivery) deliver(directory string) error {
 			if e != nil {
 				return e
 			}
-			control = text(command.Get("compact_fallback_control"))
+			fb := text(command.Get("compact_fallback_control"))
+			if hdrLine := text(command.Get("compact_header_line")); hdrLine != "" {
+				control = fb + "\n" + hdrLine
+				withHdr, _ := withAllowanceForLabel(requiredText, label)
+				if cost(withHdr) > budget {
+					control = fb
+				}
+			} else {
+				control = fb
+			}
 		}
+	}
+	tryTruncateSource := func(reqText string) bool {
+		if reqHeader == nil || fullSourceBody == "" {
+			return false
+		}
+		origSource, origLabel := source, label
+		ref := id.publication.Get("ref")
+		const truncLabel = "source_truncated_preview_read_exact_source"
+		maxCap := min(len(fullSourceBody)-1, 4096)
+		for capBytes := maxCap; capBytes >= 128; capBytes = capBytes * 3 / 4 {
+			prefix, inc, omitted := core.TruncateCleanUTF8(fullSourceBody, capBytes)
+			if inc == 0 {
+				break
+			}
+			cand := clone(ref)
+			cand.Set("header", clone(reqHeader))
+			cand.Set("body_sha256", value.Text(hashText(fullSourceBody)))
+			cand.Set("total_bytes", integer(len(fullSourceBody)))
+			cand.Set("truncated", value.Boolean(true))
+			cand.Set("preview_bytes", integer(inc))
+			cand.Set("preview", value.Text(prefix+core.FormatTruncationMarker(omitted, len(fullSourceBody), pullCue)))
+			if compactHandle != "" {
+				cand.Set("pull_handle", value.Text(compactHandle))
+			} else if nonCompactPull != nil {
+				cand.Set("pull_handle", clone(nonCompactPull))
+			}
+			cand.Set("historical", value.Boolean(true))
+			cand.Set("sender", id.publication.Get("from"))
+			source = cand
+			label = truncLabel
+			withSuffix, _ := withAllowanceForLabel(reqText, truncLabel)
+			if costForLabel(withSuffix, truncLabel) <= budget {
+				return true
+			}
+			if capBytes == 128 {
+				break
+			}
+		}
+		source, label = origSource, origLabel
+		return false
 	}
 	if source != nil {
 		withSuffix, _ := withAllowanceForLabel(requiredText, "optional_recall_unavailable")
 		if costForLabel(withSuffix, "optional_recall_unavailable") > budget {
-			source = nil
-			control = fallbackControl
-			label = "source_exceeds_delivery_budget_read_exact_source"
+			if !tryTruncateSource(requiredText) {
+				source = nil
+				control = fallbackControl
+				label = "source_exceeds_delivery_budget_read_exact_source"
+			}
 			taskBody = nil
 		}
 	}
@@ -440,9 +511,11 @@ func (d *inboxDelivery) deliver(directory string) error {
 			}
 			withCandidateSuffix, _ := withAllowanceForLabel(requiredCandidate, "optional_recall_unavailable")
 			if source != nil && costForLabel(withCandidateSuffix, "optional_recall_unavailable") > budget {
-				source = nil
-				control = fallbackControl
-				label = "source_exceeds_delivery_budget_read_exact_source"
+				if !tryTruncateSource(requiredCandidate) {
+					source = nil
+					control = fallbackControl
+					label = "source_exceeds_delivery_budget_read_exact_source"
+				}
 				withFallbackSuffix, _ := withAllowanceForLabel(requiredCandidate, label)
 				if cost(withFallbackSuffix) > budget {
 					return refuseBudget("whole required task context exceeds delivery budget", "optional_render", "task_context", nil)
@@ -551,6 +624,29 @@ func (d *inboxDelivery) deliver(directory string) error {
 	}
 	d.out.Message = output
 	return nil
+}
+
+func inboxRequestHeaderValue(pub *value.Value) *value.Value {
+	if pub == nil || pub.Kind != value.Object {
+		return nil
+	}
+	summary := text(pub.Get("summary"))
+	due := text(pub.Get("expect_by"))
+	if due == "" {
+		due = text(pub.Get("task_deadline"))
+	}
+	if summary == "" && due == "" {
+		return nil
+	}
+	hdr := value.Mapping()
+	if summary != "" {
+		hdr.Set("summary", value.Text(summary))
+	}
+	hdr.Set("action_needed", value.Text("complete"))
+	if due != "" {
+		hdr.Set("due", value.Text(due))
+	}
+	return hdr
 }
 
 func minTime(a, b time.Time) time.Time {

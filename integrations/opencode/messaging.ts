@@ -18,11 +18,62 @@ type DeliveryRecord = {
   delivery_id: string, lease_id?: string, lease_until?: string, state: string, attempts?: number,
   result?: RecordRef, code?: string, superseded_by?: string, consumer?: string, completed_at?: string, diagnosis?: unknown,
   event: {
-    event_id: string, kind: string, action?: string, supersedes?: string, expect_next_by?: string, expect_by?: string,
+    event_id: string, kind: string, summary?: string, action?: string, supersedes?: string,
+    expect_next_by?: string, expect_by?: string, task_deadline?: string,
     from: string, created_at: string,
     causation_id?: string, correlation_id?: string, ref: RecordRef,
     destination: { type: string, name: string },
   },
+}
+
+function viewMessageHeader(e: DeliveryRecord["event"]) {
+  const due = e.expect_next_by || e.expect_by || e.task_deadline
+  if (!e.summary && !e.action && !due && !e.supersedes) return undefined
+  const action_needed = e.action || (e.kind === "request" ? "complete" : "review")
+  return {
+    ...(e.summary ? { summary: e.summary } : {}),
+    action_needed,
+    ...(due ? { due } : {}),
+    ...(e.supersedes ? { supersedes: e.supersedes } : {}),
+  }
+}
+
+const messagingDisallowedSummary = /[\x00-\x1f\x7f\u0080-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069\uD800-\uDFFF]/u
+
+function validateEventSummary(summary: string | undefined) {
+  if (summary === undefined || summary === "") return
+  const sumLen = Buffer.byteLength(summary, "utf8")
+  if (sumLen > 280 || summary.trim() === "" || messagingDisallowedSummary.test(summary)) {
+    throw new Error("INVALID_REQUEST: event summary must be 1-280 single-line UTF-8 bytes without control or bidi characters")
+  }
+}
+
+function truncateCleanUTF8(text: string, maxBytes: number): { prefix: string, included: number, omitted: number } {
+  const raw = Buffer.from(text, "utf8")
+  const total = raw.length
+  if (maxBytes <= 0) return { prefix: "", included: 0, omitted: total }
+  if (total <= maxBytes) return { prefix: text, included: total, omitted: 0 }
+  let cut = maxBytes
+  while (cut > 0 && (raw[cut]! & 0xc0) === 0x80) cut--
+  if (cut === 0) return { prefix: "", included: 0, omitted: total }
+  const half = Math.floor(cut / 2)
+  const searchStart = Math.max(half, cut - 256)
+  let nl = -1
+  let ws = -1
+  for (let i = cut - 1; i >= searchStart; i--) {
+    const b = raw[i]!
+    if (b === 0x0a) { nl = i; break }
+    if (ws < 0 && (b === 0x20 || b === 0x09)) ws = i
+  }
+  if (nl >= 0) {
+    let cand = nl
+    if (cand > 0 && raw[cand - 1] === 0x0d) cand--
+    if (cand > 0) cut = cand
+  } else if (ws > 0) {
+    cut = ws
+  }
+  const prefix = raw.subarray(0, cut).toString("utf8")
+  return { prefix, included: cut, omitted: total - cut }
 }
 
 function isUUID(value: string | undefined): value is string {
@@ -63,10 +114,12 @@ function viewDelivery(d: DeliveryRecord) {
     state: d.state,
     ...(d.attempts ? { attempts: d.attempts } : {}),
     event_id: d.event.event_id, kind: d.event.kind,
+    ...(d.event.summary ? { summary: d.event.summary } : {}),
     ...(d.event.action ? { action: d.event.action } : {}),
     ...(d.event.supersedes ? { supersedes: d.event.supersedes } : {}),
     ...(d.event.expect_next_by ? { expect_next_by: d.event.expect_next_by } : {}),
     ...(d.event.expect_by ? { expect_by: d.event.expect_by } : {}),
+    ...(viewMessageHeader(d.event) ? { header: viewMessageHeader(d.event) } : {}),
     ...(d.superseded_by ? { superseded_by: d.superseded_by } : {}),
     from: d.event.from, created_at: d.event.created_at,
     ...(d.event.causation_id ? { causation_id: d.event.causation_id } : {}),
@@ -219,6 +272,7 @@ export const send = validatedTool({
     causation_id: z.string().optional().describe("Event UUID this message answers or follows."),
     correlation_id: z.string().optional().describe("Interaction UUID shared by related events."),
     urgency: z.string().optional().describe("Notice wake policy: routine or urgent. Notices only."),
+    summary: z.string().optional().describe("Short single-line header summarizing what changed or what is requested (1-280 UTF-8 bytes, separate from body; required when body exceeds 280 bytes)."),
     action: z.string().optional().describe("Notice action intent: none, review or decide. Notices only."),
     supersedes: z.string().optional().describe("Sender-scoped topic key (1-128 ASCII letters, digits or _.:/-) that supersedes older pending notices from you. Notices only."),
     expect_next_by: z.string().optional().describe("Optional RFC3339 timestamp when the next update is expected. Notices only."),
@@ -237,7 +291,11 @@ export const send = validatedTool({
       if (length < 1 || length > 65536 || args.body.trim() === "" || /[\uD800-\uDFFF]/u.test(args.body)) {
         throw new Error("INVALID_REQUEST: body requires 1-65536 bytes of nonblank UTF-8 text")
       }
+      if (length > 280 && (!args.summary || args.summary === "")) {
+        throw new Error("INVALID_REQUEST: summary (1-280 single-line UTF-8 bytes) is required when body exceeds 280 bytes; state what changed in summary and keep uncompressed details in body")
+      }
     }
+    validateEventSummary(args.summary)
     let notice_policy: { version: number, urgency: string } | undefined
     if (args.urgency) {
       if (kind !== "notice" || (args.urgency !== "routine" && args.urgency !== "urgent")) {
@@ -300,22 +358,30 @@ export const send = validatedTool({
       ...(args.causation_id ? { causation_id: args.causation_id } : {}),
       ...(args.correlation_id ? { correlation_id: args.correlation_id } : {}),
       ...(notice_policy ? { notice_policy } : {}),
+      ...(args.summary ? { summary: args.summary } : {}),
       ...(args.action ? { action: args.action } : {}),
       ...(args.supersedes ? { supersedes: args.supersedes } : {}),
       ...(args.expect_next_by ? { expect_next_by: args.expect_next_by } : {}),
       ...(args.expect_by ? { expect_by: args.expect_by } : {}),
-    }, ref) as { event_id?: string, from?: string, kind?: string, action?: string, supersedes?: string, expect_next_by?: string, expect_by?: string, ref?: RecordRef, destination?: { type: string, name: string } }
+    }, ref) as { event_id?: string, from?: string, kind?: string, summary?: string, action?: string, supersedes?: string, expect_next_by?: string, expect_by?: string, ref?: RecordRef, destination?: { type: string, name: string } }
     if (!isUUID(published.event_id) || published.ref?.record_id !== source.record_id || published.ref?.version !== source.version ||
         published.destination?.type !== destination.type || published.destination?.name !== destination.name) {
       throw new Error("SCHEMA_MISMATCH: publish returned a different source or destination")
     }
+    const header = viewMessageHeader({
+      event_id: published.event_id, kind: published.kind ?? kind, summary: published.summary,
+      action: published.action, supersedes: published.supersedes, expect_next_by: published.expect_next_by,
+      expect_by: published.expect_by, from: published.from ?? "", created_at: "", ref: source, destination,
+    })
     return render({
       event_id: published.event_id, from: published.from, to: published.destination,
       ...(recipient ? { recipient } : {}), kind: published.kind,
+      ...(published.summary ? { summary: published.summary } : {}),
       ...(published.action ? { action: published.action } : {}),
       ...(published.supersedes ? { supersedes: published.supersedes } : {}),
       ...(published.expect_next_by ? { expect_next_by: published.expect_next_by } : {}),
       ...(published.expect_by ? { expect_by: published.expect_by } : {}),
+      ...(header ? { header } : {}),
       source, request_id: args.request_id,
     }, config)
   },
@@ -343,12 +409,15 @@ export const inbox = validatedTool({
     }, ref) as { delivery?: DeliveryRecord | null }
     if (!next.delivery) return render({ delivery: null }, config)
     const delivery = viewDelivery(next.delivery)
+    const header = viewMessageHeader(next.delivery.event)
     let body: string | undefined
     let body_omitted: string | undefined
+    let rawHistory: Record<string, unknown> | undefined
     try {
       const history = await call(config, context, ["history"], {
         record_id: delivery.source.record_id, repo: config.repo, version: delivery.source.version,
-      }) as { versions?: Array<{ body?: string | null }> }
+      }) as Record<string, unknown> & { versions?: Array<{ body?: string | null }> }
+      rawHistory = history
       if (history.versions?.length === 1 && typeof history.versions[0]?.body === "string") {
         body = history.versions[0].body
       } else {
@@ -359,12 +428,61 @@ export const inbox = validatedTool({
     }
     if (body !== undefined) {
       try {
-        return render({ delivery, body }, config)
+        return render({ delivery, ...(header ? { header } : {}), body }, config)
       } catch {
-        body_omitted = "source exceeds this result's room; read it with cairn_history using source.record_id and source.version"
+        const total_bytes = Buffer.byteLength(body, "utf8")
+        const maxRoom = config.max_tokens || config.tokens
+        const rawBody = Buffer.from(body, "utf8")
+        const makePull = (previewBytes: number) => {
+          if (maxRoom < 256 || !rawHistory) return undefined
+          const fullHistBytes = Buffer.byteLength(JSON.stringify(rawHistory), "utf8")
+          if (fullHistBytes <= maxRoom) {
+            const needed = Math.min(maxRoom, Math.max(256, fullHistBytes + 64))
+            const available_tokens = Math.min(maxRoom, Math.max(config.tokens, needed))
+            return { record_id: delivery.source.record_id, version: delivery.source.version, available_tokens, memory_budget_bytes: needed }
+          }
+          if (previewBytes < total_bytes && Array.isArray(rawHistory.versions) && rawHistory.versions.length === 1) {
+            const rem = rawBody.subarray(previewBytes).toString("utf8")
+            for (let cap = Math.min(total_bytes - previewBytes, Math.max(64, maxRoom - 512)); cap >= 64; cap = Math.floor(cap * 3 / 4)) {
+              const { prefix: chunkText, included: chunkInc } = truncateCleanUTF8(rem, cap)
+              if (chunkInc === 0) break
+              const v0 = { ...(rawHistory.versions[0] as Record<string, unknown>), body: undefined, span: { offset: previewBytes, end: previewBytes + chunkInc, total_bytes, sha256: "0".repeat(64), body: chunkText } }
+              const spanBytes = Buffer.byteLength(JSON.stringify({ ...rawHistory, versions: [v0] }), "utf8")
+              if (spanBytes <= maxRoom) {
+                const available_tokens = Math.min(maxRoom, Math.max(config.tokens, Math.max(256, spanBytes + 64)))
+                return { record_id: delivery.source.record_id, version: delivery.source.version, available_tokens, span: { offset: previewBytes, length: chunkInc } }
+              }
+              if (cap === 64) break
+            }
+          }
+          return undefined
+        }
+        for (let capBytes = Math.min(total_bytes - 1, Math.max(128, config.tokens - 1200)); capBytes >= 128; capBytes = Math.floor(capBytes * 3 / 4)) {
+          const { prefix, included, omitted } = truncateCleanUTF8(body, capBytes)
+          if (included === 0) break
+          const body_preview = `${prefix}\n[... truncated ${omitted} of ${total_bytes} UTF-8 bytes; pull full source with cairn_history ...]`
+          const pull_source = makePull(included)
+          const preview_omitted = pull_source
+            ? "source exceeds this result's room; body_preview is truncated — read full source with cairn_history using pull_source"
+            : "source exceeds this result's room; body_preview is truncated — read source.record_id version source.version with cairn_history"
+          try {
+            return render({ delivery, ...(header ? { header } : {}), body_preview, body_truncated: true, total_bytes, ...(pull_source ? { pull_source } : {}), body_omitted: preview_omitted }, config)
+          } catch {
+            if (capBytes === 128) break
+          }
+        }
+        const fallbackPull = makePull(0)
+        if (fallbackPull) {
+          try {
+            return render({ delivery, ...(header ? { header } : {}), body_truncated: true, total_bytes, pull_source: fallbackPull, body_omitted: "source exceeds this result's room; read full source with cairn_history using pull_source" }, config)
+          } catch {
+            // Fall through to bare source reference.
+          }
+        }
+        body_omitted = "source exceeds this result's room; read source.record_id version source.version with cairn_history"
       }
     }
-    return render({ delivery, ...(body_omitted ? { body_omitted } : {}) }, config)
+    return render({ delivery, ...(header ? { header } : {}), ...(body_omitted ? { body_omitted } : {}) }, config)
   },
 })
 
@@ -401,6 +519,7 @@ export const complete = validatedTool({
     request_id: z.string().describe("A UUID chosen before completing; reuse it with identical arguments to retry."),
     delivery_id: z.string().describe("Delivery UUID from cairn_inbox."),
     lease_id: z.string().describe("Current lease UUID from cairn_inbox."),
+    summary: z.string().optional().describe("Optional 1-280 single-line UTF-8 byte summary for the reply header."),
     body: z.string().describe("Concise selected result: what was done, evidence, and what remains. Never secrets or raw sessions."),
     shareable: z.boolean().optional().describe("Whether hosted agents may read the result. Defaults to true."),
     reply: z.boolean().optional().describe("Publish the result to the requester as a response. Defaults to true for requests; other kinds never reply."),
@@ -412,6 +531,7 @@ export const complete = validatedTool({
     if (length < 1 || length > 65536 || args.body.trim() === "" || /[\uD800-\uDFFF]/u.test(args.body)) {
       throw new Error("INVALID_REQUEST: body requires 1-65536 bytes of nonblank UTF-8 text")
     }
+    validateEventSummary(args.summary)
     const config = await settings("complete", context)
     const { ref } = await selfSession(config, context, args.agent_id, args.execution_id)
     const sensitivity = args.shareable === false ? "local" : "shareable"
@@ -432,6 +552,7 @@ export const complete = validatedTool({
             request_id: derivedRequestID(args.request_id, "cairn_complete/response"),
             repo: config.repo, kind: "response", ref: delivery.result,
             destination: { type: "agent", name: delivery.event.from }, causation_id: delivery.event.event_id,
+            ...(args.summary ? { summary: args.summary } : {}),
           }, ref) as { event_id?: string }
           delete result.reply_pending
           result.reply_event_id = event.event_id
@@ -488,10 +609,12 @@ export const event_status = validatedTool({
     }
     return render({
       event_id: status.event.event_id, kind: status.event.kind,
+      ...(status.event.summary ? { summary: status.event.summary } : {}),
       ...(status.event.action ? { action: status.event.action } : {}),
       ...(status.event.supersedes ? { supersedes: status.event.supersedes } : {}),
       ...(status.event.expect_next_by ? { expect_next_by: status.event.expect_next_by } : {}),
       ...(status.event.expect_by ? { expect_by: status.event.expect_by } : {}),
+      ...(viewMessageHeader(status.event) ? { header: viewMessageHeader(status.event) } : {}),
       from: status.event.from,
       to: status.event.destination, created_at: status.event.created_at,
       deliveries: (status.deliveries ?? []).map(d => ({

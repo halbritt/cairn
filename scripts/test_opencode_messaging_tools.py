@@ -102,6 +102,7 @@ elif op == "event-publish":
         "event_id": event_id,
         "from": "agent/" + agent_id,
         "kind": body["kind"],
+        "summary": body.get("summary", ""),
         "ref": body["ref"],
         "destination": body["destination"],
         "causation_id": body.get("causation_id", ""),
@@ -222,6 +223,7 @@ class OpenCodeMessagingToolsTests(unittest.TestCase):
                 "delivery_id": delivery_id, "lease_id": lease_id, "state": "leased", "attempts": 1,
                 "event": {
                     "event_id": request_event, "kind": "request", "from": "agent/" + peer_agent,
+                    "summary": "Review OpenCode messaging adapter",
                     "created_at": "2026-11-18T00:00:00Z", "ref": {"record_id": source_record, "version": 3},
                     "destination": {"type": "agent", "name": "agent/" + self_agent},
                 },
@@ -248,6 +250,8 @@ class OpenCodeMessagingToolsTests(unittest.TestCase):
             ("bind-session", "cairn_remember", {"request_id": str(uuid.uuid4()), "body": "bind session", "scope": "run"}),
             ("self-lookup", "cairn_agents", {"agent": "self"}),
             ("stopped-send", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-12", "body": "Hi"}),
+            ("long-no-summary", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-9", "body": "x" * 281}),
+            ("long-with-summary", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-9", "summary": "Long OpenCode report", "body": "x" * 281}),
             ("valid-send", "cairn_send", {"request_id": send_req, "to": "agent-9", "body": "Synthetic notice.", "urgency": "urgent"}),
             ("inbox-peek", "cairn_inbox", {"peek": True}),
             ("inbox-claim", "cairn_inbox", {"lease_seconds": 600}),
@@ -340,6 +344,8 @@ class OpenCodeMessagingToolsTests(unittest.TestCase):
         tool_outputs = {m["tool_call_id"]: m["content"] for m in final_messages if m.get("role") == "tool"}
         self.assertIn("IDENTITY_UNKNOWN", str(tool_outputs["unknown-self"]))
         self.assertIn("RECIPIENT_STOPPED", str(tool_outputs["stopped-send"]))
+        self.assertIn("is required when body exceeds 280 bytes", str(tool_outputs["long-no-summary"]))
+        self.assertEqual(json.loads(tool_outputs["long-with-summary"])["summary"], "Long OpenCode report")
 
         me = json.loads(tool_outputs["self-lookup"])
         self.assertEqual(me["agents"][0]["agent_id"], self_agent)
@@ -350,6 +356,7 @@ class OpenCodeMessagingToolsTests(unittest.TestCase):
         self.assertEqual(json.loads(tool_outputs["inbox-peek"]), {"requests": 1, "notices": 2})
         claimed = json.loads(tool_outputs["inbox-claim"])
         self.assertEqual(claimed["body"], base_state["source_body"])
+        self.assertEqual(claimed["header"], {"summary": "Review OpenCode messaging adapter", "action_needed": "complete"})
         self.assertEqual(json.loads(tool_outputs["renew-lease"])["delivery_id"], delivery_id)
         done = json.loads(tool_outputs["complete-req"])
         self.assertTrue(done.get("reply_event_id"))

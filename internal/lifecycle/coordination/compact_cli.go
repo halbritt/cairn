@@ -419,8 +419,12 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 			return 0, nativeRefusal("INVALID_HOST", "compact inbox delivery changed")
 		}
 	}
-	if !nativeEqual(native.Get("native_turn_id"), attempt.Get("native_turn_id")) || !nativeContains([]string{"notice", "response"}, nativeText(event.Get("kind"))) {
+	kindText := nativeText(event.Get("kind"))
+	if !nativeEqual(native.Get("native_turn_id"), attempt.Get("native_turn_id")) || !nativeContains([]string{"notice", "response", "request"}, kindText) {
 		return 0, nativeRefusal("INVALID_HOST", "compact inbox delivery changed")
+	}
+	if kindText == "request" && op != "read" && op != "inspect" {
+		return 0, nativeRefusal("UNSUPPORTED_CONTROL", "request deliveries complete via finish_reply, not compact settle or advance")
 	}
 	if value.SameText(attempt.Get("admission_kind"), "digest") {
 		return c.compactDigestOperation(ctx, config, dir, handle, op, disposition, a.get("--code"), a.get("--item"), native, attempt, delivery, out)
@@ -487,8 +491,12 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 		}
 	}
 	if op == "read" {
-		readOut := nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "kind", event.Get("kind"), "sender", event.Get("from"), "source", event.Get("ref"), "body", body)
-		for _, k := range []string{"action", "supersedes", "expect_next_by", "expect_by"} {
+		readOut := nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "kind", event.Get("kind"), "sender", event.Get("from"), "source", event.Get("ref"))
+		if hdr := nativeMessageHeaderValue(event); hdr != nil {
+			readOut.Set("header", hdr)
+		}
+		readOut.Set("body", body)
+		for _, k := range []string{"summary", "action", "supersedes", "expect_next_by", "expect_by", "task_deadline"} {
 			if v := event.Get(k); value.Truth(v) {
 				readOut.Set(k, v)
 			}

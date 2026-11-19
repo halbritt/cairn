@@ -221,6 +221,7 @@ type sendArgs struct {
 	CausationID   string                 `json:"causation_id,omitempty" jsonschema:"Event UUID this message answers or follows."`
 	CorrelationID string                 `json:"correlation_id,omitempty" jsonschema:"Interaction UUID shared by related events."`
 	Urgency       string                 `json:"urgency,omitempty" jsonschema:"Notice wake policy: routine or urgent. Notices only."`
+	Summary       string                 `json:"summary,omitempty" jsonschema:"Short single-line header summarizing what changed or what is requested (1-280 UTF-8 bytes, separate from body; required when body exceeds 280 bytes)."`
 	Action        string                 `json:"action,omitempty" jsonschema:"Notice intent action: none, review or decide. Notices only."`
 	Supersedes    string                 `json:"supersedes,omitempty" jsonschema:"Sender-scoped topic key superseded by this notice. Notices only."`
 	ExpectNextBy  string                 `json:"expect_next_by,omitempty" jsonschema:"Optional RFC3339 time when the next update is expected. Notices only."`
@@ -235,10 +236,12 @@ type sendResult struct {
 	To           core.EventDestination `json:"to"`
 	Recipient    *agentView            `json:"recipient,omitempty"`
 	Kind         string                `json:"kind"`
+	Summary      string                `json:"summary,omitempty"`
 	Action       string                `json:"action,omitempty"`
 	Supersedes   string                `json:"supersedes,omitempty"`
 	ExpectNextBy *time.Time            `json:"expect_next_by,omitempty"`
 	ExpectBy     *time.Time            `json:"expect_by,omitempty"`
+	Header       *core.MessageHeader   `json:"header,omitempty"`
 	Source       core.RecordVersionRef `json:"source"`
 	RequestID    string                `json:"request_id"`
 }
@@ -288,6 +291,12 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 	}
 	if args.Body != "" && (len(args.Body) > 65536 || strings.TrimSpace(args.Body) == "" || !utf8.ValidString(args.Body)) {
 		return toolResult(nil, messagingError("INVALID_REQUEST", "body requires 1-65536 bytes of nonblank UTF-8 text"), 0)
+	}
+	if err := core.ValidateEventSummary(args.Summary); err != nil {
+		return toolResult(nil, err, 0)
+	}
+	if args.Body != "" && len(args.Body) > core.MaxEventSummaryBytes && args.Summary == "" {
+		return toolResult(nil, messagingError("INVALID_REQUEST", "summary (1-280 single-line UTF-8 bytes) is required when body exceeds 280 bytes; state what changed in summary and keep uncompressed details in body"), 0)
 	}
 	var policy *core.NoticeWakePolicyRequest
 	if args.Urgency != "" {
@@ -360,7 +369,7 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 		}
 		source = core.RecordVersionRef{RecordID: record.RecordID, Version: record.Version}
 	}
-	publish := core.PublishEventRequest{Action: args.Action, Supersedes: args.Supersedes, ExpectNextBy: expectNextBy, ExpectBy: expectBy, RequestID: args.RequestID, Repo: repo, Kind: args.Kind, Ref: source, Destination: destination, CausationID: args.CausationID, CorrelationID: args.CorrelationID, NoticePolicy: policy}
+	publish := core.PublishEventRequest{Summary: args.Summary, Action: args.Action, Supersedes: args.Supersedes, ExpectNextBy: expectNextBy, ExpectBy: expectBy, RequestID: args.RequestID, Repo: repo, Kind: args.Kind, Ref: source, Destination: destination, CausationID: args.CausationID, CorrelationID: args.CorrelationID, NoticePolicy: policy}
 	var event core.AgentEvent
 	if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 		return toolResult(nil, err, 0)
@@ -368,7 +377,7 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 	if uuid.Validate(event.EventID) != nil || event.Ref != source || event.Destination != destination {
 		return toolResult(nil, messagingError("SCHEMA_MISMATCH", "publish returned a different source or destination"), 0)
 	}
-	return toolResult(sendResult{EventID: event.EventID, From: event.From, To: event.Destination, Recipient: recipient, Kind: event.Kind, Action: event.Action, Supersedes: event.Supersedes, ExpectNextBy: event.ExpectNextBy, ExpectBy: event.ExpectBy, Source: source, RequestID: args.RequestID}, nil, t.config.AvailableTokens)
+	return toolResult(sendResult{EventID: event.EventID, From: event.From, To: event.Destination, Recipient: recipient, Kind: event.Kind, Summary: event.Summary, Action: event.Action, Supersedes: event.Supersedes, ExpectNextBy: event.ExpectNextBy, ExpectBy: event.ExpectBy, Header: event.Header(), Source: source, RequestID: args.RequestID}, nil, t.config.AvailableTokens)
 }
 
 type inboxArgs struct {
@@ -386,10 +395,12 @@ type deliveryView struct {
 	Attempts      int                    `json:"attempts,omitempty"`
 	EventID       string                 `json:"event_id"`
 	Kind          string                 `json:"kind"`
+	Summary       string                 `json:"summary,omitempty"`
 	Action        string                 `json:"action,omitempty"`
 	Supersedes    string                 `json:"supersedes,omitempty"`
 	ExpectNextBy  *time.Time             `json:"expect_next_by,omitempty"`
 	ExpectBy      *time.Time             `json:"expect_by,omitempty"`
+	Header        *core.MessageHeader    `json:"header,omitempty"`
 	SupersededBy  string                 `json:"superseded_by,omitempty"`
 	From          string                 `json:"from"`
 	CreatedAt     time.Time              `json:"created_at"`
@@ -401,15 +412,70 @@ type deliveryView struct {
 }
 
 func viewDelivery(d core.AgentDelivery) deliveryView {
-	return deliveryView{DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, LeaseUntil: d.LeaseUntil, State: d.State, Attempts: d.Attempts, EventID: d.Event.EventID, Kind: d.Event.Kind, Action: d.Event.Action, Supersedes: d.Event.Supersedes, ExpectNextBy: d.Event.ExpectNextBy, ExpectBy: d.Event.ExpectBy, SupersededBy: d.SupersededBy, From: d.Event.From, CreatedAt: d.Event.CreatedAt, CausationID: d.Event.CausationID, CorrelationID: d.Event.CorrelationID, Source: d.Event.Ref, Result: d.Result, Code: d.Code}
+	return deliveryView{DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, LeaseUntil: d.LeaseUntil, State: d.State, Attempts: d.Attempts, EventID: d.Event.EventID, Kind: d.Event.Kind, Summary: d.Event.Summary, Action: d.Event.Action, Supersedes: d.Event.Supersedes, ExpectNextBy: d.Event.ExpectNextBy, ExpectBy: d.Event.ExpectBy, Header: d.Event.Header(), SupersededBy: d.SupersededBy, From: d.Event.From, CreatedAt: d.Event.CreatedAt, CausationID: d.Event.CausationID, CorrelationID: d.Event.CorrelationID, Source: d.Event.Ref, Result: d.Result, Code: d.Code}
+}
+
+type historyPullArgs struct {
+	RecordID          string                `json:"record_id"`
+	Version           int                   `json:"version"`
+	AvailableTokens   *int                  `json:"available_tokens,omitempty"`
+	MemoryBudgetBytes *int                  `json:"memory_budget_bytes,omitempty"`
+	Span              *core.ByteSpanRequest `json:"span,omitempty"`
 }
 
 type inboxResult struct {
-	Delivery *deliveryView `json:"delivery"`
+	Delivery *deliveryView       `json:"delivery"`
+	Header   *core.MessageHeader `json:"header,omitempty"`
 	// Body is the exact source version text. It is the sender's testimony and
 	// task context, never authorization.
-	Body        *string `json:"body,omitempty"`
-	BodyOmitted string  `json:"body_omitted,omitempty"`
+	Body          *string          `json:"body,omitempty"`
+	BodyPreview   *string          `json:"body_preview,omitempty"`
+	BodyTruncated bool             `json:"body_truncated,omitempty"`
+	TotalBytes    int              `json:"total_bytes,omitempty"`
+	PullSource    *historyPullArgs `json:"pull_source,omitempty"`
+	BodyOmitted   string           `json:"body_omitted,omitempty"`
+}
+
+func buildHistoryPullArgs(ref core.RecordVersionRef, history core.RecordHistory, fullBody string, previewBytes, defaultTokens, maxRoom int) *historyPullArgs {
+	if maxRoom < 256 {
+		return nil
+	}
+	if _, encodedHist, fitErr := encodeToolResult(history, maxRoom); fitErr == nil {
+		needed := max(256, len(encodedHist)+64)
+		if needed > maxRoom {
+			needed = maxRoom
+		}
+		avail := min(maxRoom, max(defaultTokens, needed))
+		return &historyPullArgs{RecordID: ref.RecordID, Version: ref.Version, AvailableTokens: &avail, MemoryBudgetBytes: &needed}
+	}
+	if previewBytes < len(fullBody) && len(history.Versions) == 1 {
+		rem := fullBody[previewBytes:]
+		for capBytes := min(len(rem), max(64, maxRoom-512)); capBytes >= 64; capBytes = capBytes * 3 / 4 {
+			chunkText, chunkInc, _ := core.TruncateCleanUTF8(rem, capBytes)
+			if chunkInc == 0 {
+				break
+			}
+			synth := history
+			v0 := synth.Versions[0]
+			v0.Body = nil
+			v0.Span = &core.ByteSpan{Offset: previewBytes, End: previewBytes + chunkInc, TotalBytes: len(fullBody), SHA256: strings.Repeat("0", 64), Body: chunkText}
+			synth.Versions = []core.HistoricalVersion{v0}
+			if _, encodedSpan, spanErr := encodeToolResult(synth, maxRoom); spanErr == nil {
+				needed := max(256, min(maxRoom, len(encodedSpan)+64))
+				avail := min(maxRoom, max(defaultTokens, needed))
+				return &historyPullArgs{
+					RecordID:        ref.RecordID,
+					Version:         ref.Version,
+					AvailableTokens: &avail,
+					Span:            &core.ByteSpanRequest{Offset: previewBytes, Length: chunkInc},
+				}
+			}
+			if capBytes == 64 {
+				break
+			}
+		}
+	}
+	return nil
 }
 
 func (t messagingTools) inbox(ctx context.Context, request *mcp.CallToolRequest, args inboxArgs) (*mcp.CallToolResult, any, error) {
@@ -434,7 +500,7 @@ func (t messagingTools) inbox(ctx context.Context, request *mcp.CallToolRequest,
 	}
 	// The delivery is already leased, so every later failure still returns it.
 	view := viewDelivery(*next.Delivery)
-	result := inboxResult{Delivery: &view}
+	result := inboxResult{Delivery: &view, Header: next.Delivery.Event.Header()}
 	var history core.RecordHistory
 	err = t.client.Call(ctx, "history", core.RecordHistoryRequest{RecordID: view.Source.RecordID, Repo: t.config.Scope.Repo, Version: view.Source.Version}, &history)
 	switch {
@@ -447,8 +513,51 @@ func (t messagingTools) inbox(ctx context.Context, request *mcp.CallToolRequest,
 	}
 	encoded, _, err := encodeToolResult(result, t.config.AvailableTokens)
 	if err != nil && result.Body != nil {
-		result.Body, result.BodyOmitted = nil, "source exceeds this result's room; read it with cairn_history using source.record_id and source.version"
-		encoded, _, err = encodeToolResult(result, t.config.AvailableTokens)
+		fullBody := *result.Body
+		totalBytes := len(fullBody)
+		maxRoom := t.config.maxTokens()
+		result.Body = nil
+		result.TotalBytes = totalBytes
+		result.BodyTruncated = true
+		maxCap := min(totalBytes-1, max(128, t.config.AvailableTokens-1200))
+		fitFound := false
+		for capBytes := maxCap; capBytes >= 128; capBytes = capBytes * 3 / 4 {
+			prefix, inc, omitted := core.TruncateCleanUTF8(fullBody, capBytes)
+			if inc == 0 {
+				break
+			}
+			preview := prefix + core.FormatTruncationMarker(omitted, totalBytes, "cairn_history")
+			result.BodyPreview = &preview
+			result.PullSource = buildHistoryPullArgs(view.Source, history, fullBody, inc, t.config.AvailableTokens, maxRoom)
+			if result.PullSource != nil {
+				result.BodyOmitted = "source exceeds this result's room; body_preview is truncated — read full source with cairn_history using pull_source"
+			} else {
+				result.BodyOmitted = "source exceeds this result's room; body_preview is truncated — read source.record_id version source.version with cairn_history"
+			}
+			encoded, _, err = encodeToolResult(result, t.config.AvailableTokens)
+			if err == nil {
+				fitFound = true
+				break
+			}
+			if capBytes == 128 {
+				break
+			}
+		}
+		if !fitFound {
+			result.BodyPreview = nil
+			result.PullSource = buildHistoryPullArgs(view.Source, history, fullBody, 0, t.config.AvailableTokens, maxRoom)
+			if result.PullSource != nil {
+				result.BodyOmitted = "source exceeds this result's room; read full source with cairn_history using pull_source"
+				encoded, _, err = encodeToolResult(result, t.config.AvailableTokens)
+			}
+			if result.PullSource == nil || err != nil {
+				result.PullSource = nil
+				result.TotalBytes = 0
+				result.BodyTruncated = false
+				result.BodyOmitted = "source exceeds this result's room; read source.record_id version source.version with cairn_history"
+				encoded, _, err = encodeToolResult(result, t.config.AvailableTokens)
+			}
+		}
 	}
 	return encoded, nil, err
 }
@@ -483,6 +592,7 @@ type completeArgs struct {
 	RequestID   string `json:"request_id" jsonschema:"A UUID chosen before completing; reuse it with identical arguments to retry."`
 	DeliveryID  string `json:"delivery_id" jsonschema:"Delivery UUID from cairn_inbox."`
 	LeaseID     string `json:"lease_id" jsonschema:"Current lease UUID from cairn_inbox."`
+	Summary     string `json:"summary,omitempty" jsonschema:"Optional 1-280 single-line UTF-8 byte summary for the reply header (required when reply body exceeds 280 bytes and you want a structured header)."`
 	Body        string `json:"body" jsonschema:"Concise selected result: what was done, evidence, and what remains. Never secrets or raw sessions."`
 	Shareable   *bool  `json:"shareable,omitempty" jsonschema:"Whether hosted agents may read the result. Defaults to true."`
 	Reply       *bool  `json:"reply,omitempty" jsonschema:"Publish the result to the requester as a response. Defaults to true for requests; other kinds never reply."`
@@ -505,6 +615,9 @@ func (t messagingTools) complete(ctx context.Context, request *mcp.CallToolReque
 	}
 	if len(args.Body) > 65536 || strings.TrimSpace(args.Body) == "" || !utf8.ValidString(args.Body) {
 		return toolResult(nil, messagingError("INVALID_REQUEST", "body requires 1-65536 bytes of nonblank UTF-8 text"), 0)
+	}
+	if err := core.ValidateEventSummary(args.Summary); err != nil {
+		return toolResult(nil, err, 0)
 	}
 	ref, _, err := t.self(ctx, request, args.AgentID, args.ExecutionID)
 	if err != nil {
@@ -533,7 +646,7 @@ func (t messagingTools) complete(ctx context.Context, request *mcp.CallToolReque
 			result.ReplyError = "request has no sender to answer"
 		default:
 			var event core.AgentEvent
-			publish := core.PublishEventRequest{RequestID: derivedRequestID(args.RequestID, "cairn_complete/response"), Repo: repo, Kind: "response", Ref: *delivery.Result, Destination: core.EventDestination{Type: "agent", Name: delivery.Event.From}, CausationID: delivery.Event.EventID}
+			publish := core.PublishEventRequest{Summary: args.Summary, RequestID: derivedRequestID(args.RequestID, "cairn_complete/response"), Repo: repo, Kind: "response", Ref: *delivery.Result, Destination: core.EventDestination{Type: "agent", Name: delivery.Event.From}, CausationID: delivery.Event.EventID}
 			if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 				result.ReplyError = replyFailure(err)
 			} else {
@@ -584,10 +697,12 @@ type eventStatusArgs struct {
 type eventStatusResult struct {
 	EventID      string                `json:"event_id"`
 	Kind         string                `json:"kind"`
+	Summary      string                `json:"summary,omitempty"`
 	Action       string                `json:"action,omitempty"`
 	Supersedes   string                `json:"supersedes,omitempty"`
 	ExpectNextBy *time.Time            `json:"expect_next_by,omitempty"`
 	ExpectBy     *time.Time            `json:"expect_by,omitempty"`
+	Header       *core.MessageHeader   `json:"header,omitempty"`
 	From         string                `json:"from"`
 	To           core.EventDestination `json:"to"`
 	CreatedAt    time.Time             `json:"created_at"`
@@ -619,7 +734,7 @@ func (t messagingTools) eventStatus(ctx context.Context, request *mcp.CallToolRe
 	if err != nil {
 		return toolResult(nil, err, 0)
 	}
-	result := eventStatusResult{EventID: status.Event.EventID, Kind: status.Event.Kind, Action: status.Event.Action, Supersedes: status.Event.Supersedes, ExpectNextBy: status.Event.ExpectNextBy, ExpectBy: status.Event.ExpectBy, From: status.Event.From, To: status.Event.Destination, CreatedAt: status.Event.CreatedAt, Deliveries: make([]eventDeliveryStatus, 0, len(status.Deliveries)), NextAfter: status.NextAfter, More: status.More}
+	result := eventStatusResult{EventID: status.Event.EventID, Kind: status.Event.Kind, Summary: status.Event.Summary, Action: status.Event.Action, Supersedes: status.Event.Supersedes, ExpectNextBy: status.Event.ExpectNextBy, ExpectBy: status.Event.ExpectBy, Header: status.Event.Header(), From: status.Event.From, To: status.Event.Destination, CreatedAt: status.Event.CreatedAt, Deliveries: make([]eventDeliveryStatus, 0, len(status.Deliveries)), NextAfter: status.NextAfter, More: status.More}
 	for _, d := range status.Deliveries {
 		entry := eventDeliveryStatus{DeliveryID: d.DeliveryID, Consumer: d.Consumer, State: d.State, Attempts: d.Attempts, LeaseUntil: d.LeaseUntil, CompletedAt: d.CompletedAt, Code: d.Code, SupersededBy: d.SupersededBy, Result: d.Result}
 		if d.Diagnosis != nil {

@@ -27,12 +27,21 @@ options are stored in owner-only files under `<state_dir>/session-options/`;
 other sessions on the shared binding keep their current behavior, and
 `--clear-session-options` removes the per-session override.
 
-A compact notice or response names its kind, sender and exact source version.
+A compact notice or response names its kind, sender and exact source version,
+followed by its structured header (`Summary`, `Action`, and `Due` when declared)
+before any source body or preview. High-level send commands (`cairn agent send`
+and MCP/OpenCode `cairn_send`) accept `--summary TEXT` / `summary` (`1..280`
+single-line UTF-8 bytes) and require it whenever `body` exceeds `280` bytes so
+callers state what changed in the header and keep full uncompressed prose in the
+body.
 The hook reads the selected historical version through the existing hosted
 profile, checks its identity, full body length and SHA-256, and includes the
-source when it fits 4,096 UTF-8 bytes and the overall hook budget. A larger
-source says why it is omitted.
-The agent then runs `cairn-inbox read HANDLE` for that exact body. Reading does
+whole source when it fits 4,096 UTF-8 bytes and the overall hook budget. An
+oversized source (for example, a 9,579-byte report against a 9,500-byte hook
+budget) is truncated on a clean line, word, or UTF-8 rune boundary with an
+explicit truncation marker and pull handle (`cairn-inbox read HANDLE`, which
+also supports `read` and `inspect` on headered `request` deliveries).
+The agent runs `cairn-inbox read HANDLE` when it needs the complete source. Reading does
 not acknowledge delivery. The owner-only full context and original journaled
 commands remain available with `cairn-inbox inspect HANDLE`.
 
