@@ -14,6 +14,9 @@ import (
 
 // Agent events are operational observations, not qualified memory or authority.
 type AgentEvent struct {
+	Action             string             `json:"action,omitempty"`
+	Supersedes         string             `json:"supersedes,omitempty"`
+	ExpectNextBy       *time.Time         `json:"expect_next_by,omitempty"`
 	NoticePolicy       *NoticeWakePolicy  `json:"notice_policy,omitempty"`
 	NoticeFlush        *NoticeFlushResult `json:"notice_flush,omitempty"`
 	NoticeDelivery     string             `json:"notice_delivery,omitempty"`
@@ -53,6 +56,9 @@ type NoticeWakePolicyRequest struct {
 	DeferSeconds int    `json:"defer_seconds"`
 }
 type PublishEventRequest struct {
+	Action             string                   `json:"action,omitempty"`
+	Supersedes         string                   `json:"supersedes,omitempty"`
+	ExpectNextBy       *time.Time               `json:"expect_next_by,omitempty"`
 	NoticePolicy       *NoticeWakePolicyRequest `json:"notice_policy,omitempty"`
 	NoticeDelivery     string                   `json:"notice_delivery,omitempty"`
 	NoticeExpiresAt    *time.Time               `json:"notice_expires_at,omitempty"`
@@ -100,17 +106,18 @@ type NextEventRequest struct {
 	LeaseSeconds int    `json:"lease_seconds,omitempty"`
 }
 type AgentDelivery struct {
-	Control     *WorkControl      `json:"control,omitempty"`
-	DeliveryID  string            `json:"delivery_id"`
-	Consumer    string            `json:"consumer"`
-	State       string            `json:"state"`
-	AvailableAt *time.Time        `json:"available_at,omitempty"`
-	LeaseID     string            `json:"lease_id,omitempty"`
-	LeaseUntil  *time.Time        `json:"lease_until,omitempty"`
-	Attempts    int               `json:"attempts"`
-	CompletedAt *time.Time        `json:"completed_at,omitempty"`
-	Code        string            `json:"code,omitempty"`
-	Result      *RecordVersionRef `json:"result,omitempty"`
+	Control      *WorkControl      `json:"control,omitempty"`
+	DeliveryID   string            `json:"delivery_id"`
+	Consumer     string            `json:"consumer"`
+	State        string            `json:"state"`
+	AvailableAt  *time.Time        `json:"available_at,omitempty"`
+	LeaseID      string            `json:"lease_id,omitempty"`
+	LeaseUntil   *time.Time        `json:"lease_until,omitempty"`
+	Attempts     int               `json:"attempts"`
+	CompletedAt  *time.Time        `json:"completed_at,omitempty"`
+	Code         string            `json:"code,omitempty"`
+	SupersededBy string            `json:"superseded_by,omitempty"`
+	Result       *RecordVersionRef `json:"result,omitempty"`
 	// Late marks a native completion accepted after its lease lapsed, under
 	// the same unreleased hold, execution and database generation.
 	Late  bool       `json:"late,omitempty"`
@@ -155,12 +162,16 @@ type EventStats struct {
 	Expired       int64   `json:"expired_leases"`
 	Handled       int64   `json:"handled"`
 	Ignored       int64   `json:"ignored"`
+	Superseded    int64   `json:"superseded"`
 	Failed        int64   `json:"failed"`
 	Redeliveries  int64   `json:"redeliveries"`
 	OldestSeconds float64 `json:"oldest_outstanding_seconds"`
 }
 
-var eventName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+var (
+	eventName           = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+	noticeSupersedesKey = regexp.MustCompile(`^[A-Za-z0-9_.:/-]{1,128}$`)
+)
 
 func (s *Store) eventScope(repo, agent string) (string, error) {
 	if repo == "" {
@@ -202,7 +213,7 @@ func leaseSeconds(seconds int) (int, error) {
 	return seconds, nil
 }
 
-const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id),e.notice_policy,(SELECT jsonb_build_object('event_id',f.event_id,'request_id',f.request_id,'flushed_at',f.flushed_at,'flushed_by',f.flushed_by,'released',f.released,'already_ready',f.already_ready,'leased',f.leased,'terminal',f.terminal) FROM cairn.agent_notice_flush f WHERE f.event_id=e.event_id),COALESCE(e.notice_delivery,''),e.notice_expires_at`
+const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id),e.notice_policy,(SELECT jsonb_build_object('event_id',f.event_id,'request_id',f.request_id,'flushed_at',f.flushed_at,'flushed_by',f.flushed_by,'released',f.released,'already_ready',f.already_ready,'leased',f.leased,'terminal',f.terminal) FROM cairn.agent_notice_flush f WHERE f.event_id=e.event_id),COALESCE(e.notice_delivery,''),e.notice_expires_at,COALESCE(e.notice_action,''),COALESCE(e.notice_supersedes,''),e.notice_expect_next_by`
 const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=$2) OR EXISTS(SELECT 1 FROM cairn.agent_organic_notice q WHERE q.event_id=e.event_id AND q.recipient_inbox=$2))`
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
@@ -211,7 +222,7 @@ func scanEvent(row pgx.Row) (AgentEvent, error) {
 	return e, err
 }
 func eventScanFields(e *AgentEvent) []any {
-	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup, &e.NoticePolicy, &e.NoticeFlush, &e.NoticeDelivery, &e.NoticeExpiresAt}
+	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup, &e.NoticePolicy, &e.NoticeFlush, &e.NoticeDelivery, &e.NoticeExpiresAt, &e.Action, &e.Supersedes, &e.ExpectNextBy}
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))
@@ -234,6 +245,23 @@ func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destin
 }
 
 func (s *Store) normalizePublication(req PublishEventRequest, dest Destination) (PublishEventRequest, error) {
+	if req.Action != "" || req.Supersedes != "" || req.ExpectNextBy != nil {
+		if req.Kind != "notice" {
+			return req, failure("INVALID_REQUEST", "notice intent fields require notice kind")
+		}
+		if req.Action != "" && req.Action != "none" && req.Action != "review" && req.Action != "decide" {
+			return req, failure("INVALID_REQUEST", "notice action must be none, review or decide")
+		}
+		if req.Action == "none" && req.NoticePolicy != nil && req.NoticePolicy.Urgency == "urgent" {
+			return req, failure("INVALID_REQUEST", "notice action none cannot combine with urgent notice policy")
+		}
+		if req.Supersedes != "" && !noticeSupersedesKey.MatchString(req.Supersedes) {
+			return req, failure("INVALID_REQUEST", "notice supersedes must be a 1-128 byte topic key")
+		}
+		if req.ExpectNextBy != nil && (req.ExpectNextBy.IsZero() || req.ExpectNextBy.Year() < 1 || req.ExpectNextBy.Year() > 9999) {
+			return req, failure("INVALID_REQUEST", "notice expect_next_by requires a valid absolute timestamp")
+		}
+	}
 	if policy := req.NoticePolicy; policy != nil {
 		if req.Kind != "notice" || policy.Version != 1 ||
 			(policy.Urgency != "routine" && policy.Urgency != "urgent") ||
@@ -402,7 +430,7 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 			delay = policy.DeferSeconds
 		}
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline,notice_policy,notice_delivery,notice_expires_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14,$15,NULLIF($16,''),$17,clock_timestamp())`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline, policy, req.NoticeDelivery, req.NoticeExpiresAt)
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline,notice_policy,notice_delivery,notice_expires_at,notice_action,notice_supersedes,notice_expect_next_by,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''),NULLIF($19,''),$20,clock_timestamp())`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline, policy, req.NoticeDelivery, req.NoticeExpiresAt, req.Action, req.Supersedes, req.ExpectNextBy)
 	if err != nil {
 		return AgentEvent{}, err
 	}
@@ -452,6 +480,15 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 		if req.NoticeExpiresAt.Before(now.Add(1*time.Minute)) || req.NoticeExpiresAt.After(now.Add(7*24*time.Hour)) {
 			return AgentEvent{}, failure("INVALID_REQUEST", "notice expiry must be between 1 minute and 7 days from now")
 		}
+		if req.Kind == "notice" && req.Supersedes != "" {
+			_, err = tx.Exec(ctx, `UPDATE cairn.agent_organic_notice q SET state='unavailable',unavailable_reason='superseded' FROM cairn.agent_event e WHERE q.event_id=e.event_id AND q.repo=$2 AND q.publisher_principal=$3 AND q.recipient_inbox=$5 AND e.kind='notice' AND e.notice_supersedes=$4 AND ($6='shareable' OR e.sensitivity='local') AND q.event_id<>$1 AND q.state='queued'`, id, req.Repo, s.channel.Principal, req.Supersedes, req.Destination.Name, sensitivity)
+			if err == nil {
+				_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery d SET state='ignored',completed_at=clock_timestamp(),code='superseded',superseded_by=$1 FROM cairn.agent_event e WHERE d.event_id=e.event_id AND e.repo=$2 AND e.publisher=$3 AND e.kind='notice' AND e.notice_supersedes=$4 AND ($6='shareable' OR e.sensitivity='local') AND e.event_id<>$1 AND d.state='pending' AND d.consumer=$5 AND `+wakeHold+` AND `+sessionInboxHold, id, req.Repo, s.channel.Principal, req.Supersedes, req.Destination.Name, sensitivity)
+			}
+			if err != nil {
+				return AgentEvent{}, err
+			}
+		}
 		var recipientCount, repoCount int
 		if err = tx.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_organic_notice WHERE repo=$1 AND recipient_agent_id=$2 AND state='queued'`, req.Repo, agentID).Scan(&recipientCount); err != nil {
 			return AgentEvent{}, err
@@ -497,6 +534,15 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 	}
 	if err != nil {
 		return AgentEvent{}, err
+	}
+	if req.Kind == "notice" && req.Supersedes != "" && req.NoticeDelivery != "next_organic_turn" {
+		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery d SET state='ignored',completed_at=clock_timestamp(),code='superseded',superseded_by=$1 FROM cairn.agent_event e WHERE d.event_id=e.event_id AND e.repo=$2 AND e.publisher=$3 AND e.kind='notice' AND e.notice_supersedes=$4 AND ($5='shareable' OR e.sensitivity='local') AND e.event_id<>$1 AND d.state='pending' AND EXISTS(SELECT 1 FROM cairn.agent_delivery dn WHERE dn.event_id=$1 AND dn.consumer=d.consumer) AND `+wakeHold+` AND `+sessionInboxHold, id, req.Repo, s.channel.Principal, req.Supersedes, sensitivity)
+		if err == nil {
+			_, err = tx.Exec(ctx, `UPDATE cairn.agent_organic_notice q SET state='unavailable',unavailable_reason='superseded' FROM cairn.agent_event e WHERE q.event_id=e.event_id AND q.repo=$2 AND q.publisher_principal=$3 AND EXISTS(SELECT 1 FROM cairn.agent_delivery dn WHERE dn.event_id=$1 AND dn.consumer=q.recipient_inbox) AND e.kind='notice' AND e.notice_supersedes=$4 AND ($5='shareable' OR e.sensitivity='local') AND q.event_id<>$1 AND q.state='queued'`, id, req.Repo, s.channel.Principal, req.Supersedes, sensitivity)
+		}
+		if err != nil {
+			return AgentEvent{}, err
+		}
 	}
 	if req.ResponseGroup != nil {
 		if err = createResponseGroup(ctx, tx, id, *req.ResponseGroup); err != nil {
@@ -674,20 +720,21 @@ func (s *Store) Events(ctx context.Context, req EventQuery, dest Destination) (E
 }
 
 const deliveryControl = `CASE WHEN d.control_at IS NULL THEN NULL ELSE jsonb_build_object('at',d.control_at,'by',d.control_by,'code',d.code) END`
-const deliveryColumns = `d.delivery_id::text,d.consumer,d.state,d.available_at,COALESCE(d.lease_id::text,''),d.lease_until,d.attempts,d.completed_at,d.code,d.result_id::text,d.result_version,` + deliveryControl + `,d.completed_after_lease`
+const deliveryColumns = `d.delivery_id::text,d.consumer,d.state,d.available_at,COALESCE(d.lease_id::text,''),d.lease_until,d.attempts,d.completed_at,d.code,COALESCE(d.superseded_by::text,''),d.result_id::text,d.result_version,` + deliveryControl + `,d.completed_after_lease`
 
 func scanDelivery(row pgx.Row) (AgentDelivery, error) {
 	var d AgentDelivery
 	var id *string
 	var version *int
-	err := row.Scan(&d.DeliveryID, &d.Consumer, &d.State, &d.AvailableAt, &d.LeaseID, &d.LeaseUntil, &d.Attempts, &d.CompletedAt, &d.Code, &id, &version, &d.Control, &d.Late)
+	err := row.Scan(&d.DeliveryID, &d.Consumer, &d.State, &d.AvailableAt, &d.LeaseID, &d.LeaseUntil, &d.Attempts, &d.CompletedAt, &d.Code, &d.SupersededBy, &id, &version, &d.Control, &d.Late)
 	if id != nil && version != nil {
 		d.Result = &RecordVersionRef{RecordID: *id, Version: *version}
 	}
 	return d, err
 }
 func (s *Store) ownedDelivery(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentDelivery, error) {
-	d, err := scanDelivery(tx.QueryRow(ctx, `SELECT `+deliveryColumns+` FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE d.delivery_id=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) FOR UPDATE OF d`, id, s.channel.Principal, dest.AllowLocal))
+	cols := strings.Replace(deliveryColumns, "COALESCE(d.superseded_by::text,'')", "COALESCE((SELECT CASE WHEN se.sensitivity='shareable' OR $3 THEN d.superseded_by::text ELSE '' END FROM cairn.agent_event se WHERE se.event_id=d.superseded_by),'')", 1)
+	d, err := scanDelivery(tx.QueryRow(ctx, `SELECT `+cols+` FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE d.delivery_id=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) FOR UPDATE OF d`, id, s.channel.Principal, dest.AllowLocal))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return d, failure("NOT_FOUND", "delivery not found")
 	}
@@ -965,7 +1012,9 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 			}
 		}
 	}
-	rows, err := tx.Query(ctx, `SELECT `+strings.Replace(deliveryColumns, "d.result_id::text,d.result_version", "CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_id::text END,CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_version END", 1)+` FROM cairn.agent_delivery d LEFT JOIN cairn.memory_record rm ON rm.record_id=d.result_id WHERE event_id=$1 AND ($2 OR consumer=ANY($3)) AND ($4='' OR delivery_id>NULLIF($4,'')::uuid) ORDER BY delivery_id LIMIT $5`, req.EventID, publisherVisible, consumers, req.After, limit+1, dest.AllowLocal)
+	statusCols := strings.Replace(deliveryColumns, "COALESCE(d.superseded_by::text,'')", "COALESCE((SELECT CASE WHEN se.sensitivity='shareable' OR $6 THEN d.superseded_by::text ELSE '' END FROM cairn.agent_event se WHERE se.event_id=d.superseded_by),'')", 1)
+	statusCols = strings.Replace(statusCols, "d.result_id::text,d.result_version", "CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_id::text END,CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_version END", 1)
+	rows, err := tx.Query(ctx, `SELECT `+statusCols+` FROM cairn.agent_delivery d LEFT JOIN cairn.memory_record rm ON rm.record_id=d.result_id WHERE event_id=$1 AND ($2 OR consumer=ANY($3)) AND ($4='' OR delivery_id>NULLIF($4,'')::uuid) ORDER BY delivery_id LIMIT $5`, req.EventID, publisherVisible, consumers, req.After, limit+1, dest.AllowLocal)
 	if err != nil {
 		return out, err
 	}
@@ -1036,6 +1085,6 @@ func (s *Store) AgentEventStats(ctx context.Context, req EventQuery, dest Destin
 	if err != nil {
 		return out, err
 	}
-	err = tx.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE d.state='pending'),count(*) FILTER(WHERE d.state='leased'),count(*) FILTER(WHERE d.state='leased' AND lease_until<=clock_timestamp()),count(*) FILTER(WHERE d.state='handled'),count(*) FILTER(WHERE d.state='ignored'),count(*) FILTER(WHERE d.state='failed'),COALESCE(sum(greatest(d.attempts-1,0)),0),COALESCE(extract(epoch FROM clock_timestamp()-min(e.created_at) FILTER(WHERE d.state IN ('pending','leased'))),0) FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3)`, repo, s.channel.Principal, dest.AllowLocal).Scan(&out.Deliveries, &out.Pending, &out.Leased, &out.Expired, &out.Handled, &out.Ignored, &out.Failed, &out.Redeliveries, &out.OldestSeconds)
+	err = tx.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE d.state='pending'),count(*) FILTER(WHERE d.state='leased'),count(*) FILTER(WHERE d.state='leased' AND lease_until<=clock_timestamp()),count(*) FILTER(WHERE d.state='handled'),count(*) FILTER(WHERE d.state='ignored'),count(*) FILTER(WHERE d.state='ignored' AND d.code='superseded'),count(*) FILTER(WHERE d.state='failed'),COALESCE(sum(greatest(d.attempts-1,0)),0),COALESCE(extract(epoch FROM clock_timestamp()-min(e.created_at) FILTER(WHERE d.state IN ('pending','leased'))),0) FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3)`, repo, s.channel.Principal, dest.AllowLocal).Scan(&out.Deliveries, &out.Pending, &out.Leased, &out.Expired, &out.Handled, &out.Ignored, &out.Superseded, &out.Failed, &out.Redeliveries, &out.OldestSeconds)
 	return out, err
 }

@@ -1,6 +1,8 @@
 // Opt-in OpenCode session messaging tools, appended by `cairn opencode-install --messaging`.
 const messagingAgentName = /^agent-([1-9][0-9]{0,17})$/
 const messagingLabel = /^[A-Za-z0-9_.-]{1,128}$/
+const messagingTopicKey = /^[A-Za-z0-9_.:/-]{1,128}$/
+const messagingRFC3339 = /^([0-9]{4})-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})$/
 const messagingUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const messagingDirectoryPages = 50
 const messagingIdentityNote = " Your session inbox is found from this conversation's registered native session; pass agent_id and execution_id only if that lookup fails."
@@ -14,9 +16,10 @@ type DirectoryPage = { agents: DirectoryAgent[], next_after?: number, more?: boo
 type RecordRef = { record_id: string, version: number }
 type DeliveryRecord = {
   delivery_id: string, lease_id?: string, lease_until?: string, state: string, attempts?: number,
-  result?: RecordRef, code?: string, consumer?: string, completed_at?: string, diagnosis?: unknown,
+  result?: RecordRef, code?: string, superseded_by?: string, consumer?: string, completed_at?: string, diagnosis?: unknown,
   event: {
-    event_id: string, kind: string, from: string, created_at: string,
+    event_id: string, kind: string, action?: string, supersedes?: string, expect_next_by?: string,
+    from: string, created_at: string,
     causation_id?: string, correlation_id?: string, ref: RecordRef,
     destination: { type: string, name: string },
   },
@@ -59,7 +62,12 @@ function viewDelivery(d: DeliveryRecord) {
     ...(d.lease_until ? { lease_until: d.lease_until } : {}),
     state: d.state,
     ...(d.attempts ? { attempts: d.attempts } : {}),
-    event_id: d.event.event_id, kind: d.event.kind, from: d.event.from, created_at: d.event.created_at,
+    event_id: d.event.event_id, kind: d.event.kind,
+    ...(d.event.action ? { action: d.event.action } : {}),
+    ...(d.event.supersedes ? { supersedes: d.event.supersedes } : {}),
+    ...(d.event.expect_next_by ? { expect_next_by: d.event.expect_next_by } : {}),
+    ...(d.superseded_by ? { superseded_by: d.superseded_by } : {}),
+    from: d.event.from, created_at: d.event.created_at,
     ...(d.event.causation_id ? { causation_id: d.event.causation_id } : {}),
     ...(d.event.correlation_id ? { correlation_id: d.event.correlation_id } : {}),
     source: d.event.ref,
@@ -210,6 +218,9 @@ export const send = validatedTool({
     causation_id: z.string().optional().describe("Event UUID this message answers or follows."),
     correlation_id: z.string().optional().describe("Interaction UUID shared by related events."),
     urgency: z.string().optional().describe("Notice wake policy: routine or urgent. Notices only."),
+    action: z.string().optional().describe("Notice action intent: none, review or decide. Notices only."),
+    supersedes: z.string().optional().describe("Sender-scoped topic key (1-128 ASCII letters, digits or _.:/-) that supersedes older pending notices from you. Notices only."),
+    expect_next_by: z.string().optional().describe("Optional RFC3339 timestamp when the next update is expected. Notices only."),
     ...sessionOverrideFields,
   },
   async execute(args, context) {
@@ -231,6 +242,27 @@ export const send = validatedTool({
         throw new Error("INVALID_REQUEST: urgency is routine or urgent and applies to notices only")
       }
       notice_policy = { version: 1, urgency: args.urgency }
+    }
+    if (args.action !== undefined || args.supersedes !== undefined || args.expect_next_by !== undefined) {
+      if (kind !== "notice") {
+        throw new Error("INVALID_REQUEST: action, supersedes and expect_next_by apply to notices only")
+      }
+      if (args.action !== undefined && args.action !== "" && args.action !== "none" && args.action !== "review" && args.action !== "decide") {
+        throw new Error("INVALID_REQUEST: action must be none, review or decide")
+      }
+      if (args.action === "none" && args.urgency === "urgent") {
+        throw new Error("INVALID_REQUEST: action none cannot combine with urgent urgency")
+      }
+      if (args.supersedes !== undefined && args.supersedes !== "" && !messagingTopicKey.test(args.supersedes)) {
+        throw new Error("INVALID_REQUEST: supersedes requires a 1-128 byte topic key")
+      }
+      if (args.expect_next_by !== undefined && args.expect_next_by !== "") {
+        const match = messagingRFC3339.exec(args.expect_next_by)
+        const year = match ? Number(match[1]) : 0
+        if (!match || year < 1 || year > 9999 || Number.isNaN(Date.parse(args.expect_next_by))) {
+          throw new Error("INVALID_REQUEST: expect_next_by must be an RFC3339 timestamp")
+        }
+      }
     }
     const config = await settings("send", context)
     const { ref } = await selfSession(config, context, args.agent_id, args.execution_id)
@@ -256,14 +288,21 @@ export const send = validatedTool({
       ...(args.causation_id ? { causation_id: args.causation_id } : {}),
       ...(args.correlation_id ? { correlation_id: args.correlation_id } : {}),
       ...(notice_policy ? { notice_policy } : {}),
-    }, ref) as { event_id?: string, from?: string, kind?: string, ref?: RecordRef, destination?: { type: string, name: string } }
+      ...(args.action ? { action: args.action } : {}),
+      ...(args.supersedes ? { supersedes: args.supersedes } : {}),
+      ...(args.expect_next_by ? { expect_next_by: args.expect_next_by } : {}),
+    }, ref) as { event_id?: string, from?: string, kind?: string, action?: string, supersedes?: string, expect_next_by?: string, ref?: RecordRef, destination?: { type: string, name: string } }
     if (!isUUID(published.event_id) || published.ref?.record_id !== source.record_id || published.ref?.version !== source.version ||
         published.destination?.type !== destination.type || published.destination?.name !== destination.name) {
       throw new Error("SCHEMA_MISMATCH: publish returned a different source or destination")
     }
     return render({
       event_id: published.event_id, from: published.from, to: published.destination,
-      ...(recipient ? { recipient } : {}), kind: published.kind, source, request_id: args.request_id,
+      ...(recipient ? { recipient } : {}), kind: published.kind,
+      ...(published.action ? { action: published.action } : {}),
+      ...(published.supersedes ? { supersedes: published.supersedes } : {}),
+      ...(published.expect_next_by ? { expect_next_by: published.expect_next_by } : {}),
+      source, request_id: args.request_id,
     }, config)
   },
 })
@@ -434,7 +473,11 @@ export const event_status = validatedTool({
       event: DeliveryRecord["event"], deliveries?: DeliveryRecord[], next_after?: string, more?: boolean,
     }
     return render({
-      event_id: status.event.event_id, kind: status.event.kind, from: status.event.from,
+      event_id: status.event.event_id, kind: status.event.kind,
+      ...(status.event.action ? { action: status.event.action } : {}),
+      ...(status.event.supersedes ? { supersedes: status.event.supersedes } : {}),
+      ...(status.event.expect_next_by ? { expect_next_by: status.event.expect_next_by } : {}),
+      from: status.event.from,
       to: status.event.destination, created_at: status.event.created_at,
       deliveries: (status.deliveries ?? []).map(d => ({
         delivery_id: d.delivery_id, consumer: d.consumer ?? "", state: d.state,
@@ -442,6 +485,7 @@ export const event_status = validatedTool({
         ...(d.lease_until ? { lease_until: d.lease_until } : {}),
         ...(d.completed_at ? { completed_at: d.completed_at } : {}),
         ...(d.code ? { code: d.code } : {}),
+        ...(d.superseded_by ? { superseded_by: d.superseded_by } : {}),
         ...(d.result ? { result: d.result } : {}),
         ...(d.diagnosis !== undefined ? { diagnosis: d.diagnosis } : {}),
       })),

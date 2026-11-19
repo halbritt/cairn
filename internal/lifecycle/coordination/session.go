@@ -638,6 +638,13 @@ func (s *NativeSession) AdvanceBatch(ctx context.Context, freshOrganic bool) (*v
 	fields := []string{"request_id", "session", "attempt_id", "version"}
 	if organic {
 		fields = append(fields, "root_id")
+	} else if request != nil && request.Kind == value.Object {
+		if as := request.Get("auto_settle_action_none"); as != nil {
+			if as.Kind != value.Bool {
+				return nil, nativeRefusal("INVALID_HOST", "native batch advance intent is malformed")
+			}
+			fields = append(fields, "auto_settle_action_none")
+		}
 	}
 	if !nativeHasKeys(request, fields...) {
 		return nil, nativeRefusal("INVALID_HOST", "native batch advance intent is malformed")

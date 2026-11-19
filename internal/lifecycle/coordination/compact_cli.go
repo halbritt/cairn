@@ -478,7 +478,13 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 		}
 	}
 	if op == "read" {
-		return 0, c.output(out, nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "kind", event.Get("kind"), "sender", event.Get("from"), "source", event.Get("ref"), "body", body), false)
+		readOut := nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "kind", event.Get("kind"), "sender", event.Get("from"), "source", event.Get("ref"), "body", body)
+		for _, k := range []string{"action", "supersedes", "expect_next_by"} {
+			if v := event.Get(k); value.Truth(v) {
+				readOut.Set(k, v)
+			}
+		}
+		return 0, c.output(out, readOut, false)
 	}
 	if op == "inspect" {
 		return 0, c.output(out, nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "context", native), false)
@@ -575,12 +581,25 @@ func (c *CLI) advanceCompact(ctx context.Context, config *value.Value, path stri
 		result, err = s.AdvanceOrganicNotice(ctx, request)
 	} else {
 		old := state.Get("batch_advance_intent")
-		if !nativeNone(old) && !nativeEqual(old, request) {
-			return 0, nativeRefusal("SESSION_BUSY", "another notice handoff is unresolved")
-		}
-		state.Set("batch_advance_intent", request)
-		if err = s.Save(); err != nil {
-			return 0, err
+		if !nativeNone(old) {
+			if old.Kind != value.Object || !nativeEqual(old.Get("request_id"), request.Get("request_id")) ||
+				!nativeEqual(old.Get("session"), request.Get("session")) ||
+				!nativeEqual(old.Get("attempt_id"), request.Get("attempt_id")) ||
+				!nativeEqual(old.Get("version"), request.Get("version")) {
+				return 0, nativeRefusal("SESSION_BUSY", "another notice handoff is unresolved")
+			}
+		} else {
+			autoSettle, err := c.stateAutoSettleActionNone(config, state)
+			if err != nil {
+				return 0, err
+			}
+			if autoSettle {
+				request.Set("auto_settle_action_none", value.Boolean(true))
+			}
+			state.Set("batch_advance_intent", request)
+			if err = s.Save(); err != nil {
+				return 0, err
+			}
 		}
 		result, err = s.AdvanceBatch(ctx, false)
 	}

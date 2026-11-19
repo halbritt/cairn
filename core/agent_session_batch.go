@@ -12,10 +12,11 @@ import (
 // eligible routine notice only after the current item was explicitly settled.
 // It never applies a disposition to the next item or releases the final hold.
 type SessionInboxAdvance struct {
-	RequestID string          `json:"request_id"`
-	Session   AgentSessionRef `json:"session"`
-	AttemptID string          `json:"attempt_id"`
-	Version   int             `json:"version"`
+	RequestID            string          `json:"request_id"`
+	Session              AgentSessionRef `json:"session"`
+	AttemptID            string          `json:"attempt_id"`
+	Version              int             `json:"version"`
+	AutoSettleActionNone bool            `json:"auto_settle_action_none,omitempty"`
 }
 
 type SessionInboxAdvanceResult struct {
@@ -32,8 +33,17 @@ func (s *Store) AdvanceSessionInbox(ctx context.Context, req SessionInboxAdvance
 		return empty, failure("INVALID_REQUEST", "native notice advance requires stable UUIDs and version 1")
 	}
 	guard := func(tx pgx.Tx) error {
-		_, err := currentAgentSession(ctx, tx, req.Session, s.channel.Principal, s.channel.Repo, true, dest)
-		return err
+		if _, err := currentAgentSession(ctx, tx, req.Session, s.channel.Principal, s.channel.Repo, true, dest); err != nil {
+			return err
+		}
+		var hidden bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt att JOIN cairn.agent_delivery d USING(delivery_id) JOIN cairn.agent_event e USING(event_id) WHERE att.attempt_id=$1 AND e.sensitivity<>'shareable' AND NOT $2)`, req.RequestID, dest.AllowLocal).Scan(&hidden); err != nil {
+			return err
+		}
+		if hidden {
+			return failure("NOT_FOUND", "source version unavailable")
+		}
+		return nil
 	}
 	return mutate(ctx, s, "session-inbox-advance", req.RequestID, req,
 		func(tx pgx.Tx) (SessionInboxAdvanceResult, error) {
@@ -106,19 +116,40 @@ func (s *Store) AdvanceSessionInbox(ctx context.Context, req SessionInboxAdvance
 			}
 			// The root attempt timestamp freezes the burst. A routine notice
 			// published during handling waits for its own turn.
-			var nextID, kind, urgency string
-			err = tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.kind,COALESCE(e.notice_policy->>'urgency','')`+
-				sessionInboxEligibleBase+` AND e.created_at<=$4 AND d.available_at<=$4`+
-				` AND (d.state='pending' OR d.lease_until<=$4) ORDER BY e.position FOR UPDATE OF d LIMIT 1`,
-				a.Repo, a.Inbox, dest.AllowLocal, cutoff).Scan(&nextID, &kind, &urgency)
-			if errors.Is(err, pgx.ErrNoRows) {
-				return endBatch("empty")
+			var nextID, eventID, kind, urgency, action string
+			limit := 1
+			if req.AutoSettleActionNone {
+				limit = maxAutoSettleBatch + 1
 			}
-			if err != nil {
-				return empty, err
-			}
-			if kind != "notice" || urgency == "urgent" {
-				return endBatch("priority_waiting")
+			for i := 0; i < limit; i++ {
+				err = tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.event_id::text,e.kind,COALESCE(e.notice_policy->>'urgency',''),COALESCE(e.notice_action,'')`+
+					sessionInboxEligibleBase+` AND e.created_at<=$4 AND d.available_at<=$4`+
+					` AND (d.state='pending' OR d.lease_until<=$4) ORDER BY e.position FOR UPDATE OF d LIMIT 1`,
+					a.Repo, a.Inbox, dest.AllowLocal, cutoff).Scan(&nextID, &eventID, &kind, &urgency, &action)
+				if errors.Is(err, pgx.ErrNoRows) {
+					return endBatch("empty")
+				}
+				if err != nil {
+					return empty, err
+				}
+				if kind != "notice" || urgency == "urgent" {
+					return endBatch("priority_waiting")
+				}
+				if req.AutoSettleActionNone && action == "none" {
+					if i == maxAutoSettleBatch {
+						return endBatch("batch_limit")
+					}
+					_, skip, err := autoSettleActionNoneDeliveryTx(ctx, tx, nextID, eventID, dest.AllowLocal)
+					if err != nil {
+						return empty, err
+					}
+					if skip {
+						return endBatch("empty")
+					}
+					nextID = ""
+					continue
+				}
+				break
 			}
 			lease := uuid.NewString()
 			if _, err = finishAttempt(ctx, tx, current.ID, "delivery_completed", attemptClose{}); err != nil {

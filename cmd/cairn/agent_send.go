@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -22,6 +23,7 @@ const sendHelp = `cairn agent [connection flags] send --journal ABSOLUTE_PATH --
   --stdin --kind EVENT_KIND [--shareable] [--source-kind NOTE_KIND]
   (--to PRINCIPAL | --resolution FILE | --topic TOPIC | --pool POOL)
   [--workspace PATH --harness NAME --model NAME --capability NAME]
+  [--action none|review|decide] [--supersedes TOPIC_KEY] [--expect-next-by RFC3339]
 
 Save selected stdin text under coordination/<publication-request-UUID>, then
 publish its exact returned version. The helper allocates separate source and
@@ -34,7 +36,10 @@ helper never chooses a recipient or creates a session. Publication failure
 returns source_saved and publication_pending without marking delivery complete.
 `
 
-var sendEventName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+var (
+	sendEventName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+	sendTopicKey  = regexp.MustCompile(`^[A-Za-z0-9_.:/-]{1,128}$`)
+)
 
 type sendIntent struct {
 	BodySHA256       string                 `json:"body_sha256"`
@@ -47,6 +52,9 @@ type sendIntent struct {
 	Resolution       *core.AgentResolution  `json:"resolution,omitempty"`
 	Pool             *core.PoolRequirements `json:"pool,omitempty"`
 	Session          *core.AgentSessionRef  `json:"session,omitempty"`
+	Action           string                 `json:"action,omitempty"`
+	Supersedes       string                 `json:"supersedes,omitempty"`
+	ExpectNextBy     *time.Time             `json:"expect_next_by,omitempty"`
 }
 
 type sendJournal struct {
@@ -134,6 +142,9 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	workspace := f.String("workspace", "", "pool workspace")
 	harness := f.String("harness", "", "pool harness")
 	model := f.String("model", "", "pool model")
+	noticeAction := f.String("action", "", "notice intent action (none|review|decide)")
+	noticeSupersedes := f.String("supersedes", "", "sender-scoped notice topic key superseded by this notice")
+	noticeExpectNextBy := f.String("expect-next-by", "", "expected next update instant for notice (RFC3339)")
 	var capabilities []string
 	f.Func("capability", "pool capability; repeat", func(value string) error { capabilities = append(capabilities, value); return nil })
 	if err := f.Parse(args); err != nil {
@@ -144,6 +155,27 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	}
 	if f.NArg() != 0 || !*stdin || *journalPath == "" || strings.TrimSpace(*repo) == "" || *repo == "*" || len(*repo) > 256 || !sendEventName.MatchString(*kind) {
 		return nil, invalid("send requires --journal, --repo, --stdin, --kind and no positional arguments")
+	}
+	provided := map[string]bool{}
+	f.Visit(func(fl *flag.Flag) { provided[fl.Name] = true })
+	var parsedExpectNextBy *time.Time
+	if provided["action"] || provided["supersedes"] || provided["expect-next-by"] {
+		if *kind != "notice" {
+			return nil, invalid("notice intent flags (--action, --supersedes, --expect-next-by) require --kind notice")
+		}
+		if provided["action"] && *noticeAction != "none" && *noticeAction != "review" && *noticeAction != "decide" {
+			return nil, invalid("invalid --action: must be none, review or decide")
+		}
+		if provided["supersedes"] && !sendTopicKey.MatchString(*noticeSupersedes) {
+			return nil, invalid("invalid --supersedes: must be a 1-128 byte topic key")
+		}
+		if provided["expect-next-by"] {
+			t, err := parseEventTimestamp(*noticeExpectNextBy)
+			if err != nil || t.IsZero() || t.Year() < 1 || t.Year() > 9999 {
+				return nil, invalid("invalid --expect-next-by: must be an RFC3339 timestamp")
+			}
+			parsedExpectNextBy = &t
+		}
 	}
 	switch *sourceKind {
 	case "note", "observation", "claim", "lesson", "procedure", "decision", "preference":
@@ -219,7 +251,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 		return nil, invalid("explicit destination required")
 	}
 	bodyHash := sha256.Sum256(body)
-	intent := sendIntent{BodySHA256: hex.EncodeToString(bodyHash[:]), CredentialSHA256: client.CredentialFingerprint(), Repo: *repo, Kind: *kind, SourceKind: *sourceKind, Shareable: *shareable, Destination: dest, Resolution: resolution, Pool: needs, Session: session}
+	intent := sendIntent{BodySHA256: hex.EncodeToString(bodyHash[:]), CredentialSHA256: client.CredentialFingerprint(), Repo: *repo, Kind: *kind, SourceKind: *sourceKind, Shareable: *shareable, Destination: dest, Resolution: resolution, Pool: needs, Session: session, Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy}
 	intentHash, err := sendHash(intent)
 	if err != nil {
 		return nil, err
@@ -256,7 +288,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 			}
 		}
 		if journal.EventID == "" {
-			publish := core.PublishEventRequest{RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
+			publish := core.PublishEventRequest{Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
 			var event core.AgentEvent
 			if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 				out = sendState(journal)

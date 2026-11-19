@@ -9,6 +9,7 @@ import (
 
 var agentSessionOperations = []OperationSpec{
 	bindDestination(OperationSpec{Name: "session-inbox-ready", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).SessionInboxReady),
+	bindDestination(OperationSpec{Name: "session-inbox-settle-none", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).SettleSessionActionNone),
 	bindDestination(OperationSpec{Name: "session-inbox-pending", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).SessionInboxPending),
 	bindOperation(OperationSpec{Name: "session-inbox-claim", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "request-id"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req core.SessionInboxClaim) (core.SessionInboxResult, error) {
 		if c.remote && req.TurnExclusive {

@@ -105,8 +105,11 @@ func ValidateConfig(config *value.Value) (*value.Value, error) {
 	if v := config.Get("compact_inbox_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !nativeContains([]string{"codex", "claude"}, h) || !value.Truth(config.Get("native_delivery"))) {
 		return fail("compact_inbox_version 1 requires Codex or Claude native delivery")
 	}
-	if v := config.Get("notice_batch_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !nativeEqual(config.Get("compact_inbox_version"), value.IntegerText("1")) || !nativeContains([]string{"codex", "claude"}, h) || !value.Truth(config.Get("native_delivery"))) {
+	if v := config.Get("notice_batch_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !sessionIntOne(config.Get("compact_inbox_version")) || !nativeContains([]string{"codex", "claude"}, h) || !value.Truth(config.Get("native_delivery"))) {
 		return fail("notice_batch_version 1 requires compact Codex or Claude native delivery")
+	}
+	if v := config.Get("notice_auto_settle_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !value.Truth(config.Get("native_delivery"))) {
+		return fail("notice_auto_settle_version 1 requires native_delivery")
 	}
 	binding := config.Get("binding")
 	if wake := config.Get("idle_wakeup"); !nativeNone(wake) {
@@ -331,7 +334,7 @@ func (c *CLI) usage(prog string) string {
 	case "cairn-inbox":
 		groups = []string{"[-h]", "[--code {unsupported_kind,source_unavailable,processing_failed}]", "{read,inspect,settle,advance}", "handle", "[{handled,ignored,failed}]"}
 	default:
-		groups = []string{"[-h]", "[--config CONFIG]", "[--event EVENT]", "[--config-dir CONFIG_DIR]", "[--once]", "[--native-session-id NATIVE_SESSION_ID]", "[--agent-id AGENT_ID]", "[--compact-inbox]", "[--notice-batch]", "[--clear-session-options]", "[--attempt-id ATTEMPT_ID]", "[--native-turn-id NATIVE_TURN_ID]", "[--delivery-id DELIVERY_ID]", "[--queued-submission-id QUEUED_SUBMISSION_ID]", "[--outcome {admitted_active,completed,cancelled,never_admitted,unknown}]", "[--record RECORD]", "[--enqueue-record ENQUEUE_RECORD]", "[--dequeue-record DEQUEUE_RECORD]", "[--refusal-record REFUSAL_RECORD]", "[--start-record START_RECORD]", "[--context-record CONTEXT_RECORD]", "[--end-record END_RECORD]", "[--check-only]", "{hook,watch,recover-refused-wake,recover-native-refused-wake,recover-codex-refused-wake,recover-codex-ended-turn,recover-daemon-start-claim,check-codex-native-health,reconcile-codex-queue-wake,inspect-held-refusal,configure-session-inbox}"}
+		groups = []string{"[-h]", "[--config CONFIG]", "[--event EVENT]", "[--config-dir CONFIG_DIR]", "[--once]", "[--native-session-id NATIVE_SESSION_ID]", "[--agent-id AGENT_ID]", "[--compact-inbox]", "[--notice-batch]", "[--auto-settle-action-none]", "[--clear-session-options]", "[--attempt-id ATTEMPT_ID]", "[--native-turn-id NATIVE_TURN_ID]", "[--delivery-id DELIVERY_ID]", "[--queued-submission-id QUEUED_SUBMISSION_ID]", "[--outcome {admitted_active,completed,cancelled,never_admitted,unknown}]", "[--record RECORD]", "[--enqueue-record ENQUEUE_RECORD]", "[--dequeue-record DEQUEUE_RECORD]", "[--refusal-record REFUSAL_RECORD]", "[--start-record START_RECORD]", "[--context-record CONTEXT_RECORD]", "[--end-record END_RECORD]", "[--check-only]", "{hook,watch,recover-refused-wake,recover-native-refused-wake,recover-codex-refused-wake,recover-codex-ended-turn,recover-daemon-start-claim,check-codex-native-health,reconcile-codex-queue-wake,inspect-held-refusal,configure-session-inbox}"}
 	}
 	width := 78
 	if n, err := strconv.Atoi(c.env("COLUMNS")); err == nil && n > 0 {
@@ -586,7 +589,7 @@ func (c *CLI) runRecovery(ctx context.Context, argv []string, out io.Writer) (in
 
 func (c *CLI) runRecoveryWithIO(ctx context.Context, argv []string, in io.Reader, out, errOut io.Writer) (int, error) {
 	const prog = "coordination.py"
-	spec := map[string]int{"--config": 1, "--event": 1, "--config-dir": 1, "--once": 0, "--native-session-id": 1, "--agent-id": 1, "--compact-inbox": 0, "--notice-batch": 0, "--clear-session-options": 0, "--attempt-id": 1, "--native-turn-id": 1, "--delivery-id": 1, "--queued-submission-id": 1, "--outcome": 1, "--record": 1, "--enqueue-record": 1, "--dequeue-record": 1, "--refusal-record": 1, "--start-record": 1, "--context-record": 1, "--end-record": 1, "--check-only": 0}
+	spec := map[string]int{"--config": 1, "--event": 1, "--config-dir": 1, "--once": 0, "--native-session-id": 1, "--agent-id": 1, "--compact-inbox": 0, "--notice-batch": 0, "--auto-settle-action-none": 0, "--clear-session-options": 0, "--attempt-id": 1, "--native-turn-id": 1, "--delivery-id": 1, "--queued-submission-id": 1, "--outcome": 1, "--record": 1, "--enqueue-record": 1, "--dequeue-record": 1, "--refusal-record": 1, "--start-record": 1, "--context-record": 1, "--end-record": 1, "--check-only": 0}
 	a, err := parseCLI(argv, prog, spec)
 	if err != nil {
 		return 0, err
@@ -623,26 +626,27 @@ func (c *CLI) runRecoveryWithIO(ctx context.Context, argv []string, in io.Reader
 		if !a.has("--config") || a.has("--native-session-id") == a.has("--agent-id") {
 			return 0, parseFail(prog, "configure-session-inbox requires --config and exactly one of --native-session-id or --agent-id")
 		}
-		if a.has("--clear-session-options") && (a.has("--compact-inbox") || a.has("--notice-batch")) {
-			return 0, parseFail(prog, "configure-session-inbox cannot combine --clear-session-options with --compact-inbox or --notice-batch")
+		if a.has("--clear-session-options") && (a.has("--compact-inbox") || a.has("--notice-batch") || a.has("--auto-settle-action-none")) {
+			return 0, parseFail(prog, "configure-session-inbox cannot combine --clear-session-options with --compact-inbox, --notice-batch or --auto-settle-action-none")
 		}
 		if a.has("--notice-batch") && !a.has("--compact-inbox") {
 			return 0, parseFail(prog, "configure-session-inbox: --notice-batch requires --compact-inbox")
 		}
-		if !a.has("--clear-session-options") && !a.has("--compact-inbox") {
-			return 0, parseFail(prog, "configure-session-inbox requires --compact-inbox or --clear-session-options")
+		if !a.has("--clear-session-options") && !a.has("--compact-inbox") && !a.has("--auto-settle-action-none") {
+			return 0, parseFail(prog, "configure-session-inbox requires --compact-inbox, --auto-settle-action-none or --clear-session-options")
 		}
 		cfg, cfgErr := LoadConfig(c.Host, a.get("--config"))
 		if cfgErr != nil {
 			return 0, cfgErr
 		}
 		res, cfgErr := c.ConfigureSessionInbox(ctx, cfg, SessionInboxOptionsRequest{
-			NativeSessionID:    a.get("--native-session-id"),
-			HasNativeSessionID: a.has("--native-session-id"),
-			AgentID:            a.get("--agent-id"),
-			CompactInbox:       a.has("--compact-inbox"),
-			NoticeBatch:        a.has("--notice-batch"),
-			Clear:              a.has("--clear-session-options"),
+			NativeSessionID:      a.get("--native-session-id"),
+			HasNativeSessionID:   a.has("--native-session-id"),
+			AgentID:              a.get("--agent-id"),
+			CompactInbox:         a.has("--compact-inbox"),
+			NoticeBatch:          a.has("--notice-batch"),
+			AutoSettleActionNone: a.has("--auto-settle-action-none"),
+			Clear:                a.has("--clear-session-options"),
 		})
 		if cfgErr != nil {
 			return 0, cfgErr

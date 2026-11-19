@@ -23,12 +23,13 @@ import (
 const sessionInboxOptionsSchema = "cairn.session-inbox-options/1"
 
 type SessionInboxOptionsRequest struct {
-	NativeSessionID    string
-	HasNativeSessionID bool
-	AgentID            string
-	CompactInbox       bool
-	NoticeBatch        bool
-	Clear              bool
+	NativeSessionID      string
+	HasNativeSessionID   bool
+	AgentID              string
+	CompactInbox         bool
+	NoticeBatch          bool
+	AutoSettleActionNone bool
+	Clear                bool
 }
 
 func (c *CLI) sessionOptionsPath(config *value.Value, nativeID string) (string, error) {
@@ -110,7 +111,7 @@ func validateSessionInboxOptionsEntry(config *value.Value, nativeID string, entr
 	}
 	for _, m := range entry.Members {
 		switch string(m.Key) {
-		case "schema", "binding", "native_session_id", "compact_inbox_version", "notice_batch_version", "updated_at":
+		case "schema", "binding", "native_session_id", "compact_inbox_version", "notice_batch_version", "notice_auto_settle_version", "updated_at":
 		default:
 			return nil, nativeRefusal("INVALID_HOST", "session inbox options are malformed")
 		}
@@ -127,19 +128,33 @@ func validateSessionInboxOptionsEntry(config *value.Value, nativeID string, entr
 	}
 	capable := nativeContains([]string{"codex", "claude"}, nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
 	cv := entry.Get("compact_inbox_version")
-	if !capable || cv == nil || cv.Kind != value.Int || cv.Integer != "1" {
+	asv := entry.Get("notice_auto_settle_version")
+	if cv == nil && asv == nil {
+		if !capable {
+			return nil, nativeRefusal("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
+		}
+		return nil, nativeRefusal("INVALID_HOST", "session inbox options are malformed")
+	}
+	if cv != nil && (!capable || cv.Kind != value.Int || cv.Integer != "1") {
 		return nil, nativeRefusal("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
 	}
-	if bv := entry.Get("notice_batch_version"); bv != nil && (bv.Kind != value.Int || bv.Integer != "1") {
+	if bv := entry.Get("notice_batch_version"); bv != nil && (bv.Kind != value.Int || bv.Integer != "1" || cv == nil) {
 		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
+	}
+	if asv != nil && (!value.Truth(config.Get("native_delivery")) || asv.Kind != value.Int || asv.Integer != "1") {
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_auto_settle_version 1 requires native_delivery")
 	}
 	return entry, nil
 }
 
+func sessionIntOne(v *value.Value) bool {
+	return v != nil && v.Kind == value.Int && v.Integer == "1"
+}
+
 func (c *CLI) effectiveSessionInboxOptions(config, nativeID *value.Value) (bool, bool, error) {
 	capable := nativeContains([]string{"codex", "claude"}, nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
-	compact := capable && nativeEqual(config.Get("compact_inbox_version"), value.IntegerText("1"))
-	batch := compact && nativeEqual(config.Get("notice_batch_version"), value.IntegerText("1"))
+	compact := capable && sessionIntOne(config.Get("compact_inbox_version"))
+	batch := compact && sessionIntOne(config.Get("notice_batch_version"))
 	if nativeID == nil || nativeID.Kind != value.String {
 		return compact, batch, nil
 	}
@@ -148,10 +163,38 @@ func (c *CLI) effectiveSessionInboxOptions(config, nativeID *value.Value) (bool,
 		return false, false, err
 	}
 	if override != nil {
-		compact = true
-		batch = batch || nativeEqual(override.Get("notice_batch_version"), value.IntegerText("1"))
+		compact = compact || sessionIntOne(override.Get("compact_inbox_version"))
+		batch = batch || (compact && sessionIntOne(override.Get("notice_batch_version")))
 	}
 	return compact, batch, nil
+}
+
+func (c *CLI) autoSettleActionNoneEnabled(config, nativeID *value.Value) (bool, error) {
+	if !value.Truth(config.Get("native_delivery")) {
+		return false, nil
+	}
+	enabled := sessionIntOne(config.Get("notice_auto_settle_version"))
+	if nativeID == nil || nativeID.Kind != value.String {
+		return enabled, nil
+	}
+	override, err := c.readSessionInboxOptions(config, string(nativeID.String))
+	if err != nil {
+		return false, err
+	}
+	if override != nil && sessionIntOne(override.Get("notice_auto_settle_version")) {
+		enabled = true
+	}
+	return enabled, nil
+}
+
+func (c *CLI) stateAutoSettleActionNone(config, state *value.Value) (bool, error) {
+	var nativeID *value.Value
+	if state != nil && state.Kind == value.Object {
+		if agent := state.Get("agent"); agent != nil && agent.Kind == value.Object {
+			nativeID = agent.Get("native_session_id")
+		}
+	}
+	return c.autoSettleActionNoneEnabled(config, nativeID)
 }
 
 func (c *CLI) resolveSessionTarget(config *value.Value, req SessionInboxOptionsRequest) (string, error) {
@@ -218,6 +261,9 @@ func (c *CLI) ConfigureSessionInbox(ctx context.Context, config *value.Value, re
 	if req.NoticeBatch && !req.CompactInbox {
 		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
 	}
+	if req.AutoSettleActionNone && !value.Truth(config.Get("native_delivery")) {
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_auto_settle_version 1 requires native_delivery")
+	}
 	nativeID, err := c.resolveSessionTarget(config, req)
 	if err != nil {
 		return nil, err
@@ -251,11 +297,16 @@ func (c *CLI) ConfigureSessionInbox(ctx context.Context, config *value.Value, re
 			"schema", sessionInboxOptionsSchema,
 			"binding", config.Get("binding"),
 			"native_session_id", nativeID,
-			"compact_inbox_version", 1,
 			"updated_at", nowFloat,
 		)
+		if req.CompactInbox {
+			rec.Set("compact_inbox_version", value.IntegerText("1"))
+		}
 		if req.NoticeBatch {
 			rec.Set("notice_batch_version", value.IntegerText("1"))
+		}
+		if req.AutoSettleActionNone {
+			rec.Set("notice_auto_settle_version", value.IntegerText("1"))
 		}
 		if err := c.writeState(optPath, rec); err != nil {
 			return nil, err
@@ -266,12 +317,19 @@ func (c *CLI) ConfigureSessionInbox(ctx context.Context, config *value.Value, re
 	if err != nil {
 		return nil, err
 	}
-	var compactVal, batchVal *value.Value
+	autoSettle, err := c.autoSettleActionNoneEnabled(config, value.Text(nativeID))
+	if err != nil {
+		return nil, err
+	}
+	var compactVal, batchVal, autoSettleVal *value.Value
 	if compact {
 		compactVal = value.IntegerText("1")
 	}
 	if batch {
 		batchVal = value.IntegerText("1")
+	}
+	if autoSettle {
+		autoSettleVal = value.IntegerText("1")
 	}
 	return nativeMap(
 		"schema", sessionInboxOptionsSchema,
@@ -281,5 +339,6 @@ func (c *CLI) ConfigureSessionInbox(ctx context.Context, config *value.Value, re
 		"options_path", optPath,
 		"compact_inbox_version", compactVal,
 		"notice_batch_version", batchVal,
+		"notice_auto_settle_version", autoSettleVal,
 	), nil
 }

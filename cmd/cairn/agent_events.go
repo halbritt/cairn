@@ -32,6 +32,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
     [--admission-expires-at RFC3339] [--task-deadline RFC3339]
     [--response-deadline RFC3339 --response-policy all|partial]
     [--notice-urgency routine|urgent --notice-defer-seconds 0..60] (notice only)
+    [--action none|review|decide] [--supersedes TOPIC_KEY] [--expect-next-by RFC3339] (notice only)
     [--notice-delivery next_organic_turn --notice-expires-at RFC3339] (quiet notice only)
   notice-flush --request-id UUID EVENT_UUID (original publisher; releases pending routine deferral)
   notice-pending [--agent AGENT] [--state queued|admitted|expired|flushed|restore_fenced] [--limit N]
@@ -127,6 +128,9 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	responsePolicy := f.String("response-policy", "", "response group partial collection policy (all|partial)")
 	noticeUrgency := f.String("notice-urgency", "", "opt-in notice wake policy (routine|urgent)")
 	noticeDeferSeconds := f.Int("notice-defer-seconds", 0, "routine notice wake delay, 0-60 seconds")
+	noticeAction := f.String("action", "", "notice intent action (none|review|decide)")
+	noticeSupersedes := f.String("supersedes", "", "sender-scoped notice topic key superseded by this notice")
+	noticeExpectNextBy := f.String("expect-next-by", "", "expected next update instant for notice (RFC3339)")
 	noticeDelivery := f.String("notice-delivery", "", "quiet notice delivery strategy (e.g. next_organic_turn)")
 	noticeExpiresAt := f.String("notice-expires-at", "", "expiration instant for quiet notice (RFC3339)")
 	state := f.String("state", "", "response group state filter (open|collected|partial|incomplete); closure state filter (reserved|delivered|released)")
@@ -148,7 +152,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	case "event-admission-preview":
 		allowed += "repo to topic "
 	case "publish":
-		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy notice-urgency notice-defer-seconds notice-delivery notice-expires-at "
+		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy notice-urgency notice-defer-seconds action supersedes expect-next-by notice-delivery notice-expires-at "
 	case "notice-flush":
 		allowed += "request-id "
 	case "notice-pending":
@@ -376,8 +380,36 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 				return nil, invalid("--notice-delivery cannot combine with notice wake policy")
 			}
 		}
+		var parsedExpectNextBy *time.Time
+		if provided["action"] || provided["supersedes"] || provided["expect-next-by"] {
+			if *kind != "notice" {
+				return nil, invalid("notice intent flags (--action, --supersedes, --expect-next-by) require --kind notice")
+			}
+			if provided["action"] && *noticeAction != "none" && *noticeAction != "review" && *noticeAction != "decide" {
+				return nil, invalid("invalid --action: must be none, review or decide")
+			}
+			if *noticeAction == "none" && *noticeUrgency == "urgent" {
+				return nil, invalid("--action none cannot combine with --notice-urgency urgent")
+			}
+			if provided["supersedes"] && !sendTopicKey.MatchString(*noticeSupersedes) {
+				return nil, invalid("invalid --supersedes: must be 1..128 ASCII letters, digits or _.:/-")
+			}
+			if provided["expect-next-by"] {
+				if strings.TrimSpace(*noticeExpectNextBy) == "" {
+					return nil, invalid("--expect-next-by cannot be explicitly empty")
+				}
+				t, err := parseEventTimestamp(*noticeExpectNextBy)
+				if err != nil {
+					return nil, invalid("invalid --expect-next-by: must be an RFC3339 timestamp")
+				}
+				parsedExpectNextBy = &t
+			}
+		}
 		operation = "event-publish"
 		req = core.PublishEventRequest{
+			Action:             *noticeAction,
+			Supersedes:         *noticeSupersedes,
+			ExpectNextBy:       parsedExpectNextBy,
 			RequestID:          *request,
 			Repo:               *repo,
 			Kind:               *kind,

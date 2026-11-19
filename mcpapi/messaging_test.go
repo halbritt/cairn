@@ -877,3 +877,59 @@ func TestHostAncestorsAtProcParsing(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
+
+func TestSendAndInboxNoticeIntentFields(t *testing.T) {
+	f := newMessagingFixture(t, Config{NativeSessionID: "native-self"})
+	reqID := uuid.NewString()
+	f.ok(t, "cairn_send", map[string]any{
+		"request_id":     reqID,
+		"to":             "agent-9",
+		"body":           "Status update.",
+		"action":         "review",
+		"supersedes":     "stream/build",
+		"expect_next_by": "2026-11-20T12:00:00Z",
+	})
+	calls := f.api.taken()
+	pub := calls[len(calls)-1]
+	if pub.Operation != "event-publish" || pub.Body["action"] != "review" ||
+		pub.Body["supersedes"] != "stream/build" || pub.Body["expect_next_by"] != "2026-11-20T12:00:00Z" {
+		t.Fatalf("cairn_send did not forward notice intent fields: %+v", pub.Body)
+	}
+	f.refused(t, "cairn_send", map[string]any{
+		"request_id": uuid.NewString(), "to": "agent-9", "body": "Bad.", "kind": "request", "action": "decide",
+	}, "notice")
+	f.refused(t, "cairn_send", map[string]any{
+		"request_id": uuid.NewString(), "to": "agent-9", "body": "Bad.", "action": "none", "urgency": "urgent",
+	}, "urgent")
+	f.refused(t, "cairn_send", map[string]any{
+		"request_id": uuid.NewString(), "to": "agent-9", "body": "Bad.", "expect_next_by": "0000-01-01T00:00:00Z",
+	}, "expect_next_by")
+	if len(f.api.taken()) != 0 {
+		t.Fatal("invalid notice intent fields wrote before refusing")
+	}
+	prevHandler := f.api.handler
+	t.Cleanup(func() { f.api.handler = prevHandler })
+	due := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	supID := uuid.NewString()
+	f.api.handler = func(call fakeCall) (any, *core.Error) {
+		if call.Operation == "event-inspect" {
+			return core.EventStatus{
+				Event: core.AgentEvent{
+					EventID: requestEvent, Kind: "notice", Action: "review", Supersedes: "stream/build",
+					ExpectNextBy: &due, From: "agent/" + selfAgent,
+					Destination: core.EventDestination{Type: "agent", Name: "agent/" + peerAgent},
+				},
+				Deliveries: []core.AgentDelivery{{
+					DeliveryID: deliveryID, Consumer: "agent/" + peerAgent,
+					State: "ignored", Code: "superseded", SupersededBy: supID,
+				}},
+			}, nil
+		}
+		return prevHandler(call)
+	}
+	st := f.ok(t, "cairn_event_status", map[string]any{"event_id": requestEvent})
+	d0 := st["deliveries"].([]any)[0].(map[string]any)
+	if st["action"] != "review" || st["supersedes"] != "stream/build" || d0["superseded_by"] != supID {
+		t.Fatalf("cairn_event_status missing notice intent / superseded_by: %+v", st)
+	}
+}

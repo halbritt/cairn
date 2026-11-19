@@ -648,6 +648,8 @@ class PublicGoV3SessionCompactTests(unittest.TestCase):
             (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "", "--compact-inbox"], 1),
             (["configure-session-inbox", "--config", "<CFG>", "--agent-id", "33333333-3333-4333-8333-333333333333", "--compact-inbox"], 1),
             (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--compact-inbox", "--notice-batch"], 0),
+            (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--auto-settle-action-none"], 0),
+            (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--auto-settle-action-none", "--clear-session-options"], 2),
             (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--clear-session-options"], 0),
         ]
         for raw_args, expected_code in cases:
@@ -664,6 +666,41 @@ class PublicGoV3SessionCompactTests(unittest.TestCase):
                 py_doc = json.loads(py_res.stdout.replace(str(py_state), "<STATE>"))
                 go_doc = json.loads(go_res.stdout.replace(str(go_state), "<STATE>"))
                 self.assertEqual(py_doc, go_doc)
+
+    def test_auto_settle_action_none_without_compact_inbox(self):
+        from integrations.lifecycle import coordination as engine, inbox_recall
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            state_dir = root / "state"
+            state_dir.mkdir(parents=True, mode=0o700)
+            cfg = dict(cairn="/bin/true", socket=str(root / "api.sock"), token_file=str(root / "tok"),
+                       repo="fixture", binding="claude-two", harness="claude", native_delivery=True,
+                       state_dir=str(state_dir))
+            res = engine.configure_session_inbox(cfg, native_session_id="s-auto", auto_settle_action_none=True)
+            self.assertEqual(res["notice_auto_settle_version"], 1)
+            self.assertIsNone(res["compact_inbox_version"])
+            self.assertFalse(inbox_recall.session_compact_inbox_enabled(cfg, "s-auto"))
+
+            agent = dict(agent_id="11111111-1111-4111-8111-111111111111",
+                         execution_id="22222222-2222-4222-8222-222222222222",
+                         native_session_id="s-auto")
+            state = dict(agent=agent)
+            ops = []
+
+            def fake_call(_cfg, op, body, **_kw):
+                ops.append((op, body))
+                if op == "session-inbox-ready":
+                    return dict(delivery_id="33333333-3333-4333-8333-333333333333", action="none")
+                if op == "session-inbox-settle-none":
+                    return dict(settled=["33333333-3333-4333-8333-333333333333"], ready={})
+                raise AssertionError(f"unexpected op {op}")
+
+            cycle = {}
+            with mock.patch.object(engine, "call", side_effect=fake_call):
+                ready = engine.session_inbox_ready_for_wake(cfg, state, agent, cycle=cycle)
+            self.assertEqual(ready, {})
+            self.assertEqual([op for op, _ in ops], ["session-inbox-ready", "session-inbox-settle-none"])
+            self.assertEqual(cycle["auto_settled_deliveries"], ["33333333-3333-4333-8333-333333333333"])
 
 
 if __name__ == "__main__":

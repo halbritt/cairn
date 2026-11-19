@@ -27,6 +27,7 @@ import (
 var (
 	messagingAgentName = regexp.MustCompile(`^agent-([1-9][0-9]{0,17})$`)
 	messagingLabel     = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+	messagingTopicKey  = regexp.MustCompile(`^[A-Za-z0-9_.:/-]{1,128}$`)
 )
 
 // messagingDirectoryPages bounds one identity lookup: 50 pages of 100 online sessions.
@@ -220,18 +221,24 @@ type sendArgs struct {
 	CausationID   string                 `json:"causation_id,omitempty" jsonschema:"Event UUID this message answers or follows."`
 	CorrelationID string                 `json:"correlation_id,omitempty" jsonschema:"Interaction UUID shared by related events."`
 	Urgency       string                 `json:"urgency,omitempty" jsonschema:"Notice wake policy: routine or urgent. Notices only."`
+	Action        string                 `json:"action,omitempty" jsonschema:"Notice intent action: none, review or decide. Notices only."`
+	Supersedes    string                 `json:"supersedes,omitempty" jsonschema:"Sender-scoped topic key superseded by this notice. Notices only."`
+	ExpectNextBy  string                 `json:"expect_next_by,omitempty" jsonschema:"Optional RFC3339 time when the next update is expected. Notices only."`
 	AgentID       string                 `json:"agent_id,omitempty" jsonschema:"Your registered agent UUID. Only when automatic session lookup fails."`
 	ExecutionID   string                 `json:"execution_id,omitempty" jsonschema:"Your current execution UUID. Required with agent_id."`
 }
 
 type sendResult struct {
-	EventID   string                `json:"event_id"`
-	From      string                `json:"from"`
-	To        core.EventDestination `json:"to"`
-	Recipient *agentView            `json:"recipient,omitempty"`
-	Kind      string                `json:"kind"`
-	Source    core.RecordVersionRef `json:"source"`
-	RequestID string                `json:"request_id"`
+	EventID      string                `json:"event_id"`
+	From         string                `json:"from"`
+	To           core.EventDestination `json:"to"`
+	Recipient    *agentView            `json:"recipient,omitempty"`
+	Kind         string                `json:"kind"`
+	Action       string                `json:"action,omitempty"`
+	Supersedes   string                `json:"supersedes,omitempty"`
+	ExpectNextBy *time.Time            `json:"expect_next_by,omitempty"`
+	Source       core.RecordVersionRef `json:"source"`
+	RequestID    string                `json:"request_id"`
 }
 
 // derivedRequestID gives a second mutation of one tool call its own stable
@@ -287,6 +294,28 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 		}
 		policy = &core.NoticeWakePolicyRequest{Version: 1, Urgency: args.Urgency}
 	}
+	var expectNextBy *time.Time
+	if args.Action != "" || args.Supersedes != "" || args.ExpectNextBy != "" {
+		if args.Kind != "notice" {
+			return toolResult(nil, messagingError("INVALID_REQUEST", "notice intent fields (action, supersedes, expect_next_by) apply to notices only"), 0)
+		}
+		if args.Action != "" && args.Action != "none" && args.Action != "review" && args.Action != "decide" {
+			return toolResult(nil, messagingError("INVALID_REQUEST", "action must be none, review or decide"), 0)
+		}
+		if args.Action == "none" && args.Urgency == "urgent" {
+			return toolResult(nil, messagingError("INVALID_REQUEST", "action none cannot combine with urgent urgency"), 0)
+		}
+		if args.Supersedes != "" && !messagingTopicKey.MatchString(args.Supersedes) {
+			return toolResult(nil, messagingError("INVALID_REQUEST", "supersedes requires a 1-128 byte topic key"), 0)
+		}
+		if args.ExpectNextBy != "" {
+			parsed, err := time.Parse(time.RFC3339Nano, args.ExpectNextBy)
+			if err != nil || parsed.IsZero() || parsed.Year() < 1 || parsed.Year() > 9999 {
+				return toolResult(nil, messagingError("INVALID_REQUEST", "expect_next_by must be an RFC3339 timestamp"), 0)
+			}
+			expectNextBy = &parsed
+		}
+	}
 	ref, _, err := t.self(ctx, request, args.AgentID, args.ExecutionID)
 	if err != nil {
 		return toolResult(nil, err, 0)
@@ -318,7 +347,7 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 		}
 		source = core.RecordVersionRef{RecordID: record.RecordID, Version: record.Version}
 	}
-	publish := core.PublishEventRequest{RequestID: args.RequestID, Repo: repo, Kind: args.Kind, Ref: source, Destination: destination, CausationID: args.CausationID, CorrelationID: args.CorrelationID, NoticePolicy: policy}
+	publish := core.PublishEventRequest{Action: args.Action, Supersedes: args.Supersedes, ExpectNextBy: expectNextBy, RequestID: args.RequestID, Repo: repo, Kind: args.Kind, Ref: source, Destination: destination, CausationID: args.CausationID, CorrelationID: args.CorrelationID, NoticePolicy: policy}
 	var event core.AgentEvent
 	if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 		return toolResult(nil, err, 0)
@@ -326,7 +355,7 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 	if uuid.Validate(event.EventID) != nil || event.Ref != source || event.Destination != destination {
 		return toolResult(nil, messagingError("SCHEMA_MISMATCH", "publish returned a different source or destination"), 0)
 	}
-	return toolResult(sendResult{EventID: event.EventID, From: event.From, To: event.Destination, Recipient: recipient, Kind: event.Kind, Source: source, RequestID: args.RequestID}, nil, t.config.AvailableTokens)
+	return toolResult(sendResult{EventID: event.EventID, From: event.From, To: event.Destination, Recipient: recipient, Kind: event.Kind, Action: event.Action, Supersedes: event.Supersedes, ExpectNextBy: event.ExpectNextBy, Source: source, RequestID: args.RequestID}, nil, t.config.AvailableTokens)
 }
 
 type inboxArgs struct {
@@ -344,6 +373,10 @@ type deliveryView struct {
 	Attempts      int                    `json:"attempts,omitempty"`
 	EventID       string                 `json:"event_id"`
 	Kind          string                 `json:"kind"`
+	Action        string                 `json:"action,omitempty"`
+	Supersedes    string                 `json:"supersedes,omitempty"`
+	ExpectNextBy  *time.Time             `json:"expect_next_by,omitempty"`
+	SupersededBy  string                 `json:"superseded_by,omitempty"`
 	From          string                 `json:"from"`
 	CreatedAt     time.Time              `json:"created_at"`
 	CausationID   string                 `json:"causation_id,omitempty"`
@@ -354,7 +387,7 @@ type deliveryView struct {
 }
 
 func viewDelivery(d core.AgentDelivery) deliveryView {
-	return deliveryView{DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, LeaseUntil: d.LeaseUntil, State: d.State, Attempts: d.Attempts, EventID: d.Event.EventID, Kind: d.Event.Kind, From: d.Event.From, CreatedAt: d.Event.CreatedAt, CausationID: d.Event.CausationID, CorrelationID: d.Event.CorrelationID, Source: d.Event.Ref, Result: d.Result, Code: d.Code}
+	return deliveryView{DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, LeaseUntil: d.LeaseUntil, State: d.State, Attempts: d.Attempts, EventID: d.Event.EventID, Kind: d.Event.Kind, Action: d.Event.Action, Supersedes: d.Event.Supersedes, ExpectNextBy: d.Event.ExpectNextBy, SupersededBy: d.SupersededBy, From: d.Event.From, CreatedAt: d.Event.CreatedAt, CausationID: d.Event.CausationID, CorrelationID: d.Event.CorrelationID, Source: d.Event.Ref, Result: d.Result, Code: d.Code}
 }
 
 type inboxResult struct {
@@ -535,26 +568,30 @@ type eventStatusArgs struct {
 }
 
 type eventStatusResult struct {
-	EventID    string                `json:"event_id"`
-	Kind       string                `json:"kind"`
-	From       string                `json:"from"`
-	To         core.EventDestination `json:"to"`
-	CreatedAt  time.Time             `json:"created_at"`
-	Deliveries []eventDeliveryStatus `json:"deliveries"`
-	NextAfter  string                `json:"next_after,omitempty"`
-	More       bool                  `json:"more"`
+	EventID      string                `json:"event_id"`
+	Kind         string                `json:"kind"`
+	Action       string                `json:"action,omitempty"`
+	Supersedes   string                `json:"supersedes,omitempty"`
+	ExpectNextBy *time.Time            `json:"expect_next_by,omitempty"`
+	From         string                `json:"from"`
+	To           core.EventDestination `json:"to"`
+	CreatedAt    time.Time             `json:"created_at"`
+	Deliveries   []eventDeliveryStatus `json:"deliveries"`
+	NextAfter    string                `json:"next_after,omitempty"`
+	More         bool                  `json:"more"`
 }
 
 type eventDeliveryStatus struct {
-	DeliveryID  string                 `json:"delivery_id"`
-	Consumer    string                 `json:"consumer"`
-	State       string                 `json:"state"`
-	Attempts    int                    `json:"attempts,omitempty"`
-	LeaseUntil  *time.Time             `json:"lease_until,omitempty"`
-	CompletedAt *time.Time             `json:"completed_at,omitempty"`
-	Code        string                 `json:"code,omitempty"`
-	Result      *core.RecordVersionRef `json:"result,omitempty"`
-	Diagnosis   any                    `json:"diagnosis,omitempty"`
+	DeliveryID   string                 `json:"delivery_id"`
+	Consumer     string                 `json:"consumer"`
+	State        string                 `json:"state"`
+	Attempts     int                    `json:"attempts,omitempty"`
+	LeaseUntil   *time.Time             `json:"lease_until,omitempty"`
+	CompletedAt  *time.Time             `json:"completed_at,omitempty"`
+	Code         string                 `json:"code,omitempty"`
+	SupersededBy string                 `json:"superseded_by,omitempty"`
+	Result       *core.RecordVersionRef `json:"result,omitempty"`
+	Diagnosis    any                    `json:"diagnosis,omitempty"`
 }
 
 func (t messagingTools) eventStatus(ctx context.Context, request *mcp.CallToolRequest, args eventStatusArgs) (*mcp.CallToolResult, any, error) {
@@ -567,9 +604,9 @@ func (t messagingTools) eventStatus(ctx context.Context, request *mcp.CallToolRe
 	if err != nil {
 		return toolResult(nil, err, 0)
 	}
-	result := eventStatusResult{EventID: status.Event.EventID, Kind: status.Event.Kind, From: status.Event.From, To: status.Event.Destination, CreatedAt: status.Event.CreatedAt, Deliveries: make([]eventDeliveryStatus, 0, len(status.Deliveries)), NextAfter: status.NextAfter, More: status.More}
+	result := eventStatusResult{EventID: status.Event.EventID, Kind: status.Event.Kind, Action: status.Event.Action, Supersedes: status.Event.Supersedes, ExpectNextBy: status.Event.ExpectNextBy, From: status.Event.From, To: status.Event.Destination, CreatedAt: status.Event.CreatedAt, Deliveries: make([]eventDeliveryStatus, 0, len(status.Deliveries)), NextAfter: status.NextAfter, More: status.More}
 	for _, d := range status.Deliveries {
-		entry := eventDeliveryStatus{DeliveryID: d.DeliveryID, Consumer: d.Consumer, State: d.State, Attempts: d.Attempts, LeaseUntil: d.LeaseUntil, CompletedAt: d.CompletedAt, Code: d.Code, Result: d.Result}
+		entry := eventDeliveryStatus{DeliveryID: d.DeliveryID, Consumer: d.Consumer, State: d.State, Attempts: d.Attempts, LeaseUntil: d.LeaseUntil, CompletedAt: d.CompletedAt, Code: d.Code, SupersededBy: d.SupersededBy, Result: d.Result}
 		if d.Diagnosis != nil {
 			entry.Diagnosis = d.Diagnosis
 		}

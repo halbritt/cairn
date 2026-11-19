@@ -119,3 +119,52 @@ func TestSessionInboxOptionsCapabilityAndTamperGuards(t *testing.T) {
 		t.Fatalf("expected cleared status, got code=%d res=%v", code, clrRes)
 	}
 }
+
+func TestSessionInboxAutoSettleActionNoneWatcherAndAdvance(t *testing.T) {
+	f := stage2Compact(t)
+	nativePop(f.config, "compact_inbox_version")
+	nativePop(f.config, "notice_batch_version")
+
+	// Auto-settle works on any native_delivery harness (including agy without compact inbox).
+	agyCfg := nativeClone(f.config)
+	agyCfg.Set("harness", value.Text("agy"))
+	agyCfgPath := filepath.Join(f.root, "bindings", "agy-autosettle.json")
+	stage2WriteValue(t, f.p, agyCfgPath, agyCfg)
+	agyStatePath, err := f.c.statePath(agyCfg, stage2Agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage2WriteValue(t, f.p, agyStatePath, f.state)
+
+	code, cfgRes, stderr := stage2CLIResult(t, f.c, "configure-session-inbox", "--config", agyCfgPath, "--agent-id", stage2Agent, "--auto-settle-action-none")
+	if code != 0 || stderr != "" || cfgRes.Get("notice_auto_settle_version").Integer != "1" || !nativeNone(cfgRes.Get("compact_inbox_version")) {
+		t.Fatalf("configure auto-settle failed: code=%d stderr=%q res=%v", code, stderr, cfgRes)
+	}
+
+	sref, err := f.c.sessionRef(f.state.Get("agent"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ops []string
+	f.c.Host.Call = func(_ context.Context, _ *value.Value, op string, body *value.Value, _ NativeCallOptions) (*value.Value, error) {
+		ops = append(ops, op)
+		switch op {
+		case "session-inbox-ready":
+			return nativeMap("delivery_id", stage2Delivery, "event_id", stage2Delivery, "action", "none"), nil
+		case "session-inbox-settle-none":
+			if !nativeEqual(body.Get("session"), sref) {
+				t.Fatalf("unexpected settle-none session: %v", body)
+			}
+			return nativeMap("settled", &value.Value{Kind: value.Array, Items: []*value.Value{value.Text(stage2Delivery)}}, "ready", nativeMap()), nil
+		default:
+			t.Fatalf("unexpected op %s", op)
+			return nil, nil
+		}
+	}
+	cycle := nativeMap()
+	ready, err := f.c.sessionInboxReadyForWake(context.Background(), agyCfg, f.state, sref, cycle)
+	if err != nil || value.Truth(ready.Get("delivery_id")) || len(ops) != 2 || ops[1] != "session-inbox-settle-none" ||
+		string(cycle.Get("auto_settled_deliveries").Items[0].String) != stage2Delivery {
+		t.Fatalf("expected idle wake auto-settle without waking session: ready=%v ops=%v cycle=%v err=%v", ready, ops, cycle, err)
+	}
+}

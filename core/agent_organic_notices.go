@@ -1018,7 +1018,7 @@ func flushOrganicNoticeTx(ctx context.Context, tx pgx.Tx, s *Store, eventID, req
 			return NoticeFlushResult{}, err
 		}
 		result.Released = 1
-	} else if state == "delivered" || state == "admitted" {
+	} else if state == "delivered" || state == "admitted" || state == "unavailable" || state == "restore_fenced" {
 		result.Terminal = 1
 	} else if state == "claimed" {
 		result.Leased = 1

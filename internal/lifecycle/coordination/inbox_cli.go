@@ -387,6 +387,11 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 	}
 	read := &value.Value{Kind: value.Array, Items: []*value.Value{cairn, value.Text("agent"), value.Text("--socket"), config.Get("socket"), value.Text("--token-file"), config.Get("token_file"), value.Text("history")}}
 	native := nativeMap("schema", "cairn.session-inbox/1", "agent_id", session.Get("agent_id"), "execution_id", session.Get("execution_id"), "attempt_id", attemptID, "event_id", eventID, "kind", kind, "sender", sender, "source", ref, "delivery_id", deliveryID, "lease_id", leaseID, "read", read, "read_input", ref, "completion", stringArray(append(append([]string{}, journaled...), "complete")...), "acknowledgement", stringArray(append(append([]string{}, journaled...), "ack")...), "state_dir", stateDir, "commands", commands, "request_ids", requestIDs)
+	for _, k := range []string{"action", "supersedes", "expect_next_by"} {
+		if v := event.Get(k); value.Truth(v) {
+			native.Set(k, v)
+		}
+	}
 	if value.SameText(kind, "request") {
 		native.Set("response", stringArray(append(journaled, "respond")...))
 	}

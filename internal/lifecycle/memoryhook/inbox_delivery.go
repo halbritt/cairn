@@ -671,19 +671,23 @@ func sessionCompactInboxEnabled(config *value.Value, session string) (bool, erro
 	if err != nil {
 		return false, ledger.RefuseInbox("session inbox options are malformed", "command_context", "compact_fallback")
 	}
-	if msg, ok := validateInboxSessionOptions(entry, binding, session, capable); !ok {
+	if msg, ok := validateInboxSessionOptions(entry, binding, session, capable, value.Truth(config.Get("native_delivery"))); !ok {
 		return false, ledger.RefuseInbox(msg, "command_context", "compact_fallback")
 	}
-	return true, nil
+	return compact || (capable && nativeIntOne(entry.Get("compact_inbox_version"))), nil
 }
 
-func validateInboxSessionOptions(entry *value.Value, binding, session string, capable bool) (string, bool) {
+func nativeIntOne(v *value.Value) bool {
+	return v != nil && v.Kind == value.Int && v.Integer == "1"
+}
+
+func validateInboxSessionOptions(entry *value.Value, binding, session string, capable, nativeDelivery bool) (string, bool) {
 	if entry == nil || entry.Kind != value.Object || !value.SameText(entry.Get("schema"), "cairn.session-inbox-options/1") || !value.SameText(entry.Get("binding"), binding) || !value.SameText(entry.Get("native_session_id"), session) {
 		return "session inbox options are malformed", false
 	}
 	for _, m := range entry.Members {
 		switch string(m.Key) {
-		case "schema", "binding", "native_session_id", "compact_inbox_version", "notice_batch_version", "updated_at":
+		case "schema", "binding", "native_session_id", "compact_inbox_version", "notice_batch_version", "notice_auto_settle_version", "updated_at":
 		default:
 			return "session inbox options are malformed", false
 		}
@@ -699,11 +703,21 @@ func validateInboxSessionOptions(entry *value.Value, binding, session string, ca
 		}
 	}
 	cv := entry.Get("compact_inbox_version")
-	if !capable || cv == nil || cv.Kind != value.Int || cv.Integer != "1" {
+	asv := entry.Get("notice_auto_settle_version")
+	if cv == nil && asv == nil {
+		if !capable {
+			return "compact_inbox_version 1 requires Codex or Claude native delivery", false
+		}
+		return "session inbox options are malformed", false
+	}
+	if cv != nil && (!capable || !nativeIntOne(cv)) {
 		return "compact_inbox_version 1 requires Codex or Claude native delivery", false
 	}
-	if bv := entry.Get("notice_batch_version"); bv != nil && (bv.Kind != value.Int || bv.Integer != "1") {
+	if bv := entry.Get("notice_batch_version"); bv != nil && (!nativeIntOne(bv) || cv == nil) {
 		return "notice_batch_version 1 requires compact Codex or Claude native delivery", false
+	}
+	if asv != nil && (!nativeDelivery || !nativeIntOne(asv)) {
+		return "notice_auto_settle_version 1 requires native_delivery", false
 	}
 	return "", true
 }

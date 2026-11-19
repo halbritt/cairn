@@ -485,12 +485,12 @@ WantedBy=default.target
 def configure_installed_session(args, home):
     if args.session is not None and args.agent_id is not None:
         return 'pass at most one of --session and --agent-id', None
-    if args.clear_session_options and (args.compact_inbox or args.notice_batch):
-        return 'cannot combine --clear-session-options with --compact-inbox or --notice-batch', None
+    if args.clear_session_options and (args.compact_inbox or args.notice_batch or args.auto_settle_action_none):
+        return 'cannot combine --clear-session-options with --compact-inbox, --notice-batch or --auto-settle-action-none', None
     if args.notice_batch and not args.compact_inbox:
         return '--notice-batch requires --compact-inbox', None
-    if not args.clear_session_options and not args.compact_inbox:
-        return '--session/--agent-id requires --compact-inbox or --clear-session-options', None
+    if not args.clear_session_options and not args.compact_inbox and not args.auto_settle_action_none:
+        return '--session/--agent-id requires --compact-inbox, --auto-settle-action-none or --clear-session-options', None
     for forbidden, name in ((args.opencode_cancel_trial, '--opencode-cancel-trial'),
                             (args.idle_wakeup, '--idle-wakeup'),
                             (args.no_herdr, '--no-herdr'),
@@ -508,6 +508,8 @@ def configure_installed_session(args, home):
         return '--harness does not match installed binding configuration', None
     if args.compact_inbox and (installed.get('harness') not in ('codex', 'claude') or not installed.get('native_delivery')):
         return '--compact-inbox requires an installed Codex or Claude binding with --native-delivery', None
+    if args.auto_settle_action_none and not installed.get('native_delivery'):
+        return '--auto-settle-action-none requires an installed binding with --native-delivery', None
     native = engine.resolve_session_target(installed, native_session_id=args.session, agent_id=args.agent_id)
     pinned = installed.get('inbox_recall_binding')
     manifest_schema = None
@@ -527,6 +529,7 @@ def configure_installed_session(args, home):
     result = engine.configure_session_inbox(
         installed, native_session_id=native,
         compact_inbox=args.compact_inbox, notice_batch=args.notice_batch,
+        auto_settle_action_none=args.auto_settle_action_none,
         clear=args.clear_session_options)
     return None, result
 
@@ -550,6 +553,8 @@ def main():
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
     parser.add_argument('--compact-inbox', action='store_true', help='opt this Codex or Claude binding into compact notice/response delivery')
     parser.add_argument('--notice-batch', action='store_true', help='opt a compact native binding into bounded already-waiting notice batches')
+    parser.add_argument('--auto-settle-action-none', action='store_true',
+                        help='opt a native binding or session into settling action:none notices without a model turn')
     parser.add_argument('--opencode-cancel-trial', action='store_true',
                         help='opt in the OpenCode binding to the request-cancellation trial (requires native delivery and idle wakeup)')
     parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work; also installs Herdr\'s native integration in the selected account home through the installed herdr CLI when missing')
@@ -585,21 +590,27 @@ def main():
         parser.error('--compact-inbox requires --harness codex|claude --native-delivery')
     if args.notice_batch and not args.compact_inbox:
         parser.error('--notice-batch requires --compact-inbox')
+    if args.auto_settle_action_none and not args.native_delivery:
+        parser.error('--auto-settle-action-none requires --native-delivery')
     config = dict(cairn=str(Path(args.cairn).resolve()), socket=str(args.socket.resolve()), token_file=str(args.token_file.resolve()),
                   repo=args.repo, harness=args.harness, binding=args.binding, model=args.model,
                   process_names=[args.harness], native_delivery=args.native_delivery)
     if args.opencode_cancel_trial:
         config['opencode_cancel_enabled'] = True
+    if args.auto_settle_action_none:
+        config['notice_auto_settle_version'] = 1
     if args.compact_inbox:
         config['compact_inbox_version'] = 1
         if args.notice_batch:
             config['notice_batch_version'] = 1
+    if args.compact_inbox or args.auto_settle_action_none:
         previous = args.root.resolve() / 'bindings' / (args.binding + '.json')
         if previous.exists():
             installed = json.loads(previous.read_text())
             pinned = installed.get('inbox_recall_binding')
             if pinned and json.loads(Path(pinned).read_text()).get('enabled') is True:
-                parser.error('--compact-inbox needs the bound recall manifest disabled before its configuration changes; '
+                flag_name = '--compact-inbox' if args.compact_inbox else '--auto-settle-action-none'
+                parser.error(f'{flag_name} needs the bound recall manifest disabled before its configuration changes; '
                              'repin and validate that manifest before re-enabling it, or pass --session/--agent-id '
                              'to configure one session without changing the pinned binding')
             if pinned:

@@ -244,6 +244,10 @@ class NativeSession:
             raise refusal('SESSION_BUSY', 'two notice handoffs are unresolved')
         request = record.get(intent_key)
         fields = {'request_id', 'session', 'attempt_id', 'version'} | ({'root_id'} if organic else set())
+        if not organic and isinstance(request, dict) and 'auto_settle_action_none' in request:
+            if type(request['auto_settle_action_none']) is not bool:
+                raise refusal('INVALID_HOST', 'native batch advance intent is malformed')
+            fields = fields | {'auto_settle_action_none'}
         if not isinstance(request, dict) or set(request) != fields:
             raise refusal('INVALID_HOST', 'native batch advance intent is malformed')
         old = record.get('inbox_attempt') or {}

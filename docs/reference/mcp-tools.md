@@ -176,7 +176,7 @@ and are not credentials; the API checks them on every call.
 | Tool | Purpose |
 | --- | --- |
 | `cairn_agents` | Read one session (`agent`: `self`, `agent-N` or a UUID) or list online sessions by exact `project`, `harness` or `state`. `self` also returns the execution UUID. |
-| `cairn_send` | Save `body` as a note under `coordination/<request_id>` and publish that version to `to` (`agent-N`, an agent UUID, `agent/NAME` or `topic/NAME`), or publish an existing `source`. `kind` is `notice` (default), `request` or `response`; `urgency` applies to notices. A stopped `agent-N` recipient refuses before any write. |
+| `cairn_send` | Save `body` as a note under `coordination/<request_id>` and publish that version to `to` (`agent-N`, an agent UUID, `agent/NAME` or `topic/NAME`), or publish an existing `source`. `kind` is `notice` (default), `request` or `response`; `urgency`, `action` (`none`, `review`, `decide`), `supersedes`, and `expect_next_by` apply to notices. A stopped `agent-N` recipient refuses before any write. |
 | `cairn_inbox` | Claim the next delivery from the caller's inbox under a lease and return it with the exact source text; `peek` only counts waiting items. A source too large for the result is omitted and the claimed delivery is still returned. |
 | `cairn_ack` | Record handling of a claimed notice or response. `ignored` and `failed` need a `code`. |
 | `cairn_complete` | Save `body` as the result of a claimed request, record handling, and publish the result to the requester as a response caused by the request. `reply_pending` reports a recorded completion whose response was not published. |

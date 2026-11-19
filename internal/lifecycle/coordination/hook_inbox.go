@@ -417,6 +417,18 @@ func (c *CLI) inboxContext(ctx context.Context, config, state *value.Value, stat
 			return value.Text(""), nil
 		}
 		binding := c.selectAdmissionBinding(config, state, observation, wakeBinding, opencodeReplay)
+		autoSettle, err := c.stateAutoSettleActionNone(config, state)
+		if err != nil {
+			return nil, err
+		}
+		if autoSettle {
+			if !value.Truth(binding) {
+				binding = value.Mapping()
+			} else {
+				binding = nativeClone(binding)
+			}
+			binding.Set("auto_settle_action_none", value.Boolean(true))
+		}
 		if !value.Truth(state.Get("inbox_attempt")) {
 			if _, err := ns.AdmitInbox(ctx, binding); err != nil {
 				return nil, err

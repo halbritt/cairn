@@ -102,3 +102,63 @@ func TestNoticeFlushCLIUsesAuthenticatedEventRoute(t *testing.T) {
 		t.Fatalf("notice flush route: %+v %v", received, err)
 	}
 }
+
+func TestPublishAndSendNoticeIntentFlags(t *testing.T) {
+	ctx := context.Background()
+	for _, helpArgs := range [][]string{{"publish", "--help"}, {"agent", "send", "--help"}} {
+		help, err := run(ctx, helpArgs, strings.NewReader(""))
+		if err != nil || !strings.Contains(string(help.(commandHelp)), "--action") ||
+			!strings.Contains(string(help.(commandHelp)), "--supersedes") ||
+			!strings.Contains(string(help.(commandHelp)), "--expect-next-by") {
+			t.Fatalf("%v help missing notice intent flags: %v %v", helpArgs, help, err)
+		}
+	}
+	for _, flags := range [][]string{
+		{"--kind", "request", "--action", "decide"},
+		{"--kind", "request", "--supersedes", "stream/a"},
+		{"--kind", "request", "--expect-next-by", "2026-11-20T12:00:00Z"},
+		{"--kind", "notice", "--action", "bad"},
+		{"--kind", "notice", "--supersedes", "bad space"},
+		{"--kind", "notice", "--expect-next-by", "not-a-timestamp"},
+		{"--kind", "notice", "--action", "none", "--notice-urgency", "urgent"},
+	} {
+		args := append([]string{"publish", "--request-id", uuid.NewString(), "--to", "agent:worker", "--version", "1"}, flags...)
+		args = append(args, uuid.NewString())
+		if _, err := run(ctx, args, strings.NewReader("")); core.Code(err) != "INVALID_REQUEST" {
+			t.Fatalf("expected INVALID_REQUEST for %v, got %v", flags, err)
+		}
+	}
+
+	root := t.TempDir()
+	tokenPath := filepath.Join(root, "token")
+	if err := os.WriteFile(tokenPath, []byte("test-token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", filepath.Join(root, "api.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received core.PublishEventRequest
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/event-publish" {
+			http.Error(w, "wrong request", http.StatusBadRequest)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true,
+			"status": "OK", "data": map[string]any{"event_id": uuid.NewString(),
+				"kind": received.Kind, "ref": received.Ref, "destination": received.Destination,
+				"action": received.Action, "supersedes": received.Supersedes, "expect_next_by": received.ExpectNextBy}})
+	})}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	_, err = run(ctx, []string{"publish", "--socket", filepath.Join(root, "api.sock"), "--token-file", tokenPath,
+		"--request-id", uuid.NewString(), "--to", "agent:worker", "--kind", "notice", "--version", "1",
+		"--action", "review", "--supersedes", "stream/build", "--expect-next-by", "2026-11-20T12:00:00Z", uuid.NewString()}, strings.NewReader(""))
+	if err != nil || received.Action != "review" || received.Supersedes != "stream/build" || received.ExpectNextBy == nil {
+		t.Fatalf("publish notice intent fields: %+v %v", received, err)
+	}
+}

@@ -2248,6 +2248,15 @@ func (c *CLI) renderCompactAttemptContext(ctx context.Context, config *value.Val
 	}
 	header := fmt.Sprintf("Cairn %s from %s; exact source %s version %s. ",
 		nativeText(event.Get("kind")), nativeText(event.Get("from")), nativeText(recID), sourceScalarText(ver))
+	var intentParts []string
+	for _, k := range []string{"action", "supersedes", "expect_next_by"} {
+		if v := event.Get(k); value.Truth(v) {
+			intentParts = append(intentParts, k+"="+nativeText(v))
+		}
+	}
+	if len(intentParts) > 0 {
+		header += "Intent: " + strings.Join(intentParts, ", ") + ". "
+	}
 	handle := nativeText(native.Get("compact_handle"))
 	bodyVal, err := c.exactInboxSource(ctx, config, attempt, source)
 	if err != nil {

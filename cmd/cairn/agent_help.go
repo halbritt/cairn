@@ -33,7 +33,7 @@ Everyday operations:
 
 JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
-  session-inbox-ready, session-inbox-claim, session-inbox-advance, session-inbox-reconcile Native host delivery
+  session-inbox-ready, session-inbox-settle-none, session-inbox-claim, session-inbox-advance, session-inbox-reconcile Native host delivery
   session-inbox-pending Native host busy-session inbox counts (read-only)
   session-quiescence Read exact owned inbox custody; does not establish native quiescence
   session-delivery-observe Native host delivery diagnosis (host-reported)
@@ -79,6 +79,10 @@ var agentJSONHelp = map[string]agentJSONHelpSpec{
 	"session-inbox-ready": {
 		Detail:  "Native host adapter only: read the first eligible delivery ID for a live idle execution without claiming or changing work. Empty when busy, held or unavailable. This is a snapshot; only the native hook claims ownership.",
 		Example: `{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}`,
+	},
+	"session-inbox-settle-none": {
+		Detail:  "Native host adapter only: settle eligible head-of-queue action:none notices for an unoccupied existing-session inbox without waking a model turn, returning settled delivery IDs and the next ready item when idle. Retry the same request UUID.",
+		Example: `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}}`,
 	},
 	"session-inbox-pending": {
 		Detail:  "Native host adapter only: count requests, notices and responses that native delivery would hand this execution at a later boundary, whatever its presence state. Kinds and the newest position only; no senders, sources or bodies. Claims, leases and acknowledges nothing; truncated at 100.",

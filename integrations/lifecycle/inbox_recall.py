@@ -91,7 +91,7 @@ def session_compact_inbox_enabled(config, session):
     except (ValueError, UnicodeDecodeError) as exc:
         raise _grant_ledger.inbox_refusal('session inbox options are malformed', 'command_context', 'compact_fallback') from exc
     allowed = {'schema', 'binding', 'native_session_id', 'compact_inbox_version',
-               'notice_batch_version', 'updated_at'}
+               'notice_batch_version', 'notice_auto_settle_version', 'updated_at'}
     if (not isinstance(entry, dict)
             or entry.get('schema') != SESSION_INBOX_OPTIONS_SCHEMA
             or entry.get('binding') != config.get('binding')
@@ -100,13 +100,22 @@ def session_compact_inbox_enabled(config, session):
         raise _grant_ledger.inbox_refusal('session inbox options are malformed', 'command_context', 'compact_fallback')
     if 'updated_at' in entry and not _finite_timestamp(entry['updated_at']):
         raise _grant_ledger.inbox_refusal('session inbox options timestamp is invalid', 'command_context', 'compact_fallback')
-    if (not capable or type(entry.get('compact_inbox_version')) is not int
+    has_compact = 'compact_inbox_version' in entry
+    has_auto_settle = 'notice_auto_settle_version' in entry
+    if not has_compact and not has_auto_settle:
+        if not capable:
+            raise _grant_ledger.inbox_refusal('compact_inbox_version 1 requires Codex or Claude native delivery', 'command_context', 'compact_fallback')
+        raise _grant_ledger.inbox_refusal('session inbox options are malformed', 'command_context', 'compact_fallback')
+    if has_compact and (not capable or type(entry['compact_inbox_version']) is not int
             or entry['compact_inbox_version'] != 1):
         raise _grant_ledger.inbox_refusal('compact_inbox_version 1 requires Codex or Claude native delivery', 'command_context', 'compact_fallback')
     if 'notice_batch_version' in entry and (
-            type(entry['notice_batch_version']) is not int or entry['notice_batch_version'] != 1):
+            type(entry['notice_batch_version']) is not int or entry['notice_batch_version'] != 1 or not has_compact):
         raise _grant_ledger.inbox_refusal('notice_batch_version 1 requires compact Codex or Claude native delivery', 'command_context', 'compact_fallback')
-    return True
+    if has_auto_settle and (not bool(config.get('native_delivery'))
+            or type(entry['notice_auto_settle_version']) is not int or entry['notice_auto_settle_version'] != 1):
+        raise _grant_ledger.inbox_refusal('notice_auto_settle_version 1 requires native_delivery', 'command_context', 'compact_fallback')
+    return compact or (capable and has_compact)
 RECALL_OBSERVATION_VERSION = 1
 # The required lookup is the only recall phase whose failure refuses delivery.
 # Each attempt may use the remaining recall time except this reserve, and never

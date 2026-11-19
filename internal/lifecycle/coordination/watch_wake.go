@@ -556,6 +556,37 @@ func (c *CLI) prepareIdleWakeStaleBusyCodex(ctx context.Context, config, state, 
 	return agent, true, c.noteWakeRefusal(config, state, nativeText(deliv), reason, cond, cycle, errOut)
 }
 
+func (c *CLI) sessionInboxReadyForWake(ctx context.Context, config, state, sref, cycle *value.Value) (*value.Value, error) {
+	ready, err := c.call(ctx, config, "session-inbox-ready", sref, NativeCallOptions{})
+	if err != nil || ready == nil || ready.Kind != value.Object {
+		return ready, err
+	}
+	if value.Truth(ready.Get("delivery_id")) && value.SameText(ready.Get("action"), "none") {
+		autoSettle, err := c.stateAutoSettleActionNone(config, state)
+		if err != nil {
+			return nil, err
+		}
+		if autoSettle {
+			settled, err := c.call(ctx, config, "session-inbox-settle-none", nativeMap("request_id", c.newUUID(), "session", sref), NativeCallOptions{})
+			if err != nil {
+				return nil, err
+			}
+			if cycle != nil && cycle.Kind == value.Object && settled != nil && settled.Kind == value.Object && settled.Get("settled") != nil {
+				cycle.Set("auto_settled_deliveries", settled.Get("settled"))
+			}
+			nextReady := value.Mapping()
+			if settled != nil && settled.Kind == value.Object && settled.Get("ready") != nil && settled.Get("ready").Kind == value.Object {
+				nextReady = settled.Get("ready")
+			}
+			if value.SameText(nextReady.Get("action"), "none") {
+				return value.Mapping(), nil
+			}
+			return nextReady, nil
+		}
+	}
+	return ready, nil
+}
+
 func (c *CLI) prepareIdleWakeReady(ctx context.Context, config, state, agent *value.Value, path string, cycle *value.Value, refusal, refusalCondition string, errOut io.Writer) (*value.Value, error) {
 	sref, err := c.sessionRef(agent)
 	if err != nil {
@@ -585,7 +616,7 @@ func (c *CLI) prepareIdleWakeReady(ctx context.Context, config, state, agent *va
 			return nil, err
 		}
 	}
-	ready, err := c.call(ctx, config, "session-inbox-ready", sref, NativeCallOptions{})
+	ready, err := c.sessionInboxReadyForWake(ctx, config, state, sref, cycle)
 	if err != nil {
 		return nil, err
 	}

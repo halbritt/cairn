@@ -379,6 +379,22 @@ new notices before flushing known pending notices during rollback. A flush
 makes an item eligible for the next host check; it does not guarantee that a
 busy host runs it immediately.
 
+Publishers may also attach additive intent fields to a `notice` via `--action
+none|review|decide`, `--supersedes TOPIC`, and `--expect-next-by RFC3339` (CLI
+`publish` and `send`, MCP `cairn_send`, and API `event-publish`). Requests and
+responses reject these fields, and `--action none` cannot combine with urgent
+wake policy. When a new notice has the same authenticated publisher and
+`supersedes` topic key (and does not cross from `local` to `shareable`
+sensitivity), the store settles older `pending` deliveries for matching
+recipients as `ignored` with `code: "superseded"` and `superseded_by` pointing
+to the new event UUID (and marks queued organic notices `unavailable` with
+`unavailable_reason: "superseded"`); `leased` items and items held by an active
+wake or session attempt are left unchanged. On bindings or
+sessions opted into `notice_auto_settle_version: 1`
+(`--auto-settle-action-none`), the host settles `action: none` notices at
+delivery (`state: "handled"`, `code: "auto_settled_none"`) without opening a
+model turn while keeping them readable in event status and record history.
+
 [Automated wakeups](agent-wakeups.md) are a separate host-side layer with a
 durable hold on claimed deliveries; ordinary claims respect those holds and retry
 delays. Structured wake context, [watch](inbox-watch.md),

@@ -16,8 +16,9 @@ while its manifest is enabled. After installing a binding-wide change, repin
 the changed coordination configuration, validate the complete manifest, then
 reactivate it under that document's staged procedure.
 
-To enable compact inbox or notice batches for a single live session on a shared
-Codex or Claude native binding without modifying the pinned binding
+To enable compact inbox, notice batches, or `action: none` auto-settle
+(`--auto-settle-action-none`) for a single live session on a shared
+native binding without modifying the pinned binding
 configuration, disabling inbox recall, or restarting the presence watcher, pass
 `--session NATIVE_SESSION_ID` or `--agent-id AGENT_UUID` (or run
 `configure-session-inbox` with `--config` on the coordination CLI). Per-session

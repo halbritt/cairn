@@ -648,7 +648,7 @@ func normalizeNoticeUnavailableReason(state, raw string) *string {
 		return nil
 	}
 	switch raw {
-	case "source_unavailable":
+	case "source_unavailable", "superseded":
 		r := raw
 		return &r
 	default:
