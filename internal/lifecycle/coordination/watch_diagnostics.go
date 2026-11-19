@@ -332,6 +332,155 @@ func (c *CLI) noteCodexErrorWake(config, state *value.Value, delivery string) er
 	return nil
 }
 
+const codexIdleGraceSeconds = 5
+
+func (c *CLI) codexIdleWake(ctx context.Context, config, state *value.Value, now float64, errOut io.Writer) (*value.Value, error) {
+	agent, err := nativeRequired(state, "agent")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := nativeObj(agent, "agent"); err != nil {
+		return nil, err
+	}
+	nowSeconds := now
+	if nowSeconds <= 0 {
+		nowSeconds = float64(c.clock().UnixNano()) / 1e9
+	}
+	sessionRef, err := c.sessionRef(agent)
+	if err != nil {
+		return nil, err
+	}
+	prior := nativeMap()
+	if raw := state.Get("codex_idle_wake"); raw != nil && raw.Kind == value.Object {
+		if ps := raw.Get("session"); nativeNone(ps) || nativeEqual(ps, sessionRef) {
+			prior = raw
+		}
+	}
+	decidedAt, err := utcTimestamp(&value.Value{Kind: value.Float, Number: nowSeconds})
+	if err != nil {
+		return nil, err
+	}
+	record := nativeMap("schema", "cairn.codex-idle-wake/1", "session", sessionRef, "decided_at", decidedAt)
+	health, err := nativeObj(state.Get("native_health"), "native_health")
+	if err != nil {
+		return nil, err
+	}
+	decide := func(decision, reason string) *value.Value {
+		record.Set("decision", value.Text(decision))
+		record.Set("reason", value.Text(reason))
+		var priorTurnRec, currTurnRec *value.Value
+		if pt := prior.Get("turn"); pt != nil && pt.Kind == value.Object {
+			priorTurnRec = pt.Get("record")
+		}
+		if ct := record.Get("turn"); ct != nil && ct.Kind == value.Object {
+			currTurnRec = ct.Get("record")
+		}
+		if (!nativeEqual(prior.Get("decision"), value.Text(decision)) || !nativeEqual(priorTurnRec, currTurnRec)) && errOut != nil {
+			display := nativeOr(agent.Get("display_name"), agent.Get("agent_id"))
+			_, _ = fmt.Fprintf(errOut, "Cairn presence %s: Codex stale-busy idle decision for %s (native %s): %s; %s\n",
+				nativeText(config.Get("binding")), pythonRepr(display, false), pythonRepr(agent.Get("native_session_id"), false), decision, reason)
+		}
+		state.Set("codex_idle_wake", record)
+		return record
+	}
+	if value.Truth(state.Get("inbox_intent")) || value.Truth(state.Get("inbox_attempt")) || value.Truth(state.Get("inbox_close")) || value.Truth(state.Get("inbox_turn_ended")) ||
+		value.Truth(state.Get("organic_claim_intent")) || value.Truth(state.Get("organic_advance_intent")) || value.Truth(state.Get("batch_advance_intent")) {
+		return decide("held", "a held inbox attempt remains; it is never replayed and needs its own settlement"), nil
+	}
+	if value.Truth(state.Get("tool_calls")) {
+		return decide("held", "in-flight tool calls remain recorded for this session"), nil
+	}
+	if value.Truth(health.Get("queue_count")) || value.Truth(health.Get("queued_present")) {
+		return decide("held", "the native Codex queue still holds items"), nil
+	}
+	if pw := state.Get("idle_wake"); pw != nil && pw.Kind == value.Object && nativeEqual(pw.Get("session"), sessionRef) {
+		st := nativeText(pw.Get("status"))
+		if value.Truth(pw.Get("reconciliation_required")) || st == "uncertain" || st == "refused" {
+			return decide("held", "a retained wake requires reconciliation before clearing busy presence"), nil
+		}
+	}
+	return c.finishCodexIdleWake(ctx, config, state, record, nowSeconds, decide)
+}
+
+func (c *CLI) finishCodexIdleWake(ctx context.Context, config, state, record *value.Value, nowSeconds float64, decide func(string, string) *value.Value) (*value.Value, error) {
+	hooks, err := c.probeCodexHookHealth(ctx, config, state)
+	if err != nil {
+		return nil, err
+	}
+	hookStatus := nativeText(hooks.Get("status"))
+	if hookStatus == "" {
+		hookStatus = "unknown"
+	}
+	record.Set("hook_status", value.Text(hookStatus))
+	if hookStatus == "untrusted" || hookStatus == "missing" || hookStatus == "error" {
+		record.Set("missing_events", nativeOr(hooks.Get("missing_events"), &value.Value{Kind: value.Array}))
+		record.Set("untrusted_events", nativeOr(hooks.Get("untrusted_events"), &value.Value{Kind: value.Array}))
+		reason := nativeText(hooks.Get("reason"))
+		if reason == "" {
+			reason = "required Cairn lifecycle hooks are not trusted"
+		}
+		return decide("hooks_untrusted", reason), nil
+	}
+	if hookStatus != "ready" {
+		reason := nativeText(hooks.Get("reason"))
+		if reason == "" {
+			reason = "native hook readiness is unverified"
+		}
+		return decide("unverified", reason), nil
+	}
+	end, locator, err := c.latestCodexTurnEnd(ctx, config, state)
+	if err != nil {
+		if reason, ok := codexErrorRolloutReason(err); ok {
+			return decide("unverified", reason), nil
+		}
+		return nil, err
+	}
+	if end == nil {
+		return decide("unverified", "no task_complete after the latest turn start in the bounded rollout tail"), nil
+	}
+	payload, err := nativeRequired(end, "payload")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := nativeObj(payload, "payload"); err != nil {
+		return nil, err
+	}
+	if !nativeNone(payload.Get("error")) {
+		return decide("unverified", "the latest turn ended on an error; error recovery governs"), nil
+	}
+	tsVal := end.Get("timestamp")
+	tsText := nativeText(tsVal)
+	if tsVal == nil || tsVal.Kind != value.String || !codexTurnEndTimestampRegex.MatchString(tsText) {
+		return decide("unverified", "the turn end record timestamp shape is unknown"), nil
+	}
+	parsed, err := time.Parse("2006-01-02T15:04:05.000Z", tsText)
+	if err != nil {
+		return decide("unverified", "the turn end record timestamp shape is unknown"), nil
+	}
+	ended := float64(parsed.UnixMicro()) / 1e6
+	turnIDVal := payload.Get("turn_id")
+	if turnIDVal == nil {
+		turnIDVal = &value.Value{Kind: value.Null}
+	}
+	turnIDText := nativeText(turnIDVal)
+	if turnIDVal.Kind != value.String {
+		turnIDText = pythonRepr(turnIDVal, false)
+	}
+	record.Set("turn", nativeMap("turn_id", turnIDVal, "ended_at", tsVal, "record", locator))
+	due := ended + float64(codexIdleGraceSeconds)
+	dueVal := &value.Value{Kind: value.Float, Number: due}
+	dueAt, err := utcTimestamp(dueVal)
+	if err != nil {
+		return nil, err
+	}
+	record.Set("next_eligible_epoch", dueVal)
+	record.Set("next_eligible_at", dueAt)
+	if nowSeconds < due {
+		return decide("grace_period", fmt.Sprintf("turn %s ended at %s; waiting until %s for normal Stop hook completion", turnIDText, tsText, nativeText(dueAt))), nil
+	}
+	return decide("wake_allowed", fmt.Sprintf("turn %s ended cleanly at %s with native thread idle and lifecycle hooks ready", turnIDText, tsText)), nil
+}
+
 func (c *CLI) deliveryObservation(config, state, prepared, cycle *value.Value) (*value.Value, error) {
 	agent, err := nativeRequired(state, "agent")
 	if err != nil {
@@ -361,32 +510,54 @@ func (c *CLI) deliveryObservation(config, state, prepared, cycle *value.Value) (
 		return nil, err
 	}
 	healthErrored := false
+	healthStaleIdle := false
+	idleDecision := ""
 	if nativeText(config.Get("harness")) == "codex" {
-		if h := state.Get("native_health"); h != nil && h.Kind == value.Object && nativeEqual(h.Get("session"), sref) && nativeText(h.Get("status_type")) == "systemError" {
-			cew, err := nativeObj(state.Get("codex_error_wake"), "codex_error_wake")
-			if err != nil {
-				return nil, err
+		if h := state.Get("native_health"); h != nil && h.Kind == value.Object && nativeEqual(h.Get("session"), sref) {
+			if nativeText(h.Get("status_type")) == "systemError" {
+				cew, err := nativeObj(state.Get("codex_error_wake"), "codex_error_wake")
+				if err != nil {
+					return nil, err
+				}
+				dec := nativeText(cew.Get("decision"))
+				healthErrored = dec != "wake_allowed" && dec != "woken"
+			} else if nativeText(meta.Get("state")) == "busy" && nativeText(h.Get("status_type")) == "idle" {
+				if ciw := state.Get("codex_idle_wake"); ciw != nil && ciw.Kind == value.Object && nativeEqual(ciw.Get("session"), sref) {
+					dec := nativeText(ciw.Get("decision"))
+					if dec == "hooks_untrusted" || dec == "unverified" || dec == "grace_period" {
+						healthStaleIdle = true
+						idleDecision = dec
+					}
+				}
 			}
-			dec := nativeText(cew.Get("decision"))
-			healthErrored = dec != "wake_allowed" && dec != "woken"
 		}
 	}
-	return c.finishDeliveryObservation(config, state, meta, sref, prepared, cycle, healthErrored)
+	return c.finishDeliveryObservation(config, state, meta, sref, prepared, cycle, healthErrored, healthStaleIdle, idleDecision)
 }
 
-func (c *CLI) finishDeliveryObservation(config, state, meta, sref, prepared, cycle *value.Value, healthErrored bool) (*value.Value, error) {
+func (c *CLI) finishDeliveryObservation(config, state, meta, sref, prepared, cycle *value.Value, healthErrored, healthStaleIdle bool, idleDecision string) (*value.Value, error) {
 	condition := "unknown"
 	var deliveryID, wake *value.Value
 	agentState := nativeText(meta.Get("state"))
+	staleIdleCond := func() string {
+		if idleDecision == "hooks_untrusted" {
+			return "lifecycle_hooks_untrusted"
+		}
+		return "native_idle_stale_busy"
+	}
 	if !value.Truth(config.Get("native_delivery")) || value.Truth(state.Get("inbox_intent")) || value.Truth(state.Get("ending")) || value.Truth(state.Get("retired")) {
 		condition = "unknown"
-	} else if agentState == "busy" && !healthErrored {
+	} else if agentState == "busy" && !healthErrored && !healthStaleIdle {
 		condition = "busy"
-	} else if agentState != "idle" && !healthErrored {
+	} else if agentState != "idle" && !healthErrored && !healthStaleIdle {
 		condition = "unknown"
 	} else if !value.Truth(config.Get("idle_wakeup")) {
-		condition = "owner_turn_required"
-	} else if value.Truth(prepared) && value.Truth(prepared.Get("wake")) && !healthErrored && nativeEqual(cycle.Get("ready_delivery"), prepared.Get("wake").Get("delivery_id")) {
+		if healthStaleIdle {
+			condition = staleIdleCond()
+		} else {
+			condition = "owner_turn_required"
+		}
+	} else if value.Truth(prepared) && value.Truth(prepared.Get("wake")) && !healthErrored && !healthStaleIdle && nativeEqual(cycle.Get("ready_delivery"), prepared.Get("wake").Get("delivery_id")) {
 		selected := prepared.Get("wake")
 		deliveryID = selected.Get("delivery_id")
 		if nativeText(selected.Get("status")) == "queued" {
@@ -400,6 +571,9 @@ func (c *CLI) finishDeliveryObservation(config, state, meta, sref, prepared, cyc
 		condition, deliveryID, wake, err = c.refusalDeliveryObservation(state, cycle)
 		if err != nil {
 			return nil, err
+		}
+		if condition == "unknown" && deliveryID == nil && healthStaleIdle {
+			condition = staleIdleCond()
 		}
 	}
 	return formatDeliveryObservation(sref, condition, deliveryID, wake)
@@ -534,6 +708,25 @@ func (c *CLI) sendDeliveryObservation(ctx context.Context, config, state, prepar
 	req := nativeClone(desired)
 	req.Set("observed_at", obsAt)
 	if _, err := c.call(ctx, config, "session-delivery-observe", req, NativeCallOptions{Timeout: 500 * time.Millisecond}); err != nil {
+		var ce *CoordinationError
+		cond := nativeText(desired.Get("condition"))
+		if errors.As(err, &ce) && ce.Code == "INVALID_REQUEST" && (cond == "native_idle_stale_busy" || cond == "lifecycle_hooks_untrusted") {
+			fallback := "unknown"
+			if value.Truth(desired.Get("delivery_id")) {
+				fallback = "native_transport_unavailable"
+			}
+			desired = nativeClone(desired)
+			desired.Set("condition", value.Text(fallback))
+			if fallback == "unknown" {
+				nativePop(desired, "delivery_id")
+			}
+			retryReq := nativeClone(desired)
+			retryReq.Set("observed_at", obsAt)
+			if _, retryErr := c.call(ctx, config, "session-delivery-observe", retryReq, NativeCallOptions{Timeout: 500 * time.Millisecond}); retryErr != nil {
+				return nil, 0, false, retryErr
+			}
+			return desired, now, true, nil
+		}
 		return nil, 0, false, err
 	}
 	return desired, now, true, nil

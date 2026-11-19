@@ -28,9 +28,9 @@ func eventAdmissionEnforcementReadyTx(ctx context.Context, tx pgx.Tx) (bool, err
 	if !eventAdmissionEnforcementReady() {
 		return false, nil
 	}
-	var version int
-	err := tx.QueryRow(ctx, `SELECT COALESCE(max(version),0) FROM public.cairn_migration`).Scan(&version)
-	return version >= eventAdmissionSchemaVersion, err
+	var ready bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM public.cairn_migration WHERE version=$1)`, eventAdmissionSchemaVersion).Scan(&ready)
+	return ready, err
 }
 
 type eventAdmissionSnapshot struct {

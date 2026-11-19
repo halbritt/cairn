@@ -19,12 +19,13 @@ import (
 )
 
 type CodexHealthBindings struct {
-	ProcRoot   string
-	Now        func() time.Time
-	Alive      func(*value.Value) (bool, error)
-	SessionRef func(*value.Value) (*value.Value, error)
-	Endpoint   func(context.Context, *value.Value, *value.Value) (*value.Value, error)
-	Inspector  func(context.Context, *value.Value, *value.Value, *value.Value, *value.Value) (*value.Value, error)
+	ProcRoot       string
+	Now            func() time.Time
+	Alive          func(*value.Value) (bool, error)
+	SessionRef     func(*value.Value) (*value.Value, error)
+	Endpoint       func(context.Context, *value.Value, *value.Value) (*value.Value, error)
+	Inspector      func(context.Context, *value.Value, *value.Value, *value.Value, *value.Value) (*value.Value, error)
+	HooksInspector func(context.Context, *value.Value, *value.Value, *value.Value, *value.Value) (*value.Value, error)
 }
 
 func (b CodexHealthBindings) reference(agent *value.Value) (*value.Value, error) {
@@ -130,6 +131,118 @@ func (b CodexHealthBindings) inspect(ctx context.Context, endpoint, process, nat
 		qp = value.Boolean(*inspection.QueuedPresent)
 	}
 	return nativeMap("status_type", inspection.StatusType, "updated_at", updated, "queue_count", inspection.QueueCount, "queued_ids", ids, "queued_present", qp, "peer", nativeMap("pid", inspection.Peer.PID, "start", value.IntegerText(strconv.FormatUint(inspection.Peer.Start, 10)), "boot", inspection.Peer.Boot)), nil
+}
+
+func (b CodexHealthBindings) inspectHooks(ctx context.Context, endpoint, process, native, workspace *value.Value) (*value.Value, error) {
+	pid, err := nativeRequired(process, "pid")
+	if err != nil {
+		return nil, err
+	}
+	start, err := nativeRequired(process, "start")
+	if err != nil {
+		return nil, err
+	}
+	boot, err := nativeRequired(process, "boot")
+	if err != nil {
+		return nil, err
+	}
+	if pid.Kind != value.Int || boot.Kind != value.String || native == nil || native.Kind != value.String {
+		return nil, &journal.TypeError{Field: "Codex process reference"}
+	}
+	p, err := strconv.Atoi(pid.Integer)
+	if err != nil {
+		return nil, err
+	}
+	s, err := codexPeerStart(start)
+	if err != nil {
+		return nil, err
+	}
+	address, err := nativeRequired(endpoint, "endpoint")
+	if err != nil {
+		return nil, err
+	}
+	if address.Kind != value.String {
+		return nil, &journal.TypeError{Field: "Codex endpoint"}
+	}
+	owner := procpeer.ProcessOwner
+	if value.SameText(endpoint.Get("owner"), "uid") {
+		owner = procpeer.UserOwner
+	}
+	inspection, err := wake.CodexInspectHooks(ctx, nativeText(address), wake.ProcessRef{PID: p, Start: s, Boot: nativeText(boot)}, nativeText(native), nativeText(workspace), owner)
+	if err != nil {
+		return nil, err
+	}
+	missing := &value.Value{Kind: value.Array}
+	for _, ev := range inspection.MissingEvents {
+		missing.Items = append(missing.Items, value.Text(ev))
+	}
+	untrusted := &value.Value{Kind: value.Array}
+	for _, ev := range inspection.UntrustedEvents {
+		untrusted.Items = append(untrusted.Items, value.Text(ev))
+	}
+	var reason, peer *value.Value
+	if inspection.Reason != "" {
+		reason = value.Text(inspection.Reason)
+	}
+	if inspection.Peer != nil {
+		peer = nativeMap("pid", inspection.Peer.PID, "start", value.IntegerText(strconv.FormatUint(inspection.Peer.Start, 10)), "boot", inspection.Peer.Boot)
+	}
+	return nativeMap("status", inspection.Status, "missing_events", missing, "untrusted_events", untrusted, "reason", reason, "peer", peer), nil
+}
+
+func (b CodexHealthBindings) ProbeHooks(ctx context.Context, config, state *value.Value) (*value.Value, error) {
+	agent, process := state.Get("agent"), state.Get("process")
+	if !value.SameText(config.Get("harness"), "codex") || agent == nil || agent.Kind != value.Object || process == nil || process.Kind != value.Object {
+		return nativeMap("status", "unobserved", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", &value.Value{Kind: value.Array}, "reason", nil), nil
+	}
+	aliveFn := b.Alive
+	if aliveFn == nil {
+		aliveFn = NewProcessHooks(b.ProcRoot).Alive
+	}
+	alive, err := aliveFn(process)
+	if err != nil {
+		return nil, err
+	}
+	if !alive {
+		return nativeMap("status", "unavailable", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", &value.Value{Kind: value.Array}, "reason", "native process is not alive"), nil
+	}
+	discover := b.Endpoint
+	if discover == nil {
+		discover = b.endpoint
+	}
+	endpoint, err := discover(ctx, config, process)
+	if err != nil {
+		return nil, err
+	}
+	if !value.Truth(endpoint) {
+		return nativeMap("status", "unobserved", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", &value.Value{Kind: value.Array}, "reason", nil), nil
+	}
+	inspect := b.HooksInspector
+	if inspect == nil {
+		if b.Inspector != nil {
+			return nativeMap("status", "unobserved", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", &value.Value{Kind: value.Array}, "reason", nil), nil
+		}
+		inspect = b.inspectHooks
+	}
+	nativeID, err := nativeRequired(agent, "native_session_id")
+	if err != nil {
+		return nil, err
+	}
+	out, err := inspect(ctx, endpoint, process, nativeID, state.Get("workspace"))
+	if err != nil {
+		if wake.IsCodexQueueUnavailable(err) {
+			return nativeMap("status", "unavailable", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", &value.Value{Kind: value.Array}, "reason", err.Error()), nil
+		}
+		var ce *CoordinationError
+		if errors.As(err, &ce) {
+			return nativeMap("status", "unavailable", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", &value.Value{Kind: value.Array}, "reason", ce.Error()), nil
+		}
+		return nativeMap("status", "unknown", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", &value.Value{Kind: value.Array}, "reason", sourceErrorName(err)), nil
+	}
+	if out == nil || out.Kind != value.Object || out.Get("status") == nil || out.Get("status").Kind != value.String {
+		return nativeMap("status", "unobserved", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", &value.Value{Kind: value.Array}, "reason", nil), nil
+	}
+	return out, nil
 }
 func sourceErrorName(err error) string {
 	var ir *InboxRecallError
@@ -270,7 +383,23 @@ func (b CodexHealthBindings) ProbeCodex(ctx context.Context, config, state *valu
 		if err != nil {
 			return nil, err
 		}
-		if nativeEqual(existing.Get("session"), ref) && nativeEqual(existing.Get("process"), procID) {
+		cachedMeta, err := nativeObj(agent.Get("metadata"), "metadata")
+		if err != nil {
+			return nil, err
+		}
+		cachedReported := cachedMeta.Get("state")
+		if cachedReported == nil {
+			cachedReported = value.Text("unknown")
+		}
+		cachedRev := agent.Get("context_revision")
+		if cachedRev == nil {
+			cachedRev = &value.Value{Kind: value.Null}
+		}
+		tm := existing.Get("task_metadata")
+		if nativeEqual(existing.Get("session"), ref) && nativeEqual(existing.Get("process"), procID) &&
+			tm != nil && tm.Kind == value.Object &&
+			nativeEqual(tm.Get("reported_state"), cachedReported) &&
+			nativeEqual(tm.Get("context_revision"), cachedRev) {
 			epoch := existing.Get("observed_at_epoch")
 			if epoch != nil && (epoch.Kind == value.Int || epoch.Kind == value.Float || epoch.Kind == value.Bool) {
 				then, err := sourceSeconds(epoch)

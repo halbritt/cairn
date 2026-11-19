@@ -440,3 +440,28 @@ func TestAttentionDistinguishesMissingFromAmbiguousTerminalTargets(t *testing.T)
 		checks[condition] = next
 	}
 }
+
+func TestStaleBusyAndUntrustedHookConditionsSurfaceWithoutLongBusyTurnMislabel(t *testing.T) {
+	now := starvationNow
+	for _, cond := range []string{"native_idle_stale_busy", "lifecycle_hooks_untrusted"} {
+		d := starvationRow("d-stale-"+cond, "agent/1259", "pending", "busy", 700)
+		d.Diagnosis.Host = &DiagnosisHost{Condition: cond, Applies: "exact", Freshness: "current"}
+
+		// 1. AttentionCandidate surfaces native-idle stale metadata even while Recipient.State == "busy".
+		res, _, err := SummarizeAttention([]ReviewDelivery{d}, true, AttentionOptions{}, emptyAttentionCache(), now)
+		if err != nil || len(res.Changed) != 1 || res.Changed[0].Condition != cond {
+			t.Fatalf("%s attention: %+v %v", cond, res, err)
+		}
+
+		// 2. DetectStarvation applies the 600s idle threshold (not 1800s busy) and distinguishes metadata disagreement from a long busy turn.
+		starved, err := DetectStarvation([]ReviewDelivery{d}, StarvationOptions{}, now, handledAt(nil))
+		if err != nil || len(starved) != 1 {
+			t.Fatalf("%s starvation: %+v %v", cond, starved, err)
+		}
+		s := starved[0]
+		if s.ThresholdSeconds != 600 || s.HostCondition != cond || strings.Contains(s.Diagnosis, "long busy turn") ||
+			!strings.Contains(s.Diagnosis, "stale_busy") || !strings.Contains(s.Diagnosis, "authoritative native state is idle") {
+			t.Fatalf("%s diagnosis: %+v", cond, s)
+		}
+	}
+}

@@ -202,8 +202,10 @@ type CLI struct {
 	CallerDescends func(*value.Value) (bool, error)
 	// ReadInput is the selected stdin text codec, bounded in characters. The
 	// frontend must supply it for complete/finish-reply; no locale is inferred.
-	ReadInput   func(io.Reader, int) (string, error)
-	NextContext func(context.Context, *value.Value, *value.Value, string, *value.Value) (*value.Value, error)
+	ReadInput           func(io.Reader, int) (string, error)
+	NextContext         func(context.Context, *value.Value, *value.Value, string, *value.Value) (*value.Value, error)
+	CodexInspector      func(context.Context, *value.Value, *value.Value, *value.Value, *value.Value) (*value.Value, error)
+	CodexHooksInspector func(context.Context, *value.Value, *value.Value, *value.Value, *value.Value) (*value.Value, error)
 }
 
 func (c *CLI) profile() *value.SourceReaderProfile {

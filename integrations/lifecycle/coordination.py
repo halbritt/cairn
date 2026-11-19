@@ -434,9 +434,14 @@ def probe_codex_native_health(config, state, now=None, force=False):
     agent = state['agent']
     process = state['process']
     proc_id = {k: process[k] for k in ('pid', 'start', 'boot') if k in process}
+    reported_state = (agent.get('metadata') or {}).get('state', 'unknown')
     existing = state.get('native_health')
+    existing_meta = existing.get('task_metadata') if isinstance(existing, dict) else None
     if (not force and isinstance(existing, dict) and existing.get('session') == session_ref(agent) and
-            existing.get('process') == proc_id and isinstance(existing.get('observed_at_epoch'), (int, float)) and
+            existing.get('process') == proc_id and isinstance(existing_meta, dict) and
+            existing_meta.get('reported_state') == reported_state and
+            existing_meta.get('context_revision') == agent.get('context_revision') and
+            isinstance(existing.get('observed_at_epoch'), (int, float)) and
             0 <= now - existing['observed_at_epoch'] < CODEX_HEALTH_POLL_INTERVAL):
         return existing
     alive = process_alive(process)
@@ -662,6 +667,98 @@ def note_codex_error_wake(config, state, delivery):
                                          reason=state['codex_error_wake']['reason'] + '; normal wake issued')
 
 
+CODEX_IDLE_GRACE_SECONDS = 5
+
+
+def probe_codex_hook_health(config, state):
+    """Inspect required Cairn lifecycle hook trust/readiness on the live Codex socket."""
+    process = state.get('process') or {}
+    agent = state.get('agent') or {}
+    if not process_alive(process):
+        return dict(status='unavailable', missing_events=[], untrusted_events=[], reason='native process is not alive')
+    endpoint = codex_queue_endpoint(config, process)
+    if not endpoint:
+        return dict(status='unobserved', missing_events=[], untrusted_events=[], reason=None)
+    try:
+        queue = queue_helper()
+        inspect_fn = getattr(queue, 'inspect_hooks', None)
+        if not callable(inspect_fn):
+            return dict(status='unobserved', missing_events=[], untrusted_events=[], reason=None)
+        result = inspect_fn(endpoint['endpoint'], process, agent['native_session_id'],
+                            state.get('workspace') or '', owner=endpoint.get('owner', 'process'))
+        if not isinstance(result, dict) or not isinstance(result.get('status'), str):
+            return dict(status='unobserved', missing_events=[], untrusted_events=[], reason=None)
+        return result
+    except CoordinationError as exc:
+        return dict(status='unavailable', missing_events=[], untrusted_events=[], reason=str(exc))
+    except Exception as exc:
+        if type(exc).__name__ == 'QueueUnavailable':
+            return dict(status='unavailable', missing_events=[], untrusted_events=[], reason=str(exc))
+        return dict(status='unknown', missing_events=[], untrusted_events=[], reason=type(exc).__name__)
+
+
+def codex_idle_wake(config, state, now):
+    """Decide whether a natively idle Codex thread behind busy metadata may reconcile to idle (CAIRN-363)."""
+    agent = state['agent']
+    prior = state.get('codex_idle_wake') if isinstance(state.get('codex_idle_wake'), dict) else {}
+    if prior.get('session') not in (None, session_ref(agent)):
+        prior = {}
+    record = dict(schema='cairn.codex-idle-wake/1', session=session_ref(agent), decided_at=utc_timestamp(now))
+    health = state.get('native_health') or {}
+
+    def decide(decision, reason):
+        record.update(decision=decision, reason=reason)
+        if (prior.get('decision'), (prior.get('turn') or {}).get('record')) != (decision, (record.get('turn') or {}).get('record')):
+            print(f"Cairn presence {config['binding']}: Codex stale-busy idle decision for "
+                  f"{agent.get('display_name') or agent['agent_id']} (native {agent.get('native_session_id')}): "
+                  f"{decision}; {reason}", file=sys.stderr)
+        state['codex_idle_wake'] = record
+        return record
+
+    if any(state.get(k) for k in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_turn_ended',
+                                  'organic_claim_intent', 'organic_advance_intent', 'batch_advance_intent')):
+        return decide('held', 'a held inbox attempt remains; it is never replayed and needs its own settlement')
+    if state.get('tool_calls'):
+        return decide('held', 'in-flight tool calls remain recorded for this session')
+    if health.get('queue_count') or health.get('queued_present'):
+        return decide('held', 'the native Codex queue still holds items')
+    prior_wake = state.get('idle_wake') or {}
+    if prior_wake.get('session') == session_ref(agent) and (
+            prior_wake.get('reconciliation_required') or prior_wake.get('status') in ('uncertain', 'refused')):
+        return decide('held', 'a retained wake requires reconciliation before clearing busy presence')
+    hooks = probe_codex_hook_health(config, state)
+    hook_status = hooks.get('status') or 'unknown'
+    record['hook_status'] = hook_status
+    if hook_status in ('untrusted', 'missing', 'error'):
+        record['missing_events'] = list(hooks.get('missing_events') or [])
+        record['untrusted_events'] = list(hooks.get('untrusted_events') or [])
+        return decide('hooks_untrusted', hooks.get('reason') or 'required Cairn lifecycle hooks are not trusted')
+    if hook_status != 'ready':
+        return decide('unverified', hooks.get('reason') or 'native hook readiness is unverified')
+    try:
+        found = latest_codex_turn_end(config, state)
+    except (CoordinationError, OSError, ValueError) as exc:
+        return decide('unverified', f'rollout unavailable ({getattr(exc, "code", type(exc).__name__)})')
+    if found is None:
+        return decide('unverified', 'no task_complete after the latest turn start in the bounded rollout tail')
+    end, locator = found
+    payload = end['payload']
+    if payload.get('error') is not None:
+        return decide('unverified', 'the latest turn ended on an error; error recovery governs')
+    try:
+        ended = native_time(end.get('timestamp')).timestamp()
+    except CoordinationError:
+        return decide('unverified', 'the turn end record timestamp shape is unknown')
+    record['turn'] = dict(turn_id=payload.get('turn_id'), ended_at=end['timestamp'], record=locator)
+    due = ended + CODEX_IDLE_GRACE_SECONDS
+    record.update(next_eligible_epoch=due, next_eligible_at=utc_timestamp(due))
+    if now < due:
+        return decide('grace_period', f'turn {payload.get("turn_id")} ended at {end["timestamp"]}; '
+                                      f'waiting until {utc_timestamp(due)} for normal Stop hook completion')
+    return decide('wake_allowed', f'turn {payload.get("turn_id")} ended cleanly at {end["timestamp"]} '
+                                  'with native thread idle and lifecycle hooks ready')
+
+
 def delivery_observation(config, state, prepared, cycle=None):
     """Describe only this host's current session and ready-head observation.
 
@@ -681,15 +778,21 @@ def delivery_observation(config, state, prepared, cycle=None):
     health_errored = (isinstance(health, dict) and health.get('session') == session_ref(agent) and
                       health.get('status_type') == 'systemError' and
                       (state.get('codex_error_wake') or {}).get('decision') not in ('wake_allowed', 'woken'))
+    idle_rec = state.get('codex_idle_wake') if isinstance(state.get('codex_idle_wake'), dict) else {}
+    health_stale_idle = (agent['metadata'].get('state') == 'busy' and
+                         isinstance(health, dict) and health.get('session') == session_ref(agent) and
+                         health.get('status_type') == 'idle' and idle_rec.get('session') == session_ref(agent) and
+                         idle_rec.get('decision') in ('hooks_untrusted', 'unverified', 'grace_period'))
     if not config.get('native_delivery') or state.get('inbox_intent') or state.get('ending') or state.get('retired'):
         condition = 'unknown'
-    elif agent['metadata'].get('state') == 'busy' and not health_errored:
+    elif agent['metadata'].get('state') == 'busy' and not health_errored and not health_stale_idle:
         condition = 'busy'
-    elif agent['metadata'].get('state') != 'idle' and not health_errored:
+    elif agent['metadata'].get('state') != 'idle' and not health_errored and not health_stale_idle:
         condition = 'unknown'
     elif not config.get('idle_wakeup'):
-        condition = 'owner_turn_required'
-    elif (prepared and prepared.get('wake') and not health_errored and
+        condition = ('lifecycle_hooks_untrusted' if health_stale_idle and idle_rec.get('decision') == 'hooks_untrusted'
+                     else ('native_idle_stale_busy' if health_stale_idle else 'owner_turn_required'))
+    elif (prepared and prepared.get('wake') and not health_errored and not health_stale_idle and
             cycle.get('ready_delivery') == prepared['wake'].get('delivery_id')):
         selected = prepared['wake']
         delivery_id = selected.get('delivery_id')
@@ -709,6 +812,9 @@ def delivery_observation(config, state, prepared, cycle=None):
                     wake = selected
                 else:
                     condition = 'unknown'
+        elif health_stale_idle:
+            condition = ('lifecycle_hooks_untrusted'
+                         if idle_rec.get('decision') == 'hooks_untrusted' else 'native_idle_stale_busy')
     if condition == 'unknown':
         delivery_id = None
     observation = dict(session=session_ref(agent), condition=condition)
@@ -748,7 +854,18 @@ def report_delivery_observation(config, state, prepared, cycle=None):
         if desired == previous_value and now - previous.get('sent_at', 0) < 45:
             return
         request = dict(desired, observed_at=utc_timestamp(now))
-        call(config, 'session-delivery-observe', request, timeout=0.5)
+        try:
+            call(config, 'session-delivery-observe', request, timeout=0.5)
+        except CoordinationError as exc:
+            if (exc.code == 'INVALID_REQUEST' and
+                    desired.get('condition') in ('native_idle_stale_busy', 'lifecycle_hooks_untrusted')):
+                fallback_cond = 'native_transport_unavailable' if desired.get('delivery_id') else 'unknown'
+                desired = dict(desired, condition=fallback_cond)
+                if fallback_cond == 'unknown':
+                    desired.pop('delivery_id', None)
+                call(config, 'session-delivery-observe', dict(desired, observed_at=utc_timestamp(now)), timeout=0.5)
+            else:
+                raise
     except CoordinationError as exc:
         diagnostic_error = exc.code
     except (OSError, ValueError, KeyError, TypeError, OverflowError) as exc:
@@ -761,6 +878,22 @@ def report_delivery_observation(config, state, prepared, cycle=None):
         print(f"Cairn presence {config['binding']}: delivery diagnostics unavailable ({diagnostic_error}); "
               "ordinary inbox delivery continues", file=sys.stderr)
         state['delivery_observation_error'] = diagnostic_error
+
+
+def _has_process_keys(proc):
+    return isinstance(proc, dict) and all(k in proc for k in ('pid', 'start', 'boot'))
+
+
+def codex_idle_health_matches(health, agent, process, endpoint):
+    if (not isinstance(health, dict) or health.get('status_type') != 'idle' or
+            health.get('session') != session_ref(agent) or health.get('process_alive') is not True or
+            not isinstance(endpoint, dict) or not endpoint or
+            not _has_process_keys(health.get('process')) or not _has_process_keys(process) or
+            not same_process(health['process'], process)):
+        return False
+    if endpoint.get('owner', 'process') == 'uid':
+        return True
+    return _has_process_keys(health.get('peer')) and same_process(health['peer'], process)
 
 
 def prepare_idle_wake(config, state, path, cycle=None):
@@ -814,8 +947,54 @@ def prepare_idle_wake(config, state, path, cycle=None):
                     'native Codex thread reports systemError behind busy metadata; '
                     'review the pending delivery and provider state before owner-authorized recovery',
                     'native_transport_unavailable', cycle)
+            elif health and health.get('status_type') == 'idle':
+                endpoint = codex_queue_endpoint(config, state['process'])
+                if codex_idle_health_matches(health, agent, state['process'], endpoint):
+                    idle_decision = codex_idle_wake(config, state, time.time())
+                    if (idle_decision['decision'] == 'wake_allowed' and
+                            (not isinstance(health.get('observed_at_epoch'), (int, float)) or
+                             health['observed_at_epoch'] < idle_decision['next_eligible_epoch'])):
+                        health = probe_codex_native_health(config, state, force=True)
+                        endpoint = codex_queue_endpoint(config, state['process'])
+                        if codex_idle_health_matches(health, agent, state['process'], endpoint):
+                            idle_decision = codex_idle_wake(config, state, time.time())
+                        else:
+                            state.pop('codex_idle_wake', None)
+                            idle_decision = None
+                    if idle_decision and idle_decision['decision'] == 'wake_allowed':
+                        current = state['agent']
+                        state['agent'] = agent = call(config, 'agent-context', dict(
+                            request_id=str(uuid.uuid4()), session=session_ref(current),
+                            expected_revision=current['context_revision'],
+                            metadata=dict(current['metadata'], state='idle')))
+                        if state.get('delivered_since_idle'):
+                            state['delivered_since_idle'] = False
+                            state['codex_idle_wake']['latch'] = 'cleared'
+                        state['codex_idle_wake']['presence'] = 'busy_corrected_to_idle'
+                        write_state(path, state)
+                    else:
+                        write_state(path, state)
+                        if idle_decision and idle_decision['decision'] != 'held':
+                            ready = call(config, 'session-inbox-ready', session_ref(agent))
+                            delivery = ready.get('delivery_id')
+                            if cycle is not None:
+                                cycle['ready_delivery'] = delivery
+                            if not delivery:
+                                state.pop('wake_refusal', None)
+                                return None
+                            cond = ('lifecycle_hooks_untrusted'
+                                    if idle_decision['decision'] == 'hooks_untrusted' else 'native_idle_stale_busy')
+                            return note_wake_refusal(config, state, delivery,
+                                f"native Codex thread is idle behind busy metadata ({idle_decision['decision']}): "
+                                f"{idle_decision['reason']}", cond, cycle)
+                else:
+                    write_state(path, state)
         if agent['metadata']['state'] != 'idle':
             return None
+    if (isinstance(state.get('codex_idle_wake'), dict) and
+            state['codex_idle_wake'].get('presence') != 'busy_corrected_to_idle'):
+        state.pop('codex_idle_wake', None)
+        write_state(path, state)
     if (config.get('harness') == 'codex' and
             isinstance(state.get('native_health'), dict) and
             state['native_health'].get('status_type') == 'systemError'):

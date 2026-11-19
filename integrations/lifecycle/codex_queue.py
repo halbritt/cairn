@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import shlex
 import struct
 import sys
 import time
@@ -314,5 +315,104 @@ def inspect_thread(endpoint, process, native_id, owner='process', queued_id=None
                     peer=peer)
     finally:
         connection.close(timeout=0)
+
+
+REQUIRED_HOOK_EVENTS = ('userPromptSubmit', 'stop')
+
+
+def _classify_cairn_hook_command(command):
+    if not isinstance(command, str) or not command.strip():
+        return None
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    if not tokens:
+        return None
+    for idx in range(len(tokens) - 1):
+        if tokens[idx] == 'hook' and tokens[idx + 1] == '--config':
+            return 'coordination'
+    if '--config' in tokens and any(
+        tok in ('lifecycle.py', 'memory.py') or tok.endswith(('/lifecycle.py', '/memory.py'))
+        for tok in tokens
+    ):
+        return 'memory'
+    exe = tokens[0]
+    if '/launch/' in exe and Path(exe).name in ('inbox', 'memory', 'memory-capture'):
+        return 'memory'
+    return None
+
+
+def inspect_hooks(endpoint, process, native_id, workspace, owner='process'):
+    """Read-only, peer/session-verified native Cairn lifecycle hook readiness probe."""
+    if not isinstance(workspace, str) or not workspace.strip():
+        return dict(status='unavailable', missing_events=[], untrusted_events=[],
+                    reason='session workspace is unavailable', peer=None)
+    connection, websocket, peer = _open(endpoint, process, owner)
+    try:
+        rpc = _Rpc(connection, time.monotonic() + 4)
+        try:
+            _admit(connection, rpc, native_id)
+        except QueueUnavailable:
+            raise
+        except (QueueError, OSError, ValueError, KeyError, TypeError, websocket.WebSocketException) as exc:
+            raise QueueUnavailable(f'native queue is not ready: {exc}') from exc
+        try:
+            listing = rpc('hooks/list', dict(cwds=[workspace]))
+        except QueueRefused as exc:
+            if type(exc.code) is int and exc.code == -32601:
+                return dict(status='unobserved', missing_events=[], untrusted_events=[], reason=None, peer=peer)
+            return dict(status='unavailable', missing_events=[], untrusted_events=[],
+                        reason='native hooks/list was refused', peer=peer)
+        except (QueueError, OSError, ValueError, KeyError, TypeError, websocket.WebSocketException):
+            return dict(status='unavailable', missing_events=[], untrusted_events=[],
+                        reason='native hooks/list is unavailable', peer=peer)
+        entries = listing.get('data')
+        if not isinstance(entries, list):
+            return dict(status='unknown', missing_events=[], untrusted_events=[],
+                        reason='native hooks/list returned an invalid payload', peer=peer)
+        coord_present = {ev: False for ev in REQUIRED_HOOK_EVENTS}
+        untrusted = {ev: False for ev in REQUIRED_HOOK_EVENTS}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                return dict(status='unknown', missing_events=[], untrusted_events=[],
+                            reason='native hooks/list returned an invalid entry', peer=peer)
+            errors = entry.get('errors')
+            if isinstance(errors, list) and errors:
+                return dict(status='error', missing_events=[], untrusted_events=[],
+                            reason='native hooks/list reported configuration errors', peer=peer)
+            raw_hooks = entry.get('hooks')
+            if not isinstance(raw_hooks, list):
+                return dict(status='unknown', missing_events=[], untrusted_events=[],
+                            reason='native hooks/list returned an invalid hook list', peer=peer)
+            for hook in raw_hooks:
+                if not isinstance(hook, dict):
+                    continue
+                raw_ev = hook.get('eventName')
+                ev = ('userPromptSubmit' if raw_ev in ('userPromptSubmit', 'UserPromptSubmit')
+                      else ('stop' if raw_ev in ('stop', 'Stop') else None))
+                if ev is None:
+                    continue
+                role = _classify_cairn_hook_command(hook.get('command'))
+                if role is None:
+                    continue
+                if role == 'coordination':
+                    coord_present[ev] = True
+                if hook.get('enabled') is not True or hook.get('trustStatus') != 'trusted':
+                    untrusted[ev] = True
+        missing_events = [ev for ev in REQUIRED_HOOK_EVENTS if not coord_present[ev]]
+        untrusted_events = [ev for ev in REQUIRED_HOOK_EVENTS if untrusted[ev]]
+        if missing_events:
+            return dict(status='missing', missing_events=missing_events, untrusted_events=untrusted_events,
+                        reason='required Cairn coordination hooks missing for ' + ', '.join(missing_events),
+                        peer=peer)
+        if untrusted_events:
+            return dict(status='untrusted', missing_events=[], untrusted_events=untrusted_events,
+                        reason='required Cairn lifecycle hooks untrusted or disabled for ' + ', '.join(untrusted_events),
+                        peer=peer)
+        return dict(status='ready', missing_events=[], untrusted_events=[], reason=None, peer=peer)
+    finally:
+        connection.close(timeout=0)
+
 
 

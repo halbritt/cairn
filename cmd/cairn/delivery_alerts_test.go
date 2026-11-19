@@ -246,6 +246,12 @@ func TestStarvationAlertTextNamesSessionAgeAndLastHandled(t *testing.T) {
 	if strings.Contains(newStarvationAlert(s, "<b>", starvationNow).DescriptionHTML, "<script>") {
 		t.Fatal("description is not escaped")
 	}
+	s.HostCondition = "lifecycle_hooks_untrusted"
+	s.Diagnosis = "Metadata disagreement and unmet hook requirement: Cairn metadata reports busy while authoritative native state is idle (stale_busy)."
+	disagreed := newStarvationAlert(s, "agent-1259", starvationNow)
+	if !strings.Contains(disagreed.Title, "busy metadata, host lifecycle_hooks_untrusted") || !strings.Contains(disagreed.DescriptionHTML, "stale_busy") {
+		t.Fatalf("expected disagreement in alert title/description: title=%q html=%s", disagreed.Title, disagreed.DescriptionHTML)
+	}
 }
 
 func TestDeliveryAlertsCommandAlertsOnceThroughPlane(t *testing.T) {

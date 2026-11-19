@@ -282,8 +282,8 @@ func TestEventRatesRequireCompleteDatabaseSchemaBeforeEnforcement(t *testing.T) 
 		t.Fatal(err)
 	}
 	// Migration084 contains the compatibility barrier and ledger marker only.
-	// Removing its row in this isolated fixture represents an 083 database.
-	if _, err = s.pool.Exec(ctx, `DELETE FROM public.cairn_migration WHERE version=84`); err != nil {
+	// Removing 084+ rows in this isolated fixture represents an 083 database.
+	if _, err = s.pool.Exec(ctx, `DELETE FROM public.cairn_migration WHERE version>=84`); err != nil {
 		t.Fatal(err)
 	}
 	inspected, err := s.EventAdmissionPolicy(ctx, EventAdmissionPolicyQuery{Repo: repo})

@@ -537,3 +537,129 @@ m.flush_inbox_intents(cfg, state, scope="attempt")
 		})
 	}
 }
+
+func TestCodexIdleWakeStaleBusyDecisionsAndObservation(t *testing.T) {
+	root := t.TempDir()
+	procRoot := procFixtureRoot(t)
+	procRef := writeProcessFixture(t, procRoot, processFixture{
+		pid: 5200, parent: 1, start: 98765, comm: "codex", exe: "/usr/bin/codex",
+		argv: []string{"codex", "app-server", "--listen", "unix://" + filepath.Join(root, "q.sock")},
+	})
+	procVal := nativeMap("pid", procRef.PID, "start", int64(procRef.Start), "boot", procRef.Boot)
+	agentVal := nativeMap(
+		"agent_id", "47f9039f-65f1-469c-a7b8-5fc3598937d6",
+		"execution_id", "9d32d090-7d9b-48e6-9a97-fd7c5d2cebbb",
+		"native_session_id", "01a1b246-3307-7a73-afdf-2909c5607790",
+		"display_name", "agent-1259",
+		"context_revision", 69,
+		"metadata", nativeMap("harness", "codex", "state", "busy", "delivery_mode", "existing-session", "workspace", root),
+	)
+	sessRef := nativeMap("agent_id", "47f9039f-65f1-469c-a7b8-5fc3598937d6", "execution_id", "9d32d090-7d9b-48e6-9a97-fd7c5d2cebbb")
+	endedEpoch := float64(time.Date(2026, 11, 6, 21, 29, 44, 0, time.UTC).Unix())
+	endClean := nativeMap("timestamp", "2026-11-06T21:29:44.000Z", "payload", nativeMap("turn_id", "t-clean", "error", nil))
+	loc := nativeMap("offset", 100, "length", 50, "sha256", strings.Repeat("c", 64))
+
+	hookStatus := "untrusted"
+	cli := &CLI{
+		Host:     NewFileHost(FileHostOptions{}),
+		ProcRoot: procRoot,
+		Now:      func() time.Time { return time.Unix(int64(endedEpoch)+30, 0) },
+		CodexHooksInspector: func(context.Context, *value.Value, *value.Value, *value.Value, *value.Value) (*value.Value, error) {
+			if hookStatus == "untrusted" {
+				return nativeMap("status", "untrusted", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", stringArray("stop"), "reason", "required Cairn lifecycle hooks untrusted or disabled for stop"), nil
+			}
+			return nativeMap("status", "ready", "missing_events", &value.Value{Kind: value.Array}, "untrusted_events", &value.Value{Kind: value.Array}, "reason", nil), nil
+		},
+	}
+	cli.Engine = &RecoveryEngine{Host: cli.Host, Evidence: stubCodexEvidence{endClean, loc}}
+	cfg := nativeMap("binding", "codex-three", "harness", "codex", "native_delivery", true, "idle_wakeup", true, "state_dir", root)
+	healthVal := nativeMap("session", sessRef, "native_session_id", "01a1b246-3307-7a73-afdf-2909c5607790", "process", procVal, "process_alive", true, "status_type", "idle", "queue_count", 0, "queued_present", nil, "observed_at_epoch", endedEpoch+25, "peer", procVal)
+	st := nativeMap("agent", agentVal, "process", procVal, "workspace", root, "native_health", healthVal, "delivered_since_idle", true)
+
+	// 1. Untrusted Stop hook blocks reconciliation and surfaces lifecycle_hooks_untrusted.
+	var errOut bytes.Buffer
+	recUntrusted, err := cli.codexIdleWake(context.Background(), cfg, st, endedEpoch+30, &errOut)
+	if err != nil || nativeText(recUntrusted.Get("decision")) != "hooks_untrusted" {
+		t.Fatalf("want hooks_untrusted, got %v err=%v", recUntrusted, err)
+	}
+	obsUntrusted, err := cli.deliveryObservation(cfg, st, nil, nativeMap())
+	if err != nil || nativeText(obsUntrusted.Get("condition")) != "lifecycle_hooks_untrusted" {
+		t.Fatalf("want lifecycle_hooks_untrusted observation, got %v err=%v", obsUntrusted, err)
+	}
+
+	// 2. Grace period (<5s after turn end) reports native_idle_stale_busy without racing Stop.
+	hookStatus = "ready"
+	recGrace, err := cli.codexIdleWake(context.Background(), cfg, st, endedEpoch+2, &errOut)
+	if err != nil || nativeText(recGrace.Get("decision")) != "grace_period" {
+		t.Fatalf("want grace_period, got %v err=%v", recGrace, err)
+	}
+	obsGrace, err := cli.deliveryObservation(cfg, st, nil, nativeMap())
+	if err != nil || nativeText(obsGrace.Get("condition")) != "native_idle_stale_busy" {
+		t.Fatalf("want native_idle_stale_busy observation, got %v err=%v", obsGrace, err)
+	}
+
+	// 3. Past grace period with ready hooks -> wake_allowed.
+	recAllowed, err := cli.codexIdleWake(context.Background(), cfg, st, endedEpoch+6, &errOut)
+	if err != nil || nativeText(recAllowed.Get("decision")) != "wake_allowed" || nativeText(recAllowed.Get("turn").Get("turn_id")) != "t-clean" {
+		t.Fatalf("want wake_allowed with t-clean, got %v err=%v", recAllowed, err)
+	}
+
+	// 4. End-to-end prepareIdleWake: grace deferral + sendDeliveryObservation INVALID_REQUEST fallback,
+	// followed by post-grace fresh re-probe, agent-context busy->idle update, and delivered_since_idle clear.
+	nowSec := int64(endedEpoch) + 2
+	rejectNewCond := true
+	contextUpdated := false
+	statePath := filepath.Join(root, "session.json")
+	cli.Now = func() time.Time { return time.Unix(nowSec, 0) }
+	cli.CodexInspector = func(context.Context, *value.Value, *value.Value, *value.Value, *value.Value) (*value.Value, error) {
+		return nativeMap("status_type", "idle", "updated_at", int64(endedEpoch), "queue_count", 0, "queued_ids", &value.Value{Kind: value.Array}, "queued_present", nil, "peer", procVal), nil
+	}
+	cli.Host = NewFileHost(FileHostOptions{
+		Profile: stage2ServicesProfile(),
+		Call: func(_ context.Context, _ *value.Value, op string, body *value.Value, _ NativeCallOptions) (*value.Value, error) {
+			switch op {
+			case "session-inbox-ready":
+				return nativeMap("delivery_id", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), nil
+			case "session-delivery-observe":
+				cnd := nativeText(body.Get("condition"))
+				if rejectNewCond && (cnd == "native_idle_stale_busy" || cnd == "lifecycle_hooks_untrusted") {
+					return nil, &CoordinationError{Code: "INVALID_REQUEST", Message: "unknown condition"}
+				}
+				return nativeMap("applied", true), nil
+			case "agent-context":
+				contextUpdated = true
+				updated := nativeClone(st.Get("agent"))
+				updated.Set("metadata", body.Get("metadata"))
+				updated.Set("context_revision", value.IntegerText("70"))
+				return updated, nil
+			}
+			return nativeMap(), nil
+		},
+	})
+	cli.Engine = &RecoveryEngine{Host: cli.Host, Evidence: stubCodexEvidence{endClean, loc}}
+	nativePop(st, "codex_idle_wake")
+	nativePop(st, "native_health")
+	if err := cli.writeState(statePath, st); err != nil {
+		t.Fatal(err)
+	}
+	cycle1 := nativeMap()
+	prep1, err := cli.prepareIdleWake(context.Background(), cfg, st, statePath, cycle1, &errOut)
+	if err != nil || prep1 != nil || contextUpdated {
+		t.Fatalf("grace prepareIdleWake should defer without agent-context: prep=%v updated=%v err=%v", prep1, contextUpdated, err)
+	}
+	sentObs, _, sent, err := cli.sendDeliveryObservation(context.Background(), cfg, st, prep1, cycle1)
+	if err != nil || !sent || nativeText(sentObs.Get("condition")) != "native_transport_unavailable" {
+		t.Fatalf("want pre-migration fallback native_transport_unavailable, got %v sent=%v err=%v", sentObs, sent, err)
+	}
+
+	rejectNewCond = false
+	nowSec = int64(endedEpoch) + 6
+	cycle2 := nativeMap()
+	prep2, err := cli.prepareIdleWake(context.Background(), cfg, st, statePath, cycle2, &errOut)
+	if err != nil || prep2 == nil || !contextUpdated {
+		t.Fatalf("post-grace prepareIdleWake should reconcile busy->idle and prepare wake: prep=%v updated=%v err=%v", prep2, contextUpdated, err)
+	}
+	if nativeText(st.Get("agent").Get("metadata").Get("state")) != "idle" || value.Truth(st.Get("delivered_since_idle")) {
+		t.Fatalf("expected state=idle and delivered_since_idle=false, got %v", st)
+	}
+}

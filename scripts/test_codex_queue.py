@@ -37,7 +37,8 @@ class NativeQueue(unittest.TestCase):
 
     def serve(self, loaded=('native-one',), add='confirm', start='confirm', malformed_loaded=False,
               request_collision=False, oversized_method=None, malformed_method=None, start_error=None,
-              thread_status='idle', updated_at=1700000000, queued_items=(), next_cursor=None):
+              thread_status='idle', updated_at=1700000000, queued_items=(), next_cursor=None,
+              hooks_data=None):
         """Serve exactly one connection with the requested fixture behavior.
 
         add: 'confirm' or 'refuse' (no acknowledgment; the add may have committed).
@@ -123,6 +124,13 @@ class NativeQueue(unittest.TestCase):
                             result = {'data': [dict(id=item) if isinstance(item, str) else item
                                                for item in queued_items],
                                       'nextCursor': next_cursor}
+                        elif method == 'hooks/list':
+                            if hooks_data == 'unsupported':
+                                connection.sendall(frame(json.dumps(
+                                    {'id': request['id'], 'error': {'code': -32601, 'message': 'Method not found'}}
+                                ).encode()))
+                                continue
+                            result = {'data': list(hooks_data or [])}
                         elif method == 'thread/queue/add':
                             if add == 'refuse':
                                 return  # Submission may have committed; no acknowledgment.

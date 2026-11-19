@@ -110,6 +110,10 @@ func newStarvationAlert(s core.StarvedSession, name string, now time.Time) starv
 	var title string
 	if s.Condition == "hold_stalled" {
 		title = fmt.Sprintf("Stalled delivery hold: %s holds %d for %s with no open tools (%s)", name, s.Count, age, s.RecipientState)
+	} else if (s.HostCondition == "native_idle_stale_busy" || s.HostCondition == "lifecycle_hooks_untrusted") && s.RecipientState != "idle" {
+		title = fmt.Sprintf("Inbox starvation: %s has %d pending for %s (%s metadata, host %s)", name, s.Count, age, s.RecipientState, s.HostCondition)
+	} else if s.HostCondition == "native_idle_stale_busy" || s.HostCondition == "lifecycle_hooks_untrusted" {
+		title = fmt.Sprintf("Inbox starvation: %s has %d pending for %s (%s, host %s)", name, s.Count, age, s.RecipientState, s.HostCondition)
 	} else {
 		title = fmt.Sprintf("Inbox starvation: %s has %d pending for %s (%s)", name, s.Count, age, s.RecipientState)
 	}

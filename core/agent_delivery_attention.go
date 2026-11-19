@@ -199,7 +199,10 @@ func AttentionCandidate(d ReviewDelivery, cutoff int64, now time.Time) (Attentio
 		}
 		return g, true
 	}
-	if (d.State != "pending" && d.State != "leased") || diag.Stage != "waiting" || diag.Recipient.State == "busy" || waiting < float64(cutoff) {
+	staleIdleHost := diag.Host != nil && diag.Host.Freshness == "current" &&
+		(diag.Host.Applies == "exact" || diag.Host.Applies == "session") &&
+		(diag.Host.Condition == "native_idle_stale_busy" || diag.Host.Condition == "lifecycle_hooks_untrusted")
+	if (d.State != "pending" && d.State != "leased") || diag.Stage != "waiting" || (diag.Recipient.State == "busy" && !staleIdleHost) || waiting < float64(cutoff) {
 		return AttentionGroup{}, false
 	}
 	g := AttentionGroup{Recipient: d.Consumer, Condition: "unknown", Freshness: "absent", Applies: "none", OldestWaitingSeconds: waiting, SampleDeliveryID: d.DeliveryID}
@@ -249,6 +252,10 @@ func HostConditionHint(condition string) string {
 		return "Several eligible Herdr panes match this session; no pane is chosen. Waiting is not acknowledgement."
 	case "terminal_host_unavailable":
 		return "The session's process has no Herdr host environment; no terminal wake is available. Waiting is not acknowledgement."
+	case "native_idle_stale_busy":
+		return "Authoritative native state is idle while Cairn metadata still reports busy (stale_busy); check rollout turn-end state and lifecycle hooks before any manual action."
+	case "lifecycle_hooks_untrusted":
+		return "Authoritative native state is idle behind busy metadata, and required Cairn lifecycle hooks (UserPromptSubmit/Stop) are untrusted, disabled, or missing in this native process."
 	case "unknown":
 		return "Check current recipient and host observations; the cause of delay is unknown."
 	default:
@@ -557,7 +564,8 @@ func DetectStarvation(rows []ReviewDelivery, options StarvationOptions, now time
 		switch {
 		case (d.State == "pending" || d.State == "leased") && diag.Stage == "waiting":
 			condition, basis, age, threshold = "pending_starved", "waiting", diagnosisWaitingSeconds(diag), busy
-			if diag.Recipient.State == "idle" {
+			hc := currentHostCondition(diag)
+			if diag.Recipient.State == "idle" || hc == "native_idle_stale_busy" || hc == "lifecycle_hooks_untrusted" {
 				threshold = idle
 			}
 		case d.State == "leased" || d.Held || diag.Stage == "held" || diag.Stage == "leased":
@@ -671,6 +679,18 @@ func starvationDiagnosis(g StarvedSession) string {
 	switch g.HostCondition {
 	case "busy":
 		text += "The host reports the session busy, so automatic delivery waits for an idle boundary that has not come; a long busy turn is starving its inbox."
+	case "native_idle_stale_busy":
+		if g.RecipientState == "idle" {
+			text += "Host condition native_idle_stale_busy (recipient metadata now reports idle): safe idle reconciliation or turn-end/rollout readiness was pending at the latest host observation rather than active model execution."
+		} else {
+			text += "Metadata disagreement: Cairn metadata reports " + g.RecipientState + ", but authoritative native state is idle (stale_busy) and safe idle reconciliation has not completed; pending work is blocked on turn-end/rollout readiness rather than active model execution."
+		}
+	case "lifecycle_hooks_untrusted":
+		if g.RecipientState == "idle" {
+			text += "Unmet hook requirement: required Cairn lifecycle hooks (UserPromptSubmit/Stop) were reported untrusted, disabled, or missing in this native process (recipient metadata now reports idle)."
+		} else {
+			text += "Metadata disagreement and unmet hook requirement: Cairn metadata reports " + g.RecipientState + " while authoritative native state is idle (stale_busy), and required Cairn lifecycle hooks (UserPromptSubmit/Stop) are untrusted, disabled, or missing in this native process."
+		}
 	default:
 		text += "Host condition " + g.HostCondition + ": " + HostConditionHint(g.HostCondition)
 	}

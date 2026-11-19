@@ -182,7 +182,7 @@ func TestAdmissionMigrationDrainsAdmittedAndInvalidatesOldSnapshots(t *testing.T
 			var generationAfter int64
 			var sessionAfter string
 			var version int
-			if err = old.pool.QueryRow(ctx, `SELECT a.paused,COALESCE(a.session_id::text,''),g.generation,(SELECT max(version) FROM public.cairn_migration) FROM cairn.restore_admission a CROSS JOIN cairn.retrieval_generation g WHERE a.singleton AND g.singleton`).Scan(&pausedAfter, &sessionAfter, &generationAfter, &version); err != nil || pausedAfter != pausedBefore || sessionAfter != sessionBefore || generationAfter != generationBefore || version != 84 {
+			if err = old.pool.QueryRow(ctx, `SELECT a.paused,COALESCE(a.session_id::text,''),g.generation,(SELECT max(version) FROM public.cairn_migration) FROM cairn.restore_admission a CROSS JOIN cairn.retrieval_generation g WHERE a.singleton AND g.singleton`).Scan(&pausedAfter, &sessionAfter, &generationAfter, &version); err != nil || pausedAfter != pausedBefore || sessionAfter != sessionBefore || generationAfter != generationBefore || version != defaultMaxMigrationVersion() {
 				t.Fatalf("barrier changed restore semantics or schema wrong: paused=%v session=%q generation=%d version=%d err=%v", pausedAfter, sessionAfter, generationAfter, version, err)
 			}
 			preserved, err := migrator.Get(ctx, recordID)

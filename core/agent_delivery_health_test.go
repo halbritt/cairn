@@ -429,3 +429,28 @@ func TestTerminalTargetConditionsAreDistinctAndLegacyReadable(t *testing.T) {
 	_, err := f.receiver.ObserveSessionDelivery(context.Background(), SessionDeliveryObservation{Session: f.ref, Condition: "terminal_target_missing", ObservedAt: dbNow(t, f.receiver)}, f.dest)
 	requireCode(t, err, "INVALID_REQUEST")
 }
+
+func TestStaleBusyAndUntrustedHookConditionsRoundTripWithAndWithoutDelivery(t *testing.T) {
+	f := newHealthFixture(t)
+	event, delivery := f.publish("request", f.agent.Inbox)
+	for _, condition := range []string{"native_idle_stale_busy", "lifecycle_hooks_untrusted"} {
+		// Session-scoped without delivery_id
+		noDeliv := f.observe(t, SessionDeliveryObservation{Condition: condition, ObservedAt: dbNow(t, f.receiver)})
+		if !noDeliv.Applied || noDeliv.Observation.Condition != condition || noDeliv.Observation.Scope != "session" || noDeliv.Observation.DeliveryID != "" {
+			t.Fatalf("%s session-only: %+v", condition, noDeliv)
+		}
+		diagSession := f.diagnosis(t, event.EventID)
+		if diagSession.Host == nil || diagSession.Host.Condition != condition || diagSession.Host.Applies != "session" || diagSession.Host.Freshness != "current" {
+			t.Fatalf("%s session diagnosis: %+v", condition, diagSession.Host)
+		}
+		// Exact ready-delivery observation
+		exact := f.observe(t, SessionDeliveryObservation{DeliveryID: delivery, Condition: condition, ObservedAt: dbNow(t, f.receiver).Add(time.Millisecond)})
+		if !exact.Applied || exact.Observation.Condition != condition || exact.Observation.DeliveryID != delivery {
+			t.Fatalf("%s exact: %+v", condition, exact)
+		}
+		diagExact := f.diagnosis(t, event.EventID)
+		if diagExact.Host == nil || diagExact.Host.Condition != condition || diagExact.Host.Applies != "exact" {
+			t.Fatalf("%s exact diagnosis: %+v", condition, diagExact.Host)
+		}
+	}
+}

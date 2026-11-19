@@ -251,7 +251,11 @@ func canResumeCodexQueued(prior, endpoint, agent *value.Value) (bool, error) {
 }
 
 func (c *CLI) probeCodexNativeHealth(ctx context.Context, config, state *value.Value, force bool) (*value.Value, error) {
-	return (CodexHealthBindings{ProcRoot: c.ProcRoot, Now: c.clock}).ProbeCodex(ctx, config, state, force)
+	return (CodexHealthBindings{ProcRoot: c.ProcRoot, Now: c.clock, Inspector: c.CodexInspector}).ProbeCodex(ctx, config, state, force)
+}
+
+func (c *CLI) probeCodexHookHealth(ctx context.Context, config, state *value.Value) (*value.Value, error) {
+	return (CodexHealthBindings{ProcRoot: c.ProcRoot, Now: c.clock, HooksInspector: c.CodexHooksInspector}).ProbeHooks(ctx, config, state)
 }
 
 func (c *CLI) prepareIdleWake(ctx context.Context, config, state *value.Value, path string, cycle *value.Value, errOut io.Writer) (*value.Value, error) {
@@ -346,6 +350,12 @@ func (c *CLI) prepareIdleWakeEligible(ctx context.Context, config, state *value.
 			return nil, nil
 		}
 	}
+	if ciw := state.Get("codex_idle_wake"); ciw != nil && ciw.Kind == value.Object && nativeText(ciw.Get("presence")) != "busy_corrected_to_idle" {
+		nativePop(state, "codex_idle_wake")
+		if err := c.writeState(path, state); err != nil {
+			return nil, err
+		}
+	}
 	return c.prepareIdleWakeReady(ctx, config, state, agent, path, cycle, refusal, refusalCondition, errOut)
 }
 
@@ -417,7 +427,132 @@ func (c *CLI) prepareIdleWakeBusyCodex(ctx context.Context, config, state, agent
 		err = c.noteWakeRefusal(config, state, nativeText(deliv), "native Codex thread reports systemError behind busy metadata; review the pending delivery and provider state before owner-authorized recovery", "native_transport_unavailable", cycle, errOut)
 		return agent, true, err
 	}
+	if value.Truth(health) && nativeText(health.Get("status_type")) == "idle" {
+		return c.prepareIdleWakeStaleBusyCodex(ctx, config, state, agent, health, sref, path, cycle, errOut)
+	}
 	return agent, false, nil
+}
+
+func hasProcessKeys(v *value.Value) bool {
+	return v != nil && v.Kind == value.Object && v.Get("pid") != nil && v.Get("start") != nil && v.Get("boot") != nil
+}
+
+func (c *CLI) codexIdleHealthMatches(health, sref, proc, endpoint *value.Value) (bool, error) {
+	if health == nil || health.Kind != value.Object || nativeText(health.Get("status_type")) != "idle" ||
+		!nativeEqual(health.Get("session"), sref) || !nativeEqual(health.Get("process_alive"), value.Boolean(true)) ||
+		endpoint == nil || endpoint.Kind != value.Object || !value.Truth(endpoint) ||
+		!hasProcessKeys(health.Get("process")) || !hasProcessKeys(proc) {
+		return false, nil
+	}
+	sameHealthProc, err := c.sameProcess(health.Get("process"), proc)
+	if err != nil || !sameHealthProc {
+		return false, err
+	}
+	if nativeText(endpoint.Get("owner")) == "uid" {
+		return true, nil
+	}
+	if !hasProcessKeys(health.Get("peer")) {
+		return false, nil
+	}
+	return c.sameProcess(health.Get("peer"), proc)
+}
+
+func (c *CLI) prepareIdleWakeStaleBusyCodex(ctx context.Context, config, state, agent, health, sref *value.Value, path string, cycle *value.Value, errOut io.Writer) (*value.Value, bool, error) {
+	proc, err := nativeRequired(state, "process")
+	if err != nil {
+		return nil, false, err
+	}
+	endpoint, err := c.codexQueueEndpoint(config, proc)
+	if err != nil {
+		return nil, false, err
+	}
+	matched, err := c.codexIdleHealthMatches(health, sref, proc, endpoint)
+	if err != nil {
+		return nil, false, err
+	}
+	if !matched {
+		return agent, false, c.writeState(path, state)
+	}
+	ciw, err := c.codexIdleWake(ctx, config, state, float64(c.clock().UnixNano())/1e9, errOut)
+	if err != nil {
+		return nil, false, err
+	}
+	if nativeText(ciw.Get("decision")) == "wake_allowed" {
+		obsEpoch, obsErr := sourceSeconds(health.Get("observed_at_epoch"))
+		dueEpoch, dueErr := sourceSeconds(ciw.Get("next_eligible_epoch"))
+		if obsErr != nil || dueErr != nil || obsEpoch < dueEpoch {
+			health, err = c.probeCodexNativeHealth(ctx, config, state, true)
+			if err != nil {
+				return nil, false, err
+			}
+			endpoint, err = c.codexQueueEndpoint(config, proc)
+			if err != nil {
+				return nil, false, err
+			}
+			matched, err = c.codexIdleHealthMatches(health, sref, proc, endpoint)
+			if err != nil {
+				return nil, false, err
+			}
+			if matched {
+				ciw, err = c.codexIdleWake(ctx, config, state, float64(c.clock().UnixNano())/1e9, errOut)
+				if err != nil {
+					return nil, false, err
+				}
+			} else {
+				nativePop(state, "codex_idle_wake")
+				return agent, false, c.writeState(path, state)
+			}
+		}
+	}
+	dec := nativeText(ciw.Get("decision"))
+	if dec == "wake_allowed" {
+		rev, err := nativeRequired(agent, "context_revision")
+		if err != nil {
+			return nil, false, err
+		}
+		meta, err := nativeRequired(agent, "metadata")
+		if err != nil {
+			return nil, false, err
+		}
+		newMeta := nativeClone(meta)
+		newMeta.Set("state", value.Text("idle"))
+		updated, err := c.call(ctx, config, "agent-context", nativeMap("request_id", c.newUUID(), "session", sref, "expected_revision", rev, "metadata", newMeta), NativeCallOptions{})
+		if err != nil {
+			return nil, false, err
+		}
+		state.Set("agent", updated)
+		agent = updated
+		if value.Truth(state.Get("delivered_since_idle")) {
+			state.Set("delivered_since_idle", value.Boolean(false))
+			state.Get("codex_idle_wake").Set("latch", value.Text("cleared"))
+		}
+		state.Get("codex_idle_wake").Set("presence", value.Text("busy_corrected_to_idle"))
+		return agent, false, c.writeState(path, state)
+	}
+	if err := c.writeState(path, state); err != nil {
+		return nil, false, err
+	}
+	if dec == "held" {
+		return agent, false, nil
+	}
+	ready, err := c.call(ctx, config, "session-inbox-ready", sref, NativeCallOptions{})
+	if err != nil {
+		return nil, false, err
+	}
+	deliv := ready.Get("delivery_id")
+	if cycle != nil && cycle.Kind == value.Object {
+		cycle.Set("ready_delivery", deliv)
+	}
+	if !value.Truth(deliv) {
+		nativePop(state, "wake_refusal")
+		return agent, true, nil
+	}
+	cond := "native_idle_stale_busy"
+	if dec == "hooks_untrusted" {
+		cond = "lifecycle_hooks_untrusted"
+	}
+	reason := fmt.Sprintf("native Codex thread is idle behind busy metadata (%s): %s", dec, nativeText(ciw.Get("reason")))
+	return agent, true, c.noteWakeRefusal(config, state, nativeText(deliv), reason, cond, cycle, errOut)
 }
 
 func (c *CLI) prepareIdleWakeReady(ctx context.Context, config, state, agent *value.Value, path string, cycle *value.Value, refusal, refusalCondition string, errOut io.Writer) (*value.Value, error) {

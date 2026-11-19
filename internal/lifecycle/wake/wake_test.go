@@ -1860,6 +1860,8 @@ type codexStandinOptions struct {
 	updatedAt         any
 	queuedItems       []any
 	nextCursor        any
+	hooksData         any
+	hooksUnsupported  bool
 }
 
 func defaultCodexStandinOptions() codexStandinOptions {
@@ -2042,6 +2044,13 @@ func serveCodexStandinOnce(t *testing.T, listener *net.UnixListener, opts codexS
 					}
 				}
 				result = map[string]any{"data": items, "nextCursor": opts.nextCursor}
+			case "hooks/list":
+				if opts.hooksUnsupported {
+					body, _ := json.Marshal(map[string]any{"id": req["id"], "error": map[string]any{"code": -32601, "message": "Method not found"}})
+					_ = writeWSServerFrame(conn, body)
+					continue
+				}
+				result = map[string]any{"data": opts.hooksData}
 			case "thread/queue/add":
 				if opts.add == "refuse" {
 					return
@@ -2445,5 +2454,50 @@ func TestCodexQueueRefusalsLimitsAndInspect(t *testing.T) {
 				t.Fatalf("InspectThread invoked mutating method %s", m)
 			}
 		}
+	}
+
+	// 7. InspectHooks isolates hook trust per live app-server socket and handles -32601 unobserved.
+	sockB := filepath.Join(t.TempDir(), "b.sock")
+	listenerB, err := net.ListenUnix("unix", &net.UnixAddr{Name: sockB, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listenerB.Close() })
+	coordCmd := "/opt/cairn/inbox hook --config /opt/cairn/coordination-0.json"
+	memCmd := "/opt/cairn/launch/abc123/inbox"
+	otherCmd := "/home/user/.local/bin/git-stop-hygiene-hook"
+	makeHooks := func(stopTrusted bool) []any {
+		ts := "untrusted"
+		if stopTrusted {
+			ts = "trusted"
+		}
+		return []any{map[string]any{
+			"cwd": "/work", "warnings": []any{}, "errors": []any{},
+			"hooks": []any{
+				map[string]any{"eventName": "userPromptSubmit", "command": coordCmd, "enabled": true, "trustStatus": "trusted"},
+				map[string]any{"eventName": "userPromptSubmit", "command": memCmd, "enabled": true, "trustStatus": "trusted"},
+				map[string]any{"eventName": "stop", "command": otherCmd, "enabled": true, "trustStatus": "untrusted"},
+				map[string]any{"eventName": "stop", "command": coordCmd, "enabled": true, "trustStatus": ts},
+				map[string]any{"eventName": "stop", "command": memCmd, "enabled": true, "trustStatus": ts},
+			},
+		}}
+	}
+	optsA := defaultCodexStandinOptions()
+	optsA.hooksData = makeHooks(true)
+	optsB := defaultCodexStandinOptions()
+	optsB.hooksData = makeHooks(false)
+	_ = serveCodexStandinOnce(t, listener, optsA)
+	_ = serveCodexStandinOnce(t, listenerB, optsB)
+	hA, errA := CodexInspectHooks(context.Background(), sockPath, selfRef, "native-one", "/work", procpeer.ProcessOwner)
+	hB, errB := CodexInspectHooks(context.Background(), sockB, selfRef, "native-one", "/work", procpeer.ProcessOwner)
+	if errA != nil || hA.Status != "ready" || errB != nil || hB.Status != "untrusted" || !slices.Equal(hB.UntrustedEvents, []string{"stop"}) {
+		t.Fatalf("InspectHooks A=(%#v,%v) B=(%#v,%v)", hA, errA, hB, errB)
+	}
+	optsUnsupported := defaultCodexStandinOptions()
+	optsUnsupported.hooksUnsupported = true
+	_ = serveCodexStandinOnce(t, listener, optsUnsupported)
+	hUnobs, errUnobs := CodexInspectHooks(context.Background(), sockPath, selfRef, "native-one", "/work", procpeer.ProcessOwner)
+	if errUnobs != nil || hUnobs.Status != "unobserved" {
+		t.Fatalf("InspectHooks(-32601) = (%#v, %v)", hUnobs, errUnobs)
 	}
 }

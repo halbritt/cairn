@@ -70,6 +70,18 @@ one eligible pane, the watcher still revalidates pane, terminal, revision,
 state sequence, process ownership and Cairn readiness before submission; a
 target that changed in between defers to a later cycle.
 
+### Native idle and lifecycle hook conditions
+
+On Codex sessions where Cairn metadata still reports `busy` while authoritative
+native thread status is `idle`, the watcher verifies hook readiness and pinned
+rollout turn-end state before reconciling `busy` to `idle`. When reconciliation
+must wait or is blocked, the host reports:
+
+| Condition | Host observation |
+| --- | --- |
+| `native_idle_stale_busy` | Authoritative native state is idle while Cairn metadata still reports busy (`stale_busy`) and safe idle reconciliation has not yet completed. |
+| `lifecycle_hooks_untrusted` | Authoritative native state is idle behind busy metadata, and required Cairn lifecycle hooks (`UserPromptSubmit`/`Stop`) are untrusted, disabled, or missing in that native process. |
+
 Waiting is not explicit acknowledgement. A delivery that stays pending behind
 any of these conditions has not been claimed or handled, however long it waits.
 Only a native claim and explicit handling record progress.
@@ -171,7 +183,10 @@ poller and triggers no agent turn.
 Groups show recipient, cause, freshness, applicability, oldest waiting age and
 a sample delivery. Request, response and notice counts remain separate. A new
 notice or an increasing age alone does not produce a changed request condition.
-Busy recipients and scheduled availability do not produce attention items.
+Genuinely busy recipients and scheduled availability do not produce attention
+items; busy metadata with a current `native_idle_stale_busy`,
+`lifecycle_hooks_untrusted` or `native_transport_unavailable` host observation
+surfaces immediately at the normal attention cutoff.
 A route reported as available still warrants attention if the request remains
 unclaimed beyond the cutoff: route availability does not prove progress.
 An aged request with missing,
@@ -197,7 +212,8 @@ handling and recovery separate from clearing this presentation cache.
 Online sessions can also starve their own inbox. A coordinator that stays busy
 for hours never reaches the idle boundary its wake waits for, and a held native
 attempt with no open tool can sit for hours. Existing attention groups stay
-quiet for busy recipients, so `attention.starved_sessions` reports these
+quiet for genuinely busy recipients without a stale-busy or transport-error host
+observation, so `attention.starved_sessions` reports these
 separately. It is a current snapshot of the same page, outside the
 `changed`/`cleared` cache, and does not alter the groups or their suppression.
 Because review pages run oldest first, an early page is often all stopped-session
@@ -206,7 +222,7 @@ backlog; filter by `consumer` or run `cairn delivery-alerts` without
 
 | Condition | Reported when |
 | --- | --- |
-| `pending_starved` | An online session has pending work (including an expired lease the store reports as waiting) older than 30 minutes while busy (or in any reported state other than idle), or 10 minutes while idle, and no delivery to that inbox was handled within the same threshold. |
+| `pending_starved` | An online session has pending work (including an expired lease the store reports as waiting) older than 30 minutes while busy (or 10 minutes while idle or when a current `native_idle_stale_busy`, `lifecycle_hooks_untrusted` or `native_transport_unavailable` observation establishes native idle/error behind busy metadata), and no delivery to that inbox was handled within the same threshold. |
 | `hold_stalled` | An online session has a leased or held delivery older than one hour with no open tool call on its latest native attempt. Recent handling of other deliveries does not suppress it. |
 
 Each item names the inbox, agent and execution, display name when the sessions

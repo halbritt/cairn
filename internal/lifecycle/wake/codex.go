@@ -112,6 +112,78 @@ type CodexThreadInspection struct {
 	Peer          ProcessRef `json:"peer"`
 }
 
+// CodexHooksInspection holds the read-only Cairn lifecycle hook readiness
+// snapshot returned by InspectHooks on a verified native app-server socket.
+type CodexHooksInspection struct {
+	Status          string      `json:"status"`
+	MissingEvents   []string    `json:"missing_events"`
+	UntrustedEvents []string    `json:"untrusted_events"`
+	Reason          string      `json:"reason,omitempty"`
+	Peer            *ProcessRef `json:"peer,omitempty"`
+}
+
+func splitShellTokens(s string) ([]string, bool) {
+	var tokens []string
+	var cur strings.Builder
+	inToken, inSingle, inDouble, escaped := false, false, false, false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if escaped {
+			cur.WriteByte(ch)
+			escaped = false
+			inToken = true
+			continue
+		}
+		if inSingle {
+			if ch == '\'' {
+				inSingle = false
+			} else {
+				cur.WriteByte(ch)
+			}
+			inToken = true
+			continue
+		}
+		if inDouble {
+			if ch == '"' {
+				inDouble = false
+			} else if ch == '\\' && i+1 < len(s) && strings.ContainsRune(`\"$`+"`", rune(s[i+1])) {
+				escaped = true
+			} else {
+				cur.WriteByte(ch)
+			}
+			inToken = true
+			continue
+		}
+		switch ch {
+		case ' ', '\t', '\n', '\r':
+			if inToken {
+				tokens = append(tokens, cur.String())
+				cur.Reset()
+				inToken = false
+			}
+		case '\'':
+			inSingle = true
+			inToken = true
+		case '"':
+			inDouble = true
+			inToken = true
+		case '\\':
+			escaped = true
+			inToken = true
+		default:
+			cur.WriteByte(ch)
+			inToken = true
+		}
+	}
+	if inSingle || inDouble || escaped {
+		return nil, false
+	}
+	if inToken {
+		tokens = append(tokens, cur.String())
+	}
+	return tokens, true
+}
+
 // SelectCodexQueueEndpoint inspects /proc/<pid>/cmdline and selects only an
 // explicit absolute unix:// --listen or --remote endpoint.
 func SelectCodexQueueEndpoint(harness string, process ProcessRef) (*CodexQueueEndpoint, bool) {
@@ -899,4 +971,164 @@ func (c CodexQueueClient) InspectThread(ctx context.Context, endpoint string, pr
 		QueuedPresent: present,
 		Peer:          peer,
 	}, nil
+}
+
+var codexRequiredHookEvents = []string{"userPromptSubmit", "stop"}
+
+func classifyCairnHookCommand(command string) string {
+	if strings.TrimSpace(command) == "" {
+		return ""
+	}
+	tokens, ok := splitShellTokens(command)
+	if !ok || len(tokens) == 0 {
+		return ""
+	}
+	for i := 0; i+1 < len(tokens); i++ {
+		if tokens[i] == "hook" && tokens[i+1] == "--config" {
+			return "coordination"
+		}
+	}
+	if slices.Contains(tokens, "--config") {
+		for _, tok := range tokens {
+			if tok == "lifecycle.py" || tok == "memory.py" || strings.HasSuffix(tok, "/lifecycle.py") || strings.HasSuffix(tok, "/memory.py") {
+				return "memory"
+			}
+		}
+	}
+	exe := tokens[0]
+	if strings.Contains(exe, "/launch/") {
+		switch filepath.Base(exe) {
+		case "inbox", "memory", "memory-capture":
+			return "memory"
+		}
+	}
+	return ""
+}
+
+// CodexInspectHooks performs a read-only, peer/session-verified native Cairn
+// lifecycle hook readiness probe without mutating native state.
+func CodexInspectHooks(ctx context.Context, endpoint string, process ProcessRef, nativeID, workspace string, owner procpeer.ClientOwner) (*CodexHooksInspection, error) {
+	var client CodexQueueClient
+	return client.InspectHooks(ctx, endpoint, process, nativeID, workspace, owner)
+}
+
+func (c CodexQueueClient) InspectHooks(ctx context.Context, endpoint string, process ProcessRef, nativeID, workspace string, owner procpeer.ClientOwner) (*CodexHooksInspection, error) {
+	if strings.TrimSpace(workspace) == "" {
+		return &CodexHooksInspection{
+			Status:          "unavailable",
+			MissingEvents:   []string{},
+			UntrustedEvents: []string{},
+			Reason:          "session workspace is unavailable",
+		}, nil
+	}
+	ws, peer, err := c.open(ctx, endpoint, process, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = ws.Close() }()
+	peerCopy := peer
+	rpc := &codexRPC{
+		ws:         ws,
+		Deadline:   c.now().Add(c.rpcTimeout()),
+		now:        c.now,
+		beforeCall: c.BeforeCall,
+	}
+	if err := rpc.admit(nativeID); err != nil {
+		if IsCodexQueueUnavailable(err) {
+			return nil, err
+		}
+		return nil, &CodexQueueUnavailable{Message: fmt.Sprintf("native queue is not ready: %v", err), Cause: err}
+	}
+	listing, err := rpc.call("hooks/list", map[string]any{"cwds": []string{workspace}}, false)
+	if err != nil {
+		var refused *CodexQueueRefused
+		if errors.As(err, &refused) {
+			if refused.HasIntCode && refused.IntCode == -32601 {
+				return &CodexHooksInspection{Status: "unobserved", MissingEvents: []string{}, UntrustedEvents: []string{}, Peer: &peerCopy}, nil
+			}
+			return &CodexHooksInspection{Status: "unavailable", MissingEvents: []string{}, UntrustedEvents: []string{}, Reason: "native hooks/list was refused", Peer: &peerCopy}, nil
+		}
+		return &CodexHooksInspection{Status: "unavailable", MissingEvents: []string{}, UntrustedEvents: []string{}, Reason: "native hooks/list is unavailable", Peer: &peerCopy}, nil
+	}
+	return evaluateCodexHooksList(listing, &peerCopy), nil
+}
+
+func evaluateCodexHooksList(listing map[string]any, peer *ProcessRef) *CodexHooksInspection {
+	entries, ok := listing["data"].([]any)
+	if !ok {
+		return &CodexHooksInspection{Status: "unknown", MissingEvents: []string{}, UntrustedEvents: []string{}, Reason: "native hooks/list returned an invalid payload", Peer: peer}
+	}
+	coordPresent := map[string]bool{"userPromptSubmit": false, "stop": false}
+	untrusted := map[string]bool{"userPromptSubmit": false, "stop": false}
+	for _, rawEntry := range entries {
+		entry, ok := rawEntry.(map[string]any)
+		if !ok {
+			return &CodexHooksInspection{Status: "unknown", MissingEvents: []string{}, UntrustedEvents: []string{}, Reason: "native hooks/list returned an invalid entry", Peer: peer}
+		}
+		if errs, ok := entry["errors"].([]any); ok && len(errs) > 0 {
+			return &CodexHooksInspection{Status: "error", MissingEvents: []string{}, UntrustedEvents: []string{}, Reason: "native hooks/list reported configuration errors", Peer: peer}
+		}
+		rawHooks, ok := entry["hooks"].([]any)
+		if !ok {
+			return &CodexHooksInspection{Status: "unknown", MissingEvents: []string{}, UntrustedEvents: []string{}, Reason: "native hooks/list returned an invalid hook list", Peer: peer}
+		}
+		for _, rawHook := range rawHooks {
+			hook, ok := rawHook.(map[string]any)
+			if !ok {
+				continue
+			}
+			rawEv, _ := hook["eventName"].(string)
+			var ev string
+			switch rawEv {
+			case "userPromptSubmit", "UserPromptSubmit":
+				ev = "userPromptSubmit"
+			case "stop", "Stop":
+				ev = "stop"
+			default:
+				continue
+			}
+			cmd, _ := hook["command"].(string)
+			role := classifyCairnHookCommand(cmd)
+			if role == "" {
+				continue
+			}
+			if role == "coordination" {
+				coordPresent[ev] = true
+			}
+			enabled, _ := hook["enabled"].(bool)
+			trustStatus, _ := hook["trustStatus"].(string)
+			if !enabled || trustStatus != "trusted" {
+				untrusted[ev] = true
+			}
+		}
+	}
+	missingEvents := []string{}
+	untrustedEvents := []string{}
+	for _, ev := range codexRequiredHookEvents {
+		if !coordPresent[ev] {
+			missingEvents = append(missingEvents, ev)
+		}
+		if untrusted[ev] {
+			untrustedEvents = append(untrustedEvents, ev)
+		}
+	}
+	if len(missingEvents) > 0 {
+		return &CodexHooksInspection{
+			Status:          "missing",
+			MissingEvents:   missingEvents,
+			UntrustedEvents: untrustedEvents,
+			Reason:          "required Cairn coordination hooks missing for " + strings.Join(missingEvents, ", "),
+			Peer:            peer,
+		}
+	}
+	if len(untrustedEvents) > 0 {
+		return &CodexHooksInspection{
+			Status:          "untrusted",
+			MissingEvents:   []string{},
+			UntrustedEvents: untrustedEvents,
+			Reason:          "required Cairn lifecycle hooks untrusted or disabled for " + strings.Join(untrustedEvents, ", "),
+			Peer:            peer,
+		}
+	}
+	return &CodexHooksInspection{Status: "ready", MissingEvents: []string{}, UntrustedEvents: []string{}, Peer: peer}
 }

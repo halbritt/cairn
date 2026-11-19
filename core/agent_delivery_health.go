@@ -31,6 +31,8 @@ var observationScopes = map[string]string{
 	"channel_not_selected":         "session",
 	"channel_unconfigured":         "session",
 	"native_transport_unavailable": "session",
+	"native_idle_stale_busy":       "session",
+	"lifecycle_hooks_untrusted":    "session",
 	"terminal_host_unavailable":    "session",
 	"terminal_target_ambiguous":    "session", // More than one eligible pane.
 	"terminal_target_missing":      "session", // No pane identifies this session.
@@ -44,7 +46,14 @@ var observationScopes = map[string]string{
 
 // Session-level conditions that need no delivery. Every other condition names
 // the exact ready delivery the host observed.
-var observationWithoutDelivery = map[string]bool{"owner_turn_required": true, "busy": true, "unknown": true, "none": true}
+var observationWithoutDelivery = map[string]bool{
+	"owner_turn_required":       true,
+	"native_idle_stale_busy":    true,
+	"lifecycle_hooks_untrusted": true,
+	"busy":                      true,
+	"unknown":                   true,
+	"none":                      true,
+}
 
 var wakeTransports = map[string]bool{"claude-channel": true, "codex-queue": true, "opencode-queue": true, "hermes-queue": true, "terminal": true}
 var wakeStatuses = map[string]bool{"uncertain": true, "submitted": true, "queued": true, "refused": true}
