@@ -10,11 +10,20 @@ an already issued handle remains usable under its original checks until it
 expires or its attempt ends.
 
 If the binding uses [inbox recall](inbox-recall.md), first disable that
-manifest and let current callbacks settle. The installer refuses to alter a
-configuration while its manifest is enabled. After installing, repin the
-changed coordination configuration, validate the complete manifest, then
-reactivate it under that document's staged procedure. An active native session
-keeps its loaded hook code; start a fresh session for the new capability.
+manifest and let current callbacks settle before changing the shared binding
+configuration. The installer refuses to alter a pinned binding configuration
+while its manifest is enabled. After installing a binding-wide change, repin
+the changed coordination configuration, validate the complete manifest, then
+reactivate it under that document's staged procedure.
+
+To enable compact inbox or notice batches for a single live session on a shared
+Codex or Claude native binding without modifying the pinned binding
+configuration, disabling inbox recall, or restarting the presence watcher, pass
+`--session NATIVE_SESSION_ID` or `--agent-id AGENT_UUID` (or run
+`configure-session-inbox` with `--config` on the coordination CLI). Per-session
+options are stored in owner-only files under `<state_dir>/session-options/`;
+other sessions on the shared binding keep their current behavior, and
+`--clear-session-options` removes the per-session override.
 
 A compact notice or response names its kind, sender and exact source version.
 The hook reads the selected historical version through the existing hosted

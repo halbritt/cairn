@@ -1,11 +1,14 @@
 """Explicit, pinned bridge for memory on an admitted native inbox boundary."""
+import errno
 import fcntl
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 from pathlib import Path
+import stat
 import sys
 import time
 import uuid
@@ -38,6 +41,72 @@ _inbox_binding = _BUNDLE.load("inbox_binding").InboxBinding(_BUNDLE)
 GrantLedger = _grant_ledger.GrantLedger
 
 SCHEMA = 'cairn.inbox-recall-binding/2'
+SESSION_INBOX_OPTIONS_SCHEMA = 'cairn.session-inbox-options/1'
+
+
+def _unique_json_object(pairs):
+    out = {}
+    for key, val in pairs:
+        if key in out:
+            raise ValueError('duplicate session inbox options key')
+        out[key] = val
+    return out
+
+
+def _finite_timestamp(value):
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def session_compact_inbox_enabled(config, session):
+    capable = config.get('harness') in ('codex', 'claude') and bool(config.get('native_delivery'))
+    compact = capable and config.get('compact_inbox_version') == 1
+    if not isinstance(session, str) or not session:
+        return compact
+    key = hashlib.sha256((config['binding'] + '\0' + session).encode()).hexdigest()
+    path = Path(config['state_dir']) / 'session-options' / (key + '.json')
+    if path.parent.is_symlink():
+        raise _grant_ledger.inbox_refusal('session inbox options must be owner-only', 'command_context', 'compact_fallback')
+    try:
+        fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return compact
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise _grant_ledger.inbox_refusal('session inbox options must be owner-only', 'command_context', 'compact_fallback') from exc
+        raise
+    with os.fdopen(fd, 'rb') as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise _grant_ledger.inbox_refusal('session inbox options must be owner-only', 'command_context', 'compact_fallback')
+        raw = handle.read(65537)
+    if len(raw) > 65536:
+        raise _grant_ledger.inbox_refusal('session inbox options exceed limit', 'command_context', 'compact_fallback')
+    try:
+        entry = json.loads(raw.decode('utf-8'), object_pairs_hook=_unique_json_object)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise _grant_ledger.inbox_refusal('session inbox options are malformed', 'command_context', 'compact_fallback') from exc
+    allowed = {'schema', 'binding', 'native_session_id', 'compact_inbox_version',
+               'notice_batch_version', 'updated_at'}
+    if (not isinstance(entry, dict)
+            or entry.get('schema') != SESSION_INBOX_OPTIONS_SCHEMA
+            or entry.get('binding') != config.get('binding')
+            or entry.get('native_session_id') != session
+            or set(entry) - allowed):
+        raise _grant_ledger.inbox_refusal('session inbox options are malformed', 'command_context', 'compact_fallback')
+    if 'updated_at' in entry and not _finite_timestamp(entry['updated_at']):
+        raise _grant_ledger.inbox_refusal('session inbox options timestamp is invalid', 'command_context', 'compact_fallback')
+    if (not capable or type(entry.get('compact_inbox_version')) is not int
+            or entry['compact_inbox_version'] != 1):
+        raise _grant_ledger.inbox_refusal('compact_inbox_version 1 requires Codex or Claude native delivery', 'command_context', 'compact_fallback')
+    if 'notice_batch_version' in entry and (
+            type(entry['notice_batch_version']) is not int or entry['notice_batch_version'] != 1):
+        raise _grant_ledger.inbox_refusal('notice_batch_version 1 requires compact Codex or Claude native delivery', 'command_context', 'compact_fallback')
+    return True
 RECALL_OBSERVATION_VERSION = 1
 # The required lookup is the only recall phase whose failure refuses delivery.
 # Each attempt may use the remaining recall time except this reserve, and never
@@ -577,6 +646,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             prior_bytes = prior_emitted + grant['reserved_native_bytes']
             budget = min(memory_config['context_bytes'], grant['limit_bytes']) - prior_bytes
         metrics['refusal_stage'] = 'command_context'
+        compact_enabled = session_compact_inbox_enabled(config, session)
         fallback_control = control
         if source is not None:
             context = json.loads((Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')).read_text())
@@ -619,7 +689,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         selected = required.get('selected', [])
         required_text = engine.render_recall(selected, []) if selected else ''
         if (publication and publication['kind'] in ('notice', 'response') and
-                config.get('compact_inbox_version') == 1 and cost(with_allowance(required_text)[0]) > budget):
+                compact_enabled and cost(with_allowance(required_text)[0]) > budget):
             context = json.loads((Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')).read_text())
             if (context.get('delivery_id') != identity['delivery_id'] or
                     context.get('event_id') != identity['event_id'] or

@@ -420,7 +420,7 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 		return 0, nativeRefusal("INVALID_HOST", "compact inbox delivery changed")
 	}
 	if op == "advance" {
-		return c.advanceCompact(ctx, config, statePath, native, attempt, event, out)
+		return c.advanceCompact(ctx, config, statePath, nativeID, native, attempt, event, out)
 	}
 	renewed, err := c.Host.Call(ctx, config, "event-renew", nativeMap("delivery_id", delivery.Get("delivery_id"), "lease_id", delivery.Get("lease_id"), "lease_seconds", 90), NativeCallOptions{Session: attempt.Get("session")})
 	if err != nil {
@@ -519,8 +519,12 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	return 0, c.output(out, nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "status", data.Get("state"), "attempts", data.Get("attempts"), "handle", handle), false)
 }
 
-func (c *CLI) advanceCompact(ctx context.Context, config *value.Value, path string, native, attempt, event *value.Value, out io.Writer) (int, error) {
-	if !nativeEqual(config.Get("notice_batch_version"), value.IntegerText("1")) || !value.SameText(event.Get("kind"), "notice") || !value.Truth(attempt.Get("native_turn_id")) {
+func (c *CLI) advanceCompact(ctx context.Context, config *value.Value, path string, nativeID, native, attempt, event *value.Value, out io.Writer) (int, error) {
+	_, batchEnabled, optErr := c.effectiveSessionInboxOptions(config, nativeID)
+	if optErr != nil {
+		return 0, optErr
+	}
+	if !batchEnabled || !value.SameText(event.Get("kind"), "notice") || !value.Truth(attempt.Get("native_turn_id")) {
 		return 0, nativeRefusal("UNSUPPORTED_CONTROL", "notice batching is unavailable for this native turn")
 	}
 	requestID := native.Get("batch_advance_request_id")

@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +22,7 @@ import (
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 	"github.com/halbritt/cairn/internal/statefile"
 	"github.com/halbritt/cairn/localapi"
+	"golang.org/x/sys/unix"
 )
 
 type inboxDelivery struct {
@@ -292,6 +295,10 @@ func (d *inboxDelivery) deliver(directory string) error {
 		budget = min(configured, number(g.Get("limit_bytes"))) - priorBytes
 	}
 	d.phase("command_context", "")
+	compactEnabled, err := sessionCompactInboxEnabled(in.Config, id.session)
+	if err != nil {
+		return err
+	}
 	control, fallbackControl := in.Control, in.Control
 	if source != nil {
 		command, readErr := inboxCommand(in.Config, id, false)
@@ -360,7 +367,7 @@ func (d *inboxDelivery) deliver(directory string) error {
 	if err != nil {
 		return err
 	}
-	if id.publication != nil && (value.SameText(id.publication.Get("kind"), "notice") || value.SameText(id.publication.Get("kind"), "response")) && number(in.Config.Get("compact_inbox_version")) == 1 {
+	if id.publication != nil && (value.SameText(id.publication.Get("kind"), "notice") || value.SameText(id.publication.Get("kind"), "response")) && compactEnabled {
 		withSuffix, _ := withAllowanceForLabel(requiredText, label)
 		if cost(withSuffix) > budget {
 			command, e := inboxCommand(in.Config, id, true)
@@ -617,6 +624,88 @@ func inboxCommand(config *value.Value, id inboxIdentity, compact bool) (*value.V
 		return nil, ledger.RefuseInbox(message, "command_context", reason)
 	}
 	return v, nil
+}
+
+func sessionCompactInboxEnabled(config *value.Value, session string) (bool, error) {
+	capable := (value.SameText(config.Get("harness"), "codex") || value.SameText(config.Get("harness"), "claude")) && value.Truth(config.Get("native_delivery"))
+	compact := capable && number(config.Get("compact_inbox_version")) == 1
+	if session == "" {
+		return compact, nil
+	}
+	dir, err := pathValue(config.Get("state_dir"))
+	if err != nil {
+		return false, err
+	}
+	binding := text(config.Get("binding"))
+	path := filepath.Join(dir, "session-options", hashText(binding+"\x00"+session)+".json")
+	if info, lErr := os.Lstat(filepath.Dir(path)); lErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		return false, ledger.RefuseInbox("session inbox options must be owner-only", "command_context", "compact_fallback")
+	}
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err != nil {
+		if errors.Is(err, syscall.ENOENT) {
+			return compact, nil
+		}
+		if errors.Is(err, syscall.ELOOP) {
+			return false, ledger.RefuseInbox("session inbox options must be owner-only", "command_context", "compact_fallback")
+		}
+		return false, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	file := os.NewFile(uintptr(fd), path)
+	defer func() { _ = file.Close() }()
+	var st syscall.Stat_t
+	if err := syscall.Fstat(int(file.Fd()), &st); err != nil {
+		return false, &os.PathError{Op: "fstat", Path: path, Err: err}
+	}
+	if st.Mode&syscall.S_IFMT != syscall.S_IFREG || st.Uid != uint32(os.Getuid()) || st.Mode&0o077 != 0 {
+		return false, ledger.RefuseInbox("session inbox options must be owner-only", "command_context", "compact_fallback")
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, 65537))
+	if err != nil {
+		return false, err
+	}
+	if len(raw) > 65536 {
+		return false, ledger.RefuseInbox("session inbox options exceed limit", "command_context", "compact_fallback")
+	}
+	entry, err := value.DecodeTextWithObjectPolicy(raw, "utf-8", 0, value.DuplicateReject)
+	if err != nil {
+		return false, ledger.RefuseInbox("session inbox options are malformed", "command_context", "compact_fallback")
+	}
+	if msg, ok := validateInboxSessionOptions(entry, binding, session, capable); !ok {
+		return false, ledger.RefuseInbox(msg, "command_context", "compact_fallback")
+	}
+	return true, nil
+}
+
+func validateInboxSessionOptions(entry *value.Value, binding, session string, capable bool) (string, bool) {
+	if entry == nil || entry.Kind != value.Object || !value.SameText(entry.Get("schema"), "cairn.session-inbox-options/1") || !value.SameText(entry.Get("binding"), binding) || !value.SameText(entry.Get("native_session_id"), session) {
+		return "session inbox options are malformed", false
+	}
+	for _, m := range entry.Members {
+		switch string(m.Key) {
+		case "schema", "binding", "native_session_id", "compact_inbox_version", "notice_batch_version", "updated_at":
+		default:
+			return "session inbox options are malformed", false
+		}
+	}
+	if upd := entry.Get("updated_at"); upd != nil {
+		if (upd.Kind != value.Int && upd.Kind != value.Float) || (upd.Kind == value.Float && (math.IsNaN(upd.Number) || math.IsInf(upd.Number, 0))) {
+			return "session inbox options timestamp is invalid", false
+		}
+		if upd.Kind == value.Int {
+			if _, err := strconv.ParseFloat(upd.Integer, 64); err != nil {
+				return "session inbox options timestamp is invalid", false
+			}
+		}
+	}
+	cv := entry.Get("compact_inbox_version")
+	if !capable || cv == nil || cv.Kind != value.Int || cv.Integer != "1" {
+		return "compact_inbox_version 1 requires Codex or Claude native delivery", false
+	}
+	if bv := entry.Get("notice_batch_version"); bv != nil && (bv.Kind != value.Int || bv.Integer != "1") {
+		return "notice_batch_version 1 requires compact Codex or Claude native delivery", false
+	}
+	return "", true
 }
 
 func (d *inboxDelivery) history(payload *value.Value, deadline time.Time) (*value.Value, error) {

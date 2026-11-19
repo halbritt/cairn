@@ -482,12 +482,65 @@ WantedBy=default.target
     subprocess.run(['systemctl', '--user', 'restart', service.name], check=True)
 
 
+def configure_installed_session(args, home):
+    if args.session is not None and args.agent_id is not None:
+        return 'pass at most one of --session and --agent-id', None
+    if args.clear_session_options and (args.compact_inbox or args.notice_batch):
+        return 'cannot combine --clear-session-options with --compact-inbox or --notice-batch', None
+    if args.notice_batch and not args.compact_inbox:
+        return '--notice-batch requires --compact-inbox', None
+    if not args.clear_session_options and not args.compact_inbox:
+        return '--session/--agent-id requires --compact-inbox or --clear-session-options', None
+    for forbidden, name in ((args.opencode_cancel_trial, '--opencode-cancel-trial'),
+                            (args.idle_wakeup, '--idle-wakeup'),
+                            (args.no_herdr, '--no-herdr'),
+                            (args.claude_channel_dir is not None, '--claude-channel-dir')):
+        if forbidden:
+            return f'{name} cannot be combined with --session or --agent-id', None
+    root = args.root.resolve()
+    config_path = args.config.resolve() if args.config is not None else (root / 'bindings' / (args.binding + '.json'))
+    if not config_path.is_file():
+        return f'installed binding configuration {config_path} does not exist', None
+    installed = engine.load_config(config_path)
+    if args.binding and installed.get('binding') != args.binding:
+        return '--binding does not match installed binding configuration', None
+    if args.harness and installed.get('harness') != args.harness:
+        return '--harness does not match installed binding configuration', None
+    if args.compact_inbox and (installed.get('harness') not in ('codex', 'claude') or not installed.get('native_delivery')):
+        return '--compact-inbox requires an installed Codex or Claude binding with --native-delivery', None
+    native = engine.resolve_session_target(installed, native_session_id=args.session, agent_id=args.agent_id)
+    pinned = installed.get('inbox_recall_binding')
+    manifest_schema = None
+    if pinned and Path(pinned).is_file():
+        try:
+            parsed_manifest = json.loads(Path(pinned).read_text())
+        except (OSError, ValueError):
+            return f'bound recall manifest {pinned} is unreadable or invalid JSON', None
+        if not isinstance(parsed_manifest, dict):
+            return f'bound recall manifest {pinned} must be a JSON object', None
+        manifest_schema = parsed_manifest.get('schema')
+    default_cfg_path = root / 'bindings' / (installed['binding'] + '.json')
+    if (args.compact_inbox and manifest_schema != 'cairn.inbox-recall-binding/3'
+            and not (config_path.parent / 'receipt.json').is_file()
+            and (args.config is None or config_path == default_cfg_path)):
+        install_compact_inbox_launcher(root, home)
+    result = engine.configure_session_inbox(
+        installed, native_session_id=native,
+        compact_inbox=args.compact_inbox, notice_batch=args.notice_batch,
+        clear=args.clear_session_options)
+    return None, result
+
+
 def main():
     home = Path.home()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--harness', required=True, choices=('codex', 'claude', 'agy', 'opencode', 'hermes'))
+    parser.add_argument('--harness', choices=('codex', 'claude', 'agy', 'opencode', 'hermes'))
     parser.add_argument('--binding', required=True)
-    parser.add_argument('--settings', type=Path, required=True, help='hook settings file, or OpenCode/Hermes directory')
+    parser.add_argument('--settings', type=Path, help='hook settings file, or OpenCode/Hermes directory')
+    parser.add_argument('--config', type=Path, help='installed binding config path for --session/--agent-id')
+    parser.add_argument('--session', help='configure compact/batch options for one native session without modifying binding config or restarting the watcher')
+    parser.add_argument('--agent-id', help='configure compact/batch options for one active Cairn agent UUID on the binding')
+    parser.add_argument('--clear-session-options', action='store_true', help='remove per-session compact/batch options')
     parser.add_argument('--root', type=Path, default=home / '.local/share/cairn/coordination')
     parser.add_argument('--cairn', default=shutil.which('cairn'))
     parser.add_argument('--socket', type=Path, default=home / '.local/share/cairn/api.sock')
@@ -509,10 +562,23 @@ def main():
     parser.add_argument('--codex', help='native codex executable the launcher shim execs (default: resolved from PATH)')
     parser.add_argument('--no-service', action='store_true', help='prepare hooks without installing/restarting the watcher')
     args = parser.parse_args()
-    if not args.cairn or not args.token_file.is_file():
-        parser.error('installed cairn and an existing profile token are required')
     if not args.binding or len(args.binding) > 128 or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-' for c in args.binding) or args.binding in ('.', '..'):
         parser.error('binding must be a bounded name without path components')
+    if args.session is not None or args.agent_id is not None or args.clear_session_options or args.config is not None:
+        if args.session is None and args.agent_id is None:
+            parser.error('--clear-session-options and --config require --session or --agent-id')
+        try:
+            err_msg, result = configure_installed_session(args, home)
+        except engine.CoordinationError as exc:
+            parser.error(str(exc))
+        if err_msg is not None:
+            parser.error(err_msg)
+        print(json.dumps(result, sort_keys=True))
+        return
+    if not args.harness or args.settings is None:
+        parser.error('the following arguments are required: --harness, --settings')
+    if not args.cairn or not args.token_file.is_file():
+        parser.error('installed cairn and an existing profile token are required')
     if args.opencode_cancel_trial and (args.harness != 'opencode' or not args.native_delivery or not args.idle_wakeup):
         parser.error('--opencode-cancel-trial requires --harness opencode --native-delivery --idle-wakeup')
     if args.compact_inbox and (args.harness not in ('codex', 'claude') or not args.native_delivery):
@@ -534,7 +600,8 @@ def main():
             pinned = installed.get('inbox_recall_binding')
             if pinned and json.loads(Path(pinned).read_text()).get('enabled') is True:
                 parser.error('--compact-inbox needs the bound recall manifest disabled before its configuration changes; '
-                             'repin and validate that manifest before re-enabling it')
+                             'repin and validate that manifest before re-enabling it, or pass --session/--agent-id '
+                             'to configure one session without changing the pinned binding')
             if pinned:
                 config['inbox_recall_binding'] = pinned
     if args.no_herdr and (args.harness != 'opencode' or not args.idle_wakeup or args.herdr):

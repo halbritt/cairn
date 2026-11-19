@@ -3,11 +3,13 @@
 import argparse
 from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timezone
+import errno
 import fcntl
 import hashlib
 import importlib.util
 import io
 import json
+import math
 import os
 import re
 import selectors
@@ -1886,6 +1888,155 @@ def state_path(config, native):
     return Path(config["state_dir"]) / (key + ".json")
 
 
+SESSION_INBOX_OPTIONS_SCHEMA = "cairn.session-inbox-options/1"
+
+
+def session_options_path(config, native):
+    key = hashlib.sha256((config["binding"] + "\0" + native).encode()).hexdigest()
+    return Path(config["state_dir"]) / "session-options" / (key + ".json")
+
+
+def _unique_json_object(pairs):
+    out = {}
+    for key, val in pairs:
+        if key in out:
+            raise ValueError("duplicate session inbox options key")
+        out[key] = val
+    return out
+
+
+def _finite_timestamp(value):
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def read_session_inbox_options(config, native):
+    """Read and validate owner-only per-session compact/batch options, or None if absent."""
+    if not valid_native_session_id(native):
+        return None
+    path = session_options_path(config, native)
+    if path.parent.is_symlink():
+        raise CoordinationError("INVALID_HOST", "session inbox options must be owner-only")
+    try:
+        fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise CoordinationError("INVALID_HOST", "session inbox options must be owner-only") from exc
+        raise
+    with os.fdopen(fd, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise CoordinationError("INVALID_HOST", "session inbox options must be owner-only")
+        raw = handle.read(65537)
+    if len(raw) > 65536:
+        raise CoordinationError("INVALID_HOST", "session inbox options exceed limit")
+    entry = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_json_object)
+    allowed = {"schema", "binding", "native_session_id", "compact_inbox_version",
+               "notice_batch_version", "updated_at"}
+    if (not isinstance(entry, dict)
+            or entry.get("schema") != SESSION_INBOX_OPTIONS_SCHEMA
+            or entry.get("binding") != config.get("binding")
+            or entry.get("native_session_id") != native
+            or set(entry) - allowed):
+        raise CoordinationError("INVALID_HOST", "session inbox options are malformed")
+    if "updated_at" in entry and not _finite_timestamp(entry["updated_at"]):
+        raise CoordinationError("INVALID_HOST", "session inbox options timestamp is invalid")
+    capable = config.get("harness") in ("codex", "claude") and bool(config.get("native_delivery"))
+    if (not capable or type(entry.get("compact_inbox_version")) is not int
+            or entry["compact_inbox_version"] != 1):
+        raise CoordinationError("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
+    if "notice_batch_version" in entry and (
+            type(entry["notice_batch_version"]) is not int or entry["notice_batch_version"] != 1):
+        raise CoordinationError("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
+    return entry
+
+
+def effective_session_inbox_options(config, native):
+    capable = config.get("harness") in ("codex", "claude") and bool(config.get("native_delivery"))
+    compact = capable and config.get("compact_inbox_version") == 1
+    batch = compact and config.get("notice_batch_version") == 1
+    override = read_session_inbox_options(config, native)
+    if override is not None:
+        compact = True
+        batch = batch or override.get("notice_batch_version") == 1
+    return compact, batch
+
+
+def resolve_session_target(config, native_session_id=None, agent_id=None):
+    if native_session_id is not None:
+        if not valid_native_session_id(native_session_id):
+            raise CoordinationError("INVALID_REQUEST", "invalid native session ID")
+        return native_session_id
+    if not isinstance(agent_id, str) or not re.fullmatch(
+            "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", agent_id):
+        raise CoordinationError("INVALID_REQUEST", "invalid Cairn agent ID")
+    state_dir = Path(config["state_dir"])
+    matches = []
+    try:
+        entries = sorted(entry.name for entry in os.scandir(state_dir) if entry.name.endswith(".json"))
+    except FileNotFoundError:
+        entries = []
+    for name in entries:
+        candidate = state_dir / name
+        if candidate.is_symlink():
+            continue
+        try:
+            info = candidate.stat()
+            if info.st_uid != os.getuid() or info.st_mode & 0o077:
+                continue
+            record = json.loads(candidate.read_text())
+        except (OSError, ValueError):
+            continue
+        if not isinstance(record, dict) or record.get("retired") or record.get("ending"):
+            continue
+        agent = record.get("agent")
+        if not isinstance(agent, dict) or agent.get("agent_id") != agent_id:
+            continue
+        native = agent.get("native_session_id")
+        if valid_native_session_id(native) and state_path(config, native).resolve() == candidate.resolve():
+            matches.append(native)
+    if not matches:
+        raise CoordinationError("NOT_FOUND", "no active native session found for agent_id on this binding")
+    if len(matches) > 1:
+        raise CoordinationError("CONFLICT", "multiple active native sessions match agent_id; pass --native-session-id")
+    return matches[0]
+
+
+def configure_session_inbox(config, *, native_session_id=None, agent_id=None,
+                            compact_inbox=False, notice_batch=False, clear=False):
+    if compact_inbox and (config.get("harness") not in ("codex", "claude") or not config.get("native_delivery")):
+        raise CoordinationError("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
+    if notice_batch and not compact_inbox:
+        raise CoordinationError("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
+    native = resolve_session_target(config, native_session_id=native_session_id, agent_id=agent_id)
+    s_path = state_path(config, native)
+    opt_path = session_options_path(config, native)
+    with session_lock(s_path, wait_seconds=HOOK_LOCK_WAIT_SECONDS):
+        if opt_path.parent.is_symlink() or opt_path.is_symlink():
+            raise CoordinationError("INVALID_HOST", "session inbox options must be owner-only")
+        if clear:
+            opt_path.unlink(missing_ok=True)
+            status = "cleared"
+        else:
+            record = dict(schema=SESSION_INBOX_OPTIONS_SCHEMA, binding=config["binding"],
+                          native_session_id=native, compact_inbox_version=1, updated_at=time.time())
+            if notice_batch:
+                record["notice_batch_version"] = 1
+            write_state(opt_path, record)
+            status = "configured"
+        compact, batch = effective_session_inbox_options(config, native)
+    return dict(schema=SESSION_INBOX_OPTIONS_SCHEMA, status=status, binding=config["binding"],
+                native_session_id=native, options_path=str(opt_path),
+                compact_inbox_version=1 if compact else None,
+                notice_batch_version=1 if batch else None)
+
+
 def heartbeat(config, state):
     return call(config, "agent-heartbeat", session_ref(state["agent"]))
 
@@ -2496,7 +2647,8 @@ def compact_inbox_command(argv):
             event['kind'] not in ('notice', 'response')):
         raise CoordinationError('INVALID_HOST', 'compact inbox delivery changed')
     if args.operation == 'advance':
-        if config.get('notice_batch_version') != 1 or event['kind'] != 'notice' or not attempt.get('native_turn_id'):
+        _, batch_enabled = effective_session_inbox_options(config, native)
+        if not batch_enabled or event['kind'] != 'notice' or not attempt.get('native_turn_id'):
             raise CoordinationError('UNSUPPORTED_CONTROL', 'notice batching is unavailable for this native turn')
         if not isinstance(context.get('batch_advance_request_id'), str):
             raise CoordinationError('INVALID_HOST', 'native batch advance identity is absent')
@@ -3126,8 +3278,10 @@ def inbox_context(config, state, path, observation, wake_binding=None, *, joined
     compatibility = getattr(_BUNDLE, 'compatibility_context', None)
     if compatibility is not None:
         compatibility.context_commands(context)
-    if config.get('compact_inbox_version') == 1 and event['kind'] in ('notice', 'response'):
-        if config.get('notice_batch_version') == 1 and event['kind'] == 'notice' and attempt.get('native_turn_id'):
+    compact_enabled, batch_enabled = effective_session_inbox_options(
+        config, state.get('agent', {}).get('native_session_id'))
+    if compact_enabled and event['kind'] in ('notice', 'response'):
+        if batch_enabled and event['kind'] == 'notice' and attempt.get('native_turn_id'):
             context['batch_advance_request_id'] = str(uuid.uuid4())
         handle, issued = compact_inbox_handle(config, state, path, target, context)
         if handle:
@@ -4833,12 +4987,17 @@ def main():
     parser.add_argument("mode", choices=("hook", "watch", "recover-refused-wake", "recover-native-refused-wake",
                                          "recover-codex-refused-wake", "recover-codex-ended-turn", "recover-daemon-start-claim",
                                          "check-codex-native-health",
-                                         "reconcile-codex-queue-wake", "inspect-held-refusal"))
+                                         "reconcile-codex-queue-wake", "inspect-held-refusal",
+                                         "configure-session-inbox"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--event")
     parser.add_argument("--config-dir", type=Path)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--native-session-id", help="recover-refused-wake: the held native session")
+    parser.add_argument("--agent-id", help="configure-session-inbox: the live Cairn agent UUID")
+    parser.add_argument("--compact-inbox", action="store_true", help="configure-session-inbox: enable compact notice/response delivery")
+    parser.add_argument("--notice-batch", action="store_true", help="configure-session-inbox: enable bounded notice batches")
+    parser.add_argument("--clear-session-options", action="store_true", help="configure-session-inbox: remove per-session inbox options")
     parser.add_argument("--attempt-id", help="recover-refused-wake: the held attempt")
     parser.add_argument("--native-turn-id", help="recover-refused-wake: the refused claude-channel prompt")
     parser.add_argument("--delivery-id", help="reconcile-codex-queue-wake: the retained delivery UUID")
@@ -4854,6 +5013,20 @@ def main():
     parser.add_argument("--check-only", action="store_true", help="validate Codex recovery evidence without settlement")
     args = parser.parse_args()
     try:
+        if args.mode == "configure-session-inbox":
+            if args.config is None or (args.native_session_id is None) == (args.agent_id is None):
+                parser.error("configure-session-inbox requires --config and exactly one of --native-session-id or --agent-id")
+            if args.clear_session_options and (args.compact_inbox or args.notice_batch):
+                parser.error("configure-session-inbox cannot combine --clear-session-options with --compact-inbox or --notice-batch")
+            if args.notice_batch and not args.compact_inbox:
+                parser.error("configure-session-inbox: --notice-batch requires --compact-inbox")
+            if not args.clear_session_options and not args.compact_inbox:
+                parser.error("configure-session-inbox requires --compact-inbox or --clear-session-options")
+            result = configure_session_inbox(load_config(args.config), native_session_id=args.native_session_id,
+                                             agent_id=args.agent_id, compact_inbox=args.compact_inbox,
+                                             notice_batch=args.notice_batch, clear=args.clear_session_options)
+            print(json.dumps(result, sort_keys=True))
+            return 0
         if args.mode == "check-codex-native-health":
             if None in (args.config, args.native_session_id):
                 parser.error("check-codex-native-health requires --config and --native-session-id")

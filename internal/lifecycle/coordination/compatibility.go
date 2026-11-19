@@ -2174,8 +2174,16 @@ func (c *CLI) renderRenewedAttemptContext(ctx context.Context, ns *NativeSession
 }
 
 func (c *CLI) finalizeAttemptContext(ctx context.Context, ns *NativeSession, config, state *value.Value, statePath, target string, native, attempt, delivery, event *value.Value) (*value.Value, error) {
-	if nativeEqual(config.Get("compact_inbox_version"), value.IntegerText("1")) && nativeContains([]string{"notice", "response"}, nativeText(event.Get("kind"))) {
-		if nativeEqual(config.Get("notice_batch_version"), value.IntegerText("1")) && value.SameText(event.Get("kind"), "notice") && value.Truth(attempt.Get("native_turn_id")) {
+	var nativeID *value.Value
+	if ag := state.Get("agent"); ag != nil && ag.Kind == value.Object {
+		nativeID = ag.Get("native_session_id")
+	}
+	compactEnabled, batchEnabled, err := c.effectiveSessionInboxOptions(config, nativeID)
+	if err != nil {
+		return nil, err
+	}
+	if compactEnabled && nativeContains([]string{"notice", "response"}, nativeText(event.Get("kind"))) {
+		if batchEnabled && value.SameText(event.Get("kind"), "notice") && value.Truth(attempt.Get("native_turn_id")) {
 			native.Set("batch_advance_request_id", value.Text(c.newUUID()))
 		}
 		handle, issued, err := c.CompactInboxHandle(config, state, statePath, target, native)
