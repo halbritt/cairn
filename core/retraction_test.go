@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -140,4 +141,81 @@ func TestConcurrentCompileAndRetraction(t *testing.T) {
 			t.Fatal("new exposure committed alongside an obsolete impact preview")
 		}
 	}
+}
+
+func TestConcurrentOverlappingExpandsAndDependentRetraction(t *testing.T) {
+	ctx := context.Background()
+	s, root := testOperator(t)
+	repo := uuid.NewString()
+	parentDraft := projectNote(repo)
+	parentDraft.Body = "parent exposure barrier fixture_error note"
+	parent, err := s.Create(ctx, CreateRequest{uuid.NewString(), parentDraft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	depDraft := projectNote(repo)
+	depDraft.Body = "dependent exposure barrier fixture_error note"
+	depDraft.Relations = []RecordRelation{{parent.RecordID, parent.Version, "derived_from"}}
+	dep, err := s.Create(ctx, CreateRequest{uuid.NewString(), depDraft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Four concurrent writers repeatedly index AND pull the same two notes with zero VERSION_CONFLICT.
+	const workers, rounds = 4, 8
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*rounds)
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for r := 0; r < rounds; r++ {
+				idx, err := s.Index(ctx, CompileRequest{
+					RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"},
+					Query: "fixture_error", Purpose: "context", AvailableTokens: 32000,
+				}, Destination{"local", true})
+				if err != nil {
+					errs <- err
+					return
+				}
+				for _, h := range idx.Handles {
+					if _, err := s.Expand(ctx, ExpandRequest{
+						RequestID: uuid.NewString(), ReceiptID: idx.Package.ReceiptID, Handle: h.Handle,
+					}, Destination{"local", true}); err != nil {
+						errs <- err
+						return
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent index+expand failed: %v", err)
+	}
+	var parentGen, depGen int64
+	if err := s.pool.QueryRow(ctx, `SELECT cairn.record_exposure_generation($1), cairn.record_exposure_generation($2)`, parent.RecordID, dep.RecordID).Scan(&parentGen, &depGen); err != nil {
+		t.Fatal(err)
+	}
+	wantDepGen := int64(workers * rounds * 2) // 1 index exposure + 1 expand observation per round
+	wantParentGen := wantDepGen + 1           // +1 from dep's incoming derived_from relation (013_record_relations.sql)
+	if parentGen != wantParentGen || depGen != wantDepGen {
+		t.Fatalf("exposure generation mismatch: parent=%d (want %d) dep=%d (want %d)", parentGen, wantParentGen, depGen, wantDepGen)
+	}
+	// Dependent exposure invalidates parent retraction preview!
+	preview, err := s.PreviewRetraction(ctx, parent.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Index(ctx, CompileRequest{
+		RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"},
+		Query: "dependent", Purpose: "context", AvailableTokens: 32000,
+	}, Destination{"local", true}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Retract(ctx, RetractRequest{
+		RequestID: uuid.NewString(), RecordID: parent.RecordID, ExpectedVersion: parent.Version,
+		GrantID: root.ID, Reason: "Dependent exposure invalidation check", PreviewID: preview.PreviewID,
+	})
+	requireCode(t, err, "STALE_PREVIEW")
 }

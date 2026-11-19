@@ -207,6 +207,7 @@ func TestRealRepliesConformToContract(t *testing.T) {
 	c.call(c.server, "local", "get", `{"record_id":"`+uuid.NewString()+`"}`, nil)
 	c.call(c.server, "local", "create", `{"request_id":"not-a-uuid"}`, nil)
 	c.call(c.server, "local", "agent-directory", `{}`, session)
+	c.ok("local", "refusal-stats", `{}`)
 }
 
 // TestAcceptedInputMatchesDecoder sends documented accepted and rejected wire

@@ -197,7 +197,9 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	for attempt := 0; attempt < compileAttempts; attempt++ {
 		pkg, err := s.compileOnce(ctx, req, destination, memo)
 		var pgErr *pgconn.PgError
-		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "retrieval_receipt_caller_request_id_key")) {
+		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" &&
+			!(pgErr.Code == "23505" && pgErr.ConstraintName == "retrieval_receipt_caller_request_id_key") &&
+			!((pgErr.Code == "23001" || pgErr.Code == "23503") && pgErr.ConstraintName == "record_exposure_barrier_fkey")) {
 			return pkg, err
 		}
 		select {
@@ -209,9 +211,10 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	return Package{}, failure("VERSION_CONFLICT", "compile retry limit reached")
 }
 
-// Every exposure updates its note's row, so compiles that expose the same note
-// conflict by design: that row is how lifecycle changes detect concurrent use. A
-// retry is cheap against that, and failing a search loses an agent its memory.
+// Routine exposures acquire compatible FOR SHARE locks on record_exposure_barrier
+// and append to record_exposure without contending on memory_record, while
+// lifecycle preview transitions advance exposure_epoch under FOR UPDATE. Bounded
+// retries recover cleanly across concurrent lifecycle transitions.
 const compileAttempts = 8
 
 func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination Destination, memo *semanticMemo) (Package, error) {

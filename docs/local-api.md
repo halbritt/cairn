@@ -365,8 +365,19 @@ journalctl --user -u cairn-api -g '"event":"refusal"' --since -1d -o cat \
   | jq -r '[.operation,.code] | @tsv' | sort | uniq -c | sort -rn
 ```
 
-Compiles retry serialization conflicts themselves, so a `VERSION_CONFLICT` from `index`
-or `compile` means a search failed after eight attempts.
+Authenticated profiles can also read their own principal's volatile per-process refusal
+counts directly from `POST /v1/refusal-stats` (`cairn agent refusal-stats [--operation OP] [--code CODE]`):
+it returns `cairn.refusal-stats/1` with `principal`, `started_at`, `observed_at`,
+`total_refusals`, `matched_refusals`, `dropped_refusals` and `rows` grouped by
+`(operation, code, status)`. Unauthenticated requests and unknown endpoints are excluded,
+and counts are isolated per `(principal, machine_id)`.
+
+Routine exposure no longer updates `memory_record.use_generation`; concurrent searches
+and pulls share `record_exposure_barrier` and append to `record_exposure` without
+contending on the note row, while lifecycle transitions drain exposures and advance
+`exposure_epoch`. Compiles retain bounded retries across concurrent lifecycle changes,
+so a `VERSION_CONFLICT` from `index` or `compile` means a search failed after eight
+attempts against concurrent lifecycle mutations.
 
 ## Striatum boundary
 

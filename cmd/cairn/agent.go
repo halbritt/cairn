@@ -151,6 +151,15 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 			},
 		},
 		{
+			Name:        "refusal-stats",
+			Operation:   "refusal-stats",
+			AcceptsArgs: true,
+			Help:        refusalStatsOperationHelp,
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, _ io.Reader) (any, error) {
+				return agentRefusalStats(ctx, client, args)
+			},
+		},
+		{
 			Name:        "evidence",
 			Operation:   "evidence",
 			AcceptsArgs: true,

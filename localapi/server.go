@@ -57,8 +57,29 @@ type Server struct {
 	// Server never depends on it for startup. Tests may set it before serving.
 	obs         *observer
 	observeOnce sync.Once
+	refusals    *refusalTracker
+	refusalOnce sync.Once
 	routeMux    *http.ServeMux
 	muxOnce     sync.Once
+}
+
+func (s *Server) refusalCounters() *refusalTracker {
+	s.refusalOnce.Do(func() {
+		if s.refusals == nil {
+			s.refusals = newRefusalTracker()
+		}
+	})
+	return s.refusals
+}
+
+// RefusalStats returns the volatile per-process refusal counts for one authenticated principal.
+func (s *Server) RefusalStats(principal, machineID string, req RefusalStatsRequest) (RefusalStatsResponse, error) {
+	return s.refusalCounters().view(principal, machineID, req)
+}
+
+func (s *Server) recordRefusal(principal, machineID, operation, code string, status int) {
+	s.refusalCounters().record(principal, machineID, operation, code, status)
+	logRefusal(os.Stderr, operation, code, status)
 }
 
 func (s *Server) mux() *http.ServeMux {
@@ -143,27 +164,35 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		writeError(w, 401, "AUTHORITY_DENIED", "authentication required")
 		return
 	}
+	opSpec, hasOp := LookupOperation(strings.TrimPrefix(r.URL.Path, "/v1/"))
+	noteKnownOpRefusal := func(code string, status int) {
+		if hasOp {
+			s.recordRefusal(c.principal, c.machineID, opSpec.Name, code, status)
+		}
+	}
 	if remoteOnly && !c.remote {
+		noteKnownOpRefusal("AUTHORITY_DENIED", 403)
 		writeError(w, 403, "AUTHORITY_DENIED", "network API requires a remote machine profile")
 		return
 	}
-	opSpec, hasOp := LookupOperation(strings.TrimPrefix(r.URL.Path, "/v1/"))
 	if c.remote && (!hasOp || !opSpec.RemoteAllowed || (c.role != "agent" && !opSpec.RemoteObserverAllowed)) {
+		noteKnownOpRefusal("AUTHORITY_DENIED", 403)
 		writeError(w, 403, "AUTHORITY_DENIED", "operation is unavailable to remote machine profiles")
 		return
 	}
 	if r.Method != "POST" {
+		noteKnownOpRefusal("INVALID_REQUEST", 405)
 		writeError(w, 405, "INVALID_REQUEST", "use POST with JSON")
 		return
 	}
 	// Record the declaration of this authenticated contact before protocol
 	// admission, so a refused request is still diagnosable. Observation never
 	// reads the body, fails, retries or changes how the request is handled; the
-	// inspection route is excluded so that listing does not refresh anything.
-	if r.URL.Path != "/v1/clients" {
+	// inspection routes are excluded so that listing does not refresh anything.
+	if r.URL.Path != "/v1/clients" && r.URL.Path != "/v1/refusal-stats" {
 		s.observation().observe(c.principal, c.machineID, r.Header.Values(ClientDiagnosticsHeader))
 	}
-	if !admitProtocol(w, r, remoteOnly) {
+	if !admitProtocol(w, r, remoteOnly, noteKnownOpRefusal) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -172,11 +201,13 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 	ref := core.AgentSessionRef{AgentID: r.Header.Get("Cairn-Agent-ID"), ExecutionID: r.Header.Get("Cairn-Execution-ID")}
 	if len(r.Header.Values("Cairn-Agent-ID")) > 0 || len(r.Header.Values("Cairn-Execution-ID")) > 0 {
 		if strings.HasPrefix(r.URL.Path, "/v1/agent-") {
+			noteKnownOpRefusal("INVALID_REQUEST", 400)
 			writeError(w, 400, "INVALID_REQUEST", "session directory operations use the base profile and explicit request fields")
 			return
 		}
 		store, err := c.store.ForAgentSession(ref, c.destination)
 		if err != nil {
+			noteKnownOpRefusal(core.Code(err), 400)
 			writeError(w, 400, core.Code(err), err.Error())
 			return
 		}
@@ -192,6 +223,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 
 func (s *Server) serveOperation(w http.ResponseWriter, r *http.Request, c client, spec OperationSpec) {
 	if spec.RequiresLocalDestination && !c.destination.AllowLocal {
+		s.recordRefusal(c.principal, c.machineID, spec.Name, "AUTHORITY_DENIED", 403)
 		writeError(w, 403, "AUTHORITY_DENIED", spec.LocalDestinationMessage)
 		return
 	}
@@ -207,6 +239,9 @@ var serverOperations = []OperationSpec{
 	// caller's own principal and machine come from its authenticated profile.
 	bindOperation(OperationSpec{Name: "clients", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "read"}, func(_ context.Context, s *Server, _ *http.Request, c client, req ClientsRequest) (ClientsResponse, error) {
 		return s.observation().view(c.principal, c.machineID, req)
+	}),
+	bindOperation(OperationSpec{Name: "refusal-stats", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "read"}, func(_ context.Context, s *Server, _ *http.Request, c client, req RefusalStatsRequest) (RefusalStatsResponse, error) {
+		return s.RefusalStats(c.principal, c.machineID, req)
 	}),
 	bindStore(OperationSpec{Name: "create", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: 512 * 1024, RetryClass: "request-id"}, (*core.Store).Create),
 	bindStore(OperationSpec{Name: "edit", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: 512 * 1024, RetryClass: "request-id"}, (*core.Store).Edit),
@@ -384,23 +419,39 @@ func writeRefusal(w http.ResponseWriter, status int, refused response) {
 	_ = json.NewEncoder(w).Encode(refused)
 }
 func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(context.Context, Q) (R, error)) {
-	limit := RequestBodyLimit(strings.TrimPrefix(r.URL.Path, "/v1/"))
+	serveServerJSON(nil, client{}, w, r, call)
+}
+
+func serveServerJSON[Q any, R any](s *Server, c client, w http.ResponseWriter, r *http.Request, call func(context.Context, Q) (R, error)) {
+	opName := strings.TrimPrefix(r.URL.Path, "/v1/")
+	noteRefusal := func(code string, status int) {
+		if s != nil {
+			s.recordRefusal(c.principal, c.machineID, opName, code, status)
+		} else {
+			logRefusal(os.Stderr, opName, code, status)
+		}
+	}
+	failDecode := func(msg string) {
+		noteRefusal("INVALID_REQUEST", 400)
+		writeError(w, 400, "INVALID_REQUEST", msg)
+	}
+	limit := RequestBodyLimit(opName)
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil || jsontext.CheckUnicode(body) != nil {
-		writeError(w, 400, "INVALID_REQUEST", "invalid bounded JSON request")
+		failDecode("invalid bounded JSON request")
 		return
 	}
-	body, admitted := admitBodyProtocol(w, r, body)
+	body, admitted := admitBodyProtocol(w, r, body, noteRefusal)
 	if !admitted {
 		return
 	}
 	var req Q
 	if err := DecodeRequest(body, &req); err != nil {
 		if errors.Is(err, errTrailingRequest) {
-			writeError(w, 400, "INVALID_REQUEST", "expected one JSON request")
+			failDecode("expected one JSON request")
 			return
 		}
-		writeError(w, 400, "INVALID_REQUEST", "invalid bounded JSON request")
+		failDecode("invalid bounded JSON request")
 		return
 	}
 	result, err := call(r.Context(), req)
@@ -421,7 +472,7 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 				refused.Admission = &admission
 			}
 		}
-		logRefusal(os.Stderr, strings.TrimPrefix(r.URL.Path, "/v1/"), code, status)
+		noteRefusal(code, status)
 		writeRefusal(w, status, refused)
 		return
 	}

@@ -637,7 +637,9 @@ func (s *Store) ExpandForReader(ctx context.Context, req ExpandRequest, dest Des
 			return Expansion{}, err
 		}
 
-		for _, position := range append([]Selection{selection}, companions...) {
+		positions := append([]Selection{selection}, companions...)
+		slices.SortFunc(positions, func(a, b Selection) int { return strings.Compare(a.Record.RecordID, b.Record.RecordID) })
+		for _, position := range positions {
 			if _, err = tx.Exec(ctx, `INSERT INTO cairn.usage_observation(observation_id,receipt_id,record_id,version,signal,witness,method) VALUES($1,$2,$3,$4,'expanded','instrumented',$5)`, uuid.NewString(), req.ReceiptID, position.Record.RecordID, position.Record.Version, method); err != nil {
 				return Expansion{}, err
 			}

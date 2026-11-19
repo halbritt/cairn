@@ -212,14 +212,22 @@ func guardBody(body []byte) ([]byte, error) {
 // request is strictly decoded. Every other member keeps its exact bytes and
 // order. A duplicate guard, or a differently cased spelling next to it, is
 // refused rather than reinterpreted.
-func admitBodyProtocol(w http.ResponseWriter, r *http.Request, body []byte) ([]byte, bool) {
+func admitBodyProtocol(w http.ResponseWriter, r *http.Request, body []byte, onRefusal ...func(code string, status int)) ([]byte, bool) {
+	fail := func(status int, code, msg string) ([]byte, bool) {
+		for _, fn := range onRefusal {
+			if fn != nil {
+				fn(code, status)
+			}
+		}
+		writeError(w, status, code, msg)
+		return nil, false
+	}
 	legacy, _ := r.Context().Value(undeclaredProtocol{}).(string)
 	refuseLegacy := func() ([]byte, bool) {
 		if legacy == "" {
 			return body, true
 		}
-		writeError(w, 426, "PROTOCOL_UNSUPPORTED", legacy)
-		return nil, false
+		return fail(426, "PROTOCOL_UNSUPPORTED", legacy)
 	}
 	// Keys are compared after JSON unescaping, so an escaped spelling of the
 	// reserved name is the guard (or ambiguous), never an unnoticed field.
@@ -232,8 +240,7 @@ func admitBodyProtocol(w http.ResponseWriter, r *http.Request, body []byte) ([]b
 	for i, member := range members {
 		exact, ambiguous := reservedKey(member.key)
 		if ambiguous || (exact && guard != nil) {
-			writeError(w, 400, "INVALID_REQUEST", "duplicate or ambiguous "+BodyProtocolField)
-			return nil, false
+			return fail(400, "INVALID_REQUEST", "duplicate or ambiguous "+BodyProtocolField)
 		}
 		if exact {
 			guard = &members[i]
@@ -247,17 +254,14 @@ func admitBodyProtocol(w http.ResponseWriter, r *http.Request, body []byte) ([]b
 	text := string(bytes.TrimSpace(bytes.SplitN(guard.text, []byte(":"), 2)[1]))
 	version, err := strconv.Atoi(text)
 	if err != nil || text != strconv.Itoa(version) || version < 1 || version > 9999 {
-		writeError(w, 400, "INVALID_REQUEST", BodyProtocolField+" must be one positive integer protocol version")
-		return nil, false
+		return fail(400, "INVALID_REQUEST", BodyProtocolField+" must be one positive integer protocol version")
 	}
 	if declared, present, _ := ParseProtocol(r.Header, ProtocolHeader); present && declared < version {
-		writeError(w, 400, "INVALID_REQUEST", "Cairn-Protocol is below the request's "+BodyProtocolField+" minimum")
-		return nil, false
+		return fail(400, "INVALID_REQUEST", "Cairn-Protocol is below the request's "+BodyProtocolField+" minimum")
 	}
 	if !Protocol.Supports(version) {
-		writeError(w, 426, "PROTOCOL_UNSUPPORTED", "the request requires protocol "+text+"; this server supports protocols "+
+		return fail(426, "PROTOCOL_UNSUPPORTED", "the request requires protocol "+text+"; this server supports protocols "+
 			strconv.Itoa(Protocol.Min)+" to "+strconv.Itoa(Protocol.Current))
-		return nil, false
 	}
 	stripped := []byte("{")
 	for i, member := range kept {
@@ -272,15 +276,22 @@ func admitBodyProtocol(w http.ResponseWriter, r *http.Request, body []byte) ([]b
 // admitProtocol refuses an unsupported or malformed declaration before any
 // session binding, decoding or store work. It runs after authentication, so
 // a claim never substitutes for identity.
-func admitProtocol(w http.ResponseWriter, r *http.Request, network bool) bool {
-	version, present, ok := ParseProtocol(r.Header, ProtocolHeader)
-	if !ok {
-		writeError(w, 400, "INVALID_REQUEST", "Cairn-Protocol must be one canonical decimal version")
+func admitProtocol(w http.ResponseWriter, r *http.Request, network bool, onRefusal ...func(code string, status int)) bool {
+	fail := func(status int, code, msg string) bool {
+		for _, fn := range onRefusal {
+			if fn != nil {
+				fn(code, status)
+			}
+		}
+		writeError(w, status, code, msg)
 		return false
 	}
+	version, present, ok := ParseProtocol(r.Header, ProtocolHeader)
+	if !ok {
+		return fail(400, "INVALID_REQUEST", "Cairn-Protocol must be one canonical decimal version")
+	}
 	if _, _, relayOK := ParseProtocol(r.Header, RelayProtocolHeader); !relayOK {
-		writeError(w, 400, "INVALID_REQUEST", "Cairn-Relay-Protocol must be one canonical decimal version")
-		return false
+		return fail(400, "INVALID_REQUEST", "Cairn-Relay-Protocol must be one canonical decimal version")
 	}
 	if Protocol.Supports(version) {
 		return true
@@ -291,9 +302,8 @@ func admitProtocol(w http.ResponseWriter, r *http.Request, network bool) bool {
 		*r = *r.WithContext(context.WithValue(r.Context(), undeclaredProtocol{}, legacyRefusal(r, network)))
 		return true
 	}
-	writeError(w, 426, "PROTOCOL_UNSUPPORTED", "protocol "+strconv.Itoa(version)+" is unsupported; this server supports protocols "+
+	return fail(426, "PROTOCOL_UNSUPPORTED", "protocol "+strconv.Itoa(version)+" is unsupported; this server supports protocols "+
 		strconv.Itoa(Protocol.Min)+" to "+strconv.Itoa(Protocol.Current))
-	return false
 }
 
 type undeclaredProtocol struct{}

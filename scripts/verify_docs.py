@@ -308,7 +308,7 @@ def discover_cli_schema(repo_root):
         "agents": {"register", "context", "heartbeat", "leave", "list", "resolve"},
         "machine": {"provision", "rotate", "revoke", "list", "enroll", "unenroll", "status"},
         "wake": {"check", "serve", "worker"},
-        "agent": {"search", "pull", "pull-evidence", "remember", "start", "run", "clients",
+        "agent": {"search", "pull", "pull-evidence", "remember", "start", "run", "clients", "refusal-stats",
                   "version", "evidence", "send", "publish", "inbox", "ack", "complete",
                   "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events",
                   "event-status", "event-stats", "wake-attempts", "wait", "status", "team"},

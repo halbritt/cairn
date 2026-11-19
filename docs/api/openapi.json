@@ -17119,6 +17119,136 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/localapi.ReaderCapabilities"
       },
+      "localapi.RefusalStatRow": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 18446744073709551615,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "first_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "status": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "count",
+          "first_at",
+          "last_at",
+          "operation",
+          "status"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.RefusalStatRow"
+      },
+      "localapi.RefusalStatsRequest": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.RefusalStatsRequest"
+      },
+      "localapi.RefusalStatsRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.RefusalStatsRequest"
+      },
+      "localapi.RefusalStatsResponse": {
+        "properties": {
+          "dropped_refusals": {
+            "maximum": 18446744073709551615,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "machine_id": {
+            "type": "string"
+          },
+          "matched_refusals": {
+            "maximum": 18446744073709551615,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/localapi.RefusalStatRow"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "schema": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "storage": {
+            "type": "string"
+          },
+          "total_refusals": {
+            "maximum": 18446744073709551615,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dropped_refusals",
+          "matched_refusals",
+          "observed_at",
+          "principal",
+          "rows",
+          "schema",
+          "started_at",
+          "storage",
+          "total_refusals"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.RefusalStatsResponse"
+      },
       "localapi.RetrievalCapabilities": {
         "properties": {
           "schema": {
@@ -27434,6 +27564,144 @@
         "x-cairn-source": "server.go"
       }
     },
+    "/v1/refusal-stats": {
+      "post": {
+        "operationId": "refusal-stats",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "operation": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/localapi.RefusalStatsRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/localapi.RefusalStatsResponse"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/localapi.RefusalStatsRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/localapi.RefusalStatsRequest",
+          "response": "github.com/halbritt/cairn/localapi.RefusalStatsResponse"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "read",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "server.go"
+      }
+    },
     "/v1/register-context": {
       "post": {
         "operationId": "register-context",
@@ -36191,11 +36459,6 @@
     {
       "http_status": 400,
       "code": "INVALID_REQUEST",
-      "source": "protocol.go"
-    },
-    {
-      "http_status": 400,
-      "code": "INVALID_REQUEST",
       "source": "relay.go"
     },
     {
@@ -36287,11 +36550,6 @@
       "http_status": 410,
       "code": "PROPOSAL_EXPIRED",
       "source": "serveJSON"
-    },
-    {
-      "http_status": 426,
-      "code": "PROTOCOL_UNSUPPORTED",
-      "source": "protocol.go"
     },
     {
       "http_status": 426,

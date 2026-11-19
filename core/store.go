@@ -335,15 +335,32 @@ func (s *Store) beginLevel(ctx context.Context, level pgx.TxIsoLevel) (pgx.Tx, e
 // One request lock covers lookup, effect and stored response. A lost response can
 // be retried without repeating the effect; a different intent cannot reuse a key.
 func mutate[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
-	return mutateOnce(ctx, s, operation, requestID, request, pgx.ReadCommitted, apply, guards...)
+	var zero T
+	for attempt := 0; attempt < privilegedAttempts; attempt++ {
+		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.ReadCommitted, apply, guards...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || (pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "mutation_request_pkey")) {
+			return result, err
+		}
+		select {
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		case <-time.After(serializationBackoff(attempt)):
+		}
+	}
+	return zero, failure("VERSION_CONFLICT", "serialization retry limit reached; retry the same request")
 }
+
+const privilegedAttempts = 8
 
 func privileged[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
 	var zero T
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < privilegedAttempts; attempt++ {
 		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.Serializable, apply, guards...)
 		var pgErr *pgconn.PgError
-		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "mutation_request_pkey")) {
+		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" &&
+			!(pgErr.Code == "23505" && pgErr.ConstraintName == "mutation_request_pkey") &&
+			!((pgErr.Code == "23001" || pgErr.Code == "23503") && pgErr.ConstraintName == "record_exposure_barrier_fkey")) {
 			return result, err
 		}
 		select {

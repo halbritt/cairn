@@ -56,6 +56,7 @@ func (s *Store) Delete(ctx context.Context, req DeleteRequest) (DeletedRecord, e
 			`DELETE FROM cairn.evidence_ref WHERE record_id=$1`,
 			`DELETE FROM cairn.record_relation WHERE from_id=$1`,
 			`DELETE FROM cairn.record_version WHERE record_id=$1`,
+			`DELETE FROM cairn.record_exposure_barrier WHERE record_id=$1`,
 			`DELETE FROM cairn.memory_record WHERE record_id=$1`,
 		} {
 			if _, err = tx.Exec(ctx, query, req.RecordID); err != nil {

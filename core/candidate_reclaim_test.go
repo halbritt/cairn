@@ -155,9 +155,6 @@ func TestReclaimRewritesOnlyRetainedDetailUnderConcurrentWrites(t *testing.T) {
 		defer writer.Done()
 		for !stop.Load() {
 			index, err := s.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "mu", Purpose: "context", AvailableTokens: 32000}, retentionLocal)
-			if Code(err) == "VERSION_CONFLICT" {
-				continue
-			}
 			if err != nil {
 				errs <- err
 				return

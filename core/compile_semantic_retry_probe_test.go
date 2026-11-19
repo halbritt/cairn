@@ -34,7 +34,7 @@ func TestCompileSemanticReuseAfterCompetingExposure(t *testing.T) {
 				t.Helper()
 				var value int64
 				var version int
-				if err := s.pool.QueryRow(ctx, `SELECT use_generation,current_version FROM cairn.memory_record WHERE record_id=$1`, record.RecordID).Scan(&value, &version); err != nil {
+				if err := s.pool.QueryRow(ctx, `SELECT cairn.record_exposure_generation(record_id),current_version FROM cairn.memory_record WHERE record_id=$1`, record.RecordID).Scan(&value, &version); err != nil {
 					t.Fatal(err)
 				}
 				if version != record.Version {
@@ -83,6 +83,10 @@ func TestCompileSemanticReuseAfterCompetingExposure(t *testing.T) {
 					receipts[lexical.RequestID] = index.Package.ReceiptID
 					if got := generation(); got != int64(calls) {
 						t.Fatalf("competing exposure not committed: generation %d, want %d", got, calls)
+					}
+					// Also advance exposure_epoch to exercise 40001 retry memoization across barrier advances.
+					if _, err := s.pool.Exec(call, `UPDATE cairn.record_exposure_barrier SET exposure_epoch=exposure_epoch+0 WHERE record_id=$1`, record.RecordID); err != nil {
+						t.Fatalf("competing barrier touch: %v", err)
 					}
 				}
 				// Match StartIndex's per-call budget without invoking a worker,

@@ -116,3 +116,32 @@ func clientsCommand(ctx context.Context, args []string, input io.Reader) (any, e
 	}
 	return agentRequest(ctx, forwarded, input)
 }
+
+const refusalStatsHelpDetail = "Read volatile per-process refusal counts for your own authenticated principal, grouped by operation, code and HTTP status."
+
+func agentRefusalStats(ctx context.Context, client *localapi.Client, args []string) (any, error) {
+	f := flags("refusal-stats")
+	op := f.String("operation", "", "filter by exact catalog operation name")
+	code := f.String("code", "", "filter by exact refusal code")
+	if err := f.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return agentFlagHelp("cairn agent [--token-file FILE] [--socket PATH] refusal-stats [--operation OP] [--code CODE]", refusalStatsHelpDetail, f), nil
+		}
+		return nil, invalid(err.Error())
+	}
+	if f.NArg() != 0 {
+		return nil, invalid("refusal-stats takes no positional arguments")
+	}
+	req := localapi.RefusalStatsRequest{Operation: *op, Code: *code}
+	var out localapi.RefusalStatsResponse
+	if err := client.Call(ctx, "refusal-stats", req, &out); err != nil {
+		if core.Code(err) == "NOT_FOUND" {
+			return nil, &core.Error{Code: "UNSUPPORTED_DIAGNOSTICS", Message: "this API does not provide refusal statistics; refusal counts are unknown"}
+		}
+		return nil, err
+	}
+	if out.Schema != localapi.RefusalStatsSchema || out.Storage != "volatile" {
+		return nil, &core.Error{Code: "INVALID_DIAGNOSTICS", Message: "API refusal statistics are invalid or unsupported"}
+	}
+	return out, nil
+}

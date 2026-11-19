@@ -42,7 +42,9 @@ func competingReuseIndex(ctx context.Context, s *Store, req CompileRequest, id s
 	if len(r.Package.Semantic.Index) != 1 || r.Package.Semantic.Index[0].RecordID != id {
 		return fmt.Errorf("competing index did not expose expected record")
 	}
-	return nil
+	// Touch exposure_epoch so retry-memoization fixtures continue to force a real 40001 retry.
+	_, err = s.pool.Exec(ctx, `UPDATE cairn.record_exposure_barrier SET exposure_epoch=exposure_epoch+0 WHERE record_id=$1`, id)
+	return err
 }
 
 func TestSemanticReuseProviderDispositionsAfterRealConflict(t *testing.T) {
@@ -98,7 +100,7 @@ func TestSemanticReuseProviderDispositionsAfterRealConflict(t *testing.T) {
 				t.Fatalf("calls=%d state=%s entries=%+v", calls, index.Package.Semantic.Discovery.State, entries)
 			}
 			var generation, receipts int
-			if err := s.pool.QueryRow(ctx, `SELECT use_generation,(SELECT count(*) FROM cairn.record_use WHERE record_id=$1) FROM cairn.memory_record WHERE record_id=$1`, record.RecordID).Scan(&generation, &receipts); err != nil || generation != 2 || receipts != 2 {
+			if err := s.pool.QueryRow(ctx, `SELECT cairn.record_exposure_generation(record_id),(SELECT count(*) FROM cairn.record_use WHERE record_id=$1) FROM cairn.memory_record WHERE record_id=$1`, record.RecordID).Scan(&generation, &receipts); err != nil || generation != 2 || receipts != 2 {
 				t.Fatalf("generation=%d uses=%d err=%v", generation, receipts, err)
 			}
 		})
@@ -269,7 +271,7 @@ func TestSemanticReuseIsolatedConcurrentPublicCalls(t *testing.T) {
 		t.Fatalf("public call outcomes shared: calls=%d receipts=%d", calls.Load(), len(seen))
 	}
 	var generation, uses int
-	if err := s.pool.QueryRow(ctx, `SELECT use_generation,(SELECT count(*) FROM cairn.record_use WHERE record_id=$1) FROM cairn.memory_record WHERE record_id=$1`, record.RecordID).Scan(&generation, &uses); err != nil || generation != 4 || uses != 4 {
+	if err := s.pool.QueryRow(ctx, `SELECT cairn.record_exposure_generation(record_id),(SELECT count(*) FROM cairn.record_use WHERE record_id=$1) FROM cairn.memory_record WHERE record_id=$1`, record.RecordID).Scan(&generation, &uses); err != nil || generation != 4 || uses != 4 {
 		t.Fatalf("both retries not committed: generation=%d uses=%d err=%v", generation, uses, err)
 	}
 }

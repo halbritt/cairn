@@ -31,6 +31,7 @@ Everyday operations:
   pull-evidence Read a selected supporting source
   version      Identify the CLI and running API builds
   clients      List the client implementations this API process observed for your own principal (--help)
+  refusal-stats List volatile per-process refusal counts for your own principal (--help)
 
 JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
@@ -279,6 +280,13 @@ func clientsOperationHelp() (commandHelp, error) {
 	f := flags("clients")
 	f.Int("limit", 0, "maximum cohorts to return, 1 to 100 (default 50)")
 	return agentFlagHelp("cairn agent [--token-file FILE] [--socket PATH] clients [--limit N]", clientsHelpDetail, f), nil
+}
+
+func refusalStatsOperationHelp() (commandHelp, error) {
+	f := flags("refusal-stats")
+	f.String("operation", "", "filter by exact catalog operation name")
+	f.String("code", "", "filter by exact refusal code")
+	return agentFlagHelp("cairn agent [--token-file FILE] [--socket PATH] refusal-stats [--operation OP] [--code CODE]", refusalStatsHelpDetail, f), nil
 }
 
 func pullOperationHelp(operation string) commandHelp {

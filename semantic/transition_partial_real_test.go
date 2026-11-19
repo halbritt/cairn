@@ -59,9 +59,10 @@ func (r *transitionPartialRecorder) observed() []transitionPartialCall {
 	return append([]transitionPartialCall{}, r.calls...)
 }
 
-// Public compilation legitimately advances memory_record.use_generation once
-// per committed record_use (schema/005_retraction_preview.sql). All other
-// current-record fields and complete historical version rows must stay exact.
+// Routine compilation records exposures in cairn.record_exposure without
+// modifying cairn.memory_record (schema/092_exposure_barrier.sql); lifecycle or
+// maintenance compaction may fold up to addedUses into memory_record.use_generation.
+// All other current-record fields and complete historical version rows must stay exact.
 func transitionPartialHistoryCheck(before, after []transitionEditSource, addedUses map[string]int64) error {
 	if len(before) != len(after) {
 		return fmt.Errorf("historical population changed")
@@ -76,8 +77,8 @@ func transitionPartialHistoryCheck(before, after []transitionEditSource, addedUs
 			return fmt.Errorf("invalid complete current-record snapshot")
 		}
 		var oldGeneration, newGeneration int64
-		if json.Unmarshal(oldRow["use_generation"], &oldGeneration) != nil || json.Unmarshal(newRow["use_generation"], &newGeneration) != nil || addedUses[old.RecordID] < 0 || newGeneration != oldGeneration+addedUses[old.RecordID] {
-			return fmt.Errorf("use generation differs from committed exposure delta: %s", old.RecordID)
+		if json.Unmarshal(oldRow["use_generation"], &oldGeneration) != nil || json.Unmarshal(newRow["use_generation"], &newGeneration) != nil || addedUses[old.RecordID] < 0 || newGeneration < oldGeneration || newGeneration > oldGeneration+addedUses[old.RecordID] {
+			return fmt.Errorf("use generation outside committed exposure delta: %s", old.RecordID)
 		}
 		newRow["use_generation"] = oldRow["use_generation"]
 		if !reflect.DeepEqual(oldRow, newRow) {
@@ -92,15 +93,17 @@ func TestSemanticPartialHistoryExposureGuard(t *testing.T) {
 		RecordRow:  `{"record_id":"one","current_version":1,"sensitivity":"shareable","use_generation":0}`,
 		VersionRow: `{"record_id":"one","version":1,"body":"original","observed_writer":"store-owned"}`}
 	allowed := before
-	allowed.RecordRow = strings.Replace(before.RecordRow, `"use_generation":0`, `"use_generation":2`, 1)
 	for _, change := range []struct {
 		name   string
 		mutate func(*transitionEditSource)
 		valid  bool
 	}{
-		{"exact_committed_exposure_delta", func(*transitionEditSource) {}, true},
+		{"unchanged_record_row", func(*transitionEditSource) {}, true},
+		{"compacted_exposure_delta", func(s *transitionEditSource) {
+			s.RecordRow = strings.Replace(before.RecordRow, `"use_generation":0`, `"use_generation":2`, 1)
+		}, true},
 		{"unexplained_generation", func(s *transitionEditSource) {
-			s.RecordRow = strings.Replace(s.RecordRow, `"use_generation":2`, `"use_generation":3`, 1)
+			s.RecordRow = strings.Replace(before.RecordRow, `"use_generation":0`, `"use_generation":3`, 1)
 		}, false},
 		{"current_version", func(s *transitionEditSource) {
 			s.RecordRow = strings.Replace(s.RecordRow, `"current_version":1`, `"current_version":2`, 1)
@@ -657,8 +660,8 @@ func transitionRealPartialOne(t *testing.T, selected transitionRealSelection, la
 	if d.count(t, `SELECT count(*) FROM cairn.record_use`) != 12 || d.count(t, `SELECT count(*) FROM cairn.record_use WHERE record_id=$1 AND version=1 AND exposure_kind='index'`, a.RecordID) != 6 || d.count(t, `SELECT count(*) FROM cairn.record_use WHERE record_id=$1 AND version=1 AND exposure_kind='index'`, b.RecordID) != 6 || d.count(t, `SELECT count(*) FROM cairn.record_use WHERE record_id=$1`, c.RecordID) != 0 {
 		t.Fatal("compiler exposure population differs from six actual two-source index deliveries")
 	}
-	if d.count(t, `SELECT count(*) FROM cairn.s05_source_audit`) != 18 || d.count(t, `SELECT count(*) FROM cairn.s05_source_audit WHERE operation='INSERT' AND phase<>0`) != 0 || d.count(t, `SELECT count(*) FROM cairn.s05_source_audit WHERE table_name='record_version' AND operation<>'INSERT'`) != 0 || d.count(t, `SELECT count(*) FROM cairn.s05_source_audit WHERE table_name='memory_record' AND operation='UPDATE' AND ((new_row-'use_generation') IS DISTINCT FROM (old_row-'use_generation') OR (new_row->>'use_generation')::bigint<>(old_row->>'use_generation')::bigint+1)`) != 0 {
-		t.Fatal("source audit changed more than store-owned committed-use generation")
+	if d.count(t, `SELECT count(*) FROM cairn.s05_source_audit`) != 6 || d.count(t, `SELECT count(*) FROM cairn.s05_source_audit WHERE operation='INSERT' AND phase<>0`) != 0 || d.count(t, `SELECT count(*) FROM cairn.s05_source_audit WHERE table_name='record_version' AND operation<>'INSERT'`) != 0 || d.count(t, `SELECT count(*) FROM cairn.s05_source_audit WHERE table_name='memory_record' AND operation<>'INSERT'`) != 0 {
+		t.Fatal("source audit changed memory_record or record_version outside phase 0 seeding")
 	}
 	errorMu.Lock()
 	report["background_errors"] = append([]map[string]any{}, backendErrors...)

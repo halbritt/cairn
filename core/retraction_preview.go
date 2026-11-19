@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -67,7 +68,7 @@ func (s *Store) checkRetractionPreview(ctx context.Context, tx pgx.Tx, req Retra
 	}
 	var current bool
 	var expectedDigest []byte
-	err := tx.QueryRow(ctx, `SELECT p.version=m.current_version AND p.use_generation=m.use_generation AND p.expires_at>clock_timestamp(),p.dependency_digest
+	err := tx.QueryRow(ctx, `SELECT p.version=m.current_version AND p.use_generation=cairn.record_exposure_generation(m.record_id) AND p.expires_at>clock_timestamp(),p.dependency_digest
  FROM cairn.retraction_preview p JOIN cairn.memory_record m USING(record_id)
  WHERE p.preview_id=$1 AND p.record_id=$2 AND p.caller=$3`, req.PreviewID, req.RecordID, s.channel.Principal).Scan(&current, &expectedDigest)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -88,13 +89,67 @@ func (s *Store) checkRetractionPreview(ctx context.Context, tx pgx.Tx, req Retra
 	if !current {
 		return failure("STALE_PREVIEW", "record or exposure state changed, or preview expired; obtain a new preview")
 	}
-	return nil
+	return advanceExposureBarriersTx(ctx, tx, refs)
+}
+
+func advanceExposureBarriersTx(ctx context.Context, tx pgx.Tx, refs []RecordVersionRef) error {
+	seen := make(map[string]bool, len(refs))
+	ids := make([]string, 0, len(refs))
+	for _, r := range refs {
+		if !seen[r.RecordID] {
+			seen[r.RecordID] = true
+			ids = append(ids, r.RecordID)
+		}
+	}
+	slices.Sort(ids)
+	mRows, err := tx.Query(ctx, `SELECT record_id::text FROM cairn.memory_record WHERE record_id = ANY($1::uuid[]) ORDER BY record_id FOR NO KEY UPDATE`, ids)
+	if err != nil {
+		return err
+	}
+	for mRows.Next() {
+	}
+	err = mRows.Err()
+	mRows.Close()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO cairn.record_exposure_barrier(record_id, exposure_epoch)
+ SELECT unnest($1::uuid[]), 0 ON CONFLICT (record_id) DO UPDATE SET exposure_epoch = cairn.record_exposure_barrier.exposure_epoch`, ids); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT record_id::text FROM cairn.record_exposure_barrier WHERE record_id = ANY($1::uuid[]) ORDER BY record_id FOR UPDATE`, ids)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `WITH drained AS (
+ DELETE FROM cairn.record_exposure WHERE record_id = ANY($1::uuid[]) RETURNING record_id
+), counts AS (
+ SELECT record_id, count(*)::bigint AS n FROM drained GROUP BY record_id
+)
+UPDATE cairn.memory_record m SET use_generation = m.use_generation + c.n
+FROM counts c WHERE m.record_id = c.record_id`, ids); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE cairn.record_exposure_barrier SET exposure_epoch = exposure_epoch + 1 WHERE record_id = ANY($1::uuid[])`, ids)
+	return err
 }
 
 func dependencyStateDigest(ctx context.Context, tx pgx.Tx, refs []RecordVersionRef) ([]byte, error) {
 	var state []byte
-	err := tx.QueryRow(ctx, `SELECT jsonb_agg(jsonb_build_array(d.record_id,d.version,m.current_version,m.lifecycle,m.use_generation) ORDER BY d.record_id,d.version)::text
- FROM jsonb_to_recordset($1) AS d(record_id uuid,version integer) JOIN cairn.memory_record m ON m.record_id=d.record_id`, refs).Scan(&state)
+	err := tx.QueryRow(ctx, `WITH ids AS (
+ SELECT DISTINCT record_id FROM jsonb_to_recordset($1) AS d(record_id uuid,version integer)
+), exp AS (
+ SELECT e.record_id, count(*)::bigint AS n FROM cairn.record_exposure e JOIN ids USING(record_id) GROUP BY e.record_id
+)
+SELECT jsonb_agg(jsonb_build_array(d.record_id,d.version,m.current_version,m.lifecycle,m.use_generation + COALESCE(exp.n,0)) ORDER BY d.record_id,d.version)::text
+ FROM jsonb_to_recordset($1) AS d(record_id uuid,version integer) JOIN cairn.memory_record m ON m.record_id=d.record_id LEFT JOIN exp ON exp.record_id=m.record_id`, refs).Scan(&state)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +170,7 @@ func (s *Store) previewRetractionTx(ctx context.Context, tx pgx.Tx, recordID str
 	}
 	result := RetractionPreview{PreviewID: uuid.NewString(), RecordID: recordID, Version: record.Version, Uses: []Impact{}, Coverage: "Retained versions, known versioned relation dependents, their supporting evidence and recorded exposures; at most 1000 versions, 1000 evidence references and 1000 uses. Evidence metadata checks retained inline bytes, not source truth or upstream freshness. Unknown derivations and unmanaged dependencies are not inferred."}
 	var generation int64
-	if err = tx.QueryRow(ctx, `SELECT use_generation FROM cairn.memory_record WHERE record_id=$1`, recordID).Scan(&generation); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT cairn.record_exposure_generation($1)`, recordID).Scan(&generation); err != nil {
 		return result, err
 	}
 	result.Dependents, err = dependentVersions(ctx, tx, recordID)

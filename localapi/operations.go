@@ -168,7 +168,7 @@ func bindOperation[Q, R any](spec OperationSpec, call func(context.Context, *Ser
 	spec.RequestType = reflect.TypeFor[Q]()
 	spec.ResponseType = reflect.TypeFor[R]()
 	spec.serve = func(s *Server, w http.ResponseWriter, r *http.Request, c client) {
-		serveJSON(w, r, func(ctx context.Context, req Q) (R, error) {
+		serveServerJSON(s, c, w, r, func(ctx context.Context, req Q) (R, error) {
 			return call(ctx, s, r, c, req)
 		})
 	}

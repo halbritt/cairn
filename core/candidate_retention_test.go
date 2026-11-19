@@ -496,10 +496,6 @@ func TestExpiryWithConcurrentCompilesAndExplanations(t *testing.T) {
 			for !stop.Load() {
 				req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "kappa", Purpose: "context", AvailableTokens: 32000}
 				index, err := s.Index(ctx, req, retentionLocal)
-				// Saturating compiles can still exhaust their bounded retries, retention or not.
-				if Code(err) == "VERSION_CONFLICT" {
-					continue
-				}
 				if err != nil {
 					errs <- err
 					return
@@ -678,8 +674,8 @@ func TestCandidateRetentionMigrationIsSafeUnderTraffic(t *testing.T) {
 	}
 }
 
-// Compiles exposing the same note conflict by design, so spreading their retries is
-// what keeps a search from failing. Fixed delays failed about 16% of these searches.
+// Routine exposures share record_exposure_barrier and append to record_exposure without
+// updating memory_record, so overlapping searches never fail with VERSION_CONFLICT.
 func TestOverlappingCompilesRarelyExhaustRetries(t *testing.T) {
 	ctx := context.Background()
 	s := retentionStore(t)
@@ -715,8 +711,8 @@ func TestOverlappingCompilesRarelyExhaustRetries(t *testing.T) {
 	if total < 20 {
 		t.Fatalf("only %d searches finished", total)
 	}
-	if float64(conflicted.Load()) > float64(total)*0.08 {
-		t.Fatalf("%d of %d overlapping searches failed", conflicted.Load(), total)
+	if conflicted.Load() != 0 {
+		t.Fatalf("%d of %d overlapping searches failed with VERSION_CONFLICT", conflicted.Load(), total)
 	}
 }
 

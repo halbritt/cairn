@@ -303,7 +303,35 @@ func (s *Store) ExpireCandidateDetail(ctx context.Context, req CandidateRetentio
 			}
 		}
 	}
+	_ = s.compactRecordExposures(ctx, 200)
 	return result, nil
+}
+
+// compactRecordExposures folds accumulated record_exposure rows into
+// memory_record.use_generation without blocking active searches (SKIP LOCKED).
+func (s *Store) compactRecordExposures(ctx context.Context, limit int) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	_, err = tx.Exec(ctx, `WITH cand AS (
+ SELECT record_id FROM cairn.record_exposure GROUP BY record_id ORDER BY record_id LIMIT $1
+), locked_m AS (
+ SELECT m.record_id FROM cairn.memory_record m JOIN cand USING(record_id) ORDER BY m.record_id FOR NO KEY UPDATE SKIP LOCKED
+), locked_b AS (
+ SELECT b.record_id FROM cairn.record_exposure_barrier b JOIN locked_m USING(record_id) ORDER BY b.record_id FOR UPDATE SKIP LOCKED
+), drained AS (
+ DELETE FROM cairn.record_exposure e USING locked_b lb WHERE e.record_id = lb.record_id RETURNING e.record_id
+), counts AS (
+ SELECT record_id, count(*)::bigint AS n FROM drained GROUP BY record_id
+)
+UPDATE cairn.memory_record m SET use_generation = m.use_generation + c.n
+FROM counts c WHERE m.record_id = c.record_id`, limit)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) candidateRetentionCensus(ctx context.Context, cutoff time.Time, keep int) (eligible, protected int, err error) {
