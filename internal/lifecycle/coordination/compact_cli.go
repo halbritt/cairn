@@ -488,7 +488,7 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	}
 	if op == "read" {
 		readOut := nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "kind", event.Get("kind"), "sender", event.Get("from"), "source", event.Get("ref"), "body", body)
-		for _, k := range []string{"action", "supersedes", "expect_next_by"} {
+		for _, k := range []string{"action", "supersedes", "expect_next_by", "expect_by"} {
 			if v := event.Get(k); value.Truth(v) {
 				readOut.Set(k, v)
 			}

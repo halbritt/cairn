@@ -224,6 +224,7 @@ type sendArgs struct {
 	Action        string                 `json:"action,omitempty" jsonschema:"Notice intent action: none, review or decide. Notices only."`
 	Supersedes    string                 `json:"supersedes,omitempty" jsonschema:"Sender-scoped topic key superseded by this notice. Notices only."`
 	ExpectNextBy  string                 `json:"expect_next_by,omitempty" jsonschema:"Optional RFC3339 time when the next update is expected. Notices only."`
+	ExpectBy      string                 `json:"expect_by,omitempty" jsonschema:"Optional RFC3339 advisory deadline when completion or response is expected. Requests only."`
 	AgentID       string                 `json:"agent_id,omitempty" jsonschema:"Your registered agent UUID. Only when automatic session lookup fails."`
 	ExecutionID   string                 `json:"execution_id,omitempty" jsonschema:"Your current execution UUID. Required with agent_id."`
 }
@@ -237,6 +238,7 @@ type sendResult struct {
 	Action       string                `json:"action,omitempty"`
 	Supersedes   string                `json:"supersedes,omitempty"`
 	ExpectNextBy *time.Time            `json:"expect_next_by,omitempty"`
+	ExpectBy     *time.Time            `json:"expect_by,omitempty"`
 	Source       core.RecordVersionRef `json:"source"`
 	RequestID    string                `json:"request_id"`
 }
@@ -316,6 +318,17 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 			expectNextBy = &parsed
 		}
 	}
+	var expectBy *time.Time
+	if args.ExpectBy != "" {
+		if args.Kind != "request" {
+			return toolResult(nil, messagingError("INVALID_REQUEST", "expect_by applies to requests only"), 0)
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, args.ExpectBy)
+		if err != nil || parsed.IsZero() || parsed.Year() < 1 || parsed.Year() > 9999 {
+			return toolResult(nil, messagingError("INVALID_REQUEST", "expect_by must be an RFC3339 timestamp"), 0)
+		}
+		expectBy = &parsed
+	}
 	ref, _, err := t.self(ctx, request, args.AgentID, args.ExecutionID)
 	if err != nil {
 		return toolResult(nil, err, 0)
@@ -347,7 +360,7 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 		}
 		source = core.RecordVersionRef{RecordID: record.RecordID, Version: record.Version}
 	}
-	publish := core.PublishEventRequest{Action: args.Action, Supersedes: args.Supersedes, ExpectNextBy: expectNextBy, RequestID: args.RequestID, Repo: repo, Kind: args.Kind, Ref: source, Destination: destination, CausationID: args.CausationID, CorrelationID: args.CorrelationID, NoticePolicy: policy}
+	publish := core.PublishEventRequest{Action: args.Action, Supersedes: args.Supersedes, ExpectNextBy: expectNextBy, ExpectBy: expectBy, RequestID: args.RequestID, Repo: repo, Kind: args.Kind, Ref: source, Destination: destination, CausationID: args.CausationID, CorrelationID: args.CorrelationID, NoticePolicy: policy}
 	var event core.AgentEvent
 	if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 		return toolResult(nil, err, 0)
@@ -355,7 +368,7 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 	if uuid.Validate(event.EventID) != nil || event.Ref != source || event.Destination != destination {
 		return toolResult(nil, messagingError("SCHEMA_MISMATCH", "publish returned a different source or destination"), 0)
 	}
-	return toolResult(sendResult{EventID: event.EventID, From: event.From, To: event.Destination, Recipient: recipient, Kind: event.Kind, Action: event.Action, Supersedes: event.Supersedes, ExpectNextBy: event.ExpectNextBy, Source: source, RequestID: args.RequestID}, nil, t.config.AvailableTokens)
+	return toolResult(sendResult{EventID: event.EventID, From: event.From, To: event.Destination, Recipient: recipient, Kind: event.Kind, Action: event.Action, Supersedes: event.Supersedes, ExpectNextBy: event.ExpectNextBy, ExpectBy: event.ExpectBy, Source: source, RequestID: args.RequestID}, nil, t.config.AvailableTokens)
 }
 
 type inboxArgs struct {
@@ -376,6 +389,7 @@ type deliveryView struct {
 	Action        string                 `json:"action,omitempty"`
 	Supersedes    string                 `json:"supersedes,omitempty"`
 	ExpectNextBy  *time.Time             `json:"expect_next_by,omitempty"`
+	ExpectBy      *time.Time             `json:"expect_by,omitempty"`
 	SupersededBy  string                 `json:"superseded_by,omitempty"`
 	From          string                 `json:"from"`
 	CreatedAt     time.Time              `json:"created_at"`
@@ -387,7 +401,7 @@ type deliveryView struct {
 }
 
 func viewDelivery(d core.AgentDelivery) deliveryView {
-	return deliveryView{DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, LeaseUntil: d.LeaseUntil, State: d.State, Attempts: d.Attempts, EventID: d.Event.EventID, Kind: d.Event.Kind, Action: d.Event.Action, Supersedes: d.Event.Supersedes, ExpectNextBy: d.Event.ExpectNextBy, SupersededBy: d.SupersededBy, From: d.Event.From, CreatedAt: d.Event.CreatedAt, CausationID: d.Event.CausationID, CorrelationID: d.Event.CorrelationID, Source: d.Event.Ref, Result: d.Result, Code: d.Code}
+	return deliveryView{DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, LeaseUntil: d.LeaseUntil, State: d.State, Attempts: d.Attempts, EventID: d.Event.EventID, Kind: d.Event.Kind, Action: d.Event.Action, Supersedes: d.Event.Supersedes, ExpectNextBy: d.Event.ExpectNextBy, ExpectBy: d.Event.ExpectBy, SupersededBy: d.SupersededBy, From: d.Event.From, CreatedAt: d.Event.CreatedAt, CausationID: d.Event.CausationID, CorrelationID: d.Event.CorrelationID, Source: d.Event.Ref, Result: d.Result, Code: d.Code}
 }
 
 type inboxResult struct {
@@ -573,6 +587,7 @@ type eventStatusResult struct {
 	Action       string                `json:"action,omitempty"`
 	Supersedes   string                `json:"supersedes,omitempty"`
 	ExpectNextBy *time.Time            `json:"expect_next_by,omitempty"`
+	ExpectBy     *time.Time            `json:"expect_by,omitempty"`
 	From         string                `json:"from"`
 	To           core.EventDestination `json:"to"`
 	CreatedAt    time.Time             `json:"created_at"`
@@ -604,7 +619,7 @@ func (t messagingTools) eventStatus(ctx context.Context, request *mcp.CallToolRe
 	if err != nil {
 		return toolResult(nil, err, 0)
 	}
-	result := eventStatusResult{EventID: status.Event.EventID, Kind: status.Event.Kind, Action: status.Event.Action, Supersedes: status.Event.Supersedes, ExpectNextBy: status.Event.ExpectNextBy, From: status.Event.From, To: status.Event.Destination, CreatedAt: status.Event.CreatedAt, Deliveries: make([]eventDeliveryStatus, 0, len(status.Deliveries)), NextAfter: status.NextAfter, More: status.More}
+	result := eventStatusResult{EventID: status.Event.EventID, Kind: status.Event.Kind, Action: status.Event.Action, Supersedes: status.Event.Supersedes, ExpectNextBy: status.Event.ExpectNextBy, ExpectBy: status.Event.ExpectBy, From: status.Event.From, To: status.Event.Destination, CreatedAt: status.Event.CreatedAt, Deliveries: make([]eventDeliveryStatus, 0, len(status.Deliveries)), NextAfter: status.NextAfter, More: status.More}
 	for _, d := range status.Deliveries {
 		entry := eventDeliveryStatus{DeliveryID: d.DeliveryID, Consumer: d.Consumer, State: d.State, Attempts: d.Attempts, LeaseUntil: d.LeaseUntil, CompletedAt: d.CompletedAt, Code: d.Code, SupersededBy: d.SupersededBy, Result: d.Result}
 		if d.Diagnosis != nil {

@@ -444,6 +444,13 @@
           "event_id": {
             "type": "string"
           },
+          "expect_by": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "expect_next_by": {
             "format": "date-time",
             "type": [
@@ -8510,6 +8517,13 @@
           "destination": {
             "$ref": "#/components/schemas/core.EventDestination"
           },
+          "expect_by": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "expect_next_by": {
             "format": "date-time",
             "type": [
@@ -8635,6 +8649,13 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "expect_by": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "expect_next_by": {
@@ -22856,6 +22877,13 @@
                           {
                             "type": "null"
                           }
+                        ]
+                      },
+                      "expect_by": {
+                        "format": "date-time",
+                        "type": [
+                          "string",
+                          "null"
                         ]
                       },
                       "expect_next_by": {

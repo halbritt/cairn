@@ -65,6 +65,34 @@ cairn status authorize --operator --repo /home/halbritt/git/cairn --stream found
   profiles without leaking stream existence, and a `shareable` stream cannot be
   downgraded to `local`.
 
+## Overdue checkpoint and `expect_by` notices (`CAIRN-467`)
+
+When a non-`done` workstream entry declares `next_checkpoint`, a notice declares
+`expect_next_by`, or a request declares `expect_by` (`--expect-by RFC3339`),
+`cairn schedule-serve --repo COLLECTION [--overdue-grace-seconds N]` (or one-shot
+`cairn checkpoint-overdue-sweep`) evaluates missed deadlines after `deadline + grace`
+(default grace `60` seconds):
+
+- **Subscribers**:
+  - Workstreams: active topic subscribers of `workstream-overdue`, `overdue`, or
+    `workstream-overdue.<stream>` (`cairn subscribe --request-id UUID --topic workstream-overdue`).
+  - Notices (`expect_next_by`): each addressed notice recipient (`agent/...`).
+  - Requests (`expect_by`): the request publisher (`agent/...`), plus active
+    subscribers of `overdue.<topic>` for topic requests (or `request-overdue`
+    for operator-published requests).
+- **Satisfaction before `deadline + grace`**: no overdue event is emitted if the
+  workstream reaches `done`, clears or advances `next_checkpoint`, receives a
+  board revision at/after `next_checkpoint`, or receives a newer event on that
+  stream from an authorized writer; if a newer notice/event from the sender on
+  that topic arrives; or if a request is completed (`handled`), cancelled, or
+  receives a `response` or progress notice referencing its `event_id` or `correlation_id`.
+- **Deduplication and coalescing**: `cairn.agent_overdue_checkpoint` persists
+  `(repo, subscriber_consumer, source_kind, source_key, deadline_at)` so at most
+  one urgent (`action=review`, `urgency=urgent`) overdue notice is emitted per
+  missed deadline across host restarts. Additional missed deadlines for the same
+  subscriber coalesce in `coalesced_pending` while an earlier overdue notice
+  delivery remains `pending` or `leased`, and re-verify staleness before emitting.
+
 ## Deterministic Kanban rendering
 
 `scripts/render_kanban_board.py` combines `cairn status get` with `plane issue list`

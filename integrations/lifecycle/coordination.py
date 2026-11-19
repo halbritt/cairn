@@ -2841,7 +2841,7 @@ def compact_inbox_command(argv):
     if args.operation == 'read':
         read_out = dict(schema='cairn.compact-inbox/1', ok=True, kind=event['kind'],
                         sender=event['from'], source=event['ref'], body=body)
-        for key in ('action', 'supersedes', 'expect_next_by'):
+        for key in ('action', 'supersedes', 'expect_next_by', 'expect_by'):
             if event.get(key):
                 read_out[key] = event[key]
         print(json.dumps(read_out))
@@ -3476,7 +3476,7 @@ def inbox_handoff(config, session, delivery, attempt_id, request_ids, *, scope=(
                    read_input=event['ref'], completion=[*journaled, 'complete'],
                    acknowledgement=[*journaled, 'ack'], state_dir=config['state_dir'],
                    commands=commands, request_ids=request_ids)
-    for key in ('action', 'supersedes', 'expect_next_by'):
+    for key in ('action', 'supersedes', 'expect_next_by', 'expect_by'):
         if event.get(key):
             context[key] = event[key]
     if event['kind'] == 'request':
@@ -3743,7 +3743,7 @@ def inbox_context(config, state, path, observation, wake_binding=None, *, joined
         source = event['ref']
         header = (f"Cairn {event['kind']} from {event['from']}; exact source "
                   f"{source['record_id']} version {source['version']}. ")
-        intent_parts = [f"{k}={event[k]}" for k in ('action', 'supersedes', 'expect_next_by') if event.get(k)]
+        intent_parts = [f"{k}={event[k]}" for k in ('action', 'supersedes', 'expect_next_by', 'expect_by') if event.get(k)]
         if intent_parts:
             header += f"Intent: {', '.join(intent_parts)}. "
         try:

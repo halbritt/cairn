@@ -109,14 +109,17 @@ func TestPublishAndSendNoticeIntentFlags(t *testing.T) {
 		help, err := run(ctx, helpArgs, strings.NewReader(""))
 		if err != nil || !strings.Contains(string(help.(commandHelp)), "--action") ||
 			!strings.Contains(string(help.(commandHelp)), "--supersedes") ||
-			!strings.Contains(string(help.(commandHelp)), "--expect-next-by") {
-			t.Fatalf("%v help missing notice intent flags: %v %v", helpArgs, help, err)
+			!strings.Contains(string(help.(commandHelp)), "--expect-next-by") ||
+			!strings.Contains(string(help.(commandHelp)), "--expect-by") {
+			t.Fatalf("%v help missing notice/request deadline flags: %v %v", helpArgs, help, err)
 		}
 	}
 	for _, flags := range [][]string{
 		{"--kind", "request", "--action", "decide"},
 		{"--kind", "request", "--supersedes", "stream/a"},
 		{"--kind", "request", "--expect-next-by", "2026-11-20T12:00:00Z"},
+		{"--kind", "notice", "--expect-by", "2026-11-20T12:00:00Z"},
+		{"--kind", "request", "--expect-by", "not-a-timestamp"},
 		{"--kind", "notice", "--action", "bad"},
 		{"--kind", "notice", "--supersedes", "bad space"},
 		{"--kind", "notice", "--expect-next-by", "not-a-timestamp"},
@@ -151,7 +154,7 @@ func TestPublishAndSendNoticeIntentFlags(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true,
 			"status": "OK", "data": map[string]any{"event_id": uuid.NewString(),
 				"kind": received.Kind, "ref": received.Ref, "destination": received.Destination,
-				"action": received.Action, "supersedes": received.Supersedes, "expect_next_by": received.ExpectNextBy}})
+				"action": received.Action, "supersedes": received.Supersedes, "expect_next_by": received.ExpectNextBy, "expect_by": received.ExpectBy}})
 	})}
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
@@ -160,5 +163,12 @@ func TestPublishAndSendNoticeIntentFlags(t *testing.T) {
 		"--action", "review", "--supersedes", "stream/build", "--expect-next-by", "2026-11-20T12:00:00Z", uuid.NewString()}, strings.NewReader(""))
 	if err != nil || received.Action != "review" || received.Supersedes != "stream/build" || received.ExpectNextBy == nil {
 		t.Fatalf("publish notice intent fields: %+v %v", received, err)
+	}
+	received = core.PublishEventRequest{}
+	_, err = run(ctx, []string{"publish", "--socket", filepath.Join(root, "api.sock"), "--token-file", tokenPath,
+		"--request-id", uuid.NewString(), "--to", "agent:worker", "--kind", "request", "--version", "1",
+		"--expect-by", "2026-11-20T13:00:00Z", uuid.NewString()}, strings.NewReader(""))
+	if err != nil || received.ExpectBy == nil || received.Kind != "request" {
+		t.Fatalf("publish request expect-by field: %+v %v", received, err)
 	}
 }

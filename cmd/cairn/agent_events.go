@@ -29,7 +29,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
   publish --request-id UUID (--to PRINCIPAL | --topic TOPIC | --resolution FILE | --pool POOL) --kind KIND --version N RECORD_UUID
     [--workspace /PATH --capability NAME --harness NAME --model NAME] (pool selectors)
     [--causation-id UUID] [--correlation-id UUID]
-    [--admission-expires-at RFC3339] [--task-deadline RFC3339]
+    [--admission-expires-at RFC3339] [--task-deadline RFC3339] [--expect-by RFC3339]
     [--response-deadline RFC3339 --response-policy all|partial]
     [--notice-urgency routine|urgent --notice-defer-seconds 0..60] (notice only)
     [--action none|review|decide] [--supersedes TOPIC_KEY] [--expect-next-by RFC3339] (notice only)
@@ -124,6 +124,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	shareable := f.Bool("shareable", false, "allow hosted result reads")
 	admissionExpiresAt := f.String("admission-expires-at", "", "expiration instant for unclaimed request admission (RFC3339)")
 	taskDeadline := f.String("task-deadline", "", "execution deadline instant for running request (RFC3339)")
+	requestExpectBy := f.String("expect-by", "", "advisory completion or response deadline for request (RFC3339)")
 	responseDeadline := f.String("response-deadline", "", "response group deadline instant (RFC3339)")
 	responsePolicy := f.String("response-policy", "", "response group partial collection policy (all|partial)")
 	noticeUrgency := f.String("notice-urgency", "", "opt-in notice wake policy (routine|urgent)")
@@ -152,7 +153,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	case "event-admission-preview":
 		allowed += "repo to topic "
 	case "publish":
-		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy notice-urgency notice-defer-seconds action supersedes expect-next-by notice-delivery notice-expires-at "
+		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline expect-by response-deadline response-policy notice-urgency notice-defer-seconds action supersedes expect-next-by notice-delivery notice-expires-at "
 	case "notice-flush":
 		allowed += "request-id "
 	case "notice-pending":
@@ -300,7 +301,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		}
 		provided := map[string]bool{}
 		f.Visit(func(value *flag.Flag) { provided[value.Name] = true })
-		var parsedAdmission, parsedDeadline *time.Time
+		var parsedAdmission, parsedDeadline, parsedExpectBy *time.Time
 		if provided["admission-expires-at"] {
 			if strings.TrimSpace(*admissionExpiresAt) == "" {
 				return nil, invalid("--admission-expires-at cannot be explicitly empty")
@@ -320,6 +321,19 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 				return nil, invalid("invalid --task-deadline: must be an RFC3339 timestamp")
 			}
 			parsedDeadline = &t
+		}
+		if provided["expect-by"] {
+			if *kind != "request" {
+				return nil, invalid("--expect-by requires --kind request")
+			}
+			if strings.TrimSpace(*requestExpectBy) == "" {
+				return nil, invalid("--expect-by cannot be explicitly empty")
+			}
+			t, err := parseEventTimestamp(*requestExpectBy)
+			if err != nil || t.IsZero() || t.Year() < 1 || t.Year() > 9999 {
+				return nil, invalid("invalid --expect-by: must be an RFC3339 timestamp")
+			}
+			parsedExpectBy = &t
 		}
 		var parsedResponseGroup *core.ResponseGroupSpec
 		if provided["response-deadline"] || provided["response-policy"] {
@@ -410,6 +424,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 			Action:             *noticeAction,
 			Supersedes:         *noticeSupersedes,
 			ExpectNextBy:       parsedExpectNextBy,
+			ExpectBy:           parsedExpectBy,
 			RequestID:          *request,
 			Repo:               *repo,
 			Kind:               *kind,

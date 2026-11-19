@@ -104,6 +104,15 @@ ON CONFLICT (event_uuid,generation) DO NOTHING`, result.Generation); err != nil 
 		IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'cairn' AND tablename = 'agent_organic_notice') THEN
 			UPDATE cairn.agent_organic_notice SET state='restore_fenced' WHERE state='queued';
 		END IF;
+		IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'cairn' AND tablename = 'agent_overdue_checkpoint') THEN
+			UPDATE cairn.agent_overdue_checkpoint SET state='skipped', skip_reason='restore_fenced', updated_at=clock_timestamp() WHERE state='coalesced_pending';
+		END IF;
+		IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'cairn' AND tablename = 'agent_overdue_fence') THEN
+			INSERT INTO cairn.agent_overdue_fence(generation, fenced_at, max_event_position)
+			SELECT generation, clock_timestamp(), COALESCE((SELECT max(position) FROM cairn.agent_event), 0)
+			FROM cairn.retrieval_generation WHERE singleton
+			ON CONFLICT (generation) DO NOTHING;
+		END IF;
 	END $$;`); err != nil {
 		return result, err
 	}

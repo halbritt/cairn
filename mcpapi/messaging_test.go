@@ -904,8 +904,19 @@ func TestSendAndInboxNoticeIntentFields(t *testing.T) {
 	f.refused(t, "cairn_send", map[string]any{
 		"request_id": uuid.NewString(), "to": "agent-9", "body": "Bad.", "expect_next_by": "0000-01-01T00:00:00Z",
 	}, "expect_next_by")
+	f.refused(t, "cairn_send", map[string]any{
+		"request_id": uuid.NewString(), "to": "agent-9", "body": "Bad.", "expect_by": "2026-11-20T12:00:00Z",
+	}, "requests")
 	if len(f.api.taken()) != 0 {
 		t.Fatal("invalid notice intent fields wrote before refusing")
+	}
+	f.ok(t, "cairn_send", map[string]any{
+		"request_id": uuid.NewString(), "to": "agent-9", "kind": "request", "body": "Run checks.", "expect_by": "2026-11-20T13:00:00Z",
+	})
+	reqCalls := f.api.taken()
+	reqPub := reqCalls[len(reqCalls)-1]
+	if reqPub.Operation != "event-publish" || reqPub.Body["expect_by"] != "2026-11-20T13:00:00Z" {
+		t.Fatalf("cairn_send did not forward request expect_by: %+v", reqPub.Body)
 	}
 	prevHandler := f.api.handler
 	t.Cleanup(func() { f.api.handler = prevHandler })

@@ -73,7 +73,7 @@ JSON commands (read one request from stdin):
   coordination-review event-reissue native-hold-release stopped-inbox-expire (local operator recovery; see docs/event-recovery.md)
   delivery-alerts (local operator; owner alerts for starved online sessions; see docs/delivery-health.md)
   session-successor-authorize session-successor-revoke (local operator takeover; see docs/successor-event-continuity.md)
-  event-schedule schedule-list schedule-cancel schedule-tick schedule-serve (local operator; see docs/event-scheduling.md)
+  event-schedule schedule-list schedule-cancel schedule-tick checkpoint-overdue-sweep schedule-serve (local operator; see docs/event-scheduling.md)
   create edit revise append replace set-sections cite delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal proposal-history worker-pool-configure candidate-retention candidate-reclaim
   supersession RECORD_UUID

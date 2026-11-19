@@ -15,6 +15,8 @@ type ScheduleServeOnceResult struct {
 	PublishedNotices             int64  `json:"published_notices"`
 	ScheduleOccurrences          int    `json:"schedule_occurrences"`
 	DeferredSchedules            int    `json:"deferred_schedules,omitempty"`
+	OverdueNotices               int    `json:"overdue_notices,omitempty"`
+	CoalescedOverdue             int    `json:"coalesced_overdue,omitempty"`
 	UnrecordedRefusalDiagnostics int    `json:"unrecorded_refusal_diagnostics,omitempty"`
 	DiagnosticWarning            string `json:"diagnostic_warning,omitempty"`
 }
@@ -23,11 +25,15 @@ func serveSchedules(ctx context.Context, store *core.Store, args []string, log i
 	f := flags("schedule-serve")
 	repo := f.String("repo", "", "collection repository")
 	once := f.Bool("once", false, "run one complete scheduler tick and exit")
+	overdueGrace := f.Int("overdue-grace-seconds", core.DefaultOverdueGraceSeconds, "grace period before overdue checkpoint or expect_by notice")
 	if err := f.Parse(args); err != nil {
 		return nil, err
 	}
 	if f.NArg() != 0 || *repo == "" {
 		return nil, invalid("schedule-serve requires --repo and no positional arguments")
+	}
+	if *overdueGrace < 0 || *overdueGrace > core.MaxOverdueGraceSeconds {
+		return nil, invalid("--overdue-grace-seconds must be 0-86400")
 	}
 	ready := false
 	for ctx.Err() == nil {
@@ -65,6 +71,15 @@ func serveSchedules(ctx context.Context, store *core.Store, args []string, log i
 			return nil, err
 		}
 		publishedNotices, err := store.DrainWaitOutbox(tickCtx, *repo, 50)
+		if err != nil {
+			cancel()
+			if ctx.Err() != nil {
+				return nil, nil
+			}
+			return nil, err
+		}
+		graceVal := *overdueGrace
+		overdueRes, err := store.SweepOverdueDeadlines(tickCtx, core.OverdueSweepRequest{Repo: *repo, GraceSeconds: &graceVal})
 		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
@@ -76,8 +91,13 @@ func serveSchedules(ctx context.Context, store *core.Store, args []string, log i
 			fmt.Fprintln(log, "scheduler ready")
 			ready = true
 		}
-		if result.UnrecordedRefusalDiagnostics > 0 {
-			fmt.Fprintf(log, "schedule refusal_diagnostics_unrecorded=%d warning=%q\n", result.UnrecordedRefusalDiagnostics, result.DiagnosticWarning)
+		unrecordedDiag := result.UnrecordedRefusalDiagnostics + overdueRes.UnrecordedRefusalDiagnostics
+		diagWarn := result.DiagnosticWarning
+		if diagWarn == "" {
+			diagWarn = overdueRes.DiagnosticWarning
+		}
+		if unrecordedDiag > 0 {
+			fmt.Fprintf(log, "schedule refusal_diagnostics_unrecorded=%d warning=%q\n", unrecordedDiag, diagWarn)
 		}
 		if *once {
 			return ScheduleServeOnceResult{
@@ -86,8 +106,10 @@ func serveSchedules(ctx context.Context, store *core.Store, args []string, log i
 				PublishedNotices:             publishedNotices,
 				ScheduleOccurrences:          len(result.Occurrences),
 				DeferredSchedules:            result.Deferred,
-				UnrecordedRefusalDiagnostics: result.UnrecordedRefusalDiagnostics,
-				DiagnosticWarning:            result.DiagnosticWarning,
+				OverdueNotices:               overdueRes.EmittedNotices,
+				CoalescedOverdue:             overdueRes.CoalescedItems,
+				UnrecordedRefusalDiagnostics: unrecordedDiag,
+				DiagnosticWarning:            diagWarn,
 			}, nil
 		}
 		for _, item := range result.Occurrences {
@@ -98,6 +120,9 @@ func serveSchedules(ctx context.Context, store *core.Store, args []string, log i
 		}
 		if publishedNotices > 0 {
 			fmt.Fprintf(log, "wait outbox published=%d\n", publishedNotices)
+		}
+		if overdueRes.EmittedNotices > 0 || overdueRes.CoalescedItems > 0 {
+			fmt.Fprintf(log, "overdue notices published=%d coalesced=%d\n", overdueRes.EmittedNotices, overdueRes.CoalescedItems)
 		}
 		timer := time.NewTimer(time.Second)
 		select {

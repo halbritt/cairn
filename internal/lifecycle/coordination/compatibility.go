@@ -2272,7 +2272,7 @@ func (c *CLI) renderCompactAttemptContext(ctx context.Context, config *value.Val
 	header := fmt.Sprintf("Cairn %s from %s; exact source %s version %s. ",
 		nativeText(event.Get("kind")), nativeText(event.Get("from")), nativeText(recID), sourceScalarText(ver))
 	var intentParts []string
-	for _, k := range []string{"action", "supersedes", "expect_next_by"} {
+	for _, k := range []string{"action", "supersedes", "expect_next_by", "expect_by"} {
 		if v := event.Get(k); value.Truth(v) {
 			intentParts = append(intentParts, k+"="+nativeText(v))
 		}

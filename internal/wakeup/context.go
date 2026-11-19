@@ -18,6 +18,7 @@ type WakeContext struct {
 	Response                []string                `json:"response,omitempty"`
 	AdmissionExpiresAt      *time.Time              `json:"admission_expires_at,omitempty"`
 	TaskDeadline            *time.Time              `json:"task_deadline,omitempty"`
+	ExpectBy                *time.Time              `json:"expect_by,omitempty"`
 	ProviderObservationFile string                  `json:"provider_observation_file,omitempty"`
 	ProviderHarness         string                  `json:"provider_harness,omitempty"`
 	Schema                  string                  `json:"schema"`
@@ -42,7 +43,8 @@ type WakeContext struct {
 func writeContext(c Config, w core.WakeAttempt, executable string, deadline time.Time) (WakeContext, string, error) {
 	context := WakeContext{
 		AdmissionExpiresAt: w.Delivery.Event.AdmissionExpiresAt, TaskDeadline: w.Delivery.Event.TaskDeadline,
-		Schema: "cairn.wake-context/1", ExecutionID: w.ID, Binding: c.Name,
+		ExpectBy: w.Delivery.Event.ExpectBy,
+		Schema:   "cairn.wake-context/1", ExecutionID: w.ID, Binding: c.Name,
 		AttemptID: w.ID, NativeRegistration: true, Socket: c.Socket, TokenFile: c.AgentToken,
 		Inbox: c.Principal, Collection: c.Repo, Workspace: c.Directory,
 		DeliveryID: w.Delivery.DeliveryID, EventID: w.Delivery.Event.EventID,

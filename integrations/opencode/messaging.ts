@@ -18,7 +18,7 @@ type DeliveryRecord = {
   delivery_id: string, lease_id?: string, lease_until?: string, state: string, attempts?: number,
   result?: RecordRef, code?: string, superseded_by?: string, consumer?: string, completed_at?: string, diagnosis?: unknown,
   event: {
-    event_id: string, kind: string, action?: string, supersedes?: string, expect_next_by?: string,
+    event_id: string, kind: string, action?: string, supersedes?: string, expect_next_by?: string, expect_by?: string,
     from: string, created_at: string,
     causation_id?: string, correlation_id?: string, ref: RecordRef,
     destination: { type: string, name: string },
@@ -66,6 +66,7 @@ function viewDelivery(d: DeliveryRecord) {
     ...(d.event.action ? { action: d.event.action } : {}),
     ...(d.event.supersedes ? { supersedes: d.event.supersedes } : {}),
     ...(d.event.expect_next_by ? { expect_next_by: d.event.expect_next_by } : {}),
+    ...(d.event.expect_by ? { expect_by: d.event.expect_by } : {}),
     ...(d.superseded_by ? { superseded_by: d.superseded_by } : {}),
     from: d.event.from, created_at: d.event.created_at,
     ...(d.event.causation_id ? { causation_id: d.event.causation_id } : {}),
@@ -221,6 +222,7 @@ export const send = validatedTool({
     action: z.string().optional().describe("Notice action intent: none, review or decide. Notices only."),
     supersedes: z.string().optional().describe("Sender-scoped topic key (1-128 ASCII letters, digits or _.:/-) that supersedes older pending notices from you. Notices only."),
     expect_next_by: z.string().optional().describe("Optional RFC3339 timestamp when the next update is expected. Notices only."),
+    expect_by: z.string().optional().describe("Optional RFC3339 advisory deadline when completion or response is expected. Requests only."),
     ...sessionOverrideFields,
   },
   async execute(args, context) {
@@ -264,6 +266,16 @@ export const send = validatedTool({
         }
       }
     }
+    if (args.expect_by !== undefined && args.expect_by !== "") {
+      if (kind !== "request") {
+        throw new Error("INVALID_REQUEST: expect_by applies to requests only")
+      }
+      const match = messagingRFC3339.exec(args.expect_by)
+      const year = match ? Number(match[1]) : 0
+      if (!match || year < 1 || year > 9999 || Number.isNaN(Date.parse(args.expect_by))) {
+        throw new Error("INVALID_REQUEST: expect_by must be an RFC3339 timestamp")
+      }
+    }
     const config = await settings("send", context)
     const { ref } = await selfSession(config, context, args.agent_id, args.execution_id)
     const { destination, recipient } = await resolveDestination(config, context, args.to)
@@ -291,7 +303,8 @@ export const send = validatedTool({
       ...(args.action ? { action: args.action } : {}),
       ...(args.supersedes ? { supersedes: args.supersedes } : {}),
       ...(args.expect_next_by ? { expect_next_by: args.expect_next_by } : {}),
-    }, ref) as { event_id?: string, from?: string, kind?: string, action?: string, supersedes?: string, expect_next_by?: string, ref?: RecordRef, destination?: { type: string, name: string } }
+      ...(args.expect_by ? { expect_by: args.expect_by } : {}),
+    }, ref) as { event_id?: string, from?: string, kind?: string, action?: string, supersedes?: string, expect_next_by?: string, expect_by?: string, ref?: RecordRef, destination?: { type: string, name: string } }
     if (!isUUID(published.event_id) || published.ref?.record_id !== source.record_id || published.ref?.version !== source.version ||
         published.destination?.type !== destination.type || published.destination?.name !== destination.name) {
       throw new Error("SCHEMA_MISMATCH: publish returned a different source or destination")
@@ -302,6 +315,7 @@ export const send = validatedTool({
       ...(published.action ? { action: published.action } : {}),
       ...(published.supersedes ? { supersedes: published.supersedes } : {}),
       ...(published.expect_next_by ? { expect_next_by: published.expect_next_by } : {}),
+      ...(published.expect_by ? { expect_by: published.expect_by } : {}),
       source, request_id: args.request_id,
     }, config)
   },
@@ -477,6 +491,7 @@ export const event_status = validatedTool({
       ...(status.event.action ? { action: status.event.action } : {}),
       ...(status.event.supersedes ? { supersedes: status.event.supersedes } : {}),
       ...(status.event.expect_next_by ? { expect_next_by: status.event.expect_next_by } : {}),
+      ...(status.event.expect_by ? { expect_by: status.event.expect_by } : {}),
       from: status.event.from,
       to: status.event.destination, created_at: status.event.created_at,
       deliveries: (status.deliveries ?? []).map(d => ({

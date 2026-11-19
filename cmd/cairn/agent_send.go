@@ -24,6 +24,7 @@ const sendHelp = `cairn agent [connection flags] send --journal ABSOLUTE_PATH --
   (--to PRINCIPAL | --resolution FILE | --topic TOPIC | --pool POOL)
   [--workspace PATH --harness NAME --model NAME --capability NAME]
   [--action none|review|decide] [--supersedes TOPIC_KEY] [--expect-next-by RFC3339]
+  [--expect-by RFC3339]
 
 Save selected stdin text under coordination/<publication-request-UUID>, then
 publish its exact returned version. The helper allocates separate source and
@@ -55,6 +56,7 @@ type sendIntent struct {
 	Action           string                 `json:"action,omitempty"`
 	Supersedes       string                 `json:"supersedes,omitempty"`
 	ExpectNextBy     *time.Time             `json:"expect_next_by,omitempty"`
+	ExpectBy         *time.Time             `json:"expect_by,omitempty"`
 }
 
 type sendJournal struct {
@@ -145,6 +147,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	noticeAction := f.String("action", "", "notice intent action (none|review|decide)")
 	noticeSupersedes := f.String("supersedes", "", "sender-scoped notice topic key superseded by this notice")
 	noticeExpectNextBy := f.String("expect-next-by", "", "expected next update instant for notice (RFC3339)")
+	requestExpectBy := f.String("expect-by", "", "advisory completion or response deadline for request (RFC3339)")
 	var capabilities []string
 	f.Func("capability", "pool capability; repeat", func(value string) error { capabilities = append(capabilities, value); return nil })
 	if err := f.Parse(args); err != nil {
@@ -176,6 +179,17 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 			}
 			parsedExpectNextBy = &t
 		}
+	}
+	var parsedExpectBy *time.Time
+	if provided["expect-by"] {
+		if *kind != "request" {
+			return nil, invalid("--expect-by requires --kind request")
+		}
+		t, err := parseEventTimestamp(*requestExpectBy)
+		if err != nil || t.IsZero() || t.Year() < 1 || t.Year() > 9999 {
+			return nil, invalid("invalid --expect-by: must be an RFC3339 timestamp")
+		}
+		parsedExpectBy = &t
 	}
 	switch *sourceKind {
 	case "note", "observation", "claim", "lesson", "procedure", "decision", "preference":
@@ -251,7 +265,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 		return nil, invalid("explicit destination required")
 	}
 	bodyHash := sha256.Sum256(body)
-	intent := sendIntent{BodySHA256: hex.EncodeToString(bodyHash[:]), CredentialSHA256: client.CredentialFingerprint(), Repo: *repo, Kind: *kind, SourceKind: *sourceKind, Shareable: *shareable, Destination: dest, Resolution: resolution, Pool: needs, Session: session, Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy}
+	intent := sendIntent{BodySHA256: hex.EncodeToString(bodyHash[:]), CredentialSHA256: client.CredentialFingerprint(), Repo: *repo, Kind: *kind, SourceKind: *sourceKind, Shareable: *shareable, Destination: dest, Resolution: resolution, Pool: needs, Session: session, Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy}
 	intentHash, err := sendHash(intent)
 	if err != nil {
 		return nil, err
@@ -288,7 +302,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 			}
 		}
 		if journal.EventID == "" {
-			publish := core.PublishEventRequest{Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
+			publish := core.PublishEventRequest{Action: *noticeAction, Supersedes: *noticeSupersedes, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy, RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
 			var event core.AgentEvent
 			if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 				out = sendState(journal)

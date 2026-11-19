@@ -208,6 +208,7 @@ func buildOperatorOperations() map[string]operatorOperation {
 		storeOperation("session-successor-revoke", (*core.Store).RevokeSessionSuccessor),
 		storeOperation("work-cancel", (*core.Store).CancelWork),
 		storeOperation("request-control-sweep", (*core.Store).SweepRequestControls),
+		storeOperation("checkpoint-overdue-sweep", (*core.Store).SweepOverdueDeadlines),
 		storeOperation("event-schedule", (*core.Store).ScheduleEvent),
 		storeOperation("schedule-list", (*core.Store).Schedules),
 		storeOperation("schedule-cancel", (*core.Store).CancelSchedule),
