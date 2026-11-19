@@ -301,9 +301,16 @@ class NativeSession:
         if attempt.get('lease_lapsed'):
             return delivery
         try:
-            delivery = self.host.call(self.config, 'event-renew', dict(
-                delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'], lease_seconds=LEASE_SECONDS),
-                session=attempt['session'])
+            if attempt.get('admission_kind') == 'digest':
+                renewed_att = self.host.call(self.config, 'session-inbox-digest-renew', dict(
+                    session=attempt['session'], attempt_id=attempt['attempt_id'], lease_seconds=LEASE_SECONDS))
+                delivery = renewed_att['delivery']
+                if 'digest_items' in renewed_att:
+                    attempt['digest_items'] = renewed_att['digest_items']
+            else:
+                delivery = self.host.call(self.config, 'event-renew', dict(
+                    delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'], lease_seconds=LEASE_SECONDS),
+                    session=attempt['session'])
         except self.host.refusal as exc:
             if exc.code != 'STALE_LEASE':
                 raise

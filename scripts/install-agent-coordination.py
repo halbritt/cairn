@@ -485,10 +485,18 @@ WantedBy=default.target
 def configure_installed_session(args, home):
     if args.session is not None and args.agent_id is not None:
         return 'pass at most one of --session and --agent-id', None
-    if args.clear_session_options and (args.compact_inbox or args.notice_batch or args.auto_settle_action_none):
-        return 'cannot combine --clear-session-options with --compact-inbox, --notice-batch or --auto-settle-action-none', None
+    if args.clear_session_options and (
+            args.compact_inbox or args.notice_batch or args.notice_digest
+            or args.digest_window_seconds is not None or args.auto_settle_action_none):
+        return ('cannot combine --clear-session-options with --compact-inbox, '
+                '--notice-batch, --notice-digest or --auto-settle-action-none'), None
     if args.notice_batch and not args.compact_inbox:
         return '--notice-batch requires --compact-inbox', None
+    if args.notice_digest and not args.compact_inbox:
+        return '--notice-digest requires --compact-inbox', None
+    if args.digest_window_seconds is not None and (
+            not args.notice_digest or not (1 <= args.digest_window_seconds <= 3600)):
+        return '--digest-window-seconds requires 1..3600 with --notice-digest', None
     if not args.clear_session_options and not args.compact_inbox and not args.auto_settle_action_none:
         return '--session/--agent-id requires --compact-inbox, --auto-settle-action-none or --clear-session-options', None
     for forbidden, name in ((args.opencode_cancel_trial, '--opencode-cancel-trial'),
@@ -529,6 +537,7 @@ def configure_installed_session(args, home):
     result = engine.configure_session_inbox(
         installed, native_session_id=native,
         compact_inbox=args.compact_inbox, notice_batch=args.notice_batch,
+        notice_digest=args.notice_digest, digest_window_seconds=args.digest_window_seconds,
         auto_settle_action_none=args.auto_settle_action_none,
         clear=args.clear_session_options)
     return None, result
@@ -553,6 +562,8 @@ def main():
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
     parser.add_argument('--compact-inbox', action='store_true', help='opt this Codex or Claude binding into compact notice/response delivery')
     parser.add_argument('--notice-batch', action='store_true', help='opt a compact native binding into bounded already-waiting notice batches')
+    parser.add_argument('--notice-digest', action='store_true', help='opt a compact native binding or session into FYI notice digests')
+    parser.add_argument('--digest-window-seconds', type=int, help='FYI notice digest window in seconds (1..3600, requires --notice-digest)')
     parser.add_argument('--auto-settle-action-none', action='store_true',
                         help='opt a native binding or session into settling action:none notices without a model turn')
     parser.add_argument('--opencode-cancel-trial', action='store_true',
@@ -590,6 +601,11 @@ def main():
         parser.error('--compact-inbox requires --harness codex|claude --native-delivery')
     if args.notice_batch and not args.compact_inbox:
         parser.error('--notice-batch requires --compact-inbox')
+    if args.notice_digest and not args.compact_inbox:
+        parser.error('--notice-digest requires --compact-inbox')
+    if args.digest_window_seconds is not None:
+        if not args.notice_digest or not (1 <= args.digest_window_seconds <= 3600):
+            parser.error('--digest-window-seconds requires 1..3600 with --notice-digest')
     if args.auto_settle_action_none and not args.native_delivery:
         parser.error('--auto-settle-action-none requires --native-delivery')
     config = dict(cairn=str(Path(args.cairn).resolve()), socket=str(args.socket.resolve()), token_file=str(args.token_file.resolve()),
@@ -603,6 +619,10 @@ def main():
         config['compact_inbox_version'] = 1
         if args.notice_batch:
             config['notice_batch_version'] = 1
+        if args.notice_digest:
+            config['notice_digest_version'] = 1
+            if args.digest_window_seconds is not None:
+                config['notice_digest_window_seconds'] = args.digest_window_seconds
     if args.compact_inbox or args.auto_settle_action_none:
         previous = args.root.resolve() / 'bindings' / (args.binding + '.json')
         if previous.exists():

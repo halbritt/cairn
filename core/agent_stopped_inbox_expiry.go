@@ -252,7 +252,7 @@ func stoppedInboxPlan(ctx context.Context, tx pgx.Tx, req StoppedInboxExpiryRequ
 			}
 		}
 		rows, err = tx.Query(ctx, `SELECT substr(d.consumer,7),d.delivery_id::text,d.event_id::text,e.kind,e.publisher,d.available_at,d.attempts,d.state,
- d.attempts>0 OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id) OR EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id),
+ d.attempts>0 OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id) OR EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id OR EXISTS(SELECT 1 FROM cairn.agent_session_digest_item di WHERE di.attempt_id=n.attempt_id AND di.delivery_id=d.delivery_id)),
  NOT (`+wakeHold+`) OR NOT (`+sessionInboxHold+`),
  EXISTS(SELECT 1 FROM cairn.agent_successor_grant g WHERE g.repo=e.repo AND 'agent/'||g.predecessor_agent_id::text=d.consumer AND d.event_id=ANY(g.event_ids) AND g.revoked_at IS NULL AND g.expires_at>clock_timestamp())
  FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)

@@ -413,7 +413,7 @@ func (c *CLI) prepareIdleWakeBusyCodex(ctx context.Context, config, state, agent
 		return nil, false, err
 	}
 	if value.Truth(health) && nativeText(health.Get("status_type")) == "systemError" && nativeText(meta.Get("state")) != "idle" {
-		ready, err := c.call(ctx, config, "session-inbox-ready", sref, NativeCallOptions{})
+		ready, err := c.querySessionInboxReady(ctx, config, state, sref)
 		if err != nil {
 			return nil, false, err
 		}
@@ -536,7 +536,7 @@ func (c *CLI) prepareIdleWakeStaleBusyCodex(ctx context.Context, config, state, 
 	if dec == "held" {
 		return agent, false, nil
 	}
-	ready, err := c.call(ctx, config, "session-inbox-ready", sref, NativeCallOptions{})
+	ready, err := c.querySessionInboxReady(ctx, config, state, sref)
 	if err != nil {
 		return nil, false, err
 	}
@@ -556,8 +556,31 @@ func (c *CLI) prepareIdleWakeStaleBusyCodex(ctx context.Context, config, state, 
 	return agent, true, c.noteWakeRefusal(config, state, nativeText(deliv), reason, cond, cycle, errOut)
 }
 
+func (c *CLI) querySessionInboxReady(ctx context.Context, config, state, sref *value.Value) (*value.Value, error) {
+	return c.querySessionInboxReadyWithOptions(ctx, config, state, sref, NativeCallOptions{})
+}
+
+func (c *CLI) querySessionInboxReadyWithOptions(ctx context.Context, config, state, sref *value.Value, opts NativeCallOptions) (*value.Value, error) {
+	digestWin, err := c.stateNoticeDigestWindowSeconds(config, state)
+	if err != nil {
+		return nil, err
+	}
+	if digestWin > 0 {
+		autoSettle, err := c.stateAutoSettleActionNone(config, state)
+		if err != nil {
+			return nil, err
+		}
+		return c.call(ctx, config, "session-inbox-digest-ready", nativeMap("session", sref, "digest_window_seconds", digestWin, "auto_settle_action_none", autoSettle), opts)
+	}
+	return c.call(ctx, config, "session-inbox-ready", sref, opts)
+}
+
 func (c *CLI) sessionInboxReadyForWake(ctx context.Context, config, state, sref, cycle *value.Value) (*value.Value, error) {
-	ready, err := c.call(ctx, config, "session-inbox-ready", sref, NativeCallOptions{})
+	digestWin, err := c.stateNoticeDigestWindowSeconds(config, state)
+	if err != nil {
+		return nil, err
+	}
+	ready, err := c.querySessionInboxReady(ctx, config, state, sref)
 	if err != nil || ready == nil || ready.Kind != value.Object {
 		return ready, err
 	}
@@ -573,6 +596,16 @@ func (c *CLI) sessionInboxReadyForWake(ctx context.Context, config, state, sref,
 			}
 			if cycle != nil && cycle.Kind == value.Object && settled != nil && settled.Kind == value.Object && settled.Get("settled") != nil {
 				cycle.Set("auto_settled_deliveries", settled.Get("settled"))
+			}
+			if digestWin > 0 {
+				nextReady, err := c.querySessionInboxReady(ctx, config, state, sref)
+				if err != nil || nextReady == nil || nextReady.Kind != value.Object {
+					return nextReady, err
+				}
+				if value.SameText(nextReady.Get("action"), "none") {
+					return value.Mapping(), nil
+				}
+				return nextReady, nil
 			}
 			nextReady := value.Mapping()
 			if settled != nil && settled.Kind == value.Object && settled.Get("ready") != nil && settled.Get("ready").Kind == value.Object {
@@ -884,6 +917,10 @@ func wrapHerdrErr(err error) error {
 }
 
 func (c *CLI) herdrClient(config *value.Value) (wake.HerdrClient, error) {
+	return c.herdrClientForState(config, nil)
+}
+
+func (c *CLI) herdrClientForState(config, state *value.Value) (wake.HerdrClient, error) {
 	var execPath string
 	if iw := config.Get("idle_wakeup"); iw != nil && iw.Kind == value.String {
 		var err error
@@ -896,7 +933,7 @@ func (c *CLI) herdrClient(config *value.Value) (wake.HerdrClient, error) {
 		Executable: execPath,
 		ProcRoot:   c.ProcRoot,
 		InboxReady: func(ctx context.Context, s wake.SessionRef) (string, error) {
-			res, err := c.call(ctx, config, "session-inbox-ready", nativeMap("agent_id", s.AgentID, "execution_id", s.ExecutionID), NativeCallOptions{})
+			res, err := c.querySessionInboxReady(ctx, config, state, nativeMap("agent_id", s.AgentID, "execution_id", s.ExecutionID))
 			if err != nil {
 				return "", err
 			}
@@ -906,7 +943,7 @@ func (c *CLI) herdrClient(config *value.Value) (wake.HerdrClient, error) {
 }
 
 func (c *CLI) prepareTerminalWake(ctx context.Context, config, state, agent, process, sref *value.Value, delivery, reqID, path string, cycle *value.Value, errOut io.Writer) (*value.Value, error) {
-	client, err := c.herdrClient(config)
+	client, err := c.herdrClientForState(config, state)
 	if err != nil {
 		return nil, err
 	}

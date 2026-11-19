@@ -91,7 +91,8 @@ def session_compact_inbox_enabled(config, session):
     except (ValueError, UnicodeDecodeError) as exc:
         raise _grant_ledger.inbox_refusal('session inbox options are malformed', 'command_context', 'compact_fallback') from exc
     allowed = {'schema', 'binding', 'native_session_id', 'compact_inbox_version',
-               'notice_batch_version', 'notice_auto_settle_version', 'updated_at'}
+               'notice_batch_version', 'notice_digest_version', 'notice_digest_window_seconds',
+               'notice_auto_settle_version', 'updated_at'}
     if (not isinstance(entry, dict)
             or entry.get('schema') != SESSION_INBOX_OPTIONS_SCHEMA
             or entry.get('binding') != config.get('binding')
@@ -112,6 +113,14 @@ def session_compact_inbox_enabled(config, session):
     if 'notice_batch_version' in entry and (
             type(entry['notice_batch_version']) is not int or entry['notice_batch_version'] != 1 or not has_compact):
         raise _grant_ledger.inbox_refusal('notice_batch_version 1 requires compact Codex or Claude native delivery', 'command_context', 'compact_fallback')
+    has_digest = 'notice_digest_version' in entry
+    if has_digest and (
+            type(entry['notice_digest_version']) is not int or entry['notice_digest_version'] != 1 or not has_compact):
+        raise _grant_ledger.inbox_refusal('notice_digest_version 1 requires compact Codex or Claude native delivery', 'command_context', 'compact_fallback')
+    if 'notice_digest_window_seconds' in entry and (
+            not has_digest or type(entry['notice_digest_window_seconds']) is not int
+            or not (1 <= entry['notice_digest_window_seconds'] <= 3600)):
+        raise _grant_ledger.inbox_refusal('notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1', 'command_context', 'compact_fallback')
     if has_auto_settle and (not bool(config.get('native_delivery'))
             or type(entry['notice_auto_settle_version']) is not int or entry['notice_auto_settle_version'] != 1):
         raise _grant_ledger.inbox_refusal('notice_auto_settle_version 1 requires native_delivery', 'command_context', 'compact_fallback')
@@ -518,7 +527,8 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         if not attempt.get('native_turn_id') or attempt['native_turn_id'] != native:
             raise _grant_ledger.inbox_refusal('inbox recall native owner differs', 'identity', 'attempt_owner')
         delivery = attempt['delivery']
-        if delivery['delivery_id'] != wake_ids.group(3):
+        if delivery['delivery_id'] != wake_ids.group(3) and not (
+                attempt.get('admission_kind') == 'digest' and attempt.get('wake_delivery_id') == wake_ids.group(3)):
             raise _grant_ledger.inbox_refusal('reserved wake belongs to another delivery', 'identity', 'wake_delivery')
         publication = delivery['event']
         identity = dict(attempt_id=attempt['attempt_id'], delivery_id=delivery['delivery_id'],
@@ -819,8 +829,11 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             # Coordination holds one attempt per session and it is this one, so no
             # older attempt can still be recovered. See LEDGER_RECENT_GRANTS.
             wake_delivery = (state.get('idle_wake') or {}).get('delivery_id')
+            att_wake = attempt.get('wake_delivery_id')
             compact_grants(ledger, owners={native}, attempts={identity['attempt_id']},
-                           deliveries={identity['delivery_id'], *([wake_delivery] if isinstance(wake_delivery, str) else [])},
+                           deliveries={identity['delivery_id'],
+                                       *([wake_delivery] if isinstance(wake_delivery, str) else []),
+                                       *([att_wake] if isinstance(att_wake, str) else [])},
                            turns={native})
         if not marker.exists():
             engine.save_codex_budget(marker, dict(schema='cairn.inbox-recall-initialized/1', session=session))

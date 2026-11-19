@@ -87,14 +87,9 @@ func (s *Store) ReleaseNativeHold(ctx context.Context, req NativeHoldReleaseRequ
 		if live {
 			return out, failure("SESSION_LIVE", "the session is still present; its host must reconcile this attempt")
 		}
-		if err = tx.QueryRow(ctx, `SELECT state FROM cairn.agent_delivery WHERE delivery_id=$1 FOR UPDATE`, out.DeliveryID).Scan(&out.DeliveryState); err != nil {
+		releasedItems, err := releaseDigestOrPrimaryDeliveries(ctx, tx, req.AttemptID, out.DeliveryID, eventID, &stopControl{By: s.channel.Principal, Reason: req.Reason})
+		if err != nil {
 			return out, err
-		}
-		stateBefore := out.DeliveryState
-		if out.DeliveryState == "pending" || out.DeliveryState == "leased" {
-			if _, err = failDelivery(ctx, tx, out.DeliveryID, "operator_released", &stopControl{By: s.channel.Principal, Reason: req.Reason}); err != nil {
-				return out, err
-			}
 		}
 		if out.FinishedAt, err = finishAttempt(ctx, tx, req.AttemptID, "operator_released", attemptClose{ReleasedBy: s.channel.Principal, ReleaseReason: req.Reason}); err != nil {
 			return out, err
@@ -106,7 +101,12 @@ func (s *Store) ReleaseNativeHold(ctx context.Context, req NativeHoldReleaseRequ
 			return out, err
 		}
 		attemptID := req.AttemptID
-		return out, recordRecoveryTransition(ctx, tx, s, out.DeliveryID, eventID, "", &attemptID, req.RequestID,
-			"native_hold_release", "hold_released", stateBefore, out.DeliveryState)
+		for _, item := range releasedItems {
+			if err := recordRecoveryTransition(ctx, tx, s, item.deliveryID, item.eventID, "", &attemptID, req.RequestID,
+				"native_hold_release", "hold_released", item.stateBefore, item.stateAfter); err != nil {
+				return out, err
+			}
+		}
+		return out, nil
 	})
 }

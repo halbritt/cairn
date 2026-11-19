@@ -170,7 +170,8 @@ func inboxClaim(config, event, observation, state *value.Value) (inboxIdentity, 
 			return refuse("inbox recall native owner differs", "attempt_owner")
 		}
 		delivery := attempt.Get("delivery")
-		if !value.SameText(delivery.Get("delivery_id"), wake[3]) {
+		if !value.SameText(delivery.Get("delivery_id"), wake[3]) &&
+			!(value.SameText(attempt.Get("admission_kind"), "digest") && value.SameText(attempt.Get("wake_delivery_id"), wake[3])) {
 			return refuse("reserved wake belongs to another delivery", "wake_delivery")
 		}
 		publication = delivery.Get("event")

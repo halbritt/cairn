@@ -181,6 +181,9 @@ func (c *CLI) InboxCommand(ctx context.Context, argv []string, in io.Reader, out
 	if native == nil || native.Kind != value.Object || !value.SameText(native.Get("schema"), "cairn.session-inbox/1") {
 		return 0, nativeRefusal("INVALID_HOST", "not a native inbox context")
 	}
+	if value.SameText(native.Get("admission_kind"), "digest") {
+		return 0, nativeRefusal("INVALID_REQUEST", "digest attempts must be settled with cairn-inbox")
+	}
 	if c.Compatibility != nil {
 		if err = c.Compatibility.BindContext(native); err != nil {
 			return 0, err

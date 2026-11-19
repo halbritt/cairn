@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,15 @@ import (
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 	"github.com/halbritt/cairn/internal/lifecycle/wake"
 )
+
+var goalContinuationTagRe = regexp.MustCompile(`<(?:objective|goal[_-]continuation|goal[_-]loop)[>\s]`)
+
+func isGoalContinuationPrompt(event *value.Value) bool {
+	if event == nil || event.Kind != value.Object || !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") || inboxRecallWakeValue(event) {
+		return false
+	}
+	return goalContinuationTagRe.MatchString(nativeText(event.Get("prompt")))
+}
 
 func (c *CLI) attemptCommandsAbsent(config, attempt *value.Value) (bool, error) {
 	if c.Host != nil {
@@ -101,12 +111,22 @@ func (c *CLI) unacknowledgedTurnEndReminder(ctx context.Context, ns *NativeSessi
 	if ap := state.Get("active_prompt"); ap != nil && ap.Kind == value.Object && value.Truth(ap.Get("joined")) {
 		return "", nil
 	}
-	absent, err := c.attemptCommandsAbsent(config, attempt)
-	if err != nil {
-		return "", err
-	}
-	if !absent {
-		return "", nil
+	if value.SameText(attempt.Get("admission_kind"), "digest") {
+		jState, err := c.journalCompletionState(config, attempt)
+		if err != nil {
+			return "", err
+		}
+		if jState == "committed" {
+			return "", nil
+		}
+	} else {
+		absent, err := c.attemptCommandsAbsent(config, attempt)
+		if err != nil {
+			return "", err
+		}
+		if !absent {
+			return "", nil
+		}
 	}
 	stateDir, err := c.pathText(config.Get("state_dir"))
 	if err != nil {
@@ -132,7 +152,13 @@ func (c *CLI) unacknowledgedTurnEndReminder(ctx context.Context, ns *NativeSessi
 
 func (c *CLI) formatUnacknowledgedTurnEndReminder(ctx context.Context, ns *NativeSession, config, state *value.Value, statePath string, observation, attempt, attemptID *value.Value, attemptIDText string, ctxVal *value.Value) (string, error) {
 	var fallback string
-	if s := ctxVal.Get("compact_source_unavailable"); s != nil && s.Kind == value.Bool && s.Boolean {
+	if value.SameText(attempt.Get("admission_kind"), "digest") {
+		fb := ctxVal.Get("compact_fallback_control")
+		if fb == nil || fb.Kind != value.String || len(fb.String) == 0 {
+			return "", nativeRefusal("INVALID_HOST", "digest context has no settlement instructions")
+		}
+		fallback = string(fb.String)
+	} else if s := ctxVal.Get("compact_source_unavailable"); s != nil && s.Kind == value.Bool && s.Boolean {
 		fb := ctxVal.Get("compact_fallback_control")
 		if fb == nil || fb.Kind != value.String || len(fb.String) == 0 {
 			return "", nativeRefusal("INVALID_HOST", "unavailable source has no settlement instructions")
@@ -402,7 +428,12 @@ func (c *CLI) inboxContext(ctx context.Context, config, state *value.Value, stat
 	if err != nil {
 		return nil, err
 	}
-	if owns {
+	digestWin, err := c.stateNoticeDigestWindowSeconds(config, state)
+	if err != nil {
+		return nil, err
+	}
+	goalFlush := digestWin > 0 && value.Truth(observation.Get("goal_continuation")) && !value.Truth(wakeBinding) && !value.Truth(state.Get("idle_wake"))
+	if owns && !goalFlush {
 		return value.Text(""), nil
 	}
 	if _, err := ns.Recover(ctx); err != nil {
@@ -413,7 +444,7 @@ func (c *CLI) inboxContext(ctx context.Context, config, state *value.Value, stat
 			return value.Text(""), nil
 		}
 		freshBoundWake := (value.SameText(config.Get("harness"), "claude") || value.SameText(config.Get("harness"), "codex")) && value.Truth(wakeBinding) && value.SameText(observation.Get("event"), "UserPromptSubmit") && nativeEqual(wakeBinding.Get("native_turn_id"), observation.Get("native_turn_id"))
-		if value.Truth(state.Get("delivered_since_idle")) && !freshBoundWake {
+		if value.Truth(state.Get("delivered_since_idle")) && !freshBoundWake && !goalFlush {
 			return value.Text(""), nil
 		}
 		binding := c.selectAdmissionBinding(config, state, observation, wakeBinding, opencodeReplay)
@@ -421,13 +452,24 @@ func (c *CLI) inboxContext(ctx context.Context, config, state *value.Value, stat
 		if err != nil {
 			return nil, err
 		}
-		if autoSettle {
+		if autoSettle || digestWin > 0 {
 			if !value.Truth(binding) {
 				binding = value.Mapping()
 			} else {
 				binding = nativeClone(binding)
 			}
-			binding.Set("auto_settle_action_none", value.Boolean(true))
+			if autoSettle {
+				binding.Set("auto_settle_action_none", value.Boolean(true))
+			}
+			if digestWin > 0 {
+				binding.Set("digest_window_seconds", value.IntegerText(strconv.Itoa(digestWin)))
+				if !value.Truth(wakeBinding) && !opencodeReplay {
+					binding.Set("digest_flush_now", value.Boolean(true))
+					if owns {
+						binding.Set("digest_only", value.Boolean(true))
+					}
+				}
+			}
 		}
 		if !value.Truth(state.Get("inbox_attempt")) {
 			if _, err := ns.AdmitInbox(ctx, binding); err != nil {

@@ -898,15 +898,30 @@ def codex_idle_health_matches(health, agent, process, endpoint):
     return _has_process_keys(health.get('peer')) and same_process(health['peer'], process)
 
 
+def query_session_inbox_ready(config, state, sref, **kwargs):
+    digest_win = state_notice_digest_window_seconds(config, state)
+    if digest_win > 0:
+        return call(config, 'session-inbox-digest-ready', dict(
+            session=sref, digest_window_seconds=digest_win,
+            auto_settle_action_none=state_auto_settle_action_none(config, state)), **kwargs)
+    return call(config, 'session-inbox-ready', sref, **kwargs)
+
+
 def session_inbox_ready_for_wake(config, state, agent, cycle=None):
     sref = session_ref(agent)
-    ready = call(config, 'session-inbox-ready', sref)
+    digest_win = state_notice_digest_window_seconds(config, state)
+    ready = query_session_inbox_ready(config, state, sref)
     if not isinstance(ready, dict):
         return ready
     if ready.get('delivery_id') and ready.get('action') == 'none' and state_auto_settle_action_none(config, state):
         settled = call(config, 'session-inbox-settle-none', dict(request_id=str(uuid.uuid4()), session=sref))
         if cycle is not None and isinstance(settled, dict) and 'settled' in settled:
             cycle['auto_settled_deliveries'] = settled['settled']
+        if digest_win > 0:
+            next_ready = query_session_inbox_ready(config, state, sref)
+            if not isinstance(next_ready, dict) or next_ready.get('action') == 'none':
+                return {}
+            return next_ready
         next_ready = settled.get('ready') if isinstance(settled, dict) and isinstance(settled.get('ready'), dict) else {}
         if next_ready.get('action') == 'none':
             return {}
@@ -954,7 +969,7 @@ def prepare_idle_wake(config, state, path, cycle=None):
                 else:
                     write_state(path, state)
             if health and health.get('status_type') == 'systemError' and agent['metadata']['state'] != 'idle':
-                ready = call(config, 'session-inbox-ready', session_ref(agent))
+                ready = query_session_inbox_ready(config, state, session_ref(agent))
                 delivery = ready.get('delivery_id')
                 if cycle is not None:
                     cycle['ready_delivery'] = delivery
@@ -993,7 +1008,7 @@ def prepare_idle_wake(config, state, path, cycle=None):
                     else:
                         write_state(path, state)
                         if idle_decision and idle_decision['decision'] != 'held':
-                            ready = call(config, 'session-inbox-ready', session_ref(agent))
+                            ready = query_session_inbox_ready(config, state, session_ref(agent))
                             delivery = ready.get('delivery_id')
                             if cycle is not None:
                                 cycle['ready_delivery'] = delivery
@@ -1954,7 +1969,8 @@ def read_session_inbox_options(config, native):
         raise CoordinationError("INVALID_HOST", "session inbox options exceed limit")
     entry = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_json_object)
     allowed = {"schema", "binding", "native_session_id", "compact_inbox_version",
-               "notice_batch_version", "notice_auto_settle_version", "updated_at"}
+               "notice_batch_version", "notice_digest_version", "notice_digest_window_seconds",
+               "notice_auto_settle_version", "updated_at"}
     if (not isinstance(entry, dict)
             or entry.get("schema") != SESSION_INBOX_OPTIONS_SCHEMA
             or entry.get("binding") != config.get("binding")
@@ -1976,6 +1992,14 @@ def read_session_inbox_options(config, native):
     if "notice_batch_version" in entry and (
             type(entry["notice_batch_version"]) is not int or entry["notice_batch_version"] != 1 or not has_compact):
         raise CoordinationError("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
+    has_digest = "notice_digest_version" in entry
+    if has_digest and (
+            type(entry["notice_digest_version"]) is not int or entry["notice_digest_version"] != 1 or not has_compact):
+        raise CoordinationError("INVALID_CONFIG", "notice_digest_version 1 requires compact Codex or Claude native delivery")
+    if "notice_digest_window_seconds" in entry and (
+            not has_digest or type(entry["notice_digest_window_seconds"]) is not int
+            or not (1 <= entry["notice_digest_window_seconds"] <= 3600)):
+        raise CoordinationError("INVALID_CONFIG", "notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1")
     if has_auto_settle and (not bool(config.get("native_delivery"))
             or type(entry["notice_auto_settle_version"]) is not int or entry["notice_auto_settle_version"] != 1):
         raise CoordinationError("INVALID_CONFIG", "notice_auto_settle_version 1 requires native_delivery")
@@ -2008,6 +2032,33 @@ def auto_settle_action_none_enabled(config, native):
 def state_auto_settle_action_none(config, state):
     native = state.get("agent", {}).get("native_session_id") if isinstance(state, dict) and isinstance(state.get("agent"), dict) else None
     return auto_settle_action_none_enabled(config, native)
+
+
+def notice_digest_window_seconds(config, native):
+    capable = config.get("harness") in ("codex", "claude") and bool(config.get("native_delivery"))
+    if not capable:
+        return 0
+    compact = type(config.get("compact_inbox_version")) is int and config["compact_inbox_version"] == 1
+    digest = compact and type(config.get("notice_digest_version")) is int and config["notice_digest_version"] == 1
+    window = 300
+    cfg_win = config.get("notice_digest_window_seconds")
+    if digest and type(cfg_win) is int and 1 <= cfg_win <= 3600:
+        window = cfg_win
+    if isinstance(native, str):
+        override = read_session_inbox_options(config, native)
+        if override is not None:
+            compact = compact or (type(override.get("compact_inbox_version")) is int and override["compact_inbox_version"] == 1)
+            if compact and type(override.get("notice_digest_version")) is int and override["notice_digest_version"] == 1:
+                digest = True
+                ov_win = override.get("notice_digest_window_seconds")
+                if type(ov_win) is int and 1 <= ov_win <= 3600:
+                    window = ov_win
+    return window if digest else 0
+
+
+def state_notice_digest_window_seconds(config, state):
+    native = state.get("agent", {}).get("native_session_id") if isinstance(state, dict) and isinstance(state.get("agent"), dict) else None
+    return notice_digest_window_seconds(config, native)
 
 
 def resolve_session_target(config, native_session_id=None, agent_id=None):
@@ -2052,11 +2103,17 @@ def resolve_session_target(config, native_session_id=None, agent_id=None):
 
 def configure_session_inbox(config, *, native_session_id=None, agent_id=None,
                             compact_inbox=False, notice_batch=False,
+                            notice_digest=False, digest_window_seconds=None,
                             auto_settle_action_none=False, clear=False):
     if compact_inbox and (config.get("harness") not in ("codex", "claude") or not config.get("native_delivery")):
         raise CoordinationError("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
     if notice_batch and not compact_inbox:
         raise CoordinationError("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
+    if notice_digest and not compact_inbox:
+        raise CoordinationError("INVALID_CONFIG", "notice_digest_version 1 requires compact Codex or Claude native delivery")
+    if digest_window_seconds is not None and (
+            not notice_digest or type(digest_window_seconds) is not int or not (1 <= digest_window_seconds <= 3600)):
+        raise CoordinationError("INVALID_CONFIG", "notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1")
     if auto_settle_action_none and not config.get("native_delivery"):
         raise CoordinationError("INVALID_CONFIG", "notice_auto_settle_version 1 requires native_delivery")
     native = resolve_session_target(config, native_session_id=native_session_id, agent_id=agent_id)
@@ -2075,16 +2132,23 @@ def configure_session_inbox(config, *, native_session_id=None, agent_id=None,
                 record["compact_inbox_version"] = 1
             if notice_batch:
                 record["notice_batch_version"] = 1
+            if notice_digest:
+                record["notice_digest_version"] = 1
+                if digest_window_seconds is not None:
+                    record["notice_digest_window_seconds"] = digest_window_seconds
             if auto_settle_action_none:
                 record["notice_auto_settle_version"] = 1
             write_state(opt_path, record)
             status = "configured"
         compact, batch = effective_session_inbox_options(config, native)
+        digest_win = notice_digest_window_seconds(config, native)
         auto_settle = auto_settle_action_none_enabled(config, native)
     return dict(schema=SESSION_INBOX_OPTIONS_SCHEMA, status=status, binding=config["binding"],
                 native_session_id=native, options_path=str(opt_path),
                 compact_inbox_version=1 if compact else None,
                 notice_batch_version=1 if batch else None,
+                notice_digest_version=1 if digest_win > 0 else None,
+                notice_digest_window_seconds=digest_win if digest_win > 0 else None,
                 notice_auto_settle_version=1 if auto_settle else None)
 
 
@@ -2512,6 +2576,8 @@ def inbox_command(argv):
     context = json.loads(args.context.read_text())
     if not isinstance(context, dict) or context.get('schema') != 'cairn.session-inbox/1':
         raise CoordinationError('INVALID_HOST', 'not a native inbox context')
+    if context.get('admission_kind') == 'digest':
+        raise CoordinationError('INVALID_REQUEST', 'digest attempts must be settled with cairn-inbox')
     if compatibility is not None:
         compatibility.bind_context(context)
     command_kind = 'complete' if args.kind == 'finish-reply' else args.kind
@@ -2620,6 +2686,7 @@ def compact_inbox_command(argv):
     parser.add_argument('handle')
     parser.add_argument('disposition', nargs='?', choices=('handled', 'ignored', 'failed'))
     parser.add_argument('--code', choices=('unsupported_kind', 'source_unavailable', 'processing_failed'))
+    parser.add_argument('--item')
     args = parser.parse_args(argv)
     if not re.fullmatch('[0-9a-f]{16}', args.handle):
         raise CoordinationError('INVALID_REQUEST', 'invalid compact inbox handle')
@@ -2627,6 +2694,8 @@ def compact_inbox_command(argv):
         raise CoordinationError('INVALID_REQUEST', 'settlement requires a disposition')
     if args.operation != 'settle' and args.code:
         raise CoordinationError('INVALID_REQUEST', 'reason code applies only to settlement')
+    if args.item is not None and args.operation not in ('read', 'settle'):
+        raise CoordinationError('INVALID_REQUEST', '--item applies only to read or settle')
     root = Path(os.environ.get('CAIRN_INBOX_ROOT', str(Path.home() / '.local/share/cairn/coordination'))).resolve()
     compatibility = getattr(_BUNDLE, 'compatibility_context', None)
     if compatibility is not None:
@@ -2697,6 +2766,10 @@ def compact_inbox_command(argv):
             context.get('native_turn_id') != attempt.get('native_turn_id') or
             event['kind'] not in ('notice', 'response')):
         raise CoordinationError('INVALID_HOST', 'compact inbox delivery changed')
+    if attempt.get('admission_kind') == 'digest':
+        return _compact_digest_operation(config, args, context, attempt, delivery)
+    if args.item is not None:
+        raise CoordinationError('INVALID_REQUEST', '--item applies only to notice digests')
     if args.operation == 'advance':
         _, batch_enabled = effective_session_inbox_options(config, native)
         if not batch_enabled or event['kind'] != 'notice' or not attempt.get('native_turn_id'):
@@ -2798,6 +2871,208 @@ def compact_inbox_command(argv):
         return 7
     print(json.dumps(dict(schema='cairn.compact-inbox/1', ok=True, status=data['state'],
                           attempts=data.get('attempts'), handle=args.handle)))
+    return 0
+
+
+def _select_digest_item(items, selector):
+    sel = (selector or '').strip()
+    if not sel:
+        raise CoordinationError('INVALID_REQUEST', 'digest item selector must not be empty')
+    if re.fullmatch(r'[0-9]+', sel):
+        want = int(sel)
+        if want < 1:
+            raise CoordinationError('INVALID_REQUEST', 'digest item ordinal not found in this attempt')
+        for it in items:
+            if isinstance(it, dict) and it.get('ordinal') == want:
+                return it
+        raise CoordinationError('INVALID_REQUEST', 'digest item ordinal not found in this attempt')
+    for it in items:
+        if isinstance(it, dict) and (it.get('delivery') or {}).get('delivery_id') == sel:
+            return it
+    raise CoordinationError('INVALID_REQUEST', 'digest item not found in this attempt')
+
+
+def _overlay_digest_status_items(local_items, status_items):
+    if not isinstance(local_items, list) or not isinstance(status_items, list):
+        return local_items
+    by_id = {
+        (st_it.get('delivery') or {}).get('delivery_id'): st_it['delivery']
+        for st_it in status_items
+        if isinstance(st_it, dict) and isinstance(st_it.get('delivery'), dict)
+    }
+    out = json.loads(json.dumps(local_items))
+    for loc_it in out:
+        if not isinstance(loc_it, dict) or not isinstance(loc_it.get('delivery'), dict):
+            continue
+        ld = loc_it['delivery']
+        sd = by_id.get(ld.get('delivery_id'))
+        if sd is not None:
+            for k in ('state', 'code', 'control', 'completed_at', 'completed_after_lease', 'attempts'):
+                if k in sd:
+                    ld[k] = sd[k]
+                else:
+                    ld.pop(k, None)
+    return out
+
+
+def _mark_digest_journal_committed(config, context, attempt, delivery, fallback_req_id):
+    target = intent_path(config['state_dir'], attempt['attempt_id'])
+    comp_id = ((context.get('request_ids') or {}).get('completion') or fallback_req_id)
+    write_state(target, dict(
+        schema='cairn.inbox-intent/1',
+        attempt_id=attempt['attempt_id'],
+        delivery_id=delivery['delivery_id'],
+        kind='notice',
+        session=attempt['session'],
+        completion=dict(kind='ack', request_id=comp_id, status='committed', code='OK'),
+    ))
+
+
+def _compact_digest_operation(config, args, context, attempt, delivery):
+    if context.get('admission_kind') != 'digest':
+        raise CoordinationError('INVALID_HOST', 'compact inbox delivery changed')
+    if args.operation == 'advance':
+        raise CoordinationError('UNSUPPORTED_CONTROL', 'notice batching is unavailable for a notice digest')
+    items = attempt.get('digest_items')
+    status_finished = False
+    try:
+        renewed = call(config, 'session-inbox-digest-renew', dict(
+            session=attempt['session'], attempt_id=attempt['attempt_id'], lease_seconds=90))
+    except CoordinationError as exc:
+        if exc.code != 'STALE_LEASE':
+            raise
+        try:
+            st_att = call(config, 'session-inbox-attempt-status', dict(
+                session=attempt['session'], attempt_id=attempt['attempt_id']))
+        except CoordinationError:
+            raise exc
+        if not isinstance(st_att, dict) or st_att.get('attempt_id') != attempt['attempt_id']:
+            raise
+        if st_att.get('finished_at'):
+            if args.operation != 'settle':
+                raise
+            status_finished = True
+        items = _overlay_digest_status_items(items, st_att.get('digest_items'))
+    else:
+        if (not isinstance(renewed, dict) or renewed.get('attempt_id') != attempt['attempt_id']
+                or renewed.get('finished_at')):
+            raise CoordinationError('STALE_LEASE', 'compact inbox digest is no longer leased')
+        if isinstance(renewed.get('digest_items'), list):
+            items = renewed['digest_items']
+    if not isinstance(items, list) or not items:
+        raise CoordinationError('INVALID_HOST', 'digest attempt has no items')
+    if args.operation == 'inspect':
+        print(json.dumps(dict(schema='cairn.compact-inbox/1', ok=True, digest=True, context=context)))
+        return 0
+    if args.operation == 'read':
+        return _compact_digest_read(config, attempt, items, args.item)
+    return _compact_digest_settle(config, args, context, attempt, delivery, items, status_finished)
+
+
+def _compact_digest_read(config, attempt, items, selector):
+    if selector is not None:
+        it = _select_digest_item(items, selector)
+        deliv = it['delivery']
+        ev = deliv['event']
+        body = exact_inbox_source(config, attempt, ev['ref'])
+        out = dict(schema='cairn.compact-inbox/1', ok=True, digest=True, ordinal=it['ordinal'],
+                   delivery_id=deliv['delivery_id'], state=deliv['state'], kind=ev['kind'],
+                   sender=ev['from'], source=ev['ref'], body=body)
+        if it.get('topic_key'):
+            out['topic_key'] = it['topic_key']
+        for key in ('action', 'supersedes', 'expect_next_by'):
+            if ev.get(key):
+                out[key] = ev[key]
+        print(json.dumps(out))
+        return 0
+    out_items = []
+    for it in items:
+        deliv = it['delivery']
+        ev = deliv['event']
+        entry = dict(ordinal=it['ordinal'], delivery_id=deliv['delivery_id'], state=deliv['state'],
+                     kind=ev['kind'], sender=ev['from'], source=ev['ref'])
+        if it.get('topic_key'):
+            entry['topic_key'] = it['topic_key']
+        for key in ('action', 'supersedes', 'expect_next_by'):
+            if ev.get(key):
+                entry[key] = ev[key]
+        try:
+            entry['body'] = exact_inbox_source(config, attempt, ev['ref'])
+        except CoordinationError as exc:
+            if exc.code not in ('SOURCE_UNAVAILABLE', 'PAYLOAD_UNAVAILABLE', 'NOT_FOUND'):
+                raise
+            entry['body'] = None
+            entry['source_error'] = exc.code
+        out_items.append(entry)
+    print(json.dumps(dict(schema='cairn.compact-inbox/1', ok=True, digest=True,
+                          superseded_count=attempt.get('digest_superseded_count') or 0, items=out_items)))
+    return 0
+
+
+def _compact_digest_settle(config, args, context, attempt, delivery, items, status_finished=False):
+    code = args.code or ''
+    if (args.disposition == 'handled' and code) or (args.disposition != 'handled' and not code):
+        raise CoordinationError('INVALID_REQUEST', 'ignored or failed acknowledgement needs a reason code')
+    if args.item is not None:
+        targets = [_select_digest_item(items, args.item)]
+    elif status_finished:
+        targets = [it for it in items
+                   if (it.get('delivery') or {}).get('state') == args.disposition
+                   and ((it.get('delivery') or {}).get('code') or '') == code
+                   and (it.get('delivery') or {}).get('control') is None]
+        if not targets:
+            targets = [items[0]]
+    else:
+        has_controlled = any((it.get('delivery') or {}).get('control') is not None for it in items)
+        targets = [it for it in items if (it.get('delivery') or {}).get('state') in ('pending', 'leased')]
+        if not targets:
+            if has_controlled:
+                targets = [items[0]]
+            else:
+                targets = [it for it in items
+                           if (it.get('delivery') or {}).get('state') == args.disposition
+                           and ((it.get('delivery') or {}).get('code') or '') == code]
+                if not targets:
+                    if args.disposition != 'handled':
+                        raise CoordinationError('VERSION_CONFLICT', 'digest items are already settled with a different disposition')
+                    req_id = str(uuid.uuid5(uuid.NAMESPACE_URL, 'cairn.digest-settled/1:' + attempt['attempt_id']))
+                    _mark_digest_journal_committed(config, context, attempt, delivery, req_id)
+                    print(json.dumps(dict(schema='cairn.compact-inbox/1', ok=True, digest=True, status=args.disposition,
+                                          settled_count=0, remaining=0, handle=args.handle)))
+                    return 0
+    outcomes = []
+    ids = []
+    first_unavail = None
+    for it in targets:
+        deliv = it['delivery']
+        ev = deliv['event']
+        if not (args.disposition == 'failed' and code == 'source_unavailable'):
+            try:
+                exact_inbox_source(config, attempt, ev['ref'])
+            except CoordinationError as exc:
+                if args.item is None and exc.code in ('SOURCE_UNAVAILABLE', 'PAYLOAD_UNAVAILABLE', 'NOT_FOUND'):
+                    if first_unavail is None:
+                        first_unavail = exc
+                    continue
+                raise
+        ids.append(deliv['delivery_id'])
+        oc = dict(delivery_id=deliv['delivery_id'], lease_id=deliv['lease_id'], disposition=args.disposition)
+        if code:
+            oc['code'] = code
+        outcomes.append(oc)
+    if not outcomes and first_unavail is not None:
+        raise first_unavail
+    ids.sort()
+    req_id = str(uuid.uuid5(uuid.NAMESPACE_URL,
+                            f"cairn.digest-settle/1:{attempt['attempt_id']}:{args.disposition}:{code}:{','.join(ids)}"))
+    res = call(config, 'session-inbox-digest-settle', dict(
+        request_id=req_id, session=attempt['session'], attempt_id=attempt['attempt_id'], outcomes=outcomes))
+    if res.get('remaining') == 0:
+        _mark_digest_journal_committed(config, context, attempt, delivery, req_id)
+    settled_items = res.get('items') or []
+    print(json.dumps(dict(schema='cairn.compact-inbox/1', ok=True, digest=True, status=args.disposition,
+                          settled_count=len(settled_items), remaining=res.get('remaining'),
+                          items=settled_items, handle=args.handle)))
     return 0
 
 
@@ -3084,8 +3359,12 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
     if (not attempt_id or intent.get('request_id') != attempt_id
             or attempt.get('session') != session_ref(state.get('agent') or {})
             or attempt.get('finished_at') or attempt.get('cancel') or attempt.get('lease_lapsed')
-            or (state.get('active_prompt') or {}).get('joined')
-            or not attempt_commands_absent(config, attempt)):
+            or (state.get('active_prompt') or {}).get('joined')):
+        return ''
+    if attempt.get('admission_kind') == 'digest':
+        if journal_completion_state(config, attempt) == 'committed':
+            return ''
+    elif not attempt_commands_absent(config, attempt):
         return ''
     target = Path(config['state_dir']) / 'inbox' / (attempt_id + '.json')
     try:
@@ -3095,7 +3374,11 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
     if not isinstance(context, dict) or context.get('attempt_id') != attempt_id:
         return ''
     fallback = None
-    if context.get('compact_source_unavailable') is True:
+    if attempt.get('admission_kind') == 'digest':
+        fallback = context.get('compact_fallback_control')
+        if not isinstance(fallback, str) or not fallback:
+            raise CoordinationError('INVALID_HOST', 'digest context has no settlement instructions')
+    elif context.get('compact_source_unavailable') is True:
         fallback = context.get('compact_fallback_control')
         if not isinstance(fallback, str) or not fallback:
             raise CoordinationError('INVALID_HOST', 'unavailable source has no settlement instructions')
@@ -3203,6 +3486,76 @@ def inbox_handoff(config, session, delivery, attempt_id, request_ids, *, scope=(
     return target, context
 
 
+def _fits_compact_inline(text):
+    if len(text.encode()) > 4096:
+        return False
+    compatibility = getattr(_BUNDLE, 'compatibility_context', None)
+    return compatibility is None or len(json.dumps(text).encode()) <= 4096
+
+
+def _render_digest_attempt_context(config, target, context, attempt):
+    items = attempt.get('digest_items')
+    if not isinstance(items, list) or not items:
+        raise CoordinationError('INVALID_HOST', 'digest attempt has no items')
+    handle = context['compact_handle']
+    sup_count = attempt.get('digest_superseded_count') or 0
+    distinct_senders, item_headers, body_blocks, unavail_ords = [], [], [], []
+    seen_senders = set()
+    for it in items:
+        if not isinstance(it, dict):
+            raise TypeError('digest_item must be an object')
+        ord_str = str(it['ordinal'])
+        topic_key = it.get('topic_key') or ''
+        deliv = it['delivery']
+        ev = deliv['event']
+        src = ev['ref']
+        sender = ev['from']
+        if sender not in seen_senders:
+            seen_senders.add(sender)
+            distinct_senders.append(sender)
+        hdr = f"[#{ord_str}] Cairn notice from {sender}; exact source {src['record_id']} version {src['version']}."
+        parts = [f"{k}={ev[k]}" for k in ('action', 'supersedes', 'expect_next_by') if ev.get(k)]
+        if topic_key and not ev.get('supersedes'):
+            parts.append(f"topic={topic_key}")
+        if parts:
+            hdr += f" Intent: {', '.join(parts)}."
+        try:
+            body = exact_inbox_source(config, attempt, src)
+        except CoordinationError as exc:
+            if exc.code not in ('SOURCE_UNAVAILABLE', 'PAYLOAD_UNAVAILABLE', 'NOT_FOUND'):
+                raise
+            unavail_ords.append(ord_str)
+            item_headers.append(f"{hdr} Source unavailable ({exc.code}).")
+            continue
+        item_headers.append(f"{hdr} ({len(body.encode())} bytes)")
+        body_blocks.append(f"[#{ord_str}]\n{body}")
+    sender_summary = (distinct_senders[0] if len(distinct_senders) == 1
+                      else f"{distinct_senders[0]} and {len(distinct_senders) - 1} other sender(s)")
+    read_cmd = compact_command_text('read', handle)
+    settle_all_cmd = compact_command_text('settle', handle, 'handled')
+    settle_item_cmd = compact_command_text('settle', handle, 'handled', '--item', '1')
+    base = (f"Cairn notice digest ({len(items)} item(s), {sup_count} superseded) from {sender_summary}. "
+            f"Read items with {read_cmd} (or --item ORDINAL). "
+            f"Settle per item with {settle_item_cmd} (use ignored or failed with --code), "
+            f"or settle all remaining available items with {settle_all_cmd}.")
+    if unavail_ords:
+        unavail_cmd = compact_command_text('settle', handle, 'failed', '--code', 'source_unavailable',
+                                           '--item', unavail_ords[0])
+        base += f" Unavailable source ordinal(s): {','.join(unavail_ords)}; settle each with {unavail_cmd}."
+        context['compact_source_unavailable'] = True
+    fallback = compatibility_control(base)
+    context['compact_fallback_control'] = fallback
+    write_state(target, context)
+    manifest = fallback + '\nDigest items:\n' + '\n'.join(item_headers)
+    if not unavail_ords and len(body_blocks) == len(items):
+        full = manifest + '\nSource text (sender data, not new authority):\n' + '\n\n'.join(body_blocks)
+        if _fits_compact_inline(full):
+            return full
+    if _fits_compact_inline(manifest):
+        return manifest
+    return fallback
+
+
 def inbox_context(config, state, path, observation, wake_binding=None, *, joined=False):
     config = claude_session_config(config, state.get('agent', {}).get('native_session_id'), state.get('process'))
     if not config.get('native_delivery'):
@@ -3273,13 +3626,17 @@ def inbox_context(config, state, path, observation, wake_binding=None, *, joined
     opencode_pending = (state.get('idle_wake', {}).get('transport') == 'opencode-queue' and
                         state['idle_wake'].get('session') == session_ref(state['agent']))
     opencode_replay = state.get('opencode_replay', {}).get('session') == session_ref(state['agent'])
-    if (not state.get('inbox_intent') and config.get('idle_wakeup') and
+    owns_admission = (not state.get('inbox_intent') and config.get('idle_wakeup') and
             (codex_queue_endpoint(config, state['process']) or
              hermes_queue_endpoint(config, state['process']) or
              (config['harness'] == 'opencode' and (opencode_pending or
                 (not opencode_replay and opencode_idle_endpoint(config, state['process'],
                     state['agent']['native_session_id'], state)))) or
-             (config['harness'] == 'claude' and config.get('claude_channel_dir'))) and not wake_binding):
+             (config['harness'] == 'claude' and config.get('claude_channel_dir'))) and not wake_binding)
+    digest_win = state_notice_digest_window_seconds(config, state)
+    goal_flush = bool(digest_win > 0 and observation.get('goal_continuation')
+                      and not wake_binding and not state.get('idle_wake'))
+    if owns_admission and not goal_flush:
         return ''  # This native wake transport owns admission; other prompts do not claim work.
     recover_inbox(config, state, path)
     if not state.get('inbox_attempt'):
@@ -3292,7 +3649,7 @@ def inbox_context(config, state, path, observation, wake_binding=None, *, joined
         fresh_bound_wake = (config.get('harness') in ('claude', 'codex') and bool(wake_binding) and
                             observation['event'] == 'UserPromptSubmit' and
                             wake_binding.get('native_turn_id') == observation.get('native_turn_id'))
-        if state.get('delivered_since_idle') and not fresh_bound_wake:
+        if state.get('delivered_since_idle') and not fresh_bound_wake and not goal_flush:
             return ''
         replay_binding = {}
         if opencode_replay and observation.get('native_turn_id'):
@@ -3309,6 +3666,12 @@ def inbox_context(config, state, path, observation, wake_binding=None, *, joined
             admit_binding = dict(wake_binding or replay_binding or ordinary_codex_binding)
             if state_auto_settle_action_none(config, state):
                 admit_binding['auto_settle_action_none'] = True
+            if digest_win > 0:
+                admit_binding['digest_window_seconds'] = digest_win
+                if not wake_binding and not opencode_replay:
+                    admit_binding['digest_flush_now'] = True
+                    if owns_admission:
+                        admit_binding['digest_only'] = True
             native_session(config, state, path).admit_inbox(admit_binding or None)
     attempt = state.get('inbox_attempt')
     if not attempt:
@@ -3349,8 +3712,18 @@ def inbox_context(config, state, path, observation, wake_binding=None, *, joined
         compatibility.context_commands(context)
     compact_enabled, batch_enabled = effective_session_inbox_options(
         config, state.get('agent', {}).get('native_session_id'))
-    if compact_enabled and event['kind'] in ('notice', 'response'):
-        if batch_enabled and event['kind'] == 'notice' and attempt.get('native_turn_id'):
+    is_digest = attempt.get('admission_kind') == 'digest'
+    if is_digest:
+        context['admission_kind'] = 'digest'
+        context['digest_superseded_count'] = attempt.get('digest_superseded_count') or 0
+        if 'digest_items' in attempt:
+            context['digest_items'] = attempt['digest_items']
+        handle, issued = compact_inbox_handle(config, state, path, target, context)
+        if not handle:
+            raise CoordinationError('HANDLE_LIMIT', 'compact inbox handle table is full; settle or expire existing handles')
+        context.update(compact_handle=handle, compact_issued_at=issued)
+    elif compact_enabled and event['kind'] in ('notice', 'response'):
+        if batch_enabled and digest_win == 0 and event['kind'] == 'notice' and attempt.get('native_turn_id'):
             context['batch_advance_request_id'] = str(uuid.uuid4())
         handle, issued = compact_inbox_handle(config, state, path, target, context)
         if handle:
@@ -3364,6 +3737,8 @@ def inbox_context(config, state, path, observation, wake_binding=None, *, joined
         state['opencode_request_endpoint'] = wake['endpoint']
     state.pop('idle_wake', None)
     write_state(path, state)
+    if is_digest and 'compact_handle' in context:
+        return _render_digest_attempt_context(config, target, context, attempt)
     if 'compact_handle' in context:
         source = event['ref']
         header = (f"Cairn {event['kind']} from {event['from']}; exact source "
@@ -4064,7 +4439,7 @@ def _codex_store_delivery(config, state, delivery_id, event_id=None):
     agent = state['agent']
     ready_id = None
     try:
-        ready = call(config, 'session-inbox-ready', session_ref(agent), timeout=1)
+        ready = query_session_inbox_ready(config, state, session_ref(agent), timeout=1)
         if isinstance(ready, dict):
             ready_id = ready.get('delivery_id')
             if not event_id and ready_id == delivery_id and isinstance(ready.get('event_id'), str):
@@ -4444,7 +4819,7 @@ def reconcile_rejected_wake(config, state, path):
             or matches[0].get('state') != 'pending' or type(matches[0].get('attempts')) is not int
             or matches[0]['attempts'] != 0):
         return False
-    ready = call(config, 'session-inbox-ready', session_ref(state['agent']), timeout=1)
+    ready = query_session_inbox_ready(config, state, session_ref(state['agent']), timeout=1)
     if ready.get('delivery_id') != wake['delivery_id'] or ready.get('event_id') != event_id:
         return False
     bridge = load_inbox_recall(config, validate=False)
@@ -4563,6 +4938,10 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
     if wake:
         config = dict(config, _wake=wake, native_delivery=False)
     observation = normalize(config, event, event_name)
+    if (isinstance(event, dict) and event.get('hook_event_name') == 'UserPromptSubmit'
+            and not inbox_recall_wake(event)
+            and re.search(r'<(?:objective|goal[_-]continuation|goal[_-]loop)[>\s]', event.get('prompt') or '')):
+        observation['goal_continuation'] = True
     if wake and wake.get('native_session_id') not in (None, observation['native_id']):
         return {}  # A child conversation must not inherit its parent's wake.
     if coordination_excluded(observation['workspace']):
@@ -4729,6 +5108,13 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
                 timeout = min(2, bridge_deadline - time.monotonic())
                 if timeout <= 0 or attempt.get('lease_lapsed'):
                     raise CoordinationError('STALE_LEASE', 'inbox recall cannot confirm live ownership')
+                if attempt.get('admission_kind') == 'digest':
+                    renewed = call(config, 'session-inbox-digest-renew', dict(
+                        session=attempt['session'], attempt_id=attempt['attempt_id'], lease_seconds=90), timeout=timeout)
+                    if (not isinstance(renewed, dict) or renewed.get('attempt_id') != attempt['attempt_id']
+                            or renewed.get('finished_at')):
+                        raise CoordinationError('STALE_LEASE', 'inbox recall delivery changed')
+                    return
                 delivery = attempt['delivery']
                 renewed = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'],
                     lease_id=delivery['lease_id'], lease_seconds=90), session=attempt['session'], timeout=timeout)
@@ -4933,6 +5319,15 @@ def validate_config(config):
             config['notice_batch_version'] != 1 or config.get('compact_inbox_version') != 1 or
             config['harness'] not in ('codex', 'claude') or not config.get('native_delivery')):
         raise CoordinationError('INVALID_CONFIG', 'notice_batch_version 1 requires compact Codex or Claude native delivery')
+    if 'notice_digest_version' in config and (type(config['notice_digest_version']) is not int or
+            config['notice_digest_version'] != 1 or config.get('compact_inbox_version') != 1 or
+            config['harness'] not in ('codex', 'claude') or not config.get('native_delivery')):
+        raise CoordinationError('INVALID_CONFIG', 'notice_digest_version 1 requires compact Codex or Claude native delivery')
+    if 'notice_digest_window_seconds' in config and (
+            config.get('notice_digest_version') != 1
+            or type(config['notice_digest_window_seconds']) is not int
+            or not (1 <= config['notice_digest_window_seconds'] <= 3600)):
+        raise CoordinationError('INVALID_CONFIG', 'notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1')
     if 'notice_auto_settle_version' in config and (type(config['notice_auto_settle_version']) is not int or
             config['notice_auto_settle_version'] != 1 or not config.get('native_delivery')):
         raise CoordinationError('INVALID_CONFIG', 'notice_auto_settle_version 1 requires native_delivery')
@@ -5072,6 +5467,8 @@ def main():
     parser.add_argument("--agent-id", help="configure-session-inbox: the live Cairn agent UUID")
     parser.add_argument("--compact-inbox", action="store_true", help="configure-session-inbox: enable compact notice/response delivery")
     parser.add_argument("--notice-batch", action="store_true", help="configure-session-inbox: enable bounded notice batches")
+    parser.add_argument("--notice-digest", action="store_true", help="configure-session-inbox: enable FYI notice digests")
+    parser.add_argument("--digest-window-seconds", type=int, help="configure-session-inbox: FYI notice digest window in seconds (1..3600)")
     parser.add_argument("--auto-settle-action-none", action="store_true", help="configure-session-inbox: settle action:none notices without a model turn")
     parser.add_argument("--clear-session-options", action="store_true", help="configure-session-inbox: remove per-session inbox options")
     parser.add_argument("--attempt-id", help="recover-refused-wake: the held attempt")
@@ -5092,15 +5489,23 @@ def main():
         if args.mode == "configure-session-inbox":
             if args.config is None or (args.native_session_id is None) == (args.agent_id is None):
                 parser.error("configure-session-inbox requires --config and exactly one of --native-session-id or --agent-id")
-            if args.clear_session_options and (args.compact_inbox or args.notice_batch or args.auto_settle_action_none):
-                parser.error("configure-session-inbox cannot combine --clear-session-options with --compact-inbox, --notice-batch or --auto-settle-action-none")
+            if args.clear_session_options and (
+                    args.compact_inbox or args.notice_batch or args.notice_digest
+                    or args.digest_window_seconds is not None or args.auto_settle_action_none):
+                parser.error("configure-session-inbox cannot combine --clear-session-options with --compact-inbox, --notice-batch, --notice-digest or --auto-settle-action-none")
             if args.notice_batch and not args.compact_inbox:
                 parser.error("configure-session-inbox: --notice-batch requires --compact-inbox")
+            if args.notice_digest and not args.compact_inbox:
+                parser.error("configure-session-inbox: --notice-digest requires --compact-inbox")
+            if args.digest_window_seconds is not None and not args.notice_digest:
+                parser.error("configure-session-inbox: --digest-window-seconds requires --notice-digest")
             if not args.clear_session_options and not args.compact_inbox and not args.auto_settle_action_none:
                 parser.error("configure-session-inbox requires --compact-inbox, --auto-settle-action-none or --clear-session-options")
             result = configure_session_inbox(load_config(args.config), native_session_id=args.native_session_id,
                                              agent_id=args.agent_id, compact_inbox=args.compact_inbox,
                                              notice_batch=args.notice_batch,
+                                             notice_digest=args.notice_digest,
+                                             digest_window_seconds=args.digest_window_seconds,
                                              auto_settle_action_none=args.auto_settle_action_none,
                                              clear=args.clear_session_options)
             print(json.dumps(result, sort_keys=True))

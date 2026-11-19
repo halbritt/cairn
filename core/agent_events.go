@@ -809,7 +809,7 @@ func checkEventLease(ctx context.Context, tx pgx.Tx, d AgentDelivery, lease stri
 
 // The native attempt row names the exact claim: its lease, agent, execution
 // and base profile. Only that session's own attempt can carry a lapsed lease.
-const nativeLeaseHold = `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND lease_id=$2 AND agent_id=$3 AND execution_id=$4 AND owner=$5 AND `
+const nativeLeaseHold = `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE ((n.delivery_id=$1 AND n.lease_id=$2) OR EXISTS(SELECT 1 FROM cairn.agent_session_digest_item di WHERE di.attempt_id=n.attempt_id AND di.delivery_id=$1 AND di.lease_id=$2)) AND n.agent_id=$3 AND n.execution_id=$4 AND n.owner=$5 AND `
 
 // eventLease checks completion ownership. With a native session, an expired
 // lease is still accepted (late=true) while that session's unfinished attempt
@@ -850,7 +850,7 @@ func eventLease(ctx context.Context, tx pgx.Tx, d AgentDelivery, lease string, h
 		return false, failure("DEADLINE_EXCEEDED", "request task deadline reached; its host must stop and reconcile the hold")
 	}
 	var cancelled bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND finished_at IS NULL AND cancel_requested_at IS NOT NULL)`, d.DeliveryID).Scan(&cancelled); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE (n.delivery_id=$1 OR EXISTS(SELECT 1 FROM cairn.agent_session_digest_item di WHERE di.attempt_id=n.attempt_id AND di.delivery_id=$1)) AND n.finished_at IS NULL AND n.cancel_requested_at IS NOT NULL)`, d.DeliveryID).Scan(&cancelled); err != nil {
 		return false, err
 	}
 	if cancelled {

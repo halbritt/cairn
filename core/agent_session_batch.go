@@ -62,7 +62,7 @@ func (s *Store) AdvanceSessionInbox(ctx context.Context, req SessionInboxAdvance
 				return empty, err
 			}
 			if current.FinishedAt != nil || current.Cancel != nil || current.NativeTurnID == "" || current.TurnExclusive ||
-				current.Delivery.Event.Kind != "notice" || current.AdmissionKind == "organic" {
+				current.Delivery.Event.Kind != "notice" || current.AdmissionKind != "ordinary" {
 				return empty, failure("INVALID_REQUEST", "only one live pinned nonexclusive notice may advance")
 			}
 			if current.Delivery.State != "handled" && current.Delivery.State != "ignored" && current.Delivery.State != "failed" {

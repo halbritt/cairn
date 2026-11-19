@@ -687,7 +687,7 @@ func validateInboxSessionOptions(entry *value.Value, binding, session string, ca
 	}
 	for _, m := range entry.Members {
 		switch string(m.Key) {
-		case "schema", "binding", "native_session_id", "compact_inbox_version", "notice_batch_version", "notice_auto_settle_version", "updated_at":
+		case "schema", "binding", "native_session_id", "compact_inbox_version", "notice_batch_version", "notice_digest_version", "notice_digest_window_seconds", "notice_auto_settle_version", "updated_at":
 		default:
 			return "session inbox options are malformed", false
 		}
@@ -715,6 +715,18 @@ func validateInboxSessionOptions(entry *value.Value, binding, session string, ca
 	}
 	if bv := entry.Get("notice_batch_version"); bv != nil && (!nativeIntOne(bv) || cv == nil) {
 		return "notice_batch_version 1 requires compact Codex or Claude native delivery", false
+	}
+	dv := entry.Get("notice_digest_version")
+	if dv != nil && (!nativeIntOne(dv) || cv == nil) {
+		return "notice_digest_version 1 requires compact Codex or Claude native delivery", false
+	}
+	if dw := entry.Get("notice_digest_window_seconds"); dw != nil {
+		if dv == nil || dw.Kind != value.Int {
+			return "notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1", false
+		}
+		if n, err := strconv.Atoi(dw.Integer); err != nil || n < 1 || n > 3600 {
+			return "notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1", false
+		}
 	}
 	if asv != nil && (!nativeDelivery || !nativeIntOne(asv)) {
 		return "notice_auto_settle_version 1 requires native_delivery", false
@@ -760,10 +772,37 @@ func (d *inboxDelivery) revalidate() error {
 	}
 	defer api.Close()
 	session := d.id.attempt.Get("session")
-	api = api.ForAgentSession(core.AgentSessionRef{AgentID: text(session.Get("agent_id")), ExecutionID: text(session.Get("execution_id"))})
-	delivery := d.id.attempt.Get("delivery")
 	limited, cancel := context.WithTimeout(d.ctx, 2*time.Second)
 	defer cancel()
+	if value.SameText(d.id.attempt.Get("admission_kind"), "digest") {
+		payload := value.Mapping(value.Field("session", session), value.Field("attempt_id", d.id.attempt.Get("attempt_id")), value.Field("lease_seconds", integer(90)))
+		rawPayload, err := encoded(payload, false)
+		if err != nil {
+			return err
+		}
+		var raw json.RawMessage
+		if err = api.Call(limited, "session-inbox-digest-renew", json.RawMessage(rawPayload), &raw); err != nil {
+			code := core.Code(err)
+			if code == "" || code == "OK" {
+				code = "API_UNAVAILABLE"
+			}
+			message := "Cairn refused the lifecycle operation"
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				message = "Cairn lifecycle command is unavailable"
+			}
+			return &inboxCoordinationError{code: code, message: message}
+		}
+		renewed, err := value.DecodeText(raw, "utf-8", 0)
+		if err != nil {
+			return err
+		}
+		if !inboxEqual(renewed.Get("attempt_id"), d.id.attempt.Get("attempt_id")) || value.Truth(renewed.Get("finished_at")) {
+			return &inboxCoordinationError{code: "STALE_LEASE", message: "inbox recall delivery changed"}
+		}
+		return nil
+	}
+	api = api.ForAgentSession(core.AgentSessionRef{AgentID: text(session.Get("agent_id")), ExecutionID: text(session.Get("execution_id"))})
+	delivery := d.id.attempt.Get("delivery")
 	payload := value.Mapping(value.Field("delivery_id", delivery.Get("delivery_id")), value.Field("lease_id", delivery.Get("lease_id")), value.Field("lease_seconds", integer(90)))
 	rawPayload, err := encoded(payload, false)
 	if err != nil {

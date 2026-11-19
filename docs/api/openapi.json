@@ -12037,6 +12037,112 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.SessionDeliveryObservationResult"
       },
+      "core.SessionDigestItem": {
+        "properties": {
+          "delivery": {
+            "$ref": "#/components/schemas/core.AgentDelivery"
+          },
+          "ordinal": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "topic_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "delivery",
+          "ordinal"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionDigestItem"
+      },
+      "core.SessionDigestItemOutcome": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "lease_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "delivery_id",
+          "disposition",
+          "lease_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionDigestItemOutcome"
+      },
+      "core.SessionDigestItemOutcome.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delivery_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disposition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lease_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionDigestItemOutcome"
+      },
+      "core.SessionDigestSettledItem": {
+        "properties": {
+          "already_settled": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "completed_after_lease": {
+            "type": "boolean"
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "ordinal": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "delivery_id",
+          "ordinal",
+          "state"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionDigestSettledItem"
+      },
       "core.SessionInboxAdvance": {
         "properties": {
           "attempt_id": {
@@ -12175,6 +12281,20 @@
           "delivery": {
             "$ref": "#/components/schemas/core.AgentDelivery"
           },
+          "digest_items": {
+            "items": {
+              "$ref": "#/components/schemas/core.SessionDigestItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "digest_superseded_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
           "finished_at": {
             "format": "date-time",
             "type": [
@@ -12210,6 +12330,9 @@
             "type": "boolean"
           },
           "turn_stop_state": {
+            "type": "string"
+          },
+          "wake_delivery_id": {
             "type": "string"
           }
         },
@@ -12269,6 +12392,17 @@
           "delivery_id": {
             "type": "string"
           },
+          "digest_flush_now": {
+            "type": "boolean"
+          },
+          "digest_only": {
+            "type": "boolean"
+          },
+          "digest_window_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
           "native_turn_id": {
             "type": "string"
           },
@@ -12301,6 +12435,26 @@
           "delivery_id": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "digest_flush_now": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "digest_only": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "digest_window_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -12354,6 +12508,248 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.SessionInboxControlStatus"
+      },
+      "core.SessionInboxDigestReady": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "boolean"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestReady"
+      },
+      "core.SessionInboxDigestReadyRequest": {
+        "properties": {
+          "auto_settle_action_none": {
+            "type": "boolean"
+          },
+          "digest_flush_now": {
+            "type": "boolean"
+          },
+          "digest_window_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "session": {
+            "$ref": "#/components/schemas/core.AgentSessionRef"
+          }
+        },
+        "required": [
+          "digest_window_seconds",
+          "session"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestReadyRequest"
+      },
+      "core.SessionInboxDigestReadyRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_settle_action_none": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "digest_flush_now": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "digest_window_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestReadyRequest"
+      },
+      "core.SessionInboxDigestRenew": {
+        "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "lease_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "session": {
+            "$ref": "#/components/schemas/core.AgentSessionRef"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "session"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestRenew"
+      },
+      "core.SessionInboxDigestRenew.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lease_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestRenew"
+      },
+      "core.SessionInboxDigestSettle": {
+        "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/core.SessionDigestItemOutcome"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/core.AgentSessionRef"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "outcomes",
+          "request_id",
+          "session"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestSettle"
+      },
+      "core.SessionInboxDigestSettle.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcomes": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/core.SessionDigestItemOutcome.accepted"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestSettle"
+      },
+      "core.SessionInboxDigestSettleResult": {
+        "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/core.SessionDigestSettledItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "remaining": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "items",
+          "remaining"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestSettleResult"
       },
       "core.SessionInboxPending": {
         "properties": {
@@ -27872,6 +28268,26 @@
                           "null"
                         ]
                       },
+                      "digest_flush_now": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "digest_only": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "digest_window_seconds": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
                       "native_turn_id": {
                         "type": [
                           "string",
@@ -28126,6 +28542,476 @@
         "x-cairn-request-limit-bytes": 131072,
         "x-cairn-requires-local-destination": false,
         "x-cairn-retry": "read",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_sessions.go"
+      }
+    },
+    "/v1/session-inbox-digest-ready": {
+      "post": {
+        "operationId": "session-inbox-digest-ready",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "auto_settle_action_none": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "digest_flush_now": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "digest_window_seconds": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestReadyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.SessionInboxDigestReady"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.SessionInboxDigestReadyRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.SessionInboxDigestReadyRequest",
+          "response": "github.com/halbritt/cairn/core.SessionInboxDigestReady"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "read",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_sessions.go"
+      }
+    },
+    "/v1/session-inbox-digest-renew": {
+      "post": {
+        "operationId": "session-inbox-digest-renew",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "lease_seconds": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestRenew"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.SessionInboxAttempt"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.SessionInboxDigestRenew"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.SessionInboxDigestRenew",
+          "response": "github.com/halbritt/cairn/core.SessionInboxAttempt"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "idempotent",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_sessions.go"
+      }
+    },
+    "/v1/session-inbox-digest-settle": {
+      "post": {
+        "operationId": "session-inbox-digest-settle",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "outcomes": {
+                        "items": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/core.SessionDigestItemOutcome.accepted"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SessionInboxDigestSettle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.SessionInboxDigestSettleResult"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.SessionInboxDigestSettle"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.SessionInboxDigestSettle",
+          "response": "github.com/halbritt/cairn/core.SessionInboxDigestSettleResult"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "request-id",
         "x-cairn-session-headers": "optional",
         "x-cairn-source": "agent_sessions.go"
       }

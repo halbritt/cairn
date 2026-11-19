@@ -648,6 +648,9 @@ class PublicGoV3SessionCompactTests(unittest.TestCase):
             (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "", "--compact-inbox"], 1),
             (["configure-session-inbox", "--config", "<CFG>", "--agent-id", "33333333-3333-4333-8333-333333333333", "--compact-inbox"], 1),
             (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--compact-inbox", "--notice-batch"], 0),
+            (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--compact-inbox", "--notice-digest", "--digest-window-seconds", "180"], 0),
+            (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--notice-digest"], 2),
+            (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--compact-inbox", "--digest-window-seconds", "180"], 2),
             (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--auto-settle-action-none"], 0),
             (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--auto-settle-action-none", "--clear-session-options"], 2),
             (["configure-session-inbox", "--config", "<CFG>", "--native-session-id", "s1", "--clear-session-options"], 0),
@@ -701,6 +704,121 @@ class PublicGoV3SessionCompactTests(unittest.TestCase):
             self.assertEqual(ready, {})
             self.assertEqual([op for op, _ in ops], ["session-inbox-ready", "session-inbox-settle-none"])
             self.assertEqual(cycle["auto_settled_deliveries"], ["33333333-3333-4333-8333-333333333333"])
+
+    def test_notice_digest_python_wake_render_and_per_item_settle(self):
+        from integrations.lifecycle import coordination as engine, inbox_recall
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            state_dir = root / "state" / "claude-two"
+            state_dir.mkdir(parents=True, mode=0o700)
+            bindings_dir = root / "bindings"
+            bindings_dir.mkdir(parents=True, mode=0o700)
+            cfg = dict(cairn="/bin/true", socket=str(root / "api.sock"), token_file=str(root / "tok"),
+                       repo="fixture", binding="claude-two", harness="claude", native_delivery=True,
+                       remind_unacknowledged_turn_end=True, state_dir=str(state_dir))
+            cfg_path = bindings_dir / "claude-two.json"
+            cfg_path.write_text(json.dumps(cfg))
+            cfg_path.chmod(0o600)
+
+            res = engine.configure_session_inbox(cfg, native_session_id="s-digest",
+                                                 compact_inbox=True, notice_digest=True, digest_window_seconds=90)
+            self.assertEqual((res["notice_digest_version"], res["notice_digest_window_seconds"]), (1, 90))
+            self.assertTrue(inbox_recall.session_compact_inbox_enabled(cfg, "s-digest"))
+
+            agent = dict(agent_id="11111111-1111-4111-8111-111111111111",
+                         execution_id="22222222-2222-4222-8222-222222222222",
+                         native_session_id="s-digest")
+            d1_id = "33333333-3333-4333-8333-333333333333"
+            d2_id = "44444444-4444-4444-8444-444444444444"
+            l1_id = "55555555-5555-4555-8555-555555555555"
+            l2_id = "66666666-6666-4666-8666-666666666666"
+            r1_id = "77777777-7777-4777-8777-777777777777"
+            r2_id = "88888888-8888-4888-8888-888888888888"
+            att_id = "99999999-9999-4999-8999-999999999999"
+            ev1 = dict(event_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind="notice",
+                       from_="agent/w1", ref=dict(record_id=r1_id, version=1), action="review")
+            ev1["from"] = ev1.pop("from_")
+            ev2 = dict(event_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", kind="notice",
+                       from_="agent/w2", ref=dict(record_id=r2_id, version=1))
+            ev2["from"] = ev2.pop("from_")
+            deliv1 = dict(delivery_id=d1_id, lease_id=l1_id, state="leased", event=ev1)
+            deliv2 = dict(delivery_id=d2_id, lease_id=l2_id, state="leased", event=ev2)
+            digest_items = [
+                dict(ordinal=1, topic_key="slot/1", delivery=deliv1),
+                dict(ordinal=2, topic_key="slot/2", delivery=deliv2),
+            ]
+            sref = dict(agent_id=agent["agent_id"], execution_id=agent["execution_id"])
+            proc = engine.process_reference(os.getpid())
+            attempt = dict(attempt_id=att_id, session=sref, native_turn_id="claude-channel:p1",
+                           admission_kind="digest", digest_superseded_count=2,
+                           delivery=deliv1, digest_items=digest_items)
+            state = dict(agent=agent, process=proc, inbox_intent=dict(request_id=att_id, session=sref, native_turn_id="claude-channel:p1"),
+                         inbox_attempt=attempt)
+            s_path = engine.state_path(cfg, "s-digest")
+            engine.write_state(s_path, state)
+
+            item_states = {d1_id: ("leased", ""), d2_id: ("leased", "")}
+            bodies = {r1_id: "worker one digest note", r2_id: "worker two digest note"}
+
+            def fake_call(_cfg, op, body, **_kw):
+                if op == "session-inbox-digest-ready":
+                    self.assertEqual(body["digest_window_seconds"], 90)
+                    return dict(delivery_id=d1_id, event_id=ev1["event_id"], digest=True, count=2)
+                if op == "session-inbox-digest-renew":
+                    cur = json.loads(json.dumps(attempt))
+                    for it in cur["digest_items"]:
+                        st, cd = item_states[it["delivery"]["delivery_id"]]
+                        it["delivery"]["state"] = st
+                        if cd:
+                            it["delivery"]["code"] = cd
+                    return cur
+                if op == "history":
+                    txt = bodies[body["record_id"]]
+                    return dict(record_id=body["record_id"], historical=True, versions=[dict(
+                        version=1, payload_available=True, body=txt,
+                        body_bytes=len(txt.encode()), body_sha256=hashlib.sha256(txt.encode()).hexdigest(),
+                    )])
+                if op == "session-inbox-digest-settle":
+                    out = []
+                    for oc in body["outcomes"]:
+                        item_states[oc["delivery_id"]] = (oc["disposition"], oc.get("code", ""))
+                        out.append(dict(ordinal=1 if oc["delivery_id"] == d1_id else 2,
+                                        delivery_id=oc["delivery_id"], state=oc["disposition"], code=oc.get("code", "")))
+                    rem = sum(1 for st, _ in item_states.values() if st == "leased")
+                    return dict(attempt_id=att_id, items=out, remaining=rem)
+                if op == "session-inbox-reconcile":
+                    if body.get("reason") == "delivery_completed" and any(st == "leased" for st, _ in item_states.values()):
+                        raise engine.CoordinationError("DELIVERY_ACTIVE", "native digest has unsettled deliveries")
+                    return dict(attempt, finished_at="2026-11-19T00:00:00Z", reason=body.get("reason"))
+                raise AssertionError(f"unexpected op {op}")
+
+            with mock.patch.object(engine, "call", side_effect=fake_call), \
+                    mock.patch.dict(os.environ, {"CAIRN_INBOX_ROOT": str(root), "CLAUDE_SESSION_ID": "s-digest"}, clear=False):
+                ready = engine.session_inbox_ready_for_wake(cfg, state, agent)
+                self.assertEqual(ready["digest"], True)
+                rendered = engine.inbox_context(cfg, state, s_path, dict(event="UserPromptSubmit", phase="active", native_turn_id="claude-channel:p1"))
+                self.assertIn("Cairn notice digest (2 item(s), 2 superseded)", rendered)
+                self.assertIn("worker one digest note", rendered)
+                self.assertIn("worker two digest note", rendered)
+
+                ctx_doc = json.loads((state_dir / "inbox" / f"{att_id}.json").read_text())
+                handle = ctx_doc["compact_handle"]
+                buf = io.StringIO()
+                with mock.patch.object(sys, "stdout", buf):
+                    rc = engine.compact_inbox_command(["settle", handle, "ignored", "--code", "unsupported_kind", "--item", "2"])
+                self.assertEqual(rc, 0)
+                self.assertEqual(json.loads(buf.getvalue())["remaining"], 1)
+
+                # Turn-end reminder still fires while item 1 is unsettled!
+                rem_txt = engine.unacknowledged_turn_end_reminder(cfg, state, s_path, dict(event="Stop", phase="idle"))
+                self.assertIn("still needs an explicit outcome", rem_txt)
+
+                buf2 = io.StringIO()
+                with mock.patch.object(sys, "stdout", buf2):
+                    rc2 = engine.compact_inbox_command(["settle", handle, "handled"])
+                self.assertEqual(rc2, 0)
+                self.assertEqual(json.loads(buf2.getvalue())["remaining"], 0)
+                self.assertEqual(item_states, {d1_id: ("handled", ""), d2_id: ("ignored", "unsupported_kind")})
 
 
 if __name__ == "__main__":

@@ -156,7 +156,7 @@ func compactFresh(issued *value.Value, now float64) (bool, error) {
 
 func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.Writer) (int, error) {
 	const prog = "cairn-inbox"
-	a, err := parseCLI(argv, prog, map[string]int{"--code": 1})
+	a, err := parseCLI(argv, prog, map[string]int{"--code": 1, "--item": 1})
 	if err != nil {
 		return 0, err
 	}
@@ -196,6 +196,9 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	}
 	if op != "settle" && a.has("--code") {
 		return 0, nativeRefusal("INVALID_REQUEST", "reason code applies only to settlement")
+	}
+	if a.has("--item") && op != "read" && op != "settle" {
+		return 0, nativeRefusal("INVALID_REQUEST", "--item applies only to read or settle")
 	}
 	root, err := c.compactRoot()
 	if err != nil {
@@ -418,6 +421,12 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	}
 	if !nativeEqual(native.Get("native_turn_id"), attempt.Get("native_turn_id")) || !nativeContains([]string{"notice", "response"}, nativeText(event.Get("kind"))) {
 		return 0, nativeRefusal("INVALID_HOST", "compact inbox delivery changed")
+	}
+	if value.SameText(attempt.Get("admission_kind"), "digest") {
+		return c.compactDigestOperation(ctx, config, dir, handle, op, disposition, a.get("--code"), a.get("--item"), native, attempt, delivery, out)
+	}
+	if a.has("--item") {
+		return 0, nativeRefusal("INVALID_REQUEST", "--item applies only to notice digests")
 	}
 	if op == "advance" {
 		return c.advanceCompact(ctx, config, statePath, nativeID, native, attempt, event, out)

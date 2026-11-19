@@ -746,7 +746,21 @@ func (e *RecoveryEngine) codexStoreDelivery(ctx context.Context, s *NativeSessio
 		return nil, nil, err
 	}
 	var readyID *value.Value
-	ready, err := s.call(ctx, "session-inbox-ready", ref, NativeCallOptions{Timeout: time.Second})
+	helperCLI := &CLI{Host: s.Host}
+	digestWin, optErr := helperCLI.stateNoticeDigestWindowSeconds(s.Config, s.Record)
+	var ready *value.Value
+	if optErr != nil {
+		err = optErr
+	} else if digestWin > 0 {
+		autoSettle, asErr := helperCLI.stateAutoSettleActionNone(s.Config, s.Record)
+		if asErr != nil {
+			err = asErr
+		} else {
+			ready, err = s.call(ctx, "session-inbox-digest-ready", nativeMap("session", ref, "digest_window_seconds", digestWin, "auto_settle_action_none", autoSettle), NativeCallOptions{Timeout: time.Second})
+		}
+	} else {
+		ready, err = s.call(ctx, "session-inbox-ready", ref, NativeCallOptions{Timeout: time.Second})
+	}
 	if err != nil && nativeCode(err) == "" {
 		return nil, nil, err
 	}

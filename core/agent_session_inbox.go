@@ -18,6 +18,9 @@ type SessionInboxClaim struct {
 	NativeTurnID         string          `json:"native_turn_id,omitempty"`
 	TurnExclusive        bool            `json:"turn_exclusive,omitempty"`
 	AutoSettleActionNone bool            `json:"auto_settle_action_none,omitempty"`
+	DigestWindowSeconds  int             `json:"digest_window_seconds,omitempty"`
+	DigestFlushNow       bool            `json:"digest_flush_now,omitempty"`
+	DigestOnly           bool            `json:"digest_only,omitempty"`
 }
 
 type SessionInboxSettleNone struct {
@@ -36,25 +39,28 @@ type SessionInboxReconcile struct {
 	Reason    string          `json:"reason"`
 }
 type SessionInboxAttempt struct {
-	ID            string          `json:"attempt_id"`
-	Session       AgentSessionRef `json:"session"`
-	CreatedAt     time.Time       `json:"created_at"`
-	FinishedAt    *time.Time      `json:"finished_at,omitempty"`
-	Reason        string          `json:"reason,omitempty"`
-	Delivery      AgentDelivery   `json:"delivery"`
-	NativeTurnID  string          `json:"native_turn_id,omitempty"`
-	TurnExclusive bool            `json:"turn_exclusive,omitempty"`
-	BatchRoot     string          `json:"batch_root,omitempty"`
-	BatchIndex    int             `json:"batch_index,omitempty"`
-	BatchLimit    int             `json:"batch_limit,omitempty"`
-	CaptureGap    bool            `json:"capture_gap,omitempty"`
-	TurnStopState string          `json:"turn_stop_state,omitempty"`
-	CaptureState  string          `json:"capture_state,omitempty"`
-	TerminalScan  string          `json:"terminal_scan,omitempty"`
-	Cancel        *SessionCancel  `json:"cancel,omitempty"`
-	Tools         []SessionTool   `json:"tools,omitempty"`
-	AdmissionKind string          `json:"admission_kind,omitempty"`
-	OrganicRoot   string          `json:"organic_root,omitempty"`
+	ID                    string              `json:"attempt_id"`
+	Session               AgentSessionRef     `json:"session"`
+	CreatedAt             time.Time           `json:"created_at"`
+	FinishedAt            *time.Time          `json:"finished_at,omitempty"`
+	Reason                string              `json:"reason,omitempty"`
+	Delivery              AgentDelivery       `json:"delivery"`
+	NativeTurnID          string              `json:"native_turn_id,omitempty"`
+	TurnExclusive         bool                `json:"turn_exclusive,omitempty"`
+	BatchRoot             string              `json:"batch_root,omitempty"`
+	BatchIndex            int                 `json:"batch_index,omitempty"`
+	BatchLimit            int                 `json:"batch_limit,omitempty"`
+	CaptureGap            bool                `json:"capture_gap,omitempty"`
+	TurnStopState         string              `json:"turn_stop_state,omitempty"`
+	CaptureState          string              `json:"capture_state,omitempty"`
+	TerminalScan          string              `json:"terminal_scan,omitempty"`
+	Cancel                *SessionCancel      `json:"cancel,omitempty"`
+	Tools                 []SessionTool       `json:"tools,omitempty"`
+	AdmissionKind         string              `json:"admission_kind,omitempty"`
+	OrganicRoot           string              `json:"organic_root,omitempty"`
+	DigestSupersededCount int                 `json:"digest_superseded_count,omitempty"`
+	WakeDeliveryID        string              `json:"wake_delivery_id,omitempty"`
+	DigestItems           []SessionDigestItem `json:"digest_items,omitempty"`
 }
 type SessionInboxResult struct {
 	Attempt *SessionInboxAttempt `json:"attempt"`
@@ -224,7 +230,7 @@ func (s *Store) nativeInboxProfile(ref AgentSessionRef, dest Destination) error 
 func (s *Store) readSessionInboxAttempt(ctx context.Context, tx pgx.Tx, id string, ref AgentSessionRef, dest Destination) (SessionInboxAttempt, error) {
 	var out SessionInboxAttempt
 	var deliveryID, leaseID string
-	err := tx.QueryRow(ctx, `SELECT attempt_id::text,agent_id::text,execution_id::text,delivery_id::text,lease_id::text,created_at,finished_at,reason,native_turn_id,turn_exclusive,COALESCE(batch_root::text,''),batch_index,batch_limit,admission_kind,COALESCE(organic_root::text,'') FROM cairn.agent_session_attempt WHERE attempt_id=$1 AND owner=$2 AND agent_id=$3 AND execution_id=$4`, id, s.channel.Principal, ref.AgentID, ref.ExecutionID).Scan(&out.ID, &out.Session.AgentID, &out.Session.ExecutionID, &deliveryID, &leaseID, &out.CreatedAt, &out.FinishedAt, &out.Reason, &out.NativeTurnID, &out.TurnExclusive, &out.BatchRoot, &out.BatchIndex, &out.BatchLimit, &out.AdmissionKind, &out.OrganicRoot)
+	err := tx.QueryRow(ctx, `SELECT attempt_id::text,agent_id::text,execution_id::text,delivery_id::text,lease_id::text,created_at,finished_at,reason,native_turn_id,turn_exclusive,COALESCE(batch_root::text,''),batch_index,batch_limit,admission_kind,COALESCE(organic_root::text,''),digest_superseded_count FROM cairn.agent_session_attempt WHERE attempt_id=$1 AND owner=$2 AND agent_id=$3 AND execution_id=$4`, id, s.channel.Principal, ref.AgentID, ref.ExecutionID).Scan(&out.ID, &out.Session.AgentID, &out.Session.ExecutionID, &deliveryID, &leaseID, &out.CreatedAt, &out.FinishedAt, &out.Reason, &out.NativeTurnID, &out.TurnExclusive, &out.BatchRoot, &out.BatchIndex, &out.BatchLimit, &out.AdmissionKind, &out.OrganicRoot, &out.DigestSupersededCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, failure("NOT_FOUND", "native inbox attempt not found for this execution")
 	}
@@ -243,10 +249,20 @@ func (s *Store) readSessionInboxAttempt(ctx context.Context, tx pgx.Tx, id strin
 	if out.Tools, err = readSessionTools(ctx, tx, id); err != nil {
 		return out, err
 	}
+	if out.AdmissionKind == "digest" {
+		if err = lockDigestAttemptDeliveriesByUUIDTx(ctx, tx, id, deliveryID); err != nil {
+			return out, err
+		}
+		_ = tx.QueryRow(ctx, `SELECT COALESCE(requested_delivery_id::text,'') FROM cairn.agent_session_poll WHERE attempt_id=$1 AND requested_delivery_id IS NOT NULL AND requested_delivery_id<>$2 LIMIT 1`, id, deliveryID).Scan(&out.WakeDeliveryID)
+	}
 	view := *s
 	view.channel.Principal = "agent/" + ref.AgentID
 	out.Delivery, err = view.ownedDelivery(ctx, tx, deliveryID, dest)
 	out.Delivery.LeaseID = leaseID
+	if err != nil || out.AdmissionKind != "digest" {
+		return out, err
+	}
+	out.DigestItems, err = view.readSessionDigestItems(ctx, tx, id, dest)
 	return out, err
 }
 
@@ -265,6 +281,18 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 	}
 	if req.TurnExclusive && (req.NativeTurnID == "" || req.DeliveryID == "") {
 		return out, failure("INVALID_REQUEST", "an exclusive turn binding requires an exact delivery and its native turn ID")
+	}
+	if req.DigestWindowSeconds < 0 || req.DigestWindowSeconds > 3600 {
+		return out, failure("INVALID_REQUEST", "digest_window_seconds must be between 0 and 3600")
+	}
+	if (req.DigestFlushNow || req.DigestOnly) && req.DigestWindowSeconds == 0 {
+		return out, failure("INVALID_REQUEST", "digest_flush_now and digest_only require a positive digest_window_seconds")
+	}
+	if req.DigestOnly && req.DeliveryID != "" {
+		return out, failure("INVALID_REQUEST", "digest_only cannot be combined with an exact delivery_id")
+	}
+	if req.TurnExclusive && req.DigestWindowSeconds > 0 {
+		return out, failure("INVALID_REQUEST", "an exclusive turn binding cannot use notice digest admission")
 	}
 	// A pinned-but-unproven turn keeps its 048 semantics: the binding is
 	// valid for delivery identity, but without an explicit exclusivity
@@ -290,13 +318,14 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 	var owner, agentID, executionID, requestedDelivery, nativeTurn string
 	var prior *string
 	var priorExclusive *bool
-	var priorAutoSettle bool
-	err = tx.QueryRow(ctx, `SELECT owner,agent_id::text,execution_id::text,attempt_id::text,COALESCE(requested_delivery_id::text,''),native_turn_id,turn_exclusive,auto_settle_action_none FROM cairn.agent_session_poll WHERE request_id=$1`, req.RequestID).Scan(&owner, &agentID, &executionID, &prior, &requestedDelivery, &nativeTurn, &priorExclusive, &priorAutoSettle)
+	var priorAutoSettle, priorFlushNow, priorDigestOnly bool
+	var priorDigestWindow int
+	err = tx.QueryRow(ctx, `SELECT owner,agent_id::text,execution_id::text,attempt_id::text,COALESCE(requested_delivery_id::text,''),native_turn_id,turn_exclusive,auto_settle_action_none,digest_window_seconds,digest_flush_now,digest_only FROM cairn.agent_session_poll WHERE request_id=$1`, req.RequestID).Scan(&owner, &agentID, &executionID, &prior, &requestedDelivery, &nativeTurn, &priorExclusive, &priorAutoSettle, &priorDigestWindow, &priorFlushNow, &priorDigestOnly)
 	if err == nil {
 		if owner != s.channel.Principal || agentID != req.Session.AgentID || executionID != req.Session.ExecutionID {
 			return out, failure("IDEMPOTENCY_CONFLICT", "native poll UUID already belongs to another execution")
 		}
-		if requestedDelivery != req.DeliveryID || nativeTurn != req.NativeTurnID || priorExclusive == nil || *priorExclusive != req.TurnExclusive || priorAutoSettle != req.AutoSettleActionNone {
+		if requestedDelivery != req.DeliveryID || nativeTurn != req.NativeTurnID || priorExclusive == nil || *priorExclusive != req.TurnExclusive || priorAutoSettle != req.AutoSettleActionNone || priorDigestWindow != req.DigestWindowSeconds || priorFlushNow != req.DigestFlushNow || priorDigestOnly != req.DigestOnly {
 			return out, failure("IDEMPOTENCY_CONFLICT", "native poll UUID already binds another delivery, turn or exclusivity attestation")
 		}
 		if prior == nil {
@@ -316,7 +345,7 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 		if attempt != nil {
 			id = &attempt.ID
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_poll(request_id,agent_id,execution_id,attempt_id,requested_delivery_id,native_turn_id,turn_exclusive,auto_settle_action_none) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,$6,$7,$8)`, req.RequestID, req.Session.AgentID, req.Session.ExecutionID, id, req.DeliveryID, req.NativeTurnID, req.TurnExclusive, req.AutoSettleActionNone); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_poll(request_id,agent_id,execution_id,attempt_id,requested_delivery_id,native_turn_id,turn_exclusive,auto_settle_action_none,digest_window_seconds,digest_flush_now,digest_only) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,$6,$7,$8,$9,$10,$11)`, req.RequestID, req.Session.AgentID, req.Session.ExecutionID, id, req.DeliveryID, req.NativeTurnID, req.TurnExclusive, req.AutoSettleActionNone, req.DigestWindowSeconds, req.DigestFlushNow, req.DigestOnly); err != nil {
 			return out, err
 		}
 		return SessionInboxResult{attempt}, tx.Commit(ctx)
@@ -330,6 +359,9 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 	}
 	if _, err = expireRequestDeliveries(ctx, tx, s, a.Repo, a.Inbox, dest.AllowLocal); err != nil {
 		return out, err
+	}
+	if req.DigestWindowSeconds > 0 {
+		return s.claimSessionDigestAttempt(ctx, tx, a, req, dest, commit)
 	}
 	var id string
 	limit := 1
@@ -411,6 +443,9 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 		if err = s.checkRepo(repo); err != nil {
 			return err
 		}
+		if err = lock(ctx, tx, "session-attempt:"+req.AttemptID); err != nil {
+			return err
+		}
 		_, err = s.readSessionInboxAttempt(ctx, tx, req.AttemptID, req.Session, dest)
 		return err
 	}
@@ -432,13 +467,8 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 		if settled {
 			return s.readSessionInboxAttempt(ctx, tx, req.AttemptID, req.Session, dest)
 		}
-		if attempt.Delivery.State == "pending" || attempt.Delivery.State == "leased" {
-			if req.Reason == "delivery_completed" {
-				return attempt, failure("DELIVERY_ACTIVE", "native delivery has not been explicitly completed")
-			}
-			if _, err = failDelivery(ctx, tx, attempt.Delivery.DeliveryID, "processing_failed", nil); err != nil {
-				return attempt, err
-			}
+		if err = reconcileAttemptDeliveries(ctx, tx, attempt, req.Reason); err != nil {
+			return attempt, err
 		}
 		if _, err = finishAttempt(ctx, tx, req.AttemptID, req.Reason, attemptClose{}); err != nil {
 			return attempt, err

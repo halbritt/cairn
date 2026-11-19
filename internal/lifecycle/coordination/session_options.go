@@ -23,13 +23,16 @@ import (
 const sessionInboxOptionsSchema = "cairn.session-inbox-options/1"
 
 type SessionInboxOptionsRequest struct {
-	NativeSessionID      string
-	HasNativeSessionID   bool
-	AgentID              string
-	CompactInbox         bool
-	NoticeBatch          bool
-	AutoSettleActionNone bool
-	Clear                bool
+	NativeSessionID        string
+	HasNativeSessionID     bool
+	AgentID                string
+	CompactInbox           bool
+	NoticeBatch            bool
+	NoticeDigest           bool
+	DigestWindowSeconds    int
+	HasDigestWindowSeconds bool
+	AutoSettleActionNone   bool
+	Clear                  bool
 }
 
 func (c *CLI) sessionOptionsPath(config *value.Value, nativeID string) (string, error) {
@@ -111,7 +114,7 @@ func validateSessionInboxOptionsEntry(config *value.Value, nativeID string, entr
 	}
 	for _, m := range entry.Members {
 		switch string(m.Key) {
-		case "schema", "binding", "native_session_id", "compact_inbox_version", "notice_batch_version", "notice_auto_settle_version", "updated_at":
+		case "schema", "binding", "native_session_id", "compact_inbox_version", "notice_batch_version", "notice_digest_version", "notice_digest_window_seconds", "notice_auto_settle_version", "updated_at":
 		default:
 			return nil, nativeRefusal("INVALID_HOST", "session inbox options are malformed")
 		}
@@ -141,10 +144,30 @@ func validateSessionInboxOptionsEntry(config *value.Value, nativeID string, entr
 	if bv := entry.Get("notice_batch_version"); bv != nil && (bv.Kind != value.Int || bv.Integer != "1" || cv == nil) {
 		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
 	}
+	dv := entry.Get("notice_digest_version")
+	if dv != nil && (!sessionIntOne(dv) || cv == nil) {
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_version 1 requires compact Codex or Claude native delivery")
+	}
+	if dw := entry.Get("notice_digest_window_seconds"); dw != nil {
+		if dv == nil {
+			return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1")
+		}
+		if _, ok := sessionDigestWindowValid(dw); !ok {
+			return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1")
+		}
+	}
 	if asv != nil && (!value.Truth(config.Get("native_delivery")) || asv.Kind != value.Int || asv.Integer != "1") {
 		return nil, nativeRefusal("INVALID_CONFIG", "notice_auto_settle_version 1 requires native_delivery")
 	}
 	return entry, nil
+}
+
+func sessionDigestWindowValid(v *value.Value) (int, bool) {
+	if v == nil || v.Kind != value.Int {
+		return 0, false
+	}
+	n, err := strconv.Atoi(v.Integer)
+	return n, err == nil && n >= 1 && n <= 3600
 }
 
 func sessionIntOne(v *value.Value) bool {
@@ -195,6 +218,48 @@ func (c *CLI) stateAutoSettleActionNone(config, state *value.Value) (bool, error
 		}
 	}
 	return c.autoSettleActionNoneEnabled(config, nativeID)
+}
+
+func (c *CLI) noticeDigestWindowSeconds(config, nativeID *value.Value) (int, error) {
+	capable := nativeContains([]string{"codex", "claude"}, nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
+	if !capable {
+		return 0, nil
+	}
+	compact := sessionIntOne(config.Get("compact_inbox_version"))
+	digest := compact && sessionIntOne(config.Get("notice_digest_version"))
+	window := 300
+	if w, ok := sessionDigestWindowValid(config.Get("notice_digest_window_seconds")); ok && digest {
+		window = w
+	}
+	if nativeID != nil && nativeID.Kind == value.String {
+		override, err := c.readSessionInboxOptions(config, string(nativeID.String))
+		if err != nil {
+			return 0, err
+		}
+		if override != nil {
+			compact = compact || sessionIntOne(override.Get("compact_inbox_version"))
+			if compact && sessionIntOne(override.Get("notice_digest_version")) {
+				digest = true
+				if w, ok := sessionDigestWindowValid(override.Get("notice_digest_window_seconds")); ok {
+					window = w
+				}
+			}
+		}
+	}
+	if !digest {
+		return 0, nil
+	}
+	return window, nil
+}
+
+func (c *CLI) stateNoticeDigestWindowSeconds(config, state *value.Value) (int, error) {
+	var nativeID *value.Value
+	if state != nil && state.Kind == value.Object {
+		if agent := state.Get("agent"); agent != nil && agent.Kind == value.Object {
+			nativeID = agent.Get("native_session_id")
+		}
+	}
+	return c.noticeDigestWindowSeconds(config, nativeID)
 }
 
 func (c *CLI) resolveSessionTarget(config *value.Value, req SessionInboxOptionsRequest) (string, error) {
@@ -261,6 +326,12 @@ func (c *CLI) ConfigureSessionInbox(ctx context.Context, config *value.Value, re
 	if req.NoticeBatch && !req.CompactInbox {
 		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
 	}
+	if req.NoticeDigest && !req.CompactInbox {
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_version 1 requires compact Codex or Claude native delivery")
+	}
+	if req.HasDigestWindowSeconds && (!req.NoticeDigest || req.DigestWindowSeconds < 1 || req.DigestWindowSeconds > 3600) {
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1")
+	}
 	if req.AutoSettleActionNone && !value.Truth(config.Get("native_delivery")) {
 		return nil, nativeRefusal("INVALID_CONFIG", "notice_auto_settle_version 1 requires native_delivery")
 	}
@@ -305,6 +376,12 @@ func (c *CLI) ConfigureSessionInbox(ctx context.Context, config *value.Value, re
 		if req.NoticeBatch {
 			rec.Set("notice_batch_version", value.IntegerText("1"))
 		}
+		if req.NoticeDigest {
+			rec.Set("notice_digest_version", value.IntegerText("1"))
+			if req.HasDigestWindowSeconds {
+				rec.Set("notice_digest_window_seconds", value.IntegerText(strconv.Itoa(req.DigestWindowSeconds)))
+			}
+		}
 		if req.AutoSettleActionNone {
 			rec.Set("notice_auto_settle_version", value.IntegerText("1"))
 		}
@@ -317,16 +394,24 @@ func (c *CLI) ConfigureSessionInbox(ctx context.Context, config *value.Value, re
 	if err != nil {
 		return nil, err
 	}
+	digestWin, err := c.noticeDigestWindowSeconds(config, value.Text(nativeID))
+	if err != nil {
+		return nil, err
+	}
 	autoSettle, err := c.autoSettleActionNoneEnabled(config, value.Text(nativeID))
 	if err != nil {
 		return nil, err
 	}
-	var compactVal, batchVal, autoSettleVal *value.Value
+	var compactVal, batchVal, digestVal, digestWinVal, autoSettleVal *value.Value
 	if compact {
 		compactVal = value.IntegerText("1")
 	}
 	if batch {
 		batchVal = value.IntegerText("1")
+	}
+	if digestWin > 0 {
+		digestVal = value.IntegerText("1")
+		digestWinVal = value.IntegerText(strconv.Itoa(digestWin))
 	}
 	if autoSettle {
 		autoSettleVal = value.IntegerText("1")
@@ -339,6 +424,8 @@ func (c *CLI) ConfigureSessionInbox(ctx context.Context, config *value.Value, re
 		"options_path", optPath,
 		"compact_inbox_version", compactVal,
 		"notice_batch_version", batchVal,
+		"notice_digest_version", digestVal,
+		"notice_digest_window_seconds", digestWinVal,
 		"notice_auto_settle_version", autoSettleVal,
 	), nil
 }

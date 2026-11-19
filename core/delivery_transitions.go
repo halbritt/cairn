@@ -29,8 +29,8 @@ const nativeLeaseTTL = 90 * time.Second
 const (
 	// wakeHold: no unfinished wake attempt holds delivery d.
 	wakeHold = `NOT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id AND w.finished_at IS NULL)`
-	// sessionInboxHold: no unfinished native attempt holds delivery d.
-	sessionInboxHold = `NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id AND n.finished_at IS NULL)`
+	// sessionInboxHold: no unfinished native attempt holds delivery d (either as primary delivery or as a digest item).
+	sessionInboxHold = `NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.finished_at IS NULL AND (n.delivery_id=d.delivery_id OR EXISTS(SELECT 1 FROM cairn.agent_session_digest_item di WHERE di.attempt_id=n.attempt_id AND di.delivery_id=d.delivery_id)))`
 
 	unfinishedNativeByAgent = `EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$1 AND finished_at IS NULL)`
 	unfinishedWakeByAgent   = `EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE agent_id=$1 AND finished_at IS NULL)`
@@ -47,7 +47,7 @@ const (
 
 // deliveryHeld reports the unfinished wake and native attempts on a delivery.
 func deliveryHeld(ctx context.Context, tx pgx.Tx, deliveryID string) (wake, native bool, err error) {
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE delivery_id=$1 AND finished_at IS NULL),EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND finished_at IS NULL)`, deliveryID).Scan(&wake, &native)
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE delivery_id=$1 AND finished_at IS NULL),EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.finished_at IS NULL AND (n.delivery_id=$1 OR EXISTS(SELECT 1 FROM cairn.agent_session_digest_item di WHERE di.attempt_id=n.attempt_id AND di.delivery_id=$1)))`, deliveryID).Scan(&wake, &native)
 	return wake, native, err
 }
 
@@ -169,6 +169,7 @@ type nativeAttemptOpen struct {
 	Batch                                 *nativeBatchPosition
 	AdmissionKind                         string
 	OrganicRoot                           string
+	DigestSupersededCount                 int
 }
 
 // nativeBatchPosition places an attempt in a bounded notice batch.
@@ -186,10 +187,10 @@ func openAttempt(ctx context.Context, tx pgx.Tx, a nativeAttemptOpen) error {
 		admissionKind = "ordinary"
 	}
 	if a.Batch == nil {
-		_, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive,admission_kind,organic_root) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid)`, a.AttemptID, a.AgentID, a.ExecutionID, a.Repo, a.DeliveryID, a.LeaseID, a.NativeTurnID, a.TurnExclusive, admissionKind, a.OrganicRoot)
+		_, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive,admission_kind,organic_root,digest_superseded_count) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid,$11)`, a.AttemptID, a.AgentID, a.ExecutionID, a.Repo, a.DeliveryID, a.LeaseID, a.NativeTurnID, a.TurnExclusive, admissionKind, a.OrganicRoot, a.DigestSupersededCount)
 		return err
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive,batch_root,batch_index,batch_limit,admission_kind,organic_root) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULLIF($13,'')::uuid)`, a.AttemptID, a.AgentID, a.ExecutionID, a.Repo, a.DeliveryID, a.LeaseID, a.NativeTurnID, a.TurnExclusive, a.Batch.Root, a.Batch.Index, a.Batch.Limit, admissionKind, a.OrganicRoot)
+	_, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive,batch_root,batch_index,batch_limit,admission_kind,organic_root,digest_superseded_count) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULLIF($13,'')::uuid,$14)`, a.AttemptID, a.AgentID, a.ExecutionID, a.Repo, a.DeliveryID, a.LeaseID, a.NativeTurnID, a.TurnExclusive, a.Batch.Root, a.Batch.Index, a.Batch.Limit, admissionKind, a.OrganicRoot, a.DigestSupersededCount)
 	return err
 }
 

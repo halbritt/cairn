@@ -128,7 +128,7 @@ const stoppedDeliveryNotifyQuery = `SELECT d.consumer,d.state,d.attempts,d.avail
  CASE WHEN d.attempts=0 OR (
   d.attempts=(SELECT count(*) FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id)
   AND NOT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id AND w.state<>'prepared' AND w.process_state<>'prelaunch_failed')
-  AND NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id)
+  AND NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id OR EXISTS(SELECT 1 FROM cairn.agent_session_digest_item di WHERE di.attempt_id=n.attempt_id AND di.delivery_id=d.delivery_id))
  ) THEN 'never_launched' ELSE 'may_have_executed' END,
  s.agent_id::text,s.execution_id::text,s.stopped,clock_timestamp()
  FROM cairn.agent_delivery d

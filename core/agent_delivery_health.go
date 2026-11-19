@@ -296,7 +296,7 @@ type DiagnosisHost struct {
 // delivery that later waits again inherits no pre-claim host observation.
 const diagnosisQuery = `SELECT d.delivery_id::text,d.state,d.lease_until,d.available_at,clock_timestamp(),d.attempts,
  GREATEST(d.lease_until,
-  (SELECT max(GREATEST(n.created_at,n.finished_at)) FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id),
+  (SELECT max(GREATEST(n.created_at,n.finished_at)) FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id OR EXISTS(SELECT 1 FROM cairn.agent_session_digest_item di WHERE di.attempt_id=n.attempt_id AND di.delivery_id=d.delivery_id)),
   (SELECT max(GREATEST(w.created_at,w.finished_at)) FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id)),
  COALESCE(oe.sensitivity='shareable',true),
  NOT (` + wakeHold + `) OR NOT (` + sessionInboxHold + `),

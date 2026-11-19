@@ -262,6 +262,9 @@ func (c *CLI) handleHookInner(ctx context.Context, config, event *value.Value, e
 		config = cfgCopy
 	}
 	observation := decision.Observation()
+	if isGoalContinuationPrompt(event) {
+		observation.Set("goal_continuation", value.Boolean(true))
+	}
 	if value.Truth(wakeVal) && !nativeNone(wakeVal.Get("native_session_id")) && !nativeEqual(wakeVal.Get("native_session_id"), observation.Get("native_id")) {
 		return value.Mapping(), nil
 	}
@@ -786,6 +789,18 @@ func (c *CLI) invokeInboxRecallBridge(ctx context.Context, ns *NativeSession, co
 		}
 		if rem <= 0 || value.Truth(attempt.Get("lease_lapsed")) {
 			return nativeRefusal("STALE_LEASE", "inbox recall cannot confirm live ownership")
+		}
+		if value.SameText(attempt.Get("admission_kind"), "digest") {
+			renewed, err := c.call(ctx, config, "session-inbox-digest-renew", nativeMap("session", attempt.Get("session"), "attempt_id", attempt.Get("attempt_id"), "lease_seconds", 90), NativeCallOptions{
+				Timeout: time.Duration(rem * float64(time.Second)),
+			})
+			if err != nil {
+				return err
+			}
+			if renewed == nil || renewed.Kind != value.Object || !nativeEqual(renewed.Get("attempt_id"), attempt.Get("attempt_id")) || value.Truth(renewed.Get("finished_at")) {
+				return nativeRefusal("STALE_LEASE", "inbox recall delivery changed")
+			}
+			return nil
 		}
 		delivery := attempt.Get("delivery")
 		if delivery == nil || delivery.Kind != value.Object {

@@ -1073,7 +1073,7 @@ func (c *CLI) reconcileRejectedWakeStoreAndLedger(
 		matches[0].Get("attempts").Integer != "0" {
 		return false, nil
 	}
-	ready, err := c.call(ctx, config, "session-inbox-ready", ref, NativeCallOptions{Timeout: time.Second})
+	ready, err := c.querySessionInboxReadyWithOptions(ctx, config, state, ref, NativeCallOptions{Timeout: time.Second})
 	if err != nil {
 		return false, err
 	}

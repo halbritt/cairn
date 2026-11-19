@@ -34,7 +34,7 @@ Everyday operations:
 
 JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
-  session-inbox-ready, session-inbox-settle-none, session-inbox-claim, session-inbox-advance, session-inbox-reconcile Native host delivery
+  session-inbox-ready, session-inbox-digest-ready, session-inbox-settle-none, session-inbox-claim, session-inbox-advance, session-inbox-digest-renew, session-inbox-digest-settle, session-inbox-reconcile Native host delivery
   session-inbox-pending Native host busy-session inbox counts (read-only)
   session-quiescence Read exact owned inbox custody; does not establish native quiescence
   session-delivery-observe Native host delivery diagnosis (host-reported)
@@ -80,6 +80,18 @@ var agentJSONHelp = map[string]agentJSONHelpSpec{
 	"session-inbox-ready": {
 		Detail:  "Native host adapter only: read the first eligible delivery ID for a live idle execution without claiming or changing work. Empty when busy, held or unavailable. This is a snapshot; only the native hook claims ownership.",
 		Example: `{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}`,
+	},
+	"session-inbox-digest-ready": {
+		Detail:  "Native host adapter only: read the first eligible priority delivery or due FYI notice digest head for a live idle execution without claiming or changing work. Priority arrivals preempt immediately; routine and review notices wait until the digest window expires, a priority arrival occurs, or digest_flush_now is set.",
+		Example: `{"session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"digest_window_seconds":300}`,
+	},
+	"session-inbox-digest-renew": {
+		Detail:  "Native host adapter only: extend live leases across all unsettled items in an owned notice digest attempt.",
+		Example: `{"session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"ATTEMPT_UUID","lease_seconds":90}`,
+	},
+	"session-inbox-digest-settle": {
+		Detail:  "Native host adapter only: settle one or more items of an owned notice digest attempt with per-item dispositions while preserving late-completion hold semantics. Retry the same request UUID.",
+		Example: `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"ATTEMPT_UUID","outcomes":[{"delivery_id":"DELIVERY_UUID","lease_id":"LEASE_UUID","disposition":"handled"}]}`,
 	},
 	"session-inbox-settle-none": {
 		Detail:  "Native host adapter only: settle eligible head-of-queue action:none notices for an unoccupied existing-session inbox without waking a model turn, returning settled delivery IDs and the next ready item when idle. Retry the same request UUID.",

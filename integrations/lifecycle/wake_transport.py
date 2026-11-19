@@ -382,7 +382,7 @@ class TerminalWakeTransport(WakeTransport):
             config, state, current, environment
         ):
             return None
-        if coord.call(config, "session-inbox-ready", coord.session_ref(agent)).get("delivery_id") != delivery:
+        if coord.query_session_inbox_ready(config, state, coord.session_ref(agent)).get("delivery_id") != delivery:
             return None
         state.pop("wake_refusal", None)
         state["idle_wake"] = dict(

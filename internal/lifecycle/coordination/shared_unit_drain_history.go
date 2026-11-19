@@ -86,7 +86,7 @@ func (r *watchDrainRead) historicalAttempt(ctx context.Context, session watchDra
 	if !value.Truth(remote.Get("reason")) {
 		return errors.New("D2 authoritative close reason is unknown")
 	}
-	for _, key := range []string{"native_turn_id", "batch_root", "batch_index", "batch_limit", "admission_kind", "organic_root"} {
+	for _, key := range []string{"native_turn_id", "batch_root", "batch_index", "batch_limit", "admission_kind", "organic_root", "digest_superseded_count"} {
 		if retained := local.Get(key); !nativeNone(retained) && !nativeEqual(retained, remote.Get(key)) {
 			return errors.New("D2 historical native/batch ownership correspondence is unknown")
 		}
@@ -123,6 +123,19 @@ func (r *watchDrainRead) historicalCompletion(session watchDrainSession, local, 
 	case "handled", "ignored", "failed":
 	default:
 		return errors.New("D2 authoritative delivery is not terminal")
+	}
+	if value.SameText(remote.Get("admission_kind"), "digest") {
+		di := remote.Get("digest_items")
+		if di == nil || di.Kind != value.Array || len(di.Items) == 0 {
+			return errors.New("D2 authoritative digest items are missing")
+		}
+		for _, it := range di.Items {
+			switch nativeText(it.Get("delivery").Get("state")) {
+			case "handled", "ignored", "failed":
+			default:
+				return errors.New("D2 authoritative digest item is not terminal")
+			}
+		}
 	}
 	path := filepath.Join(nativeText(session.config.Get("state_dir")), "intents", nativeText(local.Get("attempt_id"))+".json")
 	intent, err := r.file(path)

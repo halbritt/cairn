@@ -82,7 +82,7 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 		}
 
 		var activeAttempt bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE delivery_id=$1 AND finished_at IS NULL UNION ALL SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND finished_at IS NULL)`, req.DeliveryID).Scan(&activeAttempt)
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE delivery_id=$1 AND finished_at IS NULL UNION ALL SELECT 1 FROM cairn.agent_session_attempt n WHERE (n.delivery_id=$1 OR EXISTS(SELECT 1 FROM cairn.agent_session_digest_item di WHERE di.attempt_id=n.attempt_id AND di.delivery_id=$1)) AND n.finished_at IS NULL)`, req.DeliveryID).Scan(&activeAttempt)
 		if err != nil {
 			return AgentEvent{}, err
 		}

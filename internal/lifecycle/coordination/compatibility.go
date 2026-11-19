@@ -2182,8 +2182,28 @@ func (c *CLI) finalizeAttemptContext(ctx context.Context, ns *NativeSession, con
 	if err != nil {
 		return nil, err
 	}
-	if compactEnabled && nativeContains([]string{"notice", "response"}, nativeText(event.Get("kind"))) {
-		if batchEnabled && value.SameText(event.Get("kind"), "notice") && value.Truth(attempt.Get("native_turn_id")) {
+	digestWin, err := c.noticeDigestWindowSeconds(config, nativeID)
+	if err != nil {
+		return nil, err
+	}
+	isDigest := value.SameText(attempt.Get("admission_kind"), "digest")
+	if isDigest {
+		native.Set("admission_kind", value.Text("digest"))
+		native.Set("digest_superseded_count", nativeOr(attempt.Get("digest_superseded_count"), value.IntegerText("0")))
+		if di := attempt.Get("digest_items"); di != nil {
+			native.Set("digest_items", di)
+		}
+		handle, issued, err := c.CompactInboxHandle(config, state, statePath, target, native)
+		if err != nil {
+			return nil, err
+		}
+		if handle == "" {
+			return nil, nativeRefusal("HANDLE_LIMIT", "compact inbox handle table is full; settle or expire existing handles")
+		}
+		native.Set("compact_handle", value.Text(handle))
+		native.Set("compact_issued_at", issued)
+	} else if compactEnabled && nativeContains([]string{"notice", "response"}, nativeText(event.Get("kind"))) {
+		if batchEnabled && digestWin == 0 && value.SameText(event.Get("kind"), "notice") && value.Truth(attempt.Get("native_turn_id")) {
 			native.Set("batch_advance_request_id", value.Text(c.newUUID()))
 		}
 		handle, issued, err := c.CompactInboxHandle(config, state, statePath, target, native)
@@ -2209,6 +2229,9 @@ func (c *CLI) finalizeAttemptContext(ctx context.Context, ns *NativeSession, con
 	nativePop(state, "idle_wake")
 	if err := ns.Save(); err != nil {
 		return nil, err
+	}
+	if isDigest && native.Get("compact_handle") != nil {
+		return c.renderDigestAttemptContext(ctx, config, target, native, attempt)
 	}
 	if native.Get("compact_handle") != nil {
 		return c.renderCompactAttemptContext(ctx, config, target, native, attempt, event)

@@ -709,19 +709,38 @@ func (s *NativeSession) Renew(ctx context.Context, attempt *value.Value) (*value
 	if value.Truth(attempt.Get("lease_lapsed")) {
 		return delivery, nil
 	}
-	id, e := nativeRequired(delivery, "delivery_id")
-	if e != nil {
-		return nil, e
-	}
-	lease, e := nativeRequired(delivery, "lease_id")
-	if e != nil {
-		return nil, e
-	}
 	session, e := nativeRequired(attempt, "session")
 	if e != nil {
 		return nil, e
 	}
-	result, e := s.call(ctx, "event-renew", nativeMap("delivery_id", id, "lease_id", lease, "lease_seconds", LeaseSeconds), NativeCallOptions{Session: session})
+	var result *value.Value
+	if value.SameText(attempt.Get("admission_kind"), "digest") {
+		attID, e := nativeRequired(attempt, "attempt_id")
+		if e != nil {
+			return nil, e
+		}
+		renewedAtt, callErr := s.call(ctx, "session-inbox-digest-renew", nativeMap("session", session, "attempt_id", attID, "lease_seconds", LeaseSeconds), NativeCallOptions{})
+		if callErr == nil {
+			if renewedAtt == nil || renewedAtt.Kind != value.Object {
+				return nil, &journal.NonObjectError{Field: "renewed digest attempt"}
+			}
+			result = renewedAtt.Get("delivery")
+			if di := renewedAtt.Get("digest_items"); di != nil {
+				attempt.Set("digest_items", di)
+			}
+		}
+		e = callErr
+	} else {
+		id, reqErr := nativeRequired(delivery, "delivery_id")
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		lease, reqErr := nativeRequired(delivery, "lease_id")
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		result, e = s.call(ctx, "event-renew", nativeMap("delivery_id", id, "lease_id", lease, "lease_seconds", LeaseSeconds), NativeCallOptions{Session: session})
+	}
 	if e != nil {
 		if nativeCode(e) != "STALE_LEASE" {
 			return nil, e

@@ -54,6 +54,9 @@ func (s *Store) SessionInboxAttemptStatus(ctx context.Context, req SessionInboxA
 	}
 	// Inspection does not convey a lease or a deadline usable by its holder.
 	attempt.Delivery.LeaseID, attempt.Delivery.LeaseUntil = "", nil
+	for i := range attempt.DigestItems {
+		attempt.DigestItems[i].Delivery.LeaseID, attempt.DigestItems[i].Delivery.LeaseUntil = "", nil
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return out, err
 	}

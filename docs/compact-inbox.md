@@ -16,7 +16,8 @@ while its manifest is enabled. After installing a binding-wide change, repin
 the changed coordination configuration, validate the complete manifest, then
 reactivate it under that document's staged procedure.
 
-To enable compact inbox, notice batches, or `action: none` auto-settle
+To enable compact inbox, notice batches, FYI notice digests (`--notice-digest`
+with optional `--digest-window-seconds 1..3600`), or `action: none` auto-settle
 (`--auto-settle-action-none`) for a single live session on a shared
 native binding without modifying the pinned binding
 configuration, disabling inbox recall, or restarting the presence watcher, pass
@@ -100,3 +101,34 @@ or as permission to retry with a different session. The final notice keeps
 its session hold until the normal turn-end reconciliation. This is an
 implemented opt-in path; paired model and task outcomes remain to be measured
 before accepting the rollout.
+
+
+## FYI notice digests
+
+Add `--notice-digest` (and optional `--digest-window-seconds SECONDS` in
+`1..3600`, defaulting to `300`) alongside `--compact-inbox` to opt a Codex or
+Claude native binding or individual coordinator session into
+`notice_digest_version: 1` (schema 088).
+
+In digest mode:
+
+- Routine and `action: review` notices are held without waking an idle session
+  while the digest window is open.
+- Priority arrivals (`request` events, `response` events, `urgency: urgent`
+  notices, and `action: decide` notices) are never held behind a digest and
+  preempt immediately.
+- Held FYI notices become due as one digest turn when the digest window timer
+  fires, after a `request`, `urgency: urgent` notice, or `action: decide`
+  notice arrives while they were waiting, or at a goal-continuation / unbound
+  turn boundary.
+- A digest keeps the latest notice per `(sender, topic)` (using explicit
+  `supersedes` keys or `topic/<name>` destinations while keeping distinct
+  untopiced direct notices up to 64 items), reports `superseded_count`, and
+  retains per-delivery leases and native hold protection across all items.
+- Inspect or read items with `cairn-inbox read HANDLE` or
+  `cairn-inbox read HANDLE --item ORDINAL`. Settle individual items with their
+  own outcome (`cairn-inbox settle HANDLE ignored --code unsupported_kind --item 3`),
+  and/or settle all remaining available items in one call with
+  `cairn-inbox settle HANDLE handled`. Partial settlement followed by a turn
+  end or process crash preserves already-settled item states and records only
+  unsettled items as `failed` (`processing_failed`).
