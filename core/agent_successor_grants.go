@@ -225,7 +225,7 @@ func (s *Store) RevokeSessionSuccessor(ctx context.Context, req RevokeSessionSuc
 // ("agent/<predecessor_agent_id>") whose active, unrevoked, unexpired,
 // generation-fenced grants authorize s.session to inspect eventID in repo while
 // the predecessor remains offline/stopped at its granted execution.
-func (s *Store) successorAuthorizedPredecessorsTx(ctx context.Context, tx pgx.Tx, eventID string) ([]string, error) {
+func (s *Store) successorAuthorizedPredecessorsTx(ctx context.Context, tx pgx.Tx, eventID string, allowLocal bool) ([]string, error) {
 	if s.session == nil {
 		return nil, nil
 	}
@@ -233,7 +233,21 @@ func (s *Store) successorAuthorizedPredecessorsTx(ctx context.Context, tx pgx.Tx
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT DISTINCT 'agent/'||g.predecessor_agent_id::text
+	rows, err := tx.Query(ctx, `WITH RECURSIVE handoff_chain(pred_principal, pred_agent_id, pred_exec_id, handoff_at, repo, campaign, depth, visited) AS (
+  SELECT h.from_principal, h.from_agent_id, h.from_execution_id, h.created_at, h.repo, h.campaign, 1, ARRAY[h.to_principal, h.from_principal]
+  FROM cairn.campaign_coordinator_handoff h
+  JOIN cairn.agent_team_campaign c ON c.repo=h.repo AND c.campaign=h.campaign
+  WHERE h.to_agent_id=$2 AND h.to_execution_id=$3 AND h.database_generation=$4 AND c.active
+    AND (c.sensitivity='shareable' OR $5)
+    AND h.from_agent_id IS NOT NULL AND h.from_execution_id IS NOT NULL
+  UNION ALL
+  SELECT prev.from_principal, prev.from_agent_id, prev.from_execution_id, prev.created_at, prev.repo, prev.campaign, hc.depth+1, hc.visited || prev.from_principal
+  FROM handoff_chain hc
+  JOIN cairn.campaign_coordinator_handoff prev ON prev.repo=hc.repo AND prev.campaign=hc.campaign AND prev.to_principal=hc.pred_principal
+  WHERE hc.depth < 16 AND prev.database_generation=$4 AND NOT (prev.from_principal = ANY(hc.visited))
+    AND prev.from_agent_id IS NOT NULL AND prev.from_execution_id IS NOT NULL
+ )
+ SELECT DISTINCT 'agent/'||g.predecessor_agent_id::text
  FROM cairn.agent_successor_grant g
  JOIN cairn.agent_session pred ON pred.agent_id=g.predecessor_agent_id
  JOIN cairn.agent_event e ON e.event_id=$1 AND e.repo=g.repo
@@ -248,7 +262,18 @@ func (s *Store) successorAuthorizedPredecessorsTx(ctx context.Context, tx pgx.Tx
   AND (pred.stopped OR pred.expires_at<=clock_timestamp() OR pred.database_generation<>$4)
   AND (e.publisher='agent/'||g.predecessor_agent_id::text OR EXISTS(
    SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer='agent/'||g.predecessor_agent_id::text
-  ))`, eventID, s.session.Ref.AgentID, s.session.Ref.ExecutionID, generation)
+  ))
+ UNION
+ SELECT DISTINCT hc.pred_principal
+ FROM handoff_chain hc
+ JOIN cairn.agent_event e ON e.event_id=$1 AND e.repo=hc.repo
+ JOIN cairn.agent_session pred ON pred.agent_id=hc.pred_agent_id AND pred.repo=hc.repo
+ WHERE pred.execution_id=hc.pred_exec_id
+  AND (pred.stopped OR pred.database_generation<>$4)
+  AND e.created_at <= hc.handoff_at
+  AND (e.publisher=hc.pred_principal OR EXISTS(
+   SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=hc.pred_principal
+  ))`, eventID, s.session.Ref.AgentID, s.session.Ref.ExecutionID, generation, allowLocal)
 	if err != nil {
 		return nil, err
 	}

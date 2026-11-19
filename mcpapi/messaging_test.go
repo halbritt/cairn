@@ -1093,3 +1093,54 @@ func TestMessageHeaderRequirementAnd9579ByteTruncationAndPull(t *testing.T) {
 		t.Fatalf("span split multi-byte UTF-8 rune at offset=%d length=%d", off, ln)
 	}
 }
+
+func TestSendAcceptsCampaignRoleAddressAndResolvedRouting(t *testing.T) {
+	ctx := context.Background()
+	selfID, execID, holderID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	api := &fakeAPI{t: t, handler: func(call fakeCall) (any, *core.Error) {
+		switch call.Operation {
+		case "agent-directory":
+			return core.AgentDirectoryPage{Agents: []core.AgentInstance{{AgentID: selfID, Ordinal: 1, DisplayName: "agent-1", NativeSessionID: "native-role", Inbox: "agent/" + selfID, ExecutionID: execID, Online: true}}}, nil
+		case "create":
+			draft := call.Body["draft"].(map[string]any)
+			return core.Record{RecordID: uuid.NewString(), Version: 1, Draft: core.Draft{Body: draft["body"].(string)}}, nil
+		case "event-publish":
+			destMap := call.Body["destination"].(map[string]any)
+			orig := core.EventDestination{Type: destMap["type"].(string), Name: destMap["name"].(string)}
+			eff := core.EventDestination{Type: "agent", Name: "agent/" + holderID}
+			return core.AgentEvent{
+				EventID: uuid.NewString(), From: "agent/" + selfID, Kind: call.Body["kind"].(string),
+				Ref:         core.RecordVersionRef{RecordID: call.Body["ref"].(map[string]any)["record_id"].(string), Version: 1},
+				Destination: eff,
+				Routing:     &core.EventRouting{Campaign: "alpha", RoleAddress: "role/alpha/root", Policy: "reroute", OriginalDestination: &orig, EffectiveDestination: eff},
+			}, nil
+		default:
+			t.Fatalf("unexpected operation %s", call.Operation)
+			return nil, nil
+		}
+	}}
+	server, err := NewServer(serveAPI(t, api), Config{
+		Scope:           core.Scope{Repo: "repo", TaskID: "task", RunID: "run"},
+		AvailableTokens: 4000,
+		Messaging:       true,
+		NativeSessionID: "native-role",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := connect(t, ctx, server)
+	for _, roleTarget := range []string{"role/alpha/root", "agent/role/alpha/root"} {
+		res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_send", Arguments: map[string]any{
+			"request_id": uuid.NewString(), "to": roleTarget, "body": "Status report to role inbox",
+		}})
+		if err != nil || res.IsError {
+			t.Fatalf("cairn_send(%s) failed: %+v %v", roleTarget, res, err)
+		}
+	}
+	badRes, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_send", Arguments: map[string]any{
+		"request_id": uuid.NewString(), "to": "role/alpha", "body": "Malformed role target",
+	}})
+	if err != nil || !badRes.IsError {
+		t.Fatalf("expected malformed role/alpha to fail, got %+v %v", badRes, err)
+	}
+}

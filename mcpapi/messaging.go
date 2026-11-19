@@ -25,9 +25,10 @@ import (
 // the profile; they are not credentials.
 
 var (
-	messagingAgentName = regexp.MustCompile(`^agent-([1-9][0-9]{0,17})$`)
-	messagingLabel     = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
-	messagingTopicKey  = regexp.MustCompile(`^[A-Za-z0-9_.:/-]{1,128}$`)
+	messagingAgentName   = regexp.MustCompile(`^agent-([1-9][0-9]{0,17})$`)
+	messagingLabel       = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+	messagingTopicKey    = regexp.MustCompile(`^[A-Za-z0-9_.:/-]{1,128}$`)
+	messagingRoleAddress = regexp.MustCompile(`^role/[A-Za-z0-9_.-]{1,64}/[A-Za-z0-9_.-]{1,64}$`)
 )
 
 // messagingDirectoryPages bounds one identity lookup: 50 pages of 100 online sessions.
@@ -273,10 +274,14 @@ func (t messagingTools) destination(ctx context.Context, to string) (core.EventD
 	if name, ok := strings.CutPrefix(to, "topic/"); ok && messagingLabel.MatchString(name) {
 		return core.EventDestination{Type: "topic", Name: name}, nil, nil
 	}
+	roleCandidate := strings.TrimPrefix(to, "agent/")
+	if messagingRoleAddress.MatchString(roleCandidate) {
+		return core.EventDestination{Type: "agent", Name: roleCandidate}, nil, nil
+	}
 	if name, ok := strings.CutPrefix(to, "agent/"); ok && messagingLabel.MatchString(name) {
 		return core.EventDestination{Type: "agent", Name: to}, nil, nil
 	}
-	return core.EventDestination{}, nil, messagingError("INVALID_REQUEST", "to must be agent-N, an agent UUID, agent/NAME or topic/NAME")
+	return core.EventDestination{}, nil, messagingError("INVALID_REQUEST", "to must be agent-N, an agent UUID, agent/NAME, role/CAMPAIGN/ROLE or topic/NAME")
 }
 
 func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, args sendArgs) (*mcp.CallToolResult, any, error) {
@@ -380,11 +385,11 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 	if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
 		return toolResult(nil, err, 0)
 	}
-	destValid := event.Destination == destination || (event.Routing != nil && event.Routing.Rerouted && event.Routing.OriginalDestination != nil && *event.Routing.OriginalDestination == destination && event.Destination == event.Routing.EffectiveDestination)
+	destValid := event.Destination == destination || (event.Routing != nil && (event.Routing.Rerouted || event.Routing.RoleAddress != "") && event.Routing.OriginalDestination != nil && *event.Routing.OriginalDestination == destination && event.Destination == event.Routing.EffectiveDestination)
 	if uuid.Validate(event.EventID) != nil || event.Ref != source || !destValid {
 		return toolResult(nil, messagingError("SCHEMA_MISMATCH", "publish returned a different source or destination"), 0)
 	}
-	if event.Routing != nil && event.Routing.Rerouted {
+	if event.Routing != nil && (event.Routing.Rerouted || event.Routing.RoleAddress != "") {
 		recipient = nil
 	}
 	return toolResult(sendResult{EventID: event.EventID, From: event.From, To: event.Destination, Recipient: recipient, Routing: event.Routing, Kind: event.Kind, Summary: event.Summary, Blocker: event.Blocker, Action: event.Action, Supersedes: event.Supersedes, ExpectNextBy: event.ExpectNextBy, ExpectBy: event.ExpectBy, Header: event.Header(), Source: source, RequestID: args.RequestID}, nil, t.config.AvailableTokens)

@@ -208,23 +208,29 @@ func TestRealRepliesConformToContract(t *testing.T) {
 	c.call(c.server, "local", "create", `{"request_id":"not-a-uuid"}`, nil)
 	c.call(c.server, "local", "agent-directory", `{}`, session)
 	c.ok("local", "refusal-stats", `{}`)
+	localCoordReg := c.ok("local", "agent-register", `{"request_id":"`+uuid.NewString()+`","binding":"contract-coord","native_session_id":"`+uuid.NewString()+`","metadata":{"harness":"codex","project":"cairn","workspace":"/tmp/contract","state":"idle","delivery_mode":"existing-session"}}`)
+	var localCoord core.AgentInstance
+	if err := json.Unmarshal(localCoordReg, &localCoord); err != nil {
+		t.Fatal(err)
+	}
+	localCoordSession := map[string]string{"Cairn-Agent-ID": localCoord.AgentID, "Cairn-Execution-ID": localCoord.ExecutionID}
 	hostedReg := c.ok("hosted", "agent-register", `{"request_id":"`+uuid.NewString()+`","binding":"contract-hosted","native_session_id":"`+uuid.NewString()+`","metadata":{"harness":"codex","project":"cairn","workspace":"/tmp/contract","state":"idle","delivery_mode":"existing-session"}}`)
 	var hostedAgent core.AgentInstance
 	if err := json.Unmarshal(hostedReg, &hostedAgent); err != nil {
 		t.Fatal(err)
 	}
 	hostedSession := map[string]string{"Cairn-Agent-ID": hostedAgent.AgentID, "Cairn-Execution-ID": hostedAgent.ExecutionID}
-	campBytes := c.ok("local", "team-campaign-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp"}`)
+	campReply := c.call(c.server, "local", "team-campaign-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","max_coordinator_compactions":1}`, localCoordSession)
 	var contractCamp core.TeamCampaign
-	if err := json.Unmarshal(campBytes, &contractCamp); err != nil {
-		t.Fatal(err)
+	if campReply.status != 200 || json.Unmarshal(campReply.parsed.Data, &contractCamp) != nil {
+		t.Fatalf("team-campaign-set failed: %d %s", campReply.status, campReply.body)
 	}
-	c.ok("local", "team-member-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","member":"agent/`+hostedAgent.AgentID+`","lead":"`+contractCamp.RootAgent+`","role":"worker"}`)
-	c.ok("local", "ledger-item-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","kind":"assignment","item_key":"slice-1","owner":"agent/`+hostedAgent.AgentID+`","status":"planned","summary":"Contract ledger assignment"}`)
-	c.ok("local", "ledger-get", `{"campaign":"contract-camp"}`)
+	c.call(c.server, "local", "team-member-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","member":"agent/`+hostedAgent.AgentID+`","lead":"`+contractCamp.RootAgent+`","role":"worker"}`, localCoordSession)
+	c.call(c.server, "local", "ledger-item-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","kind":"assignment","item_key":"slice-1","owner":"agent/`+hostedAgent.AgentID+`","status":"planned","summary":"Contract ledger assignment"}`, localCoordSession)
+	c.call(c.server, "local", "ledger-get", `{"campaign":"contract-camp"}`, localCoordSession)
 	c.ok("hosted", "ledger-sync-context", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","session":{"agent_id":"`+hostedAgent.AgentID+`","execution_id":"`+hostedAgent.ExecutionID+`"}}`)
-	c.ok("local", "ledger-publish", `{"campaign":"contract-camp","op_key":"pub-1","publication":{"destination":{"type":"agent","name":"agent/`+hostedAgent.AgentID+`"},"kind":"notice","ref":{"record_id":"`+record.RecordID+`","version":1}}}`)
-	c.ok("local", "ledger-send", `{"campaign":"contract-camp","op_key":"send-1","body":"Contract ledger send","shareable":true,"publication":{"destination":{"type":"agent","name":"agent/`+hostedAgent.AgentID+`"},"kind":"request"}}`)
+	c.call(c.server, "local", "ledger-publish", `{"campaign":"contract-camp","op_key":"pub-1","publication":{"destination":{"type":"agent","name":"agent/`+hostedAgent.AgentID+`"},"kind":"notice","ref":{"record_id":"`+record.RecordID+`","version":1}}}`, localCoordSession)
+	c.call(c.server, "local", "ledger-send", `{"campaign":"contract-camp","op_key":"send-1","body":"Contract ledger send","shareable":true,"publication":{"destination":{"type":"agent","name":"agent/`+hostedAgent.AgentID+`"},"kind":"request"}}`, localCoordSession)
 	claim1 := c.call(c.server, "hosted", "event-next", `{"lease_seconds":60}`, hostedSession)
 	var nx1 core.NextEventResult
 	if claim1.status != 200 || json.Unmarshal(claim1.parsed.Data, &nx1) != nil || nx1.Delivery == nil {
@@ -239,9 +245,18 @@ func TestRealRepliesConformToContract(t *testing.T) {
 	if claim2.status != 200 || json.Unmarshal(claim2.parsed.Data, &nx2) != nil || nx2.Delivery == nil {
 		t.Fatalf("event-next 2 failed: %d %s", claim2.status, claim2.body)
 	}
-	compOut := c.call(c.server, "hosted", "ledger-complete", `{"campaign":"contract-camp","op_key":"comp-1","delivery_id":"`+nx2.Delivery.DeliveryID+`","lease_id":"`+nx2.Delivery.LeaseID+`","body":"Contract complete result","shareable":true,"reply_to":"`+contractCamp.RootAgent+`","summary":"Completed slice-1","item_key":"slice-1"}`, hostedSession)
+	compOut := c.call(c.server, "hosted", "ledger-complete", `{"campaign":"contract-camp","op_key":"comp-1","delivery_id":"`+nx2.Delivery.DeliveryID+`","lease_id":"`+nx2.Delivery.LeaseID+`","body":"Contract complete result","shareable":true,"reply_to":"`+contractCamp.RoleAddress+`","summary":"Completed slice-1","item_key":"slice-1"}`, hostedSession)
 	if compOut.status != 200 {
 		t.Fatalf("ledger-complete failed: %d %s", compOut.status, compOut.body)
+	}
+	if checkOut := c.call(c.server, "local", "ledger-handoff-check", `{"campaign":"contract-camp"}`, localCoordSession); checkOut.status != 200 {
+		t.Fatalf("ledger-handoff-check failed: %d %s", checkOut.status, checkOut.body)
+	}
+	if compStat := c.call(c.server, "local", "ledger-compaction", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp"}`, localCoordSession); compStat.status != 200 {
+		t.Fatalf("ledger-compaction failed: %d %s", compStat.status, compStat.body)
+	}
+	if handoffOut := c.call(c.server, "local", "ledger-handoff", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","only_if_threshold_reached":true,"new_session":{"binding":"contract-coord","native_session_id":"`+uuid.NewString()+`"},"note":"Contract handoff","shareable":true}`, localCoordSession); handoffOut.status != 200 {
+		t.Fatalf("ledger-handoff failed: %d %s", handoffOut.status, handoffOut.body)
 	}
 }
 

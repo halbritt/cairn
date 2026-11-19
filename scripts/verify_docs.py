@@ -298,6 +298,7 @@ def discover_cli_schema(repo_root):
         "status-set", "status-authorize", "status-get", "status-history",
         "team-campaign-set", "team-member-set", "team-campaign-get", "team-campaign-list",
         "ledger-item-set", "ledger-get", "ledger-sync-context", "ledger-publish", "ledger-send", "ledger-complete", "ledger-ack",
+        "ledger-handoff-check", "ledger-compaction", "ledger-handoff",
         "event-pressure", "event-fanout", "event-admission-preview",
         "event-pressure-collection", "event-fanout-collection", "event-admission-policy",
         "event-admission-configure", "event-admission-preview-collection",
@@ -317,7 +318,7 @@ def discover_cli_schema(repo_root):
         "wait": {"create", "get", "list", "cancel"},
         "status": {"set", "get", "history", "authorize"},
         "team": {"set-campaign", "set-member", "get", "list"},
-        "ledger": {"get", "set", "sync-context", "publish", "send", "complete", "ack"},
+        "ledger": {"get", "set", "sync-context", "publish", "send", "complete", "ack", "handoff-check", "compact", "handoff"},
     }
 
     # Extract all flags from cmd/cairn/*.go

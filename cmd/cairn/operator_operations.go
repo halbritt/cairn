@@ -165,6 +165,9 @@ func buildOperatorOperations() map[string]operatorOperation {
 		sharedOperation("ledger-send", "ledger-send"),
 		sharedOperation("ledger-complete", "ledger-complete"),
 		sharedOperation("ledger-ack", "ledger-ack"),
+		sharedOperation("ledger-handoff-check", "ledger-handoff-check"),
+		sharedOperation("ledger-compaction", "ledger-compaction"),
+		sharedOperation("ledger-handoff", "ledger-handoff"),
 
 		// Operator-only authority, policy and proposal mutations. localapi has no
 		// route for these; the operator channel from core.Open is the authority.

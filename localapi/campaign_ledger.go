@@ -10,4 +10,7 @@ var agentLedgerOperations = []OperationSpec{
 	bindDestination(OperationSpec{Name: "ledger-send", SourceFile: "campaign_ledger.go", RemoteAllowed: true, RequestBodyLimit: 512 * 1024, RetryClass: "idempotent"}, (*core.Store).CampaignSend),
 	bindDestination(OperationSpec{Name: "ledger-complete", SourceFile: "campaign_ledger.go", RemoteAllowed: true, RequestBodyLimit: 512 * 1024, RetryClass: "idempotent"}, (*core.Store).CampaignComplete),
 	bindDestination(OperationSpec{Name: "ledger-ack", SourceFile: "campaign_ledger.go", RemoteAllowed: true, RetryClass: "idempotent"}, (*core.Store).CampaignAck),
+	bindDestination(OperationSpec{Name: "ledger-handoff-check", SourceFile: "campaign_ledger.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).CheckCoordinatorHandoff),
+	bindDestination(OperationSpec{Name: "ledger-compaction", SourceFile: "campaign_ledger.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).RecordCoordinatorCompaction),
+	bindDestination(OperationSpec{Name: "ledger-handoff", SourceFile: "campaign_ledger.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).HandoffCampaignCoordinator),
 }

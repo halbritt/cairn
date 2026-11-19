@@ -117,11 +117,16 @@ func TestUpgrade049PreservesPinnedNativeAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	dest := Destination{"hosted", false}
-	a, err := store.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "fixture-binding", NativeSessionID: "fixture-native", Metadata: existingSessionMetadata("codex", "idle")}, dest)
-	if err != nil {
-		t.Fatal(err)
+	seedSession := func(binding, native string) AgentInstance {
+		inst := AgentInstance{AgentID: uuid.NewString(), ExecutionID: uuid.NewString()}
+		inst.Inbox = "agent/" + inst.AgentID
+		if _, sErr := store.pool.Exec(ctx, `INSERT INTO cairn.agent_session(agent_id,repo,owner,binding,native_session_id,visibility,execution_id,database_generation,metadata) VALUES($1,$2,$3,$4,$5,'hosted',$6,1,$7)`,
+			inst.AgentID, store.channel.Repo, store.channel.Principal, binding, native, inst.ExecutionID, existingSessionMetadata("codex", "idle")); sErr != nil {
+			t.Fatal(sErr)
+		}
+		return inst
 	}
+	a := seedSession("fixture-binding", "fixture-native")
 	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
 	draft := projectNote(store.channel.Repo)
 	draft.Sensitivity = "shareable"
@@ -131,10 +136,7 @@ func TestUpgrade049PreservesPinnedNativeAttempts(t *testing.T) {
 	}
 	// The one-unfinished-attempt-per-agent rule predates 049, so the plain
 	// legacy attempt lives on a second registered conversation.
-	second, err := store.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "fixture-binding-two", NativeSessionID: "fixture-native-two", Metadata: existingSessionMetadata("codex", "idle")}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	second := seedSession("fixture-binding-two", "fixture-native-two")
 	pinnedAttempt, plainAttempt := uuid.NewString(), uuid.NewString()
 	for i, spec := range []struct {
 		attempt, agent, execution, inbox, turn string

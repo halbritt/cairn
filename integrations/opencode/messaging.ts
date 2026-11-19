@@ -2,6 +2,7 @@
 const messagingAgentName = /^agent-([1-9][0-9]{0,17})$/
 const messagingLabel = /^[A-Za-z0-9_.-]{1,128}$/
 const messagingTopicKey = /^[A-Za-z0-9_.:/-]{1,128}$/
+const messagingRoleAddress = /^role\/[A-Za-z0-9_.-]{1,64}\/[A-Za-z0-9_.-]{1,64}$/
 const messagingRFC3339 = /^([0-9]{4})-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})$/
 const messagingUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const messagingDirectoryPages = 50
@@ -15,7 +16,7 @@ type DirectoryAgent = {
 type DirectoryPage = { agents: DirectoryAgent[], next_after?: number, more?: boolean }
 type RecordRef = { record_id: string, version: number }
 type EventRoutingView = {
-  campaign?: string, policy: string, out_of_chain: boolean, rerouted?: boolean,
+  campaign?: string, role_address?: string, policy: string, out_of_chain: boolean, rerouted?: boolean,
   original_destination?: { type: string, name: string },
   effective_destination: { type: string, name: string },
   lead?: string, warning?: string,
@@ -203,11 +204,15 @@ async function resolveDestination(config: Settings, context: ToolContext, to: st
     const name = to.slice("topic/".length)
     if (messagingLabel.test(name)) return { destination: { type: "topic", name } }
   }
+  const roleCandidate = to.startsWith("agent/") ? to.slice("agent/".length) : to
+  if (messagingRoleAddress.test(roleCandidate)) {
+    return { destination: { type: "agent", name: roleCandidate } }
+  }
   if (to.startsWith("agent/")) {
     const name = to.slice("agent/".length)
     if (messagingLabel.test(name)) return { destination: { type: "agent", name: to } }
   }
-  throw new Error("INVALID_REQUEST: to must be agent-N, an agent UUID, agent/NAME or topic/NAME")
+  throw new Error("INVALID_REQUEST: to must be agent-N, an agent UUID, agent/NAME, role/CAMPAIGN/ROLE or topic/NAME")
 }
 
 const sessionOverrideFields = {
@@ -381,7 +386,7 @@ export const send = validatedTool({
       ...(args.expect_by ? { expect_by: args.expect_by } : {}),
     }, ref) as { event_id?: string, from?: string, kind?: string, summary?: string, blocker?: boolean, routing?: EventRoutingView, action?: string, supersedes?: string, expect_next_by?: string, expect_by?: string, ref?: RecordRef, destination?: { type: string, name: string } }
     const destMatches = (published.destination?.type === destination.type && published.destination?.name === destination.name) ||
-      Boolean(published.routing?.rerouted && published.routing.original_destination?.type === destination.type &&
+      Boolean((published.routing?.rerouted || published.routing?.role_address) && published.routing.original_destination?.type === destination.type &&
               published.routing.original_destination?.name === destination.name &&
               published.destination?.type === published.routing.effective_destination.type &&
               published.destination?.name === published.routing.effective_destination.name)
@@ -393,7 +398,7 @@ export const send = validatedTool({
       action: published.action, supersedes: published.supersedes, expect_next_by: published.expect_next_by,
       expect_by: published.expect_by, from: published.from ?? "", created_at: "", ref: source, destination: published.destination ?? destination,
     })
-    const effectiveRecipient = published.routing?.rerouted ? undefined : recipient
+    const effectiveRecipient = (published.routing?.rerouted || published.routing?.role_address) ? undefined : recipient
     return render({
       event_id: published.event_id, from: published.from, to: published.destination,
       ...(effectiveRecipient ? { recipient: effectiveRecipient } : {}),

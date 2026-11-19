@@ -247,7 +247,7 @@ func eventScanFields(e *AgentEvent) []any {
 func (s *Store) readEventRaw(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))
 	if errors.Is(err, pgx.ErrNoRows) && s.session != nil {
-		preds, grantErr := s.successorAuthorizedPredecessorsTx(ctx, tx, id)
+		preds, grantErr := s.successorAuthorizedPredecessorsTx(ctx, tx, id, dest.AllowLocal)
 		if grantErr != nil {
 			return e, grantErr
 		}
@@ -483,33 +483,52 @@ func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req Publi
 			return AgentEvent{}, err
 		}
 	}
-	// Resolve the exact reply closure before any insert so admission can
-	// exempt only that reply; it is consumed after the reply is inserted.
+	var routing *EventRouting
+	if req.Destination.Type == "agent" {
+		resolvedDest, roleRouting, rErr := resolveCampaignRoleDestinationTx(ctx, tx, req.Repo, sensitivity, dest.AllowLocal, req.Destination)
+		if rErr != nil {
+			return AgentEvent{}, rErr
+		}
+		if roleRouting != nil {
+			req.Destination = resolvedDest
+			req.Resolution = nil
+			routing = roleRouting
+		}
+	}
+	// Resolve the exact reply closure after role/handoff destination resolution so
+	// admission exempts that reply and consumeReplyClosureTx matches the bound recipient.
 	closure, err := matchReplyClosureTx(ctx, tx, req, s.channel.Principal)
 	if err != nil {
 		return AgentEvent{}, err
 	}
-	var routing *EventRouting
 	if !bypassHierarchy && !s.channel.Operator && closure == nil && req.Destination.Type == "agent" {
-		routing, err = evaluateHierarchyRoutingTx(ctx, tx, req.Repo, s.channel.Principal, req.Kind, sensitivity, req.Destination)
-		if err != nil {
-			return AgentEvent{}, err
+		hierRouting, hErr := evaluateHierarchyRoutingTx(ctx, tx, req.Repo, s.channel.Principal, req.Kind, sensitivity, req.Destination)
+		if hErr != nil {
+			return AgentEvent{}, hErr
 		}
-		if routing != nil && routing.Rerouted {
-			req.Destination = routing.EffectiveDestination
-			req.Resolution = nil
-			if req.NoticeDelivery == "next_organic_turn" {
-				supported, supErr := s.recipientSupportsNextOrganicTurnTx(ctx, tx, req.Repo, req.Destination.Name)
-				if supErr != nil {
-					return AgentEvent{}, supErr
-				}
-				if !supported {
-					req.NoticeDelivery = ""
-					req.NoticeExpiresAt = nil
-					if req.NoticePolicy == nil {
-						req.NoticePolicy = &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}
-					}
-				}
+		if hierRouting != nil {
+			if routing != nil {
+				hierRouting.OriginalDestination = routing.OriginalDestination
+				hierRouting.RoleAddress = routing.RoleAddress
+				hierRouting.LocalOnly = hierRouting.LocalOnly || routing.LocalOnly
+			}
+			routing = hierRouting
+			if routing.Rerouted {
+				req.Destination = routing.EffectiveDestination
+				req.Resolution = nil
+			}
+		}
+	}
+	if routing != nil && req.NoticeDelivery == "next_organic_turn" {
+		supported, supErr := s.recipientSupportsNextOrganicTurnTx(ctx, tx, req.Repo, req.Destination.Name)
+		if supErr != nil {
+			return AgentEvent{}, supErr
+		}
+		if !supported {
+			req.NoticeDelivery = ""
+			req.NoticeExpiresAt = nil
+			if req.NoticePolicy == nil {
+				req.NoticePolicy = &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}
 			}
 		}
 	}
@@ -1121,7 +1140,7 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 	consumers := []string{s.channel.Principal}
 	publisherVisible := out.Event.From == s.channel.Principal
 	if s.session != nil {
-		preds, err := s.successorAuthorizedPredecessorsTx(ctx, tx, req.EventID)
+		preds, err := s.successorAuthorizedPredecessorsTx(ctx, tx, req.EventID, dest.AllowLocal)
 		if err != nil {
 			return out, err
 		}

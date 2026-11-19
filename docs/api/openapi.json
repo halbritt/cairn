@@ -580,6 +580,11 @@
           "agent_id": {
             "type": "string"
           },
+          "compaction_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
           "context_revision": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -630,12 +635,17 @@
           "repo": {
             "type": "string"
           },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "stopped": {
             "type": "boolean"
           }
         },
         "required": [
           "agent_id",
+          "compaction_count",
           "context_revision",
           "database_generation",
           "display_name",
@@ -649,6 +659,7 @@
           "online",
           "ordinal",
           "repo",
+          "started_at",
           "stopped"
         ],
         "type": "object",
@@ -3204,6 +3215,40 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.CaptureObservationsRequest"
       },
+      "core.CheckCoordinatorHandoffRequest": {
+        "properties": {
+          "campaign": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "campaign"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CheckCoordinatorHandoffRequest"
+      },
+      "core.CheckCoordinatorHandoffRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "campaign": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CheckCoordinatorHandoffRequest"
+      },
       "core.CiteRequest": {
         "properties": {
           "evidence_citations": {
@@ -4394,6 +4439,154 @@
         },
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.ContextPins"
+      },
+      "core.CoordinatorHandoffResult": {
+        "properties": {
+          "campaign": {
+            "$ref": "#/components/schemas/core.TeamCampaign"
+          },
+          "from_principal": {
+            "type": "string"
+          },
+          "handoff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.RecordVersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handoff_id": {
+            "type": "string"
+          },
+          "performed": {
+            "type": "boolean"
+          },
+          "role_address": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/core.CoordinatorHandoffStatus"
+          },
+          "to_principal": {
+            "type": "string"
+          },
+          "to_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.AgentInstance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transferred_deliveries": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "transferred_subscriptions": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "campaign",
+          "from_principal",
+          "performed",
+          "role_address",
+          "status",
+          "transferred_deliveries",
+          "transferred_subscriptions"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CoordinatorHandoffResult"
+      },
+      "core.CoordinatorHandoffStatus": {
+        "properties": {
+          "age_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "campaign": {
+            "type": "string"
+          },
+          "compaction_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "holder_principal": {
+            "type": "string"
+          },
+          "max_coordinator_age_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_coordinator_compactions": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "proposed_command": {
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": "string"
+          },
+          "role_address": {
+            "type": "string"
+          },
+          "session_found": {
+            "type": "boolean"
+          },
+          "should_handoff": {
+            "type": "boolean"
+          },
+          "stopped": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "age_seconds",
+          "campaign",
+          "compaction_count",
+          "holder_principal",
+          "reasons",
+          "repo",
+          "role_address",
+          "session_found",
+          "should_handoff"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CoordinatorHandoffStatus"
       },
       "core.CreateRequest": {
         "properties": {
@@ -6135,6 +6328,9 @@
           "rerouted": {
             "type": "boolean"
           },
+          "role_address": {
+            "type": "string"
+          },
           "warning": {
             "type": "string"
           }
@@ -7578,6 +7774,140 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.Grant"
       },
+      "core.HandoffCampaignCoordinatorRequest": {
+        "properties": {
+          "campaign": {
+            "type": "string"
+          },
+          "new_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.NewCoordinatorSessionSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "only_if_threshold_reached": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "shareable": {
+            "type": "boolean"
+          },
+          "successor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.AgentSessionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "campaign",
+          "request_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffCampaignCoordinatorRequest"
+      },
+      "core.HandoffCampaignCoordinatorRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "campaign": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "new_session": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/core.NewCoordinatorSessionSpec.accepted"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "only_if_threshold_reached": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shareable": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "successor": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffCampaignCoordinatorRequest"
+      },
       "core.HandoffDelivery": {
         "properties": {
           "delivery_id": {
@@ -8526,6 +8856,68 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.MemoryBudget"
+      },
+      "core.NewCoordinatorSessionSpec": {
+        "properties": {
+          "binding": {
+            "type": "string"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.AgentMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "native_session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding",
+          "native_session_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.NewCoordinatorSessionSpec"
+      },
+      "core.NewCoordinatorSessionSpec.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "binding": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/core.AgentMetadata.accepted"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "native_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.NewCoordinatorSessionSpec"
       },
       "core.NextEventRequest": {
         "properties": {
@@ -11017,6 +11409,50 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.Record"
+      },
+      "core.RecordCoordinatorCompactionRequest": {
+        "properties": {
+          "campaign": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "campaign",
+          "request_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecordCoordinatorCompactionRequest"
+      },
+      "core.RecordCoordinatorCompactionRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "campaign": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecordCoordinatorCompactionRequest"
       },
       "core.RecordHistory": {
         "properties": {
@@ -15172,6 +15608,22 @@
             "minimum": -9223372036854775808,
             "type": "integer"
           },
+          "max_coordinator_age_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_coordinator_compactions": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "out_of_chain_policy": {
             "type": "string"
           },
@@ -15211,6 +15663,22 @@
             ]
           },
           "expected_revision": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_coordinator_age_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_coordinator_compactions": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
             "type": [
@@ -16133,6 +16601,22 @@
             "format": "date-time",
             "type": "string"
           },
+          "max_coordinator_age_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_coordinator_compactions": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "members": {
             "items": {
               "$ref": "#/components/schemas/core.TeamMember"
@@ -16153,6 +16637,9 @@
             "minimum": -9223372036854775808,
             "type": "integer"
           },
+          "role_address": {
+            "type": "string"
+          },
           "root_agent": {
             "type": "string"
           },
@@ -16171,6 +16658,7 @@
           "out_of_chain_policy",
           "repo",
           "revision",
+          "role_address",
           "root_agent",
           "sensitivity",
           "updated_at"
@@ -16303,6 +16791,9 @@
       },
       "core.UpdateAgentRequest": {
         "properties": {
+          "compacted": {
+            "type": "boolean"
+          },
           "expected_revision": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -16330,6 +16821,12 @@
       "core.UpdateAgentRequest.accepted": {
         "additionalProperties": false,
         "properties": {
+          "compacted": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "expected_revision": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -18680,6 +19177,12 @@
                         "maximum": 9999,
                         "minimum": 1,
                         "type": "integer"
+                      },
+                      "compacted": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
                       },
                       "expected_revision": {
                         "maximum": 9223372036854775807,
@@ -27633,6 +28136,150 @@
         "x-cairn-source": "campaign_ledger.go"
       }
     },
+    "/v1/ledger-compaction": {
+      "post": {
+        "operationId": "ledger-compaction",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "campaign": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RecordCoordinatorCompactionRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.CoordinatorHandoffStatus"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.RecordCoordinatorCompactionRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.RecordCoordinatorCompactionRequest",
+          "response": "github.com/halbritt/cairn/core.CoordinatorHandoffStatus"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "request-id",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "campaign_ledger.go"
+      }
+    },
     "/v1/ledger-complete": {
       "post": {
         "operationId": "ledger-complete",
@@ -27991,6 +28638,346 @@
         "x-cairn-go-types": {
           "request": "github.com/halbritt/cairn/core.GetCampaignLedgerRequest",
           "response": "github.com/halbritt/cairn/core.CampaignLedgerSnapshot"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "read",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "campaign_ledger.go"
+      }
+    },
+    "/v1/ledger-handoff": {
+      "post": {
+        "operationId": "ledger-handoff",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "campaign": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "new_session": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.NewCoordinatorSessionSpec.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "note": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "only_if_threshold_reached": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "shareable": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "successor": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.HandoffCampaignCoordinatorRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.CoordinatorHandoffResult"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.HandoffCampaignCoordinatorRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.HandoffCampaignCoordinatorRequest",
+          "response": "github.com/halbritt/cairn/core.CoordinatorHandoffResult"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "request-id",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "campaign_ledger.go"
+      }
+    },
+    "/v1/ledger-handoff-check": {
+      "post": {
+        "operationId": "ledger-handoff-check",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "campaign": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.CheckCoordinatorHandoffRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.CoordinatorHandoffStatus"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.CheckCoordinatorHandoffRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.CheckCoordinatorHandoffRequest",
+          "response": "github.com/halbritt/cairn/core.CoordinatorHandoffStatus"
         },
         "x-cairn-local-roles": [
           "agent",
@@ -35873,6 +36860,22 @@
                         ]
                       },
                       "expected_revision": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "max_coordinator_age_seconds": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "max_coordinator_compactions": {
                         "maximum": 9223372036854775807,
                         "minimum": -9223372036854775808,
                         "type": [

@@ -72,6 +72,14 @@ func TestLedgerCLIAndCampaignSendWithoutJournal(t *testing.T) {
 			})
 		case "/v1/ledger-ack":
 			ok(core.AgentDelivery{DeliveryID: delivID, State: "handled"})
+		case "/v1/team-campaign-set":
+			ok(core.TeamCampaign{Repo: "repo", Campaign: "alpha", RoleAddress: "role/alpha/root", RootAgent: "agent/root", Active: true, Revision: 1})
+		case "/v1/ledger-handoff-check":
+			ok(core.CoordinatorHandoffStatus{Repo: "repo", Campaign: "alpha", RoleAddress: "role/alpha/root", HolderPrincipal: "agent/root", ShouldHandoff: false, Reasons: []string{}})
+		case "/v1/ledger-compaction":
+			ok(core.CoordinatorHandoffStatus{Repo: "repo", Campaign: "alpha", RoleAddress: "role/alpha/root", HolderPrincipal: "agent/root", CompactionCount: 3, ShouldHandoff: true, Reasons: []string{"compactions"}})
+		case "/v1/ledger-handoff":
+			ok(core.CoordinatorHandoffResult{Performed: true, Campaign: core.TeamCampaign{Repo: "repo", Campaign: "alpha", RoleAddress: "role/alpha/root"}, RoleAddress: "role/alpha/root", FromPrincipal: "agent/root", ToPrincipal: "agent/new"})
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": false, "status": "INVALID_REQUEST", "message": "unexpected " + r.URL.Path})
@@ -132,5 +140,18 @@ func TestLedgerCLIAndCampaignSendWithoutJournal(t *testing.T) {
 	}
 	if _, err := run(ctx, []string{"ledger", "get", "--socket", sock, "--token-file", tok, "--campaign", "alpha", "--lease", leaseID}, strings.NewReader("")); err == nil {
 		t.Fatal("expected disallowed flag --lease on ledger get to fail")
+	}
+	// 10. team thresholds + ledger handoff-check, compact, and handoff
+	if _, err := run(ctx, []string{"team", "set-campaign", "--socket", sock, "--token-file", tok, "--campaign", "alpha", "--max-coordinator-age-seconds", "3600", "--max-coordinator-compactions", "3"}, strings.NewReader("")); err != nil || lastPath != "/v1/team-campaign-set" || lastBody["max_coordinator_compactions"] != float64(3) {
+		t.Fatalf("team set-campaign thresholds failed: path=%s body=%+v err=%v", lastPath, lastBody, err)
+	}
+	if _, err := run(ctx, []string{"ledger", "handoff-check", "--socket", sock, "--token-file", tok, "--campaign", "alpha"}, strings.NewReader("")); err != nil || lastPath != "/v1/ledger-handoff-check" {
+		t.Fatalf("ledger handoff-check failed: %v", err)
+	}
+	if _, err := run(ctx, []string{"ledger", "compact", "--socket", sock, "--token-file", tok, "--campaign", "alpha"}, strings.NewReader("")); err != nil || lastPath != "/v1/ledger-compaction" {
+		t.Fatalf("ledger compact failed: %v", err)
+	}
+	if _, err := run(ctx, []string{"ledger", "handoff", "--socket", sock, "--token-file", tok, "--campaign", "alpha", "--if-needed", "--new-binding", "coord-alpha", "--new-native-session", "sess-new"}, strings.NewReader("")); err != nil || lastPath != "/v1/ledger-handoff" || lastBody["only_if_threshold_reached"] != true {
+		t.Fatalf("ledger handoff failed: path=%s body=%+v err=%v", lastPath, lastBody, err)
 	}
 }

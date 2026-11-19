@@ -119,8 +119,26 @@ func observeGroupResponse(ctx context.Context, tx pgx.Tx, event AgentEvent) erro
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_response_group_member WHERE event_id=$1 AND consumer=$2),EXISTS(SELECT 1 FROM cairn.agent_response_group_member WHERE event_id=$1 AND consumer=$2 AND response_event_id IS NOT NULL)`, event.CausationID, event.From).Scan(&member, &responded); err != nil {
 		return err
 	}
+	recipientMatchesOwner := event.Destination.Name == owner
+	if !recipientMatchesOwner && event.Destination.Type == "agent" {
+		var handedOff bool
+		if err = tx.QueryRow(ctx, `WITH RECURSIVE hc(cur, depth, visited) AS (
+			SELECT h.to_principal, 1, ARRAY[h.from_principal, h.to_principal]
+			FROM cairn.campaign_coordinator_handoff h
+			JOIN cairn.agent_team_campaign c ON c.repo=h.repo AND c.campaign=h.campaign
+			WHERE h.repo=$1 AND h.from_principal=$2 AND c.active
+			UNION ALL
+			SELECT nxt.to_principal, hc.depth+1, hc.visited || nxt.to_principal
+			FROM hc
+			JOIN cairn.campaign_coordinator_handoff nxt ON nxt.repo=$1 AND nxt.from_principal=hc.cur
+			WHERE hc.depth < 16 AND NOT (nxt.to_principal = ANY(hc.visited))
+		) SELECT EXISTS(SELECT 1 FROM hc WHERE cur=$3)`, event.Repo, owner, event.Destination.Name).Scan(&handedOff); err != nil {
+			return err
+		}
+		recipientMatchesOwner = handedOff
+	}
 	disposition := "responded"
-	if !member || event.Destination.Type != "agent" || event.Destination.Name != owner || event.CorrelationID != correlation {
+	if !member || event.Destination.Type != "agent" || !recipientMatchesOwner || event.CorrelationID != correlation {
 		disposition = "unmatched"
 	} else if responded {
 		disposition = "duplicate"
@@ -180,6 +198,15 @@ func (s *Store) ResponseGroup(ctx context.Context, req ResponseGroupQuery, dest 
 	}
 	defer tx.Rollback(ctx)
 	out.ResponseGroupSummary, err = scanResponseGroup(tx.QueryRow(ctx, `SELECT `+responseGroupColumns+` FROM cairn.agent_response_group g JOIN cairn.agent_event e USING(event_id) WHERE g.event_id=$1 AND e.publisher=$2 AND (e.sensitivity='shareable' OR $3) AND ($4='' OR e.repo=$4)`, req.EventID, s.channel.Principal, dest.AllowLocal, s.channel.Repo))
+	if errors.Is(err, pgx.ErrNoRows) && s.session != nil {
+		preds, pErr := s.successorAuthorizedPredecessorsTx(ctx, tx, req.EventID, dest.AllowLocal)
+		if pErr != nil {
+			return out, pErr
+		}
+		if len(preds) > 0 {
+			out.ResponseGroupSummary, err = scanResponseGroup(tx.QueryRow(ctx, `SELECT `+responseGroupColumns+` FROM cairn.agent_response_group g JOIN cairn.agent_event e USING(event_id) WHERE g.event_id=$1 AND e.publisher=ANY($2) AND (e.sensitivity='shareable' OR $3) AND ($4='' OR e.repo=$4)`, req.EventID, preds, dest.AllowLocal, s.channel.Repo))
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, failure("NOT_FOUND", "owned response group not found")
 	}

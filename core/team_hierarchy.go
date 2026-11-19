@@ -29,6 +29,7 @@ type SubscriptionFilter struct {
 
 type EventRouting struct {
 	Campaign             string            `json:"campaign,omitempty"`
+	RoleAddress          string            `json:"role_address,omitempty"`
 	Policy               string            `json:"policy"`
 	OutOfChain           bool              `json:"out_of_chain"`
 	Rerouted             bool              `json:"rerouted,omitempty"`
@@ -51,27 +52,32 @@ type TeamMember struct {
 }
 
 type TeamCampaign struct {
-	Repo             string       `json:"repo"`
-	Campaign         string       `json:"campaign"`
-	RootAgent        string       `json:"root_agent"`
-	OutOfChainPolicy string       `json:"out_of_chain_policy"`
-	Sensitivity      string       `json:"sensitivity"`
-	Active           bool         `json:"active"`
-	Revision         int64        `json:"revision"`
-	CreatedAt        time.Time    `json:"created_at"`
-	UpdatedAt        time.Time    `json:"updated_at"`
-	Members          []TeamMember `json:"members,omitempty"`
+	Repo                      string       `json:"repo"`
+	Campaign                  string       `json:"campaign"`
+	RoleAddress               string       `json:"role_address"`
+	RootAgent                 string       `json:"root_agent"`
+	OutOfChainPolicy          string       `json:"out_of_chain_policy"`
+	Sensitivity               string       `json:"sensitivity"`
+	MaxCoordinatorAgeSeconds  *int         `json:"max_coordinator_age_seconds,omitempty"`
+	MaxCoordinatorCompactions *int         `json:"max_coordinator_compactions,omitempty"`
+	Active                    bool         `json:"active"`
+	Revision                  int64        `json:"revision"`
+	CreatedAt                 time.Time    `json:"created_at"`
+	UpdatedAt                 time.Time    `json:"updated_at"`
+	Members                   []TeamMember `json:"members,omitempty"`
 }
 
 type SetTeamCampaignRequest struct {
-	RequestID        string `json:"request_id"`
-	Repo             string `json:"repo,omitempty"`
-	Campaign         string `json:"campaign"`
-	RootAgent        string `json:"root_agent,omitempty"`
-	OutOfChainPolicy string `json:"out_of_chain_policy,omitempty"`
-	Sensitivity      string `json:"sensitivity,omitempty"`
-	Active           *bool  `json:"active,omitempty"`
-	ExpectedRevision int64  `json:"expected_revision,omitempty"`
+	RequestID                 string `json:"request_id"`
+	Repo                      string `json:"repo,omitempty"`
+	Campaign                  string `json:"campaign"`
+	RootAgent                 string `json:"root_agent,omitempty"`
+	OutOfChainPolicy          string `json:"out_of_chain_policy,omitempty"`
+	Sensitivity               string `json:"sensitivity,omitempty"`
+	MaxCoordinatorAgeSeconds  *int   `json:"max_coordinator_age_seconds,omitempty"`
+	MaxCoordinatorCompactions *int   `json:"max_coordinator_compactions,omitempty"`
+	Active                    *bool  `json:"active,omitempty"`
+	ExpectedRevision          int64  `json:"expected_revision,omitempty"`
 }
 
 type SetTeamMemberRequest struct {
@@ -283,13 +289,20 @@ func loadCampaignMembersTx(ctx context.Context, tx pgx.Tx, repo, campaign string
 	return out, nodes, rows.Err()
 }
 
+func campaignRootRoleAddress(campaign string) string {
+	return "role/" + campaign + "/root"
+}
+
 func readTeamCampaignTx(ctx context.Context, tx pgx.Tx, repo, campaign string, allowLocal, withMembers bool) (TeamCampaign, error) {
 	var c TeamCampaign
-	err := tx.QueryRow(ctx, `SELECT repo, campaign, root_agent, out_of_chain_policy, sensitivity, active, revision, created_at, updated_at FROM cairn.agent_team_campaign WHERE repo=$1 AND campaign=$2 AND (sensitivity='shareable' OR $3)`, repo, campaign, allowLocal).Scan(
-		&c.Repo, &c.Campaign, &c.RootAgent, &c.OutOfChainPolicy, &c.Sensitivity, &c.Active, &c.Revision, &c.CreatedAt, &c.UpdatedAt,
+	err := tx.QueryRow(ctx, `SELECT repo, campaign, root_agent, out_of_chain_policy, sensitivity, max_coordinator_age_seconds, max_coordinator_compactions, active, revision, created_at, updated_at FROM cairn.agent_team_campaign WHERE repo=$1 AND campaign=$2 AND (sensitivity='shareable' OR $3)`, repo, campaign, allowLocal).Scan(
+		&c.Repo, &c.Campaign, &c.RootAgent, &c.OutOfChainPolicy, &c.Sensitivity, &c.MaxCoordinatorAgeSeconds, &c.MaxCoordinatorCompactions, &c.Active, &c.Revision, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, failure("NOT_FOUND", "team campaign not found")
+	}
+	if err == nil {
+		c.RoleAddress = campaignRootRoleAddress(c.Campaign)
 	}
 	if err != nil || !withMembers {
 		return c, err
@@ -318,7 +331,7 @@ func validTeamPrincipal(p string) bool {
 	if p == "local" || p == "hosted" || p == "system" {
 		return false
 	}
-	for _, prefix := range []string{"operator:", "operator/", "system:", "daemon:", "scheduler:"} {
+	for _, prefix := range []string{"operator:", "operator/", "system:", "daemon:", "scheduler:", "role/", "agent/role/"} {
 		if strings.HasPrefix(p, prefix) {
 			return false
 		}
@@ -360,6 +373,12 @@ func (s *Store) SetTeamCampaign(ctx context.Context, req SetTeamCampaignRequest,
 	if req.ExpectedRevision < 0 {
 		return empty, failure("INVALID_REQUEST", "expected_revision must be nonnegative")
 	}
+	if req.MaxCoordinatorAgeSeconds != nil && *req.MaxCoordinatorAgeSeconds != 0 && (*req.MaxCoordinatorAgeSeconds < 60 || *req.MaxCoordinatorAgeSeconds > 604800) {
+		return empty, failure("INVALID_REQUEST", "max_coordinator_age_seconds must be 0 (to clear) or 60..604800")
+	}
+	if req.MaxCoordinatorCompactions != nil && *req.MaxCoordinatorCompactions != 0 && (*req.MaxCoordinatorCompactions < 1 || *req.MaxCoordinatorCompactions > 1000) {
+		return empty, failure("INVALID_REQUEST", "max_coordinator_compactions must be 0 (to clear) or 1..1000")
+	}
 	input := struct {
 		SetTeamCampaignRequest
 		Destination string `json:"destination"`
@@ -394,11 +413,21 @@ func (s *Store) SetTeamCampaign(ctx context.Context, req SetTeamCampaignRequest,
 		}
 		caller := s.channel.Principal
 		var curRoot, curPolicy, curSens string
+		var curMaxAge, curMaxComp *int
 		var curActive bool
 		var curRev int64
-		err := tx.QueryRow(ctx, `SELECT root_agent, out_of_chain_policy, sensitivity, active, revision FROM cairn.agent_team_campaign WHERE repo=$1 AND campaign=$2 FOR UPDATE`, req.Repo, req.Campaign).Scan(
-			&curRoot, &curPolicy, &curSens, &curActive, &curRev,
+		err := tx.QueryRow(ctx, `SELECT root_agent, out_of_chain_policy, sensitivity, max_coordinator_age_seconds, max_coordinator_compactions, active, revision FROM cairn.agent_team_campaign WHERE repo=$1 AND campaign=$2 FOR UPDATE`, req.Repo, req.Campaign).Scan(
+			&curRoot, &curPolicy, &curSens, &curMaxAge, &curMaxComp, &curActive, &curRev,
 		)
+		var maxAgePtr, maxCompPtr *int
+		if req.MaxCoordinatorAgeSeconds != nil && *req.MaxCoordinatorAgeSeconds > 0 {
+			v := *req.MaxCoordinatorAgeSeconds
+			maxAgePtr = &v
+		}
+		if req.MaxCoordinatorCompactions != nil && *req.MaxCoordinatorCompactions > 0 {
+			v := *req.MaxCoordinatorCompactions
+			maxCompPtr = &v
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			if req.ExpectedRevision != 0 {
 				return empty, failure("VERSION_CONFLICT", "team campaign does not exist for expected_revision")
@@ -433,10 +462,13 @@ func (s *Store) SetTeamCampaign(ctx context.Context, req SetTeamCampaignRequest,
 					return empty, err
 				}
 			}
-			if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_team_campaign(repo, campaign, root_agent, out_of_chain_policy, sensitivity, active, revision) VALUES($1,$2,$3,$4,$5,$6,1)`, req.Repo, req.Campaign, rootAgent, policy, sens, active); err != nil {
+			if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_team_campaign(repo, campaign, root_agent, out_of_chain_policy, sensitivity, max_coordinator_age_seconds, max_coordinator_compactions, active, revision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,1)`, req.Repo, req.Campaign, rootAgent, policy, sens, maxAgePtr, maxCompPtr, active); err != nil {
 				return empty, err
 			}
 			if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_team_member(repo, campaign, member, lead, role, assigned_by, active) VALUES($1,$2,$3,NULL,'root',$4,true)`, req.Repo, req.Campaign, rootAgent, caller); err != nil {
+				return empty, err
+			}
+			if _, err = tx.Exec(ctx, `INSERT INTO cairn.campaign_role_binding(repo, campaign, role_name, role_address, holder_principal) VALUES($1,$2,'root',$3,$4) ON CONFLICT(repo, campaign, role_name) DO UPDATE SET holder_principal=$4, updated_at=clock_timestamp()`, req.Repo, req.Campaign, campaignRootRoleAddress(req.Campaign), rootAgent); err != nil {
 				return empty, err
 			}
 			return readTeamCampaignTx(ctx, tx, req.Repo, req.Campaign, dest.AllowLocal, true)
@@ -467,6 +499,14 @@ func (s *Store) SetTeamCampaign(ctx context.Context, req SetTeamCampaignRequest,
 		if req.Sensitivity != "" {
 			sens = req.Sensitivity
 		}
+		maxAge := curMaxAge
+		if req.MaxCoordinatorAgeSeconds != nil {
+			maxAge = maxAgePtr
+		}
+		maxComp := curMaxComp
+		if req.MaxCoordinatorCompactions != nil {
+			maxComp = maxCompPtr
+		}
 		active := curActive
 		if req.Active != nil {
 			active = *req.Active
@@ -488,7 +528,10 @@ func (s *Store) SetTeamCampaign(ctx context.Context, req SetTeamCampaignRequest,
 				}
 			}
 		}
-		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_team_campaign SET out_of_chain_policy=$3, sensitivity=$4, active=$5, revision=revision+1, updated_at=clock_timestamp() WHERE repo=$1 AND campaign=$2`, req.Repo, req.Campaign, policy, sens, active); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_team_campaign SET out_of_chain_policy=$3, sensitivity=$4, max_coordinator_age_seconds=$5, max_coordinator_compactions=$6, active=$7, revision=revision+1, updated_at=clock_timestamp() WHERE repo=$1 AND campaign=$2`, req.Repo, req.Campaign, policy, sens, maxAge, maxComp, active); err != nil {
+			return empty, err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.campaign_role_binding(repo, campaign, role_name, role_address, holder_principal) VALUES($1,$2,'root',$3,$4) ON CONFLICT(repo, campaign, role_name) DO UPDATE SET holder_principal=$4, updated_at=clock_timestamp()`, req.Repo, req.Campaign, campaignRootRoleAddress(req.Campaign), curRoot); err != nil {
 			return empty, err
 		}
 		return readTeamCampaignTx(ctx, tx, req.Repo, req.Campaign, dest.AllowLocal, true)
@@ -701,16 +744,17 @@ func (s *Store) ListTeamCampaigns(ctx context.Context, req ListTeamCampaignsRequ
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT repo, campaign, root_agent, out_of_chain_policy, sensitivity, active, revision, created_at, updated_at FROM cairn.agent_team_campaign WHERE repo=$1 AND (sensitivity='shareable' OR $2) AND (NOT $3 OR active) AND campaign>$4 ORDER BY campaign LIMIT $5`, repo, dest.AllowLocal, req.ActiveOnly, req.After, limit+1)
+	rows, err := tx.Query(ctx, `SELECT repo, campaign, root_agent, out_of_chain_policy, sensitivity, max_coordinator_age_seconds, max_coordinator_compactions, active, revision, created_at, updated_at FROM cairn.agent_team_campaign WHERE repo=$1 AND (sensitivity='shareable' OR $2) AND (NOT $3 OR active) AND campaign>$4 ORDER BY campaign LIMIT $5`, repo, dest.AllowLocal, req.ActiveOnly, req.After, limit+1)
 	if err != nil {
 		return out, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var c TeamCampaign
-		if err = rows.Scan(&c.Repo, &c.Campaign, &c.RootAgent, &c.OutOfChainPolicy, &c.Sensitivity, &c.Active, &c.Revision, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err = rows.Scan(&c.Repo, &c.Campaign, &c.RootAgent, &c.OutOfChainPolicy, &c.Sensitivity, &c.MaxCoordinatorAgeSeconds, &c.MaxCoordinatorCompactions, &c.Active, &c.Revision, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return out, err
 		}
+		c.RoleAddress = campaignRootRoleAddress(c.Campaign)
 		if len(out.Campaigns) == limit {
 			out.More = true
 			break

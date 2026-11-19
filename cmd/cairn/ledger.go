@@ -26,6 +26,9 @@ Subcommands:
   cairn ledger send --campaign NAME --op-key KEY (--to PRINCIPAL | --topic TOPIC | --pool POOL [--workspace PATH --harness NAME --model NAME --capability CAP]) --kind EVENT_KIND --stdin [--shareable] [--source-kind NOTE_KIND] [--summary TEXT] [--blocker] [--action none|review|decide] [--supersedes KEY] [--causation-id UUID] [--correlation-id UUID] [--expect-by RFC3339] [--expect-next-by RFC3339] [--item-key KEY] [--item-kind KIND] [--item-status STATUS]
   cairn ledger complete --campaign NAME --op-key KEY [--lease LEASE_UUID] --stdin [--shareable] [--source-kind NOTE_KIND] [--reply-to PRINCIPAL] [--causation-id UUID] [--correlation-id UUID] [--summary TEXT] [--item-key KEY] [--item-status STATUS] DELIVERY_UUID
   cairn ledger ack --campaign NAME --op-key KEY [--lease LEASE_UUID] [--disposition handled|ignored|failed] [--code CODE] [--item-key KEY] [--item-kind KIND] [--item-status STATUS] DELIVERY_UUID
+  cairn ledger handoff-check --campaign NAME
+  cairn ledger compact --campaign NAME [--request-id UUID]
+  cairn ledger handoff --campaign NAME [--if-needed] (--to-session AGENT_UUID:EXECUTION_UUID | --to-agent-id UUID --to-execution-id UUID | --new-binding BINDING --new-native-session NATIVE_ID [--workspace PATH --harness NAME --project NAME --model NAME --delivery-mode existing-session|fresh-worker]) [--shareable] [--reason TEXT] [--note TEXT] [--request-id UUID]
 
 Common flags: --profile NAME | --token-file FILE | --operator, --socket PATH, --repo COLLECTION | --collection COLLECTION, --session AGENT_UUID:EXECUTION_UUID | (--agent-id UUID --execution-id UUID)
 Do not keep private intent, result, or receipt files on disk; retry uncertain publish, send, complete, or ack calls with the same --campaign and --op-key.
@@ -71,6 +74,17 @@ var ledgerSubcommandAllowedFlags = map[string]map[string]bool{
 		"campaign": true, "op-key": true, "lease": true, "disposition": true,
 		"code": true, "item-key": true, "item-kind": true, "item-status": true,
 	},
+	"handoff-check": {
+		"campaign": true,
+	},
+	"compact": {
+		"campaign": true, "request-id": true,
+	},
+	"handoff": {
+		"campaign": true, "if-needed": true, "to-session": true, "to-agent-id": true, "to-execution-id": true,
+		"new-binding": true, "new-native-session": true, "workspace": true, "harness": true, "project": true, "model": true, "delivery-mode": true,
+		"shareable": true, "reason": true, "note": true, "request-id": true,
+	},
 }
 
 func ledgerCommand(ctx context.Context, args []string, input io.Reader, client *localapi.Client, callerSession *core.AgentSessionRef) (any, error) {
@@ -80,7 +94,7 @@ func ledgerCommand(ctx context.Context, args []string, input io.Reader, client *
 	subcommand := args[0]
 	allowedSub, validSub := ledgerSubcommandAllowedFlags[subcommand]
 	if !validSub {
-		return nil, invalid("unknown ledger subcommand; expected get, set, sync-context, publish, send, complete, or ack")
+		return nil, invalid("unknown ledger subcommand; expected get, set, sync-context, publish, send, complete, ack, handoff-check, compact, or handoff")
 	}
 	f := flags("ledger " + subcommand)
 	token := f.String("token-file", "", "API token file")
@@ -138,6 +152,16 @@ func ledgerCommand(ctx context.Context, args []string, input io.Reader, client *
 	linkKey := f.String("item-key", "", "linked ledger item key")
 	linkKind := f.String("item-kind", "", "linked ledger item kind")
 	linkStatus := f.String("item-status", "", "linked ledger item status")
+	ifNeeded := f.Bool("if-needed", false, "only hand off if coordinator age or compaction threshold is reached")
+	toSessionFlag := f.String("to-session", "", "successor AGENT_UUID:EXECUTION_UUID")
+	toAgentID := f.String("to-agent-id", "", "successor agent UUID")
+	toExecutionID := f.String("to-execution-id", "", "successor execution UUID")
+	newBinding := f.String("new-binding", "", "launcher binding for fresh coordinator session")
+	newNativeSession := f.String("new-native-session", "", "native session ID for fresh coordinator session")
+	project := f.String("project", "", "project metadata for fresh coordinator session")
+	deliveryMode := f.String("delivery-mode", "", "delivery mode for fresh coordinator session")
+	reason := f.String("reason", "", "handoff reason")
+	note := f.String("note", "", "optional coordinator handoff note")
 
 	if err := f.Parse(args[1:]); err != nil {
 		if err == flag.ErrHelp {
@@ -255,7 +279,8 @@ func ledgerCommand(ctx context.Context, args []string, input io.Reader, client *
 		*eventID, *deliveryIDFlag, *dueStr, *expectedRevision, *opLimit,
 		*opKey, *to, *topic, *pool, *workspace, *harness, *model, capabilities,
 		*version, *blocker, *action, *supersedes, *causationID, *correlationID, *expectByStr, *expectNextByStr,
-		*stdin, *shareable, *sourceKind, *lease, *replyTo, *disposition, *code, *linkKey, *linkKind, *linkStatus)
+		*stdin, *shareable, *sourceKind, *lease, *replyTo, *disposition, *code, *linkKey, *linkKind, *linkStatus,
+		*ifNeeded, *toSessionFlag, *toAgentID, *toExecutionID, *newBinding, *newNativeSession, *project, *deliveryMode, *reason, *note)
 }
 
 func dispatchLedgerSubcommand(
@@ -267,6 +292,7 @@ func dispatchLedgerSubcommand(
 	opKey, to, topic, pool, workspace, harness, model string, capabilities []string,
 	version int, blocker bool, action, supersedes, causationID, correlationID, expectByStr, expectNextByStr string,
 	stdin, shareable bool, sourceKind, lease, replyTo, disposition, code, linkKey, linkKind, linkStatus string,
+	ifNeeded bool, toSessionFlag, toAgentID, toExecutionID, newBinding, newNativeSession, project, deliveryMode, reason, note string,
 ) (any, error) {
 	if provided["summary"] && strings.TrimSpace(summary) == "" {
 		return nil, invalid("--summary cannot be empty when specified")
@@ -418,6 +444,63 @@ func dispatchLedgerSubcommand(
 			Repo: repo, Campaign: campaign, OpKey: opKey, DeliveryID: f.Arg(0),
 			LeaseID: lease, Disposition: disposition, Code: code,
 			ItemKey: linkKey, ItemKind: linkKind, ItemStatus: linkStatus,
+		})
+	case "handoff-check":
+		if f.NArg() != 0 {
+			return nil, invalid("ledger handoff-check takes no positional arguments")
+		}
+		return callOp("ledger-handoff-check", core.CheckCoordinatorHandoffRequest{
+			Repo: repo, Campaign: campaign,
+		})
+	case "compact":
+		if f.NArg() != 0 {
+			return nil, invalid("ledger compact takes no positional arguments")
+		}
+		return callOp("ledger-compaction", core.RecordCoordinatorCompactionRequest{
+			RequestID: reqID, Repo: repo, Campaign: campaign,
+		})
+	case "handoff":
+		if f.NArg() != 0 {
+			return nil, invalid("ledger handoff takes no positional arguments")
+		}
+		if toSessionFlag != "" && (toAgentID != "" || toExecutionID != "") {
+			return nil, invalid("cannot combine --to-session with --to-agent-id or --to-execution-id")
+		}
+		if toSessionFlag != "" {
+			parts := strings.SplitN(toSessionFlag, ":", 2)
+			if len(parts) != 2 {
+				return nil, invalid("--to-session must be AGENT_UUID:EXECUTION_UUID")
+			}
+			toAgentID, toExecutionID = parts[0], parts[1]
+		}
+		var succ *core.AgentSessionRef
+		if toAgentID != "" || toExecutionID != "" {
+			ref := core.AgentSessionRef{AgentID: toAgentID, ExecutionID: toExecutionID}
+			if err := ref.Validate(); err != nil {
+				return nil, err
+			}
+			succ = &ref
+		}
+		var newSess *core.NewCoordinatorSessionSpec
+		if newBinding != "" || newNativeSession != "" {
+			if newBinding == "" || newNativeSession == "" {
+				return nil, invalid("both --new-binding and --new-native-session are required together")
+			}
+			newSess = &core.NewCoordinatorSessionSpec{Binding: newBinding, NativeSessionID: newNativeSession}
+			if workspace != "" || harness != "" || project != "" || model != "" || deliveryMode != "" {
+				newSess.Metadata = &core.AgentMetadata{
+					Harness: harness, Model: model, Project: project, Workspace: workspace, State: "idle", DeliveryMode: deliveryMode,
+				}
+			}
+		} else if workspace != "" || harness != "" || project != "" || model != "" || deliveryMode != "" {
+			return nil, invalid("metadata flags (--workspace, --harness, --project, --model, --delivery-mode) require --new-binding and --new-native-session")
+		}
+		if (succ == nil) == (newSess == nil) {
+			return nil, invalid("specify either --to-session / (--to-agent-id --to-execution-id) or (--new-binding --new-native-session)")
+		}
+		return callOp("ledger-handoff", core.HandoffCampaignCoordinatorRequest{
+			RequestID: reqID, Repo: repo, Campaign: campaign, OnlyIfThresholdReached: ifNeeded,
+			Successor: succ, NewSession: newSess, Shareable: shareable, Reason: reason, Note: note,
 		})
 	default:
 		return nil, invalid("unknown ledger subcommand")

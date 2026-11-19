@@ -17,7 +17,7 @@ import (
 const teamHelp = `Cairn team hierarchy configuration (authenticated API or --operator)
 
 Subcommands:
-  cairn team set-campaign --campaign NAME [--root-agent PRINCIPAL] [--out-of-chain-policy allow|warn|reroute] [--active | --inactive] [--expected-revision N] [--local | --shareable] [--request-id UUID]
+  cairn team set-campaign --campaign NAME [--root-agent PRINCIPAL] [--out-of-chain-policy allow|warn|reroute] [--max-coordinator-age-seconds N] [--max-coordinator-compactions N] [--active | --inactive] [--expected-revision N] [--local | --shareable] [--request-id UUID]
   cairn team set-member --campaign NAME --member PRINCIPAL [--lead PRINCIPAL] [--role lead|worker] [--active | --inactive] [--request-id UUID]
   cairn team get --campaign NAME
   cairn team list [--active-only] [--after CAMPAIGN] [--limit N]
@@ -28,6 +28,7 @@ Common flags: --profile NAME | --token-file FILE | --operator, --socket PATH, --
 var teamSubcommandAllowedFlags = map[string]map[string]bool{
 	"set-campaign": {
 		"campaign": true, "root-agent": true, "out-of-chain-policy": true,
+		"max-coordinator-age-seconds": true, "max-coordinator-compactions": true,
 		"active": true, "inactive": true, "expected-revision": true,
 		"local": true, "shareable": true, "request-id": true,
 	},
@@ -75,6 +76,8 @@ func teamCommand(ctx context.Context, args []string, _ io.Reader, client *locala
 	expectedRev := f.Int64("expected-revision", 0, "expected current revision")
 	localOnly := f.Bool("local", false, "set sensitivity to local")
 	shareableFlag := f.Bool("shareable", false, "set sensitivity to shareable")
+	maxCoordAge := f.Int("max-coordinator-age-seconds", 0, "coordinator session age threshold in seconds (0 clears)")
+	maxCoordComp := f.Int("max-coordinator-compactions", 0, "coordinator session compaction threshold (0 clears)")
 	activeOnly := f.Bool("active-only", false, "list only active campaigns")
 	after := f.String("after", "", "exclusive campaign cursor for pagination")
 	limit := f.Int("limit", 0, "page size")
@@ -169,12 +172,19 @@ func teamCommand(ctx context.Context, args []string, _ io.Reader, client *locala
 	} else if *shareableFlag {
 		sens = "shareable"
 	}
-	return dispatchTeamSubcommand(ctx, subcommand, scopeRepo, *requestID, *campaign, *rootAgent, *outPolicy, *member, *lead, *role, activePtr, *expectedRev, sens, *activeOnly, *after, *limit, *token, *socket, *operatorMode, client, sessionRef)
+	var maxAgePtr, maxCompPtr *int
+	if provided["max-coordinator-age-seconds"] {
+		maxAgePtr = maxCoordAge
+	}
+	if provided["max-coordinator-compactions"] {
+		maxCompPtr = maxCoordComp
+	}
+	return dispatchTeamSubcommand(ctx, subcommand, scopeRepo, *requestID, *campaign, *rootAgent, *outPolicy, *member, *lead, *role, activePtr, maxAgePtr, maxCompPtr, *expectedRev, sens, *activeOnly, *after, *limit, *token, *socket, *operatorMode, client, sessionRef)
 }
 
 func dispatchTeamSubcommand(
 	ctx context.Context, subcommand, scopeRepo, requestID, campaign, rootAgent, outPolicy, member, lead, role string,
-	activePtr *bool, expectedRev int64, sens string, activeOnly bool, after string, limit int,
+	activePtr *bool, maxAgePtr, maxCompPtr *int, expectedRev int64, sens string, activeOnly bool, after string, limit int,
 	token, socket string, operatorMode bool, client *localapi.Client, sessionRef *core.AgentSessionRef,
 ) (any, error) {
 	var operation string
@@ -194,7 +204,8 @@ func dispatchTeamSubcommand(
 		req = core.SetTeamCampaignRequest{
 			RequestID: requestID, Repo: scopeRepo, Campaign: campaign,
 			RootAgent: rootAgent, OutOfChainPolicy: outPolicy,
-			Sensitivity: sens, Active: activePtr, ExpectedRevision: expectedRev,
+			Sensitivity: sens, MaxCoordinatorAgeSeconds: maxAgePtr, MaxCoordinatorCompactions: maxCompPtr,
+			Active: activePtr, ExpectedRevision: expectedRev,
 		}
 	case "set-member":
 		if strings.TrimSpace(campaign) == "" {

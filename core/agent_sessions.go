@@ -39,6 +39,8 @@ type AgentInstance struct {
 	DatabaseGeneration int64         `json:"database_generation"`
 	ContextRevision    int64         `json:"context_revision"`
 	Metadata           AgentMetadata `json:"metadata"`
+	StartedAt          time.Time     `json:"started_at"`
+	CompactionCount    int           `json:"compaction_count"`
 	LastSeen           time.Time     `json:"last_seen"`
 	ExpiresAt          time.Time     `json:"expires_at"`
 	Stopped            bool          `json:"stopped"`
@@ -89,6 +91,7 @@ type UpdateAgentRequest struct {
 	RequestID        string          `json:"request_id"`
 	Session          AgentSessionRef `json:"session"`
 	ExpectedRevision int64           `json:"expected_revision"`
+	Compacted        bool            `json:"compacted,omitempty"`
 	Metadata         AgentMetadata   `json:"metadata"`
 }
 
@@ -148,11 +151,11 @@ func (m AgentMetadata) validate() error {
 	return nil
 }
 
-const agentSessionColumns = `owner,agent_id::text,ordinal,native_session_id,repo,execution_id::text,database_generation,context_revision,metadata,last_seen,expires_at,stopped,(NOT stopped AND expires_at>clock_timestamp() AND database_generation=(SELECT generation FROM cairn.retrieval_generation WHERE singleton))`
+const agentSessionColumns = `owner,agent_id::text,ordinal,native_session_id,repo,execution_id::text,database_generation,context_revision,metadata,started_at,compaction_count,last_seen,expires_at,stopped,(NOT stopped AND expires_at>clock_timestamp() AND database_generation=(SELECT generation FROM cairn.retrieval_generation WHERE singleton))`
 
 func scanAgentSession(row pgx.Row) (AgentInstance, error) {
 	var a AgentInstance
-	err := row.Scan(&a.ProfileOwner, &a.AgentID, &a.Ordinal, &a.NativeSessionID, &a.Repo, &a.ExecutionID, &a.DatabaseGeneration, &a.ContextRevision, &a.Metadata, &a.LastSeen, &a.ExpiresAt, &a.Stopped, &a.Online)
+	err := row.Scan(&a.ProfileOwner, &a.AgentID, &a.Ordinal, &a.NativeSessionID, &a.Repo, &a.ExecutionID, &a.DatabaseGeneration, &a.ContextRevision, &a.Metadata, &a.StartedAt, &a.CompactionCount, &a.LastSeen, &a.ExpiresAt, &a.Stopped, &a.Online)
 	if err == nil {
 		a.Inbox = "agent/" + a.AgentID
 		a.DisplayName = "agent-" + strconv.FormatInt(a.Ordinal, 10)
@@ -311,7 +314,7 @@ func (s *Store) UpdateAgent(ctx context.Context, req UpdateAgentRequest, dest De
 		if current.ContextRevision != req.ExpectedRevision {
 			return AgentInstance{}, failure("VERSION_CONFLICT", "agent context changed; read current presence before updating")
 		}
-		return scanAgentSession(tx.QueryRow(ctx, `UPDATE cairn.agent_session SET metadata=$2,context_revision=context_revision+1,last_seen=clock_timestamp(),expires_at=clock_timestamp()+interval '90 seconds' WHERE agent_id=$1 RETURNING `+agentSessionColumns, req.Session.AgentID, req.Metadata))
+		return scanAgentSession(tx.QueryRow(ctx, `UPDATE cairn.agent_session SET metadata=$2,compaction_count=compaction_count+CASE WHEN $3 THEN 1 ELSE 0 END,context_revision=context_revision+1,last_seen=clock_timestamp(),expires_at=clock_timestamp()+interval '90 seconds' WHERE agent_id=$1 RETURNING `+agentSessionColumns, req.Session.AgentID, req.Metadata, req.Compacted))
 	}, guard)
 }
 

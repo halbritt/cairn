@@ -318,6 +318,40 @@ cairn ledger get --token-file "$COORD_TOKEN_FILE" \
   Retry any uncertain call with the same `--campaign`, `--op-key`, and arguments; changed
   intent under the same `op_key` refuses with `IDEMPOTENCY_CONFLICT`.
 
+## Coordinator role inbox and ledger-driven session handoff
+
+Every campaign binds a stable role inbox address `role/CAMPAIGN_NAME/root` (schema 094).
+Leads and workers report to `--to role/CAMPAIGN_NAME/root` (or `--reply-to
+role/CAMPAIGN_NAME/root`), so replacing a long-running coordinator session never requires
+notifying subordinates of a new inbox UUID.
+
+Configure coordinator age and compaction thresholds on `team set-campaign`, record
+compactions with `ledger compact`, inspect thresholds with `ledger handoff-check`, and
+atomically hand off to a fresh coordinator session with `ledger handoff`:
+
+```sh
+cairn team set-campaign --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME --max-coordinator-age-seconds 14400 \
+  --max-coordinator-compactions 3
+
+cairn ledger compact --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME
+
+cairn ledger handoff --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME --if-needed \
+  --new-binding coord-CAMPAIGN_NAME --new-native-session NEW_NATIVE_SESSION_ID
+```
+
+`ledger handoff` writes a ledger-derived handoff `note` record (pass `--shareable` when
+supplying a freeform `--note` on a shareable campaign), registers or binds the fresh
+session to `role/CAMPAIGN_NAME/root`, re-parents direct reports and root-owned ledger items,
+transfers pending inbox deliveries and active topic subscriptions without duplicating
+already-settled messages, forwards late messages still addressed to the stopped predecessor,
+and stops the old coordinator session.
+
 ## Verified behavior
 
 `scripts/check_scoped_coordination_recipe.py` runs this recipe end to end with real CLI
