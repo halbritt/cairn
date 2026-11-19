@@ -271,6 +271,53 @@ With these subscriptions, a worker's routine notice on `campaign.CAMPAIGN_NAME` 
 lead and not the root coordinator; a blocker reaches the root only when the lead escalates
 it or when the root's subscription matches (`--blockers`).
 
+## Hosted campaign ledger and operation idempotency
+
+Coordinators, sub-leads, and workers keep campaign state in Cairn's hosted ledger
+(schema 093) rather than in workspace journals. **Do not keep private intent, result, or
+receipt files on disk**: private per-message files accumulate thousands of files and force
+repeated context compactions. A coordinator or replacement session in a fresh empty
+directory reconstructs assignments, owners, open decisions, blockers, holds, derived
+context summaries, and operation receipts from `cairn ledger get`:
+
+```sh
+cairn ledger set --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME --kind assignment --key slice-auth \
+  --owner "agent/$WORKER_AGENT" --status planned \
+  --summary 'Implement token rotation slice'
+
+cairn ledger send --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME --op-key send-slice-auth \
+  --to "agent/$WORKER_AGENT" --kind request --shareable --stdin \
+  --item-key slice-auth --summary 'Dispatch slice-auth' < assignment.txt
+
+cairn ledger complete --token-file "$WORKER_TOKEN_FILE" \
+  --agent-id "$WORKER_AGENT" --execution-id "$WORKER_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME --op-key complete-slice-auth \
+  --lease LEASE_UUID --reply-to "agent/$LEAD_AGENT" --shareable --stdin \
+  --item-key slice-auth --summary 'Completed slice-auth' DELIVERY_UUID < result.txt
+
+cairn ledger get --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME
+```
+
+- Typed ledger items (`assignment`, `decision`, `blocker`, `hold`) link exact source and
+  result `(record_id, version)` references plus event and delivery UUIDs, and enforce
+  hierarchy roles (`root` manages the campaign, a `lead` manages its subtree and escalates
+  decisions/blockers, and a `worker` updates its own assignments and self-owned blockers
+  or holds) and `local` vs `shareable` sensitivity isolation.
+- Ledger mutations automatically refresh live `agent_session.metadata.task_summary` for
+  affected sessions (and `cairn ledger sync-context --campaign CAMPAIGN_NAME` refreshes a
+  newly resumed session explicitly) without writing `local` campaign state into `hosted`
+  session metadata.
+- `cairn ledger publish|send|complete|ack` (and `cairn agent send --campaign NAME --op-key
+  KEY`) persist operation idempotency on the server (`cairn.campaign_operation_journal`).
+  Retry any uncertain call with the same `--campaign`, `--op-key`, and arguments; changed
+  intent under the same `op_key` refuses with `IDEMPOTENCY_CONFLICT`.
+
 ## Verified behavior
 
 `scripts/check_scoped_coordination_recipe.py` runs this recipe end to end with real CLI

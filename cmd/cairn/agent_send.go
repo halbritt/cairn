@@ -19,7 +19,7 @@ import (
 	"github.com/halbritt/cairn/localapi"
 )
 
-const sendHelp = `cairn agent [connection flags] send --journal ABSOLUTE_PATH --repo COLLECTION
+const sendHelp = `cairn agent [connection flags] send (--campaign NAME --op-key KEY | --journal ABSOLUTE_PATH) --repo COLLECTION
   --stdin --kind EVENT_KIND [--shareable] [--source-kind NOTE_KIND]
   (--to PRINCIPAL | --resolution FILE | --topic TOPIC | --pool POOL)
   [--workspace PATH --harness NAME --model NAME --capability NAME]
@@ -27,14 +27,11 @@ const sendHelp = `cairn agent [connection flags] send --journal ABSOLUTE_PATH --
   [--expect-by RFC3339]
 
 Save selected stdin text under coordination/<publication-request-UUID>, then
-publish its exact returned version. The helper allocates separate source and
-publication retry UUIDs once in an owner-only local journal. Retry with the
-same journal, flags and stdin after an uncertain result. Changed intent refuses.
-The journal records identities and a digest, never source text or credentials.
-Use ordinary remember for reusable repository guidance. Resolution FILE must
-contain the exact resolution object from a unique agent-resolve result. The
-helper never chooses a recipient or creates a session. Publication failure
-returns source_saved and publication_pending without marking delivery complete.
+publish its exact returned version. Prefer --campaign NAME --op-key KEY so
+idempotency is journaled on the host in the campaign ledger without private
+journal files on disk. Legacy --journal ABSOLUTE_PATH remains available for
+non-campaign sends. Retry with the same campaign/op-key (or journal), flags and
+stdin after an uncertain result. Changed intent refuses.
 `
 
 var (
@@ -135,7 +132,9 @@ func sendJournalStore(path string) LockedStateFile[sendJournal] {
 
 func agentSend(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, args []string, input io.Reader) (any, error) {
 	f := flags("send")
-	journalPath := f.String("journal", "", "owner-only local retry journal")
+	journalPath := f.String("journal", "", "owner-only local retry journal (legacy; prefer --campaign and --op-key)")
+	campaign := f.String("campaign", "", "hosted campaign ledger name (replaces local --journal)")
+	opKey := f.String("op-key", "", "campaign operation idempotency key (with --campaign)")
 	repo := f.String("repo", "", "collection repository")
 	kind := f.String("kind", "", "event kind")
 	sourceKind := f.String("source-kind", "note", "ordinary source record kind")
@@ -162,8 +161,12 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 		}
 		return nil, invalid(err.Error())
 	}
-	if f.NArg() != 0 || !*stdin || *journalPath == "" || strings.TrimSpace(*repo) == "" || *repo == "*" || len(*repo) > 256 || !sendEventName.MatchString(*kind) {
-		return nil, invalid("send requires --journal, --repo, --stdin, --kind and no positional arguments")
+	useLedger := *campaign != "" || *opKey != ""
+	if useLedger && (*campaign == "" || *opKey == "" || *journalPath != "") {
+		return nil, invalid("choose either (--campaign and --op-key) or --journal, not both")
+	}
+	if f.NArg() != 0 || !*stdin || (!useLedger && *journalPath == "") || strings.TrimSpace(*repo) == "" || *repo == "*" || len(*repo) > 256 || !sendEventName.MatchString(*kind) {
+		return nil, invalid("send requires (--campaign and --op-key | --journal), --repo, --stdin, --kind and no positional arguments")
 	}
 	provided := map[string]bool{}
 	f.Visit(func(fl *flag.Flag) { provided[fl.Name] = true })
@@ -283,6 +286,37 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	}
 	if strings.TrimSpace(dest.Name) == "" || len(dest.Name) > 256 {
 		return nil, invalid("explicit destination required")
+	}
+	if useLedger {
+		var sent core.CampaignSendResult
+		err := client.Call(ctx, "ledger-send", core.CampaignSendRequest{
+			Repo:       *repo,
+			Campaign:   *campaign,
+			OpKey:      *opKey,
+			Body:       string(body),
+			SourceKind: *sourceKind,
+			Shareable:  *shareable,
+			Publication: core.PublishEventRequest{
+				Summary: *eventSummary, Action: *noticeAction, Supersedes: *noticeSupersedes,
+				Blocker: *eventBlocker, ExpectNextBy: parsedExpectNextBy, ExpectBy: parsedExpectBy,
+				Repo: *repo, Kind: *kind, Destination: dest, Resolution: resolution, Pool: needs,
+			},
+		}, &sent)
+		if err != nil {
+			return nil, err
+		}
+		confirmed := true
+		src := sent.Source
+		return sendResult{
+			Schema:               "cairn.send-result/1",
+			SourceSaved:          &confirmed,
+			PublicationPending:   false,
+			Source:               &src,
+			EventID:              sent.Event.EventID,
+			Routing:              sent.Event.Routing,
+			SourceRequestID:      sent.SourceRequestID,
+			PublicationRequestID: sent.PublicationRequestID,
+		}, nil
 	}
 	bodyHash := sha256.Sum256(body)
 	var summaryHashHex string

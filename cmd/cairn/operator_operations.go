@@ -158,6 +158,13 @@ func buildOperatorOperations() map[string]operatorOperation {
 		sharedOperation("team-member-set", "team-member-set"),
 		sharedOperation("team-campaign-get", "team-campaign-get"),
 		sharedOperation("team-campaign-list", "team-campaign-list"),
+		sharedOperation("ledger-item-set", "ledger-item-set"),
+		sharedOperation("ledger-get", "ledger-get"),
+		sharedOperation("ledger-sync-context", "ledger-sync-context"),
+		sharedOperation("ledger-publish", "ledger-publish"),
+		sharedOperation("ledger-send", "ledger-send"),
+		sharedOperation("ledger-complete", "ledger-complete"),
+		sharedOperation("ledger-ack", "ledger-ack"),
 
 		// Operator-only authority, policy and proposal mutations. localapi has no
 		// route for these; the operator channel from core.Open is the authority.

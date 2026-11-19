@@ -208,6 +208,41 @@ func TestRealRepliesConformToContract(t *testing.T) {
 	c.call(c.server, "local", "create", `{"request_id":"not-a-uuid"}`, nil)
 	c.call(c.server, "local", "agent-directory", `{}`, session)
 	c.ok("local", "refusal-stats", `{}`)
+	hostedReg := c.ok("hosted", "agent-register", `{"request_id":"`+uuid.NewString()+`","binding":"contract-hosted","native_session_id":"`+uuid.NewString()+`","metadata":{"harness":"codex","project":"cairn","workspace":"/tmp/contract","state":"idle","delivery_mode":"existing-session"}}`)
+	var hostedAgent core.AgentInstance
+	if err := json.Unmarshal(hostedReg, &hostedAgent); err != nil {
+		t.Fatal(err)
+	}
+	hostedSession := map[string]string{"Cairn-Agent-ID": hostedAgent.AgentID, "Cairn-Execution-ID": hostedAgent.ExecutionID}
+	campBytes := c.ok("local", "team-campaign-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp"}`)
+	var contractCamp core.TeamCampaign
+	if err := json.Unmarshal(campBytes, &contractCamp); err != nil {
+		t.Fatal(err)
+	}
+	c.ok("local", "team-member-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","member":"agent/`+hostedAgent.AgentID+`","lead":"`+contractCamp.RootAgent+`","role":"worker"}`)
+	c.ok("local", "ledger-item-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","kind":"assignment","item_key":"slice-1","owner":"agent/`+hostedAgent.AgentID+`","status":"planned","summary":"Contract ledger assignment"}`)
+	c.ok("local", "ledger-get", `{"campaign":"contract-camp"}`)
+	c.ok("hosted", "ledger-sync-context", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","session":{"agent_id":"`+hostedAgent.AgentID+`","execution_id":"`+hostedAgent.ExecutionID+`"}}`)
+	c.ok("local", "ledger-publish", `{"campaign":"contract-camp","op_key":"pub-1","publication":{"destination":{"type":"agent","name":"agent/`+hostedAgent.AgentID+`"},"kind":"notice","ref":{"record_id":"`+record.RecordID+`","version":1}}}`)
+	c.ok("local", "ledger-send", `{"campaign":"contract-camp","op_key":"send-1","body":"Contract ledger send","shareable":true,"publication":{"destination":{"type":"agent","name":"agent/`+hostedAgent.AgentID+`"},"kind":"request"}}`)
+	claim1 := c.call(c.server, "hosted", "event-next", `{"lease_seconds":60}`, hostedSession)
+	var nx1 core.NextEventResult
+	if claim1.status != 200 || json.Unmarshal(claim1.parsed.Data, &nx1) != nil || nx1.Delivery == nil {
+		t.Fatalf("event-next 1 failed: %d %s", claim1.status, claim1.body)
+	}
+	ackOut := c.call(c.server, "hosted", "ledger-ack", `{"campaign":"contract-camp","op_key":"ack-1","delivery_id":"`+nx1.Delivery.DeliveryID+`","lease_id":"`+nx1.Delivery.LeaseID+`"}`, hostedSession)
+	if ackOut.status != 200 {
+		t.Fatalf("ledger-ack failed: %d %s", ackOut.status, ackOut.body)
+	}
+	claim2 := c.call(c.server, "hosted", "event-next", `{"lease_seconds":60}`, hostedSession)
+	var nx2 core.NextEventResult
+	if claim2.status != 200 || json.Unmarshal(claim2.parsed.Data, &nx2) != nil || nx2.Delivery == nil {
+		t.Fatalf("event-next 2 failed: %d %s", claim2.status, claim2.body)
+	}
+	compOut := c.call(c.server, "hosted", "ledger-complete", `{"campaign":"contract-camp","op_key":"comp-1","delivery_id":"`+nx2.Delivery.DeliveryID+`","lease_id":"`+nx2.Delivery.LeaseID+`","body":"Contract complete result","shareable":true,"reply_to":"`+contractCamp.RootAgent+`","summary":"Completed slice-1","item_key":"slice-1"}`, hostedSession)
+	if compOut.status != 200 {
+		t.Fatalf("ledger-complete failed: %d %s", compOut.status, compOut.body)
+	}
 }
 
 // TestAcceptedInputMatchesDecoder sends documented accepted and rejected wire

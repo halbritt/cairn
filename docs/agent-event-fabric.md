@@ -100,8 +100,20 @@ Reserve repository-wide task/run wildcards for selected reusable guidance. Recor
 kind is descriptive: a `note` can be either an assignment or a reusable lesson;
 there is no assignment kind blacklist.
 
-For a selected one-off source and an explicit destination, `agent send` composes
-the two mutations through an owner-only local retry journal:
+For a campaign managed under `cairn team set-campaign`, compose sends, publications,
+completions, and acknowledgments through the hosted campaign ledger (`cairn ledger
+send|publish|complete|ack --campaign NAME --op-key KEY`, or `cairn agent send
+--campaign NAME --op-key KEY` without `--journal`). Cairn journals the intent
+hash, deterministic mutation UUIDs, and multi-step state (`reserved`,
+`source_saved`, `completed_reply_pending`, `committed`) in PostgreSQL so a retry
+with the same `--campaign` and `--op-key` recovers from any step without local
+state. **Do not keep private intent, result, or receipt files on disk** during a
+campaign; rebuild coordinator and worker state from `cairn ledger get --campaign
+NAME`.
+
+Outside a campaign, `agent send` can still compose a single send through an
+owner-only local retry journal (`--journal` and `--campaign/--op-key` are
+mutually exclusive):
 
 ```sh
 install -d -m 0700 "$HOME/.local/share/cairn/send-journals"

@@ -28,6 +28,8 @@ Everyday commands:
   response-group | response-groups (owned reply collections; use --help)
   wait --help (durable coordination waits: create, get, list, cancel; use --help)
   status --help (bounded workstream status board that wakes no one: set, get, history, authorize)
+  team --help (campaign hierarchy configuration: set-campaign, set-member, get, list)
+  ledger --help (hosted campaign ledger & operation idempotency without private journal files)
   work --help (work features and coordination; use --help)
   subscribe | unsubscribe | subscriptions | events | event-status | event-stats
   event-pressure | event-fanout | event-admission-preview (observe event load; use --help)
@@ -164,6 +166,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	}
 	if args[0] == "team" {
 		return teamCommand(ctx, args[1:], input, nil, nil)
+	}
+	if args[0] == "ledger" {
+		return ledgerCommand(ctx, args[1:], input, nil, nil)
 	}
 	if args[0] == "machine" {
 		return machineCommand(ctx, args[1:])

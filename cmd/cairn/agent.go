@@ -142,6 +142,15 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 			},
 		},
 		{
+			Name:        "ledger",
+			Operation:   "ledger-get",
+			AcceptsArgs: true,
+			Help:        func() (commandHelp, error) { return commandHelp(ledgerHelp), nil },
+			Dispatch: func(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+				return ledgerCommand(ctx, args, input, client, session)
+			},
+		},
+		{
 			Name:        "clients",
 			Operation:   "clients",
 			AcceptsArgs: true,
