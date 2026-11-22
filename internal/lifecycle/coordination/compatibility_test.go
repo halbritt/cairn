@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -231,6 +232,64 @@ func TestCompatibilityLauncherAndIssuedArgv(t *testing.T) {
 	_, err = f.compat.IssuedArgv([]string{"inbox"})
 	if !errors.As(err, &pe) {
 		t.Fatalf("expected CompatibilityPreflightError on tampered launcher, got %v", err)
+	}
+}
+
+// TestCompatibilityIssuedArgvPrefersCheckedGoLauncher pins that issued inbox
+// commands name the staged Go coordination launcher (receipt image, role,
+// then the retained vector's selection flags) and fall back to the retained
+// /2 launcher only when no Go launcher was staged for the selection.
+func TestCompatibilityIssuedArgvPrefersCheckedGoLauncher(t *testing.T) {
+	f := newCompatFixture(t)
+	if err := f.compat.VerifyReceipt(f.profile); err != nil {
+		t.Fatal(err)
+	}
+	image := nativeText(f.compat.Receipt.Get("binary").Get("path"))
+	flags := []string{"--receipt", f.receiptPath, "--receipt-sha256", f.compat.ReceiptSHA256,
+		"--role", "coordination", "--entrypoint", "coordination.py", "--config", f.configPath,
+		"--hook-timeout", "15", "--launch-root", f.launchRoot, "--shell", "/bin/sh"}
+	vector := append([]string{"/usr/bin/python3", "-I", "-S", "-c", "pass"}, flags...)
+	pyRaw, err := LauncherBytes(vector, "/bin/sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pyPath := LauncherPath(f.launchRoot, pyRaw)
+	writePrivateFile(t, pyPath, pyRaw, 0o500)
+	f.compat.Vector, f.compat.LauncherRaw, f.compat.Launcher = vector, pyRaw, pyPath
+	tail := []string{"inbox", "--context", "/state/inbox/attempt.json", "complete"}
+
+	argv, err := f.compat.IssuedArgv(tail)
+	if err != nil || !slices.Equal(argv, append([]string{pyPath}, tail...)) {
+		t.Fatalf("without a staged Go launcher the retained launcher is issued: %v %v", argv, err)
+	}
+
+	// Literal bytes of stage_lifecycle_hooks.py checked_go_launcher.
+	goRaw := []byte("#!/bin/sh\nexec " + strings.Join(append([]string{image, "coordination"}, flags...), " ") + " -- \"$@\"\n")
+	sum := sha256.Sum256(goRaw)
+	goPath := filepath.Join(f.launchRoot, hex.EncodeToString(sum[:]), "inbox")
+	writePrivateFile(t, goPath, goRaw, 0o500)
+	for _, issued := range [][]string{tail, {"inbox", "compact", "read", "abcdef0123456789"}} {
+		argv, err = f.compat.IssuedArgv(issued)
+		if err != nil || !slices.Equal(argv, append([]string{goPath}, issued...)) {
+			t.Fatalf("staged Go launcher must be issued: %v %v", argv, err)
+		}
+	}
+	memory := *f.compat
+	memory.Role = "memory"
+	if argv, err = memory.IssuedArgv(tail); err != nil || argv[0] != pyPath {
+		t.Fatalf("a memory selection has no Go coordination launcher: %v %v", argv, err)
+	}
+
+	var pe *CompatibilityPreflightError
+	if err := os.Chmod(goPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.compat.IssuedArgv(tail); !errors.As(err, &pe) || pe.Message != "launcher mode mismatch" {
+		t.Fatalf("a present Go launcher with the wrong mode must refuse, not fall back: %v", err)
+	}
+	writePrivateFile(t, goPath, []byte("#!/bin/sh\nexec /tampered -- \"$@\"\n"), 0o500)
+	if _, err = f.compat.IssuedArgv(tail); !errors.As(err, &pe) || pe.Message != "launcher content mismatch" {
+		t.Fatalf("a tampered Go launcher must refuse, not fall back: %v", err)
 	}
 }
 

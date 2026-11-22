@@ -1577,8 +1577,62 @@ func (c *CompatibilityContext) launcherSpec() (string, []byte, error) {
 	return path, raw, nil
 }
 
+// compatibilityLaunchFlags is the fixed flag order of a canonical /3
+// compatibility launch vector (lifecycle_compatibility.py launch_vector) after
+// the interpreter, its three isolation arguments and the bootstrap literal.
+var compatibilityLaunchFlags = [...]string{"--receipt", "--receipt-sha256", "--role", "--entrypoint", "--config", "--hook-timeout", "--launch-root", "--shell"}
+
+// goLauncherSpec derives the checked Go coordination launcher that staging
+// publishes beside the retained /2 launcher for the same selection
+// (stage_lifecycle_hooks.py checked_go_launcher): the receipt-pinned binary,
+// the role, then the retained vector's selection flags. ok is false when the
+// selection has no canonical vector, receipt image or coordination role.
+func (c *CompatibilityContext) goLauncherSpec() (string, []byte, bool) {
+	vector := c.Vector
+	if c.role() != "coordination" || c.Receipt == nil || len(vector) != 5+2*len(compatibilityLaunchFlags) {
+		return "", nil, false
+	}
+	for i, flag := range compatibilityLaunchFlags {
+		if vector[5+2*i] != flag {
+			return "", nil, false
+		}
+	}
+	if vector[10] != "coordination" || vector[18] != c.LaunchRoot || vector[20] != c.shell() {
+		return "", nil, false
+	}
+	image := nativeText(c.Receipt.Get("binary").Get("path"))
+	if !compatibilityCanonical(image) {
+		return "", nil, false
+	}
+	joined, err := shlexJoinStrings(append([]string{image, "coordination"}, vector[5:]...))
+	if err != nil {
+		return "", nil, false
+	}
+	raw := []byte("#!" + c.shell() + "\nexec " + joined + " -- \"$@\"\n")
+	return LauncherPath(c.LaunchRoot, raw), raw, true
+}
+
+// issuedLauncherSpec selects the launcher named by issued inbox commands. The
+// checked Go launcher is preferred whenever staging published it; the retained
+// /2 launcher is used only when no Go launcher exists for this selection, so
+// generations staged before Go coordination keep working. A present Go
+// launcher is never skipped: IssuedArgv verifies its bytes and mode.
+func (c *CompatibilityContext) issuedLauncherSpec() (string, []byte, error) {
+	if path, raw, ok := c.goLauncherSpec(); ok {
+		var st syscall.Stat_t
+		err := syscall.Lstat(path, &st)
+		if err == nil {
+			return path, raw, nil
+		}
+		if !errors.Is(err, syscall.ENOENT) {
+			return "", nil, &os.PathError{Op: "lstat", Path: path, Err: err}
+		}
+	}
+	return c.launcherSpec()
+}
+
 func (c *CompatibilityContext) IssuedArgv(tail []string) ([]string, error) {
-	launcher, expectedRaw, err := c.launcherSpec()
+	launcher, expectedRaw, err := c.issuedLauncherSpec()
 	if err != nil {
 		return nil, err
 	}

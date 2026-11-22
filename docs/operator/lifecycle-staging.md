@@ -542,7 +542,7 @@ Every row records its `implementation` and `reason`. Current routing is:
 | Unbound Claude PostToolUse/PostToolUseFailure | Receipt-checked ordinary Go `memory` with H=13; preserves Source tool hints without starting recall or a selector. |
 | Unbound Codex PreCompact/Stop and Claude/OpenCode PreCompact/SessionEnd | Receipt-checked Go `memory-capture` with H=150; every selected profile must be unbound. The receipt role stays `memory`, and Codex Stop stays asynchronous. |
 | Other harnesses' tool observation | Existing receipt-selected Python caller. |
-| Coordination hooks for all supported harnesses | Receipt-checked Go `/3` hook entry, with the exact retained R-02 launcher for its selection and issued commands. |
+| Coordination hooks for all supported harnesses | Receipt-checked Go `/3` hook entry. Issued inbox commands (completion, acknowledgement, response, finish-reply, drain and compact read/settle/advance) name the checked Go coordination launcher for the same selection when staging published it, and the retained R-02 launcher only when it did not. A present Go launcher with other bytes or mode refuses instead of falling back. Contexts already issued with the retained launcher keep running it until settled. |
 | Agy coordination PreInvocation/Stop | Checked Go `/3` hook with the selected event flag; all profiles in the receipt unbound. |
 | Agy ordinary memory hook | Not installed; this tool adds none. |
 

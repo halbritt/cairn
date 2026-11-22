@@ -43,7 +43,7 @@ class F04IssuedTests(unittest.TestCase):
         return Fixture(root, self.binary, **kwargs)
 
     def prepare(self, name, kind='request', compact=False, *, legacy=False, remind=False, body=NOTE,
-                unavailable=False,api_suffix='',state_suffix='',refused=False,versioned_config=False):
+                unavailable=False,api_suffix='',state_suffix='',refused=False,versioned_config=False,go=False):
         root=self.root/('選択 '+name+" ' quoted")
         f=(Fixture(root,self.binary,compact=compact) if legacy else self.fixture(root,compact=compact))
         if versioned_config and f.coord_path == f.root/'bindings'/(f.coord['binding']+'.json'):
@@ -88,9 +88,15 @@ class F04IssuedTests(unittest.TestCase):
             replies['history']=[dict(ok=False,status='NOT_FOUND')]
             replies['ack']=[ok(dict(state='failed',delivery_id=DELIVERY,attempts=1))]
         f.replies(replies)
-        result=(subprocess.run([sys.executable,'-I',str(f.root/'coordination.py'),'hook','--config',str(f.coord_path)],
-                               input=f.raw,capture_output=True,cwd=f.root,env=f.env(),timeout=18)
-                if legacy else f.public('coordination'))
+        if go:
+            issuer=self.go_launcher(f)
+            result=subprocess.run([str(issuer),'hook','--config',str(f.coord_path)],
+                                  input=f.raw,capture_output=True,cwd=f.root,env=f.env(),timeout=18)
+        else:
+            issuer=f.launcher('coordination')
+            result=(subprocess.run([sys.executable,'-I',str(f.root/'coordination.py'),'hook','--config',str(f.coord_path)],
+                                   input=f.raw,capture_output=True,cwd=f.root,env=f.env(),timeout=18)
+                    if legacy else f.public('coordination'))
         if refused:
             self.assertEqual((result.returncode,result.stdout),(1,b''))
             return f,None,None,result
@@ -103,9 +109,20 @@ class F04IssuedTests(unittest.TestCase):
         for key,text in context.get('shell_commands',{}).items():
             self.assertLessEqual(len(text.encode()),512)
             self.assertNotIn(' -c ',text)
-            if key!='read': self.assertEqual(shlex.split(text)[0],str(f.launcher('coordination')))
+            if key!='read': self.assertEqual(shlex.split(text)[0],str(issuer))
         self.assertLessEqual(sum(len(s.encode()) for s in context.get('shell_commands',{}).values()),2048)
         return f,context,contexts[0],result
+
+    def go_launcher(self,f,timeout=15):
+        """Stage the checked Go coordination launcher exactly as stage_lifecycle_hooks.py does."""
+        tokens=shlex.split(f.launcher('coordination',timeout).read_text().split('\n',1)[1])
+        self.assertEqual((tokens[0],tokens[-2:]),('exec',['--','$@']))
+        vector=tokens[1:-2]
+        raw=('#!/bin/sh\nexec '+shlex.join([str(f.binary),'coordination',*vector[5:]])+' -- "$@"\n').encode()
+        launcher=f.launch_root/sha(raw)/'inbox'
+        launcher.parent.mkdir(mode=0o700,exist_ok=True)
+        if not launcher.exists(): write(launcher,raw,0o500)
+        return launcher
 
     def run_text(self,f,text,body=b'',extra_env=None):
         self.assertLessEqual(len(text.encode()),512)
@@ -148,6 +165,23 @@ class F04IssuedTests(unittest.TestCase):
                         self.assertEqual(row['argv'][row['argv'].index('--causation-id')+1],EVENT)
                         self.assertEqual(row['argv'][-2:],['1',RESULT['record_id']])
                 self.assertFalse(before.exists(),'issued commands must not re-enter activation')
+
+    def test_go_issued_commands_name_the_checked_go_launcher_and_execute(self):
+        for operation in ('completion','acknowledgement','finish_reply'):
+            with self.subTest(operation=operation):
+                f,c,path,public=self.prepare('go '+operation,'notice' if operation=='acknowledgement' else 'request',go=True)
+                go=str(self.go_launcher(f))
+                for key in ('completion','acknowledgement','response','finish_reply'):
+                    if key in c:
+                        self.assertEqual(c[key][0],go)
+                        self.assertNotEqual(c[key][0],str(f.launcher('coordination')))
+                body='Selected result: "quoted" 日本語\n'.encode()
+                sent=b'' if operation=='acknowledgement' else body
+                result=self.run_text(f,c['shell_commands'][operation],sent)
+                self.assertEqual((result.returncode,result.stderr),(0,b''))
+                selected=[row['operation'] for row in f.api_calls() if row['operation'] in ('complete','ack','publish')]
+                expected={'completion':['complete'],'acknowledgement':['ack'],'finish_reply':['complete','publish']}[operation]
+                self.assertEqual(selected,expected)
 
     def test_compact_read_inspect_settle_execute_exact_public_cue_commands(self):
         for versioned in (False,True):
