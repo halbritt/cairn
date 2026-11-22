@@ -41,6 +41,20 @@ grants a session any capability.
 - `next-turn-notices/1` matters only if a recipient supports quiet delivery (see below).
   This recipe does not enable `work-advice/1`.
 
+- A Claude or Codex coordinator enables the compact inbox, notice batches and FYI digests
+  for its own session before dispatching work. They are off by default and are per-session
+  options, so a campaign whose coordinator skips this step pays a full wake turn for every
+  notice. Use the binding configuration of the coordinator's own account:
+
+  ```sh
+  cairn-lifecycle coordination configure-session-inbox --config BINDING_CONFIG \
+    --agent-id "$COORD_AGENT" --compact-inbox --notice-batch --notice-digest
+  ```
+
+  It prints `"status": "configured"`, needs no restart and leaves other sessions on the
+  binding unchanged. A replacement coordinator session must run it again. See
+  [compact native notices](../compact-inbox.md).
+
 The commands are checked against the source revision that contains this guide. A running
 installation can be older, so check it first:
 
