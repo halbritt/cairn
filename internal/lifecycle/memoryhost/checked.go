@@ -110,7 +110,7 @@ func RunChecked(parent context.Context, args []string, input io.Reader, out, dia
 	}
 	recallEvent := value.SameText(event.Get("hook_event_name"), "SessionStart") || value.SameText(event.Get("hook_event_name"), "UserPromptSubmit")
 	postToolEvent := value.SameText(event.Get("hook_event_name"), "PostToolUse") || value.SameText(event.Get("hook_event_name"), "PostToolUseFailure")
-	if !snapshot.Bound() && (claude || hermes || codex || opencodeAmbient) && !recallEvent && !((claude || hermes) && postToolEvent) {
+	if !snapshot.Bound() && (claude || hermes || codex || opencodeAmbient) && !recallEvent && !((claude || hermes || opencodeAmbient) && postToolEvent) {
 		return refuse()
 	}
 	directory, err := os.Getwd()

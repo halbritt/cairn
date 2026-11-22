@@ -19,8 +19,10 @@ class R04OrdinaryWiringTests(provider.OrdinaryProviderTests):
         ordinary = {'SessionStart', 'UserPromptSubmit'}
         if harness == 'claude':
             ordinary |= {'PostToolUse', 'PostToolUseFailure'}
-        if harness == 'opencode' and mode == 'agent_tools':
-            ordinary |= {'PreToolUse', 'PostToolUse', 'PostToolUseFailure'}
+        if harness == 'opencode':
+            ordinary |= {'PostToolUse', 'PostToolUseFailure'}
+            if mode == 'agent_tools':
+                ordinary.add('PreToolUse')
         actual = {name for name, row in self.rows.items()
                   if row['reason'].startswith('receipt-checked ordinary Go ')}
         self.assertEqual(actual, ordinary)
@@ -34,9 +36,9 @@ class R04OrdinaryWiringTests(provider.OrdinaryProviderTests):
             self.assertEqual(vector[vector.index('--role') + 1], 'memory')
             self.assertEqual(vector[vector.index('--hook-timeout') + 1], '13')
         if harness == 'opencode' and mode != 'agent_tools':
+            self.assertNotIn('PreToolUse', self.rows)
             for name in ('PostToolUse', 'PostToolUseFailure'):
-                self.assertEqual(self.rows[name]['implementation'], 'python')
-                self.assertEqual(self.rows[name]['checked_launcher'], self.rows[name]['retained_launcher'])
+                self.assertEqual(self.rows[name]['reason'], 'receipt-checked ordinary Go tool observation')
         print('R04_ORDINARY_SELECTION ' + json.dumps({
             'test': self.id(), 'harness': harness, 'mode': mode,
             'events': sorted(ordinary), 'go_sha256': self.f.receipt['binary']['sha256'],

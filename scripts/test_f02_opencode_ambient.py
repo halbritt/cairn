@@ -370,7 +370,9 @@ class OpenCodeAmbientTests(unittest.TestCase):
         for mode in ('unsupported', None, False):
             self.configure(recall_mode=mode); self.refused()
         self.selection()
-        for name in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PreCompact', 'SessionEnd', 'Stop'):
+        # Ambient post-tool observation is reached (see the cell test below);
+        # ambient OpenCode installs no PreToolUse, and capture stays separate.
+        for name in ('PreToolUse', 'PreCompact', 'SessionEnd', 'Stop'):
             self.event(name); self.refused()
         self.event('SessionStart')
         for path in (self.f.memory_path, self.f.coord_path):
@@ -401,6 +403,25 @@ class OpenCodeAmbientTests(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout), (0, b'{}\n'))
         self.assertEqual(self.calls, [])
         self.assertIn('alpha.py', self.state()[self.state_key()+'.json']['hints']['files'])
+
+    def test_checked_ambient_post_tool_cells_match_source(self):
+        for mode in (True, False):  # explicit ambient and the default mode
+            with self.subTest(explicit=mode):
+                self.selection(mode=mode)
+                shutil.rmtree(self.f.memory['state_dir'], ignore_errors=True)
+                (self.f.root/'alpha.py').write_text('fixture\n')
+                self.event('PostToolUse', tool_name='Read', tool_input=dict(file_path='alpha.py'), tool_response={})
+                result = self.pair()
+                self.assertEqual((result.returncode, result.stdout), (0, b'{}\n'))
+                self.assertEqual(self.calls, [])
+                self.assertIn('alpha.py', self.state()[self.state_key()+'.json']['hints']['files'])
+                self.event('PostToolUseFailure', error='private output EACCES ParseError')
+                result = self.pair()
+                self.assertEqual((result.returncode, result.stdout), (0, b'{}\n'))
+                self.assertEqual(self.calls, [])
+                hints = self.state()[self.state_key()+'.json']['hints']
+                self.assertEqual(hints['errors'], ['EACCES', 'ParseError'])
+                self.assertNotIn('private output', json.dumps(hints))
 
     def test_search_timeout_and_original_thirteen_second_stdin_deadline(self):
         self.index_delay = 6; result = self.pair()

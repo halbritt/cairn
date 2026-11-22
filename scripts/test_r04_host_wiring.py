@@ -315,7 +315,17 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         self.assertEqual(memory_state['hints']['errors'], ['EACCES', 'ParseError'])
 
     def test_opencode_tool_rows_match_retained_source_after_package_removal(self):
-        f = self.fixture('ordinary installed tools')
+        self.tool_rows_match_retained_source(ambient=False)
+
+    def test_ambient_opencode_post_tool_rows_match_retained_source(self):
+        self.tool_rows_match_retained_source(ambient=True)
+
+    def tool_rows_match_retained_source(self, ambient):
+        f = self.fixture('ambient installed tools' if ambient else 'ordinary installed tools')
+        if ambient:
+            f.memory['recall_mode'] = 'ambient'
+            f.publish_configuration()
+            f.hook_plan['selection'] = f.selected
         calls = self.recall_api(f)
         _, _, record = self.selected(f)
         rows = {r['event']: r for r in record['rows'] if r['role'] == 'memory'}
@@ -323,6 +333,10 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                        tool_input=dict(path='alpha.py', pattern='StateManager token')),
                   dict(hook_event_name='PostToolUse', tool_name='Read', tool_input=dict(file_path='alpha.py')),
                   dict(hook_event_name='PostToolUseFailure', error='private output EACCES ParseError EACCES')]
+        if ambient:
+            # Ambient OpenCode installs no PreToolUse callback.
+            self.assertNotIn('PreToolUse', rows)
+            events = events[1:]
         for event in events:
             row = rows[event['hook_event_name']]
             self.assertEqual(row['implementation'], 'go')
@@ -348,10 +362,10 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
             state = json.loads((state_dir / 'ses_tools.json').read_bytes())
             hints = state['hints']
             self.assertEqual(list(hints['files']), ['alpha.py'])
-            self.assertEqual(list(hints['searches']), ['statemanager', 'token'])
+            self.assertEqual(list(hints.get('searches', {})), [] if ambient else ['statemanager', 'token'])
             self.assertEqual(hints['errors'], ['EACCES', 'ParseError'])
             self.assertNotIn('private output', json.dumps(state))
-            for values in (hints['files'], hints['searches'], {'error_at': hints['error_at']}):
+            for values in (hints['files'], hints.get('searches', {}), {'error_at': hints['error_at']}):
                 for key, stamp in values.items():
                     self.assertIsInstance(stamp, float)
                     self.assertTrue(math.isfinite(stamp) and started <= stamp <= ended)
@@ -429,11 +443,16 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 for row in rows:
                     capture = route == 'provider' and row['event'] in ('PreCompact', 'SessionEnd')
                     recall = route == 'provider' and row['event'] in ('SessionStart', 'UserPromptSubmit')
-                    self.assertEqual(row['implementation'], 'go' if capture or recall else 'python')
+                    tool = route == 'provider' and row['event'] in ('PostToolUse', 'PostToolUseFailure')
+                    self.assertEqual(row['implementation'], 'go' if capture or recall or tool else 'python')
                     if capture:
                         self.assertEqual(row['reason'], 'receipt-checked unbound Go capture')
                     if recall:
                         self.assertEqual(row['reason'], 'receipt-checked ordinary Go recall')
+                    if tool:
+                        self.assertEqual(row['reason'], 'receipt-checked ordinary Go tool observation')
+                        self.assertEqual(row['argv'], row['checked_launcher'])
+                        self.assertNotEqual(row['checked_launcher'], row['retained_launcher'])
                 self.assertNotIn('PreToolUse', [r['event'] for r in rows])
                 if route == 'bound':
                     self.assertTrue(all(r['reason'] == 'bound callback' for r in rows))

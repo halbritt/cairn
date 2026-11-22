@@ -143,8 +143,12 @@ def hook_materials(stager, plan):
             ordinary_events = ('SessionStart', 'UserPromptSubmit')
             if plan['harness'] == 'claude':
                 ordinary_events += ('PostToolUse', 'PostToolUseFailure')
-            elif plan['harness'] == 'opencode' and config.get('recall_mode') == 'agent_tools':
-                ordinary_events += ('PreToolUse', 'PostToolUse', 'PostToolUseFailure')
+            elif plan['harness'] == 'opencode':
+                # Tool observation does not depend on recall_mode; only
+                # agent_tools OpenCode installs a PreToolUse callback.
+                ordinary_events += ('PostToolUse', 'PostToolUseFailure')
+                if config.get('recall_mode') == 'agent_tools':
+                    ordinary_events += ('PreToolUse',)
         events = dict(MEMORY[plan['harness']] if role == 'memory' else COORDINATION[plan['harness']])
         if 'PreToolUse' in ordinary_events:
             events['PreToolUse'] = 13
