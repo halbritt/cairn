@@ -1,6 +1,7 @@
 package core
 
 import (
+	"maps"
 	"regexp"
 	"strings"
 	"unicode"
@@ -110,7 +111,17 @@ func newRankingLexicon(query, ranking string) rankingLexicon {
 }
 
 func (l rankingLexicon) bodyTerms(body string) map[string]bool {
-	words := rankingTerms(body, l.ranking)
+	return l.bodyTermsFrom(body, nil)
+}
+
+// bodyTermsFrom is bodyTerms with the body's rankingTerms set already computed
+// (nil to compute it). The given set is shared, so it is copied before the
+// first compound term is added and never written.
+func (l rankingLexicon) bodyTermsFrom(body string, base map[string]bool) map[string]bool {
+	words, shared := base, base != nil
+	if !shared {
+		words = rankingTerms(body, l.ranking)
+	}
 	if len(l.compounds) == 0 {
 		return words
 	}
@@ -156,7 +167,10 @@ func (l rankingLexicon) bodyTerms(body string) map[string]bool {
 				continue
 			}
 			first := segments[i-node.depth+1].start
-			if first == 0 || lower[first-1] != '-' {
+			if (first == 0 || lower[first-1] != '-') && !words[node.term] {
+				if shared {
+					words, shared = maps.Clone(words), false
+				}
 				words[node.term] = true
 			}
 		}

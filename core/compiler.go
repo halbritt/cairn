@@ -297,16 +297,21 @@ func sealPackage(semantic SemanticPackage) ([]byte, string, error) {
 }
 
 type candidate struct {
-	companion   bool
-	group       []candidate
-	identity    bool
-	literal     bool
-	failure     bool
-	selection   Selection
-	score       int
-	weighted    int64
-	idf         bool
-	specificity int
+	// bodyBase is rankingTerms of the record body at bodyGeneration, computed
+	// once by collectCandidates; later lexicons of the same request reuse it.
+	// It is shared and never written; nil means not computed.
+	bodyBase       map[string]bool
+	bodyGeneration int
+	companion      bool
+	group          []candidate
+	identity       bool
+	literal        bool
+	failure        bool
+	selection      Selection
+	score          int
+	weighted       int64
+	idf            bool
+	specificity    int
 }
 
 func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation, memo *semanticMemo) (SemanticPackage, error) {
@@ -475,7 +480,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			}
 			continue
 		}
-		words, score, specificity := scoreCandidateLexical(record, lexicon)
+		base, words, score, specificity := scoreCandidateLexicalBase(record, lexicon)
 		evaluation := &CandidateEvaluation{RecordID: id, Version: record.Version, Class: record.Class, LexicalMatches: score, ScopeSpecificity: specificity, WrittenAt: record.WrittenAt}
 		evaluations[id] = evaluation
 		if reason := applicabilityReason(record.Pins, req.Context, now); reason != "" {
@@ -525,6 +530,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		associationDigest := entitiesDigest(record.Entities)
 		evaluation.Facts = &CandidateFacts{EntitiesSHA256: &associationDigest, Category: selection.Category, BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
 		features := evaluateCandidateMatchFeatures(record, selection.Mandatory, words, score, specificity, literals, req.Entities, matches[id])
+		features.base, features.baseGeneration = base, rankingGeneration(lexicon.ranking)
 		evaluation.EntityMatch = features.entity
 		evaluation.ExactTextMatch = features.literal
 		if !selection.Mandatory {
@@ -840,11 +846,7 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 // retaining the whole identifier for exact matches. Version 4 also excludes
 // question framing words. Negation and obligation words remain meaningful.
 func rankingTerms(text, version string) map[string]bool {
-	// An unsupported identity keeps generation 1: whole words, no stop lists.
-	generation := 1
-	if spec, ok := ParseRanking(version); ok {
-		generation = spec.Tokenizer
-	}
+	generation := rankingGeneration(version)
 	terms := lexical(text)
 	if generation >= 3 {
 		for word := range terms {
@@ -862,6 +864,17 @@ func rankingTerms(text, version string) map[string]bool {
 		removeRankingStopWords(terms, questionStopWords, questionStopSet)
 	}
 	return terms
+}
+
+// rankingGeneration is the token-set generation rankingTerms applies. The set
+// depends on nothing else in the ranking identity, so equal generations give
+// equal sets for the same text. An unsupported identity keeps generation 1:
+// whole words, no stop lists.
+func rankingGeneration(version string) int {
+	if spec, ok := ParseRanking(version); ok {
+		return spec.Tokenizer
+	}
+	return 1
 }
 
 // Fixed stop lists are built once: previews tokenize every candidate word, so

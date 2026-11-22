@@ -38,7 +38,13 @@ func indexedIDFMembers(query, ranking string, candidates []candidate, evaluation
 			continue
 		}
 		r := c.selection.Record
-		words := lexicon.bodyTerms(r.Body)
+		// collectCandidates already tokenized this body; reuse that set when
+		// it was built at this lexicon's generation.
+		var base map[string]bool
+		if c.bodyBase != nil && c.bodyGeneration == rankingGeneration(lexicon.ranking) {
+			base = c.bodyBase
+		}
+		words := lexicon.bodyTermsFrom(r.Body, base)
 		members = append(members, makeIDFMember(r, words, lexicon.terms))
 		if !observe {
 			continue

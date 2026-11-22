@@ -271,17 +271,28 @@ func promoteIndexSchema(p *SemanticPackage, req CompileRequest) {
 }
 
 type candidateFeatures struct {
-	words       map[string]bool
-	score       int
-	specificity int
-	entity      bool
-	literal     bool
-	failure     bool
-	reason      string
+	// base is the shared rankingTerms set words was built from (nil if unknown).
+	base           map[string]bool
+	baseGeneration int
+	words          map[string]bool
+	score          int
+	specificity    int
+	entity         bool
+	literal        bool
+	failure        bool
+	reason         string
 }
 
 func scoreCandidateLexical(record Record, lexicon rankingLexicon) (map[string]bool, int, int) {
-	words := lexicon.bodyTerms(record.Body)
+	_, words, score, specificity := scoreCandidateLexicalBase(record, lexicon)
+	return words, score, specificity
+}
+
+// scoreCandidateLexicalBase also returns the body's rankingTerms set, which
+// later lexicons of the same request can reuse instead of re-tokenizing.
+func scoreCandidateLexicalBase(record Record, lexicon rankingLexicon) (map[string]bool, map[string]bool, int, int) {
+	base := rankingTerms(record.Body, lexicon.ranking)
+	words := lexicon.bodyTermsFrom(record.Body, base)
 	score := 0
 	for word := range lexicon.terms {
 		if words[word] {
@@ -295,7 +306,7 @@ func scoreCandidateLexical(record Record, lexicon rankingLexicon) (map[string]bo
 	if record.Scope.RunID != "*" {
 		specificity++
 	}
-	return words, score, specificity
+	return base, words, score, specificity
 }
 
 func evaluateCandidateMatchFeatures(record Record, mandatory bool, words map[string]bool, score, specificity int, literals []string, entities []EntityRef, failureMatch *FailureMatch) candidateFeatures {
@@ -320,12 +331,14 @@ func admitEvaluatedCandidate(p *SemanticPackage, selection Selection, e *Candida
 		selection.Reason = entityReason(failureReason(literalReason(semanticReason(score, features.specificity), features.literal), features.failure), features.entity)
 	}
 	item := candidate{
-		identity:    ranking.Tier == RankingTierEntity && (features.entity || features.failure),
-		literal:     features.literal,
-		failure:     features.failure,
-		selection:   selection,
-		score:       score,
-		specificity: features.specificity,
+		identity:       ranking.Tier == RankingTierEntity && (features.entity || features.failure),
+		literal:        features.literal,
+		failure:        features.failure,
+		selection:      selection,
+		score:          score,
+		specificity:    features.specificity,
+		bodyBase:       features.base,
+		bodyGeneration: features.baseGeneration,
 	}
 	if allowDisputes {
 		pool[selection.Record.RecordID] = item

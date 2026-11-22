@@ -30,12 +30,7 @@ type previewer struct {
 func newPreviewer(query, ranking string) *previewer {
 	// New IDF term evidence does not redefine historical preview selection.
 	ranking = legacyIndexedRanking(legacyIDFRanking(ranking))
-	// An unsupported identity keeps generation 1, as rankingTerms does.
-	generation := 1
-	if spec, ok := ParseRanking(ranking); ok {
-		generation = spec.Tokenizer
-	}
-	p := &previewer{generation: generation, terms: rankingTerms(query, ranking), literal: hasLiteralRanking(ranking)}
+	p := &previewer{generation: rankingGeneration(ranking), terms: rankingTerms(query, ranking), literal: hasLiteralRanking(ranking)}
 	if p.literal {
 		p.literals = queryLiterals(query)
 	}
