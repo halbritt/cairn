@@ -52,8 +52,13 @@ grants a session any capability.
   ```
 
   It prints `"status": "configured"`, needs no restart and leaves other sessions on the
-  binding unchanged. A replacement coordinator session must run it again. See
-  [compact native notices](../compact-inbox.md).
+  binding unchanged. A replacement coordinator session must run it again. The session
+  must have started after the host's current lifecycle hooks were published: a session
+  still running an earlier hook generation accepts the command but keeps receiving full
+  contexts. Read and settle each compact delivery with the exact commands its text gives.
+  On a staged host these are full launcher paths ending in `inbox compact read HANDLE` and
+  `inbox compact settle HANDLE handled`, and no `cairn-inbox` helper on `PATH` is needed.
+  See [compact native notices](../compact-inbox.md).
 
 The commands are checked against the source revision that contains this guide. A running
 installation can be older, so check it first:

@@ -27,6 +27,15 @@ options are stored in owner-only files under `<state_dir>/session-options/`;
 other sessions on the shared binding keep their current behavior, and
 `--clear-session-options` removes the per-session override.
 
+On a host that uses [staged lifecycle generations](operator/lifecycle-staging.md),
+the delivery text gives each command as a full checked launcher path followed by
+`inbox compact read|inspect|settle|advance HANDLE`. Run those exact commands
+wherever this document writes `cairn-inbox`; the `~/.local/bin/cairn-inbox`
+helper is placed only by the unstaged installer and is not required. A session
+loads its hooks when it starts, so a session that predates the published
+generation carrying these options accepts `configure-session-inbox` but keeps
+receiving full contexts until it is replaced.
+
 A compact notice or response names its kind, sender and exact source version,
 followed by its structured header (`Summary`, `Action`, and `Due` when declared)
 before any source body or preview. High-level send commands (`cairn agent send`
