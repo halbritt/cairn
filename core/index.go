@@ -109,6 +109,7 @@ func packIndexPass(p SemanticPackage, candidates []candidate, evaluations map[st
 		}
 		p.Omitted[offsetReason] = 0
 	}
+	previews := newPreviewer(query, p.Ranking)
 	for rank, c := range candidates {
 		e := evaluations[c.selection.Record.RecordID]
 		e.Rank = rank + 1
@@ -158,7 +159,7 @@ func packIndexPass(p SemanticPackage, candidates []candidate, evaluations map[st
 			switch schemaIndexSummaryMode(p.Schema) {
 			case IndexSummaryPreviewSpan:
 				var span ByteSpanRequest
-				entry.Summary, span = indexPreview(member.selection.Record.Body, query, p.Ranking)
+				entry.Summary, span = previews.preview(member.selection.Record.Body)
 				if hit := evaluations[entry.RecordID].PassageHit; hit != nil && !member.literal {
 					entry.Summary, span = passagePreview(member.selection.Record.Body, hit.Span)
 					if member.selection.Record.Class != "C" && len(entry.Conflicts) == 0 {
@@ -170,7 +171,7 @@ func packIndexPass(p SemanticPackage, candidates []candidate, evaluations map[st
 					entry.SummarySpan = &span
 				}
 			case IndexSummaryExcerpt:
-				entry.Summary = indexSummary(member.selection.Record.Body, query, p.Ranking)
+				entry.Summary, _ = previews.preview(member.selection.Record.Body)
 			}
 			entry.Category = member.selection.Category
 			encoded, err := json.Marshal(entry)

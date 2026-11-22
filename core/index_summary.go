@@ -14,18 +14,104 @@ func indexSummary(body, query, ranking string) string {
 }
 
 func indexPreview(body, query, ranking string) (string, ByteSpanRequest) {
+	return newPreviewer(query, ranking).preview(body)
+}
+
+// previewer holds the query-side preview inputs of one pack. A pack previews
+// thousands of candidates with the same query and ranking, so the query terms,
+// literals and tokenizer generation are derived once instead of per body.
+type previewer struct {
+	generation int
+	terms      map[string]bool
+	literal    bool
+	literals   []string
+}
+
+func newPreviewer(query, ranking string) *previewer {
 	// New IDF term evidence does not redefine historical preview selection.
 	ranking = legacyIndexedRanking(legacyIDFRanking(ranking))
+	// An unsupported identity keeps generation 1, as rankingTerms does.
+	generation := 1
+	if spec, ok := ParseRanking(ranking); ok {
+		generation = spec.Tokenizer
+	}
+	p := &previewer{generation: generation, terms: rankingTerms(query, ranking), literal: hasLiteralRanking(ranking)}
+	if p.literal {
+		p.literals = queryLiterals(query)
+	}
+	return p
+}
+
+// wordMatches appends the query terms in rankingTerms(word, ranking) to dst,
+// without building that set: fields of the lower-cased word split as lexical
+// splits them, plus underscore parts from generation 3. Each term is appended
+// once; order is not significant.
+func (p *previewer) wordMatches(word string, dst []string) []string {
+	lower := strings.ToLower(word)
+	start := -1
+	for offset, r := range lower {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
+			if start < 0 {
+				start = offset
+			}
+			continue
+		}
+		if start >= 0 {
+			dst = p.fieldMatches(lower[start:offset], dst)
+			start = -1
+		}
+	}
+	if start >= 0 {
+		dst = p.fieldMatches(lower[start:], dst)
+	}
+	return dst
+}
+
+func (p *previewer) fieldMatches(field string, dst []string) []string {
+	dst = p.addMatch(field, dst)
+	if p.generation < 3 || strings.IndexByte(field, '_') < 0 {
+		return dst
+	}
+	for rest := field; ; {
+		cut := strings.IndexByte(rest, '_')
+		part := rest
+		if cut >= 0 {
+			part = rest[:cut]
+		}
+		if part != "" {
+			dst = p.addMatch(part, dst)
+		}
+		if cut < 0 {
+			return dst
+		}
+		rest = rest[cut+1:]
+	}
+}
+
+// The query terms already exclude this generation's stop words, so membership
+// alone decides whether a body term matches.
+func (p *previewer) addMatch(term string, dst []string) []string {
+	if !p.terms[term] {
+		return dst
+	}
+	for _, have := range dst {
+		if have == term {
+			return dst
+		}
+	}
+	return append(dst, term)
+}
+
+func (p *previewer) preview(body string) (string, ByteSpanRequest) {
 	const limit = 160
 	prefix := body[:utf8Prefix(body, limit)]
 	span := ByteSpanRequest{Length: len(prefix)}
-	if hasLiteralRanking(ranking) && len(body) > limit {
-		if preview, matchedSpan, ok := literalPreview(body, queryLiterals(query)); ok {
+	if p.literal && len(body) > limit {
+		if preview, matchedSpan, ok := literalPreview(body, p.literals); ok {
 			return preview, matchedSpan
 		}
 	}
-	terms := rankingTerms(query, ranking)
-	if len(body) <= limit || len(terms) == 0 {
+	if len(body) <= limit || len(p.terms) == 0 {
 		return prefix, span
 	}
 	type match struct {
@@ -38,12 +124,7 @@ func indexPreview(body, query, ranking string) (string, ByteSpanRequest) {
 		if start < 0 {
 			return
 		}
-		m := match{start: start, end: end}
-		for term := range rankingTerms(body[start:end], ranking) {
-			if terms[term] {
-				m.terms = append(m.terms, term)
-			}
-		}
+		m := match{start: start, end: end, terms: p.wordMatches(body[start:end], nil)}
 		if len(m.terms) > 0 {
 			matches = append(matches, m)
 		}
