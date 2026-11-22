@@ -21,6 +21,7 @@ import (
 	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/internal/jsontext"
 	"github.com/halbritt/cairn/internal/refusal"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Identity struct {
@@ -77,9 +78,9 @@ func (s *Server) RefusalStats(principal, machineID string, req RefusalStatsReque
 	return s.refusalCounters().view(principal, machineID, req)
 }
 
-func (s *Server) recordRefusal(principal, machineID, operation, code string, status int) {
+func (s *Server) recordRefusal(principal, machineID, operation, code string, status int, cause string) {
 	s.refusalCounters().record(principal, machineID, operation, code, status)
-	logRefusal(os.Stderr, operation, code, status)
+	logRefusal(os.Stderr, operation, code, status, cause)
 }
 
 func (s *Server) mux() *http.ServeMux {
@@ -167,7 +168,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 	opSpec, hasOp := LookupOperation(strings.TrimPrefix(r.URL.Path, "/v1/"))
 	noteKnownOpRefusal := func(code string, status int) {
 		if hasOp {
-			s.recordRefusal(c.principal, c.machineID, opSpec.Name, code, status)
+			s.recordRefusal(c.principal, c.machineID, opSpec.Name, code, status, "")
 		}
 	}
 	if remoteOnly && !c.remote {
@@ -223,7 +224,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 
 func (s *Server) serveOperation(w http.ResponseWriter, r *http.Request, c client, spec OperationSpec) {
 	if spec.RequiresLocalDestination && !c.destination.AllowLocal {
-		s.recordRefusal(c.principal, c.machineID, spec.Name, "AUTHORITY_DENIED", 403)
+		s.recordRefusal(c.principal, c.machineID, spec.Name, "AUTHORITY_DENIED", 403, "")
 		writeError(w, 403, "AUTHORITY_DENIED", spec.LocalDestinationMessage)
 		return
 	}
@@ -424,13 +425,14 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 
 func serveServerJSON[Q any, R any](s *Server, c client, w http.ResponseWriter, r *http.Request, call func(context.Context, Q) (R, error)) {
 	opName := strings.TrimPrefix(r.URL.Path, "/v1/")
-	noteRefusal := func(code string, status int) {
+	noteRefusalCause := func(code string, status int, cause string) {
 		if s != nil {
-			s.recordRefusal(c.principal, c.machineID, opName, code, status)
+			s.recordRefusal(c.principal, c.machineID, opName, code, status, cause)
 		} else {
-			logRefusal(os.Stderr, opName, code, status)
+			logRefusal(os.Stderr, opName, code, status, cause)
 		}
 	}
+	noteRefusal := func(code string, status int) { noteRefusalCause(code, status, "") }
 	failDecode := func(msg string) {
 		noteRefusal("INVALID_REQUEST", 400)
 		writeError(w, 400, "INVALID_REQUEST", msg)
@@ -457,10 +459,16 @@ func serveServerJSON[Q any, R any](s *Server, c client, w http.ResponseWriter, r
 	result, err := call(r.Context(), req)
 	if err != nil {
 		code := core.Code(err)
+		cause, ended := failureCause(r.Context(), err)
+		if ended {
+			code = "TIMEOUT"
+		}
 		classification := refusal.Classify(code)
 		status := classification.HTTPStatus
 		message := err.Error()
-		if classification.HTTPMessage != "" {
+		if ended {
+			message = requestEndedMessage
+		} else if classification.HTTPMessage != "" {
 			message = classification.HTTPMessage
 		}
 		refused := response{Status: code, Message: message}
@@ -472,7 +480,7 @@ func serveServerJSON[Q any, R any](s *Server, c client, w http.ResponseWriter, r
 				refused.Admission = &admission
 			}
 		}
-		noteRefusal(code, status)
+		noteRefusalCause(code, status, cause)
 		writeRefusal(w, status, refused)
 		return
 	}
@@ -481,16 +489,57 @@ func serveServerJSON[Q any, R any](s *Server, c client, w http.ResponseWriter, r
 	_ = encodeSuccess(w, result)
 }
 
+// requestEndedMessage replaces the underlying error text when the request context
+// ended, so no driver or store detail reaches the caller.
+const requestEndedMessage = "request deadline or caller disconnect ended the operation; its outcome is not confirmed; retry with the same request ID"
+
+// failureCause classifies an untyped operation failure for the refusal log. An
+// ended request context (its deadline, or the caller disconnecting) reports
+// ended=true whatever error the driver returned after it, because the work was
+// abandoned rather than refused by the store. Other untyped failures carrying a
+// PostgreSQL error report only its two-character SQLSTATE class. Typed refusals
+// and failures without a recognized cause report no cause.
+func failureCause(ctx context.Context, err error) (cause string, ended bool) {
+	var typed *core.Error
+	if !errors.As(err, &typed) {
+		ctxErr := ctx.Err()
+		if ctxErr == nil {
+			switch {
+			case errors.Is(err, context.DeadlineExceeded):
+				ctxErr = context.DeadlineExceeded
+			case errors.Is(err, context.Canceled):
+				ctxErr = context.Canceled
+			}
+		}
+		switch {
+		case errors.Is(ctxErr, context.DeadlineExceeded):
+			return "context_deadline", true
+		case errors.Is(ctxErr, context.Canceled):
+			return "client_cancel", true
+		}
+	} else if typed.Code != "STORE_ERROR" {
+		return "", false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && len(pgErr.Code) == 5 {
+		return "sqlstate_" + pgErr.Code[:2], false
+	}
+	return "", false
+}
+
 // logRefusal records one line per refused operation, so failures that callers only
 // see individually can be counted from the service journal. It carries the catalog
-// operation, the fixed code and the status, and never a message or request content.
-func logRefusal(w io.Writer, operation, code string, status int) {
+// operation, the fixed code, the status and, when known, a fixed cause class
+// (context_deadline, client_cancel or sqlstate_XX), and never a message or
+// request content.
+func logRefusal(w io.Writer, operation, code string, status int, cause string) {
 	_ = json.NewEncoder(w).Encode(struct {
 		Event     string `json:"event"`
 		Operation string `json:"operation"`
 		Code      string `json:"code"`
 		Status    int    `json:"status"`
-	}{"refusal", operation, code, status})
+		Cause     string `json:"cause,omitempty"`
+	}{"refusal", operation, code, status, cause})
 }
 
 // encodeSuccess writes the one success envelope. Size checks use it too, so a

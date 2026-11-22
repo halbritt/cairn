@@ -243,7 +243,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 		req.Retained = &core.RunPackageRequest{ReceiptID: *receipt, Seal: *seal}
 	}
 	result, err := runner.Run(ctx, s, req, os.Stdout, os.Stderr)
-	if err != nil && core.Code(err) == "STORE_ERROR" && result.ReceiptID != "" {
+	if err != nil && (core.Code(err) == "STORE_ERROR" || core.ContextEnded(err)) && result.ReceiptID != "" {
 		err = &core.Error{Code: "RUN_FAILED", Message: "wrapped task failed; inspect process_state and the run artifact directory", Cause: err}
 	}
 	return result, err

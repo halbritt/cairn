@@ -611,7 +611,7 @@ func checkRoles(ctx context.Context, socket string, profiles []enrollmentProfile
 			check.OK, check.Status, check.ServerVersion, check.server, check.answered = true, "OK", info.Label(), info, true
 		} else if code := core.Code(err); code == "PROTOCOL_UNSUPPORTED" {
 			check.Status, check.server, check.answered = code, info, true
-		} else if code != "" && code != "STORE_ERROR" {
+		} else if code != "" && code != "STORE_ERROR" && !core.ContextEnded(err) {
 			check.Status = code
 		} else {
 			check.Status = "API_CONNECTION_FAILED"

@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -26,7 +27,18 @@ func Code(err error) string {
 	if errors.As(err, &e) {
 		return e.Code
 	}
+	if ContextEnded(err) {
+		return "TIMEOUT"
+	}
 	return "STORE_ERROR"
+}
+
+// ContextEnded reports an untyped failure caused by the caller's context ending,
+// either at its deadline or by cancellation (for an API request, the caller
+// disconnecting). The work was abandoned and its transaction rolled back, so
+// Code reports the retryable TIMEOUT instead of a store fault.
+func ContextEnded(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }
 
 // Channel is supplied by the trusted embedding host after authentication. Never

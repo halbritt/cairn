@@ -412,7 +412,7 @@ func TestExpiredCandidateDetailIsExplicitOverTheAPI(t *testing.T) {
 // line must stay countable and must never carry a message or request content.
 func TestRefusalLogCarriesOnlyOperationCodeAndStatus(t *testing.T) {
 	var out bytes.Buffer
-	logRefusal(&out, "index", "VERSION_CONFLICT", 409)
+	logRefusal(&out, "index", "VERSION_CONFLICT", 409, "")
 	var line map[string]any
 	if err := json.Unmarshal(out.Bytes(), &line); err != nil {
 		t.Fatal(err)

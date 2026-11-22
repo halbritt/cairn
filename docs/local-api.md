@@ -357,12 +357,19 @@ make old receipts unusable for new claims without changing historical outcomes.
 ### Counting refusals
 
 Each refused operation writes one JSON line to the API's standard error, with `event`,
-`operation`, `code` and `status`. It never carries a message or request content.
-Callers see refusals one at a time, so this is how to count them:
+`operation`, `code` and `status`. An untyped failure can also carry `cause`:
+`context_deadline` (the 30-second request deadline), `client_cancel` (the caller
+disconnected) or `sqlstate_XX` (the PostgreSQL SQLSTATE class). The line never carries
+a message or request content.
+
+When the request context ends, the operation is abandoned and any uncommitted
+transaction rolls back. It is reported as `TIMEOUT` (HTTP 504, CLI exit 4) with a fixed message, and is
+never reported as `STORE_ERROR` (HTTP 500). Its outcome is not confirmed, so retry with
+the same request ID. Callers see refusals one at a time, so this is how to count them:
 
 ```sh
 journalctl --user -u cairn-api -g '"event":"refusal"' --since -1d -o cat \
-  | jq -r '[.operation,.code] | @tsv' | sort | uniq -c | sort -rn
+  | jq -r '[.operation,.code,(.cause // "")] | @tsv' | sort | uniq -c | sort -rn
 ```
 
 Authenticated profiles can also read their own principal's volatile per-process refusal

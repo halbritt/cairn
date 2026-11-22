@@ -26,3 +26,14 @@ func TestAdmissionDetailCodesAreExact(t *testing.T) {
 		}
 	}
 }
+
+// An ended request context reports TIMEOUT, which clients treat as retryable; a
+// store fault stays STORE_ERROR. Pin both transports so neither drifts back.
+func TestTimeoutAndStoreErrorClassifications(t *testing.T) {
+	if got := Classify("TIMEOUT"); got.HTTPStatus != 504 || got.ExitCode != 4 {
+		t.Fatalf("TIMEOUT classified %+v", got)
+	}
+	if got := Classify("STORE_ERROR"); got.HTTPStatus != 500 || got.ExitCode != 7 || got.HTTPMessage != "store operation failed" {
+		t.Fatalf("STORE_ERROR classified %+v", got)
+	}
+}

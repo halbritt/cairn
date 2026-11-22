@@ -249,9 +249,10 @@ func (s *Store) verifyRestore(ctx context.Context, tx pgx.Tx, req VerifyRestoreR
 	for _, fixture := range req.Fixtures {
 		pkg, err := s.recompileTx(ctx, tx, fixture)
 		if err != nil {
-			// SQL/transport failures abort; domain integrity/unavailability failures
-			// remain explicit operator-facing refusal evidence.
-			if Code(err) == "STORE_ERROR" {
+			// SQL/transport failures and an ended context abort; domain
+			// integrity/unavailability failures remain explicit operator-facing
+			// refusal evidence.
+			if Code(err) == "STORE_ERROR" || ContextEnded(err) {
 				return result, err
 			}
 			result.Problems = append(result.Problems, "FIXTURE_"+Code(err)+":"+fixture.ReceiptID)
