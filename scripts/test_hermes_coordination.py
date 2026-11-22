@@ -364,7 +364,8 @@ class HermesStagedGoCoordinationDelegation(InstalledTools, unittest.TestCase):
                 context = json.loads(paths[0].read_bytes())
                 self.assertEqual(context['event_id'], issued.EVENT)
                 text = context['shell_commands']['acknowledgement']
-                self.assertEqual(shlex.split(text)[0], f.retained_launchers[15][0])
+                self.assertEqual(shlex.split(text)[0], f.go_launchers[15][0])
+                self.assertNotEqual(f.go_launchers[15], f.retained_launchers[15])
                 self.assertLessEqual(len(text.encode()), 512)
                 self.assertNotIn(' -c ', text)
                 settled = subprocess.run(

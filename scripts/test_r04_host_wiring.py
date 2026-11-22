@@ -519,7 +519,7 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         self.assertFalse((f.hook_root / ('selection-' + f.hook_plan['id'])).exists())
         self.assertEqual(f.api_calls(), [])
 
-    def test_go_hook_issues_working_retained_launcher_acknowledgement(self):
+    def test_go_hook_issues_working_checked_go_launcher_acknowledgement(self):
         f = self.fixture('issued notice', harness='codex', bound=True)
         _, _, record = self.selected(f)
         row = next(r for r in record['rows'] if r['role'] == 'coordination' and r['event'] == 'UserPromptSubmit')
@@ -541,7 +541,9 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
         self.assertEqual(len(paths), 1, result.stdout)
         context = json.loads(paths[0].read_bytes())
         text = context['shell_commands']['acknowledgement']
-        self.assertEqual(shlex.split(text)[0], row['retained_launcher'][0])
+        # The Go hook names its own checked launcher, not the retained /2 one.
+        self.assertEqual(shlex.split(text)[0], row['checked_launcher'][0])
+        self.assertNotEqual(row['checked_launcher'], row['retained_launcher'])
         self.assertLessEqual(len(text.encode()), 512)
         self.assertNotIn(' -c ', text)
         settled = subprocess.run(['/bin/sh', '-c', text], cwd=f.root, env=f.env(), capture_output=True, timeout=20)
