@@ -212,6 +212,48 @@ closure. The watcher's hook census still expects retained launchers and
 anchors per row, and staging still emits only `/1`, so no `/2` generation can
 be staged or published yet.
 
+#### Python retirement inventory (CAIRN-785)
+
+This is the source state on `main` (after `0de1ee4a`), not an installed or
+observed claim. Hosts run what was last staged.
+
+Already Go in source:
+
+- every coordination hook row;
+- the inbox commands those hooks issue (completion, acknowledgement,
+  response, finish-reply, drain, compact read/settle/advance), whenever
+  staging published the checked Go launcher;
+- unbound memory recall, capture and Claude/OpenCode tool observation in
+  every recall mode;
+- bound Codex and Claude `agent_tools` recall, bound Claude `agent_tools`
+  tool observation, and bound Codex/Claude capture.
+
+Cells `stage_lifecycle_hooks.py` still routes to the retained `/2` Python
+caller:
+
+| Cell | Why it is still Python |
+| --- | --- |
+| Bound OpenCode memory, all six events | Staging defines no bound OpenCode Go cell; the checked Go host also refuses bound ambient OpenCode (`memoryhost/checked.go`). |
+| Bound Codex/Claude ambient or default SessionStart/UserPromptSubmit | Binding admission requires `agent_tools` in both runtimes, so these rows refuse before recall. A Go route needs a decision on whether to support them or drop them. |
+| Bound Claude non-`agent_tools` PostToolUse/PostToolUseFailure | No Go route outside `agent_tools`. |
+
+These cells are not tied to the receipt, but all three use the `/1`
+closure. Until they have a Go route or are removed, a generation that keeps
+them must be `/1`.
+
+What still needs the Python files on disk:
+
+- Every staged generation is `/1`. Its Go hooks byte-check all 18 closure
+  members, and the presence watcher references them.
+- A `/2` generation needs three more changes before it can be staged:
+  1. staging must emit `/2` receipts with Go launchers and refuse any Python
+     row;
+  2. the watcher's hook census must accept rows that have no retained
+     launcher or anchor;
+  3. `publish-settings` must accept them.
+- The Hermes plugin glue (`integrations/hermes/*.py`) runs inside Hermes and
+  stays.
+
 The owner-controlled, versioned host hook configuration independently fixes
 the approved absolute interpreter and verified vector `V`: `-I -S -c`
 followed by the reviewed stdlib-only verifier literal, the receipt absolute
