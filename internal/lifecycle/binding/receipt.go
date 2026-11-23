@@ -19,6 +19,12 @@ import (
 )
 
 const compatibilitySchema = "cairn.lifecycle-compatibility/1"
+
+// goOnlyCompatibilitySchema selects a generation whose every hook and issued
+// command runs the receipt-pinned Go image. It carries no Python closure:
+// no snapshot_root, members, bootstrap, loader, roles or aliases, so no .py
+// file is read or required. /1 receipts keep their exact closure contract.
+const goOnlyCompatibilitySchema = "cairn.lifecycle-compatibility/2"
 const binaryBindingSchema = "cairn.inbox-recall-binding/3"
 const receiptLimit = 1024 * 1024
 const memberLimit = 2 * 1024 * 1024
@@ -157,6 +163,15 @@ func decodeCompatibilityReceipt(raw []byte) (*compatibilityReceipt, error) {
 	if err := checkReceiptJSON(raw); err != nil {
 		return nil, err
 	}
+	var head struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return nil, err
+	}
+	if head.Schema == goOnlyCompatibilitySchema {
+		return decodeGoOnlyReceipt(raw)
+	}
 	fields, err := exactObject(raw, "schema", "source_revision", "snapshot_root", "members", "bootstrap", "loader", "roles", "aliases", "binary", "binding", "memory_config", "coordination_configs")
 	if err != nil {
 		return nil, err
@@ -250,6 +265,50 @@ func decodeCompatibilityReceipt(raw []byte) (*compatibilityReceipt, error) {
 	return &r, nil
 }
 
+// decodeGoOnlyReceipt accepts exactly the /2 fields. The descriptor, binding
+// schema and configuration-count rules are the /1 rules.
+func decodeGoOnlyReceipt(raw []byte) (*compatibilityReceipt, error) {
+	fields, err := exactObject(raw, "schema", "source_revision", "binary", "binding", "memory_config", "coordination_configs")
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"binary", "memory_config"} {
+		if _, err := exactObject(fields[key], "path", "sha256"); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := exactObject(fields["binding"], "path", "sha256", "schema"); err != nil {
+		return nil, err
+	}
+	var configs []json.RawMessage
+	if err := json.Unmarshal(fields["coordination_configs"], &configs); err != nil {
+		return nil, err
+	}
+	for _, config := range configs {
+		if _, err := exactObject(config, "path", "sha256"); err != nil {
+			return nil, err
+		}
+	}
+	var r compatibilityReceipt
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return nil, err
+	}
+	if r.Schema != goOnlyCompatibilitySchema || r.Binding.Schema != binaryBindingSchema ||
+		!validDescriptor(r.Binary) || !validDescriptor(r.Binding.fileDescriptor) ||
+		!validDescriptor(r.MemoryConfig) || len(r.CoordinationConfigs) < 1 || len(r.CoordinationConfigs) > 8 {
+		return nil, errors.New("incompatible receipt selection")
+	}
+	for _, d := range r.CoordinationConfigs {
+		if !validDescriptor(d) {
+			return nil, errors.New("invalid coordination configuration descriptor")
+		}
+	}
+	return &r, nil
+}
+
+// goOnly reports a /2 receipt, which has no Python closure or aliases.
+func (r *compatibilityReceipt) goOnly() bool { return r.Schema == goOnlyCompatibilitySchema }
+
 // asciiCodeMap retains the existing sorted-key, ensure_ascii=True digest
 // convention, including non-ASCII aliases and literal HTML characters.
 func asciiCodeMap(codeMap map[string]string) ([]byte, error) {
@@ -292,6 +351,9 @@ func readCompatibilityReceipt(path, expected string) (*compatibilityReceipt, err
 // checkedClosure returns the exact source bytes a checked loader may execute.
 // A later pathname read cannot substitute for this snapshot.
 func (r *compatibilityReceipt) checkedClosure() (map[string][]byte, error) {
+	if r.goOnly() {
+		return map[string][]byte{}, nil
+	}
 	names := make([]string, 0, len(r.Members))
 	for name := range r.Members {
 		names = append(names, name)
