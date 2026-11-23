@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -1385,4 +1386,118 @@ func TestCompatibilityWatchMultiProfileAndPreflight(t *testing.T) {
 		t.Fatalf("expected W3 cycle-2 preflight exit 1 on tampered snapshot member, got code=%d err=%v stderr=%q", code, err, errBuf.String())
 	}
 	writePrivateFile(t, coordSnapPath, origCoordSnap, 0o400)
+}
+
+// goOnlyFixture rewrites the fixture's /1 receipt as an exact /2 receipt and
+// stages its checked Go launcher as stage_lifecycle_hooks.py would. No .py
+// member is staged for it.
+func goOnlyFixture(t *testing.T, f *compatFixture, mutate func(map[string]any)) (receiptPath, receiptSHA, launcher string, flags []string) {
+	t.Helper()
+	raw, err := os.ReadFile(f.receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old map[string]any
+	if err := json.Unmarshal(raw, &old); err != nil {
+		t.Fatal(err)
+	}
+	receipt := map[string]any{"schema": GoOnlyCompatibilitySchema}
+	for _, key := range []string{"source_revision", "binary", "binding", "memory_config", "coordination_configs"} {
+		receipt[key] = old[key]
+	}
+	if mutate != nil {
+		mutate(receipt)
+	}
+	encoded, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptPath = filepath.Join(f.root, "receipt-go", "receipt.json")
+	receiptSHA = writePrivateFile(t, receiptPath, encoded, 0o600)
+	image := old["binary"].(map[string]any)["path"].(string)
+	flags = []string{"--receipt", receiptPath, "--receipt-sha256", receiptSHA, "--role", "coordination",
+		"--entrypoint", "coordination.py", "--config", f.configPath, "--hook-timeout", "15",
+		"--launch-root", f.launchRoot, "--shell", "/bin/sh"}
+	body := []byte("#!/bin/sh\nexec " + strings.Join(append([]string{image, "coordination"}, flags...), " ") + " -- \"$@\"\n")
+	sum := sha256.Sum256(body)
+	launcher = filepath.Join(f.launchRoot, hex.EncodeToString(sum[:]), "inbox")
+	writePrivateFile(t, launcher, body, 0o500)
+	return receiptPath, receiptSHA, launcher, flags
+}
+
+func goOnlySelection(f *compatFixture, receiptPath, receiptSHA, entrypoint string) CompatibilitySelection {
+	return CompatibilitySelection{ReceiptPath: receiptPath, ReceiptSHA256: receiptSHA, Role: "coordination",
+		Entrypoint: entrypoint, ConfigPath: f.configPath, HookTimeout: "15", LaunchRoot: f.launchRoot,
+		Shell: "/bin/sh", Tail: []string{"hook", "--config", f.configPath}, Profile: f.profile}
+}
+
+// TestGoOnlyReceiptSelectsItsCheckedGoLauncher pins the /2 coordination
+// contract: no Python member or retained launcher is read, the selection is
+// the staged Go launcher, and issued commands name it.
+func TestGoOnlyReceiptSelectsItsCheckedGoLauncher(t *testing.T) {
+	f := newCompatFixture(t)
+	receiptPath, receiptSHA, launcher, _ := goOnlyFixture(t, f, nil)
+	snapshot := nativeText(mustReceipt(t, f).Get("snapshot_root"))
+	if err := os.RemoveAll(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	c, err := NewCompatibilityContext(goOnlySelection(f, receiptPath, receiptSHA, "coordination.py"))
+	if err != nil {
+		t.Fatalf("/2 selection without any Python closure: %v", err)
+	}
+	if c.Launcher != launcher || c.Vector[1] != "coordination" {
+		t.Fatalf("selected launcher %s vector %v", c.Launcher, c.Vector)
+	}
+	tail := []string{"inbox", "--context", "/state/inbox/attempt.json", "finish-reply"}
+	argv, err := c.IssuedArgv(tail)
+	if err != nil || !slices.Equal(argv, append([]string{launcher}, tail...)) {
+		t.Fatalf("issued argv %v %v", argv, err)
+	}
+
+	var pe *CompatibilityPreflightError
+	if _, err = NewCompatibilityContext(goOnlySelection(f, receiptPath, receiptSHA, "coordination-hook.py")); !errors.As(err, &pe) || pe.Message != "entrypoint" {
+		t.Fatalf("a /2 receipt has no aliases: %v", err)
+	}
+	if err := os.Chmod(launcher, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = NewCompatibilityContext(goOnlySelection(f, receiptPath, receiptSHA, "coordination.py")); !errors.As(err, &pe) || pe.Message != "launcher mode mismatch" {
+		t.Fatalf("a changed Go launcher must refuse: %v", err)
+	}
+	if err := os.Remove(launcher); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = NewCompatibilityContext(goOnlySelection(f, receiptPath, receiptSHA, "coordination.py")); !errors.As(err, &pe) {
+		t.Fatalf("a missing Go launcher must refuse: %v", err)
+	}
+}
+
+func TestGoOnlyReceiptRefusesPythonFieldsAndRetainedVectors(t *testing.T) {
+	f := newCompatFixture(t)
+	var pe *CompatibilityPreflightError
+	receiptPath, receiptSHA, _, _ := goOnlyFixture(t, f, func(r map[string]any) { r["members"] = map[string]any{} })
+	if _, err := NewCompatibilityContext(goOnlySelection(f, receiptPath, receiptSHA, "coordination.py")); !errors.As(err, &pe) {
+		t.Fatalf("/2 with a Python field must refuse: %v", err)
+	}
+	receiptPath, receiptSHA, _, flags := goOnlyFixture(t, f, nil)
+	// An explicit retained Python vector cannot select a /2 receipt.
+	sel := goOnlySelection(f, receiptPath, receiptSHA, "coordination.py")
+	sel.Vector = append([]string{"/usr/bin/python3", "-I", "-S", "-c", "pass"}, flags...)
+	if _, err := NewCompatibilityContext(sel); !errors.As(err, &pe) || pe.Message != "Go-only receipt selects only its checked Go launcher" {
+		t.Fatalf("/2 with a retained vector must refuse: %v", err)
+	}
+	// /1 keeps requiring a retained launcher: a Go launcher alone does not select it.
+	if _, err := NewCompatibilityContext(CompatibilitySelection{ReceiptPath: f.receiptPath, ReceiptSHA256: f.compat.ReceiptSHA256,
+		Role: "coordination", Entrypoint: "coordination.py", ConfigPath: f.configPath, HookTimeout: "2",
+		LaunchRoot: f.launchRoot, Shell: "/bin/sh", Profile: f.profile}); !errors.As(err, &pe) || pe.Message != "launcher vector unavailable" {
+		t.Fatalf("/1 without a retained launcher must refuse: %v", err)
+	}
+}
+
+func mustReceipt(t *testing.T, f *compatFixture) *value.Value {
+	t.Helper()
+	if err := f.compat.VerifyReceipt(f.profile); err != nil {
+		t.Fatal(err)
+	}
+	return f.compat.Receipt
 }

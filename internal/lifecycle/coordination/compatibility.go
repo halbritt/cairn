@@ -94,6 +94,7 @@ type CompatibilityContext struct {
 	receiptVerified bool
 	baseConfigPath  string
 	baseVector      []string
+	hookTimeoutText string
 }
 
 // CompatibilityClosureMembers lists the 18 canonical module names required in
@@ -157,16 +158,25 @@ func NewCompatibilityContext(sel CompatibilitySelection) (*CompatibilityContext,
 		Profile:        sel.Profile,
 	}
 	c.Deadline = c.now() + timeout
+	c.hookTimeoutText = sel.HookTimeout
 	vec := sel.Vector
 	if len(vec) == 0 {
 		resolved, rErr := resolveCompatibilityVector(sel, c.uid())
 		if rErr != nil {
-			return nil, preflightError(rErr.Error())
+			// A /2 generation stages no retained launcher; its own checked
+			// Go launcher is the selection. /1 keeps the retained-only rule.
+			if !c.pinnedReceiptIsGoOnly(sel.Profile) {
+				return nil, preflightError(rErr.Error())
+			}
+			if err := c.VerifyReceipt(sel.Profile); err != nil {
+				return nil, err
+			}
+			resolved = c.goOnlyVector()
 		}
 		vec = resolved
 		c.Vector = vec
 	}
-	raw, err := LauncherBytes(vec, sel.Shell)
+	raw, err := c.launcherBytesFor(vec)
 	if err != nil {
 		return nil, preflightError(err.Error())
 	}
@@ -174,6 +184,14 @@ func NewCompatibilityContext(sel CompatibilitySelection) (*CompatibilityContext,
 	c.Launcher = LauncherPath(sel.LaunchRoot, raw)
 	if err := c.VerifyReceipt(sel.Profile); err != nil {
 		return nil, err
+	}
+	if goOnlyReceipt(c.Receipt) {
+		if !slices.Equal(vec, c.goOnlyVector()) {
+			return nil, preflightError("Go-only receipt selects only its checked Go launcher")
+		}
+		if _, err := c.IssuedArgv([]string{"inbox"}); err != nil {
+			return nil, preflightError(err.Error())
+		}
 	}
 	return c, nil
 }
@@ -794,6 +812,9 @@ func (c *CompatibilityContext) validateReceiptSelection(receipt *value.Value) er
 	} else if c.HookTimeout != 2 && c.HookTimeout != 15 {
 		return preflightError("timeout")
 	}
+	if goOnlyReceipt(receipt) {
+		return c.validateGoOnlyReceipt(role, receipt)
+	}
 	if !exactReceiptObject(receipt, "schema", "source_revision", "snapshot_root", "members", "bootstrap", "loader", "roles", "aliases", "binary", "binding", "memory_config", "coordination_configs") {
 		return preflightError("receipt")
 	}
@@ -801,6 +822,121 @@ func (c *CompatibilityContext) validateReceiptSelection(receipt *value.Value) er
 		return preflightError("receipt")
 	}
 	return c.validateReceiptClosureAndPins(role, receipt)
+}
+
+// GoOnlyCompatibilitySchema selects a generation whose hooks and issued
+// commands all run the receipt-pinned Go image; it carries no Python closure
+// (binding/receipt.go goOnlyCompatibilitySchema).
+const GoOnlyCompatibilitySchema = "cairn.lifecycle-compatibility/2"
+
+func goOnlyReceipt(receipt *value.Value) bool {
+	return receipt != nil && receipt.Kind == value.Object && value.SameText(receipt.Get("schema"), GoOnlyCompatibilitySchema)
+}
+
+// validateGoOnlyReceipt applies the /1 provenance, descriptor, binding,
+// configuration-role and binary-pin rules to the exact /2 fields. No member,
+// snapshot, alias or interpreter is read; the entrypoint is the role name.
+func (c *CompatibilityContext) validateGoOnlyReceipt(role string, receipt *value.Value) error {
+	if !exactReceiptObject(receipt, "schema", "source_revision", "binary", "binding", "memory_config", "coordination_configs") {
+		return preflightError("receipt")
+	}
+	srcRev := receipt.Get("source_revision")
+	if srcRev == nil || srcRev.Kind != value.String || hasSurrogateRunes(srcRev.String) {
+		return preflightError("provenance")
+	}
+	if !validReceiptDescriptor(receipt.Get("binary"), "path", "sha256") || !validMemoryDescriptor(receipt.Get("memory_config")) || !validReceiptDescriptor(receipt.Get("binding"), "path", "sha256", "schema") {
+		return preflightError("descriptor")
+	}
+	coordList := receipt.Get("coordination_configs")
+	if !value.SameText(receipt.Get("binding").Get("schema"), "cairn.inbox-recall-binding/3") || coordList == nil || coordList.Kind != value.Array || len(coordList.Items) < 1 || len(coordList.Items) > 8 {
+		return preflightError("binding")
+	}
+	for _, item := range coordList.Items {
+		if !validReceiptDescriptor(item, "path", "sha256") {
+			return preflightError("descriptor")
+		}
+	}
+	if role == "memory" {
+		if memoryAbsent(receipt.Get("memory_config")) || !value.SameText(receipt.Get("memory_config").Get("path"), c.ConfigPath) {
+			return preflightError("config role")
+		}
+	} else {
+		matched := false
+		for _, item := range coordList.Items {
+			if value.SameText(item.Get("path"), c.ConfigPath) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return preflightError("config role")
+		}
+	}
+	if c.Entrypoint != role+".py" {
+		return preflightError("entrypoint")
+	}
+	binPathVal := receipt.Get("binary").Get("path")
+	if hasSurrogateRunes(binPathVal.String) {
+		return preflightError("binary pin")
+	}
+	binSHA, err := compatibilityOpenedBinary(string(binPathVal.String), c.uid())
+	if err != nil || binSHA != string(receipt.Get("binary").Get("sha256").String) {
+		return preflightError("binary pin")
+	}
+	return nil
+}
+
+// pinnedReceiptIsGoOnly reports whether the externally pinned receipt bytes
+// declare the /2 schema. It grants nothing: VerifyReceipt still validates the
+// receipt before any use; this only selects which refusal is reported.
+func (c *CompatibilityContext) pinnedReceiptIsGoOnly(prof *value.SourceReaderProfile) bool {
+	raw, sha, err := compatibilityOpened(c.ReceiptPath, 1048576, c.uid())
+	if err != nil || sha != c.ReceiptSHA256 {
+		return false
+	}
+	decoded, err := decodeCompatibilityReceiptJSON(c.profile(prof), raw)
+	return err == nil && goOnlyReceipt(decoded)
+}
+
+// goOnlyVector is the checked Go launcher vector for this selection: the
+// receipt image, the role, then the eight selection flags in launch order
+// (stage_lifecycle_hooks.py checked_go_launcher).
+func (c *CompatibilityContext) goOnlyVector() []string {
+	timeout := c.hookTimeoutText
+	if timeout == "" {
+		timeout = strconv.FormatFloat(c.HookTimeout, 'f', -1, 64)
+	}
+	return []string{nativeText(c.Receipt.Get("binary").Get("path")), c.role(),
+		"--receipt", c.ReceiptPath, "--receipt-sha256", c.ReceiptSHA256, "--role", c.role(),
+		"--entrypoint", c.Entrypoint, "--config", c.ConfigPath, "--hook-timeout", timeout,
+		"--launch-root", c.LaunchRoot, "--shell", c.shell()}
+}
+
+// goVectorShape reports a checked Go launcher vector rather than the retained
+// isolated Python vector.
+func goVectorShape(vector []string) bool {
+	if len(vector) != 2+2*len(compatibilityLaunchFlags) || (vector[1] != "coordination" && vector[1] != "memory") {
+		return false
+	}
+	for i, flag := range compatibilityLaunchFlags {
+		if vector[2+2*i] != flag {
+			return false
+		}
+	}
+	return true
+}
+
+// launcherBytesFor renders the launcher for this context's vector. A Go
+// vector is accepted only for a verified /2 receipt; /1 keeps LauncherBytes.
+func (c *CompatibilityContext) launcherBytesFor(vector []string) ([]byte, error) {
+	if !goOnlyReceipt(c.Receipt) || !goVectorShape(vector) {
+		return LauncherBytes(vector, c.shell())
+	}
+	joined, err := shlexJoinStrings(vector)
+	if err != nil {
+		return nil, err
+	}
+	return []byte("#!" + c.shell() + "\nexec " + joined + " -- \"$@\"\n"), nil
 }
 
 func (c *CompatibilityContext) validateReceiptClosureAndPins(role string, receipt *value.Value) error {
@@ -1113,7 +1249,7 @@ func (c *CompatibilityContext) watchPinnedConfig(fallbackProfile *value.SourceRe
 	c.current = decoded
 	if len(c.baseVector) > 0 && c.LaunchRoot != "" {
 		vec := vectorWithConfig(c.baseVector, c.baseConfigPath, canonicalPath)
-		lRaw, err := LauncherBytes(vec, c.shell())
+		lRaw, err := c.launcherBytesFor(vec)
 		if err != nil {
 			return nil, preflightError(err.Error())
 		}
@@ -1565,7 +1701,7 @@ func (c *CompatibilityContext) launcherSpec() (string, []byte, error) {
 	raw := c.LauncherRaw
 	if raw == nil {
 		var err error
-		raw, err = LauncherBytes(c.Vector, c.shell())
+		raw, err = c.launcherBytesFor(c.Vector)
 		if err != nil {
 			return "", nil, err
 		}

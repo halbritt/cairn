@@ -187,6 +187,25 @@ the member-name-to-SHA-256 map serialized as sorted-key, ASCII JSON with compact
 `,`/`:` separators, matching the existing complete-bundle digest convention.
 This directory identity does not hash the receipt that names the directory.
 
+#### Go-only receipt (`/2`, CAIRN-785)
+
+Schema `cairn.lifecycle-compatibility/2` selects a generation where every hook
+and issued command runs the receipt-pinned Go image. It has exactly the fields
+`schema`, `source_revision`, `binary`, `binding`, `memory_config` and
+`coordination_configs`, with the `/1` rules for each. There is no
+`snapshot_root`, `members`, `bootstrap`, `loader`, `roles` or `aliases`, so no
+Python member is read or required. The selected entrypoint must be the
+canonical role name (`memory.py` or `coordination.py`).
+
+The selection is the checked Go launcher itself:
+`#!SHELL`, then `exec IMAGE ROLE --receipt ... --shell SHELL -- "$@"`, content
+addressed under the launch root. Its mode is `0500`, and it is verified before
+use and before any command is issued. No retained launcher or interpreter
+vector can select a `/2` receipt. `/1` receipts keep this section's full
+closure contract unchanged, so generations staged before `/2` verify as before.
+Rolling back from a `/2` generation means selecting a `/1` generation and its
+retained closure; `/2` carries no rollback material of its own.
+
 The owner-controlled, versioned host hook configuration independently fixes
 the approved absolute interpreter and verified vector `V`: `-I -S -c`
 followed by the reviewed stdlib-only verifier literal, the receipt absolute
