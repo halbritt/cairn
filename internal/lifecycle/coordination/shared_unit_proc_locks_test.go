@@ -76,6 +76,34 @@ func TestProcLockDrainWaitsForConsecutiveEmptyObservations(t *testing.T) {
 	}
 }
 
+func TestProcLockDrainTornDuplicateNeverPairs(t *testing.T) {
+	owner := "1: FLOCK ADVISORY WRITE 123 00:c0:456 0 EOF\n"
+	torn := owner + strings.Replace(owner, "1:", "7:", 1)
+	for _, tc := range []struct {
+		name   string
+		tables []string
+		reason string
+	}{
+		// Neither torn read may count as the first of two agreeing observations.
+		{"owner-after-torn", []string{torn, "", owner, owner}, "owner or waiter"},
+		{"clear-after-torn", []string{torn, "", ""}, ""},
+		{"torn-between", []string{"", torn, "", owner}, "unstable"},
+		{"mostly-torn", []string{torn, torn, torn, owner}, "unstable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &procLocksFixture{t: t, tables: tc.tables}
+			r := &watchDrainRead{locks: map[string]string{"0:c0:456": "/selected.lock"}}
+			err := r.lockOwnersFrom(f.open)
+			if (tc.reason == "" && err != nil) || (tc.reason != "" && (err == nil || !strings.Contains(err.Error(), tc.reason))) {
+				t.Fatalf("torn observation %s: %v", tc.name, err)
+			}
+			if f.opened != len(tc.tables) || f.closed != f.opened || f.eof != f.opened {
+				t.Fatalf("incomplete observations: %+v", f)
+			}
+		})
+	}
+}
+
 func TestProcLockDrainWiredRefusals(t *testing.T) {
 	row := "1: FLOCK ADVISORY WRITE 123 00:c0:456 0 EOF\n"
 	for _, tc := range []struct{ name, table, reason string }{
@@ -145,7 +173,7 @@ func procLocksOwnedFixture(t *testing.T) (*watchDrainRead, *LockLease, string) {
 }
 
 func TestProcLockBootstrapRequiresUniqueStableOwnedRow(t *testing.T) {
-	for _, name := range []string{"unique", "missing", "duplicate", "waiter", "device-alias", "other-owner", "unstable", "unrelated-change", "other-selected-owner"} {
+	for _, name := range []string{"unique", "missing", "duplicate", "torn-duplicate", "waiter", "device-alias", "other-owner", "unstable", "unrelated-change", "other-selected-owner"} {
 		t.Run(name, func(t *testing.T) {
 			r, lease, own := procLocksOwnedFixture(t)
 			inode, err := strconv.ParseUint(strings.Split(strings.Fields(own)[5], ":")[2], 10, 64)
@@ -163,7 +191,11 @@ func TestProcLockBootstrapRequiresUniqueStableOwnedRow(t *testing.T) {
 			case "missing":
 				tables, reason = []string{"", ""}, "not uniquely observed"
 			case "duplicate":
-				tables, reason = []string{own + renumbered}, "duplicates"
+				dup := own + renumbered
+				tables, reason = []string{dup, dup, dup, dup}, "duplicates"
+			case "torn-duplicate":
+				// Host lock churn between seq_file reads repeats the owned row once.
+				tables = []string{own + renumbered, own, own}
 			case "waiter":
 				waiter := strings.Replace(own, " FLOCK", " -> FLOCK", 1)
 				tables, reason = []string{own + waiter, own + waiter}, "another owner/waiter"

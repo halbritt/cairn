@@ -19,6 +19,8 @@ const (
 
 type procLocksOpen func() (io.ReadCloser, error)
 
+var errProcLocksDuplicate = errors.New("kernel lock table duplicates a selected candidate")
+
 type procLockRow struct {
 	fields string // Ordinals are positions in a changing global list, not identity.
 	kind   string
@@ -121,7 +123,7 @@ func selectedProcLocks(raw []byte, inodes map[uint64]bool) ([]procLockRow, error
 	slices.SortFunc(rows, func(a, b procLockRow) int { return strings.Compare(a.fields, b.fields) })
 	for i := 1; i < len(rows); i++ {
 		if rows[i-1] == rows[i] {
-			return nil, errors.New("kernel lock table duplicates a selected candidate")
+			return nil, errProcLocksDuplicate
 		}
 	}
 	return rows, nil
@@ -189,21 +191,35 @@ func procLockKind(fields []string) error {
 
 // Agreement concerns selected inode candidates, including device aliases and
 // waiters. It is not a claim that /proc/locks provides an atomic snapshot.
+// Each read(2) of the seq_file returns at most one buffer (a page), and the
+// kernel resumes by row position, so a lock taken or released anywhere on the
+// host between reads repeats or skips a row. A repeated selected row is such a
+// torn observation; it never pairs with another read. Only duplicates seen in
+// every observation are reported as duplicates.
 func stableProcLocks(open procLocksOpen, inodes map[uint64]bool) ([]procLockRow, error) {
 	var previous []procLockRow
+	compared, duplicates := false, 0
 	for attempt := 0; attempt < procLocksAttempts; attempt++ {
 		raw, err := readCompleteProcLocks(open)
 		if err != nil {
 			return nil, err
 		}
 		rows, err := selectedProcLocks(raw, inodes)
+		if errors.Is(err, errProcLocksDuplicate) {
+			duplicates++
+			previous, compared = nil, false
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
-		if attempt > 0 && slices.Equal(rows, previous) {
+		if compared && slices.Equal(rows, previous) {
 			return rows, nil
 		}
-		previous = rows
+		previous, compared = rows, true
+	}
+	if duplicates == procLocksAttempts {
+		return nil, errProcLocksDuplicate
 	}
 	return nil, errors.New("kernel lock observations are unstable")
 }

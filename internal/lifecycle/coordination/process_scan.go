@@ -28,6 +28,10 @@ var execveRetryDelays = []time.Duration{
 	10 * time.Millisecond,
 }
 
+// Tests replace the pause between mid-execve rereads to change the fixture at
+// an exact retry, rather than racing a goroutine against wall-clock delays.
+var execveRetrySleep = time.Sleep
+
 type MarkerProcess struct {
 	PID   int    `json:"pid"`
 	Start uint64 `json:"start"`
@@ -150,7 +154,7 @@ func readProcessEnvironAt(root, directory string, pid int, since int64) (environ
 	}
 	for _, delay := range execveRetryDelays {
 		if delay > 0 {
-			time.Sleep(delay)
+			execveRetrySleep(delay)
 		}
 		environ, err = os.ReadFile(path)
 		if err != nil {

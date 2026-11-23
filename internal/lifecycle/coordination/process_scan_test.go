@@ -62,21 +62,41 @@ func TestScanMarkersMidExecveKernelAndEmptyEnv(t *testing.T) {
 	t.Run("transient_mid_execve_recovers_marker", func(t *testing.T) {
 		root := procFixtureRoot(t)
 		dir := writeFullProcEntry(t, root, 403, fullLinuxStatLine(403, "R", 0x400000, 500, 0, 0), nil, "worker\x00")
-		go func() {
-			time.Sleep(3 * time.Millisecond)
-			_ = os.WriteFile(filepath.Join(dir, "environ"), []byte("CAIRN_REQUEST_ID=m2\x00"), 0o600)
-			_ = os.WriteFile(filepath.Join(dir, "stat"), fullLinuxStatLine(403, "S", 0x400000, 500, 0x7fff00001000, 0x7fff00001020), 0o600)
-		}()
+		// The execve completes during the second pause, so the marker is found
+		// only by a later reread, independent of host scheduling.
+		var pauses []time.Duration
+		execveRetrySleep = func(delay time.Duration) {
+			pauses = append(pauses, delay)
+			if len(pauses) != 2 {
+				return
+			}
+			if err := os.WriteFile(filepath.Join(dir, "environ"), []byte("CAIRN_REQUEST_ID=m2\x00"), 0o600); err != nil {
+				t.Error(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "stat"), fullLinuxStatLine(403, "S", 0x400000, 500, 0x7fff00001000, 0x7fff00001020), 0o600); err != nil {
+				t.Error(err)
+			}
+		}
+		t.Cleanup(func() { execveRetrySleep = time.Sleep })
 		res, err := ScanMarkersAt(root, uid, "CAIRN_REQUEST_ID", "m2", 100)
 		if err != nil || res.Clear || res.Coverage != "complete" || len(res.Processes) != 1 || res.Processes[0].PID != 403 {
 			t.Fatalf("expected mid-execve PID 403 caught, got %+v err=%v", res, err)
+		}
+		if !slices.Equal(pauses, execveRetryDelays[1:3]) {
+			t.Fatalf("marker not found by the reread after the second pause: pauses=%v", pauses)
 		}
 	})
 
 	t.Run("stalled_mid_execve_is_unknown_not_false_clear", func(t *testing.T) {
 		root := procFixtureRoot(t)
 		writeFullProcEntry(t, root, 404, fullLinuxStatLine(404, "D", 0x400000, 500, 0, 0), nil, "")
+		var pauses []time.Duration
+		execveRetrySleep = func(delay time.Duration) { pauses = append(pauses, delay) }
+		t.Cleanup(func() { execveRetrySleep = time.Sleep })
 		res, err := ScanMarkersAt(root, uid, "CAIRN_REQUEST_ID", "m3", 100)
+		if !slices.Equal(pauses, execveRetryDelays[1:]) {
+			t.Fatalf("stalled mid-execve reported before every retry: pauses=%v", pauses)
+		}
 		if err != nil || res.Clear || res.Coverage != "unknown" || !slices.Equal(res.Unknown, []int{404}) {
 			t.Fatalf("expected stalled mid-execve PID 404 unknown, got %+v err=%v", res, err)
 		}
