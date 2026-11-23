@@ -210,9 +210,14 @@ The presence watcher's tracked receipt pass uses the same `/2` predicate and
 reads only the image. Its bootstrap and unbound census skip the absent
 closure. Staging can emit a `/2` generation on request (operator guide,
 "Go-only plan"), and `publish-settings` publishes and reverses its hook rows.
-The watcher's hook census still expects retained launchers and anchors per
-row, so a live presence watcher would refuse a `/2` selection. Do not publish
-one to a live account until the census accepts it.
+The watcher's native hook census accepts a `/2` row whose anchor is the
+checked Go vector. That vector must equal the row's literal program vector and
+name the receipt image and role. The row's `retained_launcher` must be empty,
+and no retained launcher or Python member is read. `/1` rows keep the
+retained-launcher and closure checks unchanged.
+The census already refuses `memory-capture` operation rows for `/1` and `/2`
+alike, so it covers bound Claude cohorts, where every memory row runs as
+`memory`.
 
 #### Python retirement inventory (CAIRN-785)
 
@@ -248,9 +253,9 @@ What still needs the Python files on disk:
 - Every generation staged on a host so far is `/1`. Its Go hooks byte-check
   all 18 closure members, and the presence watcher references them.
 - Staging already emits `/2` generations, with Go launchers and a refusal for
-  any Python row, and `publish-settings` publishes and reverses their rows.
-  One change remains before live use: the watcher's hook census must accept
-  rows that have no retained launcher or anchor.
+  any Python row. `publish-settings` publishes and reverses their rows, and
+  the watcher's native hook census accepts them. A cohort whose rows are all
+  Go can move to `/2`, and once it has, no `.py` file is read for it.
 - The Hermes plugin glue (`integrations/hermes/*.py`) runs inside Hermes and
   stays.
 

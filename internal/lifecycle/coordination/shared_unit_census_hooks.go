@@ -979,6 +979,7 @@ func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *va
 		}
 	}
 	anchorMatches := 0
+	goOnly := goOnlyReceipt(compat.Receipt)
 	for _, anchor := range anchors.Members {
 		parts := anchor.Value.Get("vector")
 		if parts == nil || parts.Kind != value.Array {
@@ -990,6 +991,23 @@ func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *va
 				return errors.New("invalid emitted anchor argv")
 			}
 			av = append(av, nativeText(part))
+		}
+		if goOnly {
+			// A /2 selection's anchor is the checked Go vector itself: the
+			// receipt image, the role and the eight flags. It has no retained
+			// launcher to name or read.
+			if len(av) != 2+len(vals) || !slices.Equal(av[2:], vals) {
+				continue
+			}
+			if flagStart != 2 || av[0] != nativeText(compat.Receipt.Get("binary").Get("path")) || av[1] != role || !slices.Equal(av, vector) {
+				return errors.New("native launcher program/literal argv differs from emitted anchor")
+			}
+			retained := row.Get("retained_launcher")
+			if retained == nil || retained.Kind != value.Array || len(retained.Items) != 0 {
+				return errors.New("Go-only native row names a retained launcher")
+			}
+			anchorMatches++
+			continue
 		}
 		if len(av) != 21 || !slices.Equal(av[5:], vals) {
 			continue

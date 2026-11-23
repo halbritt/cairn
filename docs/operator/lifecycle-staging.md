@@ -190,9 +190,10 @@ and coordination hooks of such a generation for OpenCode, Codex and Claude
 after removing the installer package and every snapshot.
 
 `publish-settings` publishes and reverses `/2` hook rows; the same test
-checks this for Claude in a disposable account. The presence watcher's hook
-census still expects retained launchers, so do not publish a `/2` generation
-to a live account until it accepts them.
+checks this for Claude in a disposable account. The presence watcher's native
+hook census accepts `/2` rows: the anchor is the checked Go vector, and
+`retained_launcher` is empty
+([census test](../../internal/lifecycle/coordination/shared_unit_census_goonly_test.go)).
 
 A coordination-only selection requires `profile_mode: "unbound"` and
 `enabled: false`. Its binding and receipt retain exactly
