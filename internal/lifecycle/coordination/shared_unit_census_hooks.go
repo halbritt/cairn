@@ -1028,7 +1028,11 @@ func (r *watchCensusRead) claudeHookRow(selected WatchCensusClaudeHooks, row *va
 	if flagStart == 2 && vector[0] != nativeText(compat.Receipt.Get("binary").Get("path")) {
 		return errors.New("native hook program differs from receipt image")
 	}
-	for _, member := range compat.Receipt.Get("members").Members {
+	var receiptMembers []value.Member
+	if !goOnlyReceipt(compat.Receipt) && compat.Receipt.Get("members") != nil {
+		receiptMembers = compat.Receipt.Get("members").Members
+	}
+	for _, member := range receiptMembers {
 		path := filepath.Join(nativeText(compat.Receipt.Get("snapshot_root")), string(member.Key))
 		if !censusWithin(r.catalog.Root, path) {
 			return errors.New("external native receipt source")

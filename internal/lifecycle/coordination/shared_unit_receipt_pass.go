@@ -39,6 +39,14 @@ func (c *unitReceiptPass) validateReceiptSelection(receipt *value.Value) error {
 	} else if c.HookTimeout != 2 && c.HookTimeout != 15 {
 		return preflightError("timeout")
 	}
+	if goOnlyReceipt(receipt) {
+		return goOnlyReceiptRules(role, c.ConfigPath, c.Entrypoint, receipt, func(path, sha string) error {
+			if _, err := c.read.pin(WatchCensusPin{path, sha}, true); err != nil {
+				return preflightError("binary pin")
+			}
+			return nil
+		})
+	}
 	if !exactReceiptObject(receipt, "schema", "source_revision", "snapshot_root", "members", "bootstrap", "loader", "roles", "aliases", "binary", "binding", "memory_config", "coordination_configs") {
 		return preflightError("receipt")
 	}

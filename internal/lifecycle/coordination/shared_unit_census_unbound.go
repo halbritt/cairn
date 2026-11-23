@@ -137,7 +137,10 @@ func (r *watchCensusRead) unboundReceipt(pin WatchCensusPin) (*watchCensusAssoci
 	}
 	root := nativeText(receipt.Get("snapshot_root"))
 	members := receipt.Get("members")
-	if !censusWithin(r.catalog.Root, root) || members == nil || members.Kind != value.Object {
+	if goOnlyReceipt(receipt) {
+		// A /2 receipt has no Python closure to pin.
+		members = &value.Value{Kind: value.Object}
+	} else if !censusWithin(r.catalog.Root, root) || members == nil || members.Kind != value.Object {
 		return nil, nil, errors.New("unbound source closure is outside the census universe")
 	}
 	for _, member := range members.Members {

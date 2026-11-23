@@ -882,7 +882,10 @@ func (b *bootstrapRead) current3(config, manifest *value.Value, selected Bootstr
 	}
 	root := nativeText(receipt.Get("snapshot_root"))
 	members := receipt.Get("members")
-	if !censusWithin(b.plan.Root, root) || members == nil || members.Kind != value.Object {
+	if goOnlyReceipt(receipt) {
+		// A /2 receipt has no Python closure to reference or read.
+		members = &value.Value{Kind: value.Object}
+	} else if !censusWithin(b.plan.Root, root) || members == nil || members.Kind != value.Object {
 		return nil, errors.New("bootstrap current3 source closure outside private root")
 	}
 	for _, member := range members.Members {

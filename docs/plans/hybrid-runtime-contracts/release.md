@@ -206,6 +206,12 @@ closure contract unchanged, so generations staged before `/2` verify as before.
 Rolling back from a `/2` generation means selecting a `/1` generation and its
 retained closure; `/2` carries no rollback material of its own.
 
+The presence watcher's tracked receipt pass uses the same `/2` predicate and
+reads only the image. Its bootstrap and unbound census skip the absent
+closure. The watcher's hook census still expects retained launchers and
+anchors per row, and staging still emits only `/1`, so no `/2` generation can
+be staged or published yet.
+
 The owner-controlled, versioned host hook configuration independently fixes
 the approved absolute interpreter and verified vector `V`: `-I -S -c`
 followed by the reviewed stdlib-only verifier literal, the receipt absolute

@@ -837,6 +837,19 @@ func goOnlyReceipt(receipt *value.Value) bool {
 // configuration-role and binary-pin rules to the exact /2 fields. No member,
 // snapshot, alias or interpreter is read; the entrypoint is the role name.
 func (c *CompatibilityContext) validateGoOnlyReceipt(role string, receipt *value.Value) error {
+	return goOnlyReceiptRules(role, c.ConfigPath, c.Entrypoint, receipt, func(path, sha string) error {
+		binSHA, err := compatibilityOpenedBinary(path, c.uid())
+		if err != nil || binSHA != sha {
+			return preflightError("binary pin")
+		}
+		return nil
+	})
+}
+
+// goOnlyReceiptRules is the single /2 predicate shared by the generic
+// validator and the watcher's tracked receipt pass; only pinBinary, the one
+// disk read, differs between them.
+func goOnlyReceiptRules(role, configPath, entrypoint string, receipt *value.Value, pinBinary func(path, sha string) error) error {
 	if !exactReceiptObject(receipt, "schema", "source_revision", "binary", "binding", "memory_config", "coordination_configs") {
 		return preflightError("receipt")
 	}
@@ -857,13 +870,13 @@ func (c *CompatibilityContext) validateGoOnlyReceipt(role string, receipt *value
 		}
 	}
 	if role == "memory" {
-		if memoryAbsent(receipt.Get("memory_config")) || !value.SameText(receipt.Get("memory_config").Get("path"), c.ConfigPath) {
+		if memoryAbsent(receipt.Get("memory_config")) || !value.SameText(receipt.Get("memory_config").Get("path"), configPath) {
 			return preflightError("config role")
 		}
 	} else {
 		matched := false
 		for _, item := range coordList.Items {
-			if value.SameText(item.Get("path"), c.ConfigPath) {
+			if value.SameText(item.Get("path"), configPath) {
 				matched = true
 				break
 			}
@@ -872,18 +885,14 @@ func (c *CompatibilityContext) validateGoOnlyReceipt(role string, receipt *value
 			return preflightError("config role")
 		}
 	}
-	if c.Entrypoint != role+".py" {
+	if entrypoint != role+".py" {
 		return preflightError("entrypoint")
 	}
 	binPathVal := receipt.Get("binary").Get("path")
 	if hasSurrogateRunes(binPathVal.String) {
 		return preflightError("binary pin")
 	}
-	binSHA, err := compatibilityOpenedBinary(string(binPathVal.String), c.uid())
-	if err != nil || binSHA != string(receipt.Get("binary").Get("sha256").String) {
-		return preflightError("binary pin")
-	}
-	return nil
+	return pinBinary(string(binPathVal.String), string(receipt.Get("binary").Get("sha256").String))
 }
 
 // pinnedReceiptIsGoOnly reports whether the externally pinned receipt bytes
