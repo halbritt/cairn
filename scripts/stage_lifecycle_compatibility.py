@@ -19,6 +19,11 @@ import uuid
 
 
 SELECTION_SCHEMA = 'cairn.lifecycle-install-selection/1'
+# A Go-only generation: every hook runs the receipt-pinned Go image, so it has
+# no Python snapshot, interpreter anchor or retained launcher (release.md).
+GO_ONLY_SCHEMA = 'cairn.lifecycle-compatibility/2'
+GO_LAUNCH_FLAGS = ('--receipt', '--receipt-sha256', '--role', '--entrypoint',
+                   '--config', '--hook-timeout', '--launch-root', '--shell')
 RETAINED_PACKAGE_SCHEMA = 'cairn.lifecycle-retained-package/1'
 # The retained /2 bundle contract, independent of any selected payload loader.
 RETAINED_MEMBERS = frozenset((
@@ -289,7 +294,59 @@ class Assembler:
                                       python=self.plan['python'], shell=self.plan['shell'], sha256=sha(raw), bytes=len(raw))
         return launchers, anchors
 
+    def go_only_anchors(self, receipt):
+        """Select the checked Go launch vector per role/timeout label.
+
+        The hook stager publishes the launcher bytes for each row's operation;
+        this generation stores only the vectors, never a retained launcher."""
+        anchors = {}
+        roles = [('memory', receipt['memory_config'], (13, 150))]
+        roles += [('coordination', config, (2, 15)) for config in receipt['coordination_configs']]
+        for index, (role, config, timeouts) in enumerate(roles):
+            if role == 'memory' and memory_absent(config):
+                continue
+            for timeout in timeouts:
+                label = role + ':' + str(index) + ':' + str(timeout)
+                vector = [receipt['binary']['path'], role, '--receipt', str(self.generation / 'receipt.json'),
+                          '--receipt-sha256', sha(self.payloads['receipt.json']), '--role', role,
+                          '--entrypoint', role + '.py', '--config', config['path'], '--hook-timeout', str(timeout),
+                          '--launch-root', str(self.root / 'launch'), '--shell', self.plan['shell']]
+                anchors[label] = dict(vector=vector, vector_sha256=sha(encoded(vector)), shell=self.plan['shell'])
+        return anchors
+
+    def stage_go_only(self):
+        memory, coordinators = self.profiles()
+        binary = backend(self.stager, ['--root', str(self.root / 'bin'), '--binary', self.plan['binary']['path'], '--sha256', self.plan['binary']['sha256']])
+        self.components.append(dict(directory=dict(path=str(Path(binary['path']).parent), identity=binary['sha256']),
+                                    files=[dict(name='cairn', **binary, executable=True)]))
+        binding = dict(schema='cairn.inbox-recall-binding/3', enabled=self.plan['enabled'], binary=binary,
+                       memory_config=memory, coordination_configs=coordinators)
+        self.payloads['binding.json'] = encoded(binding)
+        receipt = dict(schema=GO_ONLY_SCHEMA, source_revision=self.plan['source_revision'], binary=binary,
+                       binding=dict(**self.descriptor('binding.json'), schema=binding['schema']),
+                       memory_config=memory, coordination_configs=coordinators)
+        self.payloads['receipt.json'] = encoded(receipt)
+        selection = dict(schema=SELECTION_SCHEMA, generation_id=self.plan['id'], receipt=self.descriptor('receipt.json'),
+                         components=self.components, launchers={}, anchors=self.go_only_anchors(receipt),
+                         launch_environment=dict(shell=self.plan['shell'], retention='Go-only: no interpreter or Python closure'),
+                         activation='not-performed')
+        self.payloads['selection.json'] = encoded(selection)
+        return self.publish_generation()
+
+    def publish_generation(self):
+        source = self.scratch / 'generation'
+        source.mkdir(mode=0o700)
+        files = []
+        for name, raw in sorted(self.payloads.items()):
+            path = source / name
+            path.write_bytes(raw)
+            path.chmod(0o600)
+            files.append(dict(name=name, path=str(path), sha256=sha(raw)))
+        return backend(self.stager, ['generation', '--root', str(self.root / 'generations')], dict(id=self.plan['id'], files=files))
+
     def stage(self):
+        if self.plan.get('receipt_schema') == GO_ONLY_SCHEMA:
+            return self.stage_go_only()
         anchors_profile = qualify_launch_anchors(self.plan, self.scratch)
         writer, sources = self.capture_writer()
         memory, coordinators = self.profiles()
@@ -312,20 +369,17 @@ class Assembler:
                          launch_environment=anchors_profile, activation='not-performed')
         self.payloads['selection.json'] = encoded(selection)
         self.payloads['retained-argv.json'] = encoded(launchers)
-        source = self.scratch / 'generation'
-        source.mkdir(mode=0o700)
-        files = []
-        for name, raw in sorted(self.payloads.items()):
-            path = source / name
-            path.write_bytes(raw)
-            path.chmod(0o600)
-            files.append(dict(name=name, path=str(path), sha256=sha(raw)))
-        return backend(self.stager, ['generation', '--root', str(self.root / 'generations')], dict(id=self.plan['id'], files=files))
+        return self.publish_generation()
 
 
 def stage(stager, root, plan):
     required = {'id', 'enabled', 'sources', 'source_revision', 'binary', 'memory_config', 'coordination_configs', 'aliases', 'python', 'shell'}
-    if (set(plan) not in (required, required | {'profile_mode'}) or not canonical(str(root))
+    if plan.get('receipt_schema') == GO_ONLY_SCHEMA:
+        # No sources, aliases or interpreter: a /2 generation has no Python.
+        required = (required - {'sources', 'aliases', 'python'}) | {'receipt_schema'}
+        if set(plan) not in (required, required | {'profile_mode'}) or not canonical(str(root)) or not canonical(plan['shell']):
+            raise ValueError('incomplete Go-only installation plan or noncanonical shell')
+    elif (set(plan) not in (required, required | {'profile_mode'}) or not canonical(str(root))
             or not canonical(plan['python']) or not canonical(plan['shell'])):
         raise ValueError('incomplete installation plan or noncanonical launch anchor')
     with directory(str(root), private=True) as locked:
@@ -744,6 +798,11 @@ def inspect(stager, selected, legacy=False):
         backend(stager, ['inspect-directory', '--root', str(Path(d['path']).parent)],
                 dict(identity=d['identity'], files=component['files']))
         components[d['path']] = {member['name']: member for member in component['files']}
+    if receipt['schema'] == GO_ONLY_SCHEMA:
+        binary = components[str(Path(receipt['binary']['path']).parent)]['cairn']
+        if {key: binary[key] for key in ('path', 'sha256')} != receipt['binary']:
+            raise ValueError('receipt binary differs from verified components')
+        return inspect_go_only(files, selection, selected, receipt, receipt_pin)
     snapshot = components[receipt['snapshot_root']]
     if {name: member['sha256'] for name, member in snapshot.items()} != {name: member['sha256'] for name, member in receipt['members'].items()}:
         raise ValueError('receipt snapshot differs from verified components')
@@ -771,6 +830,34 @@ def inspect(stager, selected, legacy=False):
     if decoded(read_selected({key: retained[key] for key in ('path', 'sha256')}, 1024 * 1024)) != selection['launchers']:
         raise ValueError('retained launch argv differ from selection')
     return dict(selection=selected, receipt=selection['receipt'], launchers=selection['launchers'], activation='not-performed')
+
+
+def inspect_go_only(files, selection, selected, receipt, receipt_pin):
+    """Check a /2 generation: exact receipt fields, no retained launcher, and
+    one checked Go vector per role/timeout label naming this receipt."""
+    if set(receipt) != {'schema', 'source_revision', 'binary', 'binding', 'memory_config', 'coordination_configs'}:
+        raise ValueError('Go-only receipt fields differ from the selected schema')
+    if selection['launchers'] != {} or 'retained-argv.json' in files:
+        raise ValueError('a Go-only generation has no retained launcher')
+    configs = [('memory', receipt['memory_config'], (13, 150))]
+    configs += [('coordination', config, (2, 15)) for config in receipt['coordination_configs']]
+    expected = set()
+    for index, (role, config, timeouts) in enumerate(configs):
+        if role == 'memory' and memory_absent(config):
+            continue
+        for timeout in timeouts:
+            label = role + ':' + str(index) + ':' + str(timeout)
+            expected.add(label)
+            anchor = selection['anchors'].get(label)
+            want = [receipt['binary']['path'], role, '--receipt', receipt_pin['path'], '--receipt-sha256', receipt_pin['sha256'],
+                    '--role', role, '--entrypoint', role + '.py', '--config', config['path'], '--hook-timeout', str(timeout),
+                    '--launch-root', anchor['vector'][-3] if anchor else '', '--shell', anchor['shell'] if anchor else '']
+            if (anchor is None or set(anchor) != {'vector', 'vector_sha256', 'shell'} or anchor['vector'] != want
+                    or not canonical(want[-3]) or not canonical(want[-1]) or sha(encoded(anchor['vector'])) != anchor['vector_sha256']):
+                raise ValueError('Go-only launch vector differs from its receipt selection')
+    if set(selection['anchors']) != expected:
+        raise ValueError('Go-only launch labels differ from the receipt profiles')
+    return dict(selection=selected, receipt=selection['receipt'], launchers={}, activation='not-performed')
 
 
 def main():

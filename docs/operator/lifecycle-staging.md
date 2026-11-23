@@ -170,6 +170,29 @@ The plan has exactly these fields:
 | `aliases` | Public alias basename to `memory.py` or `coordination.py`; aliases cannot shadow canonical members. |
 | `python`, `shell` | Approved absolute interpreter and noninteractive shell paths, external to receipt authentication. |
 
+#### Go-only plan (`receipt_schema`, CAIRN-785)
+
+A plan that adds `"receipt_schema": "cairn.lifecycle-compatibility/2"`
+stages a Go-only generation and omits `sources`, `aliases` and `python`. It
+stages no snapshot, interpreter anchor, retained launcher or
+`retained-argv.json`. The receipt has only the `/2` fields (see release.md,
+"Go-only receipt"). `selection.json` keeps one checked Go vector per
+role/timeout label (the image, the role and the eight flags) and an empty
+`launchers` map; `inspect` checks both.
+
+Hook staging derives each row's checked Go launcher from those vectors. It
+refuses any row that would need the retained Python caller, for example any
+bound OpenCode memory row, with "a Go-only generation cannot select the
+retained Python caller". Rows carry `retained_launcher: []`.
+
+[test_r04_host_wiring](../../scripts/test_r04_host_wiring.py) runs the memory
+and coordination hooks of such a generation for OpenCode, Codex and Claude
+after removing the installer package and every snapshot.
+
+`publish-settings` and the presence watcher's hook census still expect
+retained launchers. A `/2` generation can be staged and run in a disposable
+home, but cannot yet be published to a live account.
+
 A coordination-only selection requires `profile_mode: "unbound"` and
 `enabled: false`. Its binding and receipt retain exactly
 `memory_config: {"absent": true}`. No memory profile, state directory, launcher

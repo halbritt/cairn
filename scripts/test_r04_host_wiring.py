@@ -430,6 +430,60 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 state = json.loads((Path(f.coord['state_dir']) / (key + '.json')).read_bytes())
                 self.assertEqual(state['agent']['agent_id'], '33333333-3333-4333-8333-333333333333')
 
+    def go_only_generation(self, f):
+        """Restage f's current profiles as a /2 generation (no Python inputs)."""
+        plan = f.configuration_plan()
+        for key in ('sources', 'aliases', 'python'):
+            plan.pop(key)
+        plan['receipt_schema'] = 'cairn.lifecycle-compatibility/2'
+        result = f.installer_call('stage', '--root', str(f.install_root), body=plan)
+        self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout)
+        installed = json.loads(result.stdout)
+        self.assertEqual(installed['launchers'], {})
+        f.selected = installed['selection']
+        f.hook_plan['selection'] = f.selected
+        final = f.install_root / 'generations' / ('selection-' + plan['id'])
+        receipt = json.loads((final / 'receipt.json').read_bytes())
+        self.assertEqual(set(receipt), {'schema', 'source_revision', 'binary', 'binding', 'memory_config', 'coordination_configs'})
+        self.assertFalse((final / 'retained-argv.json').exists())
+        return final
+
+    def test_go_only_generation_runs_hooks_without_any_python_closure(self):
+        for harness in ('opencode', 'codex', 'claude'):
+            with self.subTest(harness=harness):
+                f = self.fixture('go only ' + harness, harness=harness)
+                self.recall_api(f)
+                self.go_only_generation(f)
+                _, _, record = self.selected(f)
+                self.assertTrue(record['rows'])
+                for row in record['rows']:
+                    self.assertEqual((row['implementation'], row['retained_launcher']), ('go', []), row)
+                    raw = Path(row['checked_launcher'][0]).read_bytes()
+                    self.assertNotIn(b'python', raw)
+                # Nothing Python is left to run: no installer package, no
+                # snapshot of any generation, and no retained launcher.
+                shutil.rmtree(f.package)
+                shutil.rmtree(f.install_root / 'snapshots')
+                memory = next(r for r in record['rows'] if r['role'] == 'memory' and r['event'] == 'SessionStart')
+                coord = next(r for r in record['rows'] if r['role'] == 'coordination' and r['hook']['timeout'] == 15)
+                session = 'ses_goonly' if harness == 'opencode' else SESSION
+                event = dict(hook_event_name='SessionStart', session_id=session, cwd=str(f.root), host_pid=os.getpid())
+                for row in (memory, coord):
+                    result = subprocess.run(['/bin/sh', '-c', row['hook']['command']], input=encoded(event),
+                                            cwd=f.root, env=f.env(), capture_output=True, timeout=20)
+                    self.assertEqual((result.returncode, result.stderr), (0, b''), (row['role'], result.stdout))
+                key = hashlib.sha256((f.coord['binding'] + '\0' + session).encode()).hexdigest()
+                state = json.loads((Path(f.coord['state_dir']) / (key + '.json')).read_bytes())
+                self.assertEqual(state['agent']['agent_id'], '33333333-3333-4333-8333-333333333333')
+
+    def test_go_only_generation_refuses_rows_that_need_python(self):
+        f = self.fixture('go only bound', bound=True)
+        self.go_only_generation(f)
+        result = self.stage(f)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(b'a Go-only generation cannot select the retained Python caller', result.stderr)
+        self.assertEqual(list(f.hook_root.iterdir()), [])
+
     def test_bound_cells_keep_python_and_provider_recall_selects_checked_go(self):
         for route in ('bound', 'provider'):
             with self.subTest(route=route):

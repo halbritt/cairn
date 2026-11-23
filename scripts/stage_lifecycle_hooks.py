@@ -42,10 +42,14 @@ def selected_data(pin, limit=1024 * 1024):
 def checked_go_launcher(stager, image, role, vector):
     flags = ['--receipt', '--receipt-sha256', '--role', '--entrypoint',
              '--config', '--hook-timeout', '--launch-root', '--shell']
-    if len(vector) != 21 or vector[5::2] != flags:
+    if len(vector) == 21 and vector[5::2] == flags:
+        selected = vector[5:]  # retained /1 vector: interpreter, isolation, literal
+    elif len(vector) == 18 and vector[2::2] == flags and vector[0] == image:
+        selected = vector[2:]  # Go-only /2 vector: image, role
+    else:
         raise ValueError('unsupported checked Go launch vector')
     launch_root, shell = vector[-3], vector[-1]
-    raw = ('#!' + shell + '\nexec ' + shlex.join([image, role, *vector[5:]]) + ' -- "$@"\n').encode('utf-8')
+    raw = ('#!' + shell + '\nexec ' + shlex.join([image, role, *selected]) + ' -- "$@"\n').encode('utf-8')
     identity = installation.sha(raw)
     with tempfile.TemporaryDirectory(prefix='cairn-hook-launcher-') as temporary:
         source = Path(temporary) / 'inbox'
@@ -127,6 +131,7 @@ def hook_materials(stager, plan):
     if plan['harness'] == 'agy' and not all_unbound:
         raise ValueError('Agy coordination requires unbound profiles; bound recall is unsupported')
     profiles = {'memory': receipt['memory_config'], 'coordination': receipt['coordination_configs'][index]}
+    go_only = receipt['schema'] == installation.GO_ONLY_SCHEMA
     rows, go_launchers = [], {}
     for role, profile in profiles.items():
         if role == 'memory' and installation.memory_absent(profile):
@@ -154,7 +159,7 @@ def hook_materials(stager, plan):
             events['PreToolUse'] = 13
         for event, timeout in events.items():
             label = role + ':' + str(0 if role == 'memory' else index + 1) + ':' + str(timeout)
-            retained = install['launchers'][label]
+            retained = [] if go_only else install['launchers'][label]
             launcher = retained
             vector = metadata['anchors'][label]['vector']
             for flag, value in (('--role', role), ('--config', profile['path']), ('--hook-timeout', str(timeout))):
@@ -174,6 +179,9 @@ def hook_materials(stager, plan):
                 and config.get('recall_mode') == 'agent_tools'
                 or plan['harness'] == 'codex' and event in ('PreCompact', 'Stop')
                 or plan['harness'] == 'claude' and event in ('PreCompact', 'SessionEnd')))
+            if go_only and not (role == 'coordination' or ordinary_go or bound_go or unbound_capture_go):
+                raise ValueError('a Go-only generation cannot select the retained Python caller for '
+                                 + role + ' ' + event + ' (' + reason + ')')
             if role == 'coordination' or ordinary_go or bound_go or unbound_capture_go:
                 if label not in go_launchers:
                     operation = 'memory-capture' if unbound_capture_go else role
