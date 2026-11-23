@@ -27,7 +27,23 @@ elif [[ "$#" -ne 0 ]]; then
     echo "unsupported test-postgres.sh arguments" >&2
     exit 2
 fi
-pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
+# The schema needs pgvector (core/schema/056_semantic_passages.sql). The default
+# pg_config selects the newest server-dev install, which may lack it, so pick the
+# newest installed server whose share directory provides the extension and fall
+# back to pg_config. CAIRN_PG_BIN still overrides the choice and is exported.
+select_pg_bin() {
+    local candidate selected=""
+    while IFS= read -r candidate; do
+        candidate="${candidate%/pg_config}"
+        if [[ -x "$candidate/initdb" && -f "$("$candidate/pg_config" --sharedir)/extension/vector.control" ]]; then
+            selected="$candidate"
+        fi
+    done < <(ls /usr/lib/postgresql/*/bin/pg_config 2>/dev/null | sort --version-sort)
+    printf '%s\n' "${selected:-$(pg_config --bindir)}"
+}
+pg_bin="${CAIRN_PG_BIN:-$(select_pg_bin)}"
+# Fixtures that start their own clusters (scripts/disposable_host.py) use the same server.
+export CAIRN_PG_BIN="$pg_bin"
 test_root="$(mktemp -d /tmp/cairn-postgres.XXXXXXXX)"
 cleanup() {
     local check_status=$?
