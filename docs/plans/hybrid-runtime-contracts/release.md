@@ -912,23 +912,27 @@ Criteria acceptance passes no coverage, runtime, R-05/R-06 or deployment gate.
 
 ## Rollback, observation and retirement
 
-Before R-08 the rollback target is the retained `/2` executor and Python semantic
-worker, including their interpreter, websocket package, venv/native libraries,
-model/config assets and fixed launchers. R-08 may remove their **active**
-requirements only after an offline, hash-pinned restoration closure is retained
-and tested for each supported target architecture. A directory of Python source
-alone is insufficient. Post-R-08 rollback restores that declared closure from
-offline artifacts into a clean disposable home, restores the selected bindings
-and launchers, and executes lifecycle behavior plus the semantic reverse rebuild
-against a disposable database with the retired dependencies initially absent.
-No network download or assumed global package satisfies this fixture.
+Owner decisions, 2026-11-23, replace the earlier offline Python rollback
+target. Rollback: "republish or roll forward. I don't care about rollback".
+Bound modes with no Go route: "can be python, the core should be go". No
+offline, hash-pinned Python restoration closure is kept for the lifecycle or
+the semantic worker, and none is restored in a dependency-free home.
 
-The post-retirement target therefore remains the executable retained Python
-release, not an implicitly chosen older Go/Rust build. Changing that target
-requires a root decision and its own accepted rollback fixture. Keep all paths
-still needed by live issued argv/hooks until reference and session-refresh proof
-permits retirement. Unknown references or unavailable restoration artifacts
-block R-08; preserving them is preferable to an unsupported removal claim.
+The post-retirement rollback target is the previous Go generation. Its hook
+settings are republished from the recovery record (`reverse-settings`), and
+its binaries and watcher binding are reselected. The alternative is to roll
+forward to a fixed generation. Keep the previous generation and its recovery
+records until the next generation is accepted. Rehearse the rollback in a
+disposable account or home: publish, then `reverse-settings`, must restore the
+exact prior settings bytes. The semantic reverse rebuild runs against a
+disposable database with the selected (Rust) worker.
+
+Python that stays: the code for bound modes with no Go route, the Hermes glue,
+`cairn-frank-tunnel`, and the Python staging and publish tooling that
+`reverse-settings` uses. Keep all paths still needed by live issued argv or
+hooks until reference and session-refresh proof permits retirement. Unknown
+references block R-08; keeping them is preferable to an unsupported removal
+claim.
 
 Root's `4b912bb` reconciliation adds **S-04R / CAIRN-355** as a named prerequisite
 of S-05 rollback acceptance and R-06 qualification. The separately classified
@@ -940,7 +944,9 @@ derivation/rollback identity needs its explicit accepted criteria rather than
 being reported as restoration of an unchanged identity.
 
 An observation lane is host × harness × account/binding, plus one semantic lane
-per shared database/job queue. R-01 maps each lane to supported operation rows
+per shared database/job queue. The deprecated `codex-three` and `zai` accounts are
+outside the lane set (owner, 2026-11-23: codex-3 "is deprecated, zai is as
+well"). R-01 maps each lane to supported operation rows
 and expected identities. Each installed supported memory event and each
 supported request/reply/recovery path needs an observed cycle; include idle,
 busy, restart, refusal and cancellation only where supported. Unsupported rows
@@ -993,9 +999,9 @@ Each successful case includes a concrete negative or interruption case.
 | REL-EQUIVALENCE | Map each old/new assertion and seed observable faults that both checks must reject before old coverage is removed. Required model tests execute rather than skip. | R-05 records applicable changed refusal/exit, reordered operations, request-ID reuse, missing persisted field, wrong span and corrupted pin faults, their expected failures and actual results on both executors/checks. An insensitive old assertion is a disclosed gap, not permission to weaken or silently repair the reference. The maximum-punctuation case additionally cites the original oracle seal, separately reviewed B1/B2 digest manifests and Overall's population disposition under the conditional sequence above; authorization and criteria agreement do not count as numerical coverage. Retain frozen trial/SDK surfaces. |
 | REL-PERF | Compare the same workload and machine conditions; distinguish build/setup time, subprocess latency, worker footprint and suite duration. | Reproducible R-01 baseline and R-05 comparison with exact commands, environment, sample count and durations. Proposal targets are not observed results. |
 | REL-DOCS | Every affected current-facing CLI/config/example and operational claim agrees with implemented source and checked invocation. | Architecture/status, CLI/lifecycle references, harness guides, semantic install/rebuild, testing, deployment and recovery. Apply docs-guard; proposed commands stay labelled proposed. |
-| REL-MANIFEST | One exact candidate binds source, Go/Rust/model/config and fixed-launcher hashes, compatibility L/V/verifier identity and approved shell/Python trust closure/readback, running worker/interpreter/library closure, derivation, schema, host/session matrix, checks, findings, limitations and executable offline rollback closure. | R-06 candidate evidence, R-07 installed/live observations, transition/backup ledger and R-09 final reconciliation. Include the maximum-punctuation oracle seal, reviewed B1/B2 digest manifests and required population disposition. No credentials, raw sessions, generated binaries or operational memory committed. |
+| REL-MANIFEST | One exact candidate binds source, Go/Rust/model/config and fixed-launcher hashes, compatibility L/V/verifier identity and approved shell/Python trust closure/readback, running worker/interpreter/library closure, derivation, schema, host/session matrix, checks, findings, limitations and the declared rollback (previous generation's recovery records, or roll forward). | R-06 candidate evidence, R-07 installed/live observations, transition/backup ledger and R-09 final reconciliation. Include the maximum-punctuation oracle seal, reviewed B1/B2 digest manifests and required population disposition. No credentials, raw sessions, generated binaries or operational memory committed. |
 | REL-OBSERVE | Each defined lane completes its minimum supported cycles and 24 continuous hours after its last relevant change; the shared-queue semantic lane completes a full rebuild. | Use the lane/reset/rehearsal rules above, disclose unobserved rows and failed/pending work, and reset after affected removal/runtime changes. Time alone is insufficient. |
-| REL-RETIRE | No active configuration, process, cached session hook or unsettled issued context needs a removed file/dependency. Every session has new hook-identity evidence; no retired identity is observed during the qualified window. | R-08 exact candidate, reference/session/process inventory, initially dependency-free offline rollback restore plus lifecycle execution and semantic reverse rebuild in disposable environments. Keep required Hermes Python, frozen trials/SDK and still-referenced compatible paths. Unknown identity/reference or missing rollback closure blocks removal. |
+| REL-RETIRE | No active configuration, process, cached session hook or unsettled issued context needs a removed file/dependency. Every session has new hook-identity evidence; no retired identity is observed during the qualified window. | R-08 exact candidate, reference/session/process inventory, publish then `reverse-settings` rehearsal in a disposable account plus semantic reverse rebuild in a disposable database. Keep required Hermes Python, frozen trials/SDK, bound-mode Python with no Go route and still-referenced compatible paths. Unknown identity/reference or a missing previous-generation recovery record blocks removal. |
 | REL-FINAL | Recheck and redeploy the exact removal commit everywhere, including every long-lived client, then reconcile findings and clean pushed trunk. | R-09 final manifest and independent review. Pre-removal deployment evidence does not verify the removal release. |
 
 Tests use synthetic fixtures, disposable homes and disposable PostgreSQL.
