@@ -209,9 +209,10 @@ retained closure; `/2` carries no rollback material of its own.
 The presence watcher's tracked receipt pass uses the same `/2` predicate and
 reads only the image. Its bootstrap and unbound census skip the absent
 closure. Staging can emit a `/2` generation on request (operator guide,
-"Go-only plan"). The watcher's hook census and `publish-settings` still expect
-retained launchers and anchors per row, so a `/2` generation cannot be
-published to a live account yet.
+"Go-only plan"), and `publish-settings` publishes and reverses its hook rows.
+The watcher's hook census still expects retained launchers and anchors per
+row, so a live presence watcher would refuse a `/2` selection. Do not publish
+one to a live account until the census accepts it.
 
 #### Python retirement inventory (CAIRN-785)
 
@@ -247,10 +248,9 @@ What still needs the Python files on disk:
 - Every generation staged on a host so far is `/1`. Its Go hooks byte-check
   all 18 closure members, and the presence watcher references them.
 - Staging already emits `/2` generations, with Go launchers and a refusal for
-  any Python row. Before one can be published, two more changes are needed:
-  1. the watcher's hook census must accept rows that have no retained
-     launcher or anchor;
-  2. `publish-settings` must accept them.
+  any Python row, and `publish-settings` publishes and reverses their rows.
+  One change remains before live use: the watcher's hook census must accept
+  rows that have no retained launcher or anchor.
 - The Hermes plugin glue (`integrations/hermes/*.py`) runs inside Hermes and
   stays.
 

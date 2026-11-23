@@ -8,6 +8,7 @@ from pathlib import Path
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -475,6 +476,42 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 key = hashlib.sha256((f.coord['binding'] + '\0' + session).encode()).hexdigest()
                 state = json.loads((Path(f.coord['state_dir']) / (key + '.json')).read_bytes())
                 self.assertEqual(state['agent']['agent_id'], '33333333-3333-4333-8333-333333333333')
+
+    def test_go_only_hook_generation_publishes_and_reverses_settings(self):
+        f = self.fixture('go only publish', harness='claude')
+        self.recall_api(f)
+        self.go_only_generation(f)
+        before = f.settings.read_bytes()
+        selected, _, record = self.selected(f)
+        pinned = f.package / 'cairn-stage-lifecycle'
+        shutil.copyfile(self.stager, pinned)
+        pinned.chmod(0o500)
+        stager_sha = hashlib.sha256(pinned.read_bytes()).hexdigest()
+        renderer = f.root / 'renderer'
+        renderer.mkdir(mode=0o700)
+        for name in ('stage_lifecycle_hooks.py', 'stage_lifecycle_compatibility.py'):
+            shutil.copyfile(f.package / name, renderer / name)
+        plan = dict(schema='cairn.hook-settings-publish/1', selection=selected['selection'],
+                    replace_commands=f.hook_plan['replace_commands'])
+        shutil.rmtree(f.install_root / 'snapshots')
+        published = subprocess.run(
+            [sys.executable, '-I', '-S', '-B', str(renderer / 'stage_lifecycle_hooks.py'), 'publish-settings',
+             '--stager', str(pinned), '--stager-sha256', stager_sha, '--target', str(f.settings)],
+            input=encoded(plan), capture_output=True, timeout=40, cwd=f.root, env=f.env())
+        self.assertEqual((published.returncode, published.stderr), (0, b''), published.stdout)
+        live = json.loads(f.settings.read_bytes())
+        commands = {h['command'] for groups in live['hooks'].values() for g in groups for h in g['hooks']}
+        for row in record['rows']:
+            self.assertIn(row['hook']['command'], commands)
+            self.assertNotIn('python', row['hook']['command'])
+        recovery = json.loads(published.stdout)['exchange']['recovery']
+        reversed_ = subprocess.run(
+            [sys.executable, '-I', '-S', '-B', str(renderer / 'stage_lifecycle_hooks.py'), 'reverse-settings',
+             '--stager', str(pinned), '--stager-sha256', stager_sha,
+             '--record', recovery['path'], '--record-sha256', recovery['sha256']],
+            capture_output=True, timeout=40, cwd=f.root, env=f.env())
+        self.assertEqual((reversed_.returncode, reversed_.stderr), (0, b''), reversed_.stdout)
+        self.assertEqual(f.settings.read_bytes(), before)
 
     def test_go_only_generation_refuses_rows_that_need_python(self):
         f = self.fixture('go only bound', bound=True)

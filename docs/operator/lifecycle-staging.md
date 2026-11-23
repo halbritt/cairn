@@ -189,9 +189,10 @@ retained Python caller". Rows carry `retained_launcher: []`.
 and coordination hooks of such a generation for OpenCode, Codex and Claude
 after removing the installer package and every snapshot.
 
-`publish-settings` and the presence watcher's hook census still expect
-retained launchers. A `/2` generation can be staged and run in a disposable
-home, but cannot yet be published to a live account.
+`publish-settings` publishes and reverses `/2` hook rows; the same test
+checks this for Claude in a disposable account. The presence watcher's hook
+census still expects retained launchers, so do not publish a `/2` generation
+to a live account until it accepts them.
 
 A coordination-only selection requires `profile_mode: "unbound"` and
 `enabled: false`. Its binding and receipt retain exactly
