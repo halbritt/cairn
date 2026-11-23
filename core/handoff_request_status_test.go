@@ -465,8 +465,8 @@ func TestHandoffRequestStatusValidatesBeforeReadingAndFailsExplicitly(t *testing
 		"nil item list":       {Handoff: valid.Handoff},
 		"empty handoff items": with([]HandoffItemLink{}...),
 	}
-	// A canceled context would surface as a store failure if any read began, so
-	// INVALID_REQUEST proves validation ran first.
+	// A canceled context fails any read that begins (reported as the retryable
+	// TIMEOUT, never a store fault), so INVALID_REQUEST proves validation ran first.
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 	for name, req := range invalid {
@@ -477,7 +477,7 @@ func TestHandoffRequestStatusValidatesBeforeReadingAndFailsExplicitly(t *testing
 	}
 	for name, req := range map[string]HandoffRequestStatusRequest{"one item": valid, "sixteen items": with(sixteen...)} {
 		out, err := publisher.HandoffRequestStatus(canceled, req, dest)
-		if err == nil || Code(err) != "STORE_ERROR" || out.Items != nil || out.Handoff.RecordID != "" {
+		if err == nil || Code(err) != "TIMEOUT" || !ContextEnded(err) || out.Items != nil || out.Handoff.RecordID != "" {
 			t.Errorf("%s: unavailable service must be an explicit failure, got %+v %v", name, out, err)
 		}
 	}
