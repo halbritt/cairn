@@ -77,8 +77,12 @@ func (i *Index) Close() { i.pool.Close() }
 func (i *Index) Step(ctx context.Context) (bool, error) {
 	lease := uuid.NewString()
 	var id string
+	// Sources without a searchable document under this identity (new, edited or
+	// restored) go first; refreshes of a document that is still searchable, as
+	// queued by semantic-requeue, wait behind them.
 	err := i.pool.QueryRow(ctx, `UPDATE cairn.semantic_job SET lease_id=$1,lease_until=clock_timestamp()+interval '2 minutes'
- WHERE record_id=(SELECT record_id FROM cairn.semantic_job WHERE retry_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<clock_timestamp()) ORDER BY retry_at,record_id FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING record_id::text`, lease).Scan(&id)
+ WHERE record_id=(SELECT j.record_id FROM cairn.semantic_job j WHERE j.retry_at<=clock_timestamp() AND (j.lease_until IS NULL OR j.lease_until<clock_timestamp())
+ ORDER BY EXISTS(SELECT 1 FROM cairn.semantic_document d WHERE d.record_id=j.record_id AND d.model_sha256=$2),j.retry_at,j.record_id FOR UPDATE OF j SKIP LOCKED LIMIT 1) RETURNING record_id::text`, lease, i.identity.ModelSHA256).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}

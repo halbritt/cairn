@@ -293,6 +293,7 @@ func buildOperatorOperations() map[string]operatorOperation {
 		}),
 		storeOperation("fence-restore", (*core.Store).FenceRestore),
 		storeOperation("invalidate-handles", (*core.Store).InvalidateHandles),
+		storeOperation("semantic-requeue", (*core.Store).RequeueSemantic),
 		decodedOperation("verify-checkpoint", 0, func(ctx context.Context, store *core.Store, req core.VerifyCheckpointRequest) (core.CheckpointVerification, error) {
 			result, err := store.VerifyCheckpoint(ctx, req)
 			if err == nil && !result.Valid {

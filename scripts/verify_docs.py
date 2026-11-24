@@ -279,7 +279,7 @@ def discover_cli_schema(repo_root):
         "conflict", "proposal-group", "proposal", "refusal", "evidence",
         "evidence-checks", "assessments", "migrate", "begin-restore", "restore-status",
         "rebuild-restore", "verify-restore", "resume-restore", "fence-restore",
-        "invalidate-handles", "verify-checkpoint", "publish", "inbox", "ack",
+        "invalidate-handles", "semantic-requeue", "verify-checkpoint", "publish", "inbox", "ack",
         "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions",
         "events", "event-status", "event-stats", "notice-flush", "notice-pending", "response-group",
         "response-groups", "work-cancel", "request-control-sweep", "checkpoint-overdue-sweep", "coordination-review",

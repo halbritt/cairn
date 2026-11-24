@@ -91,7 +91,7 @@ Administration: recovery-export FILE | recovery-inspect FILE...
   recovery-export --directory DIR | recovery-inspect --directory DIR
   recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE
   begin-restore | restore-status | rebuild-restore | verify-restore | resume-restore
-  migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint [--header] < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)] [--semantic-command PATH | --semantic-stream-command PATH | --embedding-command PATH] [--semantic-idle-timeout DURATION]
+  migrate | fence-restore < request.json | invalidate-handles < request.json | semantic-requeue < request.json | checkpoint [--header] < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)] [--semantic-command PATH | --semantic-stream-command PATH | --embedding-command PATH] [--semantic-idle-timeout DURATION]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.

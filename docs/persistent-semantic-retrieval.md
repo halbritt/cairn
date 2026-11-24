@@ -64,6 +64,32 @@ Opening the index schedules missing current documents and documents from another
 model identity. The index is rebuildable from current sources. A model change
 does not make old vectors eligible for the new query encoder.
 
+Sources without a searchable document under the selected identity are claimed
+first. Refreshes of documents that are still searchable wait behind them, so an
+edit made during a bulk rebuild is not queued behind the whole population.
+
+### Full rebuild under the selected identity
+
+To re-derive every current document without changing the selection or
+restarting the API, an unscoped local operator queues the whole population for
+the running indexer:
+
+```sh
+printf '{"request_id":"%s","reason":"%s"}' "$(uuidgen)" "full semantic rebuild" |
+  cairn semantic-requeue
+```
+
+The command reports `eligible`, `queued` and `already_queued`. It names no model.
+The indexer embeds each job with its own worker and replaces that source's
+document in the transaction that publishes the successor. Existing documents
+therefore stay searchable throughout, and coverage never drops. One statement
+adds every absent job, so an interrupted call queues all or nothing. A repeated
+call adds only the jobs that are missing and leaves pending, leased and
+backed-off jobs as they are. If the API stops mid-rebuild, the jobs remain in
+place. A stranded lease becomes due again after two minutes, and the restarted
+indexer finishes the queue. The rebuild is complete when no job remains and
+every current document's `indexed_at` is later than the requeue.
+
 ## Model and process ownership
 
 The prepared local CPU model is `BAAI/bge-small-en-v1.5` through FastEmbed 0.8.0.
