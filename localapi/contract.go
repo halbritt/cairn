@@ -11,6 +11,13 @@ func RemoteOperation(operation string) (allowed, classified bool) {
 	return spec.RemoteAllowed, true
 }
 
+// RemoteSessionOperation reports whether a remote agent profile may call the
+// operation only for its own verified agent session (session headers).
+func RemoteSessionOperation(operation string) bool {
+	spec, ok := LookupOperation(operation)
+	return ok && !spec.RemoteAllowed && spec.RemoteSessionAllowed
+}
+
 // RemoteRoleOperations lists the only operations a remote profile whose role
 // is not "agent" may call. serveHTTP enforces the same rule; conformance tests
 // check that the two agree.

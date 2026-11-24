@@ -24854,8 +24854,10 @@
           "agent",
           "observer"
         ],
-        "x-cairn-remote": "denied",
-        "x-cairn-remote-roles": [],
+        "x-cairn-remote": "session",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
         "x-cairn-request-limit-bytes": 131072,
         "x-cairn-requires-local-destination": false,
         "x-cairn-retry": "no-key",

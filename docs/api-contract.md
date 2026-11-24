@@ -45,7 +45,8 @@ inventory is involved.
   set is open: clients must treat any unknown code as a refusal with that code.
 - **Classifications.** For each operation the contract records:
   - `x-cairn-remote`: the live remote allowlist, read through
-    `localapi.RemoteOperation`.
+    `localapi.RemoteOperation` and `localapi.RemoteSessionOperation`:
+    `allowed`, `denied`, or `session` (allowed only with session headers).
   - `x-cairn-remote-roles`: the roles a remote profile may call it with.
   - `x-cairn-local-roles`: the roles a local (non-remote) profile may call it with.
   - `x-cairn-requires-local-destination`: the entry's `RequiresLocalDestination`
@@ -180,8 +181,11 @@ accounting and retry semantics.
     profiles with 403.
 - **Remote profiles.** A profile marked remote may call only operations whose
   `x-cairn-remote` is `allowed`, and only with a role listed in
-  `x-cairn-remote-roles`. This is enforced on both the network listener and the
-  Unix socket. The network listener refuses every profile that is not remote.
+  `x-cairn-remote-roles`. An operation marked `session` (`event-next`) is
+  allowed only when both session headers are present. The session must be
+  registered to that remote profile and current, otherwise the call returns
+  `NOT_FOUND` or `STALE_SESSION`. Without them it returns 403. This is
+  enforced on both the network listener and the Unix socket. The network listener refuses every profile that is not remote.
 - **Session headers.** `Cairn-Agent-ID` and `Cairn-Execution-ID` together act as
   a registered session's inbox. A replaced or restored execution gets
   `STALE_SESSION`. The headers are forbidden on `agent-*` directory operations,

@@ -75,7 +75,7 @@ func TestEveryOperationIsFullyClassified(t *testing.T) {
 			t.Errorf("%s: retry class %v is undefined", name, op["x-cairn-retry"])
 		}
 		switch op["x-cairn-remote"] {
-		case "allowed", "denied":
+		case "allowed", "denied", "session":
 		default:
 			t.Errorf("%s: remote classification %v", name, op["x-cairn-remote"])
 		}
@@ -89,7 +89,7 @@ func TestEveryOperationIsFullyClassified(t *testing.T) {
 			t.Errorf("%s retry = %v, want %s", name, got, want)
 		}
 	}
-	for name, want := range map[string]string{"register-context": "denied", "event-next": "denied", "event-complete": "allowed", "version": "allowed", "session-tool-capture": "denied"} {
+	for name, want := range map[string]string{"register-context": "denied", "event-next": "session", "event-retry": "denied", "event-complete": "allowed", "version": "allowed", "session-tool-capture": "denied"} {
 		if got := ops[name]["x-cairn-remote"]; got != want {
 			t.Errorf("%s remote = %v, want %s", name, got, want)
 		}

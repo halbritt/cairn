@@ -43,9 +43,14 @@ func Build(source *Source) (Document, error) {
 				remote = "unclassified"
 			} else if allowed {
 				remote = "allowed"
+			} else if localapi.RemoteSessionOperation(operation) {
+				remote = "session"
 			}
 			roles := []string{"agent", "observer"}
 			remoteRoles := []string{}
+			if remote == "session" {
+				remoteRoles = []string{"agent"}
+			}
 			if remote == "allowed" {
 				remoteRoles = []string{"agent"}
 				for _, other := range localapi.RemoteRoleOperations() {

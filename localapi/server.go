@@ -176,7 +176,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		writeError(w, 403, "AUTHORITY_DENIED", "network API requires a remote machine profile")
 		return
 	}
-	if c.remote && (!hasOp || !opSpec.RemoteAllowed || (c.role != "agent" && !opSpec.RemoteObserverAllowed)) {
+	remoteSession := r.Header.Get("Cairn-Agent-ID") != "" && r.Header.Get("Cairn-Execution-ID") != ""
+	if c.remote && (!hasOp || !(opSpec.RemoteAllowed || (opSpec.RemoteSessionAllowed && remoteSession)) || (c.role != "agent" && !opSpec.RemoteObserverAllowed)) {
 		noteKnownOpRefusal("AUTHORITY_DENIED", 403)
 		writeError(w, 403, "AUTHORITY_DENIED", "operation is unavailable to remote machine profiles")
 		return

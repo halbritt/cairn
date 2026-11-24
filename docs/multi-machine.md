@@ -161,7 +161,10 @@ worker and wake operations, managed-context registration, remote process
 wrapping, cancellation capture, exclusive turns, and use/outcome recording
 (`delivery`, `outcome`, `assess-run`, reports). Lifecycle hooks that record uses
 and outcomes therefore get `AUTHORITY_DENIED` on a joining machine. Memory
-search, notes, the directory, native inbox delivery, completion, replies,
+search, notes, the directory, native inbox delivery, draining your own session
+inbox (`event-next` with that session's agent and execution IDs; `cairn inbox
+next --agent-id ... --execution-id ...` and lifecycle `inbox drain`),
+completion, replies,
 self-scoped pressure/fanout/admission-preview (`event-pressure`, `event-fanout`,
 `event-admission-preview`), inbox closure inspection and explicit reply closing
 (`closures`, `close-replies`), and quiet-notice queue inspection/flush

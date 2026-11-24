@@ -27,11 +27,18 @@ type OperationSpec struct {
 	LocalDestinationMessage  string
 	RemoteAllowed            bool
 	RemoteObserverAllowed    bool
-	RequestBodyLimit         int64
-	RetryClass               string
-	RequestType              reflect.Type
-	ResponseType             reflect.Type
-	serve                    func(*Server, http.ResponseWriter, *http.Request, client)
+	// RemoteSessionAllowed admits a remote machine profile only when the
+	// request names an agent session in both Cairn-Agent-ID and
+	// Cairn-Execution-ID. The store then verifies that the session is
+	// registered to that profile and current before any effect, so the
+	// caller reaches only its own session inbox. It never widens a
+	// base-profile (session-free) remote call.
+	RemoteSessionAllowed bool
+	RequestBodyLimit     int64
+	RetryClass           string
+	RequestType          reflect.Type
+	ResponseType         reflect.Type
+	serve                func(*Server, http.ResponseWriter, *http.Request, client)
 	// invoke runs the operation outside HTTP on one raw JSON request. Only
 	// operations whose implementation needs no server or transport state
 	// (bindStore, bindDestination) declare it; handler-shaped operations
