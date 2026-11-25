@@ -1,6 +1,6 @@
 # Swarm view design
 
-Status: **proposed, awaiting owner approval** (CAIRN-827, parent CAIRN-826).
+Status: **approved by the owner on 2026-11-25, with every recommendation accepted** (CAIRN-827, parent CAIRN-826).
 Baseline `4b310f9e`. This document is the design pass that the owner required on
 2026-11-06 before further work on a browser view. It records no implementation.
 
@@ -228,7 +228,7 @@ owner uses an action. It adds no hook, no subscription and no recall source.
 An owner action produces one ordinary event to the addressed agent, which the
 owner chose to send. CAIRN-837 measures this on a real swarm.
 
-## Decisions for the owner
+## Owner decisions (accepted 2026-11-25)
 
 1. **Where it is served.** Recommended: `cairn swarm serve`, a separate
    loopback process in the same binary, run as a user unit.
@@ -244,10 +244,12 @@ owner chose to send. CAIRN-837 measures this on a real swarm.
    `agent_team_member.role_label`.
 7. **Activate `coordination-waits/1`** on the live store.
 
+The fate of the other work features (decision 3) is CAIRN-840.
+
 Deferred, with no work: whether to revisit orchestration inside Cairn after
 Striatum-next lands.
 
-## Changes to the work items on approval
+## Changes made to the work items
 
 - CAIRN-828: the two columns of decision 6, on `cairn team`.
 - CAIRN-829: `cairn swarm serve`, the token-file login, the stream and its two
