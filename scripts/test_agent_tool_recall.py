@@ -308,31 +308,20 @@ class AgentToolRecallTests(unittest.TestCase):
 
 
 class RecallModeInstallerTests(unittest.TestCase):
-    def test_all_installers_preserve_mode_when_omitted_and_allow_explicit_ambient(self):
-        for name in ('claude', 'codex', 'opencode', 'hermes'):
+    def test_hermes_installer_preserves_mode_when_omitted_and_allows_explicit_ambient(self):
+        # The direct Claude/Codex/OpenCode memory-hook installers are retired;
+        # staged generations select recall_mode in their rendered configs.
+        for name in ('hermes',):
             with self.subTest(installer=name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 config = dict(cairn='fixture', claude='fixture', socket='fixture', token_file='fixture', repo='fixture')
-                filename = 'install-hermes-integration.py' if name == 'hermes' else f'install-{name}-hooks.py'
-                installer = module('mode_' + name, ROOT / 'scripts' / filename)
-                config_path = root / ('cairn/engine.json' if name == 'hermes' else 'dest/config.json')
-                if name in ('claude', 'codex'):
-                    if name == 'codex':
-                        trust = patch.object(installer, 'trust')
-                        trust.start()
-                        self.addCleanup(trust.stop)
-                    def install(**kwargs):
-                        installer.install(root / 'settings.json', root / 'dest', config, **kwargs)
-                elif name == 'opencode':
-                    (root / 'cairn.json').write_text(json.dumps(dict(executable='fixture', socket='fixture', token_file='fixture', repo='fixture')))
-                    def install(**kwargs):
-                        installer.install(root, root / 'dest', 'fixture', **kwargs)
-                else:
-                    skill = root / 'SKILL.md'
-                    skill.write_text('Selected fixture skill.')
-                    def install(**kwargs):
-                        installer.install(root, dict(executable='fixture', socket='fixture', token_file='fixture', repo='fixture'),
-                                          'fixture', skill, **kwargs)
+                installer = module('mode_' + name, ROOT / 'scripts' / 'install-hermes-integration.py')
+                config_path = root / 'cairn/engine.json'
+                skill = root / 'SKILL.md'
+                skill.write_text('Selected fixture skill.')
+                def install(**kwargs):
+                    installer.install(root, dict(executable='fixture', socket='fixture', token_file='fixture', repo='fixture'),
+                                      'fixture', skill, **kwargs)
                 install()
                 self.assertNotIn('recall_mode', json.loads(config_path.read_text()))
                 install(recall_mode='agent_tools')

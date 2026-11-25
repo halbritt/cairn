@@ -66,17 +66,5 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(result, {})
 
 
-class InstallerTests(unittest.TestCase):
-    def test_claude_installer_caps_the_budget_below_claude_codes_limit(self):
-        claude = module("install_claude_budget", ROOT / "scripts/install-claude-hooks.py")
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            base = dict(cairn="/bin/cairn", claude="/bin/claude", socket="/s", token_file="/t", repo="shared")
-            claude.install(root / "settings.json", root / "dest", base)
-            installed = json.loads((root / "dest" / "config.json").read_text())
-            self.assertEqual(installed["context_bytes"], 9500)
-            self.assertEqual(hook.context_budget(installed), 9500)
-
-
 if __name__ == "__main__":
     unittest.main()

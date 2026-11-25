@@ -17,7 +17,6 @@ def module(name, path):
 
 
 hook = module("cairn_lifecycle_codex", ROOT / "integrations/lifecycle/memory.py")
-installer = module("install_codex_hooks", ROOT / "scripts/install-codex-hooks.py")
 coordination = module("capture_coordination", ROOT / "integrations/lifecycle/coordination.py")
 SESSION = "01a0d0ea-3941-74b1-812a-ec349e878da4"  # Codex session IDs are UUIDv7
 
@@ -449,53 +448,6 @@ class CodexHookTests(unittest.TestCase):
         result = dict(status="READY", destination=dict(name="hosted"), selected=[], index=[])
         with patch.object(hook.Memory, "call", return_value=result):
             self.assertEqual(hook.handle(self.config, dict(self.event, hook_event_name="SessionStart", source="startup")), {})
-
-
-class CodexInstallerTests(unittest.TestCase):
-    def test_compact_context_capability_is_opt_in_preserved_and_reversible(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(installer, 'trust'):
-            root = Path(directory)
-            hooks = root / 'hooks.json'
-            dest = root / 'dest'
-            config = dict(cairn='/bin/cairn', claude='/bin/claude', socket='/s', token_file='/t', repo='shared')
-            with self.assertRaisesRegex(ValueError, 'agent_tools'):
-                installer.install(hooks, dest, config, context_lifecycle='compact/1')
-            self.assertFalse(hooks.exists())
-            installer.install(hooks, dest, config, recall_mode='agent_tools', context_lifecycle='compact/1')
-            installed = dest / 'config.json'
-            self.assertEqual(json.loads(installed.read_text())['context_lifecycle'], 'compact/1')
-            installer.install(hooks, dest, config)
-            self.assertEqual(json.loads(installed.read_text())['context_lifecycle'], 'compact/1')
-            installer.install(hooks, dest, config, context_lifecycle='full')
-            self.assertNotIn('context_lifecycle', json.loads(installed.read_text()))
-
-    def test_installer_merges_hooks_preserves_coordination_and_is_idempotent(self):
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory)
-            hooks_path = home / "hooks.json"
-            coordination = {"type": "command", "command": "python3 coordination.py hook --config codex-one.json", "timeout": 15}
-            hooks_path.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [coordination]}], "SessionStart": [{"hooks": [coordination]}]}}))
-            config = dict(cairn="/bin/cairn", claude="/bin/claude", socket="/s", token_file="/t", repo="shared", model="claude-sonnet-5")
-            trusted = []
-            with patch.object(installer, "trust", side_effect=lambda home_, path, command: trusted.append(command)):
-                first = installer.install(hooks_path, home / "dest", config)
-                second = installer.install(hooks_path, home / "dest", config)
-            self.assertEqual(first, second)
-            self.assertEqual(len(trusted), 2)
-            data = json.loads(hooks_path.read_text())["hooks"]
-            for event, spec in installer.EVENTS.items():
-                ours = [h for g in data[event] for h in g["hooks"] if h["command"] == first]
-                self.assertEqual(len(ours), 1, f"{event} not installed exactly once")
-                self.assertEqual(ours[0].get("async", False), spec.get("async", False))
-            self.assertIn(coordination, [h for g in data["Stop"] for h in g["hooks"]])
-            self.assertIn(coordination, [h for g in data["SessionStart"] for h in g["hooks"]])
-            self.assertNotIn("SessionEnd", installer.EVENTS, "SessionEnd allows too little time for capture")
-            self.assertTrue(installer.EVENTS["Stop"]["async"])
-            installed = json.loads((home / "dest" / "config.json").read_text())
-            self.assertEqual(installed["harness"], "codex")
-            self.assertTrue(installed["semantic_fallback"])
-            self.assertTrue((home / "dest" / "lifecycle.py").exists())
-            self.assertTrue((home / "hooks.json.before-cairn-lifecycle").exists())
 
 
 if __name__ == "__main__":

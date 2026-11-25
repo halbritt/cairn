@@ -38,8 +38,8 @@ does not repair fixtures or production configuration.
 ## Source operations and observation boundary
 
 The existing source event tables are in the
-[Claude installer](../../scripts/install-claude-hooks.py),
-[Codex installer](../../scripts/install-codex-hooks.py),
+[Claude installer](https://github.com/halbritt/cairn/blob/c0c6ddce699b474d1d31b93fe5705c9c0688afb9/scripts/install-claude-hooks.py),
+[Codex installer](https://github.com/halbritt/cairn/blob/c0c6ddce699b474d1d31b93fe5705c9c0688afb9/scripts/install-codex-hooks.py),
 [OpenCode plugin](../../integrations/opencode/lifecycle.ts),
 [Hermes provider](../../integrations/hermes/__init__.py) and
 [coordination frontend](../../integrations/lifecycle/coordination.py).

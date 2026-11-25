@@ -429,31 +429,17 @@ No database or MCP server upgrade is needed.
 
 ## Install
 
-From the Cairn checkout, with `cairn`, `claude` and Python 3.11+ installed:
-
-```sh
-python3 scripts/install-claude-hooks.py
-```
-
-The installer copies the hook into `~/.local/share/cairn/claude-hooks` and merges
-its six command hooks into Claude's user `settings.json`. It preserves existing
-hooks, permissions and unrelated settings, and keeps the first settings backup
-as `settings.json.before-cairn-lifecycle`. Start a fresh Claude session afterward.
-Rerunning the same command updates this installation without duplicating hooks.
-
-`--settings` selects another Claude profile. `--destination` selects a separate
-hook installation when profiles need different models or connection settings.
-The default settings location honors `CLAUDE_CONFIG_DIR`. The extraction model is
-the selected profile's configured model at installation; rerun the installer
-after changing that setting. If no model is configured, Claude selects its default.
-`--socket`, `--token-file` and `--repo` select an existing ordinary hosted profile
-and collection. The installer never provisions credentials or changes policy.
+Install these hooks by staging a lifecycle generation and publishing its hook
+rows; see [lifecycle staging](operator/lifecycle-staging.md). The direct installer `scripts/install-claude-hooks.py`,
+which copied the Python engine into `~/.local/share/cairn/claude-hooks`, was
+retired in CAIRN-311. Staged rows run the checked Go launcher; only the bound
+cells that have no Go route still run the retained Python caller.
 
 To disable hooks for one launch, set `CAIRN_LIFECYCLE_DISABLED=1`. A
 `.cairn-no-memory` file in the working directory, or in any directory above it, disables both
-retrieval and capture there (the [one marker rule](native-inbox.md#privacy-markers-and-hook-admission)). To uninstall, remove this installation's commands from the six
-hook lists; leave other hooks intact. Do not restore the entire backup over newer
-settings changes.
+retrieval and capture there (the [one marker rule](native-inbox.md#privacy-markers-and-hook-admission)).
+To uninstall, reverse the published settings with `publish-settings`; leave
+other hooks intact.
 
 ## Selected capture
 

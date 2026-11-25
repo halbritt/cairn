@@ -65,34 +65,15 @@ Replace `/home/USER` with your absolute home directory. JSON does not expand
 }
 ```
 
-## Install the dispatcher
+## Installation status
 
-1. Install the reviewed candidate engine in its own directory, not over the
-   shared one. For example, copy main's `integrations/lifecycle/memory.py` to
-   `~/.local/share/cairn/claude-hooks-candidate/lifecycle.py`. Write its
-   `config.json` as a copy of `~/.local/share/cairn/claude-hooks/config.json`
-   with only the recall keys changed (for example `"recall_mode": "agent_tools"`).
-   Keep `repo`, `socket`, `token_file` and `state_dir` identical.
-2. Write the route file, for example
-   `~/.local/share/cairn/claude-hooks/recall-route.json`, listing only the
-   target session IDs.
-3. Wrap the recall hooks, passing the existing command exactly as it appears in
-   `~/.claude/settings.json`:
-
-   ```sh
-   python3 scripts/install-recall-dispatch.py install \
-     --settings ~/.claude/settings.json \
-     --dest ~/.local/share/cairn/claude-hooks \
-     --route ~/.local/share/cairn/claude-hooks/recall-route.json \
-     --original '/usr/bin/python3 /home/USER/.local/share/cairn/claude-hooks/lifecycle.py --config /home/USER/.local/share/cairn/claude-hooks/config.json'
-   ```
-
-   The installer refuses an invalid route file, and refuses unless the original
-   command appears exactly once on each of the two recall events. It keeps
-   `settings.json.before-recall-dispatch`.
-4. Claude reads hook settings at session start. Already-running targeted
-   sessions need a restart or resume to load the changed settings. The route
-   file itself is read on every event.
+The settings installer `scripts/install-recall-dispatch.py` was retired in
+CAIRN-311. It wrapped the direct Python engine command that the retired Claude
+memory-hook installer wrote. Staged generations publish checked Go launchers,
+which this dispatcher cannot wrap. `recall_dispatch.py` stays in the source
+tree only as one of the 17 `/1` closure members
+(`lifecycle_bundle.py:MODULE_FILES`); removing it would change that reviewed
+inventory. No installed hook runs it.
 
 ## Existing Codex sessions
 
@@ -133,18 +114,8 @@ measurement criterion, not a configured deadline in this dispatcher.
 
 - **Stop routing immediately, settings untouched:** delete or rename the route
   file. Every session then gets the original command on its next event.
-- **Remove the wrapper:**
-
-  ```sh
-  python3 scripts/install-recall-dispatch.py rollback \
-    --settings ~/.claude/settings.json --dest ~/.local/share/cairn/claude-hooks
-  ```
-
-  This re-reads settings and restores the exact original command only in hooks
-  that run this dispatcher. It leaves other hooks, events and settings,
-  including edits made since install, unchanged. Do not restore
-  `settings.json.before-recall-dispatch` wholesale if anything else may have
-  changed since.
+- **Remove the wrapper:** restore the exact original command in the two recall
+  hooks by hand. The rollback installer was retired with the install path.
 
 ## Residual risks
 

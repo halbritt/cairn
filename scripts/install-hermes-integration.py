@@ -8,13 +8,86 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('claude_installer', ROOT / 'scripts/install-claude-hooks.py')
-shared = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(shared)
+_bundle_spec = importlib.util.spec_from_file_location('cairn_lifecycle_bundle_installer', ROOT / 'integrations/lifecycle/lifecycle_bundle.py')
+bundle = importlib.util.module_from_spec(_bundle_spec)
+_bundle_spec.loader.exec_module(bundle)
+
+
+# Engine-config retention helpers. They were shared with the retired direct
+# Claude/Codex/OpenCode memory-hook installers; Hermes is their only caller.
+def retain_model_overrides(config, existing_path, preview_model=None, recall_model=None):
+    existing = json.loads(existing_path.read_text()) if existing_path.exists() else {}
+    result = dict(config)
+    for key, supplied in (("preview_model", preview_model), ("recall_model", recall_model)):
+        if supplied is None and key not in existing:
+            continue
+        value = supplied if supplied is not None else existing.get(key)
+        if (not isinstance(value, str) or not value or value != value.strip()
+                or len(value) > 256
+                or any(char.isspace() or ord(char) < 32 or 127 <= ord(char) <= 159 for char in value)):
+            raise ValueError(f"invalid lifecycle {key}: expected a nonempty model name without whitespace or controls")
+        result[key] = value
+    return result
+
+
+def retain_recall_mode(config, existing_path, recall_mode=None):
+    existing = json.loads(existing_path.read_text()) if existing_path.exists() else {}
+    result = dict(config)
+    if recall_mode is None and 'recall_mode' not in config and 'recall_mode' not in existing:
+        return result  # Absence retains the ambient default.
+    mode = recall_mode if recall_mode is not None else config.get('recall_mode', existing.get('recall_mode'))
+    if mode not in ('ambient', 'agent_tools'):
+        raise ValueError('invalid lifecycle recall_mode: expected ambient or agent_tools')
+    result['recall_mode'] = mode
+    return result
+
+
+def retain_capture_observations(config, existing_path):
+    existing = json.loads(existing_path.read_text()) if existing_path.exists() else {}
+    result = dict(config)
+    value = result.get('capture_observations', existing.get('capture_observations'))
+    if value is not None:
+        if type(value) is not bool:
+            raise ValueError('capture_observations must be a boolean')
+        result['capture_observations'] = value
+    return result
+
+
+def retain_inbox_binding(config, existing_path):
+    """Require a disabled binding before an explicit installed-runtime upgrade."""
+    existing = json.loads(existing_path.read_text()) if existing_path.exists() else {}
+    result = dict(existing)
+    result.update(config)
+    if "state_dir" in existing:
+        result["state_dir"] = existing["state_dir"]
+    binding = existing.get("inbox_recall_binding") or result.get("inbox_recall_binding")
+    if binding:
+        if result.get("inbox_recall_binding", binding) != binding:
+            raise ValueError("lifecycle reinstall cannot replace the recall binding")
+        manifest = json.loads(Path(binding).read_text())
+        if manifest.get("enabled") is not False:
+            raise ValueError("disable the recall binding before reinstalling; repin and validate before re-enabling")
+        result["inbox_recall_binding"] = binding
+    return result
+
+
+def write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as out:
+        temporary = Path(out.name)
+        try:
+            json.dump(value, out, indent=2, ensure_ascii=False)
+            out.write("\n")
+            out.close()
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
 
 
 def selected_memory(selection, stager):
@@ -77,16 +150,16 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
             raise ValueError(f'missing Cairn profile field: {key}')
     selected = selected_memory(lifecycle_selection, stager) if lifecycle_selection is not None else None
     engine_path = home / 'cairn/engine.json'
-    model_overrides = shared.retain_model_overrides({}, engine_path, preview_model, recall_model)
-    model_overrides = shared.retain_recall_mode(model_overrides, engine_path, recall_mode)
-    model_overrides = shared.retain_capture_observations(model_overrides, engine_path)
-    model_overrides = shared.retain_inbox_binding(model_overrides, engine_path)
+    model_overrides = retain_model_overrides({}, engine_path, preview_model, recall_model)
+    model_overrides = retain_recall_mode(model_overrides, engine_path, recall_mode)
+    model_overrides = retain_capture_observations(model_overrides, engine_path)
+    model_overrides = retain_inbox_binding(model_overrides, engine_path)
     plugin = home / 'plugins/cairn'
     plugin.mkdir(parents=True, exist_ok=True, mode=0o700)
     for source, target in [(ROOT / 'integrations/hermes/__init__.py', plugin / '__init__.py'),
                            (ROOT / 'integrations/hermes/controls.py', plugin / 'controls.py')]:
         shutil.copyfile(source, target)
-    runtime = shared.bundle.stage_runtime(ROOT / 'integrations/lifecycle', plugin)
+    runtime = bundle.stage_runtime(ROOT / 'integrations/lifecycle', plugin)
     commands = home / 'plugins/cairn-controls'
     commands.mkdir(parents=True, exist_ok=True, mode=0o700)
     for source, name in [('commands.py', '__init__.py'), ('controls.py', 'controls.py'), ('commands-plugin.yaml', 'plugin.yaml')]:
@@ -102,8 +175,8 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
     if native.get('context'):
         engine['context'] = native['context']
     if selected is None:
-        shared.write_json(engine_path, dict(model_overrides, **engine))
-    shared.write_json(home / 'cairn-lifecycle.json', selected if selected is not None else
+        write_json(engine_path, dict(model_overrides, **engine))
+    write_json(home / 'cairn-lifecycle.json', selected if selected is not None else
                       dict(script=str(plugin / 'memory.py'), engine_config=str(engine_path)))
     skill_dir = home / 'skills/cairn'
     skill_dir.mkdir(parents=True, exist_ok=True)
@@ -120,14 +193,14 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
         backup.write_bytes(original)
         backup.chmod(0o600)
     # Use the existing atomic writer: JSON is also valid YAML and preserves values.
-    shared.write_json(path, config)
+    write_json(path, config)
     revision, modified = None, None
     try:
         revision = subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True,stderr=subprocess.DEVNULL,timeout=5).strip()
         modified = bool(subprocess.check_output(['git','-C',str(ROOT),'status','--porcelain'],text=True,stderr=subprocess.DEVNULL,timeout=5))
     except (OSError,subprocess.SubprocessError):
         pass  # An archive install has hashes but no verified Git identity.
-    shared.write_json(home / 'cairn/installed.json', {
+    write_json(home / 'cairn/installed.json', {
         'schema': 'cairn.hermes-install/1',
         'source_revision': revision, 'source_modified': modified,
         'selected_memory': selected,

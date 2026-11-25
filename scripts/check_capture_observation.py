@@ -201,10 +201,6 @@ def check(binary, directory):
         for path in state_dir.glob("*.json"):
             assert "RAW_DIALOGUE_SENTINEL" not in path.read_text()
             assert "RAW_SELECTOR_SENTINEL" not in path.read_text()
-        claude = os.environ.get("CAIRN_CLAUDE_BINARY")
-        if claude:
-            from check_claude_capture_observation_native import check as check_native_capture
-            check_native_capture(claude, binary, root, repo, agent)
         codex = os.environ.get("CAIRN_CODEX_BINARY")
         if codex:
             from check_codex_capture_observation_native import check as check_native_codex_capture

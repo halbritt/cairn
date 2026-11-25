@@ -2,24 +2,15 @@
 
 The optional native plugin uses Cairn's shared lifecycle engine for selective
 retrieval, separate durable notes, named workstreams and unchanged-capture
-suppression. Install it beside the existing native Cairn tools:
-
-```sh
-python3 scripts/install-opencode-hooks.py
-```
-
-It reads `~/.config/opencode/cairn.json`, copies its connection, declared scope
-and context settings, and installs `plugins/cairn-lifecycle.ts` plus
-`cairn-lifecycle.json`. The Python engine and session metadata live in
-`~/.local/share/cairn/opencode-hooks`. Existing tools, permissions and other
-plugins remain intact. Rerun after changing the native connection settings.
-If `cairn opencode-install --project "$PWD"` created a project-local
-`.opencode/cairn.json`, pass `--config-dir "$PWD/.opencode"` to read that
-connection instead. `--destination` supports a separate plugin installation.
-The selector uses installed Claude with its existing provider credentials; `--claude` and
-`--model` select that executable and model. The default model comes from the
-primary Claude profile at installation. This does not switch OpenCode's task model.
-Start a fresh OpenCode process after installation or update.
+suppression. Install it beside the existing native Cairn tools by staging a
+lifecycle generation and publishing its OpenCode plugin rows; see
+[lifecycle staging](operator/lifecycle-staging.md). The direct installer `scripts/install-opencode-hooks.py`, which
+copied the Python engine into `~/.local/share/cairn/opencode-hooks`, was
+retired in CAIRN-311. Unbound OpenCode memory runs the checked Go launcher.
+Bound OpenCode memory has no Go route, so a generation that selects it is
+`/1` and runs the retained Python caller. The selector uses installed Claude
+with its existing provider credentials. This does not switch OpenCode's task
+model. Start a fresh OpenCode process after installation or update.
 
 Installation explicitly enables ordinary hosted lifecycle reads and selected
 writes. They run independently of model-selected memory tools; native tools keep

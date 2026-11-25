@@ -23,7 +23,8 @@ def module(name, path):
 
 
 hook = module("cairn_lifecycle", ROOT / "integrations/lifecycle/memory.py")
-installer = module("install_claude_hooks", ROOT / "scripts/install-claude-hooks.py")
+# Engine-config retention now lives with its only remaining caller, Hermes.
+engine_config = module("hermes_engine_config", ROOT / "scripts/install-hermes-integration.py")
 
 
 class LifecycleTests(unittest.TestCase):
@@ -105,30 +106,21 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotIn("CLAUDECODE", kwargs["env"])
         self.assertEqual(json.loads(kwargs["body"]), {"request": "fixture"})
 
-    def test_installer_retains_optional_models_on_reinstall(self):
-        settings = self.root / "settings.json"
-        destination = self.root / "installed"
-        installer.install(settings, destination, self.config, preview_model="first", recall_model="second")
-        installer.install(settings, destination, self.config)
-        config = json.loads((destination / "config.json").read_text())
-        self.assertEqual((config["preview_model"], config["recall_model"]), ("first", "second"))
+    def test_engine_config_retains_optional_models_and_capture_opt_in(self):
+        config_path = self.root / "engine.json"
+        config_path.write_text(json.dumps(engine_config.retain_model_overrides(self.config, config_path, "first", "second")))
+        retained = engine_config.retain_model_overrides(self.config, config_path)
+        self.assertEqual((retained["preview_model"], retained["recall_model"]), ("first", "second"))
         with self.assertRaisesRegex(ValueError, "preview_model"):
-            installer.install(settings, destination, self.config, preview_model=" ")
-
-    def test_capture_meter_opt_in_survives_reinstall(self):
-        settings = self.root / "settings.json"
-        destination = self.root / "installed"
-        installer.install(settings, destination, dict(self.config, capture_observations=True))
-        installer.install(settings, destination, self.config)
-        self.assertTrue(json.loads((destination / "config.json").read_text())["capture_observations"])
+            engine_config.retain_model_overrides(self.config, config_path, preview_model=" ")
+        config_path.write_text(json.dumps(dict(self.config, capture_observations=True)))
+        self.assertTrue(engine_config.retain_capture_observations(self.config, config_path)["capture_observations"])
         with self.assertRaisesRegex(ValueError, "capture_observations"):
-            installer.install(settings, destination, dict(self.config, capture_observations="true"))
+            engine_config.retain_capture_observations(dict(self.config, capture_observations="true"), config_path)
 
-    def test_invalid_model_overrides_fail_before_selector_or_installer_writes(self):
-        settings = self.root / "settings.json"
-        destination = self.root / "installed"
-        installer.install(settings, destination, self.config)
-        config_path = destination / "config.json"
+    def test_invalid_model_overrides_fail_before_selector_or_config_writes(self):
+        config_path = self.root / "engine.json"
+        config_path.write_text(json.dumps(self.config))
         for key in ("preview_model", "recall_model"):
             for value in (None, "haiku\u00a0extra", "haiku\u0085extra", "haiku\u0080extra"):
                 with self.subTest(key=key, value=value):
@@ -137,10 +129,10 @@ class LifecycleTests(unittest.TestCase):
                         hook.select_json(invalid, {}, "prompt", {}, stage="preview")
                     call.assert_not_called()
                     config_path.write_text(json.dumps(invalid))
-                    before = {p: p.read_bytes() for p in (settings, config_path, destination / "lifecycle.py")}
+                    before = config_path.read_bytes()
                     with self.assertRaisesRegex(ValueError, key):
-                        installer.install(settings, destination, self.config)
-                    self.assertEqual({p: p.read_bytes() for p in before}, before)
+                        engine_config.retain_model_overrides(self.config, config_path)
+                    self.assertEqual(config_path.read_bytes(), before)
 
     def test_excerpt_omits_tools_reasoning_and_sidechains_and_bounds_unicode(self):
         self.write_dialogue([
@@ -278,24 +270,6 @@ class LifecycleTests(unittest.TestCase):
             output = hook.recall(memory, dict(self.event, hook_event_name="UserPromptSubmit", prompt="startup failure"))
         self.assertIn("search again", output["hookSpecificOutput"]["additionalContext"])
         self.assertIn("preview", output["hookSpecificOutput"]["additionalContext"])
-
-    def test_installer_preserves_unrelated_settings_and_is_idempotent(self):
-        settings = self.root / "settings.json"
-        original = dict(model="chosen", permissions={"deny": ["Bash"]},
-                        hooks={"SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "existing"}]}]})
-        settings.write_text(json.dumps(original))
-        destination = self.root / "hook files"
-        installer.install(settings, destination, self.config)
-        first = settings.read_bytes()
-        installer.install(settings, destination, self.config)
-        self.assertEqual(settings.read_bytes(), first)
-        updated = json.loads(first)
-        self.assertEqual(updated["permissions"], original["permissions"])
-        self.assertEqual(updated["hooks"]["SessionStart"][0], original["hooks"]["SessionStart"][0])
-        self.assertEqual(json.loads(settings.with_name("settings.json.before-cairn-lifecycle").read_text()), original)
-        self.assertTrue(json.loads((destination / "config.json").read_text())["semantic_fallback"])
-        installer.install(settings, destination, dict(self.config, semantic_fallback=False))
-        self.assertFalse(json.loads((destination / "config.json").read_text())["semantic_fallback"])
 
     def test_weak_matches_omitted_and_delivered_versions_reset_with_context(self):
         memory = hook.Memory(self.config, "session-one")

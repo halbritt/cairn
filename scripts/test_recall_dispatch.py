@@ -1,5 +1,4 @@
 """recall_dispatch routes only allowlisted recall events and otherwise execs the original."""
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,9 +11,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 DISPATCH = ROOT / "integrations/lifecycle/recall_dispatch.py"
-spec = importlib.util.spec_from_file_location("install_recall_dispatch", ROOT / "scripts/install-recall-dispatch.py")
-installer = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(installer)
 
 # A fake engine: records its identity, argv, config and exact stdin, then exits
 # with FAKE_EXIT or waits for a signal.
@@ -153,72 +149,6 @@ class RecallDispatch(unittest.TestCase):
             self.assertIn(key, err)
         (self.root / "candidate/config.json").write_text("[]")
         self.assertIn("configs must be objects", self.run_hook("UserPromptSubmit", "ses-target")[2])
-
-
-class InstallRollback(unittest.TestCase):
-    def test_install_wraps_only_recall_hooks_and_rollback_restores_exact_commands(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            original = shlex.join([sys.executable, "/opt/claude-hooks/lifecycle.py", "--config", "/opt/claude-hooks/config.json"])
-            other = {"hooks": [{"type": "command", "command": "owner-hook", "timeout": 5}]}
-            hooks = {event: [other, {"hooks": [{"type": "command", "command": original, "timeout": 150 if event in ("PreCompact", "SessionEnd") else 13}]}]
-                     for event in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse", "PostToolUseFailure")}
-            settings = root / "settings.json"
-            settings.write_text(json.dumps({"model": "owner", "hooks": hooks}))
-            before = json.loads(settings.read_text())
-            route = root / "route.json"
-            route.write_text(json.dumps(dict(schema="cairn.recall-dispatch/1", sessions=["ses-target"], command=[sys.executable, "x.py"])))
-            self.assertEqual(installer.install(settings, root / "dest", route, original), 2)
-            self.assertEqual(installer.install(settings, root / "dest", route, original), 0)  # idempotent
-            after = json.loads(settings.read_text())
-            for event, groups in after["hooks"].items():
-                hook = groups[1]["hooks"][0]
-                self.assertEqual(groups[0], other)
-                self.assertEqual(hook["timeout"], before["hooks"][event][1]["hooks"][0]["timeout"])
-                if event in ("SessionStart", "UserPromptSubmit"):
-                    self.assertIn("recall_dispatch.py", hook["command"])
-                    self.assertTrue(hook["command"].endswith("-- " + original))
-                else:
-                    self.assertEqual(hook["command"], original)
-            # A concurrent unrelated edit survives rollback.
-            after["model"] = "changed-meanwhile"
-            after["hooks"]["Stop"] = [other]
-            settings.write_text(json.dumps(after))
-            self.assertEqual(installer.rollback(settings, root / "dest"), 2)
-            final = json.loads(settings.read_text())
-            self.assertEqual(final["model"], "changed-meanwhile")
-            self.assertEqual(final["hooks"]["Stop"], [other])
-            final["model"] = before["model"]
-            del final["hooks"]["Stop"]
-            self.assertEqual(final, before)
-            self.assertTrue((root / "settings.json.before-recall-dispatch").exists())
-
-    def test_install_refuses_invalid_route_or_missing_hooks(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            settings = root / "settings.json"
-            settings.write_text(json.dumps({"hooks": {}}))
-            route = root / "route.json"
-            route.write_text(json.dumps(dict(schema="cairn.recall-dispatch/1", sessions=["ses-*"], command=["x"])))
-            with self.assertRaises(installer.dispatch.DispatchError):
-                installer.install(settings, root / "dest", route, "python3 /x.py --config /c.json")
-            route.unlink()
-            with self.assertRaises(SystemExit):
-                installer.install(settings, root / "dest", route, "python3 /x.py --config /c.json")
-            self.assertEqual(json.loads(settings.read_text()), {"hooks": {}})
-
-    def test_duplicate_start_does_not_substitute_for_missing_prompt_hook(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            original = "python3 /x.py --config /c.json"
-            settings = root / "hooks.json"
-            settings.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [
-                {"command": original}, {"command": original}]}]}}))
-            before = settings.read_bytes()
-            with self.assertRaises(SystemExit):
-                installer.install(settings, root / "dest", root / "route.json", original)
-            self.assertEqual(settings.read_bytes(), before)
-            self.assertFalse((root / "dest").exists())
 
 
 if __name__ == "__main__":

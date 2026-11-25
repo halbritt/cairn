@@ -122,14 +122,9 @@ capture selection is unchanged. An omitted mode retains the existing default.
 
 An opt-in Codex `agent_tools` lifecycle trial restores one current unfinished
 workstream checkpoint after a compact or resume `SessionStart` when that turn's
-optional grant was already consumed. Enable it for a fresh session with:
-
-```sh
-python3 scripts/install-codex-hooks.py --recall-mode agent_tools --context-lifecycle compact/1
-```
-
-Reruns preserve the setting. Use
-`--context-lifecycle full` to return to the prior path. The trial uses current
+optional grant was already consumed. Enable it for a fresh session by staging a memory configuration with
+`"recall_mode": "agent_tools"` and `"context_lifecycle": "compact/1"`. Stage
+`"context_lifecycle": "full"` to return to the prior path. The trial uses current
 hosted search and an exact whole-source pull. It never credits a partial span,
 an older version, a completed checkpoint, or a body that fails the emission
 budget. When a named checkpoint cannot be confirmed, it gives a short current
@@ -183,23 +178,13 @@ directory across resumes. The identity contract is present in the
 
 ## Install
 
-From the Cairn checkout, with `cairn`, `claude` and Codex installed:
-
-```sh
-python3 scripts/install-codex-hooks.py                 # ~/.codex
-CODEX_HOME=~/.codex-harm python3 scripts/install-codex-hooks.py
-```
-
-The installer copies the engine to `~/.local/share/cairn/codex-hooks`. It
-merges four command hooks into the account's `hooks.json` and preserves
-existing hooks, including Cairn's coordination hooks. It keeps the first
-original as `hooks.json.before-cairn-lifecycle`. It then trusts exactly those
-four definitions through Codex's own app-server protocol, as the coordination
-installer does. Rerunning it updates the installation without duplicating
-hooks. New sessions load those definitions; existing conversations need the
-checks below. Put `.cairn-no-memory` in a project (it applies to every directory
-below it) to opt it out, or set
-`CAIRN_LIFECYCLE_DISABLED=1` for one run.
+Install these hooks by staging a lifecycle generation, publishing its hook
+rows and repeating Codex trust; see [lifecycle staging](operator/lifecycle-staging.md). The direct installer
+`scripts/install-codex-hooks.py`, which copied the Python engine into
+`~/.local/share/cairn/codex-hooks`, was retired in CAIRN-311. New sessions
+load the published definitions; existing conversations need the checks below.
+Put `.cairn-no-memory` in a project (it applies to every directory below it)
+to opt it out, or set `CAIRN_LIFECYCLE_DISABLED=1` for one run.
 
 ### Existing conversations
 
