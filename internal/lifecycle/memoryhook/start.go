@@ -562,7 +562,7 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 		}
 		return 1 + len(out)
 	}
-	reset := value.SameText(config.Get("context_lifecycle"), "compact/1") && (value.SameText(event.Get("source"), "compact") || value.SameText(event.Get("source"), "resume")) && state.Get("workstream") != nil && state.Get("workstream").Kind == value.String
+	reset := (config.Get("context_lifecycle") == nil || value.SameText(config.Get("context_lifecycle"), "compact/1")) && (value.SameText(event.Get("source"), "compact") || value.SameText(event.Get("source"), "resume")) && state.Get("workstream") != nil && state.Get("workstream").Kind == value.String
 	refresh := bound && value.SameText(event.Get("hook_event_name"), "SessionStart") && (value.Truth(grant.Get("granted")) || emitted > 0 || reset)
 	if bound {
 		if view.Destination.Name != "hosted" || view.Destination.AllowLocal {
@@ -598,7 +598,7 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 	if refresh {
 		requiredCost := cost(body)
 		checkpointReason := ""
-		if value.SameText(config.Get("context_lifecycle"), "compact/1") && (value.SameText(event.Get("source"), "compact") || value.SameText(event.Get("source"), "resume")) {
+		if (config.Get("context_lifecycle") == nil || value.SameText(config.Get("context_lifecycle"), "compact/1")) && (value.SameText(event.Get("source"), "compact") || value.SameText(event.Get("source"), "resume")) {
 			var workstream *string
 			if v := state.Get("workstream"); v != nil && v.Kind == value.String {
 				title := text(v)

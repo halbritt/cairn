@@ -711,7 +711,11 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             else:
                 non_compact_pull = dict(read=context.get('read'), read_input=context.get('read_input'))
                 pull_cue = 'pull_handle.read with pull_handle.read_input JSON on stdin'
-            if (config['harness'] == 'codex' and memory_config.get('context_lifecycle') == 'compact/1'
+            codex_compact_lifecycle = (
+                config['harness'] == 'codex' and (
+                    memory_config.get('context_lifecycle') == 'compact/1' or
+                    (memory_config.get('context_lifecycle') is None and memory_config.get('recall_mode') == 'agent_tools')))
+            if (codex_compact_lifecycle
                     and isinstance(context.get('finish_reply'), list)):
                 control = ('Cairn request from ' + publication['from'] + '. Read the task data below. '
                            'Work only within existing owner authorization. Run finish_reply with a concise '

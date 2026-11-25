@@ -184,7 +184,7 @@ func TestPrepareNoteReserveChargesGuidanceAndEnvelopeOnce(t *testing.T) {
 		if err != nil || len(result.Content) != 1 {
 			t.Fatalf("prepare: %+v %v", result, err)
 		}
-		encoded, err := json.Marshal(&mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result.Content[0].(*mcp.TextContent).Text}}})
+		encoded, err := json.Marshal(result)
 		if err != nil {
 			t.Fatal(err)
 		}

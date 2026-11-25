@@ -573,7 +573,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if err = json.Unmarshal(viewBytes, &view); err != nil {
 		t.Fatal(err)
 	}
-	if view.Schema != "cairn.mcp-search/1" || view.SourceSeal == "" || len(view.Index) != 1 || view.Index[0].RecordID != record.RecordID || len(view.Selected) != 1 || view.Selected[0].Record.RecordID != mandatory.RecordID || view.Scope.TaskID != "build" || view.Destination.Name != "hosted" {
+	if view.Schema != "cairn.mcp-search-compact/1" || view.SourceSeal == "" || len(view.Index) != 1 || view.Index[0].RecordID != record.RecordID || len(view.Selected) != 1 || view.Selected[0].Record.RecordID != mandatory.RecordID || view.Scope.TaskID != "build" || view.Destination.Name != "hosted" {
 		t.Fatalf("search: %s", viewBytes)
 	}
 	for _, invalid := range []searchArgs{{}, {Query: " "}, {Browse: true, Query: "socketguide"}, {Browse: true, ErrorSignature: strings.Repeat("b", 64)}} {

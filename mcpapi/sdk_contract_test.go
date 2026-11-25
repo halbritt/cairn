@@ -12,7 +12,7 @@ import (
 )
 
 func TestSDKNativeAdvertisesAuthoritativeRetrievalContract(t *testing.T) {
-	server, err := NewServer(nil, Config{Scope: core.Scope{Repo: "contract", TaskID: "contract", RunID: "contract"}, AvailableTokens: 32000, MaxTokens: 32000})
+	server, err := NewServer(nil, Config{Scope: core.Scope{Repo: "contract", TaskID: "contract", RunID: "contract"}, AvailableTokens: 32000, MaxTokens: 32000, ToolProfile: "full", SearchView: "full"})
 	if err != nil {
 		t.Fatal(err)
 	}

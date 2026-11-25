@@ -48,7 +48,8 @@ class CodexConfigTest(unittest.TestCase):
         self.assertEqual(server['command'], str(self.binary))
         self.assertEqual(server['args'], ['mcp', '--socket', str(self.root / socket),
                          '--token-file', str(self.root / token), '--repo', 'repo:fixture',
-                         '--task', task, '--run', run, '--tokens', '64000', *pins])
+                         '--task', task, '--run', run, '--tokens', '64000',
+                         '--search-view', 'compact/1', '--tool-profile', 'compact/2', *pins])
         self.assertEqual(server['enabled_tools'], ['cairn_search', 'cairn_pull',
                          'cairn_pull_evidence', 'cairn_remember', 'cairn_prepare_note', 'cairn_edit', 'cairn_history',
                          'cairn_assessments', 'cairn_assess', 'cairn_client_info'])
@@ -66,7 +67,18 @@ class CodexConfigTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         server = tomllib.loads(result.stdout.decode())['mcp_servers']['cairn']
         self.assertTrue(server['required'])
-        self.assertEqual(server['args'], ['mcp', *args[:-1], '--tokens', '16000'])
+        self.assertEqual(server['args'], ['mcp', *args[:-1], '--tokens', '16000',
+                         '--search-view', 'compact/1', '--tool-profile', 'compact/2'])
+
+    def test_full_opt_out_flags_propagate(self):
+        args = ['--socket', '/missing.sock', '--token-file', '/missing.token',
+                '--repo', 'repo:fixture', '--codex-thread',
+                '--search-view', 'full', '--tool-profile', 'full']
+        result = self.render(*args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        server = tomllib.loads(result.stdout.decode())['mcp_servers']['cairn']
+        self.assertEqual(server['args'], ['mcp', *args[:7], '--tokens', '16000',
+                         '--search-view', 'full', '--tool-profile', 'full'])
 
     def test_invalid_cli_is_stderr_only(self):
         result = self.render('--socket', '/missing.sock')

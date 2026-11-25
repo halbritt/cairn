@@ -104,7 +104,7 @@ func TestCompactSearchPullContractForRequiredConflictAndPartialSource(t *testing
 		}
 	})
 	var observed []struct{ whole, partial core.Expansion }
-	for _, profile := range []string{"", "compact/1"} {
+	for _, profile := range []string{"full", "", "compact/1"} {
 		server, err := NewReadOnlyServer(localRetrievalBackend{client: client, previewChoice: new(localapi.PreviewCapabilityChoice)}, Config{
 			Scope: index.Package.Semantic.Scope, AvailableTokens: 32000, SearchView: profile,
 		})
@@ -152,9 +152,9 @@ func TestCompactSearchPullContractForRequiredConflictAndPartialSource(t *testing
 		if _, present := view.Omitted["TOTAL_BUDGET"]; present {
 			t.Fatalf("%s made an absent omission reason a known zero", profile)
 		}
-		if profile == "" {
+		if profile == "full" {
 			if view.Schema != "cairn.mcp-search/1" || fields["ranking"] == nil {
-				t.Fatal("default full view changed")
+				t.Fatal("explicit full view changed")
 			}
 		} else if view.Schema != "cairn.mcp-search-compact/1" || fields["ranking"] != nil {
 			t.Fatal("compact view failed to omit only framing")

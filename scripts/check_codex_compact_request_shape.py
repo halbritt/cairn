@@ -151,9 +151,8 @@ def local_request(binary: Path, parent: Path, profile: str) -> tuple[dict, list[
     token.chmod(0o600)
     config_args = [str(binary), "codex-config", "--socket", str(root / "no-api.sock"),
                    "--token-file", str(token), "--repo", "fixture:cairn-schema-request-shape",
-                   "--task", "request-shape", "--run", profile.replace("/", "-")]
-    if profile != "full":
-        config_args.extend(("--tool-profile", profile))
+                   "--task", "request-shape", "--run", profile.replace("/", "-"),
+                   "--tool-profile", profile]
     mcp = tomllib.loads(subprocess.run(config_args, check=True, capture_output=True,
                                        text=True, timeout=10).stdout)["mcp_servers"]["cairn"]
 

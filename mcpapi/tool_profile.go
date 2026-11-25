@@ -26,7 +26,7 @@ var compactAllToolDescriptions = map[string]string{
 }
 
 func profiledTool(profile string, tool *mcp.Tool) *mcp.Tool {
-	if profile == "compact/2" {
+	if profile == "" || profile == "compact/2" {
 		if description, ok := compactAllToolDescriptions[tool.Name]; ok {
 			tool.Description = description
 		}

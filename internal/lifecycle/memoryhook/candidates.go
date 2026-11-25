@@ -68,7 +68,7 @@ func renderCandidates(config, selected, result *value.Value, budget int, status 
 }
 
 func renderCandidatesWithSeen(config, seen *value.Value, dedup bool, selected, result *value.Value, budget int, status *value.Value, measure func(string) int, progress *candidateProgress, observers ...candidateObserver) (string, error) {
-	compact := value.SameText(config.Get("recall_view"), "compact/1")
+	compact := config.Get("recall_view") == nil || value.SameText(config.Get("recall_view"), "compact/1")
 	cue := agentToolsCue
 	if compact {
 		cue = compactAgentToolsCue

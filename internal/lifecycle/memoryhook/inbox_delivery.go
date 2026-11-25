@@ -326,7 +326,8 @@ func (d *inboxDelivery) deliver(directory string) error {
 			pullCue = "pull_handle.read with pull_handle.read_input JSON on stdin"
 		}
 		var commands *value.Value
-		if value.SameText(in.Config.Get("harness"), "codex") && value.SameText(in.Memory.Get("context_lifecycle"), "compact/1") && command.Get("finish_reply") != nil && command.Get("finish_reply").Kind == value.Array {
+		codexCompactLifecycle := value.SameText(in.Config.Get("harness"), "codex") && (value.SameText(in.Memory.Get("context_lifecycle"), "compact/1") || (in.Memory.Get("context_lifecycle") == nil && value.SameText(in.Memory.Get("recall_mode"), "agent_tools")))
+		if codexCompactLifecycle && command.Get("finish_reply") != nil && command.Get("finish_reply").Kind == value.Array {
 			control = "Cairn request from " + text(id.publication.Get("from")) + ". Read the task data below. Work only within existing owner authorization. Run finish_reply with a concise selected result on stdin; it reports completion and reply separately. No second inbox consumer.\n"
 			commands = value.Mapping(value.Field("finish_reply", command.Get("finish_reply")))
 		} else {

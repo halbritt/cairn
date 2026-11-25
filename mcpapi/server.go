@@ -50,11 +50,11 @@ type HostProcess struct {
 
 // Validate checks startup scope, text integrity and room; the API validates pin semantics on retrieval.
 func (c Config) Validate() error {
-	if c.ToolProfile != "" && c.ToolProfile != "compact/1" && c.ToolProfile != "compact/2" {
-		return fmt.Errorf("MCP tool profile must be compact/1, compact/2, or omitted")
+	if c.ToolProfile != "" && c.ToolProfile != "compact/1" && c.ToolProfile != "compact/2" && c.ToolProfile != "full" {
+		return fmt.Errorf("MCP tool profile must be compact/1, compact/2, full, or omitted")
 	}
-	if c.SearchView != "" && c.SearchView != "compact/1" {
-		return fmt.Errorf("MCP search view must be compact/1 or omitted")
+	if c.SearchView != "" && c.SearchView != "compact/1" && c.SearchView != "full" {
+		return fmt.Errorf("MCP search view must be compact/1, full, or omitted")
 	}
 	if c.NativeSessionID != "" && (!c.Messaging || c.CodexThread) {
 		return fmt.Errorf("a native session ID requires --messaging and cannot be combined with --codex-thread")
@@ -329,8 +329,12 @@ func searchView(index core.IndexResult, args searchArgs, presentation string, pr
 	if prepare {
 		view.Preparation = &notePreparation{NoteSaved: false, Guidance: preparationGuidance}
 	}
+	room := memoryRoom
 	if err == nil {
 		memoryRoom, err = indexview.ResolveViewRoom(index, args.MinPullBytes, args.InspectionPolicy, memoryRoom, receiptRoom)
+		if err != nil {
+			memoryRoom = room
+		}
 	}
 	if err == nil && presentation == "compact/1" {
 		return compactSearchResult{
@@ -631,6 +635,12 @@ func encodeToolResultInto(result *mcp.CallToolResult, value any, room int) (*mcp
 func validatedConfig(config Config) (Config, error) {
 	if err := config.Validate(); err != nil {
 		return Config{}, err
+	}
+	if config.ToolProfile == "" {
+		config.ToolProfile = "compact/2"
+	}
+	if config.SearchView == "" {
+		config.SearchView = "compact/1"
 	}
 	// Keep the host's startup declarations fixed even if it reuses its config.
 	if config.Context != nil {

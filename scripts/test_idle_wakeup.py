@@ -870,7 +870,7 @@ time.sleep(30)
                                           prompt=wake_prompt['prompt'].replace(delivery_id, 'foreign-delivery')),
                                      dict(wake_prompt, prompt_id='')):
                         ordinary = coordination.handle(config, rejected)
-                        self.assertNotIn('structured inbox context', ordinary['hookSpecificOutput']['additionalContext'])
+                        self.assertNotIn('structured inbox context', ordinary.get('hookSpecificOutput', {}).get('additionalContext', ''))
                         unchanged = json.loads(path.read_text())
                         self.assertTrue(unchanged['delivered_since_idle'])
                         self.assertEqual(unchanged['idle_wake'], marker)

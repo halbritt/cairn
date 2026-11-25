@@ -548,7 +548,7 @@ class CodexQueuedWakeContextTests(unittest.TestCase):
         res = fx.public('coordination')
         self.assertEqual((res.returncode, res.stderr), (0, b''), res.stdout)
         out_text = json.loads(res.stdout)['hookSpecificOutput']['additionalContext']
-        self.assertIn('Cairn notice from agent/coordinator.', out_text)
+        self.assertIn('Cairn has a notice from agent/coordinator for this conversation.', out_text)
         self.assertIn('Acknowledgement command:', out_text)
         self.assertIn('Public frontend rule.', out_text)
         self.assertNotIn('idle_wake', json.loads(sp.read_text()))

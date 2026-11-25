@@ -46,7 +46,7 @@ def without_descriptions(value):
 
 
 def capture(claude, cairn, root, profile):
-    label = profile.replace("/", "-") if profile else "full"
+    label = profile.replace("/", "-")
     area = root / label
     area.mkdir(mode=0o700)
     home, config_home, work = (area / name for name in ("home", "config", "work"))
@@ -60,19 +60,20 @@ def capture(claude, cairn, root, profile):
 
     flags = [str(cairn), "claude-config", "--socket", str(socket),
              "--token-file", str(token), "--repo", "fixture:cairn-schema-shape",
-             "--task", "request-shape", "--run", label]
-    if profile:
-        flags.extend(("--tool-profile", profile))
+             "--task", "request-shape", "--run", label, "--tool-profile", profile]
     rendered = subprocess.run(flags, text=True, capture_output=True,
                               check=True, timeout=10).stdout
     config = json.loads(rendered)["mcpServers"]["cairn"]
     profile_values = [config["args"][index + 1]
                       for index, value in enumerate(config["args"][:-1])
                       if value == "--tool-profile"]
+    search_views = [config["args"][index + 1]
+                    for index, value in enumerate(config["args"][:-1])
+                    if value == "--search-view"]
     require(config["type"] == "stdio" and config["command"] == str(cairn)
             and config["args"][0] == "mcp"
-            and profile_values == ([profile] if profile else [])
-            and "--search-view" not in config["args"],
+            and profile_values == [profile]
+            and search_views == ["compact/1"],
             "generated MCP configuration changed profile or view")
     config_file = area / "mcp.json"
     config_file.write_text(rendered, encoding="utf-8")
@@ -152,7 +153,7 @@ def check():
         claude_version = subprocess.run([claude, "--version"], check=True,
                                         capture_output=True, text=True,
                                         timeout=10).stdout.strip()
-        full = capture(claude, cairn, root, "")
+        full = capture(claude, cairn, root, "full")
         compact = capture(claude, cairn, root, "compact/1")
 
         def declarations(request):

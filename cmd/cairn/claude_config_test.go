@@ -24,9 +24,30 @@ func TestClaudeConfigPreservesLaunchArguments(t *testing.T) {
 	executable, _ := filepath.Abs("bin/cairn")
 	socket, _ := filepath.Abs(args[1])
 	token, _ := filepath.Abs(args[3])
-	want := []string{"mcp", "--socket", socket, "--token-file", token, "--repo", "repo", "--task", "repair", "--run", "attempt", "--tokens", "64000", "--tool-profile", "compact/2", "--revision", args[13], "--workspace-sha256", args[21], "--task-class", "repair", "--task-phase", "validation", "--binding", "native", "--capability", "declared"}
+	want := []string{"mcp", "--socket", socket, "--token-file", token, "--repo", "repo", "--task", "repair", "--run", "attempt", "--tokens", "64000", "--search-view", "compact/1", "--tool-profile", "compact/2", "--revision", args[13], "--workspace-sha256", args[21], "--task-class", "repair", "--task-phase", "validation", "--binding", "native", "--capability", "declared"}
 	if len(config.Servers) != 1 || server.Type != "stdio" || server.Command != executable || !reflect.DeepEqual(server.Args, want) {
 		t.Fatalf("generated launch changes configured arguments: %+v", config)
+	}
+	var fullOut bytes.Buffer
+	if err := writeClaudeConfig(&fullOut, []string{"--socket", "s.sock", "--token-file", "t.tok", "--repo", "repo", "--task", "repair", "--run", "attempt", "--search-view", "full", "--tool-profile", "full"}, "bin/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	var fullCfg claudeMemoryConfig
+	if err := json.Unmarshal(fullOut.Bytes(), &fullCfg); err != nil {
+		t.Fatal(err)
+	}
+	joined := fullCfg.Servers["cairn"].Args
+	hasSearchFull, hasProfileFull := false, false
+	for i := 0; i+1 < len(joined); i++ {
+		if joined[i] == "--search-view" && joined[i+1] == "full" {
+			hasSearchFull = true
+		}
+		if joined[i] == "--tool-profile" && joined[i+1] == "full" {
+			hasProfileFull = true
+		}
+	}
+	if !hasSearchFull || !hasProfileFull {
+		t.Fatalf("explicit full opt-out lost from Claude config: %+v", joined)
 	}
 }
 

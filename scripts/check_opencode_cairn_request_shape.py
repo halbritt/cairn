@@ -194,7 +194,7 @@ def check(binary, profile):
             "OPENCODE_DISABLE_MODELS_FETCH": "true",
             "OPENCODE_DISABLE_DEFAULT_PLUGINS": "true",
         }
-        if profile == "compact/1":
+        if profile == "full":
             env["CAIRN_OPENCODE_TOOL_PROFILE"] = profile
         version = subprocess.check_output([str(binary), "--version"], env=env,
                                           text=True, timeout=10).strip()

@@ -577,6 +577,26 @@ func cloneObjectOrEmpty(v *value.Value, field string) (*value.Value, error) {
 	return nativeClone(v), nil
 }
 
+func isCompactionEpochReset(observation, event *value.Value) bool {
+	if value.SameText(observation.Get("event"), "SessionStart") {
+		src := nativeText(event.Get("source"))
+		return src == "compact" || src == "clear" || src == "resume"
+	}
+	if value.SameText(observation.Get("event"), "TurnStart") || value.SameText(observation.Get("event"), "PreInvocation") {
+		return nativeText(event.Get("source")) == "compact"
+	}
+	return false
+}
+
+func stateBannerEpoch(state *value.Value) int64 {
+	if v := state.Get("banner_epoch"); v != nil && v.Kind == value.Int {
+		if n, err := strconv.ParseInt(v.Integer, 10, 64); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return 0
+}
+
 func (c *CLI) handleHookPostSession(ctx context.Context, ns *NativeSession, config, event, observation, wakeVal *value.Value, hookConfigPath string, bridgeDeadline float64, reports *[]InboxRecallReport) (*value.Value, error) {
 	state := ns.Record
 	if value.SameText(observation.Get("event"), "ToolStart") || value.SameText(observation.Get("event"), "ToolEnd") {
@@ -623,6 +643,9 @@ func (c *CLI) handleHookPostSession(ctx context.Context, ns *NativeSession, conf
 		state.Set("agent", updated)
 	}
 	state.Set("workspace", observation.Get("workspace"))
+	if isCompactionEpochReset(observation, event) {
+		state.Set("banner_epoch", value.IntegerText(strconv.FormatInt(stateBannerEpoch(state)+1, 10)))
+	}
 	if err := ns.Save(); err != nil {
 		return nil, err
 	}
@@ -744,24 +767,39 @@ func (c *CLI) handleHookInboxAndOutput(ctx context.Context, ns *NativeSession, c
 func (c *CLI) formatHookTurnOutput(ctx context.Context, ns *NativeSession, config, event, observation, wakeVal *value.Value, inbox string, bridgeDeadline float64, reports *[]InboxRecallReport) (*value.Value, error) {
 	state := ns.Record
 	agent := state.Get("agent")
-	deliverySentence := "Native message delivery is not enabled. "
-	if value.Truth(config.Get("native_delivery")) {
-		deliverySentence = "Inbox delivery uses supported turn boundaries. "
-	}
-	message := fmt.Sprintf(
-		"Cairn session %s has inbox %s. Use agent UUID %s and execution UUID %s with the existing profile token at %s for session inbox work. Use cairn agents context to maintain a concise selected task description; harness/model/project are metadata. Ordinary memory keeps its existing profile. Presence is maintained by the host watcher. %s",
-		nativeText(agent.Get("display_name")),
-		nativeText(agent.Get("inbox")),
-		nativeText(agent.Get("agent_id")),
-		nativeText(agent.Get("execution_id")),
-		nativeText(config.Get("token_file")),
-		deliverySentence,
+	bannerSpec := nativeMap(
+		"agent_id", agent.Get("agent_id"),
+		"execution_id", agent.Get("execution_id"),
+		"epoch", value.IntegerText(strconv.FormatInt(stateBannerEpoch(state), 10)),
+		"wake", value.Boolean(value.Truth(wakeVal)),
+		"native_delivery", value.Boolean(value.Truth(config.Get("native_delivery"))),
 	)
-	if value.Truth(wakeVal) {
-		message += "This conversation is linked to the current fresh-worker attempt. Complete its original slot delivery using CAIRN_WAKE_CONTEXT; do not claim a second inbox. "
+	emitBanner := !nativeEqual(state.Get("identity_banner"), bannerSpec)
+	message := ""
+	if emitBanner {
+		deliverySentence := "Native message delivery is not enabled. "
+		if value.Truth(config.Get("native_delivery")) {
+			deliverySentence = "Inbox delivery uses supported turn boundaries. "
+		}
+		message = fmt.Sprintf(
+			"Cairn session %s has inbox %s. Use agent UUID %s and execution UUID %s with the existing profile token at %s for session inbox work. Use cairn agents context to maintain a concise selected task description; harness/model/project are metadata. Ordinary memory keeps its existing profile. Presence is maintained by the host watcher. %s",
+			nativeText(agent.Get("display_name")),
+			nativeText(agent.Get("inbox")),
+			nativeText(agent.Get("agent_id")),
+			nativeText(agent.Get("execution_id")),
+			nativeText(config.Get("token_file")),
+			deliverySentence,
+		)
+		if value.Truth(wakeVal) {
+			message += "This conversation is linked to the current fresh-worker attempt. Complete its original slot delivery using CAIRN_WAKE_CONTEXT; do not claim a second inbox. "
+		}
 	}
 	if inbox != "" {
-		message += "\n" + inbox
+		if message != "" {
+			message += "\n" + inbox
+		} else {
+			message = inbox
+		}
 	}
 	if value.Truth(config.Get("inbox_recall_binding")) && inboxRecallWakeValue(event) {
 		var err error
@@ -770,11 +808,21 @@ func (c *CLI) formatHookTurnOutput(ctx context.Context, ns *NativeSession, confi
 			return nil, err
 		}
 	}
+	if emitBanner {
+		state.Set("identity_banner", bannerSpec)
+		if err := ns.Save(); err != nil {
+			return nil, err
+		}
+	}
+	toolCapture := value.SameText(config.Get("harness"), "opencode") && value.SameText(observation.Get("event"), "TurnStart") && value.Truth(config.Get("opencode_cancel_enabled")) && value.Truth(state.Get("inbox_attempt").Get("turn_exclusive")) && nativeEqual(state.Get("inbox_attempt").Get("native_turn_id"), observation.Get("native_turn_id"))
+	if message == "" && !toolCapture {
+		return value.Mapping(), nil
+	}
 	if value.SameText(config.Get("harness"), "agy") {
 		return nativeMap("injectSteps", nativeList(nativeMap("ephemeralMessage", message))), nil
 	}
 	output := nativeMap("hookSpecificOutput", nativeMap("hookEventName", observation.Get("event"), "additionalContext", message))
-	if value.SameText(config.Get("harness"), "opencode") && value.SameText(observation.Get("event"), "TurnStart") && value.Truth(config.Get("opencode_cancel_enabled")) && value.Truth(state.Get("inbox_attempt").Get("turn_exclusive")) && nativeEqual(state.Get("inbox_attempt").Get("native_turn_id"), observation.Get("native_turn_id")) {
+	if toolCapture {
 		output.Set("cairn", nativeMap("tool_capture", true))
 	}
 	return output, nil

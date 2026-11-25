@@ -45,6 +45,7 @@ class AgentToolRecallTests(unittest.TestCase):
         return result, state
 
     def test_prompt_offers_complete_candidates_without_pulls_or_seen_credit(self):
+        self.config['recall_view'] = 'full'
         result, state = self.invoke()
         text = result['hookSpecificOutput']['additionalContext']
         self.assertIn(self.required[0]['record']['body'], text)
@@ -90,13 +91,13 @@ class AgentToolRecallTests(unittest.TestCase):
                 self.assertNotIn('--min-pull-bytes', self.commands[0],
                                  'cue guidance must not change the hook search contract')
                 self.assertEqual(state['last_recall']['outcome'], 'delegated')
-                self.assertIn('inspection_policy:first-fitting-whole/1 if exposed', text)
-                self.assertIn('no min_pull_bytes', text)
+                self.assertIn('inspection_policy:first-fitting-whole/2 when exposed', text)
+                self.assertIn('without min_pull_bytes', text)
                 self.assertNotIn('--inspection-policy', self.commands[0],
                                  'native guidance must not alter an admitted hook request')
                 # Small allowances still receive the complete policy, including
                 # capability fallback; the renderer must not trim instructions.
-                self.assertTrue(text.startswith(hook.AGENT_TOOLS_CUE.format(budget=budget)))
+                self.assertTrue(text.startswith(hook.COMPACT_AGENT_TOOLS_CUE.format(budget=budget)))
                 self.assertGreater(view['remaining_memory_bytes'], 0)
                 self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], budget)
 
@@ -117,12 +118,12 @@ class AgentToolRecallTests(unittest.TestCase):
                 self.assertLessEqual(spare - remaining, len(str(budget)))
 
     def test_opt_in_compact_view_keeps_whole_required_source_and_pull_route(self):
-        full, _ = self.invoke()
-        full_text = full['hookSpecificOutput']['additionalContext']
-        self.config['recall_view'] = 'compact/1'
-        self.commands.clear()
         compact, state = self.invoke()
         compact_text = compact['hookSpecificOutput']['additionalContext']
+        self.config['recall_view'] = 'full'
+        self.commands.clear()
+        full, _ = self.invoke()
+        full_text = full['hookSpecificOutput']['additionalContext']
         view = json.loads(compact_text[compact_text.index('{"selected":'):])
         old = json.loads(full_text[full_text.index('{"selected":'):])
         self.assertEqual(view.pop('schema'), 'cairn.hook-recall-compact/1')

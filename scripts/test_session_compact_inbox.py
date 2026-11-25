@@ -610,7 +610,7 @@ class PublicGoV3SessionCompactTests(unittest.TestCase):
         self.assertEqual((w_res.returncode, w_res.stderr), (0, b""), w_res.stdout)
         w_text = json.loads(w_res.stdout.decode())["hookSpecificOutput"]["additionalContext"]
         self.assertIn("V3 mandatory rule.", w_text)
-        self.assertIn("Read context", w_text)
+        self.assertIn("Read the structured inbox context at", w_text)
         self.assertNotIn("inbox compact", w_text)
         w_ctx = json.loads((Path(fx.coord["state_dir"]) / "inbox" / "att-v3-w1.json").read_text())
         self.assertNotIn("compact_handle", w_ctx)

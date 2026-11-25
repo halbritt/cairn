@@ -285,20 +285,20 @@ func TestMessagingToolsAreOptIn(t *testing.T) {
 			t.Fatalf("%s exposed without Messaging", name)
 		}
 	}
-	full, compact := list(Config{Messaging: true}), list(Config{Messaging: true, ToolProfile: "compact/2"})
+	full, compact := list(Config{Messaging: true, ToolProfile: "full"}), list(Config{Messaging: true})
 	if len(full) != len(plain)+len(messagingToolNames) || len(compact) != len(full) {
 		t.Fatalf("tool counts: plain=%d full=%d compact=%d", len(plain), len(full), len(compact))
 	}
 	var added []string
 	for name, tool := range full {
+		short := compact[name]
 		if previous, ok := plain[name]; ok {
-			if !reflect.DeepEqual(previous, tool) {
+			if short == nil || !reflect.DeepEqual(previous.InputSchema, short.InputSchema) || !reflect.DeepEqual(previous.Annotations, short.Annotations) || previous.Description != short.Description {
 				t.Fatalf("Messaging changed the %s declaration", name)
 			}
 			continue
 		}
 		added = append(added, name)
-		short := compact[name]
 		if short == nil || len(short.Description) == 0 || len(short.Description) >= len(tool.Description) {
 			t.Fatalf("%s compact description did not shrink", name)
 		}

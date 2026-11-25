@@ -1341,3 +1341,154 @@ func TestCodexQueuedWakeAdmitsAcrossStaleLatchAndRefusesMissingContext(t *testin
 		t.Fatalf("expected prior_held_work, got %v", loaded.Get("wake_preclaim_refusal"))
 	}
 }
+
+func TestSingleEpochIdentityBannerAndCompactionRestore(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available")
+	}
+	pyScript, err := filepath.Abs(filepath.Join("..", "..", "..", "integrations", "lifecycle", "coordination.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(pyScript); err != nil {
+		t.Skipf("coordination.py not found at %s", pyScript)
+	}
+
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fakeCairn := filepath.Join(root, "fake-cairn")
+	agentID := "301e246e-a3b7-498b-b6a7-3d84e592097f"
+	execID := "da3e0447-4f10-40f7-b64d-6b66de691ef2"
+	nativeID := "22b421c2-2298-41e9-8b0e-659ea2a72ed0"
+	script := fmt.Sprintf(`#!/usr/bin/env python3
+import json, sys
+args = sys.argv[1:]
+raw = sys.stdin.read().strip()
+body = json.loads(raw) if raw else {}
+if "agent-register" in args or "agent-heartbeat" in args or "agent-context" in args:
+    meta = body.get("metadata") or {"harness":"claude","project":"cairn","workspace":%q,"delivery_mode":"existing-session","state":"busy"}
+    print(json.dumps({"schema":"cairn.response/1","ok":True,"data":{
+        "agent_id":%q,"execution_id":%q,"display_name":"agent-1268","inbox":"agent/"+%q,
+        "native_session_id":%q,"context_revision":1,"metadata":meta
+    }}))
+elif "session-inbox-claim" in args:
+    print(json.dumps({"schema":"cairn.response/1","ok":True,"data":{"attempt":None}}))
+else:
+    print(json.dumps({"schema":"cairn.response/1","ok":True,"data":{}}))
+`, root, agentID, execID, agentID, nativeID)
+	if err := os.WriteFile(fakeCairn, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	pyState, goState := filepath.Join(root, "py-state"), filepath.Join(root, "go-state")
+	for _, sd := range []string{pyState, goState} {
+		if err := os.MkdirAll(sd, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pyCfg, goCfg := filepath.Join(root, "py-coord.json"), filepath.Join(root, "go-coord.json")
+	hostPID := os.Getppid()
+	exePath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", hostPID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exeResolved, err := filepath.EvalSymlinks(exePath)
+	if err != nil {
+		exeResolved = exePath
+	}
+	commBytes, _ := os.ReadFile(fmt.Sprintf("/proc/%d/comm", hostPID))
+	selfComm := strings.TrimSpace(string(commBytes))
+	writeCfg := func(p, sd string) {
+		b, _ := json.Marshal(map[string]any{
+			"binding":          "b1",
+			"harness":          "claude",
+			"repo":             root,
+			"state_dir":        sd,
+			"cairn":            fakeCairn,
+			"socket":           filepath.Join(root, "api.sock"),
+			"token_file":       filepath.Join(root, "token"),
+			"native_delivery":  true,
+			"process_names":    []string{selfComm, filepath.Base(exeResolved), "python3"},
+			"process_exe_dirs": []string{filepath.Dir(exeResolved), "/usr/bin", "/bin"},
+		})
+		if err := os.WriteFile(p, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeCfg(pyCfg, pyState)
+	writeCfg(goCfg, goState)
+
+	cli, _ := newTestHookCLI(t, root)
+	cli.Command = []string{"/usr/bin/python3", pyScript}
+	cli.LookupEnv = func(k string) (string, bool) {
+		if k == "HOME" {
+			return root, true
+		}
+		return os.LookupEnv(k)
+	}
+
+	steps := []struct {
+		ev         string
+		wantBanner bool
+	}{
+		{fmt.Sprintf(`{"hook_event_name":"SessionStart","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID), true},
+		{fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"cwd":%q,"prompt":"turn 1","host_pid":%d}`, nativeID, root, hostPID), false},
+		{fmt.Sprintf(`{"hook_event_name":"PostToolUse","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID), false},
+		{fmt.Sprintf(`{"hook_event_name":"SessionStart","source":"compact","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID), true},
+		{fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"cwd":%q,"prompt":"post compact","host_pid":%d}`, nativeID, root, hostPID), false},
+		{fmt.Sprintf(`{"hook_event_name":"SessionStart","source":"clear","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID), true},
+		{fmt.Sprintf(`{"hook_event_name":"SessionStart","source":"resume","session_id":%q,"cwd":%q,"host_pid":%d}`, nativeID, root, hostPID), true},
+		{fmt.Sprintf(`{"hook_event_name":"UserPromptSubmit","session_id":%q,"cwd":%q,"prompt":"post resume","host_pid":%d}`, nativeID, root, hostPID), false},
+	}
+	for i, step := range steps {
+		pyCmd := exec.Command("/usr/bin/python3", pyScript, "hook", "--config", pyCfg)
+		pyCmd.Stdin = strings.NewReader(step.ev)
+		pyCmd.Env = append(os.Environ(), "HOME="+root, "CAIRN_INBOX_ROOT="+filepath.Join(root, "py-journal"))
+		var pyOut, pyErr bytes.Buffer
+		pyCmd.Stdout, pyCmd.Stderr = &pyOut, &pyErr
+		if err := pyCmd.Run(); err != nil {
+			t.Fatalf("step %d python failed: %v stderr=%s", i, err, pyErr.String())
+		}
+		var goOut, goErr bytes.Buffer
+		code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", goCfg}, strings.NewReader(step.ev), &goOut, &goErr)
+		if err != nil || code != 0 {
+			t.Fatalf("step %d go failed: code=%d err=%v stderr=%s", i, code, err, goErr.String())
+		}
+		if goOut.String() != pyOut.String() {
+			t.Fatalf("step %d parity mismatch:\ngo: %s\npy: %s", i, goOut.String(), pyOut.String())
+		}
+		hasBanner := strings.Contains(goOut.String(), "Cairn session agent-1268 has inbox agent/"+agentID)
+		if hasBanner != step.wantBanner {
+			t.Fatalf("step %d wantBanner=%v got output=%s", i, step.wantBanner, goOut.String())
+		}
+		if !step.wantBanner && strings.TrimSpace(goOut.String()) != "{}" {
+			t.Fatalf("step %d expected empty {} without banner, got %s", i, goOut.String())
+		}
+	}
+}
+
+func TestConsolidatedWakeWrapperMatchesCompatibilityAndPlain(t *testing.T) {
+	cli := &CLI{}
+	compatCLI := &CLI{Compatibility: &CompatibilityContext{}}
+	cfg := nativeMap()
+	native := nativeMap("finish_reply", nativeList(value.Text("cairn-inbox"), value.Text("finish-reply")), "acknowledgement", nativeList(value.Text("cairn-inbox"), value.Text("ack")))
+	for _, kind := range []string{"request", "notice", "response"} {
+		ev := nativeMap("kind", value.Text(kind), "from", value.Text("agent/sender"))
+		plain, err := cli.renderStandardAttemptContext(cfg, "/state/inbox/a1.json", native, ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		compat, err := compatCLI.renderStandardAttemptContext(cfg, "/state/inbox/a1.json", native, ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !nativeEqual(plain, compat) {
+			t.Fatalf("kind %s diverged:\nplain=%s\ncompat=%s", kind, nativeText(plain), nativeText(compat))
+		}
+		if len(nativeText(plain)) > 2048 {
+			t.Fatalf("kind %s exceeded 2048 bytes: %d", kind, len(nativeText(plain)))
+		}
+	}
+}

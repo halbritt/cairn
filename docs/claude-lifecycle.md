@@ -113,16 +113,16 @@ These settings only choose a selector, not a recommended production model.
 and `--recall-mode ambient` explicitly restores the normal recall path. Unknown
 values fail before retrieval. This option does not change capture selection.
 
-The engine configuration can also opt into `"recall_view": "compact/1"` for
-`agent_tools` hook output; absent or `"full"` keeps the existing view. This
+`agent_tools` hook output defaults to `"recall_view": "compact/1"` when omitted;
+set `"recall_view": "full"` to opt out back to the legacy view. This
 version shortens repeated reader guidance and marks the JSON view
 `cairn.hook-recall-compact/1`. It keeps whole selected context, candidate fields,
 complete pull arguments, discovery and nonzero/unknown omission diagnostics.
 The same serialized byte budget and native-turn reserve apply. This is a
 presentation choice, not a source-selection or eligibility change. A bound inbox
 route uses its separately pinned memory configuration; editing repository source
-or an ordinary hook config does not change an already pinned bridge. Compare
-one ordinary and one bound workflow before enabling either path on a live account.
+or an ordinary hook config does not change an already pinned bridge without
+re-pinning the manifest.
 
 In `agent_tools` mode, the hook retains the required-context search and whole
 budget check. When optional recall is eligible, existing `semantic_fallback`

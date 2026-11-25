@@ -30,7 +30,8 @@ class OptionalSearchViewTests(unittest.TestCase):
         before = copy.deepcopy(result)
         selected = [dict(mandatory=True, record=dict(body='Whole required 日本語 guard.'))]
         inspection = dict(pull_calls=0, delivered_records=0, remaining_pull_calls=4, refusals={})
-        text = hook.render_agent_candidates(selected, result, 9500, dict(rejected={}), [], inspection)
+        full_observer = type('Observer', (), {'config': {'recall_view': 'full'}})()
+        text = hook.render_agent_candidates(selected, result, 9500, dict(rejected={}), [], inspection, observer=full_observer)
         shown = view(text)
         self.assertEqual(shown['selected'], selected)
         self.assertEqual(shown['candidate_inspection'], inspection)
@@ -64,15 +65,18 @@ class OptionalSearchViewTests(unittest.TestCase):
         result = dict(index=[], status='READY', omitted=dict(OPTIONAL_BUDGET=0,
             FUTURE_REASON=0, NO_LEXICAL_MATCH=3))
         before = copy.deepcopy(result)
-        text = hook.render_agent_candidates([], result, 9500, dict(rejected={}), observer=Observer())
-        shown = view(text)
-        self.assertEqual(shown['schema'], 'cairn.hook-recall-compact/1')
-        self.assertEqual(shown['candidate_search']['omitted'], result['omitted'])
-        self.assertNotIn('TOTAL_BUDGET', shown['candidate_search']['omitted'])
+        # Omitted recall_view defaults to compact/1.
+        for observer in (None, Observer()):
+            text = hook.render_agent_candidates([], result, 9500, dict(rejected={}), observer=observer)
+            shown = view(text)
+            self.assertEqual(shown['schema'], 'cairn.hook-recall-compact/1')
+            self.assertEqual(shown['candidate_search']['omitted'], result['omitted'])
+            self.assertNotIn('TOTAL_BUDGET', shown['candidate_search']['omitted'])
         self.assertEqual(result, before)
 
     def test_bound_public_hook_admits_whole_unicode_source_and_later_refusal(self):
         case = claude_fixture.ClaudeInboxRecallTests(); case.setUp(); self.addCleanup(case.doCleanups)
+        case.mc['recall_view'] = 'full'
         # Generic synthetic source, deliberately near the automatic half of the 9500-byte envelope.
         body = '日本語 "guard"\n' + 'x' * 1400
         selection = case.fixture['pull']['selection']
@@ -118,7 +122,8 @@ class OptionalSearchViewTests(unittest.TestCase):
 
     def test_bound_compact_view_keeps_whole_required_and_optional_without_extra_reads(self):
         case = claude_fixture.ClaudeInboxRecallTests(); case.setUp(); self.addCleanup(case.doCleanups)
-        case.mc['recall_view'] = 'compact/1'
+        # Omitted recall_view defaults to compact/1.
+        case.mc.pop('recall_view', None)
         required = [dict(mandatory=True, record=dict(body='Whole mandatory 日本語 source.'))]
         case.fixture['search']['selected'] = required
         case.fixture['search']['omitted'] = dict(ZEROS, OPTIONAL_BUDGET=0, NO_LEXICAL_MATCH=2)

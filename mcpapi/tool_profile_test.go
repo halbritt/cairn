@@ -52,7 +52,7 @@ func withoutDescriptions(value any) any {
 }
 
 func TestCompactToolProfilePreservesRetrievalArgumentContract(t *testing.T) {
-	full, compact := retrievalDeclarations(t, ""), retrievalDeclarations(t, "compact/1")
+	full, compact := retrievalDeclarations(t, "full"), retrievalDeclarations(t, "compact/1")
 	if len(full) != 2 || len(compact) != 2 {
 		t.Fatalf("profile changed tool availability: %d/%d", len(full), len(compact))
 	}
@@ -92,7 +92,10 @@ func TestCompactToolProfilePreservesRetrievalArgumentContract(t *testing.T) {
 }
 
 func TestCompactAllToolProfilePreservesFullMCPContract(t *testing.T) {
-	full, compact := allDeclarations(t, ""), allDeclarations(t, "compact/2")
+	full, defaulted, compact := allDeclarations(t, "full"), allDeclarations(t, ""), allDeclarations(t, "compact/2")
+	if !reflect.DeepEqual(defaulted, compact) {
+		t.Fatal("omitted ToolProfile did not default to compact/2")
+	}
 	if len(full) != 10 || len(compact) != len(full) {
 		t.Fatalf("profile changed tool availability: full=%d compact=%d", len(full), len(compact))
 	}
@@ -145,7 +148,7 @@ func TestCompactAllToolProfileLeavesUnknownToolsFull(t *testing.T) {
 }
 
 func TestCompactV1LeavesOtherToolDeclarationsUnchanged(t *testing.T) {
-	full, compact := allDeclarations(t, ""), allDeclarations(t, "compact/1")
+	full, compact := allDeclarations(t, "full"), allDeclarations(t, "compact/1")
 	if len(full) != 10 || len(compact) != len(full) {
 		t.Fatalf("profile changed tool availability: full=%d compact=%d", len(full), len(compact))
 	}
@@ -190,8 +193,16 @@ func TestCompactToolProfileRejectsUnknownVersion(t *testing.T) {
 }
 
 func TestCompactToolProfileIsReportedByClientInfo(t *testing.T) {
-	for _, profile := range []string{"compact/1", "compact/2"} {
-		server, err := NewServer(nil, Config{Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: 32000, ToolProfile: profile})
+	for _, tc := range []struct {
+		config string
+		want   string
+	}{
+		{"", "compact/2"},
+		{"compact/1", "compact/1"},
+		{"compact/2", "compact/2"},
+		{"full", "full"},
+	} {
+		server, err := NewServer(nil, Config{Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: 32000, ToolProfile: tc.config})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,20 +214,20 @@ func TestCompactToolProfileIsReportedByClientInfo(t *testing.T) {
 		if err = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &info); err != nil {
 			t.Fatal(err)
 		}
-		if info.Facade.ToolProfile != profile || info.API.ToolProfile != "" {
-			t.Fatalf("tool profile declaration for %q: %+v", profile, info)
+		if info.Facade.ToolProfile != tc.want || info.API.ToolProfile != "" {
+			t.Fatalf("tool profile declaration for %q: %+v", tc.config, info)
 		}
 	}
 }
 
 func TestCompactToolProfileUsesUnchangedSearchHandler(t *testing.T) {
-	for _, profile := range []string{"", "compact/1", "compact/2"} {
+	for _, profile := range []string{"", "compact/1", "compact/2", "full"} {
 		server, err := NewReadOnlyServer(compactSearchBackend{index: core.IndexResult{
 			Package: core.Package{ReceiptID: "receipt", Semantic: core.SemanticPackage{
 				Schema: "cairn.semantic/19", Status: "READY", Selected: []core.Selection{},
 				Omitted: map[string]int{"OPTIONAL_BUDGET": 0},
 			}},
-		}}, Config{Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: 32000, ToolProfile: profile})
+		}}, Config{Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: 32000, ToolProfile: profile, SearchView: "full"})
 		if err != nil {
 			t.Fatal(err)
 		}

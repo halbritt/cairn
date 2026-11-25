@@ -145,7 +145,7 @@ func TestReadOnlySearchAndPullPreserveScopeRequestsAndSourceView(t *testing.T) {
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &view); err != nil {
 		t.Fatal(err)
 	}
-	if view.Schema != "cairn.mcp-search/1" || view.SourceSchema != "cairn.semantic/19" || view.SourceSeal != "seal" || view.ReceiptID != "receipt" || view.RequestID != requestID || len(view.Index) != 1 || view.Index[0].SummarySpan.Offset != 40 {
+	if view.Schema != "cairn.mcp-search-compact/1" || view.SourceSchema != "cairn.semantic/19" || view.SourceSeal != "seal" || view.ReceiptID != "receipt" || view.RequestID != requestID || len(view.Index) != 1 || view.Index[0].SummarySpan.Offset != 40 {
 		t.Fatalf("lost source view: %+v", view)
 	}
 	wantPull = view.Index[0].PullArguments

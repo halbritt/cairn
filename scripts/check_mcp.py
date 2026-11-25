@@ -119,7 +119,7 @@ def check(binary, root, environment, claim, support):
         assert 'IDEMPOTENCY_CONFLICT' in tool('cairn_remember', dict(args, body='changed'), error=True)
         local = tool('cairn_remember', dict(request_id=str(uuid.uuid4()), body=query + ' private note'))
         view = tool('cairn_search', dict(query=query))
-        assert view['schema'] == 'cairn.mcp-search/1'
+        assert view['schema'] == 'cairn.mcp-search-compact/1'
         assert 'context' not in view
         assert view['scope'] == dict(repo='fixture:socket', task_id='mcp-integration', run_id='stdio')
         assert [i['record_id'] for i in view['index']] == [saved['record_id']]

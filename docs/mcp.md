@@ -114,17 +114,18 @@ until it is restarted.
 
 ## Compact responses and tool descriptions
 
-The MCP facade accepts an opt-in `--search-view compact/1` startup flag.
-`codex-config`, `claude-config` and `opencode-config` pass it through when
-generating a new configuration. The default response remains
-`cairn.mcp-search/1`. The opt-in response is
-`cairn.mcp-search-compact/1`: it retains whole required selections, indexed
+The MCP facade defaults to `--search-view compact/1` and `--tool-profile compact/2`.
+`codex-config`, `claude-config` and `opencode-config` emit those defaults when
+generating a configuration, and accept `--search-view full` or
+`--tool-profile full` to opt out back to the verbose views. The default search
+response is `cairn.mcp-search-compact/1`: it retains whole required selections, indexed
 source identity and preview spans, complete `pull_arguments`, omission counts,
 discovery state, declared context and filters, paging, receipt budget and expiry.
 It removes repeated query,
-ranking and tokenizer metadata from the model-facing response. The sealed
+ranking and tokenizer metadata from the model-facing response (pass `--search-view full`
+for `cairn.mcp-search/1`). The sealed
 receipt and current pull checks are unchanged. `cairn_client_info` reports the
-active `facade.search_view` only when compact mode is selected.
+active `facade.search_view`.
 
 The authenticated `cairn agent recompile` and `explain-page` operations
 remain available for full retained receipt and candidate diagnostics under the
@@ -137,26 +138,18 @@ complete result does not fit, the facade returns a bounded `BUDGET_REFUSED`
 result; it does not clip source content. It has no accepted task-outcome or
 subscription-cost claim yet.
 
-`--tool-profile compact/1` is a separate opt-in MCP startup flag for shorter
-`cairn_search` and `cairn_pull` descriptions. Their names, argument types,
-required fields, annotations and handlers stay the same. The shortened field
-descriptions retain the action and constraint summary; the full descriptions
-remain the default. `cairn_client_info` reports the active
-`facade.tool_profile` when selected. Configuration generators pass the flag to
-the resulting MCP command. In the local SDK declaration fixture, the search
+`--tool-profile compact/2` is the default MCP tool-description profile and
+shortens all ten MCP tool descriptions while keeping compact/1's search/pull
+descriptions. `--tool-profile compact/1` shortens only `cairn_search` and
+`cairn_pull` descriptions, and `--tool-profile full` restores the verbose
+descriptions. Tool names, availability, annotations, handlers and all
+non-description schema fields are unchanged; only description strings differ.
+Unlisted future tools keep their full description until explicitly reviewed for
+`compact/2`. `cairn_client_info` reports the active `facade.tool_profile`.
+Configuration generators pass the selected profile to their MCP command; this
+flag does not change OpenCode's native tool profile (see
+`CAIRN_OPENCODE_TOOL_PROFILE`). In the local SDK declaration fixture, the search
 tool JSON shrank from 6,464 to 2,777 bytes and pull from 1,681 to 729 bytes.
-These are serialized declarations, not provider tokens or measured task savings.
-The profile is not enabled on existing bindings, and its effect on discovery,
-help calls, task outcomes and cache accounting still needs a paired trial.
-
-The separate opt-in `--tool-profile compact/2` shortens all ten MCP tool
-descriptions. It retains the full profile by default and keeps compact/1's
-search/pull descriptions. Tool names, availability, annotations, handlers and
-all non-description schema fields are unchanged; only description strings
-differ. Unlisted future tools keep their full description until explicitly
-reviewed for this profile. Codex and Claude configuration generators pass the
-selected profile to their MCP command; this flag does not change OpenCode's
-native tool profile.
 
 Smaller declarations do
 not by themselves establish lower provider costs or better task outcomes.
@@ -400,11 +393,12 @@ Cairn implements ten standard MCP tools across discovery, expansion, capture, mu
 ### Tool Profiles, Search Views, and Token Budgeting
 
 - **Tool Profiles (`--tool-profile`)**:
-  - Default: Full verbose tool descriptions and JSON schemas for maximum self-describing capability.
-  - `compact/1`: Shortened descriptions for `cairn_search` and `cairn_pull`, reducing schema token overhead.
-  - `compact/2`: Shortens descriptions across all ten MCP tools. In the recorded declaration-size comparison the serialized declaration array was 29.6% smaller than the full profile (7,432 bytes, 1,358 `o200k_base` proxy tokens); this is a serialized-declaration measurement, not provider tokens or task savings.
-- **Search View Compaction (`--search-view compact/1`)**:
-  - Emits `cairn.mcp-search-compact/1` instead of `cairn.mcp-search/1`. Retains required instructions, preview passages, handles, `pull_arguments`, paging, and budget fields while stripping repeated query text, ranking scores, and tokenizer debug metadata.
+  - `compact/2` (default): Shortens descriptions across all ten MCP tools. In the recorded declaration-size comparison the serialized declaration array was 29.6% smaller than the full profile (7,432 bytes, 1,358 `o200k_base` proxy tokens); this is a serialized-declaration measurement, not provider tokens or task savings.
+  - `compact/1`: Shortened descriptions for `cairn_search` and `cairn_pull`, leaving other tools full.
+  - `full`: Opt-out restoring full verbose tool descriptions and JSON schemas.
+- **Search View (`--search-view`)**:
+  - `compact/1` (default): Emits `cairn.mcp-search-compact/1`. Retains required instructions, preview passages, handles, `pull_arguments`, paging, and budget fields while stripping repeated query text, ranking scores, and tokenizer debug metadata.
+  - `full`: Opt-out emitting `cairn.mcp-search/1`.
 - **Token Budgeting (`--tokens` and `--max-tokens`)**:
   - `--tokens` (default: 32,000): Configures default memory allowance per tool result.
   - `--max-tokens` (default: 1,000,000): Upper limit for explicit `available_tokens` declarations and maximum pull expansion output.

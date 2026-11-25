@@ -217,7 +217,7 @@ func eagerCandidatesWithSeen(ctx context.Context, client *memoryclient.Client, c
 			refusal("whole_context_budget")
 			candidateRoute(observers, "whole_context_budget", group)
 		default:
-			if core.Code(readErr) == "STALE_HANDLE" && value.SameText(config.Get("recall_view"), "compact/1") {
+			if core.Code(readErr) == "STALE_HANDLE" && (config.Get("recall_view") == nil || value.SameText(config.Get("recall_view"), "compact/1")) {
 				refusal("stale_handle")
 				candidateRoute(observers, "stale_handle", group)
 			} else {

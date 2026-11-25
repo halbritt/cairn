@@ -358,7 +358,7 @@ class HermesStagedGoCoordinationDelegation(InstalledTools, unittest.TestCase):
                 callbacks['pre_llm_call'](session_id=SESSION, turn_id=TURN, platform='cli',
                                           model='hermes-model', user_message='handle inbox notice')
                 rewritten = middlewares['llm_request']({'messages': [{'role': 'user', 'content': 'hi'}]}, session_id=SESSION)
-                self.assertIn('Cairn notice from agent/requester.', rewritten['request']['messages'][-1]['content'])
+                self.assertIn('Cairn has a notice from agent/requester for this conversation.', rewritten['request']['messages'][-1]['content'])
                 paths = list((Path(f.coord['state_dir']) / 'inbox').glob('*.json'))
                 self.assertEqual(len(paths), 1)
                 context = json.loads(paths[0].read_bytes())

@@ -8,13 +8,20 @@ import (
 )
 
 func TestCodexConfigPassesCompactAllToolProfileToMCP(t *testing.T) {
-	args := []string{"--socket", "/api.sock", "--token-file", "/agent.token", "--repo", "repo", "--codex-thread", "--tool-profile", "compact/2"}
+	args := []string{"--socket", "/api.sock", "--token-file", "/agent.token", "--repo", "repo", "--codex-thread"}
 	var out bytes.Buffer
 	if err := writeCodexConfig(&out, args, "/cairn"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"--tool-profile", "compact/2"`) {
-		t.Fatalf("generated Codex config omitted selected tool profile: %s", out.String())
+	if !strings.Contains(out.String(), `"--search-view", "compact/1"`) || !strings.Contains(out.String(), `"--tool-profile", "compact/2"`) {
+		t.Fatalf("generated Codex config omitted default compact view/profile: %s", out.String())
+	}
+	var fullOut bytes.Buffer
+	if err := writeCodexConfig(&fullOut, append(append([]string{}, args...), "--search-view", "full", "--tool-profile", "full"), "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fullOut.String(), `"--search-view", "full"`) || !strings.Contains(fullOut.String(), `"--tool-profile", "full"`) {
+		t.Fatalf("generated Codex config lost full opt-out: %s", fullOut.String())
 	}
 }
 

@@ -1212,7 +1212,7 @@ class InboxRecallBridgeTests(unittest.TestCase):
         (self.root/'coordination.json').write_text(json.dumps(dict(self.cc,staging=True)))
         context=self.invoke()['hookSpecificOutput']['additionalContext']
         self.assertIn('Read its exact selected source',context)
-        self.assertIn('search ordinary Cairn memory',context)
+        self.assertIn('search Cairn memory for the task',context)
         self.assertNotIn(self.body,context)
         result=memory.handle(self.mc,self.event)
         self.assertIn('Required during staging.',result['hookSpecificOutput']['additionalContext'])

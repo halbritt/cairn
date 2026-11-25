@@ -41,7 +41,9 @@ func TestOpenCodeConfigPreservesArgumentsWithoutCredentials(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := append([]string{"/absolute/cairn executable", "mcp"}, args...)
+		want := append([]string{"/absolute/cairn executable", "mcp"}, args[:12]...)
+		want = append(want, "--search-view", "compact/1", "--tool-profile", "compact/2")
+		want = append(want, args[12:]...)
 		want[3], want[5] = wantSocket, wantToken
 		server := config.MCP["cairn"]
 		if !reflect.DeepEqual(server.Command, want) || server.Type != "local" || !server.Enabled || len(config.MCP) != 1 {

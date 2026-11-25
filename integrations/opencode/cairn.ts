@@ -8,7 +8,7 @@ import { isAbsolute, join } from "node:path"
 import type { ZodRawShape } from "zod"
 
 const z = tool.schema
-const toolProfile = process.env.CAIRN_OPENCODE_TOOL_PROFILE ?? "full"
+const toolProfile = process.env.CAIRN_OPENCODE_TOOL_PROFILE ?? "compact/1"
 if (toolProfile !== "full" && toolProfile !== "compact/1") {
   throw new Error("CAIRN_OPENCODE_TOOL_PROFILE must be full or compact/1")
 }

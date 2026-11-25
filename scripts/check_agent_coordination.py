@@ -411,7 +411,7 @@ def check(binary, root, repo, api_call):
         queued_agent = next(a for a in api_call('bob','agents','list')['agents'] if a['native_session_id']=='native-queue-owner')
         queued_message = api_call('alice','publish','--request-id',str(uuid.uuid4()),'--to',queued_agent['inbox'],
             '--kind','request','--version',str(source['version']),source['record_id'])
-        assert 'structured inbox context' not in hook(queued_owner, queued_event)['hookSpecificOutput']['additionalContext']
+        assert 'structured inbox context' not in hook(queued_owner, queued_event).get('hookSpecificOutput', {}).get('additionalContext', '')
         queued_delivery = api_call('alice','event-status',queued_message['event_id'])['deliveries'][0]
         assert queued_delivery['state']=='pending' and queued_delivery['attempts']==0
         spec = importlib.util.spec_from_file_location('native_binding_engine',script)
@@ -484,7 +484,7 @@ def check(binary, root, repo, api_call):
         watch()
         assert api_call('alice', 'event-status', uncertain['event_id'])['deliveries'][0]['state'] == 'failed'
         resumed_context = hook(second, dict(event, session_id='native-crashed-delivery'))
-        assert 'structured inbox context' not in resumed_context['hookSpecificOutput']['additionalContext'], 'uncertain native work replayed on resume'
+        assert 'structured inbox context' not in resumed_context.get('hookSpecificOutput', {}).get('additionalContext', ''), 'uncertain native work replayed on resume'
         current_crash_agent = entry(crash_agent['agent_id'])[0]
         assert current_crash_agent['execution_id'] != crash_agent['execution_id']
         notice = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()), '--to', crash_agent['inbox'],

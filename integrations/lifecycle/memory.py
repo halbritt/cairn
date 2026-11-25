@@ -1625,8 +1625,8 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
     observer_config = getattr(observer, 'config', None)
     dedup = state is not None and recall_dedup_enabled(observer_config)
     seen = state.get("seen", {}) if isinstance(state, dict) else {}
-    view_name = (observer_config.get('recall_view', 'full')
-                 if isinstance(observer_config, dict) else 'full')
+    view_name = (observer_config.get('recall_view', 'compact/1')
+                 if isinstance(observer_config, dict) else 'compact/1')
     if view_name not in ('full', 'compact/1'):
         raise HookError('invalid lifecycle recall_view: expected full or compact/1')
     cue = (COMPACT_AGENT_TOOLS_CUE if view_name == 'compact/1' else AGENT_TOOLS_CUE).format(budget=budget)
@@ -1854,7 +1854,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             trace_observe(memory, 'route', 'whole_context_budget', group)
         except HookError as exc:
             if (exc.code == "STALE_HANDLE"
-                    and memory.config.get("recall_view", "full") == "compact/1"):
+                    and memory.config.get("recall_view", "compact/1") == "compact/1"):
                 # This receipt-scoped handle cannot be revived by switching from
                 # a whole pull to a span pull. Preserve the actionable refusal
                 # in the opt-in compact view and leave re-search as the next
@@ -2265,7 +2265,7 @@ def codex_agent_context(memory, event, result, budget, status, deadline, state):
             if bound and selected:
                 raise RequiredContextRefused("current required delivery status could not be persisted") from exc
             raise
-    checkpoint_reset = (memory.config.get("context_lifecycle", "full") == "compact/1"
+    checkpoint_reset = (memory.config.get("context_lifecycle", "compact/1") == "compact/1"
                         and event.get("source") in ("compact", "resume")
                         and isinstance(state.get("workstream"), str))
     refresh = bound and event["hook_event_name"] == "SessionStart" and (grant["granted"] or emitted > 0 or checkpoint_reset)
@@ -2290,7 +2290,7 @@ def codex_agent_context(memory, event, result, budget, status, deadline, state):
         # the original per-task evaluation cap.
         required_cost = cost(text)
         checkpoint_state = None
-        if (memory.config.get("context_lifecycle", "full") == "compact/1"
+        if (memory.config.get("context_lifecycle", "compact/1") == "compact/1"
                 and event.get("source") in ("compact", "resume")):
             checkpoint, checkpoint_state = current_checkpoint_view(memory, event, state, result, deadline)
             if checkpoint:
