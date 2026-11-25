@@ -18,7 +18,10 @@ producer-attribution correction where it supersedes earlier synthesis.
 - Do not capture private Council sessions or commit operational memory,
   credentials, generated binaries, model output, or raw workspace exhaust.
 - Report the implemented slice and tested claims separately from full design
-  acceptance and measured usefulness.
+  acceptance and measured usefulness. This governs what you claim, not what
+  you switch on: unmeasured usefulness is stated in the report and is never a
+  reason to leave owner-requested work disabled. See
+  [Activation is part of done](#activation-is-part-of-done).
 
 ## Model routing
 
@@ -52,6 +55,29 @@ completing the full integration lifecycle before ending its turn or session:
   If a push fails due to concurrent agent updates, `git pull --rebase origin main`,
   re-verify, and push again.
 
+## Activation is part of done
+
+Work the owner requested is finished when it is in use, not when it is merged.
+A requested feature that is merged but switched off is unfinished work.
+
+- **Make it the default.** Ship owner-requested behavior enabled on every
+  harness and live binding that supports it. Add an opt-in flag only when the
+  owner asks for one; otherwise change the default and document the off switch.
+- **The request is the authorization.** Do not hold activation for paired
+  trials, outcome measurements or usefulness evidence the owner did not ask
+  for. State what was not measured and proceed.
+- **Finish the host step.** When activation needs host state outside this
+  repository (binding or hook configuration, pinned manifests, MCP startup
+  flags), make that change on the owner's host as part of the task, following
+  the documented staging procedure for that surface.
+- **Keep it reversible.** Report what you turned on, where, and the exact
+  command or configuration change that turns it off.
+- **Never end on a silent opt-in.** If you cannot activate, end with the
+  blocker and the exact activating commands.
+
+This does not widen authority. The limits above on unimplemented authority,
+consequential reads, destination delivery, production data and model routing
+still hold, and required checks must pass before a default changes.
 
 ## Use the provisioned memory interface
 
