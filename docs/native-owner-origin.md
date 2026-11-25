@@ -15,7 +15,8 @@ instructions. It does not install a binary or change a running session.
 
 ## Trust and input identity
 
-With an explicit verified manifest, `launch-codex-coordination.py` generates a
+The coordination installer does not install this launcher (w26); run it
+explicitly. With an explicit verified manifest, `launch-codex-coordination.py` generates a
 random 32-byte connection proof. Separate inherited Unix socket descriptors
 carry it to the app-server and TUI; only descriptor numbers appear in argv.
 The bounded frame contains the contract magic, proof, and exact private socket

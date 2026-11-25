@@ -368,75 +368,6 @@ def ensure_herdr_integration(herdr, harness, settings):
                        f'repair manually with: {manual}')
 
 
-SHIM_MARKER = '# Cairn coordinated Codex launcher (managed by install-agent-coordination.py).'
-
-
-def resolve_real_codex(shim_path, codex=None):
-    """Find the native codex executable the shim must exec.
-
-    An explicit argument wins. Otherwise the PATH result is used unless it is
-    the shim entry itself: a managed shim contributes its recorded REAL, and
-    a foreign entry — including a symlink to the real installation —
-    contributes its fully resolved target. Entries compare before resolution
-    so a symlink at the shim location never masquerades as the native binary
-    and is never written through.
-    """
-    found = codex or shutil.which('codex')
-    if not found:
-        return None
-    if Path(found) != Path(shim_path):
-        return str(Path(found).resolve())
-    entry = Path(shim_path)
-    if entry.is_symlink():
-        return os.path.realpath(entry)
-    if entry.is_file():
-        for line in entry.read_text().splitlines():
-            if line.startswith('REAL='):
-                return line.split('=', 1)[1].strip('"')
-    return None
-
-
-def install_codex_shim(root, codex=None):
-    """Make the coordinated launcher the ordinary `codex` launch route.
-
-    Interactive TUI sessions (including resume) run on a per-session
-    app-server through the launcher; every non-interactive subcommand execs
-    the real codex unchanged. A foreign entry at the shim location — file or
-    symlink — is moved aside whole, so the native installation's bytes are
-    never written through, and the shim entry itself is replaced atomically.
-    """
-    shim_dir = Path.home() / '.local' / 'bin'
-    shim_dir.mkdir(parents=True, exist_ok=True)
-    shim = shim_dir / 'codex'
-    real = resolve_real_codex(shim, codex)
-    if not real or Path(real) == shim or not Path(real).is_file():
-        raise RuntimeError('could not resolve the real codex executable for the launcher shim; '
-                           'pass an explicit path with --codex')
-    # All routing (non-interactive subcommands, explicit --remote endpoints,
-    # and interactive starts) is classified by the launcher itself, keeping
-    # the shim a trivial exec that never rewrites arguments.
-    body = '\n'.join(['#!/bin/sh', SHIM_MARKER, f'REAL="{real}"',
-                      f'LAUNCHER="{root / "launch-codex-coordination.py"}"',
-                      f'PYTHON="{sys.executable}"',
-                      'exec "$PYTHON" "$LAUNCHER" --codex "$REAL" -- "$@"', ''])
-    managed = shim.is_file() and not shim.is_symlink() and SHIM_MARKER in shim.read_text()
-    if (shim.exists() or shim.is_symlink()) and not managed:
-        # Move the foreign entry aside whole: a symlink is preserved as a
-        # symlink and its target's bytes stay untouched.
-        os.replace(shim, shim.with_name(shim.name + '.before-cairn-coordination'))
-    temp = shim_dir / ('.codex-shim-' + str(os.getpid()))
-    temp.write_text(body)
-    temp.chmod(0o700)
-    os.replace(temp, shim)
-    effective = shutil.which('codex')
-    if effective and Path(effective) == shim:
-        print(f'Installed the coordinated codex launcher as the ordinary route: {shim}.')
-    else:
-        print(f'Installed the coordinated codex launcher at {shim}, but the current PATH resolves '
-              f'codex to {effective}. Put {shim_dir} earlier in PATH (e.g. export PATH="{shim_dir}:$PATH") '
-              'so ordinary launches take the coordinated route.')
-
-
 def register_claude_channel(cairn, directory, config_home):
     """Register the channel MCP server in the account home, honestly.
 
@@ -575,7 +506,6 @@ def main():
                              'Skips the Herdr executable and integration checks and changes nothing outside the '
                              'selected --settings directory and --root, so a scratch directory is usable')
     parser.add_argument('--claude-channel-dir', type=Path, help='owner-only directory bridging Claude channel wakes (Claude + --idle-wakeup only)')
-    parser.add_argument('--codex', help='native codex executable the launcher shim execs (default: resolved from PATH)')
     parser.add_argument('--no-service', action='store_true', help='prepare hooks without installing/restarting the watcher')
     args = parser.parse_args()
     if not args.binding or len(args.binding) > 128 or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-' for c in args.binding) or args.binding in ('.', '..'):
@@ -677,10 +607,8 @@ def main():
         register_claude_channel(Path(args.cairn).resolve(), config['claude_channel_dir'],
                                 Path(config['config_home']))
     if args.harness == 'codex':
-        launcher = args.root.resolve() / 'launch-codex-coordination.py'
-        shutil.copyfile(ROOT / 'scripts/launch-codex-coordination.py', launcher)
-        launcher.chmod(0o700)
-        install_codex_shim(args.root.resolve(), str(Path(args.codex).resolve()) if args.codex else None)
+        # Codex starts natively (no launcher shim), as on every staged Go
+        # cohort; Herdr idle wake and turn-boundary delivery reach it.
         command = shlex.join([sys.executable, str(args.root.resolve() / 'coordination.py'), 'hook', '--config', str(installed)])
         trust_codex_hooks(args.settings.resolve().parent, args.settings.resolve(), command)
     if not args.no_service:

@@ -397,132 +397,42 @@ class CodexLauncher(unittest.TestCase):
             dict(harness='codex'), coordination.process_reference(plain.pid)))
 
 
-class CodexShim(unittest.TestCase):
-    def setUp(self):
+class NoCodexShim(unittest.TestCase):
+    """The coordination installer starts Codex natively and installs no shim."""
+
+    def test_codex_install_leaves_the_codex_route_and_launcher_alone(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        self.work = Path(temp.name)
-        self.real_dir = self.work / 'realbin'
-        self.real_dir.mkdir()
-        self.real = self.real_dir / 'codex'
-        self.real.write_text(CODEX)
-        self.real.chmod(0o700)
-        spec = importlib.util.spec_from_file_location('codex_installer', ROOT / 'scripts/install-agent-coordination.py')
-        self.installer = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.installer)
-
-    def install(self, home, path_env):
-        root = self.work / 'engine-root'
-        root.mkdir(exist_ok=True)
-        shutil.copyfile(ROOT / 'scripts/launch-codex-coordination.py', root / 'launch-codex-coordination.py')
-        with mock.patch.dict(os.environ, HOME=str(home), PATH=path_env):
-            self.installer.install_codex_shim(root, str(self.real))
-            return self.installer
-
-    def test_shim_installs_idempotently_and_backs_up_foreign_wrappers(self):
-        home = self.work / 'home'
-        shim = home / '.local' / 'bin' / 'codex'
-        shim.parent.mkdir(parents=True)
-        shim.write_text('#!/bin/sh\nexec other-codex "$@"\n')
-        self.install(home, str(self.real_dir))
-        body = shim.read_text()
-        self.assertIn(self.installer.SHIM_MARKER, body)
-        self.assertIn(f'REAL="{self.real}"', body)
-        self.assertIn('exec "$PYTHON" "$LAUNCHER" --codex "$REAL" -- "$@"', body)
-        self.assertNotIn('case "$1"', body)
-        self.assertEqual(shim.stat().st_mode & 0o777, 0o700)
-        self.assertIn('other-codex', (shim.parent / 'codex.before-cairn-coordination').read_text())
-        first = shim.read_text()
-        self.install(home, str(self.real_dir))
-        self.assertEqual(shim.read_text(), first)
-
-    def test_existing_symlink_install_preserves_target_and_routes_interactively(self):
-        # The real account layout: ~/.local/bin/codex symlinks to the npm
-        # installation. Installing the shim must replace only the directory
-        # entry and leave the native bytes untouched.
-        home = self.work / 'home3'
+        work = Path(temp.name)
+        home = work / 'home'
         shim_dir = home / '.local' / 'bin'
         shim_dir.mkdir(parents=True)
-        shim = shim_dir / 'codex'
-        shim.symlink_to(self.real)
-        native = self.real.read_bytes()
-        log = self.work / 'symlink-log.jsonl'
-        self.install(home, f"{shim_dir}:{self.real_dir}:{os.environ['PATH']}")
-        self.assertEqual(self.real.read_bytes(), native, 'native codex bytes were modified')
-        self.assertFalse(shim.is_symlink())
-        body = shim.read_text()
-        self.assertIn(self.installer.SHIM_MARKER, body)
-        self.assertIn(f'REAL="{self.real}"', body)
-        preserved = shim_dir / 'codex.before-cairn-coordination'
-        self.assertTrue(preserved.is_symlink() and str(preserved.resolve()) == str(self.real),
-                        'the foreign symlink was not preserved whole')
-        env = dict(os.environ, HOME=str(home), PATH=f"{shim_dir}:{self.real_dir}:{os.environ['PATH']}",
-                   LAUNCHER_LOG=str(log), LAUNCHER_SERVER_PID=str(self.work / 'server3.pid'),
-                   LAUNCHER_TUI_EXIT='0', LAUNCHER_DIRECT_EXIT='7')
-        result = subprocess.run([str(shim), 'resume', '--last'], env=env,
-                                capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        entries = [json.loads(line) for line in log.read_text().splitlines()]
-        self.assertEqual(entries[0][:2], ['app-server', '--listen'])
-        self.assertEqual(entries[1][:2], ['--remote', entries[0][2]])
-        self.assertEqual(entries[1][2:], ['resume', '--last'])
-        self.assertEqual(list(shim_dir.glob('queue-*.sock')), [])
-
-    def test_explicit_codex_argument_overrides_path_resolution(self):
-        other_dir = self.work / 'otherbin'
-        other_dir.mkdir()
-        other = other_dir / 'codex'
-        other.write_text(CODEX)
-        other.chmod(0o700)
-        home = self.work / 'home4'
-        root = self.work / 'engine4'
-        root.mkdir()
-        shutil.copyfile(ROOT / 'scripts/launch-codex-coordination.py', root / 'launch-codex-coordination.py')
-        with mock.patch.dict(os.environ, HOME=str(home), PATH=str(self.real_dir)):
-            self.installer.install_codex_shim(root, str(other))
-        body = (home / '.local' / 'bin' / 'codex').read_text()
-        self.assertIn(f'REAL="{other}"', body)
-
-    def test_shim_is_the_ordinary_route_for_interactive_launches_only(self):
-        home = self.work / 'home2'
-        shim_dir = home / '.local' / 'bin'
-        log = self.work / 'shim-log.jsonl'
-        self.install(home, f"{shim_dir}:{self.real_dir}")
-        shim = shim_dir / 'codex'
-        self.assertEqual((shim.stat().st_mode & 0o777), 0o700)
-        env = dict(os.environ, HOME=str(home), PATH=f"{shim_dir}:{self.real_dir}:{os.environ['PATH']}",
-                   LAUNCHER_LOG=str(log), LAUNCHER_SERVER_PID=str(self.work / 'server.pid'),
-                   LAUNCHER_TUI_PID=str(self.work / 'tui.pid'), LAUNCHER_TUI_SECONDS='0.2',
-                   LAUNCHER_TUI_EXIT='0', LAUNCHER_DIRECT_EXIT='7')
-        direct_cases = [['exec', 'run', 'task'], ['--help'], ['-c', 'model=gpt-6', 'exec', 'x'],
-                        ['--dangerously-bypass-approvals-and-sandbox', 'exec', 'y'],
-                        ['--config=k=v', 'exec'], ['--enable', 'beta', '--disable', 'alpha', 'exec'],
-                        ['-m', 'gpt-6', 'exec'], ['-i', 'a.png', '-m', 'gpt-6', 'exec'],
-                        ['agents'], ['resume', '--remote', 'unix:///explicit.sock'],
-                        # The equals form of an explicit endpoint; a bare
-                        # --remote argv is indistinguishable from a served
-                        # TUI to the fake, so the command-qualified cases
-                        # above carry the explicit-endpoint proof.
-                        ['--remote=unix:///explicit.sock', 'resume'], ['-V']]
-        serve_cases = [[], ['resume', '--last'], ['fork', '--last'], ['do the thing'],
-                       ['--', 'exec', 'the', 'plan'], ['--search', '--no-alt-screen']]
-        for forwarded in direct_cases:
-            with self.subTest(direct=forwarded):
-                result = subprocess.run([str(shim), *forwarded], env=env,
-                                        capture_output=True, text=True, timeout=30)
-                self.assertEqual(result.returncode, 7, result.stderr)
-        for forwarded in serve_cases:
-            with self.subTest(serve=forwarded):
-                result = subprocess.run([str(shim), *forwarded], env=env,
-                                        capture_output=True, text=True, timeout=30)
-                self.assertEqual(result.returncode, 0, result.stderr)
-        entries = [json.loads(line) for line in log.read_text().splitlines()]
-        # Every direct case execs the real codex with the user argv unchanged.
-        self.assertEqual([e for e in entries if e and e[0] != 'app-server' and e[0] != '--remote'],
-                         direct_cases)
-        served = [e for e in entries if e and e[0] in ('app-server', '--remote')]
-        self.assertEqual(len(served), 2 * len(serve_cases))
-        self.assertEqual(list((home / '.local' / 'bin').glob('queue-*.sock')), [])
+        foreign = shim_dir / 'codex'
+        foreign.write_text('#!/bin/sh\nexec /opt/codex "$@"\n')
+        foreign.chmod(0o700)
+        before = foreign.read_bytes()
+        token = work / 'token'
+        token.write_text('fixture')
+        root = work / 'coordination'
+        settings = home / '.codex' / 'hooks.json'
+        settings.parent.mkdir(parents=True)
+        spec = importlib.util.spec_from_file_location('codex_installer_noshim', ROOT / 'scripts/install-agent-coordination.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        self.assertFalse(hasattr(installer, 'install_codex_shim'))
+        argv = ['install-agent-coordination.py', '--harness', 'codex', '--binding', 'fixture',
+                '--settings', str(settings), '--root', str(root), '--cairn', sys.executable,
+                '--socket', str(work / 'api.sock'), '--token-file', str(token), '--no-service']
+        with mock.patch.dict(os.environ, HOME=str(home)), mock.patch.object(sys, 'argv', argv), \
+                mock.patch.object(installer, 'trust_codex_hooks') as trust, \
+                mock.patch.object(installer.Path, 'home', return_value=home):
+            installer.main()
+        trust.assert_called_once()
+        self.assertTrue((root / 'bindings' / 'fixture.json').is_file())
+        self.assertIn('hook', json.dumps(json.loads(settings.read_text())))
+        self.assertEqual(foreign.read_bytes(), before)
+        self.assertEqual(sorted(p.name for p in shim_dir.iterdir()), ['codex'])
+        self.assertFalse((root / 'launch-codex-coordination.py').exists())
 
 
 class LauncherLifetime(unittest.TestCase):
@@ -606,39 +516,6 @@ class InstalledHelpBoundary(unittest.TestCase):
         unknown = {name for name in documented
                    if name not in launcher.VALUE_OPTIONS and name not in launcher.FLAG_OPTIONS}
         self.assertEqual(unknown, set(), f'unclassified global options: {unknown}')
-
-
-class PathDiscoveredSymlink(unittest.TestCase):
-    def test_path_discovery_without_explicit_codex_preserves_target(self):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        work = Path(temp.name)
-        real_dir = work / 'realbin'
-        real_dir.mkdir()
-        real = real_dir / 'codex'
-        real.write_text(CODEX)
-        real.chmod(0o700)
-        native = real.read_bytes()
-        home = work / 'home'
-        shim_dir = home / '.local' / 'bin'
-        shim_dir.mkdir(parents=True)
-        shim_dir.joinpath('codex').symlink_to(real)
-        root = work / 'engine'
-        root.mkdir()
-        shutil.copyfile(ROOT / 'scripts/launch-codex-coordination.py', root / 'launch-codex-coordination.py')
-        spec = importlib.util.spec_from_file_location('installer_path', ROOT / 'scripts/install-agent-coordination.py')
-        installer = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(installer)
-        with mock.patch.dict(os.environ, HOME=str(home), PATH=f"{shim_dir}:{real_dir}:{os.environ['PATH']}"):
-            installer.install_codex_shim(root)          # No explicit codex: PATH discovery.
-            installer.install_codex_shim(root)          # Reinstall over the managed shim.
-        shim = shim_dir / 'codex'
-        self.assertEqual(real.read_bytes(), native, 'native codex bytes were modified')
-        self.assertFalse(shim.is_symlink())
-        self.assertIn(f'REAL="{real}"', shim.read_text())
-        backups = list(shim_dir.glob('codex.before-cairn-coordination'))
-        self.assertEqual(len(backups), 1, 'reinstall churned the preserved foreign entry')
-        self.assertTrue(backups[0].is_symlink() and str(backups[0].resolve()) == str(real))
 
 
 if __name__ == '__main__':
