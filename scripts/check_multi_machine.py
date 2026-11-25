@@ -514,9 +514,12 @@ def check(binary, directory):
         b_relay = start_relay(binary, b_dir, faults.port, cert)
         assert b.call("session-inbox-claim", body=json.dumps(dict(
             request_id=uid(), session=claim["session"])))["attempt"] is None
-        # Remote manual inbox-next is denied for both the session and base
-        # principal; neither can take the held delivery after lease expiry.
-        b.event("inbox", session=b_session, expected="AUTHORITY_DENIED")
+        # A remote profile may drain only its own verified session inbox
+        # (CAIRN-794). That drain cannot take the held, unreleased delivery
+        # after lease expiry; another machine's session and the base
+        # principal stay refused.
+        assert b.event("inbox", session=b_session) == {"delivery": None}
+        b.event("inbox", session=a_session, expected="NOT_FOUND")
         b.event("inbox", expected="AUTHORITY_DENIED")
         a.call("session-inbox-claim", body=json.dumps(dict(
             request_id=uid(), session=claim["session"])), expected="NOT_FOUND")
