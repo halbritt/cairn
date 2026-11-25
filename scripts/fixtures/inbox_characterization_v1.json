@@ -286,6 +286,7 @@
               "compact_fallback_control": "Cairn notice from agent/requester; exact source 9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617 version 1. Explicitly settle with cairn-inbox settle 0101010101010101 handled after processing; use failed or ignored only with a reason code. Reading or describing this message does not settle it. After confirmed settlement, run cairn-inbox advance 0101010101010101 to inspect the next already-waiting notice in this turn, up to three total. A request or urgent notice waits for the next turn. Settle each item separately. Source is 26 bytes; read its exact text with cairn-inbox read 0101010101010101 before settling.",
               "compact_handle": "0101010101010101",
               "compact_issued_at": "$TIME",
+              "compact_read_text": "cairn-inbox read 0101010101010101",
               "completion": [
                 "$PYTHON",
                 "$COORDINATION",

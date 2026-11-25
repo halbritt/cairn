@@ -309,3 +309,11 @@ They remain open for the corresponding repair
 or replacement decision. The alternatives here are to preserve and report the
 observed behavior or to repair it in a separately authorized slice; the latter
 is deferred to J-03 and its reviewers.
+
+## Golden update (2026-11-24)
+
+CAIRN-470 (`bb235b24`, 2026-11-19) added `compact_read_text`
+(`cairn-inbox read HANDLE`) to every compact inbox context, in both the Python
+producer and the Go reader (`compatibility.go`). The `compact` trace's read
+output now records that field. No other trace changed, and the v5 hash above
+covers traces this update does not touch.
