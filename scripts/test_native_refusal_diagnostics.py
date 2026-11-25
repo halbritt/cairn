@@ -55,10 +55,29 @@ class NativeRefusalDiagnosticsTests(unittest.TestCase):
         self.assertEqual((diagnostic['error_class'], diagnostic['cause_class']), ('ValueError', None))
         self.assertEqual(self.calls(), [])
 
-    def test_attempt_session_mismatch_is_an_identity_refusal(self):
-        self.state['inbox_attempt']['session'] = dict(agent_id=fixture.AGENT, execution_id=fixture.RECORD)
+    def test_attempt_session_mismatch_is_refused_before_claim(self):
+        # Since CAIRN-364 (e28564fd) a Codex wake whose held attempt names another
+        # session is refused by preclaim_codex_wake_check before the recall bridge
+        # runs. The bridge's own attempt_session guard is pinned directly by
+        # test_f02_inbox_identity.
+        mismatched = dict(agent_id=fixture.AGENT, execution_id=fixture.RECORD)
+        self.state['inbox_attempt']['session'] = mismatched
         self.freeze()
-        self.refused('identity', 'attempt_session', inspect=False)
+        result = self.invoke(main=True)
+        self.assertEqual((result['code'], result['stdout']), (2, ''), result)
+        self.assertIn('NATIVE_PROMPT_REFUSED', result['stderr'])
+        state = json.loads(fixture.coord.state_path(self.cc, fixture.SESSION).read_text())
+        refusal = state['wake_preclaim_refusal']
+        self.assertEqual((refusal['phase'], refusal['reason'], refusal['delivery_id']),
+                         ('before_claim', 'prior_held_work', fixture.DELIVERY))
+        self.assertNotIn('wake_refusal_diagnostic', state)
+        attempt = state['inbox_attempt']
+        self.assertEqual((attempt['attempt_id'], attempt['session']), (fixture.ATTEMPT, mismatched))
+        self.assertNotIn('finished_at', attempt)
+        self.assertEqual(self.calls(), [])
+        with patch.object(fixture.coord, 'process_alive', return_value=True):
+            self.assertIsNone(fixture.coord.held_attempt_refusal_observation(self.cc, state),
+                              'mismatched session must not become a current-attempt observation')
 
     def test_postclaim_configuration_hash_refusal_names_the_binding_guard(self):
         config = self.root / 'memory.json'
