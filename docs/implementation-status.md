@@ -140,8 +140,7 @@ The [roadmap](roadmap.md) lists remaining acceptance work.
 
 ## Implementation history
 
-The [implementation and deployment log](history/implementation-log.md) preserves
-the earlier chronological status page. It records historical builds, tests,
+It records historical builds, tests,
 failures, corrections, and installation observations. The
 [changelog](../CHANGELOG.md) summarizes development changes; neither is a live
 inventory of your installation.

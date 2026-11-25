@@ -13,7 +13,7 @@ there is no retry-until-pass policy or statistical superiority claim.
 
 The lesson is the exact reviewer-authored A record from the failed environment
 override repair described in
-[the observed-failure report](../../docs/verification/observed-model-failure-2026-09-08.md).
+the observed-failure report.
 Its original record/version, supporting evidence, source receipt, dump hash and
 body hash are pinned. The selected nonsensitive lesson is explicitly copied as
 shareable into an owned disposable trial repository; its original remains local
@@ -61,7 +61,7 @@ never committed as trial output. The controller pins binary hashes and refuses
 changed inputs. Updating the task, gate or lesson defines a new experiment.
 
 The first execution and its limits are recorded in the
-[verification report](../../docs/verification/agent-env-2026-09-08.md). Its original
+verification report. Its original
 controller at `0e7d8cc` called every incomplete run a task rejection. Assessment
 method v2 now keeps known local request-cap exhaustion as binding quota with
 unknown task outcome; other nonzero exits remain unknown. Candidate gate results

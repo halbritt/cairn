@@ -19,7 +19,7 @@ The [writing guide](../developer/documentation.md) records the public-facing voi
 and verification expectations.
 
 Chronological status, roadmap, Striatum integration, and transport measurement
-material moved to [history](../history/README.md), with relative links preserved.
+material moved to history, with relative links preserved.
 Current status and roadmap pages describe capabilities and remaining acceptance
 work. Pinned design source bytes and dated experimental results remain intact;
 historical records retain their original scope instead of becoming installation

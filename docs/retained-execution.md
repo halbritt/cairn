@@ -74,6 +74,5 @@ omitting the filter or supplying a different set returns `INVALID_REQUEST`
 before binding or launching. Retained execution does not recompile to satisfy a
 different filter. Omitted kinds continue to match unfiltered retained packages.
 
-The [retained-kind repair](verification/retained-kinds-2026-09-09.md) records the
-original mismatch and verified behavior. Upgrade the CLI or embedded runner;
+Upgrade the CLI or embedded runner;
 this repair requires no API or schema change.

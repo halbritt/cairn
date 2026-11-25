@@ -219,8 +219,7 @@ transport. It never sends a real Slack message or uses the operational database:
 
 The output directory must not exist. Synthetic transcripts and diagnostics stay
 outside the repository. Passing these mechanics does not measure long-term
-selection quality or task benefit. See the [verification report](verification/hermes-integration-2026-09-13.md)
-for tested revisions, remaining limits and deployment evidence.
+selection quality or task benefit.
 
 Hermes enables bounded semantic discovery alongside lexical discovery. A weak
 lexical hit or precise file request does not suppress semantic candidates.

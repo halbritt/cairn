@@ -83,5 +83,4 @@ still checks the exact current revision and live authority, as described in
 
 Category caps implement one part of roadmap L3. Recorded C waivers and the full
 unenforceability decision table remain open. Quotas do not prove that a model
-obeys an instruction or that a selected limit improves task outcomes. See the
-[verification report](verification/instruction-limits-2026-09-08.md).
+obeys an instruction or that a selected limit improves task outcomes.

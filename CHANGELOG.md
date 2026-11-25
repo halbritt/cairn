@@ -1,17 +1,26 @@
 # Changelog
 
 Cairn is an untagged local alpha. Entries below summarize user-visible development
-changes by source-commit date; they are not numbered releases. The
-[implementation history](docs/history/implementation-log.md#implementation-history)
-retains the complete chronology, including failed trials, corrections and
-superseded work.
+changes by source-commit date; they are not numbered releases. Git history holds the complete chronology.
 
 Installed binaries change independently from this source history. Check an
 installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
-See the [implementation log](docs/history/implementation-log.md) for dated deployment
-observations and [build identity](docs/build-identity.md) for unstamped builds
-and MCP processes.
+See [build identity](docs/build-identity.md) for unstamped builds and MCP
+processes.
+
+## 2026-11-25
+
+- The roadmap now states the kernel boundary (Cairn stores and delivers; it
+  does not act), the open work by Plane item and the swarm view sequence
+  (CAIRN-826).
+- `docs/decisions/` gained an index and records 0004 to 0023. Records 0004 to
+  0017 carry the decisions of the former JSON review receipts.
+- Removed about 430 files of documentation exhaust: dated verification
+  reports, the archived implementation and roadmap logs, the review receipts
+  and the plans for shipped work. Read a removed file with
+  `git show fe5743f8:<path>`. See
+  [decision 0023](docs/decisions/0023-repository-holds-current-contracts.md).
 
 ## 2026-11-24
 
@@ -619,7 +628,7 @@ and MCP processes.
   OpenCode. In every trial the unsubmitted draft survived and was never
   submitted. This is trial evidence, not a guarantee. Agy's terminal route and
   sub-second keystroke races are not covered. See the
-  [trial report](docs/verification/draft-preservation-2026-09-23.md).
+  trial report.
 - Use `--dangerously-load-development-channels=server:cairn-events` (the `=`
   form). With a space the variadic flag also consumes a following prompt.
   Refusal text, installer hint and docs now say so.
@@ -647,7 +656,7 @@ and MCP processes.
   that silence had hidden that no live Claude conversation was wake-eligible:
   the only listed conversation had exited and the second account had no channel
   directory. See [native inbox delivery](docs/native-inbox.md) and the
-  [detection deployment report](docs/verification/claude-channel-detection-2026-09-22.md).
+  detection deployment report.
 
 ## 2026-09-16
 
@@ -659,7 +668,7 @@ and MCP processes.
   covering units collected after their deadline. Unconfirmed cleanup retains
   the hold.
 - Basic automatic wakeup exchanges passed across both Codex and both Claude
-  accounts, Agy, OpenCode and Hermes. [The account report](docs/verification/native-wakeup-accounts-2026-09-16.md)
+  accounts, Agy, OpenCode and Hermes. The account report
   retains earlier failures and separates this coverage from remaining draft
   preservation and interactive cancellation work.
 
@@ -704,7 +713,7 @@ and MCP processes.
   both Codex and both Claude accounts. Each worker receives its profile name;
   legacy inboxes retain their history. The additional Claude account passed a
   live check; the additional Codex account reported its usage limit. Recorded
-  the [coordination v1 plan](docs/plans/agent-coordination-v1.md) for live agent
+  the coordination v1 plan for live agent
   identity, metadata-based routing and the deferred feature inventory.
 
 - **Enable the remaining wakeup profiles.** Codex, Claude Code and Agy now use
@@ -726,7 +735,7 @@ and MCP processes.
   restore fencing invalidates old leases. Upgrade CLI and API together and apply
   migration 035 after a backup. Provision named hosted profiles for distinct
   inboxes. [Contract and commands](docs/agent-event-fabric.md),
-  [verification](docs/verification/agent-event-fabric-2026-09-15.md).
+  verification.
 
 ## 2026-09-13
 
@@ -736,7 +745,7 @@ and MCP processes.
   native Hermes memory and task-model settings remain available. Install the
   Python provider and restart Hermes; no API upgrade or migration is required.
   [Setup](docs/hermes-lifecycle.md) and
-  [verification](docs/verification/hermes-integration-2026-09-13.md).
+  verification.
 
 - **Repair the ultrareview findings.** Top-level help prints text; runner cleanup
   errors preserve outcomes and recovery requests. CLI `list` accepts `--limit`
@@ -744,7 +753,7 @@ and MCP processes.
   inspection inputs have consistent error codes; new refusals retain candidate
   totals. Tight search responses keep structured pull arguments while omitting
   redundant shell commands. Update the CLI and API; no database migration is
-  required. [Verification](docs/verification/ultrareview-repairs-2026-09-13.md).
+  required. Verification.
 
 - **Make lifecycle memory selective and continuous across agents.** Claude and
   OpenCode use file/error hints, omit weak matches, retain bounded context and
@@ -752,7 +761,7 @@ and MCP processes.
   workstream checkpoints. Native OpenCode continued the same handoff written by
   Claude. Install/update the Python hooks and optional OpenCode plugin; no store
   migration or API upgrade is required. [OpenCode setup](docs/opencode-lifecycle.md),
-  [verification](docs/verification/lifecycle-improvements-2026-09-13.md), and
+  verification, and
   [Codex/Agy assessment](docs/lifecycle-hook-assessment.md).
 
 - **Recall and checkpoint memory at Claude lifecycle boundaries.** Optional user
@@ -778,7 +787,7 @@ and MCP processes.
   API, home directory, or stdin; malformed calls remain errors. Upgrade only the
   CLI. Clean `75eb01e` is installed after successful exact-source CI and an
   installed offline check; the API, store, adapter, configuration, and ordinary
-  note inventory were preserved. [Checks, installation, and failed model trial](docs/verification/agent-flag-help-2026-09-11.md).
+  note inventory were preserved. Checks, installation, and failed model trial.
 
 ## 2026-09-10
 
@@ -792,7 +801,7 @@ and MCP processes.
   `cairn_assessments` and `cairn_assess`. Existing allowlists need both names and
   a fresh session; upgrading the binary alone does not add them. Native Codex
   discovery and the review workflow passed.
-  [Correction and checks](docs/verification/codex-review-allowlist-2026-09-10.md).
+  Correction and checks.
 
 - **Review a task through native memory tools.** MCP and the OpenCode adapter
   add `cairn_assessments` and `cairn_assess` for owned assessment history and
@@ -805,7 +814,7 @@ and MCP processes.
   now rejects an earlier receipt after its principal's repository or destination
   changes, including requests whose responses were already cached. Matching
   retries and earlier history remain intact. Update the API; no migration is
-  required. [Repair and compatibility](docs/verification/assessment-binding-2026-09-10.md).
+  required. Repair and compatibility.
 
 - **Write a qualitative memory review.** The existing assessment guide now
   includes an authenticated write/read-back example with stable request retries
@@ -816,19 +825,19 @@ and MCP processes.
   preserves the fact of a retained instrumented expansion alongside later
   testimony or citation. Existing usage labels, witnesses and unknown outcomes
   remain. Update the API or direct-store CLI; no migration is required.
-  [Meaning and checks](docs/verification/expansion-observation-2026-09-10.md).
+  Meaning and checks.
 
 - **Identify client setup and connection failures.** CLI and MCP now distinguish
   token-file I/O failure from an unavailable API connection, with actionable
   messages that omit private paths and credentials. Unknown errors remain
   masked. Upgrade the CLI/MCP executable; the current API and schema suffice.
-  [Behavior and verification](docs/verification/client-diagnostics-2026-09-10.md).
+  Behavior and verification.
 
 - **Keep failed integration artifacts for diagnosis.** `make test-integration`
   stops its disposable PostgreSQL cluster and prints the retained directory when
   a check fails. Successful runs still remove their temporary files. This needs
   only the updated checkout, with no CLI/API installation.
-  [Checks and native investigation](docs/verification/failed-integration-artifacts-2026-09-10.md).
+  Checks and native investigation.
 
 - **Reuse passage vectors after an idle worker exits.** The streaming API can
   retain a bounded snapshot in memory while releasing the loaded semantic model.
@@ -840,7 +849,7 @@ and MCP processes.
   configuration generators enforce the existing scope byte limit. OpenCode
   setup now refuses malformed UTF-8 instead of silently replacing characters;
   configuration text and paths reject NUL. Valid Unicode remains unchanged.
-  [Repair and checks](docs/verification/harness-configuration-text-2026-09-10.md).
+  Repair and checks.
   Update the CLI; the existing API and database suffice.
 
 - **Save guidance for one task or run.** Native MCP and OpenCode
@@ -858,7 +867,7 @@ and MCP processes.
 - **Reuse unchanged passages after note edits.** The optional semantic worker
   caches exact decoded passages within its existing lifetime. Localized edits
   only re-embed changed windows; current eligibility and cache limits remain.
-  [Measurements and limits](docs/verification/semantic-chunk-cache-2026-09-10.md).
+  Measurements and limits.
   Update the prepared worker script and restart the API; no binary or schema
   upgrade is required.
 
@@ -883,7 +892,7 @@ and MCP processes.
   inputs and supervisor correspondence are merged into Striatum main at
   `5848b23`, with historical-contract compatibility repairs. Native contracts
   remain disabled in the accepted catalog; this does not change the installed
-  Cairn builds. [Scope and checks](docs/verification/native-integration-2026-09-10.md).
+  Cairn builds. Scope and checks.
 
 - **Discover harness setup flags offline.** `mcp`, `opencode-config`, `codex-config`
   and `claude-config` now print useful `--help`/`-h` output and exit successfully
@@ -924,7 +933,7 @@ and MCP processes.
   gates and distinguish category-budget refusal from selection (`c5fa55a`);
   native OpenCode arguments reject malformed Unicode before transport (`6c48411`).
   Refusal traces remain partial. [Diagnostics](docs/refusals.md),
-  [Unicode repair](docs/verification/opencode-unicode-2026-09-10.md).
+  Unicode repair.
 - **Reuse semantic workers across spaced searches.** Hosts can configure the idle
   lifetime of the optional local worker (`72e7c24`).
   [Semantic discovery](docs/semantic-discovery.md) retains labelled lexical fallback.
@@ -984,7 +993,7 @@ and MCP processes.
   historical recompilation and bounded index/pull.
 - Added evidence-attached review, standalone failed-task proposals, conflict
   inspection, durable refusal records, ordinary deletion, audited forgetting and
-  guarded lifecycle operations. [Full history](docs/history/implementation-log.md#implementation-history)
+  guarded lifecycle operations. Full history
   records the individual changes and verification limits.
 
 ## 2026-09-06
@@ -1011,7 +1020,7 @@ compatibility notes; replacing a binary is not a database rollback.
   [failure-signature sharing](docs/failure-signature-search.md) when upgrading
   across those additions. Earlier receipts keep their historical representations.
 
-The [task-value inventory](docs/verification/usefulness-status-2026-09-08.md)
+The task-value inventory
 separates useful observations, failed trials and unknown net benefits. This
 changelog describes implemented capabilities; the [roadmap](docs/roadmap.md)
 retains the unfinished requirements.

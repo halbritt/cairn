@@ -61,9 +61,7 @@ enabled at installation, the presence watcher can create that boundary by
 prompting an eligible idle Herdr conversation with pending inbox work.
 Installation verifies Herdr's native integration in that account home and
 installs it through the installed `herdr` CLI when needed; see
-[native presence adapters](agent-sessions.md). See
-[the idle wakeup contract](plans/idle-session-wakeups.md) for process/session
-checks, focused-pane deferral and host limitations. Codex processes with an
+[native presence adapters](agent-sessions.md). See [automated agent wakeups](agent-wakeups.md) for process/session checks, focused-pane deferral and host limitations. Codex processes with an
 explicit native Unix listener use the native queue described there, preserving
 the TUI draft. Claude uses its configured native channel; OpenCode and Hermes
 use their native queue endpoints. These harnesses never fall back to terminal
@@ -554,7 +552,6 @@ Settlement then follows the `Stop` path: it replays the attempt's journal and re
 is kept as `codex_ended_turn` in host state. Nothing is replayed or reissued, and a store failure
 leaves `inbox_turn_ended` for the watcher's existing retry.
 
-
 A provider error can also end an ordinary Codex turn and leave the thread in `systemError` with busy
 presence and no held attempt. The watcher reads the latest `task_complete` of the live owner's open
 rollout (bounded tail, pinned by offset, length and SHA-256) and records its decision in host state as
@@ -672,7 +669,7 @@ Tests use disposable PostgreSQL and the real API/CLI. Native Codex and Claude
 fixtures verify busy arrival, Stop continuation, source reading and explicit
 completion through their installed execution tools. Native OpenCode and Hermes
 fixtures verify next-turn handling. An opt-in Agy test uses its existing account
-and a real model. See [verification](verification/agent-sessions-2026-09-15.md).
+and a real model.
 
 Current Codex fixtures interpret supported tool-result wrappers through
 [`native_tool_results.py`](../scripts/native_tool_results.py). Source confirmation
@@ -692,8 +689,7 @@ and successful watcher and runner exits. Scripted mode additionally requires
 the exact source read and one handled settlement. A missing observer is reported
 separately from a queue refusal; receipt acceptance followed by idle
 auto-dispatch can still establish the join when a later explicit start reports
-that the submission no longer exists. See the
-[native wake verification record](verification/codex-app-server-wake-join-2026-10-25.md).
+that the submission no longer exists.
 
 The Codex fixtures drive the app-server through one module,
 `scripts/codex_app_server_session.py`. It owns request matching, deadlines,

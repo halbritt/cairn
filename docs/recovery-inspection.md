@@ -96,6 +96,6 @@ original audit gaps across a new export, and purges the post-backup file through
 imported custody without fabricating a receipt.
 Unit/integration tests also cover a revived mutable flag with an intact audit,
 missing cached-payload and transitive-dependency exclusions, wrong root, damaged
-checksum and caller scope. [Migration 026](verification/deletion-dependencies-2026-09-08.md)
+checksum and caller scope. Migration 026
 backfills known dependency exclusions from retained relations. It does not
 reconstruct missing original withdrawal events or newer context custody.

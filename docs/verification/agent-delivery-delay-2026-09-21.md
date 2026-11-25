@@ -55,7 +55,7 @@ conversation with its explicit account configuration and channel flag, enabling
 the matching binding, then verify backlog handling. Do not enable the binding
 before the channel exists: that would suppress ordinary boundary delivery too.
 The prepared configuration and activation limits are recorded in the
-[deployment report](coordination-deployment-2026-09-20.md).
+deployment report.
 
 The owner's restart approval covered OpenCode agents 24 and 67. This diagnosis did
 not restart agent 65 or alter its inbox. Fixing this route and observing successful
@@ -70,7 +70,7 @@ confirmed subsequent backlog messages were claimed in `claude-channel:` turns
 and explicitly acknowledged at 14:17:58 and 14:18:36, without additional manual
 prompts. Other Claude sessions were unchanged. This proved initial channel
 delivery, but did not establish sustained backlog handling. See the
-[repair and live verification report](native-delivery-repair-2026-09-21.md).
+repair and live verification report.
 
 ## Follow-up: delivery latch stopped the backlog
 

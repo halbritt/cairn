@@ -46,10 +46,10 @@ enable bounded event admission.
 [documentation](developer/documentation.md) describe how to make and validate a
 change. The [glossary](../GLOSSARY.md) explains the design vocabulary.
 
-Design and acceptance plans: [work coordination design](plans/work-coordination-design.md),
-[work coordination implementation sequence](plans/work-coordination-implementation.md), and
-[hybrid runtime consolidation](plans/hybrid-runtime-consolidation.md), with its
-[organization, implementation plan, and lead prompts](plans/hybrid-runtime-implementation.md).
+Designs for open work: the [swarm view](plans/swarm-view-design.md), the
+[hybrid runtime consolidation](plans/hybrid-runtime-consolidation.md) with its
+[organization and implementation plan](plans/hybrid-runtime-implementation.md), and
+[work coordination](plans/work-coordination-design.md). See [plans](plans/README.md).
 
 ## Reference
 
@@ -173,15 +173,17 @@ The feature references below cover behavior, configuration, and failure paths.
 - [Prepare search results for an attempt-scoped MCP backend](mcp-search-publication.md)
 - [Disposable fixture hosts](disposable-fixtures.md)
 
-## Status, design, and historical evidence
+## Status, direction and decisions
 
 [Capabilities and limits](implementation-status.md) describes the current source
-surface. The [roadmap](roadmap.md) describes direction and remaining acceptance
-work; the [changelog](../CHANGELOG.md) summarizes development changes.
+surface. The [roadmap](roadmap.md) describes direction and open work; the
+[changelog](../CHANGELOG.md) summarizes development changes.
 
-[Design sources](sources/README.md), the [initial design review](design-review.md),
-and [decision records](decisions/0002-local-memory-loop.md) explain the design's
-origins. [Plans](plans/README.md) preserve detailed requirements.
-[Verification records](verification/README.md) describe dated tests and deployments;
-[archived logs](history/README.md) preserve earlier chronological documentation.
-They are evidence to interpret in context, not instructions for your installation.
+[Decision records](decisions/README.md) explain why a direction was chosen.
+[Plans](plans/README.md) hold the designs for open work.
+[Design sources](sources/README.md) and the [initial design review](design-review.md)
+explain the design's origins.
+
+The repository does not keep records of past runs, reviews or deployments; see
+[decision 0023](decisions/0023-repository-holds-current-contracts.md). The few
+[dated records](verification/README.md) that remain belong to open work.

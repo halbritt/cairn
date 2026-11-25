@@ -113,7 +113,7 @@ and append qualitative assessments without shell access. These use receipt
 ownership under the configured API profile; agent reviews remain testimony.
 
 The installer does not add automatic startup retrieval. An isolated
-[OpenCode 1.18.21 hook check](verification/opencode-startup-hook-2026-09-09.md)
+OpenCode 1.18.21 hook check
 found that the system-prompt hook also runs for auxiliary requests and is not
 gated by tool permissions. A direct search from that hook would need additional
 permission and lifecycle integration; the normal tools continue to use the
@@ -128,7 +128,7 @@ OpenCode also initializes its own plugin SDK dependencies during startup. Its
 [v1.18.21 implementation](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/config/config.ts)
 requests the matching `@opencode-ai/plugin` package in its configuration
 directories. A fresh environment can therefore involve registry access before a
-Cairn tool runs. A [startup investigation](verification/native-startup-2026-09-10.md)
+Cairn tool runs. A startup investigation
 observed that work but did not reproduce an earlier timeout; dependency activity
 alone does not identify the cause of a stalled tool call.
 
@@ -231,8 +231,7 @@ are independent. Both omitted retains the existing native scope.
 
 All installer configuration values and paths must be well-formed UTF-8 without
 NUL. Invalid text refuses before writing or replacing files; valid Unicode and
-intentional U+FFFD are preserved. [Setup text checks](verification/harness-configuration-text-2026-09-10.md)
-cover generated MCP configuration as well as native installation.
+intentional U+FFFD are preserved.
 
 Identifiers must contain 1–256 UTF-8 bytes, with nonblank text, no NUL and no
 wildcard `*`. They retain case, spaces and punctuation exactly. The installer
@@ -250,8 +249,7 @@ recheck eligibility. Capture continues to use its explicitly supplied scope,
 with ordinary `remember` defaulting to repository-wide notes.
 
 Update the CLI and bundled adapter to expose these settings. Existing API and
-database versions support them. [Verification](verification/opencode-task-scope-2026-09-10.md)
-covers native sessions without an answering-model task.
+database versions support them.
 
 ### Read selected sources
 
@@ -325,7 +323,6 @@ of the physical checkout. Pulls continue to use their original receipts.
 The adapter refuses malformed Unicode in CLI arguments before process launch,
 preserving search queries and context declarations from silent replacement.
 This also checks configured argument values; valid Unicode remains supported.
-See the [native transport repair](verification/opencode-unicode-2026-09-10.md).
 
 The search tool's optional [context argument](search-context.md) can fill fields
 left unset in those settings for one call. Conflicting configured values refuse
@@ -353,9 +350,7 @@ This variable enables no-model custom-tool checks. It is separate from the older
 `CAIRN_OPENCODE_BINARY` model probe. Tests cover session scope, default local
 capture, exact body/evidence pulls, capped/reserved retrieval and preparation,
 retries, edits, stale handles, hosted filtering
-and permission/repository refusals, including malformed capture arguments. See the
-[verification record](verification/opencode-tools-2026-09-09.md) for evidence and
-remaining limits. Remove the installed tool file to undo this integration; keep
+and permission/repository refusals, including malformed capture arguments. Remove the installed tool file to undo this integration; keep
 ordinary memory records and the existing MCP/CLI alternatives.
 
 `cairn_pull` also accepts `span: {offset: 0, length: 4096}` for a partial A/B
@@ -385,9 +380,7 @@ python3 scripts/check_opencode_defaults.py \
 The output directory must be new. This uses a scripted loopback completion
 endpoint, with no model inference or Cairn database access. It characterizes the
 upstream default/type behavior and checks the shipped adapter's rejection path.
-A changed upstream result requires review after a harness upgrade. The
-[validation repair](verification/opencode-validation-2026-09-09.md) records the
-original failure and the distinction from the debug tool path.
+A changed upstream result requires review after a harness upgrade.
 
 ### Select saved kinds
 
@@ -398,13 +391,11 @@ always apply, and labels confer no authority. Keep the same kinds when following
 `browse.next_offset`. See [index and pull](index-and-pull.md) for the full contract.
 Update the API, CLI and bundled adapter together before using this argument.
 
-
 `cairn_edit` also accepts `evidence_citations` instead of `body` or `draft` to
 replace an ordinary note's captured source references. An explicit empty list
 clears the current references; text edits preserve them. The note remains A
 testimony. See [ordinary source citations](evidence-citations.md#ordinary-notes)
 for exact digests, optional passages and upgrade requirements.
-
 
 Known failure signatures can also find reviewed lessons without shared query
 vocabulary. See [failure signature search](failure-signature-search.md) for the

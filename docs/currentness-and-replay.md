@@ -22,8 +22,7 @@ unknown; a mandatory instruction still refuses. Validity exclusions take
 precedence. Private inapplicable instructions stay outside hosted bodies,
 omission counts and candidate explanations.
 
-The [precedence repair](verification/applicability-precedence-2026-09-09.md)
-corrects an earlier field-order dependency. Historical recompilation retains the
+Historical recompilation retains the
 original omission reason and seal. If a fresh compile would now produce a
 different package for an old request ID, it returns `STALE_PACKAGE`; use a new
 request ID to retrieve under the corrected rule.
@@ -33,7 +32,7 @@ mandatory instruction. An expired, not-yet-effective or context-mismatched
 instruction does not block that run. Matching, unconstrained or unknown
 applicability still refuses when the destination cannot receive the instruction.
 Private candidates remain absent from hosted packages, omission counts and
-candidate explanations. See the [regression verification](verification/private-policy-applicability-2026-09-08.md).
+candidate explanations.
 
 Context pins first appeared in semantic schema `cairn.semantic/3`. Optional JSON/CBOR
 fields preserve old v1/v2 decoding and seals. Legacy receipts remain historical;
@@ -85,15 +84,13 @@ database readers ignore the new JSON constraint and are unsuitable for those
 records; replacing only the CLI while leaving an old API running is insufficient.
 Older binaries also cannot execute or recompile a new phase-bearing receipt.
 No database migration is needed, but reverting a reader alone after writing new
-constraints is unsupported. The [phase verification](verification/task-phase-2026-09-09.md)
-records both preserved old packages and this reader-version limit.
+constraints is unsupported.
 
 Legacy unquoted lexical retrievals use `lexical-scope-recency/4`, which also filters fixed question
 framing words from lexical matches. New ordinary context index queries use the
 [binary-IDF ranking](index-and-pull.md#ordinary-lexical-ranking).
 Historical recompilation uses the ranking
-version retained in each receipt. The [retrieval comparison](verification/question-words-2026-09-08.md)
-records the measured improvements and regressions. Same-request-ID retries of ordinary IDF receipts retain the sealed ranking
+version retained in each receipt. Same-request-ID retries of ordinary IDF receipts retain the sealed ranking
 version and still check current eligibility, intent and source state. A changed
 source package returns `STALE_PACKAGE`; use a new ID for current context and the
 current ranking policy. Older non-IDF ranking upgrades retain their previous
@@ -184,9 +181,7 @@ Inspection returns no expansion handles or renewed credits. Query text remains
 transient, and the operation creates no new receipt, delivery or outcome row.
 
 The API's `run-package` operation still checks eligibility for current execution;
-historical inspection does not make an obsolete package launchable. The
-[authenticated reconstruction check](verification/authenticated-recompile-2026-09-10.md)
-uses the original observer profile from a retained real run. Older API builds
+historical inspection does not make an obsolete package launchable. Older API builds
 without this operation return `NOT_FOUND`; update CLI/API together.
 
 Explanation version 2 retains body digests and the evidence/authority/attribution
@@ -206,8 +201,6 @@ This implements historical recompilation for read sets captured by this compiler
 It does not invent the missing past observation history of older receipts or
 establish measured usefulness on real incidents. Real-history evaluation must
 separately distinguish original-time availability from later recurrence scenarios.
-The [E3 audit](verification/replay-requirements-2026-09-10.md) identifies the
-implemented contracts and the remaining original-incident evidence gap.
 
 ## Inspect retained candidate decisions
 
@@ -272,6 +265,4 @@ Historical ranker v3 recognizes nonempty words separated by
 underscores: `CAIRN_HOME` matches `cairn home` or `home`, while retaining the whole
 identifier as an additional exact-match term. Partial identifier matches can
 return more notes. Versions 1 and 2 retain their original behavior for historical
-recompilation. This does not add synonyms, stemming or semantic search; the
-[documentation retrieval experiment](verification/retrieval-quality-2026-09-08.md)
-records the measured improvement and remaining misses.
+recompilation.

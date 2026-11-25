@@ -4,15 +4,12 @@ One central Cairn API owns the PostgreSQL store. Each joining machine runs a
 small relay service that exposes the usual `~/.local/share/cairn/api.sock` and
 forwards calls to the central API over HTTPS. Agents, hooks and the CLI on the
 joining machine keep using the socket and token files they already use; they
-never hold database credentials. The design and its accepted limits are in
-[the proposal](plans/multi-machine-cairn.md).
+never hold database credentials.
 
 Use this setup to share one collection and agent directory across machines.
 The relay supports memory access and session inbox coordination. It does not
 provide remote worker pools, conversation migration, offline memory, repository
-synchronization, or automatic task placement. The
-[acceptance record](plans/multi-machine-acceptance.md) documents the original
-cross-machine checks and their limits.
+synchronization, or automatic task placement.
 
 ## What joining installs
 

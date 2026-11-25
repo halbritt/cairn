@@ -226,5 +226,4 @@ Tests use disposable PostgreSQL clusters and the real Unix API/CLI. They cover
 resume, same-account separation, context revision checks, visibility, execution
 fencing, API restart and backup/restore. Native probes exercise installed Codex,
 Claude, OpenCode and Hermes with fixture-only providers, plus an explicitly opted-in
-Agy model turn. See the [verification report](verification/agent-sessions-2026-09-15.md).
-These checks do not establish useful cross-agent task completion.
+Agy model turn. These checks do not establish useful cross-agent task completion.

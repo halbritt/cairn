@@ -93,5 +93,4 @@ the current `--artifact` selection is read after that execution; old file conten
 or manifests are not automatically replayed.
 
 The feature uses the existing evidence endpoint and storage format. No migration
-or new server endpoint is required. See the
-[verification record](verification/run-artifact-evidence-2026-09-09.md).
+or new server endpoint is required.

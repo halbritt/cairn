@@ -582,8 +582,7 @@ checkpoint after an abrupt process kill. Capture can miss tool work that has not
 yet been summarized in dialogue. Session locks and bounded metadata files remain in the installed `state` directory. They retain note IDs/versions, recent filenames, diagnostic identifiers, workstream title and capture digest, without transcript or file bodies. If transcript truncation changes the bounded excerpt, an additional selection can occur even without new work.
 
 Claude's [hook reference](https://code.claude.com/docs/en/hooks) defines these
-lifecycle events. The installed behavior is checked separately in the
-[native verification report](verification/claude-lifecycle-2026-09-13.md).
+lifecycle events.
 
 ## Optional admitted-inbox binding
 

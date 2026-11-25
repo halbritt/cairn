@@ -16,22 +16,22 @@ groups are deployed through migration 047. Automatic idle-session wakeup is
 deployed in runtime `e81057b` and verified in the existing ai-newsroom conversation.
 Basic automatic-wakeup trials now pass across both Codex and both Claude accounts,
 Agy, OpenCode and Hermes. Runtime `6fdffe0` adds migration 048 and exact native
-delivery/turn binding; see [the deployed verification](../verification/native-turn-binding-2026-09-16.md).
+delivery/turn binding; see the deployed verification.
 Overall completion remains open: host submission and draft handling, and
 interactive cancellation still need work. The owner rejected the premature completion claim. Separately conditional
 features retain their triggers. See
-the [September 16 acceptance checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
+the September 16 acceptance checkpoint.
 
 The [2026-09-20 independent review](../verification/coordination-review-2026-09-20.md)
 verifies the dormant schema 049 cancellation core and bounded OpenCode/Hermes
 bridge repairs. Disposable database checks cover cleanup order, revocation and
 persisted holds. Native fixtures cover queue handoff, hook identity, isolated
 tool processes and explicit failure handling; provider/model boundaries remain
-substituted. The September 20 [deployment](../verification/coordination-deployment-2026-09-20.md)
+substituted. The September 20 deployment
 installed clean `b5aab96`, schema 049, all seven bindings and native Hermes
 `131e95b`. Existing native clients must reload to use newly installed plugins.
 
-September 21 operational update: the [delivery repair](../verification/native-delivery-repair-2026-09-21.md)
+September 21 operational update: the delivery repair
 records same-conversation restarts of OpenCode agents 24/67 and Claude agent 65,
 then verified automatic queue/channel handling. The OpenCode message-ID defect
 and agent 65 channel activation gap are closed. This does not establish draft
@@ -40,12 +40,12 @@ preservation across every harness/account or exclusive cancellation.
 Remaining acceptance work is to establish exclusive request ownership through
 native admission and revocation across supported hosts, then exercise real-model
 interruption and host-observed cleanup, including failed termination. A
-[2026-09-24 disposable OpenCode trial](../verification/opencode-cancel-trial-2026-09-24.md)
+2026-09-24 disposable OpenCode trial
 reports C1-C5 as passed on one owned session and an atomic-session-fence fork;
 the installed OpenCode binding still has cancellation disabled. Draft preservation and
 busy-owner submission races passed live on both Claude and both Codex accounts,
 Hermes and OpenCode on September 23; Agy's terminal route remains without an
-atomic guarantee ([trials](../verification/draft-preservation-2026-09-23.md)).
+atomic guarantee (trials).
 [Implementation status](../implementation-status.md) records the installed build
 separately. These repairs do not complete coordination v1.
 
@@ -54,10 +54,10 @@ separately. These repairs do not complete coordination v1.
 | 1. Session identity | Registry, same-profile UUID inboxes and execution fencing deployed in migration 037. |
 | 2. Presence/context | Native hooks and host watcher deployed for both Codex homes, both Claude homes, OpenCode, Agy and Hermes. |
 | 3. Resolve/publish | Exact selectors/aliases, ambiguity and atomic freshness checks deployed in migration 038. |
-| 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039; actual fresh-worker conversation links deployed in migration 040. A useful review exchange completed with an explicit host wake. Pool selection, bounded admission, fairness and explicit account availability are deployed in migration 041. Migration 042 adds supported native failure ingestion, with later Codex/Agy parser coverage. The live Rhumb request completed at an owner-prompt boundary with an explicit reply. Automatic idle wakeup is deployed and verified in ai-newsroom; see [the trial](../verification/idle-session-wakeups-2026-09-16.md). |
+| 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039; actual fresh-worker conversation links deployed in migration 040. A useful review exchange completed with an explicit host wake. Pool selection, bounded admission, fairness and explicit account availability are deployed in migration 041. Migration 042 adds supported native failure ingestion, with later Codex/Agy parser coverage. The live Rhumb request completed at an owner-prompt boundary with an explicit reply. Automatic idle wakeup is deployed and verified in ai-newsroom; see the trial. |
 | 5. Wake operations | Structured context, per-slot launch spacing/backoff, read-only cursor watch and operator review/reissue deployed. |
-| 6. Scheduling/cancellation | One-shot scheduling, misfire audit and unpublished-intent cancellation deployed in migration 045 ([evidence](../verification/event-scheduling-2026-09-16.md)). Migration 046 adds admission TTL and managed fresh-worker deadlines/cancellation; active native/manual interruption remains unsupported ([evidence](../verification/request-controls-2026-09-16.md)). |
-| 7. Bounded coordination | Fixed response groups, explicit replies, deadline policies and collection limits deployed in migration 047 ([evidence](../verification/response-groups-2026-09-16.md)); conditional features retain their triggers. |
+| 6. Scheduling/cancellation | One-shot scheduling, misfire audit and unpublished-intent cancellation deployed in migration 045 (evidence). Migration 046 adds admission TTL and managed fresh-worker deadlines/cancellation; active native/manual interruption remains unsupported (evidence). |
+| 7. Bounded coordination | Fixed response groups, explicit replies, deadline policies and collection limits deployed in migration 047 (evidence); conditional features retain their triggers. |
 
 Implemented adapters: native hooks supply conversation identity and observed
 context; a host watcher maintains presence while the associated process is alive.
@@ -70,7 +70,7 @@ lifecycle boundaries and explicit handling with no new profile credentials;
 see its [contract](../native-inbox.md). The configured watcher can now wake an
 eligible idle Herdr conversation so its native hook creates that boundary.
 Focused, busy, ambiguous and unsupported targets defer; see the
-[idle-wakeup contract](idle-session-wakeups.md).
+idle-wakeup contract.
 
 ## Required user behavior
 
@@ -221,7 +221,7 @@ configuration stays replaceable behind the slot. Preserve durable wake holds
 and require explicit completion. Account quota exhaustion marks the binding
 unavailable; any permitted pre-launch fallback is recorded. Never replay work
 on another account after execution may have started.
-The [pool dispatch design](worker-pool-dispatch.md) records the next implementation
+The pool dispatch design records the next implementation
 contract. It remains separate from the deployed native-session link.
 
 Acceptance: the Rhumb message reaches the existing conversation, including when
@@ -270,8 +270,8 @@ launch and cancellation/completion races all run on disposable databases.
 
 Implementation checkpoint 2026-09-16: migrations 045–046 ship one-shot
 publication, admission expiry, managed deadlines and cancellation with retained
-holds. See [scheduling](../verification/event-scheduling-2026-09-16.md) and
-[request-control verification](../verification/request-controls-2026-09-16.md).
+holds. See scheduling and
+request-control verification.
 Running native/manual interruption remains unavailable until a per-request host
 stop contract exists. These checkpoints do not establish full v1 acceptance.
 
@@ -295,7 +295,7 @@ forgotten responses without claiming task success from acknowledgment alone.
 
 Implementation checkpoint 2026-09-16: migration 047 deploys fixed direct/topic
 response groups with explicit all/partial policy, bounded reads and retained
-reply observations. See [verification](../verification/response-groups-2026-09-16.md).
+reply observations. See verification.
 Priority and new trust-boundary policy retain their stated triggers. This
 checkpoint does not establish the remaining native/provider v1 acceptance checks.
 
@@ -361,7 +361,6 @@ reports. The live review exchanges establish routing and selected useful
 feedback. Broad productivity benefit, contention baselines and multi-host fencing
 remain unestablished; the latter two retain their conditional feature triggers.
 
-
 ### Review provenance and remaining obligations
 
 Pincite's validated release `d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f`
@@ -372,7 +371,7 @@ retriever `retriever-ec995ecdd083b2c8`. Its recommendation ceiling supports this
 plan; the owner's instructions supply the design and deployment authority.
 The selected concepts were stable domain identity, repository-contract
 precedence, preserving observed behavior, and separating semantic changes into
-verified checkpoints. The [decision receipt](agent-coordination-v1-review.json)
+verified checkpoints. The decision receipt
 records the selected scope and alternatives.
 
 Remaining packet obligations are classified below. None certifies a future
@@ -391,7 +390,6 @@ Reopen the identity design if actual native resume/fork semantics contradict the
 session rules. Reopen dispatch only if supported session delivery or measured
 availability requires a different mechanism. Stop a slice if its session association,
 restore or process-termination contract is unresolved.
-
 
 ## Task-conditioned memory after native request delivery
 

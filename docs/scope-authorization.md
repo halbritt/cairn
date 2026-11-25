@@ -76,6 +76,3 @@ unreferenced ordinary deletion.
 This operation remains local to the operator CLI. It does not change destination
 access policy, automatically generalize evidence, certify that wider applicability
 is scientifically justified, or establish complete restore admission.
-
-See [verification](verification/scope-authorization-2026-09-08.md) for tested
-claims and installation evidence.

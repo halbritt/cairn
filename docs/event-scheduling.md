@@ -102,8 +102,7 @@ and occurrence IDs in that backup remain intact. Review uncertain external
 effects before explicitly scheduling replacements. This is not an exactly-once
 guarantee for external effects or work lost from a backup.
 
-See [verification](verification/event-scheduling-2026-09-16.md) for tested claims
-and installed revision. Recurrence requires a separate timezone, DST and misfire
+Recurrence requires a separate timezone, DST and misfire
 contract before it can be enabled.
 
 Scheduled [response groups](response-groups.md) fix recipients at firing and

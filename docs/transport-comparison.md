@@ -25,9 +25,7 @@ that a request completed.
 
 ## Evaluate transport changes
 
-The [September 2026 comparison](history/transport-comparison-2026-09.md) records
-local relay benchmarks and a separate JSON/Protobuf experiment, including
-reproduction commands, hardware, repeat ranges, and limits. The production path
+The production path
 uses JSON/HTTP; the gRPC experiment is a separate module under
 [`experiments/transportbench`](../experiments/transportbench/README.md).
 

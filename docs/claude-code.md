@@ -64,9 +64,7 @@ so per-invocation configuration is appropriate when execution scopes change.
 
 [Ordinary tool behavior](mcp.md#tools) retains the authenticated API's repository,
 destination, version and stale-handle checks. A connection does not establish
-that Claude retrieved or applied a note. [Native verification](verification/claude-native-tools-2026-09-09.md) checks actual
-Claude capture, correction, search, body/evidence pulls, retries, stale refusals,
-hosted filtering and a denied edit across two isolated native sessions. Scripted
+that Claude retrieved or applied a note. Scripted
 local responses drive the calls; no inference, owner configuration changes or
 operational test records are involved. Direct MCP rejects non-boolean sharing
 flags. Claude's native path accepted textual `"false"` as a local note in this
@@ -76,7 +74,3 @@ do not rely on client coercion. Run it with:
 ```sh
 CAIRN_CLAUDE_BINARY="$(command -v claude)" make test-integration
 ```
-
-The required CLI version and remaining U8 work are recorded in the
-[setup report](verification/claude-config-2026-09-09.md) and
-[native tool report](verification/claude-native-tools-2026-09-09.md).

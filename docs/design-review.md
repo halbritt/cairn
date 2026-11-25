@@ -150,5 +150,3 @@ concepts were used to frame the review. Full architecture, replication,
 compatibility, preservation, and performance evidence obligations cannot be
 discharged by a new empty repository; they are nonmaterial to starting this
 isolated slice and remain required before corresponding production claims.
-The [decision receipt](review-receipt.json) records the exact evidence scope,
-packet identity, remaining obligations, and limits.

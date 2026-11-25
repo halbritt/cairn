@@ -117,4 +117,4 @@ Native OpenCode verification uses a scripted provider to check initial delivery,
 direct pulls, denied tool permissions and source changes. It does not establish
 model-selected use, task acceptance or memory benefit. Other harnesses with an
 argv input route can use their configured tool names, but are not qualified by
-this OpenCode check. See the [verification report](verification/compact-start-2026-09-09.md).
+this OpenCode check.

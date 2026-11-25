@@ -105,6 +105,5 @@ database coverage unless a test DSN is supplied. Use a disposable database for
 all tests. Backup and recovery changes also require `make test-lifecycle`.
 
 See the [roadmap](docs/roadmap.md) for remaining acceptance work and the
-[changelog](CHANGELOG.md) for development changes. Dated
-[verification records](docs/verification/README.md) retain the evidence and limits
-of individual tests and deployments.
+[changelog](CHANGELOG.md) for development changes.
+[Decision records](docs/decisions/README.md) explain why a direction was chosen.

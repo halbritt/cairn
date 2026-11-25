@@ -117,8 +117,7 @@ remove the first cold score or guarantee that the next eligible set will hit the
 The library's `semantic.StreamCommand` retains the 30-second default;
 `semantic.StreamCommandWithIdleTimeout` lets its host choose a positive interval.
 
-The [idle-worker experiment](verification/semantic-idle-2026-09-10.md)
-compares repeated searches with a five-minute worker lifetime. The worker occupied
+The worker occupied
 about 208 MiB in the original local experiment while loaded. The prepared worker
 reuses vectors for exact decoded passages from its last successfully scored
 request. An edit only requires new inference for passages whose text changes;
@@ -149,10 +148,6 @@ clears it. Requests that never reach the transport do not alter its state, inclu
 searches with no eligible optional notes. Snapshot lifetime can therefore extend
 until the next scoring exchange or API shutdown. No file or database cache is
 created, and releasing references is not secure allocator erasure.
-The [passage-reuse comparison](verification/semantic-chunk-cache-2026-09-10.md)
-records localized-edit timing and the remaining cold cost. The earlier
-[whole-note cache comparison](verification/semantic-vector-cache-2026-09-09.md)
-remains as historical evidence.
 The command modes accept any executable that implements these protocols, such as
 a staged Rust launcher. The `--semantic-rust-config` selection cannot be combined
 with a command mode and does not change the default worker selection or install a
@@ -250,19 +245,10 @@ current results after source or backend changes.
 
 ## Evidence and limits
 
-[The offline comparison](verification/semantic-retrieval-2026-09-09.md) motivated
-this route. [The integrated check](verification/semantic-discovery-2026-09-09.md)
-exercises actual CPU scoring, API/CLI budgets, full-body pulls, long notes,
-fallback and historical compatibility. These checks establish usable retrieval;
+These checks establish usable retrieval;
 independent downstream task benefit and performance at larger scale remain open.
-A [batching comparison](verification/semantic-batching-2026-09-09.md) records
-latency, CPU time, peak resident memory and exact-score comparisons for the local
-worker. It does not establish performance on every workload.
-A [small-set startup experiment](verification/semantic-startup-2026-09-09.md)
-found a roughly half-second saving when a scratch worker reused its model.
-The [resident-worker implementation](verification/semantic-residency-2026-09-09.md)
-preserves that benefit through the API and verifies process lifetime, current
-source selection and fallback. It does not establish downstream task value.
+It does not establish performance on every workload.
+It does not establish downstream task value.
 
 After preparation, run the optional real-worker check against a disposable store:
 

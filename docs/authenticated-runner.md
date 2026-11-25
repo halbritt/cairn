@@ -93,7 +93,7 @@ can still cause process creation to fail. These are initial delivery limits, not
 aggregate accounting across later searches, expansions and model turns.
 
 The file option and argv preflight require a CLI update only. They use the
-existing API and database contracts. [Verification](verification/run-task-file-2026-09-09.md).
+existing API and database contracts.
 
 ## Custody and failures
 
@@ -138,8 +138,7 @@ launch, binding and context registration still obey those gates.
 This provides authenticated H0 process observation and delivery for ordinary
 host invocations. It does not wire Striatum's sealed inputs, infer internal harness
 tool events or compaction, prove instruction obedience, or turn process exit into
-an acceptance decision. See [verification](verification/authenticated-runner-2026-09-08.md)
-and [local API](local-api.md).
+an acceptance decision. See [local API](local-api.md).
 
 If process-group cleanup fails after the child exits, Cairn still writes the
 pending outcome and attempts to commit it. The command reports the cleanup error

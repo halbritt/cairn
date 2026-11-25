@@ -67,8 +67,6 @@ Malformed text that would decode with replacement characters returns
 `INVALID_REQUEST` before the operation runs. Valid pairs, literal backslashes
 and explicit U+FFFD characters are preserved. Authentication, body limits,
 unknown-field rejection and the one-request rule still apply.
-[Verification and limits](verification/json-unicode-integrity-2026-09-09.md).
-
 
 `cairn serve` exposes a Unix socket, mode 0600, in an owner-only directory.
 Identity comes from a bearer token whose SHA-256 digest is in an owner-only
@@ -228,7 +226,6 @@ JSON `create`, `edit`, `revise` and `append` also accept 512 KiB envelopes;
 Update both API and CLI before sending larger requests. Existing accepted requests
 and their retry identities retain their behavior. Oversized envelopes, including
 excess trailing whitespace, are refused before a write or retry reservation.
-
 
 ## Save an ordinary note
 
@@ -420,7 +417,7 @@ The decision index still lists RFC 0015 as in flight, and the RFC index records
 its ladder as parked. Current driver dispatch also seals empty prompt assets.
 The owning RFC/decision and admission code therefore still need reconciliation;
 that target entry does not establish an available native Cairn route. The subsequent
-[native admission assessment](verification/native-admission-assessment-2026-09-08.md)
+native admission assessment
 found the accepted promotion contract and implementation, traced the historical
 Verified request to a fixture-labelled audit, and reproduced limitations in the
 current knowledge checker. It preserves the distinction between recorded
@@ -470,7 +467,6 @@ reconcile before submitting another revision. Full `edit` remains available when
 changing other ordinary draft content is intentional. Upgrade the API and clients
 together before using `revise` or the native edit tools' body-only form.
 
-
 ### Append selected guidance
 
 `POST /v1/append` accepts the same fields as `revise`, but `body` is a suffix.
@@ -506,7 +502,6 @@ Read the current note and check the addition against its guidance and sources.
 Use append for a selected additive update; use replacement for corrections or
 consolidation. Appending does not remove contradictions, obsolete guidance or
 redundancy. Upgrade the CLI, API and adapter together before using this mode.
-
 
 ### Replace one exact passage
 
@@ -549,7 +544,6 @@ full-body, append and draft edits retain their own retry identities.
 This is selected text correction, not merging or automatic contradiction review.
 Retained citations do not certify the corrected wording. Earlier versions remain
 available for comparison. Upgrade the CLI, API and native adapter before use.
-
 
 ### Ordinary source citations
 

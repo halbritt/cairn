@@ -33,11 +33,11 @@ useful evidence. Check error handling and required setup as well as the happy
 path. Do not run a documented mutation against an operational database just to
 validate its syntax.
 
-Keep historical verification reports labelled as historical. Their commands,
-counts, and deployment observations describe the recorded run. Current guides
-should explain how a reader can reproduce a check in their own environment.
+Current guides should explain how a reader can reproduce a check in their own
+environment. A passing check means the selected mechanical checks found no
+violations in that checkout. It does not establish that every example runs or
+that a deployment is ready.
 
 The checker is separate from `make check`; run both when a change affects Go
 contracts and their documentation. See [developer testing](docs/developer/testing.md)
-for the full validation workflow and [interpreting results](TEST_READY.md) for
-what a successful run establishes.
+for the full validation workflow.

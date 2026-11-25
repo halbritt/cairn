@@ -70,7 +70,6 @@ Older APIs do not implement `cite`; older edit implementations can drop current
 A references and older compilers omit them. Do not mix old store writers with
 cited ordinary notes. There is no database migration or new semantic payload
 shape; existing qualified references and frozen receipts keep their behavior.
-[Verification](verification/ordinary-citations-2026-09-09.md).
 
 ## Qualified claims
 

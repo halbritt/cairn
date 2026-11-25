@@ -47,6 +47,5 @@ Authenticated API tests cover local inspection and hosted-profile refusal.
 explicit ordinary retrieval. Acted-under-conflict outcomes and richer resolution
 semantics remain roadmap work.
 
-The [historical verification record](verification/conflict-inspection-2026-09-08.json)
-identifies the binary and checks used for the original installation. Run current
+Run current
 validation against the checkout and deployment you are evaluating.

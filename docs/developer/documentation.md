@@ -16,9 +16,10 @@ understand a current guide.
 | Architecture, contribution, validation | `docs/developer/` |
 | Commands, fields, contracts, refusal behavior | `docs/reference/` and feature references |
 | Current capability boundaries | `docs/implementation-status.md` |
-| Remaining work and acceptance criteria | `docs/roadmap.md` and `docs/plans/` |
-| A dated experiment or deployment observation | `docs/verification/` |
-| Superseded chronological material | `docs/history/` |
+| Direction and open work | `docs/roadmap.md`, with items in Plane |
+| The design for open work | `docs/plans/`, removed when the work ships |
+| A choice between options and its reason | `docs/decisions/` |
+| The result of a test run, review or deployment | The Plane work item and the commit message, not the repository |
 
 Add discoverable links from the [documentation index](../README.md). Keep one
 primary explanation of a contract and link to it from introductory guides.
@@ -64,6 +65,7 @@ shell syntax, and required-guide presence; it does not execute examples or prove
 behavior. Broaden validation within the task's scope when a claim depends on
 behavior that those checks do not establish. Record what was actually tested.
 
-Historical records retain their original evidence and qualifications. If an old
-claim is wrong, add a dated correction or a clear link to the current contract;
-do not rewrite an old experiment as if it had tested newer code.
+Do not commit run records, review receipts or deployment reports; see
+[decision 0023](../decisions/0023-repository-holds-current-contracts.md). When
+shipped work makes a plan obsolete, move its contract to a guide, write a
+decision record for its choices and remove the plan in the same change.

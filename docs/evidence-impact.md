@@ -59,5 +59,4 @@ This read-only report is not a retraction/deletion preview token. Existing
 [retraction guards](relations-and-demotion.md), evidence availability rules and
 separate authority decisions still apply. Managed external artifacts, as-cited
 spans, source-version predicates and undeclared derivations are outside its
-coverage. [Verification](verification/evidence-impact-2026-09-09.md) records the
-fixture behavior and remaining limits.
+coverage.

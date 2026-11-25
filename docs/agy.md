@@ -43,5 +43,4 @@ agy mcp remove cairn
 ```
 
 Use disable/enable to retain configuration while controlling availability;
-remove deletes the registration. The [historical configuration check](verification/agy-configuration-2026-09-09.md)
-records the tested Agy version and its limitations.
+remove deletes the registration.

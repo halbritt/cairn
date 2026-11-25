@@ -107,7 +107,7 @@ exact sources for `semantic_unavailable`, `wrong_project_memory`, and
 `meaningful_owner_correction`. These memory checks use a separate disposable
 database for each case so another case's required C conflict cannot alter
 retrieval under the fixture's shared repository scope.
-The [authenticated memory lifecycle probe](../../docs/verification/panel-memory-lifecycle-2026-10-24.md)
+The authenticated memory lifecycle probe
 checks the real CLI/API search and pull surface for wrong-project source
 ranking, then checks stale-handle refusal and exact retained history after
 the `corrected_note` and `meaningful_owner_correction` edits. Project labels
@@ -136,7 +136,7 @@ transition unrun and keeps actor acceptance unassessed. This prepares source
 authority and recall only; it does not pause or resume a native model turn or
 prove the remaining report was written.
 The four-arm `unfinished_handoff` source setup passed on fresh disposable
-databases ([verification record](../../docs/verification/panel-handoff-source-2026-10-24.md)).
+databases (verification record).
 It launched no actor and no provider; the release gate remains deferred.
 
 `core/token_efficiency_panel_recovery_test.go` checks an expired lease under
@@ -144,7 +144,7 @@ its current native hold, an offline presence with operator release and explicit
 reissue, and execution fencing for `lease_expiry`, `process_crash`, and
 `stale_execution`. Expired test presence is an observable offline boundary,
 not proof that a recipient process crashed.
-The [stale journal probe](../../docs/verification/panel-stale-journal-2026-10-24.md)
+The stale journal probe
 adds a disposable CLI/API and native helper path for `stale_execution`: a
 pending old-execution completion is refused after reviewed reissue and execution
 rotation while the current execution can settle the successor. Its host turn
@@ -160,7 +160,7 @@ request for `long_source`, and the exact saved source for
 `unfinished_handoff`. The 120-copy exposure and actor pause/resume transitions
 remain unrun; the controller source-read setup above does not exercise them.
 
-The [two-notice disposable probe](../../docs/verification/panel-compaction-settlement-2026-10-24.md)
+The two-notice disposable probe
 uses the actual bound hooks and compact helper around two synthetic compact
 callbacks. It checks a leased first notice through compaction, commits its
 settlement once, then restores and settles a different notice without replaying
@@ -247,7 +247,7 @@ before admission, forgets after claiming, verifies `PAYLOAD_UNAVAILABLE` on
 the first scoped read, and repeats the failed settlement under the same request
 UUID. Receipts retain no source body and mark actor acceptance unassessed. A
 requester explanation and actor task remain unrun. See the
-[four-arm source-loss verification](../../docs/verification/panel-source-forgotten-arms-2026-10-24.md).
+four-arm source-loss verification.
 
 The [required conflict probe](../../scripts/check_panel_required_conflict_group.py)
 issues the exact `conflict_24` and `conflict_48` mandatory instructions through
@@ -280,8 +280,8 @@ accounts, routes, pins and limits, then run and review all four arms. The
 subscription route rule remains in force. CAIRN-227 release status remains
 **Defer**.
 
-For a provider-free preflight of one fixture, see the [single-workflow dry
-run](../../docs/verification/token-efficiency-one-workflow-dry-run-2026-10-24.md).
+For a provider-free preflight of one fixture, see the single-workflow dry
+run.
 It supports only `baseline.single_notice`, checks the selected Codex account and
 current installation pins, and records fresh caller-status samples. It never
 starts an actor turn; its task grade stays unassessed and the 22-case paired

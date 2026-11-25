@@ -158,8 +158,7 @@ reviewed for this profile. Codex and Claude configuration generators pass the
 selected profile to their MCP command; this flag does not change OpenCode's
 native tool profile.
 
-The [declaration-size comparison](verification/claude-compact-all-tools-2026-10-25.md)
-records measurements for the full and compact profiles. Smaller declarations do
+Smaller declarations do
 not by themselves establish lower provider costs or better task outcomes.
 
 ## Reserve room for source inspection
@@ -217,7 +216,6 @@ protocol output. Standard flag parsing applies: a `--help` used as a flag value 
 after `--` is not a help request. This is CLI behavior; no API upgrade is needed.
 Other commands retain their existing help handling.
 
-
 ## Setup text and scope
 
 Startup and all three configuration generators require well-formed UTF-8 text
@@ -231,7 +229,6 @@ Invalid text or scope refuses before configuration output or credential access.
 A generated configuration still needs a usable profile and running API to connect.
 Intentional U+FFFD is allowed; malformed byte strings are refused rather than
 replaced. Update the setup/MCP executable for these checks.
-[Reproduction and verification](verification/harness-configuration-text-2026-09-10.md).
 
 ## Tools
 
@@ -312,7 +309,7 @@ edits cannot change the stored scope. Repeat the choice and effective scope on
 retries; a changed task or run under the same request UUID refuses when it changes
 the stored draft. A task capture remains identical across runs of that task.
 Update the MCP binary and restart its host process to expose this argument;
-the existing API and database support it. [Checks and limits](verification/native-capture-scope-2026-09-10.md).
+the existing API and database support it.
 
 ### Revise a saved note
 
@@ -344,8 +341,7 @@ edit, then submit a new request. Edits cannot change scope, sensitivity or pins,
 nor revise B/C records. The tool rejects a draft outside the server's configured
 repository. It is marked as destructive because it revises existing content;
 the generated `--memory-only` host policy continues to allow only search and body
-pull. [Verification](verification/mcp-edit-2026-09-08.md) covers the ordinary
-edit path and its limits.
+pull.
 
 Search's `cairn.mcp-search/1` is a presentation of the source package, with its
 `source_schema` and `source_seal` retained. The augmented view is not itself sealed.
@@ -406,7 +402,7 @@ Cairn implements ten standard MCP tools across discovery, expansion, capture, mu
 - **Tool Profiles (`--tool-profile`)**:
   - Default: Full verbose tool descriptions and JSON schemas for maximum self-describing capability.
   - `compact/1`: Shortened descriptions for `cairn_search` and `cairn_pull`, reducing schema token overhead.
-  - `compact/2`: Shortens descriptions across all ten MCP tools. In the recorded [declaration-size comparison](verification/claude-compact-all-tools-2026-10-25.md) the serialized declaration array was 29.6% smaller than the full profile (7,432 bytes, 1,358 `o200k_base` proxy tokens); this is a serialized-declaration measurement, not provider tokens or task savings.
+  - `compact/2`: Shortens descriptions across all ten MCP tools. In the recorded declaration-size comparison the serialized declaration array was 29.6% smaller than the full profile (7,432 bytes, 1,358 `o200k_base` proxy tokens); this is a serialized-declaration measurement, not provider tokens or task savings.
 - **Search View Compaction (`--search-view compact/1`)**:
   - Emits `cairn.mcp-search-compact/1` instead of `cairn.mcp-search/1`. Retains required instructions, preview passages, handles, `pull_arguments`, paging, and budget fields while stripping repeated query text, ranking scores, and tokenizer debug metadata.
 - **Token Budgeting (`--tokens` and `--max-tokens`)**:
@@ -453,8 +449,6 @@ access, remove `cairn_remember`, `cairn_edit` and `cairn_assess` from the genera
 Existing allowlists need `cairn_assessments` and `cairn_assess` added explicitly
 to use the [native review tools](use-outcome-loop.md#native-review-tools).
 Upgrading the executable does not rewrite configuration or bypass an allowlist.
-The [Codex repair check](verification/codex-review-allowlist-2026-09-10.md)
-verifies discovery and the review workflow through a fresh native conversation.
 
 The output has this shape (with the selected budget and context flags in `args`):
 
@@ -480,10 +474,7 @@ startup_timeout_sec = 15
 Use a provisioned profile authorized for that repository and hosted delivery.
 This example exposes ordinary capture, edit and assessment writes as well as
 retrieval. Remove `cairn_remember`, `cairn_edit` and `cairn_assess` for
-retrieval-only access. The
-[native maintenance check](verification/codex-maintenance-2026-09-08.md) saved a
-selected procedure, revised it, and retrieved its current version in a fresh task.
-`--codex-thread` requires each search call to carry `_meta.threadId`. Cairn sets
+retrieval-only access. `--codex-thread` requires each search call to carry `_meta.threadId`. Cairn sets
 `task_id` to `codex/<threadId>` and `run_id` to `<threadId>`, keeping the configured
 repository. Repeated searches within a conversation keep that scope; new
 conversations get distinct scopes. This groups a whole conversation, including
@@ -500,8 +491,7 @@ and cannot be `*`. Use explicit `--task` and `--run` instead for clients without
 this metadata or tasks needing finer scope. Explicit mode ignores thread metadata.
 `opencode-config` requires explicit scope and rejects `--codex-thread`.
 
-The [native thread check](verification/codex-thread-2026-09-09.md) verifies this
-metadata with Codex CLI 0.153.4. Compatibility with other versions remains to be
+Compatibility with other versions remains to be
 checked. Optional context flags still describe startup revision, workspace and
 binding; restart with updated declarations when these change. Conversation scope
 does not attest that those declarations match the current checkout.
@@ -511,16 +501,11 @@ cover user/project placement and command-line overrides. `codex mcp get cairn --
 For a trusted project, put the entry in `.codex/config.toml` to keep its repository
 and token profile local to that project. Keep installation-specific paths out of
 Git. Set `required = false` if unavailable memory should not block startup.
-The [local adoption check](verification/codex-project-2026-09-09.md) verified
-discovery and exact retrieval from Cairn's project configuration without MCP
-overrides. New conversations can use it; an already running conversation may
+New conversations can use it; an already running conversation may
 need a client restart to load the new tools.
 An [actual Codex client check](verification/codex-mcp-2026-09-08.md) connected,
 listed the permitted tools, searched and pulled the exact saved lesson without
 starting a model turn. Model-selected use and task benefit remain unverified.
-The [generator check](verification/codex-config-2026-09-09.md) also loads generated
-files directly in Codex 0.153.4 and retrieves exact saved content in both scope
-modes; it includes independent TOML parsing of quotes, Unicode and control bytes.
 
 ## OpenCode example
 
@@ -601,11 +586,9 @@ The host observes tool results and calls `link-run-retrieval` with its observer
 profile; the model keeps its ordinary agent profile. The association does not
 turn a process exit into task acceptance.
 
-
 Known failure signatures can also find reviewed lessons without shared query
 vocabulary. See [failure signature search](failure-signature-search.md) for the
 optional `error_signature_sha256` tool field and operator sharing requirement.
-
 
 ## Inspect possible predecessors before saving
 

@@ -100,7 +100,5 @@ For actual operation and integration contracts, use:
 - [Lifecycle bundles](../lifecycle-bundles.md), [compact inbox](../compact-inbox.md),
   and [native inbox](../native-inbox.md).
 
-The [roadmap](../roadmap.md) and dated
-[verification reports](../verification/README.md) retain development and
-acceptance evidence. They should not be read as a promise that every optional
+They should not be read as a promise that every optional
 integration is enabled in a deployment.

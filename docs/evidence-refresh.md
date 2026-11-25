@@ -48,7 +48,7 @@ No flags preserves the existing JSON-on-stdin mode. Both file commands support
 the full decoded 1 MiB cap; operator JSON input retains its separate 128 KiB
 encoded limit. The API must support `body_base64` (introduced in `386eae1`).
 This CLI feature needs no API restart or schema migration when that version is
-already running. [File capture checks](verification/file-evidence-capture-2026-09-09.md).
+already running.
 
 ## Construct a JSON capture request
 
@@ -59,8 +59,6 @@ Valid escaped surrogate pairs, literal backslashes and an explicitly supplied
 U+FFFD remain valid. The same check applies to other API/CLI JSON requests.
 It does not recover characters already changed by an upstream encoder or native
 SDK; use file mode or `body_base64` for arbitrary source bytes.
-[Unicode request checks](verification/json-unicode-integrity-2026-09-09.md).
-
 
 For binary files, encode the selected bytes as canonical padded standard base64
 (for example, Python's `base64.b64encode(data).decode("ascii")`). Do not decode
@@ -93,7 +91,6 @@ Capture returns an evidence identity and checksum, not an automatic note or a
 qualified claim. Existing explicit citation, destination and pull checks still
 apply. UTF-8 evidence is returned as `body`; non-UTF-8 evidence is returned as
 `body_base64`, regardless of its input representation.
-[Binary capture verification](verification/binary-evidence-capture-2026-09-09.md).
 
 The authenticated CLI/client/API allow an 8 MiB encoded envelope for this operation,
 so a full-size source can fit even when each source byte requires six bytes of
@@ -103,8 +100,6 @@ request ID. Repeat a successful capture with the same ID and content to retain
 its original identity. Ordinary note `create`, `edit`, `revise` and `append`,
 and `event-complete`, use 512 KiB envelopes; `replace` and `set-sections` use
 1 MiB. Other API operations keep 128 KiB. See the [local API limits](local-api.md).
-The [transport verification](verification/evidence-limit-2026-09-09.md) covers
-exact bytes, retries, limits and the actual agent CLI.
 
 `cairn check-evidence` accepts JSON `request_id` and `evidence_id`. It checks the
 retained inline bytes against their captured SHA-256 and persists a generation,

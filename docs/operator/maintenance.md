@@ -96,6 +96,4 @@ For note removal, distinguish [ordinary deletion](../ordinary-delete.md) from
 not a substitute for the required effects on retained history and references.
 
 Use normal PostgreSQL monitoring and maintenance for the database itself.
-Cairn's tests and recovery reports establish specific checked properties;
-[historical verification records](../verification/README.md) are evidence for
-their recorded runs, not a live health report for your installation.
+Cairn's tests and recovery reports establish specific checked properties; they are not a live health report for your installation.

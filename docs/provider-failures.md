@@ -108,9 +108,6 @@ HTTP 429 provider. Its `--codex` option uses isolated Codex homes and a loopback
 association and slot suspension. No real account is charged or exhausted.
 The `--agy` option uses an isolated settings mount and loopback provider to check
 rate-limit reporting, ordinary errors, a later different error and successful
-recovery with a stale final diagnostic. See [Agy verification](verification/agy-provider-failures-2026-09-16.md).
-See [verification](verification/provider-failures-2026-09-16.md).
-The `--claude` option checks the installed executable's retry event through a
+recovery with a stale final diagnostic. The `--claude` option checks the installed executable's retry event through a
 managed timeout, successful recovery and a later non-retryable HTTP 400, including
-native session association and actual slot health. See
-[Claude verification](verification/claude-provider-failures-2026-09-16.md).
+native session association and actual slot health.

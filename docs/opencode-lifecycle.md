@@ -54,5 +54,3 @@ The plugin uses the task-message transformation boundary. Pinned OpenCode
 [task transform](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/session/prompt.ts),
 [compaction boundary](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/session/compaction.ts)
 and [plugin disposal](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/plugin/index.ts).
-The [verification report](verification/lifecycle-improvements-2026-09-13.md)
-distinguishes native checks from synthetic plugin checks and measured usefulness.

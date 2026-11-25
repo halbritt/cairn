@@ -71,11 +71,9 @@ recompile under their original profiles. Retrying an old quoted compile request
 whose current package would change returns `STALE_PACKAGE`; use a new request ID
 for current retrieval.
 
-[Verification](verification/quoted-search-2026-09-10.md) covers the ranking change,
-ordinary interfaces, previous receipts and eligibility boundaries. This adds a
+This adds a
 retrieval capability. Structured entity/file/error metadata, automatic host intent
 collection and broader task-value evidence remain open in E1 and the roadmap.
-
 
 Known failure signatures can also find reviewed lessons without shared query
 vocabulary. See [failure signature search](failure-signature-search.md) for the

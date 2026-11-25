@@ -252,9 +252,7 @@ terms than the note's opening 160 bytes. They use the ranker's existing word and
 identifier matching, preserve exact source text, and mark omitted context with
 `...`. Empty queries, unmatched queries and ties keep the opening preview.
 The 160-byte limit includes omission markers. A preview can cut an explanation
-short: pull the body before applying its advice. The
-[verification report](verification/index-previews-2026-09-08.md) records the
-observed problem and compatibility checks.
+short: pull the body before applying its advice.
 
 New A/B previews include `summary_span: {"offset": N, "length": N}` identifying
 their source bytes, excluding synthetic `...` markers. Offsets and lengths count
@@ -271,7 +269,7 @@ The location is sealed with the record version and full-body digest and counts
 toward index packing cost; fewer entries can fit a page. It grants no extra access
 or credits. Historical v4–v7 indexes retain their original shape and seals; a new
 index request after the format upgrade needs a new request UUID if retrying the
-old one returns `STALE_PACKAGE`. See the [source-position verification](verification/preview-locations-2026-09-09.md).
+old one returns `STALE_PACKAGE`.
 
 The result supplies `package`, `handles`, `expires_at`, `credits_remaining` and
 `bytes_remaining`. Each handle is bound to one authenticated caller, receipt,
@@ -320,8 +318,7 @@ below `total_bytes`. A rejected whole pull spends no credit.
 
 Treat the result as a partial source, not a replacement record body. Read the
 complete note and reconcile unseen text before editing it. The API, CLI and native
-adapter must support note spans together. See the
-[note-span verification](verification/note-spans-2026-09-09.md).
+adapter must support note spans together.
 
 To inspect one attached evidence object, use `cairn agent expand-evidence` with
 its `evidence_id` and `sha256` from the selection's evidence metadata:

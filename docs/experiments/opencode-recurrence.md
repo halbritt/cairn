@@ -174,12 +174,12 @@ first: intent or a saved PID alone does not establish termination or authorize
 killing a possibly reused PID. This is retained recovery evidence, not an
 automatic recovery daemon.
 
-The [observed model failure review](../verification/observed-model-failure-2026-09-08.md)
+The observed model failure review
 exercises this path with a real model timeout, an independently reproduced
 candidate defect, and a generated failure proposal converted to an unpromoted
 local lesson. Its reviewer diagnostic does not replace the model candidate.
 
-The [host-controller verification](../verification/opencode-host-observation-2026-09-08.md)
+The host-controller verification
 includes real OpenCode against a synthetic local endpoint. It establishes the
 controller's authenticated ingress path, not model usefulness or native Striatum
 admission.
@@ -211,7 +211,6 @@ fleet lease for at least that context and verify the live server supports it;
 the default remains 65,536. The available room passed to Cairn stays 32,000.
 All settings appear in the report. A change of context size, thinking setting or
 tool policy creates a new experimental condition; preserve the prior result.
-
 
 ## Bounded hosted calibration
 
@@ -263,7 +262,6 @@ byte limits, provider controls, task and gate remain unchanged. The standard
 profile remains the default. This changes the aggregate work budget as a group;
 it does not isolate which individual limit caused an earlier failure.
 
-
 For targeted diagnosis, `--retain-final` explicitly retains up to 8 KiB of the
 last model text event in a private `ARM-last-explanation.txt` file. It excludes
 reasoning and tool-output events. This is selected diagnostic evidence; it is
@@ -275,7 +273,6 @@ model says about sharing. The operator owns its retention: remove it after the
 diagnostic review and retain only the necessary metadata or a reviewed finding.
 The controller does not automatically expire an opted-in explanation. Native
 session homes are still removed at completion.
-
 
 `--output-tokens 32768` is a separate hosted calibration condition for a model
 that exhausts the default 8,192-token response allowance. Reasoning shares that

@@ -33,7 +33,7 @@ comprehension or task benefit. False means no such instrumented event is retaine
 it does not prove the agent never accessed the content. Coverage remains separate.
 An older server omits this field, which must not be interpreted as false. Update
 the API for authenticated reports, or the CLI for direct-store reports; no
-database migration is needed. [Verification](verification/expansion-observation-2026-09-10.md).
+database migration is needed.
 
 `core.UseReport` accepts `repo`, optional `record_id`, `limit` (1–200) and `offset`.
 Optional `task_id` and `run_id` narrow the retained receipt scope, and optional
@@ -142,8 +142,7 @@ behind an outcome; aggregate rows do not contain that narrative.
 The existing authenticated `agent use-report` accepts JSON containing `repo`,
 optional `record_id`, `task_id` and `run_id`, plus `limit` and `offset`. This protected report requires a
 provisioned local profile; hosted profiles remain denied. CLI pagination adds
-no permission or new exposure of private data. Its [verification](verification/use-history-cli-2026-09-09.md)
-uses a disposable history beyond the default page.
+no permission or new exposure of private data.
 
 ## Retrieval during an observed run
 
@@ -184,9 +183,6 @@ host assessment. `run-report` still counts one execution: `linked_retrievals`
 counts associated receipts, including empty retrievals, and `exposure_rows`
 includes their record/version exposures. Repeated citations do not multiply
 exposures. There is no inferred causal benefit or automatic lesson promotion.
-
-The [verification record](verification/run-retrieval-2026-09-08.md) covers the
-store boundaries and an observed child making authenticated index/pull calls.
 
 ## Inspect runs, including no-memory baselines
 
@@ -240,9 +236,7 @@ report endpoints. Update the API before sending these fields to an older server;
 no database migration is required. Hosted profiles remain denied. The local
 operator CLI requires the updated executable.
 
-The [reviewed recurrence report check](verification/run-report-2026-09-08.json)
-reads the original M/N/O trial stores without changing their reports or
-assessments. It returns exactly one row for each run: zero exposures and rejected
+It returns exactly one row for each run: zero exposures and rejected
 task outcome for M, zero exposures and unknown task outcome for N, and one
 exposure and unknown task outcome for O. All retain assessment version 2.
 
@@ -285,13 +279,12 @@ alone does not prove that a process started. Use the process/delivery observatio
 and the task context needed for the comparison; do not treat a digest or exit zero
 as task acceptance. A qualitative value judgment need not reduce to these fields.
 
-A [bounded check](verification/run-evidence-audit-2026-09-09.json) ran four
-`/bin/true` processes in a disposable store. Changing the prompt or carrier left
+Changing the prompt or carrier left
 the command digest unchanged; splitting an argument changed it. Delivery digests
 matched the actual combined input, and all four task outcomes remained unknown.
 Argument/prompt canaries were absent from the database dump and saved context
 files. This verifies those inputs and paths, not every capture route or physical
-erasure. Existing [historical run rows](verification/run-report-2026-09-08.json)
+erasure. Existing historical run rows
 already included command digests before this audit.
 
 The generic runner supports [explicit file selections](run-artifact-evidence.md)
@@ -330,7 +323,6 @@ If that principal's repository or destination has changed, the old receipt
 returns `AUTHORITY_DENIED`; retrying cannot recover its cached assessment through
 the new binding. Earlier assessments remain retained. The direct-store
 `AssessRun` contract is unchanged; the API uses `AssessRunForDestination`.
-See the [binding repair](verification/assessment-binding-2026-09-10.md).
 
 `cairn report REPO` counts unknown task outcomes among retained process outcomes.
 It uses the latest task assessment when one exists, then falls back to the
@@ -391,13 +383,10 @@ case describing the sequence and relevant versions, receipts or artifacts.
 Ordinary project documentation can carry such a review without inventing a
 single run for the whole sequence or changing its individual task assessments.
 Preserve the reviewer's identity, evidence limits, alternatives and negative
-observations. The [adapter-repair case](verification/value-case-validation-2026-09-09.md)
-demonstrates this format with existing evidence. These reviews do not automatically
+observations. These reviews do not automatically
 produce demand proposals, rank changes or a numeric memory-value score.
 
-The [cumulative maintenance case](verification/cumulative-maintenance-value-2026-09-09.md)
-follows successive related changes and includes a correction caused by earlier
-maintenance. It also distinguishes supplied retrieval scopes from independent
+It also distinguishes supplied retrieval scopes from independent
 model sessions and counts maintenance/review work among the costs. Related reads
 and notes should not be presented as independent replications of value.
 
@@ -537,7 +526,7 @@ whole-task accounting.
 
 Upgrade the MCP executable or reinstall the matching OpenCode adapter, then
 start a fresh harness session. The API must include the
-[assessment binding repair](verification/assessment-binding-2026-09-10.md);
+assessment binding repair;
 no database migration is needed. Existing Codex `enabled_tools` lists need both
 review tool names; regenerate or update the Cairn entry and start a fresh session.
 Explicit OpenCode allowlists need
@@ -545,6 +534,5 @@ Explicit OpenCode allowlists need
 the names carry its usual `cairn_cairn_` prefix. Installation does not change
 permissions, and memory-only startup allowlists remain search/pull only.
 
-[Interface checks](verification/native-assessments-2026-09-10.md) cover the
-workflow and refusals. They establish interface behavior; downstream review
+They establish interface behavior; downstream review
 quality and task benefit remain to be observed in actual work.

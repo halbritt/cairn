@@ -88,7 +88,5 @@ adapter must support it together; an older retained-package consumer is not
 qualified by its support for schema 13. No database migration is required beyond
 034. Omitting the option preserves previous formats and default dispute omission.
 
-[Verification](verification/advisory-conflicts-2026-09-10.md) distinguishes tested
-retrieval contracts from the still-open question of whether competing guidance
-improves real tasks. Richer interested-party resolution and observed outcomes
+Richer interested-party resolution and observed outcomes
 for work performed under an open conflict remain on the roadmap.

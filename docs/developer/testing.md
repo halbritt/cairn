@@ -256,6 +256,4 @@ python3 scripts/verify_docs.py --tier 1,3
 The checker scans links and anchors, known CLI syntax, fenced JSON and shell
 syntax, and the presence of required guides. It uses heuristics; it does not
 execute examples or prove their semantics. [Documentation validation](../../TEST_INFRA.md)
-explains coverage and limitations. Dated reports in
-[verification](../verification/README.md) retain historical evidence, not a live
-pass/fail status.
+explains coverage and limitations.

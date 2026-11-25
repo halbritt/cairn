@@ -22,7 +22,7 @@ The restriction follows exact versions; a later independent revision without
 those links is not automatically assigned its predecessor's exclusions.
 Forgetting and relation writers order through the affected record generations.
 Migration 026 repairs missing exclusions created by older binaries; keep old
-writers stopped during upgrade. See the [verification](verification/deletion-dependencies-2026-09-08.md).
+writers stopped during upgrade.
 
 `cairn demote` accepts JSON `request_id`, `record_id`, `expected_version`, and
 `grant_id`. The existing `correct` capability authorizes lowering an active B
@@ -68,7 +68,7 @@ through `check-evidence` advances affected record generations and invalidates an
 older token. Ordinary version edits and new relations still invalidate it too.
 Existing tokens keep their original lifetime; obtain a fresh preview to inspect
 the new evidence inventory. No schema migration is required, but the API must be
-updated for authenticated responses. [Verification](verification/retraction-evidence-2026-09-09.md).
+updated for authenticated responses.
 
 The standalone `impact` command remains a paginated direct-use inspection.
 `preview-retract` supplies the broader known-relation analysis required before a

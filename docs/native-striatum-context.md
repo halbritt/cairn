@@ -39,19 +39,5 @@ being wrapped in a second `cairn run` process.
 
 ## Historical evidence
 
-The [September integration record](history/native-striatum-context-2026-09.md)
-retains the architecture, exact revisions, component checks, adoption constraints,
-and model-task results. Its two model comparisons delivered context but produced
+Its two model comparisons delivered context but produced
 no admitted repair. Treat those as bounded experimental results.
-
-<a id="shared-rfc-adoption-check-2026-09-10"></a>
-The [RFC adoption check](history/native-striatum-context-2026-09.md#shared-rfc-adoption-check-2026-09-10)
-describes the contract-acceptance dependencies observed on September 10.
-
-<a id="evidence-and-next-contract-work"></a>
-The [contract proposal history](history/native-striatum-context-2026-09.md#evidence-and-next-contract-work)
-records the proposed observation and build changes.
-
-<a id="current-build-verification-2026-09-10"></a>
-The [component verification](history/native-striatum-context-2026-09.md#current-build-verification-2026-09-10)
-provides the original reproduction command and its limits.

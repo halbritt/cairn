@@ -104,4 +104,3 @@ Versioning, rollback, affected-run queries and instruction-category caps impleme
 part of roadmap L3. C waivers and the full unenforceability decision table remain
 open. This rule format cannot weaken authority, evidence, sensitivity, destination
 or mandatory runtime gates, authorize broader sharing, or introduce learned ranking.
-See [verification](verification/governed-policy-2026-09-08.md).

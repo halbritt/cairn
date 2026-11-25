@@ -113,7 +113,6 @@ Migration 019 permits an absent recovery source while preserving existing pairs.
 Deploy the updated binary with this migration before generating standalone
 proposals; older binaries assume every proposal has a recovery.
 
-
 ## Preserve the linked lesson version
 
 New conversions record the lesson version linked in that transaction. Editing the
@@ -183,11 +182,8 @@ can still create an unpinned review after migration; the new reader does not car
 an earlier pin into that review. Upgrade active review writers to obtain new pins.
 Previously committed mutation retries retain their original responses.
 
-[Verification](verification/proposal-versions-2026-09-10.md) covers conversion,
-source edits, reopen/history paging, stale-version refusal, body forgetting and
-an actual older writer. Error-signature retrieval using these links remains a
+Error-signature retrieval using these links remains a
 separate E1 implementation step.
-
 
 ## Retrieve a converted lesson on a later task
 
