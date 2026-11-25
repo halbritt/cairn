@@ -35,6 +35,9 @@ type unitVerifiedFile struct {
 	stat   unix.Stat_t
 	raw    []byte
 	digest string
+	// modes is the strictest parent-mode set this path was read under;
+	// Recheck applies it rather than a looser or stricter default.
+	modes []uint32
 }
 
 func newUnitVerifiedFiles(ctx context.Context) *unitVerifiedFiles {
@@ -77,6 +80,7 @@ func (p *unitVerifiedFiles) readModes(path string, limit int64, binary bool, mod
 		if err := unitVerifiedPolicy(held, limit, binary); err != nil {
 			return nil, err
 		}
+		entry.modes = slices.DeleteFunc(entry.modes, func(m uint32) bool { return !slices.Contains(modes, m) })
 		if !binary && entry.raw == nil {
 			// A streamed executable later requested as data needs actual bytes;
 			// its earlier digest alone cannot satisfy the new bounded reader.
@@ -120,7 +124,7 @@ func (p *unitVerifiedFiles) readModes(path string, limit int64, binary bool, mod
 	if err != nil || !unitVerifiedSame(before, current) {
 		return nil, errors.Join(err, fmt.Errorf("verified file path changed: %s", path), file.Close())
 	}
-	entry := &unitVerifiedFile{file: file, stat: before, raw: raw, digest: digest}
+	entry := &unitVerifiedFile{file: file, stat: before, raw: raw, digest: digest, modes: slices.Clone(modes)}
 	p.files[path] = entry
 	p.inodes[identity] = path
 	return entry, nil
@@ -170,7 +174,7 @@ func (p *unitVerifiedFiles) Recheck() error {
 			return errors.Join(err, p.Close())
 		}
 		entry := p.files[path]
-		current, err := unitVerifiedPathStat(path)
+		current, err := unitVerifiedPathStatModes(path, entry.modes...)
 		var held unix.Stat_t
 		heldErr := unix.Fstat(int(entry.file.Fd()), &held)
 		if err != nil || heldErr != nil || !unitVerifiedSame(entry.stat, current) || !unitVerifiedSame(entry.stat, held) {
@@ -180,7 +184,7 @@ func (p *unitVerifiedFiles) Recheck() error {
 		if err != nil || digest != entry.digest {
 			return errors.Join(err, fmt.Errorf("verified file content changed: %s", path), p.Close())
 		}
-		current, err = unitVerifiedPathStat(path)
+		current, err = unitVerifiedPathStatModes(path, entry.modes...)
 		if err != nil || !unitVerifiedSame(entry.stat, current) {
 			return errors.Join(err, fmt.Errorf("verified file path changed: %s", path), p.Close())
 		}

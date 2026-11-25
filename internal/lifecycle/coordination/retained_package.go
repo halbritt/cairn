@@ -766,14 +766,22 @@ func (r *watchCensusRead) retainedSourceBytes(pin WatchCensusPin) ([]byte, error
 		return nil, err
 	}
 	raw, digest, err := r.local.openedModes(pin.Path, 1048576, false, 0o700, 0o755)
-	if err != nil || digest != pin.SHA256 {
+	if err != nil {
 		return nil, errors.Join(err, retainedPackageError())
+	}
+	if digest != pin.SHA256 {
+		// Same reason as an ordinary census pin (r.pin) for changed bytes.
+		return nil, fmt.Errorf("census pin changed: %s", pin.Path)
 	}
 	if old := r.files[pin.Path]; old != "" && old != digest {
 		return nil, retainedPackageError()
 	}
 	r.files[pin.Path] = digest
 	r.report.Facts["file:"+pin.Path] = digest
+	if r.retainedSources == nil {
+		r.retainedSources = map[string]bool{}
+	}
+	r.retainedSources[pin.Path] = true
 	return raw, nil
 }
 

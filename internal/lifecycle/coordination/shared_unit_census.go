@@ -101,6 +101,7 @@ type watchCensusRead struct {
 	nodes                 map[string]*WatchCensusMember
 	files                 map[string]string
 	directories           map[string][]string
+	admittedModes         map[string][]os.FileMode
 	inodes                map[string]string
 	images                map[string]bool
 	nodeBlockers          map[string][]string
@@ -115,6 +116,7 @@ type watchCensusRead struct {
 	hookSelections        []watchCensusHookSelection
 	retainedPackages      map[string]*retainedDataPackage
 	retainedProfiles      map[string]WatchCensusPin
+	retainedSources       map[string]bool
 	associations          map[string]*watchCensusAssociation
 	target                *unitCensusTarget
 	parsedTraces          map[agyTraceParseKey]*agyParsedTrace
@@ -164,7 +166,7 @@ func (r *watchCensusRead) refresh(ctx context.Context) error {
 
 func (c *CLI) openWatchUnitCensus(ctx context.Context, catalog WatchCensusPin, proposed WatchCensusProposal, control *unitCensusScope) (read *watchCensusRead, err error) {
 	r := &watchCensusRead{cli: c, nodes: map[string]*WatchCensusMember{}, files: map[string]string{},
-		directories: map[string][]string{}, inodes: map[string]string{}, images: map[string]bool{},
+		directories: map[string][]string{}, admittedModes: map[string][]os.FileMode{}, inodes: map[string]string{}, images: map[string]bool{},
 		nodeBlockers: map[string][]string{}, nodeGrants: map[string][]string{}, sessionRefs: map[string]WatchCensusSession{},
 		nodeDrainRequirements: map[string][]WatchCensusDrainRequirement{},
 		callbackRecords:       map[string]watchCensusCallbackRecord{},
@@ -300,6 +302,14 @@ func (r *watchCensusRead) directoryModes(path string, modes ...os.FileMode) ([]s
 		return nil, errors.New("census directory membership changed between observations")
 	}
 	r.directories[path] = names
+	// Readback rechecks with the strictest mode set this path was admitted under.
+	if admitted, seen := r.admittedModes[path]; seen {
+		modes = slices.DeleteFunc(slices.Clone(admitted), func(m os.FileMode) bool { return !slices.Contains(modes, m) })
+	}
+	if r.admittedModes == nil {
+		r.admittedModes = map[string][]os.FileMode{}
+	}
+	r.admittedModes[path] = slices.Clone(modes)
 	sum := sha256.Sum256([]byte(strings.Join(names, "\x00")))
 	r.report.Facts["directory:"+path] = hex.EncodeToString(sum[:])
 	return names, nil

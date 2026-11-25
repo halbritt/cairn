@@ -693,7 +693,7 @@ func (r *watchCensusRead) emptyHookLayer(path, role string) error {
 func (r *watchCensusRead) readback(ctx context.Context) error {
 	for _, path := range slices.Sorted(maps.Keys(r.directories)) {
 		before := slices.Clone(r.directories[path])
-		after, err := r.directory(path)
+		after, err := r.directoryModes(path, r.admittedModes[path]...)
 		if err != nil {
 			return err
 		}
@@ -712,6 +712,14 @@ func (r *watchCensusRead) readback(ctx context.Context) error {
 		}
 		if pin, ok := r.retainedProfiles[path]; ok {
 			if _, err := r.retainedProfileBytes(pin); err != nil {
+				return err
+			}
+			continue
+		}
+		// Authenticated retained source members re-read under the parent
+		// modes they were admitted with (CAIRN-745).
+		if r.retainedSources[path] {
+			if _, err := r.retainedSourceBytes(WatchCensusPin{path, r.files[path]}); err != nil {
 				return err
 			}
 			continue
