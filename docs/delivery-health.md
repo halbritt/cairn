@@ -154,9 +154,10 @@ the recipient's explicit completion or acknowledgement still establishes
 handling. Other outcomes, including `unknown`, require their own evidence and
 are not covered by this completed-delivery procedure.
 
-## Opt-in attention on the operator review
+## Caller-scoped attention on the operator review
 
-Add `attention` to the existing local operator `coordination-review` request:
+Add `attention` to the existing local operator `coordination-review` request (an
+explicit caller-scoped parameter, not enabled globally by default):
 
 ```sh
 cairn coordination-review <<'JSON'
@@ -270,20 +271,20 @@ commands in [event recovery](event-recovery.md) to decide what to do.
 
 The templates `deploy/cairn-delivery-alerts.service` and `.timer` schedule a run
 every ten minutes. Adapt their paths and install them as user units, then enable with
-`systemctl --user enable --now cairn-delivery-alerts.timer`.
+`systemctl --user enable --now cairn-delivery-alerts.timer` (active on the primary
+host; disable with `systemctl --user disable --now cairn-delivery-alerts.timer`).
 
-## What to measure
+## Operational review
 
 Delivery diagnostics should help an operator recognize stalled work and connect
-a refusal to its request without repeated journal inspection. Evaluate whether
-the alerts reduce that work.
+a refusal to its request without repeated journal inspection.
 
-Use a bounded trial with representative wanted requests. Record when a useful
-condition first appears, when the operator notices it, and which action it informs.
-Count repeated unchanged warnings and false alarms from intentional waiting.
-Check that progress clears or supersedes the condition, and that incomplete
-coverage stays visible. Keep the feature if it improves recognition at an
-acceptable attention cost. Synthetic tests establish the mechanics only.
+With `cairn-delivery-alerts.timer` active, track when a useful condition first
+appears, when the operator notices it, and which action it informs, alongside
+repeated unchanged warnings, false alarms from intentional waiting, and clearing
+on progress. Incomplete coverage stays visible through the scan fields above.
+Synthetic tests establish the detection and Plane-bookkeeping mechanics only;
+exact production alert rates depend on the active workload.
 
 Delivery diagnosis does not complete requests, initiate recovery, or change team
 structure.

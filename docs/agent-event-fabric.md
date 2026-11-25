@@ -263,8 +263,9 @@ their own stable operation request IDs, and external effects require an
 idempotent destination. The service does not promise exactly-once arbitrary
 agent behavior. Multiple result effects are outside the atomic completion API.
 
-For a native request inbox context, `finish_reply` is an opt-in command that
-takes the selected result on stdin. It journals the completion and explicit
+For a native request inbox context, `finish_reply` is an explicit caller-scoped
+command (invoked only when the recipient runs it rather than as a global toggle)
+that takes the selected result on stdin. It journals the completion and explicit
 reply intent under separate request UUIDs before calling the API, completes the
 delivery, and publishes a response citing that attempt's committed result
 version. The context fixes the original sender, publisher session, causation and

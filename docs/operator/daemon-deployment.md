@@ -13,11 +13,23 @@ Each has its own configuration and failure behavior.
 | `--semantic-command PATH` | A local scoring executable invoked for requests. |
 | `--semantic-stream-command PATH` | A reusable local scoring process. |
 | `--embedding-command PATH` | Persistent passage retrieval with a local embedding executable. |
+| `--semantic-rust-config FILE` | Rust worker configuration (`rank`, `stream`, or `embed`; active on host `cairn-api.service` via `zz-c301-api-rust.conf` drop-in). |
 
 The executable must implement Cairn's protocol; an arbitrary embedding CLI is
 not interchangeable. `--semantic-idle-timeout` applies only to
-`--semantic-stream-command`. The default reusable-worker idle lifetime is 30
-seconds. A persistent embedding backend has a different lifecycle.
+`--semantic-stream-command` or a Rust `stream` config. The default reusable-worker
+idle lifetime is 30 seconds. A persistent embedding backend has a different lifecycle.
+
+On host `cairn-api.service`, `--semantic-rust-config` is configured via systemd
+drop-in (`zz-c301-api-rust.conf`) rather than hardcoding a machine-local config
+path in `deploy/cairn-api.service`; omit the flag to disable the Rust worker.
+For `CAIRN_SOURCE_OPENING_BINDING`, `cairn serve` leaves binding disabled when unset
+or `""`; enable verified host principals via a `cairn-api.service.d` drop-in (see
+[`deploy/cairn-api-source-opening.conf`](../../deploy/cairn-api-source-opening.conf)
+and [source openings](../note-span-openings.md#enabling-binding-default-off)) after
+upgrading all host readers and relays. Delivery starvation alerts run via
+`deploy/cairn-delivery-alerts.timer` (`systemctl --user enable --now cairn-delivery-alerts.timer`,
+active on host; disable with `systemctl --user disable --now cairn-delivery-alerts.timer`).
 
 Follow [semantic discovery](../semantic-discovery.md) or
 [persistent retrieval](../persistent-semantic-retrieval.md) for setup and model

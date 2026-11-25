@@ -1,8 +1,11 @@
 # Source openings beside note spans
 
-A context-index receipt can bind a 96-byte source-opening policy. **By default
-no receipt does:** the API binds it only for authenticated profiles the operator
-has enabled (see [Enabling binding](#enabling-binding-default-off)). A subsequent
+A context-index receipt can bind a 96-byte source-opening policy. In the bare
+`cairn serve` executable, binding is disabled unless `CAIRN_SOURCE_OPENING_BINDING`
+is set for configured authenticated profiles (see
+[Enabling binding](#enabling-binding-default-off)), so mixed-version setups do
+not prematurely seal receipts or break un-upgraded readers. Host deployments
+enable it via systemd drop-in once all host readers and relays are upgraded. A subsequent
 partial `cairn_pull` of a bound receipt includes an exact prefix of the same
 current note, without requiring the agent to request context separately. This
 does not change ranking or enlarge the receipt's byte allowance. The internal
@@ -46,23 +49,34 @@ complete current note before editing it or relying on broader claims. Hooks
 validate an API-supplied pair and do not fetch a duplicate opening; their older
 whole-read excerpt path remains separate.
 
-An optional-field prototype showed no native uptake in its development trial.
-Receipt binding still requires evaluation before promotion: exact
-byte and budget tests do not establish better source application, task outcomes
-or fleet adoption. Both API and adapter versions matter; older APIs can reject
-an explicit `opening_bytes` field and running MCP sessions can retain old tool
-catalogs until a new session initializes.
+Exact byte and budget tests establish the pairing mechanics; they do not by
+themselves establish better source application or task outcomes. Both API and
+adapter versions matter: older APIs can reject an explicit `opening_bytes` field
+and running MCP sessions retain old tool catalogs until a new session initializes.
 
-## Enabling binding (default off)
+<a id="enabling-binding-default-off"></a>
+## Enabling binding (systemd drop-in / env)
 
 - **Setting.** `CAIRN_SOURCE_OPENING_BINDING` names the authenticated profile
   principals (the `principal` values in `identities.json`) whose new context-index
   receipts bind the policy: exact principals separated by commas, with no leading
   or trailing whitespace in each entry. Internal spaces are part of the exact
   principal name; entries are never trimmed.
-  Unset or empty enables none. It is deliberately not an `identities.json` member:
-  an older binary refuses to start on an unknown identity field but ignores an
-  unknown environment variable.
+  Unset or empty enables none in bare `cairn serve` (so un-upgraded readers are
+  not broken by default). Host deployments enable it via a systemd drop-in
+  (see [`deploy/cairn-api-source-opening.conf`](../deploy/cairn-api-source-opening.conf))
+  once all readers and relays for those principals are upgraded.
+  It is deliberately not an `identities.json` member: an older binary refuses to
+  start on an unknown identity field but ignores an unknown environment variable.
+- **Host promotion and off switch.** After confirming every reader and relay for
+  the target principals reports `source_opening` support (`cairn clients` /
+  `cairn_client_info`), add a drop-in such as
+  `~/.config/systemd/user/cairn-api.service.d/60-source-opening-binding.conf`
+  setting `Environment="CAIRN_SOURCE_OPENING_BINDING=<comma-separated principals>"`
+  and run `systemctl --user daemon-reload && systemctl --user restart cairn-api.service`.
+  To disable new receipt binding, set `Environment="CAIRN_SOURCE_OPENING_BINDING="`
+  (or remove the drop-in) and restart `cairn-api.service`. Review the
+  [irreversible binary-downgrade floor](#disabling-versus-downgrading) before enabling.
 - **When it takes effect.** The setting is read once when `cairn serve` starts.
   Editing the environment changes nothing until the server is restarted, which the
   operator performs separately. A restart also clears the volatile
@@ -168,8 +182,8 @@ version increase; existing clients and servers retain unrelated operations.
 Installing a new binary does not upgrade running MCP facades. Such facades must
 start with the new binary to receive paired expansions. Once binding is enabled
 for a profile, an API that has it will refuse their paired reads rather than
-charge for discarded context; with binding off (the default) no receipt carries
-the policy and nothing is refused.
+charge for discarded context; when `CAIRN_SOURCE_OPENING_BINDING` is unset or `""`,
+no receipt carries the policy and nothing is refused.
 
 Reader readiness and these declarations do not establish that openings improve
 relevance or task outcomes, and they do not make any deployment ready.

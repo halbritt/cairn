@@ -160,7 +160,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-root", type=Path, required=True,
-                        help="offline Codex candidate from stage_token_efficiency_canary.py")
+                        help="offline Codex candidate directory (previously staged via retired stage_token_efficiency_canary.py)")
     parser.add_argument("--codex-binary", default=shutil.which("codex"),
                         help="Codex CLI binary; defaults to PATH")
     args = parser.parse_args()

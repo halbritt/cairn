@@ -186,13 +186,11 @@ the Codex endpoint is a scripted loopback and does not establish provider
 usage. The wrong-lease call is a fencing control, not an incident sample or a
 measurement of recovery work. `scripts/test_codex_recovery_fixture_report.py`
 checks mismatch refusal and null provider accounting without retaining payloads.
-Reproduce it with a private, offline candidate stage and a disposable
-PostgreSQL cluster:
+Reproduce it with a private, offline Codex candidate root (staged via the
+current Go lifecycle stager `cairn-stage-lifecycle`; `scripts/stage_token_efficiency_canary.py`
+is retired) and a disposable PostgreSQL cluster:
 
 ```sh
-python3 scripts/stage_token_efficiency_canary.py \
-  --destination "$HOME/.cache/cairn-token-efficiency-stages/recovery-probe" \
-  --codex-only --profile compact-inbox --snapshot-current-codex-config
 python3 -B scripts/check_codex_recovery_fixture_disposable.py \
   --candidate-root "$HOME/.cache/cairn-token-efficiency-stages/recovery-probe"
 ```

@@ -1,7 +1,8 @@
 # Retrieve competing advisory positions
 
-Cairn normally omits notes in an open conflict. When the disagreement itself is
-useful context, request `advisory_conflicts: true` on `cairn_search`:
+Cairn normally omits notes in an open conflict so ordinary searches stay concise.
+When the disagreement itself is useful context, pass the explicit caller-scoped
+`advisory_conflicts: true` parameter on `cairn_search`:
 
 ```json
 {"query":"connection strategy","advisory_conflicts":true}

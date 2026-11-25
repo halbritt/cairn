@@ -1,9 +1,10 @@
 # Integrate Cairn with Striatum
 
-A Striatum integration can attach a Cairn context package to a task, carry its
-source identity through build admission, and record the resulting execution.
-This is an integration contract for orchestration developers. For agents that
-only need memory tools, start with [MCP setup](mcp/overview.md).
+A Striatum integration is explicit and caller-scoped: it attaches a Cairn context
+package to a task only when the Striatum host invokes it, carries its source
+identity through build admission, and records the resulting execution. This is
+an integration contract for orchestration developers (not a global Cairn toggle).
+For agents that only need memory tools, start with [MCP setup](mcp/overview.md).
 
 ## Preserve the retrieval and execution boundary
 

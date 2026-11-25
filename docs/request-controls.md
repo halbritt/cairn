@@ -104,18 +104,23 @@ its stop command. Even when that command fails, the supervisor checks the final
 unit and cgroup state before deciding whether cleanup finished. A still-running
 unit or an unreadable final state retains the hold.
 
-## Native interactive cancellation (OpenCode trial gate)
+<a id="native-interactive-cancellation-opencode-trial-gate"></a>
+## Native interactive cancellation (keep off by default)
 
-Native cancellation remains disabled in the installed configuration. OpenCode
-is the only attesting adapter; Codex, Claude and Hermes cancellation is
-unsupported. The OpenCode adapter passed an owned real-model trial (C1 to C5)
-on 2026-09-24 against a disposable store
-. That covers
-marker-preserving fixture workloads in one session, not general tool-process
-cleanup or full design acceptance. The OpenCode host adapter can opt in with the
-installer's `--opencode-cancel-trial` flag (which writes
-`opencode_cancel_enabled: true`) only after the request-specific native route,
-tool-capture plugin, and process scanner are installed together. At admission
+Native cancellation (`opencode_cancel_enabled`) remains **off by default** in
+installed configurations. OpenCode is the only attesting adapter; Codex, Claude
+and Hermes cancellation is unsupported. The OpenCode adapter passed an owned
+real-model trial (C1 to C5) on 2026-09-24 against a disposable store, covering
+marker-preserving `bash`-only fixture workloads in one session. Keep
+`opencode_cancel_enabled` off by default because exclusive cancellable OpenCode
+turns hard-refuse all non-`bash` tools (`read`, `edit`, `write`, MCP) at
+`internal/lifecycle/coordination/hook_session.go:246-248`
+(`integrations/opencode/coordination.ts:518-530`), and externally killed `bash`
+trees never emit `TurnEnd`, leaving deliveries held indefinitely (C5 in that
+trial). The OpenCode host adapter retains the explicit opt-in installer
+flag `--opencode-cancel-trial` (which writes `opencode_cancel_enabled: true`)
+only after the request-specific native route, tool-capture plugin, and process
+scanner are installed together. At admission
 it probes the peer-verified bridge for both `cancel_request` and
 `tool_capture`; otherwise it claims the turn without an exclusivity attestation,
 so `work-cancel` returns `UNSUPPORTED_CONTROL`. Codex, Claude and Hermes do not

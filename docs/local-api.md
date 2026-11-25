@@ -172,9 +172,11 @@ cairn serve
 The example refuses to overwrite existing credentials. For additional profiles,
 add a distinct principal and token digest to the configuration; up to 32 profiles
 are supported. Restart the server after changes (profile configuration and the
-optional `CAIRN_SOURCE_OPENING_BINDING` principal list, see
+`CAIRN_SOURCE_OPENING_BINDING` principal list, see
 [source openings](note-span-openings.md#enabling-binding-default-off), are read only
-when the server starts). Use `destination: hosted` for a
+when the server starts; `cairn serve` keeps binding disabled when unset or `""`, and
+host deployments enable it via drop-in once all readers are upgraded, noting the
+[irreversible downgrade floor](note-span-openings.md#disabling-versus-downgrading)). Use `destination: hosted` for a
 profile whose retrieved context goes to a remote model. Hosted profiles cannot
 read local record bodies or protected usage reports. As with the operator CLI,
 this is a cooperative local trust boundary; it does not isolate hostile processes
@@ -449,6 +451,18 @@ login or after logout depends on the machine's existing user lingering policy.
 Stopping the API leaves the dedicated store running. Stop the store service to
 shut down both. Unit files, source code and generated credentials have separate
 lifecycles; never commit the token/config files.
+
+On host `cairn-api.service`, deployment-specific options are applied via systemd
+drop-ins rather than modifying the shared template:
+
+- `--semantic-rust-config` is configured via drop-in (such as `zz-c301-api-rust.conf`)
+  for the active Rust semantic worker; omit the flag to disable it.
+- `CAIRN_SOURCE_OPENING_BINDING` is disabled when unset or `""` in `cairn serve`
+  and promoted via drop-in ([`deploy/cairn-api-source-opening.conf`](../deploy/cairn-api-source-opening.conf))
+  after all readers and relays are upgraded; see
+  [source openings](note-span-openings.md#enabling-binding-default-off).
+- `deploy/cairn-delivery-alerts.timer` runs `cairn delivery-alerts` every ten
+  minutes (`systemctl --user enable --now cairn-delivery-alerts.timer`, active on host).
 
 ### Body-only revisions
 

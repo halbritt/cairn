@@ -90,10 +90,11 @@ bounded to the publisher's own event:
 - Ordinary `notice` and `response` deliveries to `online` or transiently
   `offline` sessions continue to omit `diagnosis` on `event-status`.
 
-## Opt-in publisher notifications
+## Caller-scoped publisher notifications
 
-An operator review can opt in to notifying original publishers of unresolved
-deliveries to confirmed-stopped sessions:
+An operator review can explicitly pass `notify_publishers: true` (caller-scoped,
+off when omitted) to notify original publishers of unresolved deliveries to
+confirmed-stopped sessions:
 
 ```sh
 cairn coordination-review <<'JSON'

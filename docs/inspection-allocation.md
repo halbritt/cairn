@@ -1,7 +1,8 @@
 # Allocate search room for a whole source
 
-Use `inspection_policy: "first-fitting-whole/1"` with an explicit
-`memory_budget_bytes` when the next step is to inspect a complete source.
+Use the explicit caller-scoped `inspection_policy: "first-fitting-whole/1"`
+parameter with an explicit `memory_budget_bytes` when the next step is to inspect
+a complete source (omitted by default so ordinary preview allocation applies).
 Cairn calculates the charged source cost; the caller does not need to guess
 `min_pull_bytes`. The two options cannot be combined.
 

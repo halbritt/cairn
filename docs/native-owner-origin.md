@@ -13,6 +13,12 @@ one private Unix app-server, the TUI connected with `--remote`, and independent
 ordinary queue connections. This repository carries source and reproduction
 instructions. It does not install a binary or change a running session.
 
+`next-turn-notices/1` (`cairn work features enable --feature next-turn-notices/1`)
+remains **off by default**: it requires this carried Codex `0.166.0` patch and
+the retired Python `launch-codex-coordination.py` launcher (not ported to the
+live Go `cairn-lifecycle` / `cairn-codex-launch` runtime). Standard Codex (`0.172.0`+),
+Claude, OpenCode, Hermes, and Agy integrations retain ordinary/compact inbox delivery.
+
 ## Trust and input identity
 
 The coordination installer does not install this launcher (w26); run it

@@ -161,12 +161,13 @@ bytes remain unchanged.
 **This does not satisfy an evaluation requiring all cumulative task memory bytes
 to stay below 9500 when initial delivery plus refreshes exceeds that limit.**
 Retain that original evaluation failure instead of silently changing its denominator.
-With the Codex `context_lifecycle: compact/1` trial, a confirmed current whole
-unfinished checkpoint may follow required context on compact/resume. Its added
-serialized bytes are recorded in `checkpoint_refresh_bytes`; they also count
-toward cumulative delivery even though they do not renew an optional grant.
-The trial leaves the required refresh boundary and the existing full request
-control available for rollback.
+With Codex `context_lifecycle: "compact/1"` (enabled by default on Codex
+`agent_tools` bindings), a confirmed current whole unfinished checkpoint may
+follow required context on compact/resume. Its added serialized bytes are recorded
+in `checkpoint_refresh_bytes`; they also count toward cumulative delivery even
+though they do not renew an optional grant. Setting `context_lifecycle: "full"`
+keeps the required refresh boundary and full request control available as the off
+switch.
 The runtime distinguishes a bounded current-context delivery from optional-read
 permission; neither measures the model's actual free context.
 
@@ -293,10 +294,11 @@ establish task benefit, live lease races, model compliance, or host adoption.
 
 ### Optional local route diagnostics
 
-The pinned memory config may set `inbox_recall_trace: true` to observe the next
-ordinary inbox invocations. It is off by default and requires a bridge and engine
-with the route-trace contract. An older engine remains unobserved. Enabling it is
-an explicit config/binding update; task text cannot enable diagnostics.
+The pinned memory config may set `inbox_recall_trace: true` as a caller-scoped
+diagnostic to observe the next ordinary inbox invocations. It is off by default
+and kept off outside bounded diagnostic runs; enabling it requires a bridge and
+engine with the route-trace contract. An older engine remains unobserved. Enabling
+it is an explicit config/binding update; task text cannot enable diagnostics.
 
 The bridge writes one private JSON file below the memory state directory's
 `inbox-recall-traces/` after both locks release, within the existing reporting
@@ -323,3 +325,12 @@ the bounded observation and manage retained files explicitly.
 
 The trace does not contain lexical/dense ranks or establish applicability,
 currentness of claims within a note, useful action or comparative benefit.
+
+### Turn-end unacknowledged reminder (keep off by default)
+
+Coordination bindings also keep `remind_unacknowledged_turn_end` **off by default**
+(`false`, with no installer flag). When enabled in a binding config, blocking
+`Stop`/`TurnEnd` (`decision: "block"`, `internal/lifecycle/coordination/hook_cli.go:730-734`,
+`hook_inbox.go:85-88,175-185,318-324`) forces an extra full-context model turn
+per unacknowledged item instead of letting compact/auto-settled delivery handle
+routine notices, and lacks measured task-value benefit.
