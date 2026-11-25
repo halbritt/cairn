@@ -1,13 +1,16 @@
 # Compact native notices and responses
 
-CAIRN-216 adds an optional `compact_inbox_version: 1` binding capability for
-Codex and Claude native delivery. Install it with
-`scripts/install-agent-coordination.py --native-delivery --compact-inbox` and
-the binding's usual arguments. The installer places `cairn-inbox` on the
-account's `~/.local/bin` path. Existing bindings keep the full context unless
-they opt in. Removing the capability restores full context for new admissions;
-an already issued handle remains usable under its original checks until it
-expires or its attempt ends.
+CAIRN-216 adds `compact_inbox_version: 1` for Codex and Claude native delivery.
+`scripts/install-agent-coordination.py --native-delivery` enables
+`compact_inbox_version: 1`, `notice_digest_version: 1`
+(`notice_digest_window_seconds: 300`, without `notice_batch_version`), and
+`notice_auto_settle_version: 1` by default for Codex and Claude bindings (and
+places `cairn-inbox` on the account's `~/.local/bin` path). Pass
+`--no-compact-inbox`, `--no-notice-digest` (or `--digest-window-seconds 0`), or
+`--no-auto-settle-action-none` to opt a binding out of any of these defaults.
+Removing the capability restores full context for new admissions; an already
+issued handle remains usable under its original checks until it expires or its
+attempt ends.
 
 If the binding uses [inbox recall](inbox-recall.md), first disable that
 manifest and let current callbacks settle before changing the shared binding
@@ -80,21 +83,20 @@ key; the existing profile and store checks remain the authority. The helper
 keeps token paths, lease IDs and retry IDs in owner-only files. The native
 session is still responsible for handling the message before its turn ends.
 
-This capability is an additive local implementation. The retained audit's
-metadata projection is a representation baseline, not measured model-token
-savings. Compare complete sender, recipient and capture workflows with
-CAIRN-214's `scripts/workflow_model_report.py` on frozen paired inputs before
-accepting a rollout claim. No live binding is enabled by this source change.
+The retained audit's metadata projection is a representation baseline, not
+measured model-token savings.
 
 <a id="bounded-notice-batches-cairn-221"></a>
 
 ## Bounded notice batches
 
-Add `--notice-batch` to an installation that also uses `--compact-inbox` to opt
-that Codex or Claude binding into `notice_batch_version: 1`. This requires
-schema 067 and its preceding migrations. Existing bindings continue to admit
-one item per native turn. A new native session must load the changed hooks;
-if inbox recall is enabled, use the manifest repinning procedure above.
+Add `--notice-batch` to an installation (or `--session`/`--agent-id` call) to
+opt that Codex or Claude binding or session into `notice_batch_version: 1`.
+Batching is opt-in and mutually exclusive with `notice_digest_version: 1`: on
+binding installation `--notice-batch` suppresses the default digest (or pass
+`--notice-batch --no-notice-digest`). This requires schema 067 and its
+preceding migrations. A new native session must load the changed hooks; if inbox
+recall is enabled, use the manifest repinning procedure above.
 
 After explicitly settling a compact **notice**, run `cairn-inbox advance HANDLE`.
 The helper returns the next notice's compact context, or a reason that the
@@ -116,17 +118,17 @@ before advancing. This disposition does not settle neighboring notices.
 An uncertain handoff is saved with one request ID and replayed by the native
 hook. A failed or stale handle must not be treated as a confirmed settlement
 or as permission to retry with a different session. The final notice keeps
-its session hold until the normal turn-end reconciliation. This is an
-implemented opt-in path; paired model and task outcomes remain to be measured
-before accepting the rollout.
+its session hold until the normal turn-end reconciliation.
 
 
 ## FYI notice digests
 
-Add `--notice-digest` (and optional `--digest-window-seconds SECONDS` in
-`1..3600`, defaulting to `300`) alongside `--compact-inbox` to opt a Codex or
-Claude native binding or individual coordinator session into
-`notice_digest_version: 1` (schema 088).
+`scripts/install-agent-coordination.py --native-delivery` enables
+`notice_digest_version: 1` (schema 088) with `notice_digest_window_seconds: 300`
+by default on Codex and Claude native bindings (pass `--no-notice-digest` or
+`--digest-window-seconds 0` to opt out). Pass `--notice-digest` (and optional
+`--digest-window-seconds SECONDS` in `1..3600`, defaulting to `300`) alongside
+`--compact-inbox` to enable digests for an individual coordinator session.
 
 In digest mode:
 

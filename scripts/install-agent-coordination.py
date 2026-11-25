@@ -48,14 +48,27 @@ def install_compact_inbox_launcher(root, home):
     target.chmod(0o700)
 
 
-def install(root, settings, config):
+INBOX_OPTION_KEYS = (
+    'compact_inbox_version',
+    'notice_batch_version',
+    'notice_digest_version',
+    'notice_digest_window_seconds',
+    'notice_auto_settle_version',
+)
+
+
+def install(root, settings, config, *, reset_inbox_options=False):
     config = dict(config, state_dir=str(root / 'state' / config['binding']))
     # Several accounts can share this runtime directory; every existing bound
     # account must be disabled before any of its implementation files change.
     for installed_config in (root / 'bindings').glob('*.json'):
         previous = json.loads(installed_config.read_text())
         if previous.get('binding') == config['binding']:
-            config = dict(previous, **config)
+            merged_previous = dict(previous)
+            if reset_inbox_options:
+                for key in INBOX_OPTION_KEYS:
+                    merged_previous.pop(key, None)
+            config = dict(merged_previous, **config)
             if 'state_dir' in previous:
                 config['state_dir'] = previous['state_dir']
         binding = previous.get('inbox_recall_binding')
@@ -416,11 +429,22 @@ WantedBy=default.target
 def configure_installed_session(args, home):
     if args.session is not None and args.agent_id is not None:
         return 'pass at most one of --session and --agent-id', None
+    for forbidden, name in ((args.opencode_cancel_trial, '--opencode-cancel-trial'),
+                            (args.idle_wakeup, '--idle-wakeup'),
+                            (args.no_herdr, '--no-herdr'),
+                            (args.claude_channel_dir is not None, '--claude-channel-dir'),
+                            (args.no_compact_inbox, '--no-compact-inbox'),
+                            (args.no_notice_digest, '--no-notice-digest'),
+                            (args.no_auto_settle_action_none, '--no-auto-settle-action-none')):
+        if forbidden:
+            return f'{name} cannot be combined with --session or --agent-id', None
     if args.clear_session_options and (
             args.compact_inbox or args.notice_batch or args.notice_digest
             or args.digest_window_seconds is not None or args.auto_settle_action_none):
         return ('cannot combine --clear-session-options with --compact-inbox, '
                 '--notice-batch, --notice-digest or --auto-settle-action-none'), None
+    if args.notice_batch and args.notice_digest:
+        return 'cannot combine --notice-batch and --notice-digest', None
     if args.notice_batch and not args.compact_inbox:
         return '--notice-batch requires --compact-inbox', None
     if args.notice_digest and not args.compact_inbox:
@@ -430,12 +454,6 @@ def configure_installed_session(args, home):
         return '--digest-window-seconds requires 1..3600 with --notice-digest', None
     if not args.clear_session_options and not args.compact_inbox and not args.auto_settle_action_none:
         return '--session/--agent-id requires --compact-inbox, --auto-settle-action-none or --clear-session-options', None
-    for forbidden, name in ((args.opencode_cancel_trial, '--opencode-cancel-trial'),
-                            (args.idle_wakeup, '--idle-wakeup'),
-                            (args.no_herdr, '--no-herdr'),
-                            (args.claude_channel_dir is not None, '--claude-channel-dir')):
-        if forbidden:
-            return f'{name} cannot be combined with --session or --agent-id', None
     root = args.root.resolve()
     config_path = args.config.resolve() if args.config is not None else (root / 'bindings' / (args.binding + '.json'))
     if not config_path.is_file():
@@ -491,12 +509,22 @@ def main():
     parser.add_argument('--repo', default=str(home / 'git/cairn'))
     parser.add_argument('--model', default='')
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
-    parser.add_argument('--compact-inbox', action='store_true', help='opt this Codex or Claude binding into compact notice/response delivery')
-    parser.add_argument('--notice-batch', action='store_true', help='opt a compact native binding into bounded already-waiting notice batches')
-    parser.add_argument('--notice-digest', action='store_true', help='opt a compact native binding or session into FYI notice digests')
-    parser.add_argument('--digest-window-seconds', type=int, help='FYI notice digest window in seconds (1..3600, requires --notice-digest)')
+    parser.add_argument('--compact-inbox', action='store_true',
+                        help='enable compact notice/response delivery (default on for Codex and Claude --native-delivery)')
+    parser.add_argument('--no-compact-inbox', action='store_true',
+                        help='opt a Codex or Claude --native-delivery binding out of compact notice/response delivery')
+    parser.add_argument('--notice-batch', action='store_true',
+                        help='opt a compact native binding into bounded already-waiting notice batches (mutually exclusive with --notice-digest)')
+    parser.add_argument('--notice-digest', action='store_true',
+                        help='enable FYI notice digests on a compact native binding or session (default on for Codex and Claude --native-delivery)')
+    parser.add_argument('--no-notice-digest', action='store_true',
+                        help='opt a Codex or Claude --native-delivery binding out of FYI notice digests')
+    parser.add_argument('--digest-window-seconds', type=int,
+                        help='FYI notice digest window in seconds (1..3600, or 0 to disable default digest on binding install)')
     parser.add_argument('--auto-settle-action-none', action='store_true',
-                        help='opt a native binding or session into settling action:none notices without a model turn')
+                        help='enable settling action:none notices without a model turn (default on for Codex and Claude --native-delivery)')
+    parser.add_argument('--no-auto-settle-action-none', action='store_true',
+                        help='opt a Codex or Claude --native-delivery binding out of settling action:none notices without a model turn')
     parser.add_argument('--opencode-cancel-trial', action='store_true',
                         help='opt in the OpenCode binding to the request-cancellation trial (requires native delivery and idle wakeup)')
     parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work; also installs Herdr\'s native integration in the selected account home through the installed herdr CLI when missing')
@@ -527,39 +555,75 @@ def main():
         parser.error('installed cairn and an existing profile token are required')
     if args.opencode_cancel_trial and (args.harness != 'opencode' or not args.native_delivery or not args.idle_wakeup):
         parser.error('--opencode-cancel-trial requires --harness opencode --native-delivery --idle-wakeup')
+    if args.compact_inbox and args.no_compact_inbox:
+        parser.error('cannot combine --compact-inbox and --no-compact-inbox')
+    if args.notice_digest and args.no_notice_digest:
+        parser.error('cannot combine --notice-digest and --no-notice-digest')
+    if args.auto_settle_action_none and args.no_auto_settle_action_none:
+        parser.error('cannot combine --auto-settle-action-none and --no-auto-settle-action-none')
+    if args.notice_batch and args.notice_digest:
+        parser.error('cannot combine --notice-batch and --notice-digest')
     if args.compact_inbox and (args.harness not in ('codex', 'claude') or not args.native_delivery):
         parser.error('--compact-inbox requires --harness codex|claude --native-delivery')
-    if args.notice_batch and not args.compact_inbox:
-        parser.error('--notice-batch requires --compact-inbox')
-    if args.notice_digest and not args.compact_inbox:
-        parser.error('--notice-digest requires --compact-inbox')
-    if args.digest_window_seconds is not None:
-        if not args.notice_digest or not (1 <= args.digest_window_seconds <= 3600):
-            parser.error('--digest-window-seconds requires 1..3600 with --notice-digest')
+    if args.no_compact_inbox and (args.harness not in ('codex', 'claude') or not args.native_delivery):
+        parser.error('--no-compact-inbox requires --harness codex|claude --native-delivery')
+    if args.no_notice_digest and (args.harness not in ('codex', 'claude') or not args.native_delivery):
+        parser.error('--no-notice-digest requires --harness codex|claude --native-delivery')
     if args.auto_settle_action_none and not args.native_delivery:
         parser.error('--auto-settle-action-none requires --native-delivery')
+    if args.no_auto_settle_action_none and not args.native_delivery:
+        parser.error('--no-auto-settle-action-none requires --native-delivery')
+    capable_compact = args.harness in ('codex', 'claude') and args.native_delivery
+    compact_inbox = args.compact_inbox or (capable_compact and not args.no_compact_inbox)
+    if args.notice_batch and not compact_inbox:
+        parser.error('--notice-batch requires --compact-inbox')
+    if args.notice_digest and not compact_inbox:
+        parser.error('--notice-digest requires --compact-inbox')
+    digest_window_zero = (
+        args.digest_window_seconds == 0
+        and not args.notice_digest
+        and not args.no_notice_digest
+        and not args.notice_batch
+    )
+    if digest_window_zero and not capable_compact:
+        parser.error('--digest-window-seconds requires 1..3600 with --notice-digest')
+    notice_digest = args.notice_digest or (
+        compact_inbox and not args.no_notice_digest and not digest_window_zero and not args.notice_batch
+    )
+    if args.digest_window_seconds is not None and not digest_window_zero:
+        if not notice_digest or not (1 <= args.digest_window_seconds <= 3600):
+            parser.error('--digest-window-seconds requires 1..3600 with --notice-digest')
+    auto_settle = args.auto_settle_action_none or (capable_compact and not args.no_auto_settle_action_none)
     config = dict(cairn=str(Path(args.cairn).resolve()), socket=str(args.socket.resolve()), token_file=str(args.token_file.resolve()),
                   repo=args.repo, harness=args.harness, binding=args.binding, model=args.model,
                   process_names=[args.harness], native_delivery=args.native_delivery)
     if args.opencode_cancel_trial:
         config['opencode_cancel_enabled'] = True
-    if args.auto_settle_action_none:
+    if auto_settle:
         config['notice_auto_settle_version'] = 1
-    if args.compact_inbox:
+    if compact_inbox:
         config['compact_inbox_version'] = 1
         if args.notice_batch:
             config['notice_batch_version'] = 1
-        if args.notice_digest:
+        if notice_digest:
             config['notice_digest_version'] = 1
-            if args.digest_window_seconds is not None:
-                config['notice_digest_window_seconds'] = args.digest_window_seconds
-    if args.compact_inbox or args.auto_settle_action_none:
+            config['notice_digest_window_seconds'] = (
+                args.digest_window_seconds
+                if (args.digest_window_seconds is not None and not digest_window_zero)
+                else 300
+            )
+    if compact_inbox or auto_settle or args.no_compact_inbox or args.no_notice_digest or args.no_auto_settle_action_none or digest_window_zero:
         previous = args.root.resolve() / 'bindings' / (args.binding + '.json')
         if previous.exists():
             installed = json.loads(previous.read_text())
             pinned = installed.get('inbox_recall_binding')
             if pinned and json.loads(Path(pinned).read_text()).get('enabled') is True:
-                flag_name = '--compact-inbox' if args.compact_inbox else '--auto-settle-action-none'
+                if compact_inbox:
+                    flag_name = '--compact-inbox'
+                elif auto_settle:
+                    flag_name = '--auto-settle-action-none'
+                else:
+                    flag_name = 'inbox option change'
                 parser.error(f'{flag_name} needs the bound recall manifest disabled before its configuration changes; '
                              'repin and validate that manifest before re-enabling it, or pass --session/--agent-id '
                              'to configure one session without changing the pinned binding')
@@ -600,9 +664,9 @@ def main():
         target = ensure_herdr_integration(Path(args.herdr).resolve(), args.harness, args.settings.resolve())
         if target:
             print(f'Herdr {target} integration is current in the selected {args.harness} account home.')
-    if args.compact_inbox:
+    if compact_inbox:
         install_compact_inbox_launcher(args.root.resolve(), home)
-    installed = install(args.root.resolve(), args.settings.resolve(), config)
+    installed = install(args.root.resolve(), args.settings.resolve(), config, reset_inbox_options=True)
     if args.claude_channel_dir is not None:
         register_claude_channel(Path(args.cairn).resolve(), config['claude_channel_dir'],
                                 Path(config['config_home']))

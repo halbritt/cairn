@@ -457,6 +457,170 @@ class CompactInboxInstaller(unittest.TestCase):
             self.assertIn('manifest disabled', result.stderr)
             self.assertFalse((home / '.local/bin/cairn-inbox').exists())
 
+    def _run_installer(self, home, coord_root, settings, token, *extra, harness='claude', binding='fixture'):
+        bin_dir = home / '.local/bin'
+        bin_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        argv = ['install-agent-coordination.py', '--harness', harness, '--binding', binding,
+                '--settings', str(settings), '--root', str(coord_root),
+                '--cairn', sys.executable, '--socket', str(home / 'api.sock'),
+                '--token-file', str(token), '--no-service', *extra]
+        env = dict(os.environ, HOME=str(home), PATH=str(bin_dir) + os.pathsep + os.environ['PATH'])
+        stdout, stderr = io.StringIO(), io.StringIO()
+        code = 0
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(sys, 'argv', argv), \
+                mock.patch.object(sys, 'stdout', stdout), \
+                mock.patch.object(sys, 'stderr', stderr), \
+                mock.patch.object(installer.Path, 'home', return_value=home), \
+                mock.patch.object(installer, 'trust_codex_hooks') as trust:
+            try:
+                installer.main()
+            except SystemExit as exc:
+                code = exc.code if isinstance(exc.code, int) else 1
+        return code, stdout.getvalue(), stderr.getvalue(), trust
+
+    def test_codex_and_claude_native_delivery_default_enable_compact_digest_and_auto_settle(self):
+        for harness in ('codex', 'claude'):
+            with self.subTest(harness=harness), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                home = root / 'home'
+                home.mkdir(mode=0o700)
+                token = root / 'token'
+                token.write_text('fixture')
+                token.chmod(0o600)
+                coord_root = root / 'coordination'
+                settings = home / ('.codex/hooks.json' if harness == 'codex' else '.claude/settings.json')
+                settings.parent.mkdir(parents=True)
+                code, _out, err, trust = self._run_installer(
+                    home, coord_root, settings, token, '--native-delivery', harness=harness)
+                self.assertEqual(code, 0, err)
+                if harness == 'codex':
+                    trust.assert_called_once()
+                else:
+                    trust.assert_not_called()
+                cfg = json.loads((coord_root / 'bindings' / 'fixture.json').read_text())
+                self.assertEqual(cfg['compact_inbox_version'], 1)
+                self.assertEqual(cfg['notice_digest_version'], 1)
+                self.assertEqual(cfg['notice_digest_window_seconds'], 300)
+                self.assertEqual(cfg['notice_auto_settle_version'], 1)
+                self.assertNotIn('notice_batch_version', cfg)
+                self.assertTrue((home / '.local/bin/cairn-inbox').is_file())
+
+    def test_opt_outs_and_reinstall_clear_previous_inbox_options(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            home = root / 'home'
+            home.mkdir(mode=0o700)
+            token = root / 'token'
+            token.write_text('fixture')
+            token.chmod(0o600)
+            coord_root = root / 'coordination'
+            settings = home / '.claude/settings.json'
+            settings.parent.mkdir(parents=True)
+
+            # 1. Default install enables all three.
+            code, _, err, _ = self._run_installer(home, coord_root, settings, token, '--native-delivery')
+            self.assertEqual(code, 0, err)
+
+            # 2. Reinstall with --digest-window-seconds 0 clears digest while keeping compact + auto-settle.
+            code, _, err, _ = self._run_installer(
+                home, coord_root, settings, token, '--native-delivery', '--digest-window-seconds', '0')
+            self.assertEqual(code, 0, err)
+            cfg = json.loads((coord_root / 'bindings' / 'fixture.json').read_text())
+            self.assertEqual(cfg['compact_inbox_version'], 1)
+            self.assertEqual(cfg['notice_auto_settle_version'], 1)
+            self.assertNotIn('notice_digest_version', cfg)
+            self.assertNotIn('notice_digest_window_seconds', cfg)
+
+            # 3. Reinstall with --notice-batch enables batch + clears digest.
+            code, _, err, _ = self._run_installer(
+                home, coord_root, settings, token, '--native-delivery', '--notice-batch')
+            self.assertEqual(code, 0, err)
+            cfg = json.loads((coord_root / 'bindings' / 'fixture.json').read_text())
+            self.assertEqual(cfg['compact_inbox_version'], 1)
+            self.assertEqual(cfg['notice_batch_version'], 1)
+            self.assertEqual(cfg['notice_auto_settle_version'], 1)
+            self.assertNotIn('notice_digest_version', cfg)
+
+            # 4. Reinstall with --no-compact-inbox --no-auto-settle-action-none clears all inbox keys.
+            code, _, err, _ = self._run_installer(
+                home, coord_root, settings, token, '--native-delivery',
+                '--no-compact-inbox', '--no-auto-settle-action-none')
+            self.assertEqual(code, 0, err)
+            cfg = json.loads((coord_root / 'bindings' / 'fixture.json').read_text())
+            for key in installer.INBOX_OPTION_KEYS:
+                self.assertNotIn(key, cfg)
+
+            # 5. Reinstall with --no-notice-digest omits only digest keys.
+            code, _, err, _ = self._run_installer(
+                home, coord_root, settings, token, '--native-delivery', '--no-notice-digest')
+            self.assertEqual(code, 0, err)
+            cfg = json.loads((coord_root / 'bindings' / 'fixture.json').read_text())
+            self.assertEqual(cfg['compact_inbox_version'], 1)
+            self.assertEqual(cfg['notice_auto_settle_version'], 1)
+            self.assertNotIn('notice_digest_version', cfg)
+            self.assertNotIn('notice_digest_window_seconds', cfg)
+            self.assertNotIn('notice_batch_version', cfg)
+
+    def test_conflicting_flags_non_native_and_opencode_defaults(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            home = root / 'home'
+            home.mkdir(mode=0o700)
+            token = root / 'token'
+            token.write_text('fixture')
+            token.chmod(0o600)
+            coord_root = root / 'coordination'
+            settings = home / '.claude/settings.json'
+            settings.parent.mkdir(parents=True)
+
+            # Non-native codex install and opencode native install do not enable compact/digest/auto-settle.
+            code, _, err, _ = self._run_installer(
+                home, coord_root, home / '.codex/hooks.json', token, harness='codex', binding='codex-plain')
+            self.assertEqual(code, 0, err)
+            codex_plain = json.loads((coord_root / 'bindings' / 'codex-plain.json').read_text())
+            for key in installer.INBOX_OPTION_KEYS:
+                self.assertNotIn(key, codex_plain)
+
+            code, _, err, _ = self._run_installer(
+                home, coord_root, home / '.config/opencode', token, '--native-delivery',
+                harness='opencode', binding='oc-native')
+            self.assertEqual(code, 0, err)
+            oc_cfg = json.loads((coord_root / 'bindings' / 'oc-native.json').read_text())
+            for key in installer.INBOX_OPTION_KEYS:
+                self.assertNotIn(key, oc_cfg)
+
+            bad_cases = [
+                ('--native-delivery', '--compact-inbox', '--no-compact-inbox'),
+                ('--native-delivery', '--notice-digest', '--no-notice-digest'),
+                ('--native-delivery', '--auto-settle-action-none', '--no-auto-settle-action-none'),
+                ('--native-delivery', '--notice-batch', '--notice-digest'),
+                ('--native-delivery', '--no-compact-inbox', '--notice-batch'),
+                ('--native-delivery', '--no-compact-inbox', '--notice-digest'),
+                ('--native-delivery', '--notice-digest', '--digest-window-seconds', '0'),
+                ('--native-delivery', '--no-notice-digest', '--digest-window-seconds', '120'),
+            ]
+            for flags in bad_cases:
+                with self.subTest(flags=flags):
+                    code, _, _err, _ = self._run_installer(home, coord_root, settings, token, *flags)
+                    self.assertEqual(code, 2)
+
+            # --session cannot combine with --no-* opt-outs.
+            code, _, err, _ = self._run_installer(
+                home, coord_root, settings, token, '--native-delivery', binding='claude-s')
+            self.assertEqual(code, 0, err)
+            for flag in ('--no-compact-inbox', '--no-notice-digest', '--no-auto-settle-action-none'):
+                with self.subTest(session_flag=flag):
+                    argv = ['install-agent-coordination.py', '--binding', 'claude-s',
+                            '--root', str(coord_root), '--session', 'sess-1', flag]
+                    stderr = io.StringIO()
+                    with mock.patch.object(sys, 'argv', argv), \
+                            mock.patch.object(sys, 'stderr', stderr), \
+                            self.assertRaises(SystemExit) as caught:
+                        installer.main()
+                    self.assertEqual(caught.exception.code, 2)
+                    self.assertIn('cannot be combined with --session or --agent-id', stderr.getvalue())
+
 
 if __name__ == '__main__':
     unittest.main()

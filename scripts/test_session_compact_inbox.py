@@ -17,6 +17,8 @@ from unittest import mock
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
@@ -903,6 +905,53 @@ class PublicGoV3SessionCompactTests(unittest.TestCase):
                     "action_needed": "complete",
                     "due": "2026-11-20T04:52:00Z",
                 })
+
+    def test_default_installed_binding_config_parity_python_and_go(self):
+        from integrations.lifecycle import coordination as engine, inbox_recall
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            home = root / "home"
+            bin_dir = home / ".local/bin"
+            bin_dir.mkdir(parents=True, mode=0o700)
+            claude_dir = home / ".claude"
+            claude_dir.mkdir(parents=True, mode=0o700)
+            settings = claude_dir / "settings.json"
+            token = root / "token"
+            token.write_text("fixture-token")
+            token.chmod(0o600)
+            coord_root = root / "coordination"
+            env = dict(os.environ, HOME=str(home), PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+            res = subprocess.run(
+                [sys.executable, "-B", str(INSTALLER), "--harness", "claude", "--binding", "claude-default",
+                 "--settings", str(settings), "--root", str(coord_root), "--cairn", sys.executable,
+                 "--socket", str(root / "api.sock"), "--token-file", str(token),
+                 "--no-service", "--native-delivery"],
+                capture_output=True, text=True, env=env, timeout=20,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            cfg_path = coord_root / "bindings" / "claude-default.json"
+            cfg = json.loads(cfg_path.read_text())
+            self.assertEqual(cfg["compact_inbox_version"], 1)
+            self.assertEqual(cfg["notice_digest_version"], 1)
+            self.assertEqual(cfg["notice_digest_window_seconds"], 300)
+            self.assertEqual(cfg["notice_auto_settle_version"], 1)
+            self.assertNotIn("notice_batch_version", cfg)
+
+            # Python parity: load_config, digest window, auto-settle, compact recall enabled.
+            py_cfg = engine.load_config(cfg_path)
+            self.assertEqual(engine.notice_digest_window_seconds(py_cfg, "sess-1"), 300)
+            self.assertTrue(engine.auto_settle_action_none_enabled(py_cfg, "sess-1"))
+            self.assertEqual(engine.effective_session_inbox_options(py_cfg, "sess-1"), (True, False))
+            self.assertTrue(inbox_recall.session_compact_inbox_enabled(py_cfg, "sess-1"))
+
+            # Go parity: cairn-lifecycle coordination accepts the default-installed config.
+            go_res = subprocess.run(
+                [str(self.lifecycle_bin), "coordination", "configure-session-inbox",
+                 "--config", str(cfg_path), "--native-session-id", "sess-1", "--clear-session-options"],
+                capture_output=True, text=True, env=env, timeout=10,
+            )
+            self.assertEqual(go_res.returncode, 0, go_res.stderr)
+            self.assertEqual(json.loads(go_res.stdout)["status"], "cleared")
 
 
 if __name__ == "__main__":
