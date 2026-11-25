@@ -79,7 +79,20 @@ func (c HermesQueueClient) SelectHermesQueueEndpoint(harness string, process Pro
 type hermesResponseMessages struct{ uncertain, eof, identity string }
 
 func (c HermesQueueClient) exchange(ctx context.Context, endpoint string, process ProcessRef, request queueRequest, timeout time.Duration, messages hermesResponseMessages) (map[string]any, error) {
-	v, err := queueExchange(ctx, endpoint, process, request, queueDuration(c.ConnectTimeout, HermesConnectTimeout), timeout)
+	connectTimeout := queueDuration(c.ConnectTimeout, HermesConnectTimeout)
+	if deadline, ok := ctx.Deadline(); ok {
+		rem := time.Until(deadline)
+		if rem <= 0 {
+			return nil, &HermesQueueUnavailable{queueUnavailableMessage(context.DeadlineExceeded), context.DeadlineExceeded}
+		}
+		if rem < connectTimeout {
+			connectTimeout = rem
+		}
+		if rem < timeout {
+			timeout = rem
+		}
+	}
+	v, err := queueExchange(ctx, endpoint, process, request, connectTimeout, timeout)
 	if err != nil {
 		if queueBeforeSend(err) {
 			return nil, &HermesQueueUnavailable{queueUnavailableMessage(err), err}

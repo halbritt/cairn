@@ -151,7 +151,7 @@ def check(binary):
                        claim_type='self', sensitivity='shareable')))
         ref = dict(record_id=source['record_id'], version=source['version'])
         event = profile('sender', 'event-publish', dict(request_id=str(uuid.uuid4()),
-            kind='notice', ref=ref, destination=dict(type='agent', name=worker['inbox'])))
+            kind='notice', action='review', summary='Exact bound compact notice summary', ref=ref, destination=dict(type='agent', name=worker['inbox'])))
         delivery = profile('sender', 'event-inspect', dict(event_id=event['event_id']))['deliveries'][0]
         session = dict(agent_id=worker['agent_id'], execution_id=worker['execution_id'])
         claim_id = str(uuid.uuid4())

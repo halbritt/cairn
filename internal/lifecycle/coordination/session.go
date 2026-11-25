@@ -2,7 +2,9 @@ package coordination
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"math/big"
@@ -52,6 +54,7 @@ type Host struct {
 	Journal           JournalBoundary
 	SessionRef        func(*value.Value) (*value.Value, error)
 	NewID             func() string
+	Now               func() time.Time
 	Log               func(string) error
 	Locate            func(*value.Value, string) (string, error)
 	Lock              func(string) (io.Closer, error)
@@ -848,6 +851,7 @@ func (s *NativeSession) Release(ctx context.Context, reason string, fenced bool)
 	if e != nil {
 		if nativeCode(e) == "DELIVERY_ACTIVE" && reason == "delivery_completed" {
 			nativePop(s.Record, "inbox_close")
+			s.recordReconcileBackoff(nativeText(attempt), reason, "DELIVERY_ACTIVE")
 			if e = s.Save(); e != nil {
 				return false, e
 			}
@@ -859,11 +863,58 @@ func (s *NativeSession) Release(ctx context.Context, reason string, fenced bool)
 	}
 	return s.Clear()
 }
+
+func (s *NativeSession) recordReconcileBackoff(attemptID, reason, code string) {
+	nowTime := time.Now()
+	if s.Host != nil && s.Host.Now != nil {
+		nowTime = s.Host.Now()
+	}
+	now := float64(nowTime.UnixNano()) / 1e9
+	committed := false
+	if s.Host != nil && s.Host.Journal != nil {
+		if ok, err := s.Host.Journal.Committed(s.Config, s.Record); err == nil {
+			committed = ok
+		}
+	}
+	attempts := 1
+	if prior := s.Record.Get("inbox_reconcile_backoff"); prior != nil && prior.Kind == value.Object && value.SameText(prior.Get("attempt_id"), attemptID) && value.SameText(prior.Get("reason"), reason) {
+		attempts = int(numberInt(prior.Get("attempts"))) + 1
+	}
+	shift := attempts - 1
+	if shift > 5 {
+		shift = 5
+	}
+	delay := math.Min(60.0, 2.0*float64(int(1)<<shift))
+	// Bounded deterministic-plus-attempt jitter in [0, 0.25 * delay] avoids synchronized 409 spin waves.
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", attemptID, attempts)))
+	jitter := delay * 0.25 * (float64(sum[0]) / 255.0)
+	s.Record.Set("inbox_reconcile_backoff", nativeMap(
+		"attempt_id", attemptID,
+		"reason", reason,
+		"last_error", code,
+		"attempts", attempts,
+		"journal_committed", committed,
+		"next_eligible_epoch", now+delay+jitter,
+	))
+}
+
+func numberInt(v *value.Value) int64 {
+	if v == nil || v.Kind != value.Int {
+		return 0
+	}
+	n, err := strconv.ParseInt(v.Integer, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 func (s *NativeSession) Clear() (bool, error) {
 	if e := s.mapping(); e != nil {
 		return false, e
 	}
 	nativePop(s.Record, AttemptKeys...)
+	nativePop(s.Record, "inbox_reconcile_backoff")
 	return true, s.Save()
 }
 func (s *NativeSession) EndTurn(ctx context.Context, fenced bool) (bool, error) {

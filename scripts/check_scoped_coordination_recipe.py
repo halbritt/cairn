@@ -361,14 +361,14 @@ class Recipe:
         note = self.source("coordinator", "Routine status: the review round closed.", "coordination/status")
         events_before = self.sql_count(f"SELECT count(*) FROM cairn.agent_event WHERE repo='{self.repo}'")
         refused = self.publish("coordinator", {
-            "kind": "notice", "ref": ref(note), "destination": {"type": "agent", "name": self.inbox("worker_b")},
+            "kind": "notice", "action": "review", "ref": ref(note), "destination": {"type": "agent", "name": self.inbox("worker_b")},
             "notice_delivery": "next_organic_turn", "notice_expires_at": rfc3339(timedelta(hours=1))},
             expected="UNSUPPORTED_DELIVERY")
         require(refused["ok"] is False, "unsupported quiet recipient accepted next-turn delivery")
         require(self.sql_count(f"SELECT count(*) FROM cairn.agent_event WHERE repo='{self.repo}'") == events_before,
                 "refused quiet notice left an event")
         deferred = self.publish("coordinator", {
-            "kind": "notice", "ref": ref(note), "destination": {"type": "agent", "name": self.inbox("worker_b")},
+            "kind": "notice", "action": "review", "ref": ref(note), "destination": {"type": "agent", "name": self.inbox("worker_b")},
             "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 60}})
         require(self.next("worker_b") is None, "routine deferred notice was claimable before its deferral")
         status = self.inspect("coordinator", deferred["event_id"])
@@ -380,7 +380,7 @@ class Recipe:
         note = self.source("coordinator", "Teardown: this recipe's temporary topic is closing.", "coordination/teardown")
         # A stopped session remains a subscriber; stopping is not unsubscribing.
         self.host.agent("worker_c", "agent-leave", self.session("worker_c"))
-        stopped_notice = self.publish("coordinator", {"kind": "notice", "ref": ref(note),
+        stopped_notice = self.publish("coordinator", {"kind": "notice", "action": "review", "ref": ref(note),
                                                       "destination": {"type": "topic", "name": self.topic}})
         consumers = sorted(d["consumer"] for d in self.inspect("coordinator", stopped_notice["event_id"])["deliveries"])
         require(consumers == sorted(self.inbox(role) for role in WORKERS),
@@ -394,7 +394,7 @@ class Recipe:
             body, result = self.subscription(role, self.topic, False)
             require(self.agent(role, "event-subscribe", body) == result, "unsubscribe retry changed its result")
         require(self.sql_count(active) == 0, "explicit teardown left an active temporary subscription")
-        after = self.publish("coordinator", {"kind": "notice", "ref": ref(note),
+        after = self.publish("coordinator", {"kind": "notice", "action": "review", "ref": ref(note),
                                              "destination": {"type": "topic", "name": self.topic}})
         require(self.inspect("coordinator", after["event_id"])["deliveries"] == [],
                 "publication after teardown still fanned out")

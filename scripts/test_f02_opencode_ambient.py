@@ -1,6 +1,7 @@
 """Actual H13 installed Source and receipt-checked OpenCode ambient processes."""
 import base64
 import copy
+import datetime
 import json
 import math
 from pathlib import Path
@@ -130,6 +131,10 @@ class OpenCodeAmbientTests(unittest.TestCase):
             if op == 'recall-observation':
                 for key in ('elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms'):
                     self.measurement(body[key]); body[key] = 0
+                ts = body.get('client_generated_at')
+                self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                body['client_generated_at'] = 'validated-utc-timestamp'
             self.assertEqual(headers['Authorization'], 'Bearer f02-synthetic-token')
             data = headers['Cairn-Client-Diagnostics']
             origin = json.loads(base64.urlsafe_b64decode(data+'='*(-len(data)%4)))['origin']

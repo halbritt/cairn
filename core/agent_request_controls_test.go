@@ -147,7 +147,11 @@ func TestCancelWorkClosesOnlyUnclaimedNonRequests(t *testing.T) {
 	op := testStore(t, Channel{Principal: "cancel-notice-operator-" + source.Scope.Repo, Operator: true})
 	publish := func(kind string) string {
 		t.Helper()
-		e, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Ref: RecordVersionRef{source.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}, dest)
+		action := ""
+		if kind == "notice" {
+			action = "review"
+		}
+		e, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Action: action, Ref: RecordVersionRef{source.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}, dest)
 		if err != nil {
 			t.Fatal(err)
 		}

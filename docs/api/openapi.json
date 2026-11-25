@@ -2758,6 +2758,12 @@
               "null"
             ]
           },
+          "attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cache_creation_input_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -2774,9 +2780,38 @@
               "null"
             ]
           },
+          "client_generated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cost_usd": {
             "type": [
               "number",
+              "null"
+            ]
+          },
+          "delivery_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dialogue_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "dialogue_messages": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -2805,6 +2840,12 @@
           "method": {
             "type": "string"
           },
+          "native_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "observation_id": {
             "type": "string"
           },
@@ -2816,6 +2857,20 @@
             "type": "string"
           },
           "output_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "partial_usage": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reasoning_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
             "type": [
@@ -2888,6 +2943,9 @@
           "admission_candidate": {
             "type": "string"
           },
+          "attempt_id": {
+            "type": "string"
+          },
           "cache_creation_input_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -2904,9 +2962,35 @@
               "null"
             ]
           },
+          "client_generated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cost_usd": {
             "type": [
               "number",
+              "null"
+            ]
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "dialogue_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "dialogue_messages": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -2935,10 +3019,27 @@
           "method": {
             "type": "string"
           },
+          "native_session_id": {
+            "type": "string"
+          },
           "outcome": {
             "type": "string"
           },
           "output_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "partial_usage": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reasoning_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
             "type": [
@@ -2997,6 +3098,12 @@
               "null"
             ]
           },
+          "attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cache_creation_input_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -3013,9 +3120,38 @@
               "null"
             ]
           },
+          "client_generated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cost_usd": {
             "type": [
               "number",
+              "null"
+            ]
+          },
+          "delivery_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dialogue_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "dialogue_messages": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -3053,6 +3189,12 @@
               "null"
             ]
           },
+          "native_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "outcome": {
             "type": [
               "string",
@@ -3060,6 +3202,20 @@
             ]
           },
           "output_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "partial_usage": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reasoning_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
             "type": [
@@ -4848,6 +5004,168 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.DeliveryDiagnosis"
+      },
+      "core.DeliveryObservationRequest": {
+        "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "client_generated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "expansion_reason": {
+            "type": "string"
+          },
+          "harness": {
+            "type": "string"
+          },
+          "hook_event": {
+            "type": "string"
+          },
+          "injected_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "injected_tokenizer": {
+            "type": "string"
+          },
+          "injected_unit": {
+            "type": "string"
+          },
+          "native_session_id": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "superseded_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "disposition",
+          "harness",
+          "hook_event",
+          "repo",
+          "request_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.DeliveryObservationRequest"
+      },
+      "core.DeliveryObservationRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_generated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delivery_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disposition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expansion_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "harness": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hook_event": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "injected_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "injected_tokenizer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "injected_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "native_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "superseded_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.DeliveryObservationRequest"
       },
       "core.DeliveryRequest": {
         "properties": {
@@ -10367,6 +10685,33 @@
       },
       "core.RecallObservation": {
         "properties": {
+          "attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_generated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dedup_skipped_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "delivery_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "elapsed_ms": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -10376,6 +10721,12 @@
             ]
           },
           "error_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expansion_reason": {
             "type": [
               "string",
               "null"
@@ -10395,8 +10746,42 @@
               "null"
             ]
           },
+          "injected_tokenizer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "injected_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "method": {
             "type": "string"
+          },
+          "native_context_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "native_message_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "native_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "observation_id": {
             "type": "string"
@@ -10502,6 +10887,24 @@
       },
       "core.RecallObservationRequest": {
         "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "client_generated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dedup_skipped_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "delivered_record_ids": {
             "items": {
               "type": "string"
@@ -10510,6 +10913,9 @@
               "array",
               "null"
             ]
+          },
+          "delivery_id": {
+            "type": "string"
           },
           "elapsed_ms": {
             "maximum": 9223372036854775807,
@@ -10520,6 +10926,9 @@
             ]
           },
           "error_class": {
+            "type": "string"
+          },
+          "expansion_reason": {
             "type": "string"
           },
           "harness": {
@@ -10536,7 +10945,32 @@
               "null"
             ]
           },
+          "injected_tokenizer": {
+            "type": "string"
+          },
+          "injected_unit": {
+            "type": "string"
+          },
           "method": {
+            "type": "string"
+          },
+          "native_context_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "native_message_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "native_session_id": {
             "type": "string"
           },
           "prompt_sha256": {
@@ -10625,6 +11059,27 @@
       "core.RecallObservationRequest.accepted": {
         "additionalProperties": false,
         "properties": {
+          "attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_generated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dedup_skipped_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "delivered_record_ids": {
             "items": {
               "type": [
@@ -10637,6 +11092,12 @@
               "null"
             ]
           },
+          "delivery_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "elapsed_ms": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -10646,6 +11107,12 @@
             ]
           },
           "error_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expansion_reason": {
             "type": [
               "string",
               "null"
@@ -10671,7 +11138,41 @@
               "null"
             ]
           },
+          "injected_tokenizer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "injected_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "native_context_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "native_message_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "native_session_id": {
             "type": [
               "string",
               "null"
@@ -10923,6 +11424,20 @@
               "null"
             ]
           },
+          "partial_usage": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reasoning_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "stage": {
             "type": "string"
           }
@@ -11001,6 +11516,20 @@
               "null"
             ]
           },
+          "partial_usage": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reasoning_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "stage": {
             "type": [
               "string",
@@ -11072,6 +11601,20 @@
             "type": "string"
           },
           "output_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "partial_usage": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reasoning_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
             "type": [
@@ -14610,6 +15153,77 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.SessionInboxSettleNoneResult"
       },
+      "core.SessionLongevityMetrics": {
+        "properties": {
+          "compacted_sessions": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "median_seconds_before_first_compaction": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "median_turns_before_first_compaction": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "median_uncompacted_duration_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "p95_seconds_before_first_compaction": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "p95_turns_before_first_compaction": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sessions_observed": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "uncompacted_sessions": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "compacted_sessions",
+          "median_seconds_before_first_compaction",
+          "median_turns_before_first_compaction",
+          "median_uncompacted_duration_seconds",
+          "p95_seconds_before_first_compaction",
+          "p95_turns_before_first_compaction",
+          "sessions_observed",
+          "uncompacted_sessions"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionLongevityMetrics"
+      },
       "core.SessionOrganicNoticeAdvance": {
         "properties": {
           "attempt_id": {
@@ -16792,6 +17406,289 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.TeamMember"
       },
+      "core.TelemetryDeliveryCounters": {
+        "properties": {
+          "auto_settled": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "compact": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "day": {
+            "type": "string"
+          },
+          "digest": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "full": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "harness": {
+            "type": "string"
+          },
+          "injected_bytes": {
+            "$ref": "#/components/schemas/core.RecallMetric"
+          },
+          "injected_units": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "observations": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "superseded": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "superseded_count_total": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "auto_settled",
+          "compact",
+          "day",
+          "digest",
+          "full",
+          "harness",
+          "injected_bytes",
+          "injected_units",
+          "observations",
+          "superseded",
+          "superseded_count_total"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.TelemetryDeliveryCounters"
+      },
+      "core.TelemetryRecallCounters": {
+        "properties": {
+          "completed": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "day": {
+            "type": "string"
+          },
+          "dedup_skipped_total": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "errors": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "harness": {
+            "type": "string"
+          },
+          "injected_bytes": {
+            "$ref": "#/components/schemas/core.RecallMetric"
+          },
+          "injected_tokenizers": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "injected_units": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "observations": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "selector_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "selector_partial_usage_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "selector_reasoning_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "timeouts": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "completed",
+          "day",
+          "dedup_skipped_total",
+          "errors",
+          "harness",
+          "injected_bytes",
+          "injected_tokenizers",
+          "injected_units",
+          "observations",
+          "selector_calls",
+          "selector_partial_usage_calls",
+          "selector_reasoning_tokens",
+          "timeouts"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.TelemetryRecallCounters"
+      },
+      "core.TelemetryReport": {
+        "properties": {
+          "delivery_counters": {
+            "items": {
+              "$ref": "#/components/schemas/core.TelemetryDeliveryCounters"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "interpretation": {
+            "type": "string"
+          },
+          "per_message_window_growth": {
+            "$ref": "#/components/schemas/core.WindowGrowthMetrics"
+          },
+          "recall_counters": {
+            "items": {
+              "$ref": "#/components/schemas/core.TelemetryRecallCounters"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": "string"
+          },
+          "session_longevity_before_compaction": {
+            "$ref": "#/components/schemas/core.SessionLongevityMetrics"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "window_days": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delivery_counters",
+          "interpretation",
+          "per_message_window_growth",
+          "recall_counters",
+          "repo",
+          "session_longevity_before_compaction",
+          "since",
+          "window_days"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.TelemetryReport"
+      },
+      "core.TelemetryReportRequest": {
+        "properties": {
+          "harness": {
+            "type": "string"
+          },
+          "native_session_id": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "rollup_days": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.TelemetryReportRequest"
+      },
+      "core.TelemetryReportRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "harness": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "native_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rollup_days": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.TelemetryReportRequest"
+      },
       "core.TerminalRequest": {
         "properties": {
           "attempt_id": {
@@ -17751,6 +18648,82 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.WakeResult"
+      },
+      "core.WindowGrowthMetrics": {
+        "properties": {
+          "byte_unit": {
+            "type": "string"
+          },
+          "mean_dialogue_bytes_per_step": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "mean_injected_bytes_per_prompt": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "mean_prompt_tokens_per_step": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "median_dialogue_bytes_per_step": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "median_injected_bytes_per_prompt": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "median_prompt_tokens_per_step": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "observations_measured": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "sessions_measured": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "token_unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "byte_unit",
+          "mean_dialogue_bytes_per_step",
+          "mean_injected_bytes_per_prompt",
+          "mean_prompt_tokens_per_step",
+          "median_dialogue_bytes_per_step",
+          "median_injected_bytes_per_prompt",
+          "median_prompt_tokens_per_step",
+          "observations_measured",
+          "sessions_measured",
+          "token_unit"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.WindowGrowthMetrics"
       },
       "core.WorkControl": {
         "properties": {
@@ -21075,6 +22048,12 @@
                           "null"
                         ]
                       },
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "cache_creation_input_tokens": {
                         "maximum": 9223372036854775807,
                         "minimum": -9223372036854775808,
@@ -21097,9 +22076,38 @@
                         "minimum": 1,
                         "type": "integer"
                       },
+                      "client_generated_at": {
+                        "format": "date-time",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "cost_usd": {
                         "type": [
                           "number",
+                          "null"
+                        ]
+                      },
+                      "delivery_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "dialogue_bytes": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "dialogue_messages": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
                           "null"
                         ]
                       },
@@ -21137,6 +22145,12 @@
                           "null"
                         ]
                       },
+                      "native_session_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "outcome": {
                         "type": [
                           "string",
@@ -21144,6 +22158,20 @@
                         ]
                       },
                       "output_tokens": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "partial_usage": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "reasoning_tokens": {
                         "maximum": 9223372036854775807,
                         "minimum": -9223372036854775808,
                         "type": [
@@ -23042,6 +24070,221 @@
         ],
         "x-cairn-remote": "denied",
         "x-cairn-remote-roles": [],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "request-id",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "server.go"
+      }
+    },
+    "/v1/delivery-observation": {
+      "post": {
+        "operationId": "delivery-observation",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "client_generated_at": {
+                        "format": "date-time",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "delivery_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "disposition": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "expansion_reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "harness": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "hook_event": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "injected_bytes": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "injected_tokenizer": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "injected_unit": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "native_session_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "superseded_count": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.DeliveryObservationRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.Observation"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.DeliveryObservationRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.DeliveryObservationRequest",
+          "response": "github.com/halbritt/cairn/core.Observation"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
         "x-cairn-request-limit-bytes": 131072,
         "x-cairn-requires-local-destination": false,
         "x-cairn-retry": "request-id",
@@ -30573,11 +31816,32 @@
                   {
                     "additionalProperties": false,
                     "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "cairn_protocol": {
                         "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
                         "maximum": 9999,
                         "minimum": 1,
                         "type": "integer"
+                      },
+                      "client_generated_at": {
+                        "format": "date-time",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "dedup_skipped_count": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
                       },
                       "delivered_record_ids": {
                         "items": {
@@ -30591,6 +31855,12 @@
                           "null"
                         ]
                       },
+                      "delivery_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "elapsed_ms": {
                         "maximum": 9223372036854775807,
                         "minimum": -9223372036854775808,
@@ -30600,6 +31870,12 @@
                         ]
                       },
                       "error_class": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "expansion_reason": {
                         "type": [
                           "string",
                           "null"
@@ -30625,7 +31901,41 @@
                           "null"
                         ]
                       },
+                      "injected_tokenizer": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "injected_unit": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "native_context_tokens": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "native_message_count": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "native_session_id": {
                         "type": [
                           "string",
                           "null"
@@ -37236,6 +38546,156 @@
         "x-cairn-retry": "request-id",
         "x-cairn-session-headers": "optional",
         "x-cairn-source": "team_hierarchy.go"
+      }
+    },
+    "/v1/telemetry-report": {
+      "post": {
+        "operationId": "telemetry-report",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "harness": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "native_session_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "rollup_days": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.TelemetryReportRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.TelemetryReport"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.TelemetryReportRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.TelemetryReportRequest",
+          "response": "github.com/halbritt/cairn/core.TelemetryReport"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "denied",
+        "x-cairn-remote-roles": [],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": true,
+        "x-cairn-retry": "read",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "server.go"
       }
     },
     "/v1/terminal": {

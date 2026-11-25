@@ -4,6 +4,7 @@ The inherited fixture supplies transport data, never a recall/render oracle.
 The Source process stages the complete /2 bridge bundle; no body is replaced.
 """
 import base64
+import datetime
 import fcntl
 import os
 import sys
@@ -140,6 +141,8 @@ class OrdinaryHostTests(unittest.TestCase):
                 if op!='version':self.assertEqual(str(uuid.UUID(ident)),ident)
                 if op=='recall-observation':
                     for key in ('elapsed_ms','search_ms','pulls_ms','selector_ms'):self.assertGreaterEqual(request.pop(key),0)
+                    ts=request.pop('client_generated_at',None)
+                    self.assertIsInstance(ts,str);self.assertTrue(ts.endswith('Z'));datetime.datetime.fromisoformat(ts.replace('Z','+00:00'))
             self.assertEqual(actual,expected)
             self.assertEqual(headers['Authorization'],'Bearer f02-synthetic-token')
             for declared,image in ((headers,sha(self.binary.read_bytes())),(source_headers,sha((start_fixture.ROOT/'integrations/lifecycle/memory.py').read_bytes()))):
@@ -166,6 +169,7 @@ class OrdinaryHostTests(unittest.TestCase):
 
     def test_taskless_start_defers_optional(self):
         self.configure('opencode','SessionStart')
+        self.f.memory['skip_empty_recall'] = False; self.f.publish_configuration()
         self.f.event.pop('prompt');self.f.raw=encoded(self.f.event)
         self.pair()
         self.assertEqual(self.state()['ses_OrdinaryA1.json']['last_recall']['optional_deferred'],'taskless_startup')
@@ -215,10 +219,11 @@ class OrdinaryHostTests(unittest.TestCase):
         self.assertEqual(report['harness'],'opencode')
         self.assertEqual((report['search_calls'],report['pull_calls'],report['selector_calls'],report['injected_bytes']),(1,0,[],len(context.encode())))
 
-    def test_agy_does_not_invent_source_recall_observations(self):
+    def test_agy_emits_recall_observations(self):
         self.configure('agy');self.f.memory['recall_observations']=True;self.f.publish_configuration()
         self.pair()
-        self.assertNotIn('recall-observation',[op for op,_,_ in self.calls])
+        report=next(body for op,body,_ in self.calls if op=='recall-observation')
+        self.assertEqual(report['harness'],'agy')
 
     def test_search_refusal_saves_failure_diagnostics(self):
         for refusal in ('OPEN_CONFLICT','BUDGET_REFUSED','POLICY_UNENFORCEABLE'):
@@ -329,7 +334,7 @@ class OrdinaryHostTests(unittest.TestCase):
 
     def test_default_ambient_taskless_start_is_non_provider(self):
         self.configure('opencode','SessionStart');self.f.event.pop('prompt');self.f.raw=encoded(self.f.event)
-        self.f.memory.pop('recall_mode');self.f.memory['semantic_fallback']=True;self.f.publish_configuration()
+        self.f.memory.pop('recall_mode');self.f.memory['semantic_fallback']=True;self.f.memory['skip_empty_recall']=False;self.f.publish_configuration()
         self.selected=[dict(record=dict(record_id=SESSION,version=1,body='Project decision\nUse the existing contract.'),mandatory=True,reason='required',evidence=[],authority=[],conflicts=[])]
         self.assertIn(b'Project decision',self.pair().stdout)
 
@@ -481,6 +486,8 @@ class OrdinaryHostTests(unittest.TestCase):
                 if op!='version':self.assertEqual(str(uuid.UUID(ident)),ident)
                 if op=='recall-observation':
                     for key in ('elapsed_ms','search_ms','pulls_ms','selector_ms'):self.assertGreaterEqual(request.pop(key),0)
+                    ts=request.pop('client_generated_at',None)
+                    self.assertIsInstance(ts,str);self.assertTrue(ts.endswith('Z'));datetime.datetime.fromisoformat(ts.replace('Z','+00:00'))
             self.assertEqual(actual,expected)
             for declared,image in ((headers,sha(self.binary.read_bytes())),(source_headers,sha((start_fixture.ROOT/'integrations/lifecycle/memory.py').read_bytes()))):
                 self.assertEqual(declared['Authorization'],'Bearer f02-synthetic-token')

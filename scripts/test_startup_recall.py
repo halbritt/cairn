@@ -185,7 +185,7 @@ class StartupRecallTests(unittest.TestCase):
                  patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=0))) as model:
                 self.searches.clear()
                 self.pulls.clear()
-                result = hook.handle(dict(self.config, semantic_fallback=semantic), self.event)
+                result = hook.handle(dict(self.config, semantic_fallback=semantic, skip_empty_recall=False), self.event)
                 context = result['hookSpecificOutput']['additionalContext']
                 self.assertIn('Required instruction', context)
                 self.assertNotIn(self.body, context)
@@ -194,6 +194,24 @@ class StartupRecallTests(unittest.TestCase):
                 model.assert_not_called()
                 state = json.loads((Path(self.config['state_dir']) / (self.event['session_id'] + '.json')).read_text())
                 self.assertEqual(state['seen'], {})
+
+    def test_default_skips_unconditional_empty_startup_and_empty_prompt_with_opt_out(self):
+        for event in (self.event, dict(self.event, hook_event_name='UserPromptSubmit', prompt='   ')):
+            with self.subTest(hook_event=event['hook_event_name']), \
+                 patch.object(hook, 'bounded_command', side_effect=self.transport) as cmd, \
+                 patch.object(hook, 'select_json') as model:
+                self.searches.clear()
+                self.assertEqual(hook.handle(self.config, event), {})
+                cmd.assert_not_called()
+                model.assert_not_called()
+                state = json.loads((Path(self.config['state_dir']) / (self.event['session_id'] + '.json')).read_text())
+                self.assertEqual(state['last_recall']['outcome'], 'skipped')
+        with patch.object(hook, 'bounded_command', side_effect=self.transport), \
+             patch.dict('os.environ', {'CAIRN_RECALL_SKIP_EMPTY': '0'}):
+            self.searches.clear()
+            result = hook.handle(self.config, self.event)
+            self.assertIn('Required instruction', result['hookSpecificOutput']['additionalContext'])
+            self.assertEqual(len(self.searches), 1)
 
     def test_empty_or_blank_startup_does_not_emit_optional_previews(self):
         self.required = []
@@ -214,7 +232,7 @@ class StartupRecallTests(unittest.TestCase):
                  patch.object(hook, 'bounded_command', side_effect=self.transport), \
                  patch.object(hook, 'select_json') as model:
                 with self.assertRaisesRegex(hook.HookError, 'no partial instructions'):
-                    hook.handle(dict(self.config, semantic_fallback=semantic), self.event)
+                    hook.handle(dict(self.config, semantic_fallback=semantic, skip_empty_recall=False), self.event)
                 self.assertEqual(self.pulls, [])
                 model.assert_not_called()
 
@@ -223,7 +241,7 @@ class StartupRecallTests(unittest.TestCase):
             with self.subTest(semantic=semantic), \
                  patch.object(hook, 'bounded_command', side_effect=self.transport), \
                  patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=0))):
-                config = dict(self.config, semantic_fallback=semantic)
+                config = dict(self.config, semantic_fallback=semantic, skip_empty_recall=False)
                 startup = hook.handle(config, self.event)
                 self.assertNotIn(self.body, startup['hookSpecificOutput']['additionalContext'])
                 prompt = hook.handle(config, dict(self.event, hook_event_name='UserPromptSubmit',

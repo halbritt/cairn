@@ -458,7 +458,7 @@ func (s *Store) recipientSupportsNextOrganicTurnTx(ctx context.Context, tx pgx.T
 	if err = json.Unmarshal(metaRaw, &meta); err != nil {
 		return false, err
 	}
-	if meta.DeliveryMode != "existing-session" || meta.Harness != "codex" {
+	if stopped || meta.DeliveryMode != "existing-session" || meta.Harness != "codex" {
 		return false, nil
 	}
 	var activeBindingExists bool
@@ -593,7 +593,7 @@ func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req Publi
 		if err = json.Unmarshal(metaRaw, &meta); err != nil {
 			return AgentEvent{}, err
 		}
-		if meta.DeliveryMode != "existing-session" || meta.Harness != "codex" {
+		if stopped || meta.DeliveryMode != "existing-session" || meta.Harness != "codex" {
 			return AgentEvent{}, failure("UNSUPPORTED_DELIVERY", "recipient does not support next-organic-turn notice delivery")
 		}
 		var activeBindingExists bool
@@ -924,6 +924,15 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 	defer tx.Rollback(ctx)
 	if _, err = retrievalGeneration(ctx, tx); err != nil {
 		return out, err
+	}
+	if s.session != nil {
+		agent, err := currentAgentSession(ctx, tx, s.session.Ref, s.session.Profile, repo, true, dest)
+		if err != nil {
+			return out, err
+		}
+		if err = activeAgent(agent); err != nil {
+			return out, err
+		}
 	}
 	if _, err = expireRequestDeliveries(ctx, tx, s, repo, s.channel.Principal, dest.AllowLocal); err != nil {
 		return out, err

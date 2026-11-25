@@ -292,7 +292,7 @@ func TestClosureAdversarialExactReplyIdentityAndRetry(t *testing.T) {
 				{"wrong_correlation", func(r *PublishEventRequest) { r.CorrelationID = uuid.NewString() }},
 				{"wrong_destination", func(r *PublishEventRequest) { r.Destination.Name = b.channel.Principal }},
 				{"wrong_causation", func(r *PublishEventRequest) { r.CausationID = parent.EventID }},
-				{"wrong_kind", func(r *PublishEventRequest) { r.Kind = "notice" }},
+				{"wrong_kind", func(r *PublishEventRequest) { r.Kind = "notice"; r.Action = "review" }},
 			}
 			for _, tc := range cases {
 				t.Run(tc.name, func(t *testing.T) {

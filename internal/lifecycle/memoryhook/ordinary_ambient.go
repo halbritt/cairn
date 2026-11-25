@@ -101,20 +101,25 @@ func ambientRender(selected *value.Value, entries []*value.Value, pulled, discov
 
 // ambientRecall is the non-provider Source path. Model-selected discovery is a
 // retained cell, rather than a synthetic successful selection by this body.
-func ambientRecall(ctx context.Context, client *memoryclient.Client, event, state, status, result, selected *value.Value, typed []indexview.Entry, intent recallIntent, budget int, deferred, notification bool, project string, dedup bool, choose func() (*value.Value, *value.Value, error)) (string, error) {
+func ambientRecall(ctx context.Context, client *memoryclient.Client, event, state, status, result, selected *value.Value, typed []indexview.Entry, intent recallIntent, budget int, deferred, notification bool, project string, dedup bool, choose func() (*value.Value, *value.Value, error), meter *recallSelectorMeter) (string, error) {
 	var entries, previews []*value.Value
 	seen := state.Get("seen")
 	if !deferred {
 		slotCount := 0
+		dedupSkipped := 0
 		for _, entry := range result.Get("index").Items {
 			if slotCount >= 6 {
 				break
 			}
 			slotCount++
 			if dedup && seenCoversEntry(seen, entry) {
+				dedupSkipped++
 				continue
 			}
 			entries = append(entries, entry)
+		}
+		if dedupSkipped > 0 && meter != nil {
+			meter.dedupSkipped += dedupSkipped
 		}
 	}
 	for _, entry := range entries {

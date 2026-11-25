@@ -78,13 +78,13 @@ func inboxMeterRequest(config, meter *value.Value) (core.RecallObservationReques
 	if meter.Kind != value.Object {
 		return body, errors.New("invalid materialized inbox meter")
 	}
-	allowed := strings.Fields("request_id repo harness hook_event method status error_class elapsed_ms search_ms pulls_ms selector_ms search_calls pull_calls selector_calls injected_bytes receipt_ids")
+	allowed := strings.Fields("request_id repo harness hook_event method status error_class elapsed_ms search_ms pulls_ms selector_ms search_calls pull_calls selector_calls injected_bytes receipt_ids attempt_id delivery_id native_session_id client_generated_at injected_unit injected_tokenizer dedup_skipped_count expansion_reason")
 	for _, m := range meter.Members {
 		if !contains(allowed, string(m.Key)) {
 			return body, errors.New("invalid materialized inbox meter field")
 		}
 	}
-	if !inboxUUID(meter.Get("request_id")) || !value.SameText(meter.Get("repo"), text(config.Get("repo"))) || !value.SameText(meter.Get("method"), "cairn-lifecycle/inbox-recall-meter/1") || !contains([]string{"codex", "claude"}, text(meter.Get("harness"))) || !value.SameText(meter.Get("hook_event"), "UserPromptSubmit") || !contains([]string{"completed", "error", "timeout"}, text(meter.Get("status"))) {
+	if !inboxUUID(meter.Get("request_id")) || !value.SameText(meter.Get("repo"), text(config.Get("repo"))) || !value.SameText(meter.Get("method"), "cairn-lifecycle/inbox-recall-meter/1") || !contains([]string{"codex", "claude", "opencode", "hermes", "agy"}, text(meter.Get("harness"))) || !value.SameText(meter.Get("hook_event"), "UserPromptSubmit") || !contains([]string{"completed", "error", "timeout"}, text(meter.Get("status"))) {
 		return body, errors.New("invalid materialized inbox meter identity")
 	}
 	harness := text(config.Get("harness"))

@@ -82,6 +82,17 @@ func validText(v *value.Value) bool {
 	}
 	return true
 }
+func validTelemetryLabel(s string, maxBytes int) bool {
+	if strings.TrimSpace(s) == "" || len(s) > maxBytes || !validText(value.Text(s)) {
+		return false
+	}
+	for _, r := range s {
+		if r < 32 || r == 127 {
+			return false
+		}
+	}
+	return true
+}
 func integer(n int) *value.Value               { return value.IntegerText(strconv.Itoa(n)) }
 func floating(n float64) *value.Value          { return &value.Value{Kind: value.Float, Number: n} }
 func array(items ...*value.Value) *value.Value { return &value.Value{Kind: value.Array, Items: items} }
@@ -290,13 +301,14 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	var injected int
 	var observedErr error
 	var recallElapsed time.Duration
+	var recallStatus *value.Value
 	reportReady := false
 	defer func() {
 		if api != nil {
 			defer api.Close()
 		}
 		if client != nil && reportReady {
-			report(ctx, api, client, config, event, started, recallElapsed, operationTime, selectors, injected, observedErr)
+			report(ctx, api, client, config, event, recallStatus, started, recallElapsed, operationTime, selectors, injected, observedErr)
 		}
 	}()
 	trace["stage"] = "lock_attempt"
@@ -344,10 +356,39 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		recallStarted := time.Now()
 		trace["stage"] = "recall"
 		status := value.Mapping(value.Field("at", floating(float64(time.Now().UnixNano())/1e9)), value.Field("hook_event_name", event.Get("hook_event_name")), value.Field("outcome", value.Text("empty")), value.Field("records", array()), value.Field("bytes", integer(0)), value.Field("discovery", value.Text("lexical")), value.Field("inspected", integer(0)), value.Field("rejected", value.Mapping()))
+		recallStatus = status
 		state.Set("last_recall", status)
 		state, err = prepareSeenState(state, config, event, env, nowSeconds())
 		if err != nil {
 			return err
+		}
+		if skipReason, skip := skipEmptyRecall(config, event, env, bound); skip {
+			status.Set("outcome", value.Text("skipped"))
+			status.Set("discovery", value.Text("deferred"))
+			status.Set("optional_deferred", value.Text(skipReason))
+			status.Set("expansion_reason", value.Text("skipped_"+skipReason))
+			status.Set("duration_ms", floating(math.Round(float64(time.Since(recallStarted))/float64(time.Microsecond))/1000))
+			if err = saveState(path, state); err != nil {
+				return err
+			}
+			trace["stage"] = "saved"
+			trace["context_bytes"] = 0
+			output := value.Mapping()
+			if value.SameText(config.Get("harness"), "hermes") {
+				hermesStatus := value.Mapping()
+				for _, key := range []string{"last_recall", "last_capture", "workstream"} {
+					if v := state.Get(key); v != nil {
+						hermesStatus.Set(key, v)
+					}
+				}
+				output.Set("cairn_status", hermesStatus)
+			}
+			rawOutput, encErr := encoded(output, false)
+			if encErr != nil {
+				return encErr
+			}
+			result = Result{Stdout: string(rawOutput) + "\n"}
+			return nil
 		}
 		socket, err := pathValue(config.Get("socket"))
 		token := ""
@@ -879,8 +920,37 @@ func failure(event *value.Value, err error) Result {
 	}
 	return Result{Stderr: diagnostic + "Cairn lifecycle: " + message + "; use native tools or an explicit handoff.\n", ExitCode: 1}
 }
-func report(ctx context.Context, api *localapi.Client, client *memoryclient.Client, config, event *value.Value, started time.Time, recallElapsed time.Duration, operationTime map[string]time.Duration, selectors *recallSelectorMeter, injected int, err error) {
-	if !contains([]string{"claude", "codex", "opencode", "hermes"}, text(config.Get("harness"))) {
+func skipEmptyRecall(config, event *value.Value, env map[string][]rune, bound bool) (string, bool) {
+	if bound || value.Truth(config.Get("inbox_recall_binding")) {
+		return "", false
+	}
+	if !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
+		return "", false
+	}
+	if setting := config.Get("skip_empty_recall"); setting != nil && setting.Kind == value.Bool && !setting.Boolean {
+		return "", false
+	}
+	if raw, ok := env["CAIRN_RECALL_SKIP_EMPTY"]; ok {
+		val := strings.ToLower(strings.TrimSpace(string(raw)))
+		if val == "0" || val == "false" || val == "no" || val == "off" {
+			return "", false
+		}
+	}
+	source := text(event.Get("source"))
+	if source == "resume" || source == "compact" {
+		return "", false
+	}
+	if strip(text(event.Get("prompt"))) != "" || strip(text(event.Get("workstream"))) != "" {
+		return "", false
+	}
+	if value.SameText(event.Get("hook_event_name"), "SessionStart") {
+		return "empty_startup", true
+	}
+	return "empty_prompt", true
+}
+
+func report(ctx context.Context, api *localapi.Client, client *memoryclient.Client, config, event, statusVal *value.Value, started time.Time, recallElapsed time.Duration, operationTime map[string]time.Duration, selectors *recallSelectorMeter, injected int, err error) {
+	if !contains([]string{"claude", "codex", "opencode", "hermes", "agy"}, text(config.Get("harness"))) {
 		return
 	}
 	if setting := config.Get("recall_observations"); setting != nil && setting.Kind == value.Bool && !setting.Boolean {
@@ -909,7 +979,52 @@ func report(ctx context.Context, api *localapi.Client, client *memoryclient.Clie
 			status = "timeout"
 		}
 	}
-	body := core.RecallObservationRequest{RequestID: uuid.NewString(), Repo: text(config.Get("repo")), ReceiptIDs: accounting.SearchReceipts, Harness: text(config.Get("harness")), HookEvent: text(event.Get("hook_event_name")), Method: "cairn-lifecycle/recall-meter/1", Status: status, ErrorClass: errorClass, ElapsedMS: &elapsed, SearchMS: &search, PullsMS: &pulls, SelectorMS: &selector, SearchCalls: &searchCalls, PullCalls: &pullCalls, SelectorCalls: selectors.calls, InjectedBytes: &bytes}
+	now := time.Now().UTC()
+	body := core.RecallObservationRequest{
+		RequestID:         uuid.NewString(),
+		Repo:              text(config.Get("repo")),
+		ReceiptIDs:        accounting.SearchReceipts,
+		Harness:           text(config.Get("harness")),
+		HookEvent:         text(event.Get("hook_event_name")),
+		Method:            "cairn-lifecycle/recall-meter/1",
+		Status:            status,
+		ErrorClass:        errorClass,
+		ElapsedMS:         &elapsed,
+		SearchMS:          &search,
+		PullsMS:           &pulls,
+		SelectorMS:        &selector,
+		SearchCalls:       &searchCalls,
+		PullCalls:         &pullCalls,
+		SelectorCalls:     selectors.calls,
+		InjectedBytes:     &bytes,
+		InjectedUnit:      "utf8_bytes",
+		InjectedTokenizer: "utf8_byte_len",
+		ClientGeneratedAt: &now,
+	}
+	if sid := text(event.Get("session_id")); validTelemetryLabel(sid, 256) {
+		body.NativeSessionID = strings.TrimSpace(sid)
+	}
+	if aid := text(event.Get("attempt_id")); aid != "" {
+		if _, parseErr := uuid.Parse(aid); parseErr == nil {
+			body.AttemptID = aid
+		}
+	}
+	if did := text(event.Get("delivery_id")); did != "" {
+		if _, parseErr := uuid.Parse(did); parseErr == nil {
+			body.DeliveryID = did
+		}
+	}
+	if selectors != nil && selectors.dedupSkipped > 0 {
+		n := selectors.dedupSkipped
+		body.DedupSkippedCount = &n
+	}
+	if statusVal != nil {
+		if reason := strings.TrimSpace(text(statusVal.Get("expansion_reason"))); reason != "" && validTelemetryLabel(reason, 128) {
+			body.ExpansionReason = reason
+		} else if def := strings.TrimSpace(text(statusVal.Get("optional_deferred"))); def != "" && validTelemetryLabel(def, 128) {
+			body.ExpansionReason = def
+		}
+	}
 	limited, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
 	var response json.RawMessage

@@ -311,6 +311,7 @@ var serverOperations = []OperationSpec{
 	bindStore(OperationSpec{Name: "usage-coverage", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).RecordUsageCoverage),
 	bindStore(OperationSpec{Name: "recall-observation", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).RecordRecallObservation),
 	bindStore(OperationSpec{Name: "capture-observation", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).RecordCaptureObservation),
+	bindStore(OperationSpec{Name: "delivery-observation", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).RecordDeliveryObservation),
 	bindStore(OperationSpec{Name: "capture-observations", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "capture observation history requires a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).CaptureObservations),
 	bindStore(OperationSpec{Name: "evidence-impact", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "evidence impact inspection requires a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).InspectEvidenceImpact),
 	bindStore(OperationSpec{Name: "check-evidence", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "evidence inspection requires a local profile", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).CheckEvidence),
@@ -355,6 +356,7 @@ var serverOperations = []OperationSpec{
 		return c.store.Refusal(ctx, req.RefusalID)
 	}),
 	bindStore(OperationSpec{Name: "use-report", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "protected reports require a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).UseReport),
+	bindStore(OperationSpec{Name: "telemetry-report", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "protected reports require a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).TelemetryReport),
 	bindStore(OperationSpec{Name: "run-report", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "protected reports require a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).RunReport),
 	bindStore(OperationSpec{Name: "conflicts", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "conflict inspection requires a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).Conflicts),
 	bindOperation(OperationSpec{Name: "conflict", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "conflict inspection requires a local profile", RemoteAllowed: false, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req struct {

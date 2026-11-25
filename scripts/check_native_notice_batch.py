@@ -138,10 +138,13 @@ def check(binary, diagnostic_output=None):
                     and source["observed_writer"] == principals["sender"],
                     "routine source writer/body differs")
             ref = {"record_id": source["record_id"], "version": source["version"]}
-            event = call(binary, home, env, "sender", "event-publish", {
-                "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+            event_req = {
+                "request_id": str(uuid.uuid4()), "kind": "notice", "action": "review", "ref": ref,
                 "destination": {"type": "agent", "name": registered["inbox"]},
-                "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 0}})
+                "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 0}}
+            if len(body.encode("utf-8")) > 280:
+                event_req["summary"] = "Synthetic oversized middle source"
+            event = call(binary, home, env, "sender", "event-publish", event_req)
             require(event["kind"] == "notice" and event["ref"] == ref
                     and event["notice_policy"]["owner"] == principals["sender"],
                     "routine notice policy or ref differs")
@@ -295,7 +298,7 @@ def check(binary, diagnostic_output=None):
                       "claim_type": "self", "sensitivity": "shareable"}})
         later_ref = {"record_id": later_source["record_id"], "version": later_source["version"]}
         routine_event = call(binary, home, env, "sender", "event-publish", {
-            "request_id": str(uuid.uuid4()), "kind": "notice", "ref": later_ref,
+            "request_id": str(uuid.uuid4()), "kind": "notice", "action": "review", "ref": later_ref,
             "destination": {"type": "agent", "name": registered["inbox"]},
             "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 0}})
         next_turn = f"synthetic-native-priority-turn-{uuid.uuid4()}"
@@ -308,7 +311,7 @@ def check(binary, diagnostic_output=None):
                 and first_priority_batch["delivery"]["event"]["event_id"] == events[3]["event_id"],
                 "later turn did not claim the exact remaining routine notice")
         urgent_event = call(binary, home, env, "sender", "event-publish", {
-            "request_id": str(uuid.uuid4()), "kind": "notice", "ref": later_ref,
+            "request_id": str(uuid.uuid4()), "kind": "notice", "action": "review", "ref": later_ref,
             "destination": {"type": "agent", "name": registered["inbox"]},
             "notice_policy": {"version": 1, "urgency": "urgent", "defer_seconds": 0}})
         priority_state = {"agent": registered, "process": coordinator.process_reference(os.getpid()),

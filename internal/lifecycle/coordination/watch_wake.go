@@ -1037,6 +1037,15 @@ func (c *CLI) submitIdleWake(ctx context.Context, config *value.Value, path stri
 	if err != nil {
 		return err
 	}
+	if currentState, rErr := c.read(path, SiteSessionRead); rErr != nil {
+		return nil
+	} else if currentState == nil || currentState.Kind != value.Object || value.Truth(currentState.Get("ending")) || value.Truth(currentState.Get("retired")) {
+		return nil
+	} else if agent := currentState.Get("agent"); agent != nil && agent.Kind == value.Object {
+		if curRef, sErr := c.sessionRef(agent); sErr != nil || !nativeEqual(curRef, sref) {
+			return nil
+		}
+	}
 	deliv, err := nativeRequired(wakeRec, "delivery_id")
 	if err != nil {
 		return err

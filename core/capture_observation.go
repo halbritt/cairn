@@ -14,28 +14,52 @@ import (
 // invocation. Session and snapshot hashes are correlation references, not
 // authenticated session identity or proof that a note was saved.
 type CaptureObservationRequest struct {
-	RequestID                string   `json:"request_id"`
-	Repo                     string   `json:"repo"`
-	Harness                  string   `json:"harness"`
-	HookEvent                string   `json:"hook_event"`
-	Method                   string   `json:"method"`
-	SessionSHA256            string   `json:"session_sha256"`
-	SnapshotSHA256           string   `json:"snapshot_sha256,omitempty"`
-	Outcome                  string   `json:"outcome"`
-	AdmissionCandidate       string   `json:"admission_candidate,omitempty"`
-	SelectorOutcome          string   `json:"selector_outcome,omitempty"`
-	RequestedModel           string   `json:"requested_model,omitempty"`
-	ReportedModel            string   `json:"reported_model,omitempty"`
-	DurationMS               *int64   `json:"duration_ms,omitempty"`
-	SelectorDurationMS       *int64   `json:"selector_duration_ms,omitempty"`
-	InputTokens              *int64   `json:"input_tokens,omitempty"`
-	OutputTokens             *int64   `json:"output_tokens,omitempty"`
-	CacheCreationInputTokens *int64   `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens     *int64   `json:"cache_read_input_tokens,omitempty"`
-	CostUSD                  *float64 `json:"cost_usd,omitempty"`
+	RequestID                string     `json:"request_id"`
+	Repo                     string     `json:"repo"`
+	Harness                  string     `json:"harness"`
+	HookEvent                string     `json:"hook_event"`
+	Method                   string     `json:"method"`
+	SessionSHA256            string     `json:"session_sha256"`
+	SnapshotSHA256           string     `json:"snapshot_sha256,omitempty"`
+	Outcome                  string     `json:"outcome"`
+	AdmissionCandidate       string     `json:"admission_candidate,omitempty"`
+	SelectorOutcome          string     `json:"selector_outcome,omitempty"`
+	RequestedModel           string     `json:"requested_model,omitempty"`
+	ReportedModel            string     `json:"reported_model,omitempty"`
+	DurationMS               *int64     `json:"duration_ms,omitempty"`
+	SelectorDurationMS       *int64     `json:"selector_duration_ms,omitempty"`
+	InputTokens              *int64     `json:"input_tokens,omitempty"`
+	OutputTokens             *int64     `json:"output_tokens,omitempty"`
+	CacheCreationInputTokens *int64     `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     *int64     `json:"cache_read_input_tokens,omitempty"`
+	CostUSD                  *float64   `json:"cost_usd,omitempty"`
+	AttemptID                string     `json:"attempt_id,omitempty"`
+	DeliveryID               string     `json:"delivery_id,omitempty"`
+	NativeSessionID          string     `json:"native_session_id,omitempty"`
+	ClientGeneratedAt        *time.Time `json:"client_generated_at,omitempty"`
+	ReasoningTokens          *int64     `json:"reasoning_tokens,omitempty"`
+	PartialUsage             *bool      `json:"partial_usage,omitempty"`
+	DialogueMessages         *int       `json:"dialogue_messages,omitempty"`
+	DialogueBytes            *int64     `json:"dialogue_bytes,omitempty"`
 }
 
 var captureMethod = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$`)
+
+func validTelemetryString(v string, maxBytes int) bool {
+	if v == "" || len(v) > maxBytes {
+		return false
+	}
+	hasNonSpace := false
+	for _, r := range v {
+		if r < 32 || r == 127 {
+			return false
+		}
+		if r != ' ' && r != '\t' {
+			hasNonSpace = true
+		}
+	}
+	return hasNonSpace
+}
 
 func (req CaptureObservationRequest) validate() error {
 	bad := func() error { return failure("INVALID_REQUEST", "invalid bounded capture observation") }
@@ -45,7 +69,7 @@ func (req CaptureObservationRequest) validate() error {
 		return bad()
 	}
 	switch req.Harness {
-	case "claude", "codex", "opencode", "hermes":
+	case "claude", "codex", "opencode", "hermes", "agy":
 	default:
 		return bad()
 	}
@@ -70,7 +94,7 @@ func (req CaptureObservationRequest) validate() error {
 	if !recallMilliseconds(req.DurationMS, req.SelectorDurationMS) {
 		return bad()
 	}
-	if req.SelectorOutcome == "" && (req.SelectorDurationMS != nil || req.RequestedModel != "" || req.ReportedModel != "" || req.InputTokens != nil || req.OutputTokens != nil || req.CacheCreationInputTokens != nil || req.CacheReadInputTokens != nil || req.CostUSD != nil) {
+	if req.SelectorOutcome == "" && (req.SelectorDurationMS != nil || req.RequestedModel != "" || req.ReportedModel != "" || req.InputTokens != nil || req.OutputTokens != nil || req.CacheCreationInputTokens != nil || req.CacheReadInputTokens != nil || req.ReasoningTokens != nil || req.PartialUsage != nil || req.CostUSD != nil) {
 		return bad()
 	}
 	for _, model := range []string{req.RequestedModel, req.ReportedModel} {
@@ -78,12 +102,31 @@ func (req CaptureObservationRequest) validate() error {
 			return bad()
 		}
 	}
-	for _, tokens := range []*int64{req.InputTokens, req.OutputTokens, req.CacheCreationInputTokens, req.CacheReadInputTokens} {
+	for _, tokens := range []*int64{req.InputTokens, req.OutputTokens, req.CacheCreationInputTokens, req.CacheReadInputTokens, req.ReasoningTokens} {
 		if tokens != nil && (*tokens < 0 || *tokens > maxRecallTokens) {
 			return bad()
 		}
 	}
 	if req.CostUSD != nil && (math.IsNaN(*req.CostUSD) || math.IsInf(*req.CostUSD, 0) || *req.CostUSD < 0 || *req.CostUSD >= maxRecallCostUSD) {
+		return bad()
+	}
+	if req.AttemptID != "" {
+		if err := validID(req.AttemptID); err != nil {
+			return bad()
+		}
+	}
+	if req.DeliveryID != "" {
+		if err := validID(req.DeliveryID); err != nil {
+			return bad()
+		}
+	}
+	if req.NativeSessionID != "" && !validTelemetryString(req.NativeSessionID, 256) {
+		return bad()
+	}
+	if req.DialogueMessages != nil && (*req.DialogueMessages < 0 || *req.DialogueMessages > 100000) {
+		return bad()
+	}
+	if req.DialogueBytes != nil && (*req.DialogueBytes < 0 || *req.DialogueBytes > 16*1024*1024) {
 		return bad()
 	}
 	return nil
@@ -98,9 +141,9 @@ func (s *Store) RecordCaptureObservation(ctx context.Context, req CaptureObserva
 	}
 	return mutate(ctx, s, "capture-observation", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
 		id := uuid.NewString()
-		_, err := tx.Exec(ctx, `INSERT INTO cairn.capture_observation(observation_id,repo,harness,hook_event,method,session_sha256,snapshot_sha256,outcome,admission_candidate,selector_outcome,requested_model,reported_model,duration_ms,selector_duration_ms,input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,cost_usd)
-VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),$13,$14,$15,$16,$17,$18,$19)`,
-			id, req.Repo, req.Harness, req.HookEvent, req.Method, req.SessionSHA256, req.SnapshotSHA256, req.Outcome, req.AdmissionCandidate, req.SelectorOutcome, req.RequestedModel, req.ReportedModel, req.DurationMS, req.SelectorDurationMS, req.InputTokens, req.OutputTokens, req.CacheCreationInputTokens, req.CacheReadInputTokens, req.CostUSD)
+		_, err := tx.Exec(ctx, `INSERT INTO cairn.capture_observation(observation_id,repo,harness,hook_event,method,session_sha256,snapshot_sha256,outcome,admission_candidate,selector_outcome,requested_model,reported_model,duration_ms,selector_duration_ms,input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,cost_usd,attempt_id,delivery_id,native_session_id,client_generated_at,reasoning_tokens,partial_usage,dialogue_messages,dialogue_bytes)
+VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),$13,$14,$15,$16,$17,$18,$19,NULLIF($20,'')::uuid,NULLIF($21,'')::uuid,NULLIF($22,''),$23,$24,$25,$26,$27)`,
+			id, req.Repo, req.Harness, req.HookEvent, req.Method, req.SessionSHA256, req.SnapshotSHA256, req.Outcome, req.AdmissionCandidate, req.SelectorOutcome, req.RequestedModel, req.ReportedModel, req.DurationMS, req.SelectorDurationMS, req.InputTokens, req.OutputTokens, req.CacheCreationInputTokens, req.CacheReadInputTokens, req.CostUSD, req.AttemptID, req.DeliveryID, req.NativeSessionID, req.ClientGeneratedAt, req.ReasoningTokens, req.PartialUsage, req.DialogueMessages, req.DialogueBytes)
 		return Observation{id}, err
 	})
 }
@@ -108,25 +151,33 @@ VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,NULLIF($9,''),NULLIF($10,''),NULLIF($1
 // CaptureObservation is a retained event, separate from last_capture in the
 // hook state. Null metrics were not reported by the provider or hook.
 type CaptureObservation struct {
-	ObservationID            string    `json:"observation_id"`
-	ObservedAt               time.Time `json:"observed_at"`
-	Harness                  string    `json:"harness"`
-	HookEvent                string    `json:"hook_event"`
-	Method                   string    `json:"method"`
-	SessionSHA256            string    `json:"session_sha256"`
-	SnapshotSHA256           *string   `json:"snapshot_sha256"`
-	Outcome                  string    `json:"outcome"`
-	AdmissionCandidate       *string   `json:"admission_candidate"`
-	SelectorOutcome          *string   `json:"selector_outcome"`
-	RequestedModel           *string   `json:"requested_model"`
-	ReportedModel            *string   `json:"reported_model"`
-	DurationMS               *int64    `json:"duration_ms"`
-	SelectorDurationMS       *int64    `json:"selector_duration_ms"`
-	InputTokens              *int64    `json:"input_tokens"`
-	OutputTokens             *int64    `json:"output_tokens"`
-	CacheCreationInputTokens *int64    `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     *int64    `json:"cache_read_input_tokens"`
-	CostUSD                  *float64  `json:"cost_usd"`
+	ObservationID            string     `json:"observation_id"`
+	ObservedAt               time.Time  `json:"observed_at"`
+	Harness                  string     `json:"harness"`
+	HookEvent                string     `json:"hook_event"`
+	Method                   string     `json:"method"`
+	SessionSHA256            string     `json:"session_sha256"`
+	SnapshotSHA256           *string    `json:"snapshot_sha256"`
+	Outcome                  string     `json:"outcome"`
+	AdmissionCandidate       *string    `json:"admission_candidate"`
+	SelectorOutcome          *string    `json:"selector_outcome"`
+	RequestedModel           *string    `json:"requested_model"`
+	ReportedModel            *string    `json:"reported_model"`
+	DurationMS               *int64     `json:"duration_ms"`
+	SelectorDurationMS       *int64     `json:"selector_duration_ms"`
+	InputTokens              *int64     `json:"input_tokens"`
+	OutputTokens             *int64     `json:"output_tokens"`
+	CacheCreationInputTokens *int64     `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     *int64     `json:"cache_read_input_tokens"`
+	CostUSD                  *float64   `json:"cost_usd"`
+	AttemptID                *string    `json:"attempt_id,omitempty"`
+	DeliveryID               *string    `json:"delivery_id,omitempty"`
+	NativeSessionID          *string    `json:"native_session_id,omitempty"`
+	ClientGeneratedAt        *time.Time `json:"client_generated_at,omitempty"`
+	ReasoningTokens          *int64     `json:"reasoning_tokens,omitempty"`
+	PartialUsage             *bool      `json:"partial_usage,omitempty"`
+	DialogueMessages         *int       `json:"dialogue_messages,omitempty"`
+	DialogueBytes            *int64     `json:"dialogue_bytes,omitempty"`
 }
 
 type CaptureObservationsRequest struct {
@@ -150,7 +201,7 @@ func (s *Store) CaptureObservations(ctx context.Context, req CaptureObservations
 	if err := s.checkRepo(req.Repo); err != nil {
 		return CaptureObservations{}, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT observation_id::text,observed_at,harness,hook_event,method,session_sha256,snapshot_sha256,outcome,admission_candidate,selector_outcome,requested_model,reported_model,duration_ms,selector_duration_ms,input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,cost_usd
+	rows, err := s.pool.Query(ctx, `SELECT observation_id::text,observed_at,harness,hook_event,method,session_sha256,snapshot_sha256,outcome,admission_candidate,selector_outcome,requested_model,reported_model,duration_ms,selector_duration_ms,input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,cost_usd,attempt_id::text,delivery_id::text,native_session_id,client_generated_at,reasoning_tokens,partial_usage,dialogue_messages,dialogue_bytes
 FROM cairn.capture_observation WHERE repo=$1 AND ($2='' OR session_sha256=$2) ORDER BY sequence LIMIT $3 OFFSET $4`, req.Repo, req.SessionSHA256, req.Limit+1, req.Offset)
 	if err != nil {
 		return CaptureObservations{}, err
@@ -159,7 +210,7 @@ FROM cairn.capture_observation WHERE repo=$1 AND ($2='' OR session_sha256=$2) OR
 	result := CaptureObservations{Rows: []CaptureObservation{}, Interpretation: "Hook testimony only. Missing reports and null metrics are unknown; observed outcomes do not establish task acceptance or provider billing."}
 	for rows.Next() {
 		var row CaptureObservation
-		if err := rows.Scan(&row.ObservationID, &row.ObservedAt, &row.Harness, &row.HookEvent, &row.Method, &row.SessionSHA256, &row.SnapshotSHA256, &row.Outcome, &row.AdmissionCandidate, &row.SelectorOutcome, &row.RequestedModel, &row.ReportedModel, &row.DurationMS, &row.SelectorDurationMS, &row.InputTokens, &row.OutputTokens, &row.CacheCreationInputTokens, &row.CacheReadInputTokens, &row.CostUSD); err != nil {
+		if err := rows.Scan(&row.ObservationID, &row.ObservedAt, &row.Harness, &row.HookEvent, &row.Method, &row.SessionSHA256, &row.SnapshotSHA256, &row.Outcome, &row.AdmissionCandidate, &row.SelectorOutcome, &row.RequestedModel, &row.ReportedModel, &row.DurationMS, &row.SelectorDurationMS, &row.InputTokens, &row.OutputTokens, &row.CacheCreationInputTokens, &row.CacheReadInputTokens, &row.CostUSD, &row.AttemptID, &row.DeliveryID, &row.NativeSessionID, &row.ClientGeneratedAt, &row.ReasoningTokens, &row.PartialUsage, &row.DialogueMessages, &row.DialogueBytes); err != nil {
 			return CaptureObservations{}, err
 		}
 		result.Rows = append(result.Rows, row)

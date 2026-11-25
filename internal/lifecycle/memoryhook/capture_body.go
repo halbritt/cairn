@@ -401,9 +401,17 @@ func captureBody(ctx context.Context, config, event, state *value.Value, env map
 		return nil, err
 	}
 	if len(messages.Items) == 0 {
+		observed.Set("dialogue_messages", integer(0))
+		observed.Set("dialogue_bytes", integer(0))
 		captureStatus(state, "empty")
 		return value.Mapping(), nil
 	}
+	dialogueBytes := 0
+	for _, m := range messages.Items {
+		dialogueBytes += len(text(m.Get("text")))
+	}
+	observed.Set("dialogue_messages", integer(len(messages.Items)))
+	observed.Set("dialogue_bytes", integer(dialogueBytes))
 	if codex {
 		path, err := resolved(text(event.Get("transcript_path")), directory)
 		if err != nil {

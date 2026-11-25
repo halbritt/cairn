@@ -328,7 +328,7 @@ func (s *Store) RecordCoordinatorCompaction(ctx context.Context, req RecordCoord
 				return empty, err
 			}
 		}
-		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session SET compaction_count=compaction_count+1, context_revision=context_revision+1, last_seen=clock_timestamp(), expires_at=clock_timestamp()+interval '90 seconds' WHERE agent_id=$1`, predPtr.AgentID); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session SET compaction_count=compaction_count+1, first_compacted_at=COALESCE(first_compacted_at, clock_timestamp()), context_revision=context_revision+1, last_seen=clock_timestamp(), expires_at=clock_timestamp()+interval '90 seconds' WHERE agent_id=$1`, predPtr.AgentID); err != nil {
 			return empty, err
 		}
 		status, _, err := computeCoordinatorHandoffStatusTx(ctx, tx, camp, dest.AllowLocal)

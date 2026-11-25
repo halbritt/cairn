@@ -76,7 +76,10 @@ def check_harness(invoke, binary, environment):
     assert invoke('cairn_search', dict(error_signature_sha256=signature))['index'] == []
     operator(binary, environment, 'review-proposal', review)
     view = invoke('cairn_search', dict(error_signature_sha256=signature, offset=0))
-    assert view['error_signature_sha256'] == signature
+    if view.get('schema') == 'cairn.mcp-search-compact/1':
+        assert 'error_signature_sha256' not in view
+    else:
+        assert view['error_signature_sha256'] == signature
     assert [entry['record_id'] for entry in view['index']] == [saved['record_id']]
     pulled = invoke('cairn_pull', view['index'][0]['pull_arguments'])
     assert pulled['selection']['record']['body'] == note['body']

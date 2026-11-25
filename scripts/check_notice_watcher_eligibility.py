@@ -126,7 +126,7 @@ def check(binary, real_clock_pilot=False):
                       "scope": {"repo": repo, "task_id": "*", "run_id": "*"},
                       "claim_type": "self", "sensitivity": "shareable"}})
         ref = {"record_id": source["record_id"], "version": source["version"]}
-        routine_request = {"request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+        routine_request = {"request_id": str(uuid.uuid4()), "kind": "notice", "action": "review", "ref": ref,
                            "destination": {"type": "agent", "name": registered["inbox"]},
                            "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 30}}
         routine = call(binary, home, env, "sender", "event-publish", routine_request)
@@ -185,7 +185,7 @@ def check(binary, real_clock_pilot=False):
         # as requests. Keep the routine event pending so this checks priority
         # and identity across two notices, not only request-over-notice order.
         urgent_notice = call(binary, home, env, "sender", "event-publish", {
-            "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+            "request_id": str(uuid.uuid4()), "kind": "notice", "action": "review", "ref": ref,
             "destination": {"type": "agent", "name": registered["inbox"]},
             "notice_policy": {"version": 1, "urgency": "urgent", "defer_seconds": 0}})
         urgent_notice_delivery = call(binary, home, env, "sender", "event-inspect",
@@ -276,7 +276,7 @@ def check(binary, real_clock_pilot=False):
             "metadata": dict(registered["metadata"], state="busy")})
         require(busy["metadata"]["state"] == "busy", "owner did not report busy")
         delayed = call(binary, home, env, "sender", "event-publish", {
-            "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+            "request_id": str(uuid.uuid4()), "kind": "notice", "action": "review", "ref": ref,
             "destination": {"type": "agent", "name": registered["inbox"]},
             "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 60}})
         delayed_before = call(binary, home, env, "sender", "event-inspect",
@@ -350,7 +350,7 @@ def check(binary, real_clock_pilot=False):
             engine.write_state(state_path, {"agent": registered, "workspace": str(cluster),
                                             "process": engine.process_reference(owner.pid)})
             natural = call(binary, home, env, "sender", "event-publish", {
-                "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+                "request_id": str(uuid.uuid4()), "kind": "notice", "action": "review", "ref": ref,
                 "destination": {"type": "agent", "name": registered["inbox"]},
                 "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 60}})
             natural_created = parse_time(natural["created_at"])
@@ -413,7 +413,7 @@ def check(binary, real_clock_pilot=False):
 
                 def publish_notice(policy):
                     published = call(binary, home, env, "sender", "event-publish", {
-                        "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+                        "request_id": str(uuid.uuid4()), "kind": "notice", "action": "review", "ref": ref,
                         "destination": {"type": "agent", "name": registered["inbox"]},
                         "notice_policy": policy})
                     delivery = call(binary, home, env, "sender", "event-inspect",

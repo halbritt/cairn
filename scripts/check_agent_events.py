@@ -167,7 +167,7 @@ def check(binary, directory):
         assert first["more"] and first["events"][0]["event_id"] == event["event_id"]
         later = call("bob", "events", "--after", str(first["next_after"]), "--limit", "100")
         assert all(e["position"] > first["next_after"] for e in later["events"])
-        raw = dict(request_id=str(uuid.uuid4()), kind="notice", ref=event["ref"],
+        raw = dict(request_id=str(uuid.uuid4()), kind="notice", action="review", ref=event["ref"],
                    destination=dict(type="agent", name="agent/bob"), **{"from": "agent/carol"})
         call("alice", "event-publish", raw=True, body=json.dumps(raw), expected="INVALID_REQUEST")
         registration = ["register", "--request-id", str(uuid.uuid4()), "--binding", "codex-default",
@@ -279,7 +279,7 @@ def check(binary, directory):
         # grace, and a second restart cannot create another event/arrival.
         due = datetime.now(timezone.utc) + timedelta(seconds=2)
         scheduling = dict(request_id=str(uuid.uuid4()), not_before=due.isoformat(), grace_seconds=30,
-                          publication=dict(repo=repo, kind="notice", ref=event["ref"],
+                          publication=dict(repo=repo, kind="notice", action="review", ref=event["ref"],
                                            destination=dict(type="agent", name="agent/carol")))
         scheduled = operator("event-schedule", scheduling)
         assert operator("event-schedule", scheduling) == scheduled

@@ -14,7 +14,10 @@ import (
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
 
-type recallSelectorMeter struct{ calls []core.RecallSelectorCall }
+type recallSelectorMeter struct {
+	calls        []core.RecallSelectorCall
+	dedupSkipped int
+}
 
 func (m *recallSelectorMeter) record(stage string, started time.Time, observation, verdict *value.Value, failure error) {
 	if len(m.calls) >= 8 || failure != nil && len(observation.Members) == 0 {
@@ -50,15 +53,36 @@ func (m *recallSelectorMeter) record(stage string, started time.Time, observatio
 	for _, field := range []struct {
 		key    string
 		target **int64
-	}{{"input_tokens", &call.InputTokens}, {"output_tokens", &call.OutputTokens}, {"cache_creation_input_tokens", &call.CacheCreationInputTokens}, {"cache_read_input_tokens", &call.CacheReadInputTokens}} {
+	}{{"input_tokens", &call.InputTokens}, {"output_tokens", &call.OutputTokens}, {"cache_creation_input_tokens", &call.CacheCreationInputTokens}, {"cache_read_input_tokens", &call.CacheReadInputTokens}, {"reasoning_tokens", &call.ReasoningTokens}} {
 		v := verdict.Get("usage").Get(field.key)
+		if v == nil && failure != nil {
+			v = observation.Get("usage").Get(field.key)
+		}
 		if n, ok := captureMetric(v, 1<<40); ok && v.Kind == value.Int {
 			count := int64(n)
 			*field.target = &count
 		}
 	}
+	if call.ReasoningTokens == nil {
+		v := verdict.Get("usage").Get("completion_tokens_details").Get("reasoning_tokens")
+		if v == nil && failure != nil {
+			v = observation.Get("usage").Get("completion_tokens_details").Get("reasoning_tokens")
+		}
+		if n, ok := captureMetric(v, 1<<40); ok && v.Kind == value.Int {
+			count := int64(n)
+			call.ReasoningTokens = &count
+		}
+	}
+	if p := observation.Get("partial_usage"); p != nil && p.Kind == value.Bool && p.Boolean {
+		partial := true
+		call.PartialUsage = &partial
+	}
 	if cost, ok := captureMetric(verdict.Get("total_cost_usd"), 1000); ok && cost < 1000 {
 		call.CostUSD = &cost
+	} else if failure != nil {
+		if cost, ok := captureMetric(observation.Get("reported_cost_usd"), 1000); ok && cost < 1000 {
+			call.CostUSD = &cost
+		}
 	}
 	m.calls = append(m.calls, call)
 }
@@ -101,14 +125,19 @@ func sourceReceipt(s providerSource) string {
 }
 func (p *providerRecall) unseen(entries *value.Value, limit int) *value.Value {
 	result := array()
+	skipped := 0
 	for _, entry := range entries.Items {
 		if p.dedup && seenCoversEntry(p.seen, entry) {
+			skipped++
 			continue
 		}
 		result.Items = append(result.Items, entry)
 		if len(result.Items) == limit {
 			break
 		}
+	}
+	if skipped > 0 && p.meter != nil {
+		p.meter.dedupSkipped += skipped
 	}
 	return result
 }
@@ -119,12 +148,24 @@ func (p *providerRecall) sources() ([]providerSource, error) {
 	selected := array(append([]*value.Value{}, p.result.Get("selected").Items...)...)
 	if len(p.intent.words) >= 2 && !p.intent.startup {
 		offset, previews := 0, 0
-		for page := 0; page < 4; page++ {
-			if deadline, ok := p.ctx.Deadline(); ok && time.Until(deadline) <= 0 {
-				p.reject("discovery_page_unavailable", 1)
-				break
+		hermes := value.SameText(p.config.Get("harness"), "hermes")
+		maxPages := 4
+		searchTimeout := 3 * time.Second
+		if hermes {
+			maxPages = 2
+			searchTimeout = 2 * time.Second
+		}
+		for page := 0; page < maxPages; page++ {
+			if deadline, ok := p.ctx.Deadline(); ok {
+				remaining := time.Until(deadline)
+				if remaining <= 0 || (hermes && remaining < 6*time.Second) {
+					if remaining <= 0 {
+						p.reject("discovery_page_unavailable", 1)
+					}
+					break
+				}
 			}
-			room, timeout := 64000, 3*time.Second
+			room, timeout := 64000, searchTimeout
 			found, err := p.client.Search(p.ctx, p.intent.query, memoryclient.SearchOptions{Room: &room, Entities: p.intent.files, Semantic: true, Offset: &offset, Timeout: &timeout})
 			if err != nil {
 				if errorFamily(classify(err)) != "HookError" {
@@ -206,6 +247,19 @@ func (p *providerRecall) selectJSON(stage string, request *value.Value) (*value.
 	if stage == "preview" {
 		spec = selectorSpec{previewSchemaJSON, previewPrompt, "preview", 5 * time.Second}
 	}
+	if value.SameText(p.config.Get("harness"), "hermes") {
+		if stage == "preview" {
+			spec.timeout = 3500 * time.Millisecond
+		} else {
+			spec.timeout = 6500 * time.Millisecond
+		}
+		if deadline, ok := p.ctx.Deadline(); ok {
+			remaining := time.Until(deadline) - 1200*time.Millisecond
+			if remaining < spec.timeout {
+				spec.timeout = max(0, remaining)
+			}
+		}
+	}
 	observed := value.Mapping()
 	label := "model"
 	if stage == "preview" {
@@ -215,7 +269,7 @@ func (p *providerRecall) selectJSON(stage string, request *value.Value) (*value.
 	started := time.Now()
 	var verdict *value.Value
 	var err error
-	if deadline, ok := p.ctx.Deadline(); ok && time.Until(deadline) <= 0 {
+	if deadline, ok := p.ctx.Deadline(); ok && (time.Until(deadline) <= 0 || (value.SameText(p.config.Get("harness"), "hermes") && spec.timeout <= 0)) {
 		err = &hookError{class: "HookError", message: "retrieval time budget exhausted", code: "TIMEOUT"}
 	} else {
 		verdict, err = selectorProvider(p.ctx, p.config, request, observed, spec)

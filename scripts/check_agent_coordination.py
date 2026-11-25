@@ -248,6 +248,10 @@ def check(binary, root, repo, api_call):
                            scope=dict(repo=repo, task_id='*', run_id='*')))))
             args = ['--request-id', str(uuid.uuid4()), '--to', recipient['inbox'],
                     '--kind', kind, '--version', str(source['version'])]
+            if kind == 'notice':
+                args += ['--action', 'review']
+            if len(body.encode('utf-8')) > 280:
+                args += ['--summary', 'Compact delivery test source']
             if cause:
                 args += ['--causation-id', cause]
             notice = api_call(sender, 'publish', *args, source['record_id'])

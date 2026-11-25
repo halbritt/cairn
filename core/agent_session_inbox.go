@@ -244,6 +244,7 @@ func (s *Store) SettleSessionActionNone(ctx context.Context, req SessionInboxSet
 				}
 				switch outcome {
 				case autoSettleHandled:
+					_ = recordStoreDeliveryTelemetry(ctx, tx, a.Repo, a.Metadata.Harness, a.NativeSessionID, "", id, "SessionInbox", "auto_settled", 0, "auto_settled_none")
 					res.Settled = append(res.Settled, id)
 					continue
 				case autoSettleFailedUnavailable:

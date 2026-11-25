@@ -118,7 +118,54 @@ func selectorProvider(ctx context.Context, config, excerpt, observed *value.Valu
 	limited, cancel := context.WithTimeout(ctx, spec.timeout)
 	defer cancel()
 	raw, status, err := captureCommand(limited, executable, argv, input, env, work, observed)
+	extractSelectorMetrics := func(doc *value.Value) {
+		if doc == nil || doc.Kind != value.Object {
+			return
+		}
+		if value.Truth(doc.Get("is_error")) {
+			observed.Set("outcome", value.Text("reported_error"))
+		}
+		if models := doc.Get("modelUsage"); models != nil && models.Kind == value.Object {
+			var names []*value.Value
+			for _, member := range models.Members {
+				name := &value.Value{Kind: value.String, String: member.Key}
+				if captureModelName(name) {
+					names = append(names, name)
+				}
+			}
+			if len(names) == 1 {
+				observed.Set("reported_model", names[0])
+			}
+		}
+		for _, pair := range [][2]string{{"duration_ms", "reported_duration_ms"}, {"duration_api_ms", "reported_api_duration_ms"}, {"total_cost_usd", "reported_cost_usd"}} {
+			v := doc.Get(pair[0])
+			if _, ok := captureMetric(v, math.Inf(1)); ok {
+				observed.Set(pair[1], v)
+			}
+		}
+		if usage := doc.Get("usage"); usage != nil && usage.Kind == value.Object {
+			selected := value.Mapping()
+			for _, key := range []string{"input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "reasoning_tokens"} {
+				v := usage.Get(key)
+				if v != nil && v.Kind == value.Int && !strings.HasPrefix(v.Integer, "-") {
+					selected.Set(key, v)
+				}
+			}
+			if selected.Get("reasoning_tokens") == nil {
+				if v := usage.Get("completion_tokens_details").Get("reasoning_tokens"); v != nil && v.Kind == value.Int && !strings.HasPrefix(v.Integer, "-") {
+					selected.Set("reasoning_tokens", v)
+				}
+			}
+			observed.Set("usage", selected)
+		}
+	}
 	if err != nil {
+		if len(raw) > 0 {
+			if partial, pErr := value.DecodeText(raw, "utf-8", 0); pErr == nil && partial.Kind == value.Object {
+				extractSelectorMetrics(partial)
+				observed.Set("partial_usage", value.Boolean(true))
+			}
+		}
 		return nil, err
 	}
 	result, decodeErr := value.DecodeText(raw, "utf-8", 0)
@@ -127,6 +174,8 @@ func selectorProvider(ctx context.Context, config, excerpt, observed *value.Valu
 		code := ""
 		if decodeErr == nil && result.Kind == value.Object {
 			code = text(result.Get("status"))
+			extractSelectorMetrics(result)
+			observed.Set("partial_usage", value.Boolean(true))
 		}
 		if code == "BUDGET_REFUSED" {
 			return nil, fail("memory expansion budget exhausted")
@@ -137,37 +186,7 @@ func selectorProvider(ctx context.Context, config, excerpt, observed *value.Valu
 		observed.Set("outcome", value.Text("invalid_json"))
 		return nil, &hookError{class: "HookError", message: "memory command returned invalid JSON", reason: "INVALID_JSON"}
 	}
-	if value.Truth(result.Get("is_error")) {
-		observed.Set("outcome", value.Text("reported_error"))
-	}
-	if models := result.Get("modelUsage"); models != nil && models.Kind == value.Object {
-		var names []*value.Value
-		for _, member := range models.Members {
-			name := &value.Value{Kind: value.String, String: member.Key}
-			if captureModelName(name) {
-				names = append(names, name)
-			}
-		}
-		if len(names) == 1 {
-			observed.Set("reported_model", names[0])
-		}
-	}
-	for _, pair := range [][2]string{{"duration_ms", "reported_duration_ms"}, {"duration_api_ms", "reported_api_duration_ms"}, {"total_cost_usd", "reported_cost_usd"}} {
-		v := result.Get(pair[0])
-		if _, ok := captureMetric(v, math.Inf(1)); ok {
-			observed.Set(pair[1], v)
-		}
-	}
-	if usage := result.Get("usage"); usage != nil && usage.Kind == value.Object {
-		selected := value.Mapping()
-		for _, key := range []string{"input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"} {
-			v := usage.Get(key)
-			if v != nil && v.Kind == value.Int && !strings.HasPrefix(v.Integer, "-") {
-				selected.Set(key, v)
-			}
-		}
-		observed.Set("usage", selected)
-	}
+	extractSelectorMetrics(result)
 	return result, nil
 }
 

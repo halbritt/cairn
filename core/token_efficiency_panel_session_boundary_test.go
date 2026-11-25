@@ -25,8 +25,12 @@ func panelBoundarySession(t *testing.T, repo, state string) (*Store, AgentInstan
 func panelBoundaryPublish(t *testing.T, fixture panelNativeEventFixture, sender *Store, inbox string, event panelNativeEventSpec, dest Destination) AgentEvent {
 	t.Helper()
 	ref := fixture.createEventSource(t, sender, event)
+	action := ""
+	if event.Kind == "notice" {
+		action = "review"
+	}
 	published, err := sender.PublishEvent(context.Background(), PublishEventRequest{RequestID: uuid.NewString(),
-		Kind: event.Kind, Ref: ref, Destination: EventDestination{Type: "agent", Name: inbox}}, dest)
+		Kind: event.Kind, Action: action, Ref: ref, Destination: EventDestination{Type: "agent", Name: inbox}}, dest)
 	if err != nil || published.Ref != ref || published.Kind != "notice" {
 		t.Fatalf("publish %s: %+v %v", event.ID, published, err)
 	}

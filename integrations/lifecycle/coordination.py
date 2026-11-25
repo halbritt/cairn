@@ -1609,6 +1609,13 @@ def submit_idle_wake(config, path, prepared):
     wake = prepared['wake']
     if not process_alive(prepared['process']):
         return
+    try:
+        current = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return
+    if (not isinstance(current, dict) or current.get('ending') or current.get('retired')
+            or not isinstance(current.get('agent'), dict) or session_ref(current['agent']) != wake['session']):
+        return
     text = wake_message(wake)
     adapter = _wake_transport.get_wake_transport(wake.get('transport'))
     outcome = adapter.submit(_COORD_NS, config, path, prepared, wake, text)
@@ -2335,6 +2342,12 @@ def scan_opencode_cancel(config, state, path, attempt):
 
 def submit_opencode_cancel(config, path, request):
     """Let native cancellation settle without blocking the pinned TurnEnd hook."""
+    try:
+        current = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return
+    if not isinstance(current, dict) or current.get('ending') or current.get('retired'):
+        return
     try:
         opencode_queue = _BUNDLE.load("opencode_queue")
     except ImportError:
@@ -3345,8 +3358,23 @@ def watch_inbox(config, state, path):
             return cancel_prepared
     if config.get('harness') == 'codex' and auto_settle_codex_refused_wake(config, state, path):
         return
+    had_pending = bool(state.get('inbox_completion') or state.get('inbox_response'))
     if not flush_inbox_intents(config, state):
         return  # Uncertain journaled command: keep the hold and retry next cycle.
+    if had_pending and not state.get('inbox_completion') and not state.get('inbox_response'):
+        state.pop('inbox_reconcile_backoff', None)
+    if state.get('inbox_turn_ended'):
+        state.pop('inbox_reconcile_backoff', None)
+    else:
+        backoff = state.get('inbox_reconcile_backoff')
+        if isinstance(backoff, dict):
+            now_committed = bool(journal_committed(config, state))
+            if now_committed and not backoff.get('journal_committed'):
+                state.pop('inbox_reconcile_backoff', None)
+            elif isinstance(backoff.get('next_eligible_epoch'), (int, float)) and time.time() < backoff['next_eligible_epoch']:
+                if state.get('inbox_attempt'):
+                    renew_inbox(config, state, path, state['inbox_attempt'])
+                return
     if settle_inbox(config, state, path):
         return
     if state.get('inbox_turn_ended'):
@@ -5897,15 +5925,37 @@ def main():
             signal.signal(signal.SIGTERM, lambda *_: stop.set())
             signal.signal(signal.SIGINT, lambda *_: stop.set())
             with session_lock(args.config_dir / ".watch"):
+                conn_streak = 0
                 while not stop.is_set():
                     started = time.monotonic()
                     configs = []
-                    for path in sorted(args.config_dir.glob("*.json")):
-                        configs.append(load_config(path))
-                        watch_once(configs[-1])
+                    buf = io.StringIO()
+                    old_stderr = sys.stderr
+                    class _TeeStderr:
+                        def write(self, data):
+                            buf.write(data)
+                            return old_stderr.write(data)
+                        def flush(self):
+                            return old_stderr.flush()
+                    sys.stderr = _TeeStderr()
+                    try:
+                        for path in sorted(args.config_dir.glob("*.json")):
+                            configs.append(load_config(path))
+                            watch_once(configs[-1])
+                    finally:
+                        sys.stderr = old_stderr
                     if args.once:
                         break
-                    wait_for_next_cycle(stop, configs, max(1, WATCH_INTERVAL - (time.monotonic() - started)))
+                    logged = buf.getvalue()
+                    if any(tok in logged for tok in ("API_CONNECTION_FAILED", "API_UNAVAILABLE", "TIMEOUT:")):
+                        conn_streak += 1
+                    else:
+                        conn_streak = 0
+                    interval = WATCH_INTERVAL
+                    if conn_streak > 0:
+                        base = min(60.0, WATCH_INTERVAL * (2 ** min(conn_streak - 1, 3)))
+                        interval = base + (time.time() % 1.0) * base * 0.2
+                    wait_for_next_cycle(stop, configs, max(1, interval - (time.monotonic() - started)))
     except CoordinationError as exc:
         if exc.code == 'NATIVE_PROMPT_REFUSED':
             print(f"Cairn coordination: {exc}; channel text rejected, owner prompt continues", file=sys.stderr)

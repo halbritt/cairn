@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -79,6 +81,7 @@ func (c *CLI) WatchCommand(ctx context.Context, a cliArgs, errOut io.Writer) (in
 		return 0, err
 	}
 	defer func() { _ = lease.Close() }()
+	connStreak := 0
 	for !watchStopped(stopCh) {
 		started := c.monotonicSeconds()
 		if codexWrapper != "" {
@@ -98,25 +101,56 @@ func (c *CLI) WatchCommand(ctx context.Context, a cliArgs, errOut io.Writer) (in
 			}
 		}
 		var configs []*value.Value
+		cycleLog := &watchTransientTracker{dst: errOut}
 		for _, p := range matches {
 			cfg, err := c.loadConfig(p)
 			if err != nil {
 				return 0, err
 			}
 			configs = append(configs, cfg)
-			if err := c.WatchOnce(ctx, cfg, errOut); err != nil {
+			if err := c.WatchOnce(ctx, cfg, cycleLog); err != nil {
 				return 0, err
 			}
 		}
 		if a.has("--once") {
 			break
 		}
-		rem := math.Max(1.0, watchIntervalSeconds-(c.monotonicSeconds()-started))
+		if cycleLog.sawTransient {
+			connStreak++
+		} else {
+			connStreak = 0
+		}
+		interval := watchIntervalSeconds
+		if connStreak > 0 {
+			shift := connStreak - 1
+			if shift > 3 {
+				shift = 3
+			}
+			base := math.Min(60.0, watchIntervalSeconds*float64(int(1)<<shift))
+			interval = base + (float64(c.clock().Nanosecond()%1000)/1000.0)*base*0.2
+		}
+		rem := math.Max(1.0, interval-(c.monotonicSeconds()-started))
 		if err := c.waitForNextCycle(ctx, stopCh, configs, rem, errOut); err != nil {
 			return 0, err
 		}
 	}
 	return 0, nil
+}
+
+type watchTransientTracker struct {
+	dst          io.Writer
+	sawTransient bool
+}
+
+func (w *watchTransientTracker) Write(p []byte) (int, error) {
+	s := string(p)
+	if strings.Contains(s, "API_CONNECTION_FAILED") || strings.Contains(s, "API_UNAVAILABLE") || strings.Contains(s, "TIMEOUT:") {
+		w.sawTransient = true
+	}
+	if w.dst != nil {
+		return w.dst.Write(p)
+	}
+	return len(p), nil
 }
 
 func watchStopped(stopCh <-chan struct{}) bool {
@@ -159,9 +193,44 @@ func (c *CLI) watchInbox(ctx context.Context, config, state *value.Value, path s
 	if ns.Host == nil || ns.Host.Journal == nil {
 		return nil, &value.ProfileUnavailable{}
 	}
+	hadPending := value.Truth(state.Get("inbox_completion")) || value.Truth(state.Get("inbox_response"))
 	flushed, err := ns.Host.Journal.Flush(ctx, config, state, FlushAttempt)
 	if err != nil || !flushed {
 		return nil, err
+	}
+	if hadPending && !value.Truth(state.Get("inbox_completion")) && !value.Truth(state.Get("inbox_response")) {
+		nativePop(state, "inbox_reconcile_backoff")
+	}
+	if value.Truth(state.Get("inbox_turn_ended")) {
+		nativePop(state, "inbox_reconcile_backoff")
+	} else if backoff := state.Get("inbox_reconcile_backoff"); backoff != nil && backoff.Kind == value.Object {
+		nowCommitted := false
+		if ns.Host != nil && ns.Host.Journal != nil {
+			if ok, cErr := ns.Host.Journal.Committed(config, state); cErr == nil {
+				nowCommitted = ok
+			}
+		}
+		if nowCommitted && !value.Truth(backoff.Get("journal_committed")) {
+			nativePop(state, "inbox_reconcile_backoff")
+		} else {
+			now := float64(c.clock().UnixNano()) / 1e9
+			if next := backoff.Get("next_eligible_epoch"); next != nil && (next.Kind == value.Float || next.Kind == value.Int) {
+				nextVal := next.Number
+				if next.Kind == value.Int {
+					if parsed, pErr := strconv.ParseFloat(next.Integer, 64); pErr == nil {
+						nextVal = parsed
+					}
+				}
+				if now < nextVal {
+					if state.Get("inbox_attempt") != nil {
+						if _, err := ns.Renew(ctx, state.Get("inbox_attempt")); err != nil {
+							return nil, err
+						}
+					}
+					return nil, nil
+				}
+			}
+		}
 	}
 	settled, err := ns.SettleInbox(ctx)
 	if err != nil || settled {
@@ -277,8 +346,10 @@ func (c *CLI) watchSessionOnce(ctx context.Context, config *value.Value, path st
 		}
 	}
 	if value.Truth(cancelPrepared) {
-		if err := c.submitOpenCodeCancel(ctx, config, path, cancelPrepared, errOut); err != nil {
-			return err
+		if currentState, rErr := c.read(path, SiteSessionRead); rErr == nil && currentState != nil && !value.Truth(currentState.Get("ending")) && !value.Truth(currentState.Get("retired")) {
+			if err := c.submitOpenCodeCancel(ctx, config, path, cancelPrepared, errOut); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

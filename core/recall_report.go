@@ -26,6 +26,8 @@ type RecallSelectorCallView struct {
 	OutputTokens             *int64   `json:"output_tokens"`
 	CacheCreationInputTokens *int64   `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     *int64   `json:"cache_read_input_tokens"`
+	ReasoningTokens          *int64   `json:"reasoning_tokens,omitempty"`
+	PartialUsage             *bool    `json:"partial_usage,omitempty"`
 	CostUSD                  *float64 `json:"cost_usd"`
 }
 
@@ -57,7 +59,17 @@ type RecallObservation struct {
 	SelectorCostUSD          *float64                  `json:"selector_cost_usd"`
 	SelectorCallsWithoutCost *int                      `json:"selector_calls_without_cost"`
 
-	InjectedBytes *int64 `json:"injected_bytes"`
+	InjectedBytes       *int64     `json:"injected_bytes"`
+	AttemptID           *string    `json:"attempt_id,omitempty"`
+	DeliveryID          *string    `json:"delivery_id,omitempty"`
+	NativeSessionID     *string    `json:"native_session_id,omitempty"`
+	ClientGeneratedAt   *time.Time `json:"client_generated_at,omitempty"`
+	InjectedUnit        *string    `json:"injected_unit,omitempty"`
+	InjectedTokenizer   *string    `json:"injected_tokenizer,omitempty"`
+	DedupSkippedCount   *int       `json:"dedup_skipped_count,omitempty"`
+	ExpansionReason     *string    `json:"expansion_reason,omitempty"`
+	NativeContextTokens *int64     `json:"native_context_tokens,omitempty"`
+	NativeMessageCount  *int       `json:"native_message_count,omitempty"`
 }
 
 // RecallMetric summarizes one measurement over the observations that reported
@@ -131,6 +143,8 @@ type RecallRollups struct {
 
 var recallSummaryColumns = []string{
 	"error_class", "elapsed_ms", "search_ms", "selector_ms", "pulls_ms", "search_calls", "pull_calls", "injected_bytes",
+	"attempt_id", "delivery_id", "native_session_id", "client_generated_at", "injected_unit", "injected_tokenizer",
+	"dedup_skipped_count", "expansion_reason", "native_context_tokens", "native_message_count",
 }
 
 // recallSummarySQL builds the JSON object of the latest observation, aliased o,
@@ -145,7 +159,7 @@ var recallSummarySQL = func() string {
 		pairs = append(pairs, "'"+column+"',o."+column)
 	}
 	pairs = append(pairs,
-		`'selector_calls',CASE WHEN o.selector_calls IS NULL THEN NULL ELSE (SELECT COALESCE(jsonb_agg(jsonb_build_object('ordinal',c.ordinal,'stage',c.stage,'outcome',c.outcome,'elapsed_ms',c.elapsed_ms,'model',c.model,'model_source',c.model_source,'input_tokens',c.input_tokens,'output_tokens',c.output_tokens,'cache_creation_input_tokens',c.cache_creation_input_tokens,'cache_read_input_tokens',c.cache_read_input_tokens,'cost_usd',c.cost_usd) ORDER BY c.ordinal),'[]'::jsonb) FROM cairn.recall_selector_call c WHERE c.observation_id=o.observation_id) END`,
+		`'selector_calls',CASE WHEN o.selector_calls IS NULL THEN NULL ELSE (SELECT COALESCE(jsonb_agg(jsonb_build_object('ordinal',c.ordinal,'stage',c.stage,'outcome',c.outcome,'elapsed_ms',c.elapsed_ms,'model',c.model,'model_source',c.model_source,'input_tokens',c.input_tokens,'output_tokens',c.output_tokens,'cache_creation_input_tokens',c.cache_creation_input_tokens,'cache_read_input_tokens',c.cache_read_input_tokens,'reasoning_tokens',c.reasoning_tokens,'partial_usage',c.partial_usage,'cost_usd',c.cost_usd) ORDER BY c.ordinal),'[]'::jsonb) FROM cairn.recall_selector_call c WHERE c.observation_id=o.observation_id) END`,
 		`'selector_cost_usd',(SELECT sum(c.cost_usd) FROM cairn.recall_selector_call c WHERE c.observation_id=o.observation_id)`,
 		`'selector_calls_without_cost',CASE WHEN o.selector_calls IS NULL THEN NULL ELSE (SELECT count(*) FROM cairn.recall_selector_call c WHERE c.observation_id=o.observation_id AND c.cost_usd IS NULL) END`)
 	return "jsonb_build_object(" + strings.Join(pairs, ",") + ")"

@@ -53,9 +53,10 @@ def register(ctx):
         payload = dict(session_id=session_id, hook_event_name=event, cwd=cwd, host_pid=os.getpid(), model=model, **selected)
         if turn_id:
             payload['turn_id'] = turn_id
+        event_timeout = 2 if event in ('TurnEnd', 'SessionEnd', 'Interrupt') else 15
         result = subprocess.run(argv,
             input=json.dumps(payload),
-            text=True, capture_output=True, timeout=15)
+            text=True, capture_output=True, timeout=event_timeout)
         if result.returncode:
             raise RuntimeError('Cairn session presence unavailable')
         data = json.loads(result.stdout)
@@ -100,11 +101,14 @@ def register(ctx):
                             _approval_turn_id.set(effective_turn)
                         except Exception:
                             pass
-                try:
-                    context = invoke(session_id, 'TurnStart', task_id, model, turn_id=effective_turn, prompt=user_message)
-                    sessions[session_id]['context'] = context
-                except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-                    logger.warning('Cairn native session registration/context unavailable')
+            try:
+                context = invoke(session_id, 'TurnStart', task_id, model, turn_id=effective_turn, prompt=user_message)
+                with lock:
+                    cur = sessions.get(session_id)
+                    if cur is not None and cur.get('turn_id') == effective_turn and cur.get('busy'):
+                        cur['context'] = context
+            except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+                logger.warning('Cairn native session registration/context unavailable')
 
     def request(request, session_id='', **_):
         with lock:
@@ -134,15 +138,17 @@ def register(ctx):
 
                 effective_turn = turn_id or bound_turn or ''
                 state['busy'] = False
-                try:
-                    invoke(session_id, 'TurnEnd' if platform == 'cli' else 'SessionEnd', state['task'], state['model'], turn_id=effective_turn)
-                except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-                    logger.warning('Cairn native session stop unavailable; presence will expire')
-                finally:
-                    state['context'] = ''
-                    state['turn_id'] = ''
-                    if platform != 'cli':
-                        sessions.pop(session_id, None)
+                end_event = 'TurnEnd' if platform == 'cli' else 'SessionEnd'
+                task_val = state['task']
+                model_val = state['model']
+                state['context'] = ''
+                state['turn_id'] = ''
+                if platform != 'cli':
+                    sessions.pop(session_id, None)
+            try:
+                invoke(session_id, end_event, task_val, model_val, turn_id=effective_turn)
+            except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+                logger.warning('Cairn native session stop unavailable; presence will expire')
 
     def close():
         nonlocal bridge_running

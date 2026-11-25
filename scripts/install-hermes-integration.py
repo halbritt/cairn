@@ -169,13 +169,14 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
         enabled.append('cairn-controls')
     engine = dict(cairn=native['executable'], socket=native['socket'], token_file=native['token_file'],
                   repo=native['repo'], harness='hermes', semantic_fallback=True, claude=claude,
+                  capture_observations=True,
                   state_dir=model_overrides.get('state_dir', str(home / 'cairn/state')))
     if model:
         engine['model'] = model
     if native.get('context'):
         engine['context'] = native['context']
     if selected is None:
-        write_json(engine_path, dict(model_overrides, **engine))
+        write_json(engine_path, {**engine, **model_overrides})
     write_json(home / 'cairn-lifecycle.json', selected if selected is not None else
                       dict(script=str(plugin / 'memory.py'), engine_config=str(engine_path)))
     skill_dir = home / 'skills/cairn'

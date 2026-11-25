@@ -6,6 +6,7 @@ Source capture body, marker logic, locks and public handler remain unchanged.
 import base64
 import fcntl
 import ctypes
+import datetime
 import select
 import struct
 import http.server
@@ -123,7 +124,10 @@ class CaptureBoundaryTests(unittest.TestCase):
             for body in (actual,expected):
                 if operation!='version':
                     ident=body.pop('request_id');self.assertEqual(str(uuid.UUID(ident)),ident)
-                if operation=='capture-observation':self.assertGreaterEqual(body.pop('duration_ms'),0)
+                if operation=='capture-observation':
+                    self.assertGreaterEqual(body.pop('duration_ms'),0)
+                    ts=body.pop('client_generated_at',None)
+                    self.assertIsInstance(ts,str);self.assertTrue(ts.endswith('Z'));datetime.datetime.fromisoformat(ts.replace('Z','+00:00'))
             self.assertEqual(actual,expected)
             for declared,image in ((headers,sha(self.binary.read_bytes())),(source_headers,sha((ROOT/'integrations/lifecycle/memory.py').read_bytes()))):
                 self.assertEqual(declared['Authorization'],'Bearer f03-synthetic-token')
@@ -257,7 +261,7 @@ class CaptureBoundaryTests(unittest.TestCase):
 
     def test_exact_former_missing_opencode_transcript_row_has_source_filesystem_effects(self):
         # Ownership join0d9c15b1/v1 moves only the obsolete old F02 row here.
-        self.f.memory.pop('capture_observations',None)
+        self.f.memory['capture_observations'] = False
         self.f.memory['harness']='opencode'
         self.f.event=dict(hook_event_name='PreCompact',session_id='ses_OrdinaryA1',cwd=str(self.f.root),prompt='repair lifecycle recall implementation')
         self.f.raw=encoded(self.f.event);self.f.publish_configuration()

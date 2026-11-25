@@ -134,6 +134,7 @@ class HermesAmbientTests(unittest.TestCase):
                 self.assertNotIn(self.optional[0]['body'], result.stdout.decode())
                 self.assertNotIn('expanded', self.context(result))
                 self.assertEqual(self.state()[self.state_key()+'.json']['last_recall']['rejected'], {'not_relevant': 1})
+        self.configure(skip_empty_recall=False)
         for required in (False, True):
             if required:
                 self.required()

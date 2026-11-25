@@ -4,6 +4,7 @@ import argparse
 import base64
 import contextvars
 import copy
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import importlib.util
@@ -76,7 +77,7 @@ SELECTOR_INPUT_BYTES = 24000
 # Per-prompt recall observations: reported to the API for use-report, never to the model.
 RECALL_METER_METHOD = "cairn-lifecycle/recall-meter/1"
 CAPTURE_METER_METHOD = "cairn-lifecycle/capture-meter/2"
-RECALL_HARNESSES = ("claude", "codex", "opencode", "hermes")
+RECALL_HARNESSES = ("claude", "codex", "opencode", "hermes", "agy")
 RECALL_HOOK_SECONDS = 13  # the installed host timeout for SessionStart/UserPromptSubmit
 RECALL_REPORT_SECONDS = 1.0  # most this hook spends reporting its own observation
 RECALL_REPORT_MARGIN = 0.75  # keep clear of the host timeout, which also covers interpreter start
@@ -361,6 +362,8 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None, observation=N
             refusal = json.loads(process.stdout)
         except ValueError:
             refusal = None
+        if observation is not None and isinstance(refusal, dict):
+            observation["_partial_stdout"] = refusal
         if isinstance(refusal, dict) and refusal.get("status") == "BUDGET_REFUSED":
             raise BudgetRefused("memory expansion budget exhausted")
         raise HookError(f"memory command exited {process.returncode}; operation not confirmed",
@@ -442,6 +445,14 @@ def bounded_command(command, *, body, timeout, env, cwd, observation=None):
     except subprocess.TimeoutExpired:
         if observation is not None:
             observation["outcome"] = "timeout"
+            raw_stdout = output["stdout"].decode("utf-8", errors="replace").strip()
+            if raw_stdout:
+                try:
+                    partial = json.loads(raw_stdout)
+                    if isinstance(partial, dict):
+                        observation["_partial_stdout"] = partial
+                except ValueError:
+                    pass
         raise
     except (HookError, UnicodeError, OSError):
         if observation is not None:
@@ -719,6 +730,8 @@ class RecallMeter:
         self.calls = {"search": 0, "pull": 0}
         self.receipts = []
         self.selector_calls = []
+        self.dedup_skipped = 0
+        self.expansion_reason = None
 
     def operation(self, name, started):
         if name in self.seconds:
@@ -748,19 +761,37 @@ class RecallMeter:
         call = dict(stage=stage, elapsed_ms=whole_ms(elapsed), outcome=outcome)
         requested = observation.get("requested_model") if isinstance(observation, dict) else None
         reported = []
+        payload = verdict if isinstance(verdict, dict) else (observation if isinstance(observation, dict) else None)
+        partial = False
         if isinstance(verdict, dict):
             by_model = verdict.get("modelUsage")
             if isinstance(by_model, dict):
                 reported = [name for name in by_model if valid_model_name(name)]
             usage = verdict.get("usage")
-            if isinstance(usage, dict):
-                for key in ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"):
-                    value = usage.get(key)
-                    if type(value) is int and 0 <= value <= RECALL_TOKEN_LIMIT:
-                        call[key] = value
             cost = verdict.get("total_cost_usd")
-            if type(cost) in (int, float) and math.isfinite(cost) and 0 <= cost < 1000:
-                call["cost_usd"] = cost
+        elif isinstance(observation, dict) and observation.get("partial_usage"):
+            partial = True
+            if valid_model_name(observation.get("reported_model")):
+                reported = [observation["reported_model"]]
+            usage = observation.get("usage")
+            cost = observation.get("reported_cost_usd")
+        else:
+            usage = None
+            cost = None
+        if isinstance(usage, dict):
+            for key in ("input_tokens", "output_tokens", "cache_creation_input_tokens",
+                        "cache_read_input_tokens", "reasoning_tokens"):
+                value = usage.get(key)
+                if type(value) is int and 0 <= value <= RECALL_TOKEN_LIMIT:
+                    call[key] = value
+            if "reasoning_tokens" not in call and isinstance(usage.get("completion_tokens_details"), dict):
+                rval = usage["completion_tokens_details"].get("reasoning_tokens")
+                if type(rval) is int and 0 <= rval <= RECALL_TOKEN_LIMIT:
+                    call["reasoning_tokens"] = rval
+        if type(cost) in (int, float) and math.isfinite(cost) and 0 <= cost < 1000:
+            call["cost_usd"] = cost
+        if partial:
+            call["partial_usage"] = True
         # A single reported model is what ran; several cannot be assigned to one call.
         if len(reported) == 1:
             call.update(model=reported[0], model_source="reported")
@@ -775,7 +806,20 @@ class RecallMeter:
                     pulls_ms=whole_ms(self.seconds["pull"]),
                     selector_ms=whole_ms(sum(call["elapsed_ms"] for call in self.selector_calls) / 1000),
                     search_calls=self.calls["search"], pull_calls=self.calls["pull"],
-                    selector_calls=self.selector_calls, injected_bytes=injected)
+                    selector_calls=self.selector_calls, injected_bytes=injected,
+                    injected_unit="utf8_bytes", injected_tokenizer="utf8_byte_len",
+                    client_generated_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+        sid = event.get("session_id")
+        if isinstance(sid, str) and sid.strip() and len(sid) <= 256 and not any(ord(c) < 32 or ord(c) == 127 for c in sid):
+            body["native_session_id"] = sid.strip()
+        if canonical_uuid(event.get("attempt_id")):
+            body["attempt_id"] = event["attempt_id"]
+        if canonical_uuid(event.get("delivery_id")):
+            body["delivery_id"] = event["delivery_id"]
+        if self.dedup_skipped > 0:
+            body["dedup_skipped_count"] = self.dedup_skipped
+        if self.expansion_reason:
+            body["expansion_reason"] = self.expansion_reason
         if self.receipts:
             body["receipt_ids"] = self.receipts
         if error_class:
@@ -821,7 +865,7 @@ def report_recall(memory, event, started, elapsed, status, injected, error_class
 
 def report_capture(memory, event, elapsed):
     """Best-effort selected metrics, after capture locks and state commit."""
-    if memory.config.get("capture_observations") is not True:
+    if memory.config.get("capture_observations") is False:
         return
     try:
         timeout = min(RECALL_REPORT_SECONDS, CAPTURE_HOOK_SECONDS - elapsed - CAPTURE_COMMIT_MARGIN_SECONDS)
@@ -833,7 +877,19 @@ def report_capture(memory, event, elapsed):
                     harness=memory.config.get("harness", "claude"),
                     hook_event=event["hook_event_name"], method=CAPTURE_METER_METHOD,
                     session_sha256=hashlib.sha256(event["session_id"].encode()).hexdigest(),
-                    outcome=observed.get("outcome", "error"), duration_ms=whole_ms(elapsed))
+                    outcome=observed.get("outcome", "error"), duration_ms=whole_ms(elapsed),
+                    client_generated_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+        sid = event.get("session_id")
+        if isinstance(sid, str) and sid.strip() and len(sid) <= 256 and not any(ord(c) < 32 or ord(c) == 127 for c in sid):
+            body["native_session_id"] = sid.strip()
+        if canonical_uuid(event.get("attempt_id")):
+            body["attempt_id"] = event["attempt_id"]
+        if canonical_uuid(event.get("delivery_id")):
+            body["delivery_id"] = event["delivery_id"]
+        if type(observed.get("dialogue_messages")) is int and observed["dialogue_messages"] >= 0:
+            body["dialogue_messages"] = observed["dialogue_messages"]
+        if type(observed.get("dialogue_bytes")) is int and observed["dialogue_bytes"] >= 0:
+            body["dialogue_bytes"] = observed["dialogue_bytes"]
         if observed.get("snapshot_sha256"):
             body["snapshot_sha256"] = observed["snapshot_sha256"]
         if observed.get("admission_candidate") in ("transport_only", "confirmed_duplicate"):
@@ -853,10 +909,16 @@ def report_capture(memory, event, elapsed):
             usage = selector.get("usage")
             if isinstance(usage, dict):
                 for key in ("input_tokens", "output_tokens", "cache_creation_input_tokens",
-                            "cache_read_input_tokens"):
+                            "cache_read_input_tokens", "reasoning_tokens"):
                     value = usage.get(key)
                     if type(value) is int and 0 <= value <= RECALL_TOKEN_LIMIT:
                         body[key] = value
+                if "reasoning_tokens" not in body and isinstance(usage.get("completion_tokens_details"), dict):
+                    rval = usage["completion_tokens_details"].get("reasoning_tokens")
+                    if type(rval) is int and 0 <= rval <= RECALL_TOKEN_LIMIT:
+                        body["reasoning_tokens"] = rval
+            if selector.get("partial_usage") is True:
+                body["partial_usage"] = True
             cost = selector.get("reported_cost_usd")
             if type(cost) in (int, float) and math.isfinite(cost) and 0 <= cost < 1000:
                 body["cost_usd"] = cost
@@ -2673,9 +2735,13 @@ def admit_previews(memory, event, intent, sources, status, deadline):
         return []
     started = time.monotonic()
     status["preview_process"] = {}
+    preview_cap = 3.5 if memory.config.get("harness") == "hermes" else PREVIEW_MODEL_SECONDS
+    preview_deadline = min(deadline, started + preview_cap)
+    if memory.config.get("harness") == "hermes":
+        preview_deadline = min(preview_deadline, deadline - 1.2)
     try:
         verdict = select_json(memory.config, PREVIEW_SCHEMA, PREVIEW_PROMPT, request, stage="preview",
-                              timeout=recall_timeout(min(deadline, started + PREVIEW_MODEL_SECONDS), PREVIEW_MODEL_SECONDS),
+                              timeout=recall_timeout(preview_deadline, preview_cap),
                               observation=status["preview_process"])
     except HookError as exc:
         meter_selector(memory, "preview", started, status["preview_process"], failure=exc)
@@ -2724,15 +2790,26 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
     """Inspect a bounded union of lexical and semantic bodies, then decide once."""
     dedup = recall_dedup_enabled(memory.config)
     selected = list(result.get("selected", []))
-    sources = [("lexical", dict(result, index=[entry for entry in result.get("index", [])
-                                             if not (dedup and seen_covers_entry(seen, entry))]))]
+    lexical_index = []
+    for entry in result.get("index", []):
+        if dedup and seen_covers_entry(seen, entry):
+            if getattr(memory, "meter", None) is not None:
+                memory.meter.dedup_skipped += 1
+            continue
+        lexical_index.append(entry)
+    sources = [("lexical", dict(result, index=lexical_index))]
     if len(intent["words"]) >= 2 and not intent["startup"]:
         offset, preview_count = 0, 0
-        for page_number in range(SEMANTIC_PAGE_LIMIT):
+        hermes = memory.config.get("harness") == "hermes"
+        max_pages = 2 if hermes else SEMANTIC_PAGE_LIMIT
+        search_cap = 2 if hermes else 3
+        for page_number in range(max_pages):
+            if hermes and deadline - time.monotonic() < 6.0:
+                break
             try:
                 found = memory.search(intent["query"], room=SEMANTIC_SEARCH_ROOM, semantic=True,
                                       entities=intent["files"], offset=offset,
-                                      timeout=recall_timeout(deadline, 3))
+                                      timeout=recall_timeout(deadline, search_cap))
             except HookError:
                 status["rejected"]["discovery_page_unavailable"] = 1
                 break
@@ -2745,8 +2822,14 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
                     selected.append(item)
             if status["discovery"] != "ready":
                 break
-            entries = [entry for entry in found.get("index", [])
-                       if not (dedup and seen_covers_entry(seen, entry))][:SEMANTIC_PREVIEW_LIMIT - preview_count]
+            entries = []
+            for entry in found.get("index", []):
+                if dedup and seen_covers_entry(seen, entry):
+                    if getattr(memory, "meter", None) is not None:
+                        memory.meter.dedup_skipped += 1
+                    continue
+                if len(entries) < SEMANTIC_PREVIEW_LIMIT - preview_count:
+                    entries.append(entry)
             sources.append(("semantic" if page_number == 0 else "semantic:" + str(offset), dict(found, index=entries)))
             preview_count += len(entries)
             status["semantic_pages"] = page_number + 1
@@ -2846,12 +2929,15 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
     status["shortlist_source_extents"] = dict(
         full_body=sum(pulled.get("source_extent") != "partial_span" for _, pulled, _ in candidates),
         partial_span=sum(pulled.get("source_extent") == "partial_span" for _, pulled, _ in candidates))
-    model_deadline = min(deadline, time.monotonic() + SEMANTIC_MODEL_SECONDS)
+    shortlist_cap = 6.5 if memory.config.get("harness") == "hermes" else SEMANTIC_MODEL_SECONDS
+    model_deadline = min(deadline, time.monotonic() + shortlist_cap)
+    if memory.config.get("harness") == "hermes":
+        model_deadline = min(model_deadline, deadline - 1.2)
     model_started = time.monotonic()
     status["model_process"] = {}
     try:
         verdict = select_json(memory.config, SHORTLIST_SCHEMA, SHORTLIST_PROMPT, selector_request, stage="recall",
-                              timeout=recall_timeout(model_deadline, SEMANTIC_MODEL_SECONDS),
+                              timeout=recall_timeout(model_deadline, shortlist_cap),
                               observation=status["model_process"])
     except HookError as exc:
         meter_selector(memory, "recall", model_started, status["model_process"], failure=exc)
@@ -2906,6 +2992,24 @@ def taskless_notification(prompt):
     it are accepted, so wakes produced on either side of a rollout stay recognized.
     """
     return _grant_ledger.taskless_notification(prompt)
+
+
+def skip_empty_recall(config, event):
+    if config.get("inbox_recall_binding"):
+        return None
+    name = event.get("hook_event_name")
+    if name not in ("SessionStart", "UserPromptSubmit"):
+        return None
+    if config.get("skip_empty_recall") is False:
+        return None
+    env_flag = os.environ.get("CAIRN_RECALL_SKIP_EMPTY", "").strip().lower()
+    if env_flag in ("0", "false", "no", "off"):
+        return None
+    if event.get("source") in ("resume", "compact"):
+        return None
+    if (event.get("prompt") or "").strip() or (event.get("workstream") or "").strip():
+        return None
+    return "empty_startup" if name == "SessionStart" else "empty_prompt"
 
 
 def recall(memory, event, state=None):
@@ -2983,8 +3087,14 @@ def recall(memory, event, state=None):
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
                 if text else {})
     dedup = recall_dedup_enabled(memory.config)
-    entries = [] if defer_optional else [entry for entry in result.get("index", [])[:RECALL_CANDIDATES]
-                                        if not (dedup and seen_covers_entry(seen, entry))]
+    entries = []
+    if not defer_optional:
+        for entry in result.get("index", [])[:RECALL_CANDIDATES]:
+            if dedup and seen_covers_entry(seen, entry):
+                if getattr(memory, "meter", None) is not None:
+                    memory.meter.dedup_skipped += 1
+                continue
+            entries.append(entry)
     previews = [entry for entry in entries if relevant(entry, intent)]
     entries = previews + [entry for entry in entries if entry not in previews]
     chosen = pulled = None
@@ -3395,8 +3505,35 @@ def select_json(config, schema, prompt, excerpt, timeout=35, stage="capture", ob
     with tempfile.TemporaryDirectory(prefix="cairn-selection-") as work:
         if observation is not None:
             observation["requested_model"] = model
-        result = run_json(command, body=encoded(excerpt), timeout=timeout, env=env, cwd=work,
-                          observation=observation)
+        try:
+            result = run_json(command, body=encoded(excerpt), timeout=timeout, env=env, cwd=work,
+                              observation=observation)
+        except Exception:
+            if observation is not None and isinstance(observation.get("_partial_stdout"), dict):
+                partial = observation.pop("_partial_stdout")
+                observation["partial_usage"] = True
+                by_model = partial.get("modelUsage")
+                if isinstance(by_model, dict):
+                    reported = [name for name in by_model if valid_model_name(name)]
+                    if len(reported) == 1:
+                        observation["reported_model"] = reported[0]
+                for key, target in (("duration_ms", "reported_duration_ms"),
+                                    ("duration_api_ms", "reported_api_duration_ms"),
+                                    ("total_cost_usd", "reported_cost_usd")):
+                    value = partial.get(key)
+                    if type(value) in (int, float) and value >= 0 and (type(value) is int or math.isfinite(value)):
+                        observation[target] = value
+                usage = partial.get("usage")
+                if isinstance(usage, dict):
+                    extracted = {key: value for key in ("input_tokens", "output_tokens",
+                                 "cache_creation_input_tokens", "cache_read_input_tokens", "reasoning_tokens")
+                                 if type(value := usage.get(key)) is int and value >= 0}
+                    if "reasoning_tokens" not in extracted and isinstance(usage.get("completion_tokens_details"), dict):
+                        rval = usage["completion_tokens_details"].get("reasoning_tokens")
+                        if type(rval) is int and rval >= 0:
+                            extracted["reasoning_tokens"] = rval
+                    observation["usage"] = extracted
+            raise
     if observation is not None:
         if result.get("is_error"):
             observation["outcome"] = "reported_error"
@@ -3413,9 +3550,14 @@ def select_json(config, schema, prompt, excerpt, timeout=35, stage="capture", ob
                 observation[target] = value
         usage = result.get("usage")
         if isinstance(usage, dict):
-            observation["usage"] = {key: value for key in ("input_tokens", "output_tokens",
-                                    "cache_creation_input_tokens", "cache_read_input_tokens")
-                                    if type(value := usage.get(key)) is int and value >= 0}
+            extracted = {key: value for key in ("input_tokens", "output_tokens",
+                         "cache_creation_input_tokens", "cache_read_input_tokens", "reasoning_tokens")
+                         if type(value := usage.get(key)) is int and value >= 0}
+            if "reasoning_tokens" not in extracted and isinstance(usage.get("completion_tokens_details"), dict):
+                rval = usage["completion_tokens_details"].get("reasoning_tokens")
+                if type(rval) is int and rval >= 0:
+                    extracted["reasoning_tokens"] = rval
+            observation["usage"] = extracted
     return result
 
 
@@ -3439,8 +3581,12 @@ def capture(memory, event, state=None):
                 raise
             messages = []
     if not messages:
+        memory.capture_observation["dialogue_messages"] = 0
+        memory.capture_observation["dialogue_bytes"] = 0
         record_capture_status(state, "empty")
         return {}
+    memory.capture_observation["dialogue_messages"] = len(messages)
+    memory.capture_observation["dialogue_bytes"] = sum(len(m["text"].encode("utf-8")) for m in messages)
     if codex:
         state["capture_snapshot_marker"] = dict(path=str(Path(transcript_path).resolve()), offset=offsets[-1])
     def fingerprint(dialogue):
@@ -3766,6 +3912,18 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
         _trace_note(stage="locked")
         state = event_state(json.loads(path.read_text()) if path.exists() else {}, event)
         if event_name in ("SessionStart", "UserPromptSubmit"):
+            skip_reason = skip_empty_recall(config, event)
+            if skip_reason is not None:
+                _trace_note(outcome="early_return:skipped_empty_recall")
+                state["last_recall"] = dict(
+                    at=time.time(), hook_event_name=event_name, outcome="skipped",
+                    records=[], bytes=0, discovery="deferred", inspected=0, rejected={},
+                    optional_deferred=skip_reason, expansion_reason="skipped_" + skip_reason,
+                )
+                prepare_seen_state(state, config, event)
+                save_state(path, state)
+                return ({"cairn_status": {k: state[k] for k in ("last_recall", "last_capture", "workstream") if k in state}}
+                        if config.get("harness") == "hermes" else {})
             _trace_note(stage="recall")
             previous_state = copy.deepcopy(state)
             recall_started = time.monotonic()
@@ -3793,11 +3951,17 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
                     if isinstance(exc, RequiredContextRefused):
                         raise exc from save_error
                     raise HookError("recall failed and failure status could not be saved") from save_error
+                reason = status.get("expansion_reason") or status.get("optional_deferred")
+                if isinstance(reason, str) and reason.strip() and len(reason.strip()) <= 128:
+                    memory.meter.expansion_reason = reason.strip()
                 reports.append(dict(memory=memory, event=event, started=hook_started,
                                     elapsed=time.monotonic() - hook_started,
                                     status="timeout" if is_timeout(failure) else "error", injected=0,
                                     error_class=status["error_type"]))
                 raise exc
+            reason = state["last_recall"].get("expansion_reason") or state["last_recall"].get("optional_deferred")
+            if isinstance(reason, str) and reason.strip() and len(reason.strip()) <= 128:
+                memory.meter.expansion_reason = reason.strip()
             state["last_recall"]["duration_ms"] = round((time.monotonic() - recall_started) * 1000, 3)
             reports.append(dict(memory=memory, event=event, started=hook_started, elapsed=time.monotonic() - hook_started,
                                 status="completed", injected=injected_bytes(result)))

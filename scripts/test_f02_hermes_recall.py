@@ -5,6 +5,7 @@ The existing fixture engines supply only constructed local API data.
 """
 import base64
 import copy
+import datetime
 import fcntl
 import hashlib
 import json
@@ -137,6 +138,9 @@ class HermesRecallTests(unittest.TestCase):
                 if op == 'recall-observation':
                     for key in ('elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms'):
                         self.assertGreaterEqual(body.pop(key), 0)
+                    ts = body.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
                 self.assertEqual(headers['Authorization'], 'Bearer f02-synthetic-token')
                 token = headers['Cairn-Client-Diagnostics']
                 origin = json.loads(base64.urlsafe_b64decode(token+'='*(-len(token)%4)))['origin']
@@ -195,6 +199,7 @@ class HermesRecallTests(unittest.TestCase):
 
     def test_taskless_start_and_notification_defer_optional(self):
         self.optional_note('Unrequested retention policy must stay deferred.')
+        self.configure(skip_empty_recall=False)
         notification = self.f.wake()
         for name, prompt, reason in (('SessionStart', '', 'taskless_startup'),
                                      ('UserPromptSubmit', notification, 'taskless_notification')):

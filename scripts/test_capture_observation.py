@@ -77,7 +77,8 @@ class CaptureObservationTests(unittest.TestCase):
         self.assertEqual(skip["admission_candidate"], "confirmed_duplicate")
         self.assertNotIn("input_tokens", skip)
         self.assertNotIn("selector_outcome", skip)
-        self.assertNotIn("messages", json.dumps(self.reports))
+        self.assertNotIn('"messages"', json.dumps(self.reports))
+        self.assertNotIn("Keep the correction", json.dumps(self.reports))
 
     def test_exact_transport_candidate_is_shadow_only_and_correction_still_saves(self):
         self.invoke()
@@ -228,6 +229,45 @@ class CaptureObservationTests(unittest.TestCase):
         self.assertNotIn("snapshot_sha256", report)
         self.assertNotIn("selector_outcome", report)
         self.assertEqual(self.model_calls, 0)
+
+    def test_default_enabled_without_flag_and_partial_timeout_usage(self):
+        cfg = dict(self.config)
+        cfg.pop("capture_observations", None)
+        self.invoke(config=cfg)
+        self.assertEqual(len(self.reports), 1)
+        first = self.reports[0]
+        self.assertEqual(first["native_session_id"], self.event["session_id"])
+        self.assertEqual(first["dialogue_messages"], 2)
+        self.assertGreater(first["dialogue_bytes"], 0)
+        self.assertIn("client_generated_at", first)
+        # Timeout with partial stdout JSON keeps honest partial_usage + reasoning_tokens.
+        self.reports.clear()
+        ev2 = dict(self.event, session_id="e3ca4711-4159-4d0c-95d5-c8cc174ad891")
+        partial_stdout = json.dumps(dict(
+            modelUsage={"claude-sonnet": {}},
+            usage=dict(input_tokens=42, output_tokens=7, reasoning_tokens=19),
+            total_cost_usd=0.001,
+        )).encode("utf-8")
+        def timeout_run_json(command, *, body=None, timeout=5, env=None, cwd=None, observation=None):
+            if command[0] == "claude":
+                if observation is not None:
+                    observation["outcome"] = "timeout"
+                    observation["_partial_stdout"] = json.loads(partial_stdout.decode())
+                raise hook.HookError("command timed out", code="TIMEOUT")
+            self.reports.append(json.loads(body))
+            return dict(observation_id="stored")
+        with patch.object(hook.Memory, "checkpoint", return_value=None), \
+             patch.object(hook, "handoff_candidates", return_value=[]), \
+             patch.object(hook, "durable_candidates", return_value=[]), \
+             patch.object(hook, "run_json", side_effect=timeout_run_json):
+            with self.assertRaises(hook.HookError):
+                hook.handle(cfg, ev2)
+        self.assertEqual(len(self.reports), 1)
+        rep = self.reports[0]
+        self.assertEqual(rep["outcome"], "timeout")
+        self.assertEqual(rep["selector_outcome"], "timeout")
+        self.assertIs(rep["partial_usage"], True)
+        self.assertEqual((rep["input_tokens"], rep["output_tokens"], rep["reasoning_tokens"]), (42, 7, 19))
 
 
 if __name__ == "__main__":

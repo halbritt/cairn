@@ -40,29 +40,34 @@ reported elapsed time. Set `"recall_observations": false` in the lifecycle
 configuration to stop reporting. The installed hooks are unchanged until they are
 reinstalled with this engine.
 
-Selected capture has a separate opt-in observation stream. Set
-`"capture_observations": true` in a lifecycle binding after its API supports
-`capture-observation`. Each Stop, PreCompact or SessionEnd capture invocation
-reports a session SHA-256 reference, the bounded capture snapshot SHA-256 when
-one exists, its outcome, and the auxiliary selector's reported model, token
-usage, cost and duration when available. An unchanged, courtesy or empty skip
-has no selector usage; missing values remain unknown. Reporting occurs after
-the session locks and cannot change a confirmed note write or capture marker.
-The selector keeps the configured subscription authentication and does not
-switch providers for observation. The latest `last_capture` state remains a
-status snapshot; it is not historical accounting.
+Selected capture emits an observation stream by default via `capture-observation`
+(and installers default `"capture_observations": true` when writing hook config).
+Set `"capture_observations": false` in a lifecycle binding to disable capture
+observation reporting without changing capture itself. Each Stop, PreCompact or
+SessionEnd capture invocation reports a session SHA-256 reference, the bounded
+capture snapshot SHA-256 when one exists, its outcome, and the auxiliary
+selector's reported model, token usage, cost and duration when available. An
+unchanged, courtesy or empty skip has no selector usage; missing values remain
+unknown. Reporting occurs after the session locks and cannot change a confirmed
+note write or capture marker. The selector keeps the configured subscription
+authentication and does not switch providers for observation. The latest
+`last_capture` state remains a status snapshot; it is not historical accounting.
 
 The API retains one row per reported invocation; its history read requires a
 local profile using `cairn agent capture-observations` with `repo`, `limit` (1–200),
 optional `session_sha256` and `offset`. It contains no dialogue, selected note
 body, model output or credentials. A missing report can mean an older API,
-disabled opt-in, insufficient hook time, or a reporting failure; it is not a
-zero-cost capture. Reporting has a one-second cap and preserves five seconds
-of the 150-second capture hook budget. The
+disabled reporting (`"capture_observations": false`), insufficient hook time, or a
+reporting failure; it is not a zero-cost capture. Reporting has a one-second cap
+and preserves five seconds of the 150-second capture hook budget. The
 observation is hook testimony, not proof of accepted task work or a billing
-export. Disable the opt-in to roll back metering without changing capture.
-Installers retain an existing per-binding opt-in during reinstall; no binding is
-enabled by default.
+export. Set `"capture_observations": false` on a binding to roll back metering
+without changing capture; installers retain explicit per-binding overrides during
+reinstall.
+
+Ordinary and startup recall skip unconditional zero-byte `SessionStart` and
+empty-prompt `UserPromptSubmit` calls by default when unbound (`"skip_empty_recall": false`
+or `CAIRN_RECALL_SKIP_EMPTY=0` opts out to preserve legacy taskless startup lookups).
 
 The same capture observation can carry `admission_candidate: "transport_only"`
 as a shadow measurement. It is set only when the bounded dialogue begins with

@@ -947,6 +947,8 @@ def materialize(args):
         payload = {"request_id": intent["publication_request_ids"][event_id],
                    "repo": repo, "kind": event_spec["kind"], "ref": ref,
                    "destination": destination}
+        if event_spec["kind"] == "notice":
+            payload["action"] = event_spec.get("action", "review")
         if causation:
             payload["causation_id"] = causation
         notice_policy = (intervention["routine_notice_policy"]
@@ -1067,8 +1069,11 @@ def materialize(args):
             observed_at = database_now(dsn)
             require(deadline is None or observed_at < deadline,
                     "routine notice window expired before priority readiness proof")
-            require(ready == {"event_id": selected["event_id"],
-                              "delivery_id": selected["delivery_id"]},
+            expected_ready = {"event_id": selected["event_id"],
+                              "delivery_id": selected["delivery_id"]}
+            if selected.get("kind") == "notice":
+                expected_ready["action"] = "review"
+            require(ready == expected_ready,
                     "native readiness differs from frozen burst order")
             readiness_snapshot = {"basis": "selected_native_ready_hint",
                                   "event_id": ready["event_id"],

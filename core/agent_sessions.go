@@ -314,7 +314,7 @@ func (s *Store) UpdateAgent(ctx context.Context, req UpdateAgentRequest, dest De
 		if current.ContextRevision != req.ExpectedRevision {
 			return AgentInstance{}, failure("VERSION_CONFLICT", "agent context changed; read current presence before updating")
 		}
-		return scanAgentSession(tx.QueryRow(ctx, `UPDATE cairn.agent_session SET metadata=$2,compaction_count=compaction_count+CASE WHEN $3 THEN 1 ELSE 0 END,context_revision=context_revision+1,last_seen=clock_timestamp(),expires_at=clock_timestamp()+interval '90 seconds' WHERE agent_id=$1 RETURNING `+agentSessionColumns, req.Session.AgentID, req.Metadata, req.Compacted))
+		return scanAgentSession(tx.QueryRow(ctx, `UPDATE cairn.agent_session SET metadata=$2,compaction_count=compaction_count+CASE WHEN $3 THEN 1 ELSE 0 END,first_compacted_at=COALESCE(first_compacted_at,CASE WHEN $3 THEN clock_timestamp() ELSE NULL END),context_revision=context_revision+1,last_seen=clock_timestamp(),expires_at=clock_timestamp()+interval '90 seconds' WHERE agent_id=$1 RETURNING `+agentSessionColumns, req.Session.AgentID, req.Metadata, req.Compacted))
 	}, guard)
 }
 

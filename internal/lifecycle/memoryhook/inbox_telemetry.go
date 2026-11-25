@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -303,9 +304,18 @@ func (t *inboxTelemetry) finishMeter(out *InboxResult, client *memoryclient.Clie
 		}
 	}
 	accounting := client.Accounting()
-	body := value.Mapping(value.Field("request_id", value.Text(uuid.NewString())), value.Field("repo", clone(t.in.Memory.Get("repo"))), value.Field("harness", value.Text(text(t.in.Memory.Get("harness")))), value.Field("hook_event", clone(t.in.Event.Get("hook_event_name"))), value.Field("method", value.Text("cairn-lifecycle/inbox-recall-meter/1")), value.Field("status", value.Text(status)), value.Field("elapsed_ms", wholeMS(time.Since(t.in.Started))), value.Field("search_ms", wholeMS(t.durations["search"])), value.Field("pulls_ms", wholeMS(t.durations["pull"])), value.Field("selector_ms", integer(0)), value.Field("search_calls", integer(accounting.OperationCalls["search"])), value.Field("pull_calls", integer(accounting.OperationCalls["pull"])), value.Field("selector_calls", array()), value.Field("injected_bytes", integer(len(out.Message))))
+	body := value.Mapping(value.Field("request_id", value.Text(uuid.NewString())), value.Field("repo", clone(t.in.Memory.Get("repo"))), value.Field("harness", value.Text(text(t.in.Memory.Get("harness")))), value.Field("hook_event", clone(t.in.Event.Get("hook_event_name"))), value.Field("method", value.Text("cairn-lifecycle/inbox-recall-meter/1")), value.Field("status", value.Text(status)), value.Field("elapsed_ms", wholeMS(time.Since(t.in.Started))), value.Field("search_ms", wholeMS(t.durations["search"])), value.Field("pulls_ms", wholeMS(t.durations["pull"])), value.Field("selector_ms", integer(0)), value.Field("search_calls", integer(accounting.OperationCalls["search"])), value.Field("pull_calls", integer(accounting.OperationCalls["pull"])), value.Field("selector_calls", array()), value.Field("injected_bytes", integer(len(out.Message))), value.Field("injected_unit", value.Text("utf8_bytes")), value.Field("injected_tokenizer", value.Text("utf8_byte_len")), value.Field("client_generated_at", value.Text(time.Now().UTC().Format(time.RFC3339Nano))))
 	if t.in.Memory.Get("harness") == nil {
 		body.Set("harness", value.Text("claude"))
+	}
+	if sid := strings.TrimSpace(text(t.in.Event.Get("session_id"))); sid != "" && len(sid) <= 256 && validText(value.Text(sid)) {
+		body.Set("native_session_id", value.Text(sid))
+	}
+	if aid := text(t.data.Get("attempt_id")); inboxUUID(value.Text(aid)) {
+		body.Set("attempt_id", value.Text(aid))
+	}
+	if did := text(t.data.Get("delivery_id")); inboxUUID(value.Text(did)) {
+		body.Set("delivery_id", value.Text(did))
 	}
 	if len(accounting.SearchReceipts) > 0 {
 		receipts := array()

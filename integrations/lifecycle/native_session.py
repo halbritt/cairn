@@ -14,8 +14,10 @@ the coordination entry points that tests and pinned bundles patch stay the one
 place a transition is reached.
 """
 from contextlib import contextmanager
+import hashlib
 import json
 import sys
+import time
 import uuid
 
 
@@ -369,6 +371,21 @@ class NativeSession:
             if exc.code == 'DELIVERY_ACTIVE' and reason == 'delivery_completed':
                 # A refusal commits nothing, so a later reason may use a new UUID.
                 record.pop('inbox_close')
+                now = time.time()
+                attempt_id = intent['request_id']
+                prior = record.get('inbox_reconcile_backoff')
+                attempts = (int(prior.get('attempts', 0)) + 1
+                            if isinstance(prior, dict) and prior.get('attempt_id') == attempt_id and prior.get('reason') == reason
+                            else 1)
+                delay = min(60.0, 2.0 * (2 ** min(attempts - 1, 5)))
+                digest = hashlib.sha256(f"{attempt_id}:{attempts}".encode()).digest()
+                jitter = delay * 0.25 * (digest[0] / 255.0)
+                committed = bool(self.host.journal_committed(self.config, record)) if getattr(self.host, 'journal_committed', None) else False
+                record['inbox_reconcile_backoff'] = dict(
+                    attempt_id=attempt_id, reason=reason, last_error='DELIVERY_ACTIVE',
+                    attempts=attempts, journal_committed=committed,
+                    next_eligible_epoch=now + delay + jitter,
+                )
                 self.save()
                 return False
             # Leaving or a restore fence prevents a delayed claim from committing
@@ -381,6 +398,7 @@ class NativeSession:
         """Forget the attempt and everything that belonged to it."""
         for key in ATTEMPT_KEYS:
             self.record.pop(key, None)
+        self.record.pop('inbox_reconcile_backoff', None)
         self.save()
         return True
 

@@ -763,6 +763,7 @@ func TestCompatibilityDifferentialPythonParity(t *testing.T) {
 		Now:           func() time.Time { return time.Unix(100, 0) },
 	}
 	c.Host.NewID = func() string { return "00000000-0000-4000-8000-000000000099" }
+	c.Host.Now = c.Now
 
 	initialState := nativeClone(state)
 	goPromptVal, err := c.RenderActiveAttemptContext(context.Background(), f.config, state, statePath)

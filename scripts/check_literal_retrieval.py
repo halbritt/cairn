@@ -58,7 +58,10 @@ def check_harness(invoke):
     other = invoke('cairn_remember', dict(request_id=str(uuid.uuid4()),
                    body=literal.replace('/', ' ').replace('.', ' ') + ' repair review', shareable=True))
     view = invoke('cairn_search', dict(query='repair review "' + literal + '"'))
-    assert view['ranking'] == 'binary-idf-scope-recency/6'
+    if view.get('schema') == 'cairn.mcp-search-compact/1':
+        assert 'ranking' not in view
+    else:
+        assert view['ranking'] == 'binary-idf-scope-recency/6'
     assert view['index'][0]['record_id'] == exact['record_id']
     assert other['record_id'] in [e['record_id'] for e in view['index']]
     entry = view['index'][0]

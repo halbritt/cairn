@@ -152,8 +152,11 @@ def check(binary):
             require(source['body'] == body and source['observed_writer'] == principals['sender'],
                     'Store source body or owner differs')
             ref = dict(record_id=source['record_id'], version=source['version'])
-            event = profile('sender', 'event-publish', dict(request_id=str(uuid.uuid4()),
-                kind='notice', ref=ref, destination=dict(type='agent', name=worker['inbox'])))
+            req = dict(request_id=str(uuid.uuid4()),
+                kind='notice', action='review', ref=ref, destination=dict(type='agent', name=worker['inbox']))
+            if len(body.encode('utf-8')) > 280:
+                req['summary'] = 'Compaction notice fixture summary'
+            event = profile('sender', 'event-publish', req)
             deliveries = profile('sender', 'event-inspect', dict(event_id=event['event_id']))['deliveries']
             require(len(deliveries) == 1 and deliveries[0]['state'] == 'pending'
                     and event['ref'] == ref, 'notice was not pending with exact source')

@@ -22,11 +22,15 @@ RECEIPT = '3b241101-e2bb-4255-8caf-38c3f4bd2dc9'
 SECOND_RECEIPT = '0b7b3d5c-7a51-4bf8-9f44-2a0c4c6ac5a1'
 ALLOWED_KEYS = {'request_id', 'repo', 'receipt_ids', 'harness', 'hook_event', 'method', 'status', 'error_class',
                 'elapsed_ms', 'search_ms', 'selector_ms', 'pulls_ms', 'search_calls', 'pull_calls',
-                'selector_calls', 'injected_bytes'}
+                'selector_calls', 'injected_bytes', 'attempt_id', 'delivery_id', 'native_session_id',
+                'client_generated_at', 'injected_unit', 'injected_tokenizer', 'dedup_skipped_count',
+                'expansion_reason'}
 ALLOWED_CALL_KEYS = {'stage', 'outcome', 'elapsed_ms', 'model', 'model_source', 'input_tokens', 'output_tokens',
-                     'cache_creation_input_tokens', 'cache_read_input_tokens', 'cost_usd'}
+                     'cache_creation_input_tokens', 'cache_read_input_tokens', 'reasoning_tokens',
+                     'partial_usage', 'cost_usd'}
 SESSIONS = dict(claude='caed9473-b01a-41e7-95ce-c3c1f28d66b3', codex='caed9473-b01a-41e7-95ce-c3c1f28d66b3',
-                opencode='ses_0123456789abcdefABCDEF', hermes='opaque-hermes-session')
+                opencode='ses_0123456789abcdefABCDEF', hermes='opaque-hermes-session',
+                agy='caed9473-b01a-41e7-95ce-c3c1f28d66b3')
 
 
 class Clock:
@@ -114,7 +118,7 @@ class RecallObservationTests(unittest.TestCase):
                 return hook.handle(config, event)
 
     def test_each_harness_reports_phases_receipts_and_injected_bytes_once(self):
-        for harness in ('claude', 'codex', 'opencode', 'hermes'):
+        for harness in ('claude', 'codex', 'opencode', 'hermes', 'agy'):
             with self.subTest(harness=harness):
                 self.transport.reports.clear()
                 result = self.handle(self.config(harness), self.event(harness))
@@ -122,8 +126,11 @@ class RecallObservationTests(unittest.TestCase):
                 self.assertIn(self.transport.body, context)
                 self.assertEqual(len(self.transport.reports), 1)
                 report = self.transport.reports[0]
-                self.assertEqual(set(report), ALLOWED_KEYS - {'error_class'})
+                self.assertLessEqual(set(report), ALLOWED_KEYS)
                 self.assertEqual(report['harness'], harness)
+                self.assertEqual(report['native_session_id'], SESSIONS[harness])
+                self.assertEqual((report['injected_unit'], report['injected_tokenizer']), ('utf8_bytes', 'utf8_byte_len'))
+                self.assertIn('client_generated_at', report)
                 self.assertEqual(report['repo'], 'fixture:repo')
                 self.assertEqual(report['hook_event'], 'UserPromptSubmit')
                 self.assertEqual(report['method'], hook.RECALL_METER_METHOD)

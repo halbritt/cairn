@@ -248,6 +248,14 @@ var agentJSONHelp = map[string]agentJSONHelpSpec{
 		Detail:  "Read retained capture invocation history with a local profile.\nRows are ordered by store sequence and may be filtered by session_sha256.\nAn absent row or null metric is unknown, not zero. This is separate from\nthe latest capture marker in the hook's session state.\n",
 		Example: `{"repo":"REPOSITORY","limit":100,"offset":0}`,
 	},
+	"delivery-observation": {
+		Detail:  "Report one lifecycle inbox/context delivery disposition and byte count.\nDispositions are full, compact, digest, auto_settled, or superseded.\nInjected units and tokenizers stay explicit; missing values remain null.\n",
+		Example: `{"request_id":"NEW_UUID","repo":"REPOSITORY","harness":"codex","hook_event":"UserPromptSubmit","disposition":"compact","injected_bytes":1200,"injected_unit":"utf8_bytes","injected_tokenizer":"utf8_byte_len"}`,
+	},
+	"telemetry-report": {
+		Detail:  "Read aggregated recall/delivery counters, per-message window growth,\nand session longevity before compaction metrics with a local profile.\n",
+		Example: `{"repo":"REPOSITORY","rollup_days":7}`,
+	},
 	"explain-page": {
 		Detail:  "Inspect retained candidate references, ranks and omission reasons for an\nowned receipt. No bodies, previews, new handles or credits are returned. Use\nthe original owner and destination profile; current disclosure checks cover\nevery retained candidate on every page. Any inaccessible candidate refuses the\nwhole inspection without partial rows. Start without a cursor; pass\nnext_after_record_id and next_after_version as after_record_id and after_version\nwhile more is true. Omitted/zero limit means 20; maximum 100.\nThis is historical diagnostic metadata, not verified reconstruction, proof of\nrelevance or permission to act. No request UUID or original query is required.\n",
 		Example: `{"receipt_id":"RECEIPT_UUID","limit":20}`,

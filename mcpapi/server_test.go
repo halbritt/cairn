@@ -197,9 +197,14 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		invoke("cairn_assess", changed, "AUTHORITY_DENIED")
 	}
 	t.Run("search room", func(t *testing.T) {
+		roomServer, err := NewServer(client, Config{Scope: core.Scope{Repo: repo, TaskID: "build", RunID: "attempt"}, AvailableTokens: 64000, SearchView: "full"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		roomSession := connect(t, ctx, roomServer)
 		invoke := func(args any, wantError string) json.RawMessage {
 			t.Helper()
-			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_search", Arguments: args})
+			result, err := roomSession.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_search", Arguments: args})
 			if err != nil || len(result.Content) != 1 {
 				t.Fatalf("search: %+v %v", result, err)
 			}
@@ -241,7 +246,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	})
 	t.Run("memory budget", func(t *testing.T) {
 		const memoryAllowance = 7800
-		budgetServer, err := NewServer(client, Config{Scope: core.Scope{Repo: repo, TaskID: "memory-budget", RunID: "attempt"}, AvailableTokens: 64000})
+		budgetServer, err := NewServer(client, Config{Scope: core.Scope{Repo: repo, TaskID: "memory-budget", RunID: "attempt"}, AvailableTokens: 64000, SearchView: "full"})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -504,6 +504,16 @@ func (c HerdrClient) PrepareTerminalWake(ctx context.Context, request TerminalWa
 	if pythonStrip(request.DeliveryID) == "" {
 		return nil, nil, errors.New("delivery_id must be a nonempty string")
 	}
+	if request.StatePath != "" {
+		if raw, err := os.ReadFile(request.StatePath); err == nil {
+			var st map[string]any
+			if json.Unmarshal(raw, &st) == nil {
+				if herdrTruthy(st["ending"]) || herdrTruthy(st["retired"]) {
+					return nil, nil, nil
+				}
+			}
+		}
+	}
 	env, available, err := c.HerdrEnvironment(request.Process, baseEnv)
 	if err != nil {
 		return nil, nil, err

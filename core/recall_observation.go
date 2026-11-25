@@ -6,6 +6,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -24,6 +25,8 @@ type RecallSelectorCall struct {
 	OutputTokens             *int64   `json:"output_tokens,omitempty"`
 	CacheCreationInputTokens *int64   `json:"cache_creation_input_tokens,omitempty"`
 	CacheReadInputTokens     *int64   `json:"cache_read_input_tokens,omitempty"`
+	ReasoningTokens          *int64   `json:"reasoning_tokens,omitempty"`
+	PartialUsage             *bool    `json:"partial_usage,omitempty"`
 	CostUSD                  *float64 `json:"cost_usd,omitempty"`
 }
 
@@ -51,9 +54,19 @@ type RecallObservationRequest struct {
 	PullCalls     *int                 `json:"pull_calls,omitempty"`
 	SelectorCalls []RecallSelectorCall `json:"selector_calls"`
 
-	InjectedBytes      *int64   `json:"injected_bytes,omitempty"`
-	PromptSHA256       string   `json:"prompt_sha256,omitempty"`
-	DeliveredRecordIDs []string `json:"delivered_record_ids,omitempty"`
+	InjectedBytes       *int64     `json:"injected_bytes,omitempty"`
+	PromptSHA256        string     `json:"prompt_sha256,omitempty"`
+	DeliveredRecordIDs  []string   `json:"delivered_record_ids,omitempty"`
+	AttemptID           string     `json:"attempt_id,omitempty"`
+	DeliveryID          string     `json:"delivery_id,omitempty"`
+	NativeSessionID     string     `json:"native_session_id,omitempty"`
+	ClientGeneratedAt   *time.Time `json:"client_generated_at,omitempty"`
+	InjectedUnit        string     `json:"injected_unit,omitempty"`
+	InjectedTokenizer   string     `json:"injected_tokenizer,omitempty"`
+	DedupSkippedCount   *int       `json:"dedup_skipped_count,omitempty"`
+	ExpansionReason     string     `json:"expansion_reason,omitempty"`
+	NativeContextTokens *int64     `json:"native_context_tokens,omitempty"`
+	NativeMessageCount  *int       `json:"native_message_count,omitempty"`
 }
 
 const (
@@ -104,7 +117,7 @@ func (call RecallSelectorCall) validate() error {
 	if !recallMilliseconds(call.ElapsedMS) {
 		return invalid("selector value out of range")
 	}
-	for _, tokens := range []*int64{call.InputTokens, call.OutputTokens, call.CacheCreationInputTokens, call.CacheReadInputTokens} {
+	for _, tokens := range []*int64{call.InputTokens, call.OutputTokens, call.CacheCreationInputTokens, call.CacheReadInputTokens, call.ReasoningTokens} {
 		if tokens != nil && (*tokens < 0 || *tokens > maxRecallTokens) {
 			return invalid("selector token count out of range")
 		}
@@ -127,7 +140,7 @@ func (req RecallObservationRequest) validate() error {
 		return invalid("recall observation requires a bounded repository")
 	}
 	switch req.Harness {
-	case "claude", "codex", "opencode", "hermes":
+	case "claude", "codex", "opencode", "hermes", "agy":
 	default:
 		return invalid("unknown recall harness")
 	}
@@ -181,6 +194,39 @@ func (req RecallObservationRequest) validate() error {
 	}
 	if req.PromptSHA256 != "" && !recallPromptDigest.MatchString(req.PromptSHA256) {
 		return invalid("prompt_sha256 must be a lowercase 64-character hex digest")
+	}
+	if req.AttemptID != "" {
+		if err := validID(req.AttemptID); err != nil {
+			return invalid("attempt_id must be a UUID")
+		}
+	}
+	if req.DeliveryID != "" {
+		if err := validID(req.DeliveryID); err != nil {
+			return invalid("delivery_id must be a UUID")
+		}
+	}
+	if req.NativeSessionID != "" && !validTelemetryString(req.NativeSessionID, 256) {
+		return invalid("native_session_id must be bounded non-control text")
+	}
+	switch req.InjectedUnit {
+	case "", "utf8_bytes", "chars", "tokens_cl100k", "tokens_o200k", "tokens_reported":
+	default:
+		return invalid("unknown injected_unit")
+	}
+	if req.InjectedTokenizer != "" && !validTelemetryString(req.InjectedTokenizer, 64) {
+		return invalid("injected_tokenizer must be bounded non-control text")
+	}
+	if req.DedupSkippedCount != nil && (*req.DedupSkippedCount < 0 || *req.DedupSkippedCount > maxRecallCalls) {
+		return invalid("dedup_skipped_count out of range")
+	}
+	if req.ExpansionReason != "" && !validTelemetryString(req.ExpansionReason, 128) {
+		return invalid("expansion_reason must be bounded non-control text")
+	}
+	if req.NativeContextTokens != nil && (*req.NativeContextTokens < 0 || *req.NativeContextTokens > maxRecallTokens) {
+		return invalid("native_context_tokens out of range")
+	}
+	if req.NativeMessageCount != nil && (*req.NativeMessageCount < 0 || *req.NativeMessageCount > 100000) {
+		return invalid("native_message_count out of range")
 	}
 	if len(req.DeliveredRecordIDs) > maxRecallDelivered {
 		return invalid("too many delivered record IDs")
@@ -236,10 +282,15 @@ func (s *Store) RecordRecallObservation(ctx context.Context, req RecallObservati
 		}
 		id := uuid.NewString()
 		_, err := tx.Exec(ctx, `INSERT INTO cairn.recall_observation(observation_id,repo,harness,hook_event,method,status,error_class,
- elapsed_ms,search_ms,selector_ms,pulls_ms,search_calls,pull_calls,selector_calls,injected_bytes)
- VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10,$11,$12,$13,$14,$15)`,
+ elapsed_ms,search_ms,selector_ms,pulls_ms,search_calls,pull_calls,selector_calls,injected_bytes,
+ attempt_id,delivery_id,native_session_id,client_generated_at,injected_unit,injected_tokenizer,
+ dedup_skipped_count,expansion_reason,native_context_tokens,native_message_count)
+ VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10,$11,$12,$13,$14,$15,
+ NULLIF($16,'')::uuid,NULLIF($17,'')::uuid,NULLIF($18,''),$19,NULLIF($20,''),NULLIF($21,''),$22,NULLIF($23,''),$24,$25)`,
 			id, req.Repo, req.Harness, req.HookEvent, req.Method, req.Status, req.ErrorClass,
-			req.ElapsedMS, req.SearchMS, req.SelectorMS, req.PullsMS, req.SearchCalls, req.PullCalls, selectorCalls, req.InjectedBytes)
+			req.ElapsedMS, req.SearchMS, req.SelectorMS, req.PullsMS, req.SearchCalls, req.PullCalls, selectorCalls, req.InjectedBytes,
+			req.AttemptID, req.DeliveryID, req.NativeSessionID, req.ClientGeneratedAt, req.InjectedUnit, req.InjectedTokenizer,
+			req.DedupSkippedCount, req.ExpansionReason, req.NativeContextTokens, req.NativeMessageCount)
 		if err != nil {
 			return Observation{}, err
 		}
@@ -250,10 +301,10 @@ func (s *Store) RecordRecallObservation(ctx context.Context, req RecallObservati
 		}
 		for i, call := range req.SelectorCalls {
 			if _, err = tx.Exec(ctx, `INSERT INTO cairn.recall_selector_call(observation_id,ordinal,stage,outcome,elapsed_ms,model,model_source,
- input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,cost_usd)
- VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8,$9,$10,$11,$12)`,
+ input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,reasoning_tokens,partial_usage,cost_usd)
+ VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8,$9,$10,$11,$12,$13,$14)`,
 				id, i+1, call.Stage, call.Outcome, call.ElapsedMS, call.Model, call.ModelSource,
-				call.InputTokens, call.OutputTokens, call.CacheCreationInputTokens, call.CacheReadInputTokens, call.CostUSD); err != nil {
+				call.InputTokens, call.OutputTokens, call.CacheCreationInputTokens, call.CacheReadInputTokens, call.ReasoningTokens, call.PartialUsage, call.CostUSD); err != nil {
 				return Observation{}, err
 			}
 		}

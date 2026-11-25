@@ -153,7 +153,7 @@ func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, ev
 				result: result, seen: state.Get("seen"), dedup: dedup, intent: intent, budget: budget, project: project, meter: meter}
 			choose = provider.choose
 		}
-		body, err = ambientRecall(deadline, client, event, state, status, result, selected, view.Index, intent, budget, deferred, notification, project, dedup, choose)
+		body, err = ambientRecall(deadline, client, event, state, status, result, selected, view.Index, intent, budget, deferred, notification, project, dedup, choose, meter)
 	}
 
 	if err == nil {

@@ -472,6 +472,9 @@ func (s *Store) claimSessionDigestAttempt(ctx context.Context, tx pgx.Tx, a Agen
 	if err := openAttempt(ctx, tx, nativeAttemptOpen{AttemptID: req.RequestID, AgentID: a.AgentID, ExecutionID: a.ExecutionID, Repo: a.Repo, DeliveryID: active[0].deliveryID, LeaseID: leases[0], NativeTurnID: req.NativeTurnID, AdmissionKind: "digest", DigestSupersededCount: supersededCount}); err != nil {
 		return out, err
 	}
+	if err := recordStoreDeliveryTelemetry(ctx, tx, a.Repo, a.Metadata.Harness, a.NativeSessionID, req.RequestID, active[0].deliveryID, "SessionInbox", "digest", supersededCount, "digest_claim"); err != nil {
+		return out, err
+	}
 	for i, item := range active {
 		if _, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_digest_item(attempt_id,ordinal,delivery_id,lease_id,topic_key) VALUES($1,$2,$3,$4,$5)`, req.RequestID, i+1, item.deliveryID, leases[i], item.topicKey); err != nil {
 			return out, err

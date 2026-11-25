@@ -402,7 +402,7 @@ func TestCoordinationSubprocessInboxAndRecovery(t *testing.T) {
 	_ = os.WriteFile(unboundLPath, unboundLBytes, 0o500)
 	_ = os.Chmod(unboundLPath, 0o500)
 	compatHookCmd := exec.Command(binPath, append([]string{"coordination"}, append(unboundSel, "--", "hook", "--config", unboundCfgPath)...)...)
-	compatHookCmd.Stdin = strings.NewReader(`{"hook_event_name":"SessionStart","session_id":"conv-1","cwd":"` + root + `","host_pid":` + strconv.Itoa(os.Getpid()) + `}`)
+	compatHookCmd.Stdin = strings.NewReader(`{"hook_event_name":"SessionStart","session_id":"conv-compat-unbound","cwd":"` + root + `","host_pid":` + strconv.Itoa(os.Getpid()) + `}`)
 	compatHookOut, err := compatHookCmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(compatHookOut), "Cairn session") {
 		t.Fatalf("expected /3 subprocess coordination hook on unbound profile to succeed, got err=%v out=%q", err, compatHookOut)
