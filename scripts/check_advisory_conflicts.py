@@ -18,11 +18,12 @@ def check_harness(invoke, binary, environment):
     assert view['source_schema'] == 'cairn.semantic/17' and view['advisory_conflicts'] is True
     assert {e['record_id'] for e in view['index']} == {a['record_id'], b['record_id']}
     assert 'PRIVATE-OPENING-DETAIL' not in json.dumps(view)
-    for entry in view['index']:
+    for i, entry in enumerate(view['index']):
         assert entry['conflicts'][0]['conflict_id'] == group['conflict_id']
         assert 'summary_span' not in entry
-        pulled = invoke('cairn_pull', entry['pull_arguments'])
-        assert pulled == invoke('cairn_pull', entry['pull_arguments'])
+        pull_args = dict(entry['pull_arguments'], force=True) if i > 0 else entry['pull_arguments']
+        pulled = invoke('cairn_pull', pull_args)
+        assert pulled == invoke('cairn_pull', pull_args)
         assert pulled['selection']['record']['record_id'] == entry['record_id']
         positions = [pulled['selection'], *pulled['competing']]
         assert {p['record']['record_id']: p['record']['body'] for p in positions} == {

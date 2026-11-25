@@ -608,7 +608,7 @@ class SemanticFallbackTests(unittest.TestCase):
             self.assertIn('"source_extent":"partial_span"', text)
             self.assertIn('"coverage":{"indexed":1,"eligible":2}', text)
             self.assertIn('"match_span"', text)
-            self.assertEqual(state['seen'], {})
+            self.assertEqual(state['seen'], {'saved': {'version': 2, 'spans': [{'offset': 12600, 'end': 12652, 'eof': True}]}})
             self.assertEqual(state['last_recall']['source_extent'], 'partial_span')
             self.assertEqual(state['last_recall']['partial_record'], 'saved')
             self.assertIsNone(state['last_recall']['expanded'])
@@ -1062,7 +1062,7 @@ class RecallCandidateTests(unittest.TestCase):
             self.assertIn('"source_extent":"partial_span"', text)
             self.assertNotIn('Earlier context.', text)
             self.assertLessEqual(len(text.encode()), self.memory.config['context_bytes'])
-            self.assertEqual(state['seen'], {})
+            self.assertEqual(state['seen'], {'saved': {'version': 1, 'spans': [{'offset': 15300, 'end': 16836, 'eof': False}]}})
             self.assertEqual(state['last_recall']['partial_record'], 'saved')
             self.assertIsNone(state['last_recall']['expanded'])
             if isinstance(whole, hook.BudgetRefused):
@@ -1204,7 +1204,7 @@ class RecallCandidateTests(unittest.TestCase):
         self.assertIn('"span_origin":"whole_pull"', text)
         self.assertNotIn('Optional body unavailable', text)
         self.assertLessEqual(len(text.encode()), 4000)
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {'saved': {'version': 1, 'spans': [{'offset': 0, 'end': 1536, 'eof': False}]}})
         self.assertEqual(full['selection']['record']['body'], body)
 
     def test_local_excerpt_preserves_whole_only_and_source_integrity_guards(self):

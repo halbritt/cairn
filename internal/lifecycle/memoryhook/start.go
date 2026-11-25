@@ -214,7 +214,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		if !contains([]string{"codex", "claude", "opencode", "hermes"}, text(config.Get("harness"))) {
 			return boundary(fail("ordinary capture harness remains unavailable"))
 		}
-		return runCapture(ctx, config, event, directory, hookStarted, trace)
+		return runCapture(ctx, config, event, directory, env, hookStarted, trace)
 	}
 	if ordinary && toolObservationEvent(event) {
 		return runToolObservation(ctx, config, event, directory, trace)
@@ -345,35 +345,9 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		trace["stage"] = "recall"
 		status := value.Mapping(value.Field("at", floating(float64(time.Now().UnixNano())/1e9)), value.Field("hook_event_name", event.Get("hook_event_name")), value.Field("outcome", value.Text("empty")), value.Field("records", array()), value.Field("bytes", integer(0)), value.Field("discovery", value.Text("lexical")), value.Field("inspected", integer(0)), value.Field("rejected", value.Mapping()))
 		state.Set("last_recall", status)
-		if value.SameText(event.Get("hook_event_name"), "SessionStart") {
-			state.Set("seen", value.Mapping())
-		}
-		if retained := event.Get("retained_record_ids"); retained != nil {
-			if retained.Kind != value.Array {
-				return fail("invalid retained context identities")
-			}
-			for _, id := range retained.Items {
-				if id.Kind != value.String {
-					return fail("invalid retained context identities")
-				}
-			}
-			seen := value.Mapping()
-			previous := state.Get("seen")
-			if previous == nil {
-				previous = value.Mapping()
-			}
-			for _, member := range previous.Members {
-				for _, id := range retained.Items {
-					if string(id.String) == string(member.Key) {
-						seen.Members = append(seen.Members, member)
-						break
-					}
-				}
-			}
-			state.Set("seen", seen)
-		}
-		if state.Get("seen") == nil {
-			state.Set("seen", value.Mapping())
+		state, err = prepareSeenState(state, config, event, env, nowSeconds())
+		if err != nil {
+			return err
 		}
 		socket, err := pathValue(config.Get("socket"))
 		token := ""
@@ -398,11 +372,11 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 			client, err = memoryclient.New(api, memoryclient.Options{Scope: scope, Context: &pins, CommandPrefix: []string{text(config.Get("cairn")), "agent", "--socket", text(config.Get("socket")), "--token-file", text(config.Get("token_file"))}, Diagnostics: diagnostics, ObserveOperation: func(name string, elapsed time.Duration) { operationTime[name] += elapsed }})
 			if err == nil {
 				if ordinary && value.SameText(config.Get("harness"), "claude") {
-					body, err = claudeRecall(ctx, client, config, event, state, status, project, selectors)
+					body, err = claudeRecall(ctx, client, config, event, state, status, project, env, selectors)
 				} else if ordinary && !(value.SameText(config.Get("harness"), "codex") && value.SameText(config.Get("recall_mode"), "agent_tools")) {
-					body, err = ordinaryRecall(ctx, client, config, event, state, status, project, selectors)
+					body, err = ordinaryRecall(ctx, client, config, event, state, status, project, env, selectors)
 				} else {
-					body, err = recall(ctx, client, config, event, state, status, project, bound)
+					body, err = recall(ctx, client, config, event, state, status, project, env, bound)
 				}
 			}
 		}
@@ -472,7 +446,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 	return result
 }
 
-func recall(ctx context.Context, client *memoryclient.Client, config, event, state, status *value.Value, project string, bound bool) (string, error) {
+func recall(ctx context.Context, client *memoryclient.Client, config, event, state, status *value.Value, project string, env map[string][]rune, bound bool) (string, error) {
 	started := time.Now()
 	deadline, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -675,7 +649,7 @@ func recall(ctx context.Context, client *memoryclient.Client, config, event, sta
 			}
 		}
 		if eligible && !value.Truth(grant.Get("granted")) {
-			body, err = eagerCandidates(deadline, client, config, selected, viewValue, view.Index, remaining, status, cost)
+			body, err = eagerCandidatesWithSeen(deadline, client, config, state, env, selected, viewValue, view.Index, remaining, status, cost)
 			if err != nil {
 				return "", err
 			}

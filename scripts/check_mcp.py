@@ -131,7 +131,7 @@ def check(binary, root, environment, claim, support):
         assert pulled['credits_remaining'] == view['credits_remaining'] - 1
         location = view['index'][0]['summary_span']
         assert location['offset'] > 160
-        partial_args = dict(view['index'][0]['pull_arguments'], request_id=str(uuid.uuid4()), span=location)
+        partial_args = dict(view['index'][0]['pull_arguments'], request_id=str(uuid.uuid4()), span=location, force=True)
         partial = tool('cairn_pull', partial_args)
         assert partial['span']['body'] == args['body'][location['offset']:location['offset']+location['length']]
         assert query in partial['span']['body'] and partial['selection']['record']['body'] == ''

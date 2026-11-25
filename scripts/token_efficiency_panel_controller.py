@@ -494,7 +494,7 @@ def verify_handoff_read(binary, socket, token, session, record, source, intent, 
             and entry.get("body_sha256") == expected_body_hash,
             "worker index does not identify the exact handoff source")
     expanded = call(binary, socket, token, ("agent", "pull"), body=json.dumps(
-        entry["pull_arguments"]), session=session)
+        dict(entry["pull_arguments"], force=True)), session=session)
     selected = (expanded.get("selection") or {}).get("record") or {}
     require(selected.get("record_id") == record["record_id"]
             and selected.get("version") == record["version"]

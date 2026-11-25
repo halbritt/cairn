@@ -13,7 +13,7 @@ import (
 	"github.com/halbritt/cairn/internal/statefile"
 )
 
-var captureFields = []string{"captured_digest", "captured_messages", "capture_snapshot_marker", "codex_capture_marker", "capture_pending", "last_capture"}
+var captureFields = []string{"captured_digest", "captured_messages", "capture_snapshot_marker", "codex_capture_marker", "capture_pending", "last_capture", "capture_cache", "compaction_epoch"}
 
 func captureEventName(event *value.Value) bool {
 	return contains([]string{"PreCompact", "SessionEnd", "Stop"}, text(event.Get("hook_event_name")))
@@ -120,7 +120,7 @@ func captureStatus(state *value.Value, outcome string) {
 	state.Set("last_capture", value.Mapping(value.Field("at", floating(float64(time.Now().UnixNano())/1e9)), value.Field("outcome", value.Text(outcome)), value.Field("records", array()), value.Field("selector_calls", integer(0))))
 }
 
-func runCapture(ctx context.Context, config, event *value.Value, directory string, started time.Time, trace map[string]any) (result Result) {
+func runCapture(ctx context.Context, config, event *value.Value, directory string, env map[string][]rune, started time.Time, trace map[string]any) (result Result) {
 	observed := value.Mapping()
 	boundary := func(err error) Result { return failure(event, err) }
 	if value.SameText(config.Get("harness"), "hermes") && !validText(event.Get("session_id")) {
@@ -229,9 +229,12 @@ func runCapture(ctx context.Context, config, event *value.Value, directory strin
 				trace["stage"] = "capture"
 				prior := state.Get("capture_snapshot_marker")
 				state = state.Without("capture_snapshot_marker")
-				output, err = captureBody(ctx, config, event, state, observed, directory)
+				output, err = captureBody(ctx, config, event, state, env, observed, directory)
 				if err != nil {
 					return err
+				}
+				if value.SameText(event.Get("hook_event_name"), "PreCompact") {
+					state.Set("compaction_epoch", integer(number(state.Get("compaction_epoch"))+1))
 				}
 				outcome := text(state.Get("last_capture").Get("outcome"))
 				observed.Set("outcome", value.Text(outcome))
@@ -374,7 +377,7 @@ func captureOffset(v *value.Value) int64 {
 	return n.Int64()
 }
 
-func captureBody(ctx context.Context, config, event, state, observed *value.Value, directory string) (*value.Value, error) {
+func captureBody(ctx context.Context, config, event, state *value.Value, env map[string][]rune, observed *value.Value, directory string) (*value.Value, error) {
 	codex := value.SameText(config.Get("harness"), "codex") && event.Get("messages") == nil
 	var messages *value.Value
 	var offsets []int64
@@ -463,5 +466,5 @@ func captureBody(ctx context.Context, config, event, state, observed *value.Valu
 		captureStatus(state, "courtesy")
 		return value.Mapping(), nil
 	}
-	return captureSelection(ctx, config, event, state, observed, directory, messages, digest)
+	return captureSelection(ctx, config, event, state, env, observed, directory, messages, digest)
 }

@@ -661,16 +661,18 @@ class R04HostWiringTests(InstalledTools, unittest.TestCase):
                 self.assertFalse((f.install_root / 'generations' / ('selection-' + plan['id'])).exists())
 
     def test_unsupported_harness_and_changed_plugin_or_selection_are_refused(self):
-        for kind in ('hermes', 'plugin', 'selection'):
+        for kind in ('unknown', 'plugin', 'selection'):
             with self.subTest(kind=kind):
                 f = self.fixture(kind)
                 plan = copy.deepcopy(f.hook_plan)
-                if kind == 'hermes': plan['harness'] = 'hermes'
+                if kind == 'unknown': plan['harness'] = 'unknown'
                 elif kind == 'plugin': plan['plugins']['memory']['sha256'] = '0' * 64
                 else: plan['selection']['sha256'] = '0' * 64
                 result = self.stage(f, plan)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((f.hook_root / ('selection-' + plan['id'])).exists())
+        import stage_lifecycle_hooks
+        self.assertIn('SessionStart', stage_lifecycle_hooks.MEMORY['hermes'])
 
     def test_changed_unbound_profile_refuses_before_source_fallback(self):
         f = self.fixture('changed profile')

@@ -323,14 +323,22 @@ sys.exit(spec.get('exit',0))
         self.configure(context_bytes=3000)
         self.optional_note('Concrete retained guidance.\n'+'filler '*1800, offset=0, length=26)
         result=self.pair()
-        self.assertEqual(self.context(result)['expanded']['span_origin'], 'whole_pull')
+        expanded=self.context(result)['expanded']
+        rec=expanded['selection']['record']
+        self.assertEqual(expanded['span_origin'], 'whole_pull')
         self.assertEqual(sum(op == 'expand' for op, _, _ in self.calls), 1)
-        self.assertEqual(self.state()[self.state_key()+'.json']['seen'], {})
+        self.assertEqual(self.state()[self.state_key()+'.json']['seen'], {
+            rec['record_id']: {'version': rec['version'], 'spans': [{'offset': expanded['span']['offset'], 'end': expanded['span']['end'], 'eof': False}]}
+        })
         self.reset_state(); self.expand_refusal='BUDGET_REFUSED'
         result=self.pair()
-        self.assertEqual(self.context(result)['expanded']['source_extent'], 'partial_span')
+        expanded=self.context(result)['expanded']
+        rec=expanded['selection']['record']
+        self.assertEqual(expanded['source_extent'], 'partial_span')
         self.assertEqual(sum(op == 'expand' for op, _, _ in self.calls), 2)
-        self.assertEqual(self.state()[self.state_key()+'.json']['seen'], {})
+        self.assertEqual(self.state()[self.state_key()+'.json']['seen'], {
+            rec['record_id']: {'version': rec['version'], 'spans': [{'offset': expanded['span']['offset'], 'end': expanded['span']['end'], 'eof': False}]}
+        })
 
     def test_provider_timeout_keeps_required_and_reaps_child(self):
         self.required(); self.optional_note('Concrete retained guidance.')
@@ -403,8 +411,12 @@ sys.exit(spec.get('exit',0))
                 self.assertEqual(self.recall_status()['shortlist_candidates'],2 if partial else 1)
                 self.assertEqual(sum(op == 'expand' for op, _, _ in self.calls),2 if partial else 1)
                 if partial:
-                    self.assertEqual(self.context(result)['expanded']['span']['offset'],28)
-                    self.assertEqual(self.state()[self.state_key()+'.json']['seen'],{})
+                    expanded=self.context(result)['expanded']
+                    rec=expanded['selection']['record']
+                    self.assertEqual(expanded['span']['offset'],28)
+                    self.assertEqual(self.state()[self.state_key()+'.json']['seen'],{
+                        rec['record_id']: {'version': rec['version'], 'spans': [{'offset': 28, 'end': expanded['span']['end'], 'eof': False}]}
+                    })
 
     def test_semantic_page_and_preview_limits_select_later_guidance(self):
         self.notes(45)

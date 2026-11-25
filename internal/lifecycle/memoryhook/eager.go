@@ -87,18 +87,27 @@ func checkedWhole(group []*value.Value, response *value.Value) error {
 // eagerCandidates consumes current receipts before emitting advisory bodies.
 // Optional read failures remain visible in bounded bookkeeping, with no refund.
 func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, selected, result *value.Value, typed []indexview.Entry, budget int, status *value.Value, measure func(string) int, observers ...candidateObserver) (string, error) {
+	return eagerCandidatesWithSeen(ctx, client, config, nil, nil, selected, result, typed, budget, status, measure, observers...)
+}
+
+func eagerCandidatesWithSeen(ctx context.Context, client *memoryclient.Client, config, state *value.Value, env map[string][]rune, selected, result *value.Value, typed []indexview.Entry, budget int, status *value.Value, measure func(string) int, observers ...candidateObserver) (string, error) {
+	dedup := state != nil && recallDedupEnabled(config, env)
+	var seen *value.Value
+	if state != nil {
+		seen = state.Get("seen")
+	}
 	entries := result.Get("index")
 	anyHash := false
 	for _, entry := range entries.Items {
 		anyHash = anyHash || bodyHash.MatchString(text(entry.Get("body_sha256")))
 	}
 	if !anyHash {
-		return renderCandidates(config, selected, result, budget, status, measure, nil, observers...)
+		return renderCandidatesWithSeen(config, seen, dedup, selected, result, budget, status, measure, nil, observers...)
 	}
 	inspection := value.Mapping(value.Field("pull_calls", integer(0)), value.Field("remaining_pull_calls", integer(4)), value.Field("delivered_records", integer(0)), value.Field("refusals", value.Mapping()))
 	progress := &candidateProgress{inspection: inspection}
 	render := func(p *candidateProgress, target *value.Value) (string, error) {
-		return renderCandidates(config, selected, result, budget, target, measure, p, observers...)
+		return renderCandidatesWithSeen(config, seen, dedup, selected, result, budget, target, measure, p, observers...)
 	}
 	body, err := render(progress, status)
 	if err != nil || !value.SameText(status.Get("outcome"), "delegated") {
@@ -124,6 +133,7 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 		inspection.Set("remaining_pull_calls", integer(4-calls))
 	}
 	var lastGroup []*value.Value
+	skippedSeen := 0
 	for _, group := range groups {
 		lastGroup = group
 		candidateRoute(observers, "candidate_start", group)
@@ -139,11 +149,15 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 				return "", err
 			}
 		}
-		if number(inspection.Get("delivered_records"))+len(group) > 2 {
+		if skippedSeen+number(inspection.Get("delivered_records"))+len(group) > 2 {
 			refusal("record_limit")
 			candidateRoute(observers, "record_limit", group)
 			oversized = nil
 			break
+		}
+		if dedup && seenCoversGroup(seen, group) {
+			skippedSeen += len(group)
+			continue
 		}
 		verifiable := true
 		for _, entry := range group {
@@ -315,6 +329,9 @@ func eagerCandidates(ctx context.Context, client *memoryclient.Client, config, s
 		body, err = render(progress, status)
 		if err == nil {
 			status.Set("candidate_inspection", inspection)
+			if dedup && state != nil && len(progress.bodies) > 0 {
+				recordEagerSeen(state, progress.bodies, nowSeconds())
+			}
 			return body, nil
 		}
 		if !contextError(err) {

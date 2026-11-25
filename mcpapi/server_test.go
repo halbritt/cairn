@@ -280,6 +280,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		for range 3 {
 			pull := bounded.Index[0].PullArguments
 			pull.RequestID = uuid.NewString()
+			pull.Force = true
 			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_pull", Arguments: pull})
 			if err != nil {
 				t.Fatal(err)
@@ -329,7 +330,9 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 			if len(inspected.Selected) != 1 || inspected.Selected[0].Record.Body != mandatory.Body {
 				t.Fatal("inspection truncated required context")
 			}
-			pulled, pullBytes := invokeMeasured("cairn_pull", inspected.Index[0].PullArguments, "")
+			inspectedPull := inspected.Index[0].PullArguments
+			inspectedPull.Force = true
+			pulled, pullBytes := invokeMeasured("cairn_pull", inspectedPull, "")
 			var expanded core.Expansion
 			if err := json.Unmarshal(pulled, &expanded); err != nil || !strings.Contains(expanded.Selection.Record.Body, "日本語") || searchBytes+pullBytes > memoryAllowance {
 				t.Fatalf("whole native inspection failed: search=%d pull=%d result=%s err=%v", searchBytes, pullBytes, pulled, err)
@@ -356,7 +359,9 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 			if len(reserved.Selected) != 1 || reserved.Selected[0].Record.Body != mandatory.Body {
 				t.Fatal("reserve truncated mandatory context")
 			}
-			pulled, pullBytes := invokeMeasured("cairn_pull", reserved.Index[0].PullArguments, "")
+			reservedPull := reserved.Index[0].PullArguments
+			reservedPull.Force = true
+			pulled, pullBytes := invokeMeasured("cairn_pull", reservedPull, "")
 			var expanded core.Expansion
 			if err := json.Unmarshal(pulled, &expanded); err != nil || !strings.Contains(expanded.Selection.Record.Body, "日本語") || expanded.BytesRemaining >= reserved.BytesRemaining || searchBytes+pullBytes > memoryAllowance {
 				t.Fatalf("reserved checked pull lost content/accounting: search=%d pull=%d result=%s err=%v", searchBytes, pullBytes, pulled, err)
@@ -386,7 +391,9 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		if defaultPolicy.MemoryBudget == nil || defaultPolicy.MemoryBudget.Schema != "cairn.memory-budget/1" || defaultPolicy.MemoryBudget.Bytes != memoryAllowance || searchBytes+defaultPolicy.BytesRemaining > memoryAllowance {
 			t.Fatalf("default policy lost sealed memory cap: %s", body)
 		}
-		pulled, pullBytes = invokeMeasured("cairn_pull", defaultPolicy.Index[0].PullArguments, "")
+		defaultPull := defaultPolicy.Index[0].PullArguments
+		defaultPull.Force = true
+		pulled, pullBytes = invokeMeasured("cairn_pull", defaultPull, "")
 		if err := json.Unmarshal(pulled, &expanded); err != nil || !strings.Contains(expanded.Selection.Record.Body, "日本語") || searchBytes+pullBytes > memoryAllowance {
 			t.Fatalf("default policy exceeded search/pull allocation: search=%d pull=%d err=%v", searchBytes, pullBytes, err)
 		}
@@ -654,8 +661,10 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 			t.Fatalf("metadata changed explicit scope: %+v %v", explicit.Scope, err)
 		}
 	})
-	pulled := invoke("cairn_pull", view.Index[0].PullArguments, "")
-	if string(invoke("cairn_pull", view.Index[0].PullArguments, "")) != string(pulled) {
+	pullViewArgs := view.Index[0].PullArguments
+	pullViewArgs.Force = true
+	pulled := invoke("cairn_pull", pullViewArgs, "")
+	if string(invoke("cairn_pull", pullViewArgs, "")) != string(pulled) {
 		t.Fatal("pull retry changed")
 	}
 	var expansion core.Expansion
@@ -700,7 +709,9 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		}
 		invoke("cairn_edit", refused, "AUTHORITY_DENIED")
 	}
-	invoke("cairn_pull", view.Index[0].PullArguments, "STALE_HANDLE")
+	stalePullArgs := view.Index[0].PullArguments
+	stalePullArgs.Force = true
+	invoke("cairn_pull", stalePullArgs, "STALE_HANDLE")
 	bodyOnly, err := op.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: record.Draft})
 	if err != nil {
 		t.Fatal(err)
@@ -992,7 +1003,9 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		if !ok {
 			t.Fatalf("preview is not a saved predecessor: %+v", entry)
 		}
-		pulled, pullSize := invokeMeasured("cairn_pull", entry.PullArguments, "")
+		reservedEntryPull := entry.PullArguments
+		reservedEntryPull.Force = true
+		pulled, pullSize := invokeMeasured("cairn_pull", reservedEntryPull, "")
 		var expanded core.Expansion
 		if err := json.Unmarshal(pulled, &expanded); err != nil || expanded.Selection.Record.Body != want || expanded.BytesRemaining >= reserved.BytesRemaining || size+pullSize > allowance {
 			t.Fatalf("reserved predecessor pull lost content or accounting: prepare=%d pull=%d cap=%d err=%v", size, pullSize, allowance, err)

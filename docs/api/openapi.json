@@ -7211,6 +7211,9 @@
       },
       "core.ExpandRequest": {
         "properties": {
+          "force": {
+            "type": "boolean"
+          },
           "handle": {
             "type": "string"
           },
@@ -7247,6 +7250,12 @@
       "core.ExpandRequest.accepted": {
         "additionalProperties": false,
         "properties": {
+          "force": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "handle": {
             "type": [
               "string",
@@ -26741,6 +26750,12 @@
                         "maximum": 9999,
                         "minimum": 1,
                         "type": "integer"
+                      },
+                      "force": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
                       },
                       "handle": {
                         "type": [

@@ -39,7 +39,7 @@ func HostFailure(phase string, err error) Result {
 // InvalidInput labels selected public shape refusals without exposing data.
 func InvalidInput(phase, message string) Result { return HostFailure(phase, fail(message)) }
 
-func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, event, state, status *value.Value, project string, meter *recallSelectorMeter) (string, error) {
+func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, event, state, status *value.Value, project string, env map[string][]rune, meter *recallSelectorMeter) (string, error) {
 	started := time.Now()
 	mode := config.Get("recall_mode")
 	if mode != nil && !value.SameText(mode, "ambient") && !value.SameText(mode, "agent_tools") {
@@ -119,7 +119,7 @@ func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, ev
 	}
 	var body string
 	if boundClaude(config) {
-		body, err = claudeAgentContext(deadline, client, config, event, result, selected, status, view.Index, budget)
+		body, err = claudeAgentContext(deadline, client, config, event, state, env, result, selected, status, view.Index, budget)
 		if err != nil {
 			return "", err
 		}
@@ -142,17 +142,18 @@ func ordinaryRecall(ctx context.Context, client *memoryclient.Client, config, ev
 		}
 		status.Set("discovery", value.Text(discovery))
 	} else if !deferred && agentTools {
-		body, err = eagerCandidates(deadline, client, config, selected, result, view.Index, budget, status, func(s string) int { return len(s) })
+		body, err = eagerCandidatesWithSeen(deadline, client, config, state, env, selected, result, view.Index, budget, status, func(s string) int { return len(s) })
 		status.Set("discovery", value.Text("agent_tools"))
 		status.Set("bytes", integer(len(body)))
 	} else {
+		dedup := recallDedupEnabled(config, env)
 		var choose func() (*value.Value, *value.Value, error)
 		if !deferred && value.Truth(config.Get("semantic_fallback")) {
 			provider := &providerRecall{ctx: deadline, client: client, config: config, event: event, status: status,
-				result: result, seen: state.Get("seen"), intent: intent, budget: budget, project: project, meter: meter}
+				result: result, seen: state.Get("seen"), dedup: dedup, intent: intent, budget: budget, project: project, meter: meter}
 			choose = provider.choose
 		}
-		body, err = ambientRecall(deadline, client, event, state, status, result, selected, view.Index, intent, budget, deferred, notification, project, choose)
+		body, err = ambientRecall(deadline, client, event, state, status, result, selected, view.Index, intent, budget, deferred, notification, project, dedup, choose)
 	}
 
 	if err == nil {

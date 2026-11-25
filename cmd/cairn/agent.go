@@ -235,8 +235,8 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 			Operation:   "index",
 			AcceptsArgs: true,
 			Help:        searchOperationHelp,
-			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, socketPath, tokenPath string, args []string, input io.Reader) (any, error) {
-				return agentSearch(ctx, client, args, socketPath, tokenPath, input)
+			Dispatch: func(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, socketPath, tokenPath string, args []string, input io.Reader) (any, error) {
+				return agentSearch(ctx, client, session, args, socketPath, tokenPath, input)
 			},
 		},
 		{
@@ -244,11 +244,11 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 			Operation:   "expand",
 			AcceptsArgs: true,
 			Help:        func() (commandHelp, error) { return pullOperationHelp("pull"), nil },
-			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+			Dispatch: func(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, socketPath, tokenPath string, args []string, input io.Reader) (any, error) {
 				if len(args) > 0 {
-					return agentPull(ctx, client, "pull", args)
+					return agentPull(ctx, client, session, socketPath, tokenPath, "pull", args)
 				}
-				return callAgentJSONOperation(ctx, client, agentSubcommandSpec{Name: "pull", Operation: "expand"}, input)
+				return agentPullJSON(ctx, client, session, socketPath, tokenPath, input)
 			},
 		},
 		{
@@ -256,9 +256,9 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 			Operation:   "expand-evidence",
 			AcceptsArgs: true,
 			Help:        func() (commandHelp, error) { return pullOperationHelp("pull-evidence"), nil },
-			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+			Dispatch: func(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, socketPath, tokenPath string, args []string, input io.Reader) (any, error) {
 				if len(args) > 0 {
-					return agentPull(ctx, client, "pull-evidence", args)
+					return agentPull(ctx, client, session, socketPath, tokenPath, "pull-evidence", args)
 				}
 				return callAgentJSONOperation(ctx, client, agentSubcommandSpec{Name: "pull-evidence", Operation: "expand-evidence"}, input)
 			},

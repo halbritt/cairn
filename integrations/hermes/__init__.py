@@ -81,6 +81,13 @@ class CairnProvider(MemoryProvider):
         self.capture_pending = False
         self.binding = None
         self.turn_capture = False
+        self._started_sessions = set()
+
+    def _supports_session_start(self):
+        if 'commands' not in self.config and 'lifecycle_selection' not in self.config:
+            return True
+        commands = self.config.get('commands')
+        return isinstance(commands, dict) and 'SessionStart' in commands
 
     def is_available(self):
         return (get_hermes_home() / 'cairn-lifecycle.json').is_file()
@@ -227,9 +234,13 @@ class CairnProvider(MemoryProvider):
                 return
             self.last_dialogue = self.selected_dialogue(conversation_history or [])
             self.capture_pending = True
+            if session_id not in self._started_sessions:
+                if self._supports_session_start():
+                    self.invoke('SessionStart', source='startup', prompt='')
+                self._started_sessions.add(session_id)
             prompt = user_message if isinstance(user_message, str) else ''
             source = 'resume' if prompt.strip().lower().rstrip('.!') in ('continue', 'resume') else ''
-            result = self.invoke('UserPromptSubmit', prompt=prompt, source=source, retained_record_ids=[]) or {}
+            result = self.invoke('UserPromptSubmit', prompt=prompt, source=source) or {}
             context = result.get('hookSpecificOutput', {}).get('additionalContext', '')
             if isinstance(context, str) and len(context.encode('utf-8')) <= CONTEXT_BYTES:
                 self.context = context
@@ -284,6 +295,9 @@ class CairnProvider(MemoryProvider):
             # The live provider can retry its bounded original turn before that helper runs.
             result = self.invoke('PreCompact', messages=self.last_dialogue)
             self.capture_result(result)
+            if self._supports_session_start():
+                self.invoke('SessionStart', source='compact', prompt='')
+                self._started_sessions.add(self.session_id)
             self.compaction_attempted = True
             self.context = ''
 
@@ -307,6 +321,9 @@ class CairnProvider(MemoryProvider):
                 self.last_dialogue = dialogue(messages)
             result = self.invoke('PreCompact', messages=self.last_dialogue)
             self.capture_result(result)
+            if self._supports_session_start():
+                self.invoke('SessionStart', source='compact', prompt='')
+                self._started_sessions.add(self.session_id)
             self.context = ''
             self.compaction_attempted = True
         return ''
@@ -332,6 +349,9 @@ class CairnProvider(MemoryProvider):
             # dialogue. An asynchronously queued /new switch can be stale.
             if kwargs.get('reason') == 'compression':
                 self.context = ''
+                if not self.compaction_attempted:
+                    self._started_sessions.discard(new_session_id)
+                self.compaction_attempted = False
 
     def shutdown(self):
         with self.lock:

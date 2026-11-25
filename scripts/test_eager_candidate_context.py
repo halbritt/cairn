@@ -140,7 +140,7 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertLess(len(emitted(supplied).encode()), len(emitted(original).encode()))
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
         self.assertEqual(len(self.calls), 1)
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {entry['record_id']: 1})
 
     def test_optional_view_does_not_erase_unknown_or_malformed_metadata(self):
         for value in (True, -1, 1.5, 'unknown', dict(future='preserve'), None):
@@ -220,7 +220,7 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual(view['candidate_search']['discovery'], self.result['discovery'])
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
         self.assertGreater(view['remaining_memory_bytes'], 2500)
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {e['record_id']: 1 for e in self.entries[:2]})
         self.assertEqual(state['last_recall']['records'], [])
         self.assertEqual(state['last_recall']['outcome'], 'delegated')
         self.assertIn('unverified', text)
@@ -245,7 +245,7 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertGreaterEqual(view['remaining_memory_bytes'], 500)
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 7000)
         self.assertEqual(self.result, original)
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {e['record_id']: 1 for e in self.entries[:2]})
 
     def test_whole_context_refusal_retains_required_text_and_handles(self):
         self.result['selected'] = [dict(mandatory=True, record=dict(body='Keep this required rule whole.'))]
@@ -300,7 +300,9 @@ class EagerCandidateTests(unittest.TestCase):
             ensure_ascii=False).encode()), 5400)
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5400)
         self.assertEqual(self.responses, before)
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {
+            entry['record_id']: {'version': 1, 'spans': [{'offset': offset, 'end': offset + len(passage.encode()), 'eof': False}]}
+        })
 
     def test_whole_pull_budget_refusal_is_visible_and_has_no_span_retry(self):
         def refuse(*args, **kwargs):
@@ -446,7 +448,7 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual(view['candidate_inspection'], dict(pull_calls=2, remaining_pull_calls=2,
             delivered_records=1, refusals=dict(whole_context_budget=1, span_context_budget=1)))
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 6500)
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {later['record_id']: 1})
 
     def test_after_oversized_passage_competing_group_is_delivered_whole(self):
         self.config['context_bytes'] = 6400
@@ -682,6 +684,39 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertGreater(view['remaining_memory_bytes'], 3000)
         self.assertEqual(len(self.calls), 1)
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
+
+    def test_multiturn_dedup_counts_slots_without_backfill_and_respects_opt_out(self):
+        import os
+        extra = dict(self.entries[0], record_id='rec-extra',
+                     pull_arguments=dict(self.entries[0]['pull_arguments'], handle='rec-extra'))
+        self.entries.append(extra)
+        self.responses['rec-extra'] = json.loads(json.dumps(self.responses[self.entries[0]['record_id']]))
+        self.responses['rec-extra']['selection']['record']['record_id'] = 'rec-extra'
+        self.responses['rec-extra']['selection']['record']['body'] = 'Extra guidance.'
+        self.result['index'] = self.entries[:4]
+        _, view1, state1 = self.invoke()
+        self.assertEqual(len(view1['candidate_bodies']), 2)
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(set(state1['seen']), {self.entries[0]['record_id'], self.entries[1]['record_id']})
+        # Turn 2: top-2 already seen -> skipped without pulling, and slotCount prevents backfilling rec-2/rec-extra
+        self.calls.clear()
+        _, view2, state2 = self.invoke(hook_event_name='UserPromptSubmit', prompt='Second turn')
+        self.assertEqual(self.calls, [])
+        self.assertEqual(view2.get('candidate_bodies', []), [])
+        self.assertEqual(set(state2['seen']), {self.entries[0]['record_id'], self.entries[1]['record_id']})
+        # Version bump invalidates seen for entry 0
+        self.entries[0]['version'] = 2
+        self.responses[self.entries[0]['record_id']]['selection']['record']['version'] = 2
+        _, view3, state3 = self.invoke(hook_event_name='UserPromptSubmit', prompt='Third turn')
+        self.assertEqual([c['handle'] for c in self.calls], [self.entries[0]['record_id']])
+        self.assertEqual(len(view3['candidate_bodies']), 1)
+        self.assertEqual(state3['seen'][self.entries[0]['record_id']], 2)
+        # Opt-out via CAIRN_RECALL_DEDUP=0 pulls again even when seen
+        self.calls.clear()
+        with patch.dict(os.environ, {'CAIRN_RECALL_DEDUP': '0'}):
+            _, view4, _ = self.invoke(hook_event_name='UserPromptSubmit', prompt='Fourth turn')
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(len(view4['candidate_bodies']), 2)
 
 if __name__ == '__main__':
     unittest.main()

@@ -471,6 +471,8 @@ func (d *inboxDelivery) deliver(directory string) error {
 	}
 	body := requiredText
 	status := value.Mapping(value.Field("rejected", value.Mapping()))
+	var sessionSeenState *value.Value
+	var sessionSeenExisted, sessionSeenOK bool
 	if taskBody != nil {
 		d.phase("optional_search", "intent")
 		queryEvent := clone(in.Event)
@@ -531,7 +533,8 @@ func (d *inboxDelivery) deliver(directory string) error {
 				if d.observed.data != nil {
 					observers = []candidateObserver{d.observed}
 				}
-				body, e = eagerCandidates(limited, d.memory, in.Memory, selected, foundValue, found.Index, budget, status, cost, observers...)
+				sessionSeenState, sessionSeenExisted, sessionSeenOK = loadInboxSeenState(directory, id.session, in.Memory, in.Event)
+				body, e = eagerCandidatesWithSeen(limited, d.memory, in.Memory, sessionSeenState, nil, selected, foundValue, found.Index, budget, status, cost, observers...)
 				cancel()
 				if e != nil {
 					return inboxClassify(e)
@@ -621,6 +624,11 @@ func (d *inboxDelivery) deliver(directory string) error {
 	}
 	if err = ledger.SaveInboxValue(path, grants); err != nil {
 		return err
+	}
+	if sessionSeenOK {
+		if err = saveInboxSeenState(directory, id.session, sessionSeenState, sessionSeenExisted); err != nil {
+			return err
+		}
 	}
 	d.out.Message = output
 	return nil

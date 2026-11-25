@@ -110,6 +110,7 @@ class CheckedOrdinaryTests(unittest.TestCase):
                 if path.suffix=='.lock':continue
                 body=json.loads(path.read_text())
                 for k in ('at','duration_ms','elapsed_seconds'):body.get('last_recall',{}).pop(k,None)
+                for rec in body.get('seen_meta',{}).get('records',{}).values():rec.pop('at',None)
                 result[path.name]=body
         return result
     def pair(self):

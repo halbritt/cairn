@@ -163,6 +163,7 @@ class HermesRecallTests(unittest.TestCase):
     def test_start_and_prompt_reach_actual_checked_recall(self):
         for name in ('SessionStart', 'UserPromptSubmit'):
             with self.subTest(event=name):
+                shutil.rmtree(Path(self.f.memory['state_dir']), ignore_errors=True)
                 self.event(name)
                 result = self.pair()
                 self.assertEqual((result.returncode, result.stderr), (0, b''))
@@ -180,6 +181,7 @@ class HermesRecallTests(unittest.TestCase):
         self.optional_note('Current retention policy: 日本語 😀\n')
         for name in ('SessionStart', 'UserPromptSubmit'):
             with self.subTest(event=name):
+                shutil.rmtree(Path(self.f.memory['state_dir']), ignore_errors=True)
                 self.event(name)
                 result = self.pair()
                 context = self.context(result)

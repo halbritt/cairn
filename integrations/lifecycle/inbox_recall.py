@@ -839,6 +839,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)
         text = required_text
         status = dict(rejected={})
+        seen_state = seen_existed = seen_ok = None
         if body is not None:
             # Only retrieval sees this text. Original event/owner dialogue and
             # capture state are never rewritten with sender-authored task data.
@@ -880,7 +881,8 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                         raise _grant_ledger.inbox_refusal('whole required task context exceeds delivery budget', 'optional_render', 'task_context',
                             configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)
                     engine.trace_phase(memory, 'expansion') if hasattr(engine, 'trace_phase') else None
-                    text = engine.eager_agent_candidates(memory, found, budget, status, deadline, measure=cost)
+                    seen_state, seen_existed, seen_ok = engine.load_inbox_seen_state(directory, session, memory_config, event)
+                    text = engine.eager_agent_candidates(memory, found, budget, status, deadline, measure=cost, state=seen_state)
                     if status.get('outcome') != 'delegated':
                         label = 'optional_recall_unavailable'
         metrics['refusal_stage'] = 'final_render'
@@ -950,4 +952,6 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         if not marker.exists():
             engine.save_codex_budget(marker, dict(schema='cairn.inbox-recall-initialized/1', session=session))
         engine.save_codex_budget(path, ledger)
+        if seen_ok:
+            engine.save_inbox_seen_state(directory, session, seen_state, seen_existed)
         return output

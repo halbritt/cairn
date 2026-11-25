@@ -137,6 +137,9 @@ class ClaudeBoundCase(bound.BoundMemoryCase):
                 for key in ('at','duration_ms','elapsed_seconds'):
                     measured=body.get(label,{}).pop(key,None)
                     if measured is not None:self.assertGreaterEqual(measured,0)
+            for rec in body.get('seen_meta',{}).get('records',{}).values():
+                measured=rec.pop('at',None)
+                if measured is not None:self.assertGreaterEqual(measured,0)
             result[path.name]=body
         return result
 

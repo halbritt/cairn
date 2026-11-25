@@ -26,7 +26,7 @@ class SelectionReserveTests(unittest.TestCase):
         self.assertEqual(len(view['candidate_bodies']), 1)
         self.assertEqual(view['candidate_bodies'][0]['response']['source_extent'], 'partial_span')
         self.assertIn(case.entries[1], view['index'])
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {'00000000-0000-4000-8000-000000000000': {'version': 1, 'spans': [{'offset': 0, 'end': len('Old context. '), 'eof': False}]}})
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
 
 

@@ -2,12 +2,14 @@ package memoryhook
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/indexview"
 	"github.com/halbritt/cairn/internal/lifecycle/memoryclient"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 	"github.com/halbritt/cairn/localapi"
@@ -15,7 +17,7 @@ import (
 
 // The caller owns admission, both capture locks, and the final state CAS. The
 // client owns complete selection validation and ordered, confirmed API writes.
-func captureSelection(ctx context.Context, config, event, state, observed *value.Value, directory string, messages *value.Value, digest string) (*value.Value, error) {
+func captureSelection(ctx context.Context, config, event, state *value.Value, env map[string][]rune, observed *value.Value, directory string, messages *value.Value, digest string) (*value.Value, error) {
 	project, err := projectRoot(event, directory)
 	if err != nil {
 		return nil, err
@@ -60,7 +62,18 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 	if strings.ContainsRune(title, 0) {
 		return nil, fail("checkpoint title contains NUL")
 	}
-	previousRaw, err := client.Checkpoint(ctx, title)
+	dedup := recallDedupEnabled(config, env)
+	previousRaw, err := client.CheckpointWithCache(ctx, title, memoryclient.CheckpointCache{
+		Lookup: func(entry indexview.Entry) (json.RawMessage, bool) {
+			_, raw, ok := captureCacheLookup(state, entry, dedup)
+			return raw, ok
+		},
+		Store: func(entry indexview.Entry, raw json.RawMessage) {
+			if rec, decErr := value.DecodeText(raw, "utf-8", 0); decErr == nil {
+				captureCacheStore(state, entry, rec, dedup)
+			}
+		},
+	})
 	if err != nil {
 		return nil, classify(err)
 	}
@@ -71,11 +84,11 @@ func captureSelection(ctx context.Context, config, event, state, observed *value
 			return nil, err
 		}
 	}
-	handoffs, err := captureCandidates(ctx, client, event, state, messages, project, true)
+	handoffs, err := captureCandidates(ctx, client, event, state, state, messages, project, true, dedup)
 	if err != nil {
 		return nil, classify(err)
 	}
-	candidates, err := captureCandidates(ctx, client, event, value.Mapping(), messages, project, false)
+	candidates, err := captureCandidates(ctx, client, event, value.Mapping(), state, messages, project, false, dedup)
 	if err != nil {
 		return nil, classify(err)
 	}
@@ -207,7 +220,7 @@ func captureRecord(record *value.Value) (memoryclient.CaptureRecord, error) {
 	return memoryclient.CaptureRecord{RecordID: text(record.Get("record_id")), Version: n, Kind: text(record.Get("kind")), Body: text(record.Get("body"))}, nil
 }
 
-func captureCandidates(ctx context.Context, client *memoryclient.Client, event, state, messages *value.Value, project string, handoff bool) ([]*value.Value, error) {
+func captureCandidates(ctx context.Context, client *memoryclient.Client, event, intentState, cacheState, messages *value.Value, project string, handoff, dedup bool) ([]*value.Value, error) {
 	var prompt []string
 	for _, message := range messages.Items {
 		if value.SameText(message.Get("role"), "user") {
@@ -217,7 +230,7 @@ func captureCandidates(ctx context.Context, client *memoryclient.Client, event, 
 	queryEvent := clone(event)
 	queryEvent.Set("hook_event_name", value.Text("UserPromptSubmit"))
 	queryEvent.Set("prompt", value.Text(strings.Join(prompt, "\n")))
-	intent, err := detailedRetrievalIntent(queryEvent, state, project)
+	intent, err := detailedRetrievalIntent(queryEvent, intentState, project)
 	if err != nil {
 		return nil, err
 	}
@@ -244,18 +257,22 @@ func captureCandidates(ctx context.Context, client *memoryclient.Client, event, 
 		if matched > limit {
 			break
 		}
-		raw, err := client.Pull(ctx, entry.PullArguments, 5*time.Second)
-		if pullBudget(err) {
-			break
+		record, _, hit := captureCacheLookup(cacheState, entry, dedup)
+		if !hit {
+			raw, err := client.Pull(ctx, entry.PullArguments, 5*time.Second)
+			if pullBudget(err) {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			pulled, err := value.DecodeText(raw, "utf-8", 0)
+			if err != nil {
+				return nil, err
+			}
+			record = pulled.Get("selection").Get("record")
+			captureCacheStore(cacheState, entry, record, dedup)
 		}
-		if err != nil {
-			return nil, err
-		}
-		pulled, err := value.DecodeText(raw, "utf-8", 0)
-		if err != nil {
-			return nil, err
-		}
-		record := pulled.Get("selection").Get("record")
 		body := text(record.Get("body"))
 		if value.SameText(record.Get("class"), "A") && (handoff && strings.HasPrefix(body, workstreamPrefix(project)) && !strings.Contains(strings.SplitN(body, "\n", 2)[0], " / Claude session ") || !handoff && contains(kinds, text(record.Get("kind"))) && len(body) <= 6000) {
 			records = append(records, record)

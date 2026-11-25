@@ -101,19 +101,20 @@ func ambientRender(selected *value.Value, entries []*value.Value, pulled, discov
 
 // ambientRecall is the non-provider Source path. Model-selected discovery is a
 // retained cell, rather than a synthetic successful selection by this body.
-func ambientRecall(ctx context.Context, client *memoryclient.Client, event, state, status, result, selected *value.Value, typed []indexview.Entry, intent recallIntent, budget int, deferred, notification bool, project string, choose func() (*value.Value, *value.Value, error)) (string, error) {
+func ambientRecall(ctx context.Context, client *memoryclient.Client, event, state, status, result, selected *value.Value, typed []indexview.Entry, intent recallIntent, budget int, deferred, notification bool, project string, dedup bool, choose func() (*value.Value, *value.Value, error)) (string, error) {
 	var entries, previews []*value.Value
 	seen := state.Get("seen")
 	if !deferred {
+		slotCount := 0
 		for _, entry := range result.Get("index").Items {
-			old := seen.Get(text(entry.Get("record_id")))
-			if old != nil && sameInteger(old, entry.Get("version")) {
+			if slotCount >= 6 {
+				break
+			}
+			slotCount++
+			if dedup && seenCoversEntry(seen, entry) {
 				continue
 			}
 			entries = append(entries, entry)
-			if len(entries) == 6 {
-				break
-			}
 		}
 	}
 	for _, entry := range entries {
@@ -288,11 +289,14 @@ func ambientRecall(ctx context.Context, client *memoryclient.Client, event, stat
 		}
 		if value.SameText(pulled.Get("source_extent"), "partial_span") {
 			partial = chosen.Get("record_id")
+			if dedup {
+				span := pulled.Get("span")
+				markSeenSpan(state, text(partial), chosen.Get("version"), number(span.Get("offset")), number(span.Get("end")), number(span.Get("total_bytes")), nowSeconds())
+			}
 		} else {
 			expanded = chosen.Get("record_id")
-			seen.Set(text(expanded), chosen.Get("version"))
-			if len(seen.Members) > 256 {
-				seen.Members = seen.Members[len(seen.Members)-256:]
+			if dedup {
+				markSeenWhole(state, text(expanded), chosen.Get("version"), nowSeconds())
 			}
 		}
 	} else if len(previews) > 0 && number(status.Get("rejected").Get("unavailable")) > 0 {

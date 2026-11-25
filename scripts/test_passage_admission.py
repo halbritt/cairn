@@ -79,7 +79,7 @@ class PassageAdmissionTests(unittest.TestCase):
         self.assertEqual(len(inspected), 2)
         self.assertNotIn('Renew the original lease', inspected[0]['body'])
         self.assertIn('Renew the original lease', result['hookSpecificOutput']['additionalContext'])
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {'note': {'version': 1, 'spans': [{'offset': 7013, 'end': 7113, 'eof': False}]}})
         self.assertEqual(credits, {'lexical': 3, 'semantic': 3})
         self.assertEqual(state['last_recall']['source_extent'], 'partial_span')
 
@@ -107,7 +107,8 @@ class PassageAdmissionTests(unittest.TestCase):
                 self.assertEqual(pulls, ['lexical', 'semantic'])
                 self.assertEqual(len(inspected), 1)
                 self.assertEqual(credits, {'lexical': 3, 'semantic': 3})
-                self.assertEqual(state['seen'], {})
+                expected_seen = {'note': {'version': 1, 'spans': [{'offset': 0, 'end': 1536, 'eof': False}]}} if offset == 0 else {}
+                self.assertEqual(state['seen'], expected_seen)
                 self.assertEqual(inspected[0]['body'], source[offset:offset + 1536])
 
     def test_overlapping_different_passages_remain_eligible(self):

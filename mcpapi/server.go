@@ -238,7 +238,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	facadeBuild := buildinfo.Read()
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: facadeBuild.Label()}, nil)
 	choice := new(localapi.PreviewCapabilityChoice)
-	tools := memoryTools{previewChoice: choice, client: client, retrieval: localRetrievalBackend{client: client, previewChoice: choice}, config: config, facadeBuild: facadeBuild}
+	tools := memoryTools{previewChoice: choice, client: client, retrieval: localRetrievalBackend{client: client, previewChoice: choice}, pullDedup: newPullDedupTracker(), config: config, facadeBuild: facadeBuild}
 	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_prepare_note", Description: "Before saving reusable knowledge, inspect possible predecessors with a short subject query and known entities. Creates a bounded lexical search receipt, not a note. Returns eligible previews and complete pull_arguments; pull current bodies and check applicability before choosing cairn_edit for the same A note or cairn_remember for distinct knowledge. Similarity is not supersession. Hosted profiles cannot obtain the required protected impact preview; formal supersession needs the authorized local/operator workflow. No automatic save, edit, retirement or model call."}), tools.prepareNote)
 	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build, active opt-in search_view and tool_profile, and declared search memory_budget_bytes and min_pull_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Reports whether this facade preserves paired source openings, and whether the API declares its reader guard and the authenticated principal's receipt binding; both stay unknown without a recognized declaration and neither shows that any other reader is ready. Does not identify installed Python code or other clients. No retries, restarts or writes."}), tools.clientInfo)
 	destructive := true
@@ -261,6 +261,7 @@ type memoryTools struct {
 	retrieval     RetrievalBackend
 	attempt       AttemptRetrievalBackend
 	previewChoice *localapi.PreviewCapabilityChoice
+	pullDedup     *pullDedupTracker
 	facadeBuild   buildinfo.Info
 	client        *localapi.Client
 	config        Config
@@ -318,6 +319,7 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	if err != nil {
 		return t.retrievalToolResult(nil, err, prepared.MemoryRoom)
 	}
+	t.pullDedup.recordSearch(index)
 	view, memoryRoom, err := searchView(index, args, t.config.SearchView, prepare, prepared.MemoryRoom, prepared.ReceiptRoom)
 	return t.retrievalToolResult(view, err, memoryRoom)
 }
@@ -351,11 +353,19 @@ func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error)
 }
 
 func (t memoryTools) pull(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandRequest) (*mcp.CallToolResult, any, error) {
-	if t.attempt != nil {
-		result, err := t.attempt.Pull(ctx, args)
-		return t.retrievalToolResult(result, err, t.config.maxTokens())
+	if hit, ok := t.pullDedup.checkPull(args); ok {
+		return t.retrievalToolResult(hit, nil, t.config.maxTokens())
 	}
-	result, err := t.retrieval.Pull(ctx, args)
+	var result core.Expansion
+	var err error
+	if t.attempt != nil {
+		result, err = t.attempt.Pull(ctx, args)
+	} else {
+		result, err = t.retrieval.Pull(ctx, args)
+	}
+	if err == nil {
+		t.pullDedup.recordPull(args, result)
+	}
 	return t.retrievalToolResult(result, err, t.config.maxTokens())
 }
 
@@ -448,34 +458,41 @@ func (t memoryTools) edit(ctx context.Context, _ *mcp.CallToolRequest, args edit
 	if args.EvidenceCitations != nil {
 		var result core.Revision
 		err := t.client.Call(ctx, "cite", core.CiteRequest{RequestID: args.RequestID, RecordID: args.RecordID, ExpectedVersion: args.ExpectedVersion, Repo: t.config.Scope.Repo, EvidenceCitations: *args.EvidenceCitations}, &result)
-		return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
+		return t.editResult(result.RecordID, result.Version, args.RequestID, err)
 	}
 	if args.SetSections != nil {
 		var result core.Revision
 		err := t.client.Call(ctx, "set-sections", core.SetSectionsRequest{RequestID: args.RequestID, RecordID: args.RecordID, ExpectedVersion: args.ExpectedVersion, Repo: t.config.Scope.Repo, Sections: *args.SetSections}, &result)
-		return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
+		return t.editResult(result.RecordID, result.Version, args.RequestID, err)
 	}
 	if args.Replace != nil {
 		var result core.Revision
 		err := t.client.Call(ctx, "replace", core.ReplaceRequest{RequestID: args.RequestID, RecordID: args.RecordID, ExpectedVersion: args.ExpectedVersion, Repo: t.config.Scope.Repo, OldText: args.Replace.OldText, NewText: args.Replace.NewText}, &result)
-		return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
+		return t.editResult(result.RecordID, result.Version, args.RequestID, err)
 	}
 	if args.Append != nil {
 		var result core.Revision
 		err := t.client.Call(ctx, "append", core.AppendRequest{RequestID: args.RequestID, RecordID: args.RecordID, ExpectedVersion: args.ExpectedVersion, Repo: t.config.Scope.Repo, Body: *args.Append}, &result)
-		return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
+		return t.editResult(result.RecordID, result.Version, args.RequestID, err)
 	}
 	if args.Body != nil {
 		var result core.Revision
 		err := t.client.Call(ctx, "revise", core.ReviseRequest{RequestID: args.RequestID, RecordID: args.RecordID, ExpectedVersion: args.ExpectedVersion, Repo: t.config.Scope.Repo, Body: *args.Body}, &result)
-		return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
+		return t.editResult(result.RecordID, result.Version, args.RequestID, err)
 	}
 	if args.Draft.Scope.Repo != t.config.Scope.Repo {
 		return toolResult(nil, &core.Error{Code: "AUTHORITY_DENIED", Message: "edit draft must use the configured repository"}, t.config.AvailableTokens)
 	}
 	var result core.Record
 	err := t.client.Call(ctx, "edit", core.EditRequest{RequestID: args.RequestID, RecordID: args.RecordID, ExpectedVersion: args.ExpectedVersion, Draft: *args.Draft}, &result)
-	return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
+	return t.editResult(result.RecordID, result.Version, args.RequestID, err)
+}
+
+func (t memoryTools) editResult(recordID string, version int, requestID string, err error) (*mcp.CallToolResult, any, error) {
+	if err == nil {
+		t.pullDedup.invalidate(recordID)
+	}
+	return toolResult(recordWriteResult{recordID, version, requestID}, err, t.config.AvailableTokens)
 }
 
 func presentSearch(result core.IndexResult, requestID string) (searchResult, error) {

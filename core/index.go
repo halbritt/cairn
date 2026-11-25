@@ -389,6 +389,7 @@ type ExpandRequest struct {
 	Handle       string           `json:"handle"`
 	Span         *ByteSpanRequest `json:"span,omitempty"`
 	OpeningBytes int              `json:"opening_bytes,omitempty"`
+	Force        bool             `json:"force,omitempty"`
 }
 
 // NoteSpan is partial source text; SourceSHA256 identifies the full indexed body.

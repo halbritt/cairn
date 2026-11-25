@@ -22,6 +22,8 @@ MEMORY = {
                'PostToolUse': 13, 'PostToolUseFailure': 13},
     'opencode': {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150,
                  'PostToolUse': 13, 'PostToolUseFailure': 13},
+    'hermes': {'SessionStart': 13, 'UserPromptSubmit': 13, 'PreCompact': 150, 'SessionEnd': 150,
+               'PostToolUse': 13, 'PostToolUseFailure': 13},
     'agy': {},
 }
 COORDINATION = {
@@ -30,6 +32,7 @@ COORDINATION = {
         'codex': ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'Interrupt', 'PostToolUse'),
         'claude': ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse'),
         'opencode': ('TurnStart', 'TurnEnd', 'SessionEnd', 'PostToolUse', 'ToolStart', 'ToolEnd'),
+        'hermes': ('TurnStart', 'TurnEnd', 'ProviderObservation', 'SessionEnd'),
         'agy': ('PreInvocation', 'Stop'),
     }.items()
 }
@@ -146,7 +149,7 @@ def hook_materials(stager, plan):
         ordinary_events = ()
         if role == 'memory' and all_unbound:
             ordinary_events = ('SessionStart', 'UserPromptSubmit')
-            if plan['harness'] == 'claude':
+            if plan['harness'] in ('claude', 'hermes'):
                 ordinary_events += ('PostToolUse', 'PostToolUseFailure')
             elif plan['harness'] == 'opencode':
                 # Tool observation does not depend on recall_mode; only

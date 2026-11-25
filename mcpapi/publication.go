@@ -76,7 +76,7 @@ func NewAttemptReadOnlyServer(backend AttemptRetrievalBackend, config Config) (*
 	}
 	facadeBuild := buildinfo.Read()
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: facadeBuild.Label()}, nil)
-	if err := addRetrievalTools(server, memoryTools{attempt: backend, config: config, facadeBuild: facadeBuild}); err != nil {
+	if err := addRetrievalTools(server, memoryTools{attempt: backend, pullDedup: newPullDedupTracker(), config: config, facadeBuild: facadeBuild}); err != nil {
 		return nil, err
 	}
 	return server, nil
@@ -119,6 +119,7 @@ func (t memoryTools) attemptSearch(ctx context.Context, request core.CompileRequ
 	if err != nil || absentPublicationDependency(publication) {
 		return nil, nil, errSearchPreparation
 	}
+	t.pullDedup.recordSearch(index)
 	if ctx.Err() != nil {
 		return nil, nil, errSearchCancelled
 	}

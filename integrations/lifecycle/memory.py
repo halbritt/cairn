@@ -888,9 +888,12 @@ class Memory:
         result = None
         outcome = 'error'
         try:
+            call_env = caller_environment()
+            if operation in ("search", "pull"):
+                call_env = dict(call_env, CAIRN_RECALL_DEDUP="0")
             result = run_json(self.command + [operation, *args],
                               body=None if payload is None else encoded(payload), timeout=timeout,
-                              env=caller_environment())
+                              env=call_env)
             outcome = 'returned' if result.get('ok') is True else 'error'
         finally:
             self.meter.operation(operation, started)
@@ -930,14 +933,23 @@ class Memory:
         return result
 
     def checkpoint(self, title):
+        return self.checkpoint_with_cache(title)
+
+    def checkpoint_with_cache(self, title, state=None, dedup=False):
         result = self.search('"' + title + '"', 16000)
         for entry in result.get("index", []):
             if entry.get("summary", "").startswith(title + "\n"):
-                pulled = self.call("pull", payload=entry["pull_arguments"])
-                record = pulled["selection"]["record"]
+                record = capture_cache_lookup(state, entry, dedup)
+                if record is None:
+                    pulled = self.call("pull", payload=entry["pull_arguments"])
+                    record = pulled["selection"]["record"]
+                    capture_cache_store(state, entry, record, dedup)
                 if record["body"].startswith(title + "\n"):
                     return record
         return None
+
+
+_UNPATCHED_MEMORY_CHECKPOINT = Memory.checkpoint
 
 
 def context_budget(config):
@@ -1243,6 +1255,331 @@ def render_recall(selected, entries, expanded=None, discovery=None):
     return GUIDANCE + encoded(view)
 
 
+DEFAULT_SEEN_TTL_TURNS = 32
+DEFAULT_SEEN_TTL_SECONDS = 3600
+MAX_SEEN_RECORDS = 256
+MAX_CAPTURE_CACHE_COUNT = 32
+MAX_CAPTURE_CACHE_BYTES = 131072
+
+
+def recall_dedup_enabled(config):
+    if os.environ.get("CAIRN_RECALL_DEDUP") == "0":
+        return False
+    if isinstance(config, dict) and config.get("recall_dedup") is False:
+        return False
+    return True
+
+
+def _seen_ttl_turns(config):
+    raw = os.environ.get("CAIRN_SEEN_TTL_TURNS", "").strip()
+    if raw:
+        try:
+            n = int(raw)
+            return n if n > 0 else 0
+        except ValueError:
+            pass
+    if isinstance(config, dict) and type(config.get("seen_ttl_turns")) is int:
+        n = config["seen_ttl_turns"]
+        return n if n > 0 else 0
+    return DEFAULT_SEEN_TTL_TURNS
+
+
+def _seen_ttl_seconds(config):
+    raw = os.environ.get("CAIRN_SEEN_TTL_SECONDS", "").strip()
+    if raw:
+        try:
+            n = float(raw)
+            return n if n > 0 else 0.0
+        except ValueError:
+            pass
+    if isinstance(config, dict) and type(config.get("seen_ttl_seconds")) in (int, float):
+        n = float(config["seen_ttl_seconds"])
+        return n if n > 0 else 0.0
+    return float(DEFAULT_SEEN_TTL_SECONDS)
+
+
+def prepare_seen_state(state, config, event, now=None):
+    if now is None:
+        now = time.time()
+    compaction_epoch = state.get("compaction_epoch")
+    compaction_epoch = compaction_epoch if type(compaction_epoch) is int else 0
+    meta = state.get("seen_meta")
+    meta_epoch = meta.get("epoch") if isinstance(meta, dict) else 0
+    epoch_reset = compaction_epoch > 0 and (not isinstance(meta, dict) or meta_epoch != compaction_epoch)
+    event_name = event.get("hook_event_name") if isinstance(event, dict) else ""
+    compact_prompt = event_name == "UserPromptSubmit" and event.get("source") == "compact"
+    if event_name == "SessionStart" or compact_prompt or epoch_reset:
+        state["seen"] = {}
+        state.pop("seen_meta", None)
+    if isinstance(event, dict) and "retained_record_ids" in event:
+        retained = event["retained_record_ids"]
+        if not isinstance(retained, list) or any(not isinstance(i, str) for i in retained):
+            raise HookError("invalid retained context identities")
+        state["seen"] = {k: v for k, v in state.get("seen", {}).items() if k in retained}
+    seen = state.setdefault("seen", {})
+    if not isinstance(seen, dict) or not seen:
+        state["seen"] = {} if not isinstance(seen, dict) else seen
+        state.pop("seen_meta", None)
+        return state
+    if not isinstance(meta, dict):
+        meta = dict(epoch=compaction_epoch, turn=0, records={})
+    turn = (meta.get("turn") if type(meta.get("turn")) is int else 0) + 1
+    meta["epoch"] = compaction_epoch
+    meta["turn"] = turn
+    records = meta.get("records") if isinstance(meta.get("records"), dict) else {}
+    ttl_turns = _seen_ttl_turns(config)
+    ttl_sec = _seen_ttl_seconds(config)
+    kept_seen = {}
+    kept_records = {}
+    for key, val in seen.items():
+        rec = records.get(key)
+        if not isinstance(rec, dict):
+            kept_seen[key] = val
+            kept_records[key] = dict(turn=turn, at=now)
+            continue
+        expired = False
+        if ttl_turns > 0 and turn - (rec.get("turn") if type(rec.get("turn")) is int else 0) >= ttl_turns:
+            expired = True
+        if not expired and ttl_sec > 0 and type(rec.get("at")) in (int, float):
+            if now - float(rec["at"]) >= ttl_sec:
+                expired = True
+        if not expired:
+            kept_seen[key] = val
+            kept_records[key] = rec
+    state["seen"] = kept_seen
+    if not kept_seen:
+        state.pop("seen_meta", None)
+    else:
+        meta["records"] = kept_records
+        state["seen_meta"] = meta
+    return state
+
+
+def seen_covers_whole(seen, entry):
+    if not isinstance(seen, dict) or not isinstance(entry, dict):
+        return False
+    old = seen.get(entry.get("record_id"))
+    return type(old) is int and old == entry.get("version")
+
+
+def seen_covers_span(seen, entry, hint):
+    if seen_covers_whole(seen, entry):
+        return True
+    if not isinstance(seen, dict) or not isinstance(entry, dict) or not isinstance(hint, dict):
+        return False
+    old = seen.get(entry.get("record_id"))
+    if not isinstance(old, dict) or old.get("version") != entry.get("version"):
+        return False
+    req_off, req_end = hint["offset"], hint["offset"] + hint["length"]
+    for span in old.get("spans", []):
+        if isinstance(span, dict) and span.get("offset", 0) <= req_off and (span.get("end", 0) >= req_end or span.get("eof")):
+            return True
+    return False
+
+
+def seen_covers_entry(seen, entry):
+    if seen_covers_whole(seen, entry):
+        return True
+    if not isinstance(seen, dict) or not isinstance(entry, dict):
+        return False
+    old = seen.get(entry.get("record_id"))
+    if not isinstance(old, dict) or old.get("version") != entry.get("version"):
+        return False
+    try:
+        hint = optional_span_hint(entry)
+    except HookError:
+        return False
+    return seen_covers_span(seen, entry, hint)
+
+
+def seen_covers_group(seen, group):
+    if not isinstance(seen, dict) or not group:
+        return False
+    if len(group) == 1:
+        return seen_covers_entry(seen, group[0])
+    return all(seen_covers_whole(seen, entry) for entry in group)
+
+
+def _sync_seen_meta(state, record_id, now):
+    seen = state.setdefault("seen", {})
+    if len(seen) > MAX_SEEN_RECORDS:
+        seen = dict(list(seen.items())[-MAX_SEEN_RECORDS:])
+        state["seen"] = seen
+    if not seen:
+        state.pop("seen_meta", None)
+        return
+    epoch = state.get("compaction_epoch")
+    epoch = epoch if type(epoch) is int else 0
+    meta = state.get("seen_meta")
+    if not isinstance(meta, dict):
+        meta = dict(epoch=epoch, turn=1, records={})
+    turn = meta.get("turn")
+    if type(turn) is not int or turn <= 0:
+        turn = 1
+    meta["epoch"] = epoch
+    meta["turn"] = turn
+    records = meta.get("records") if isinstance(meta.get("records"), dict) else {}
+    records.pop(record_id, None)
+    records[record_id] = dict(turn=turn, at=now)
+    meta["records"] = {k: records[k] for k in seen if k in records}
+    state["seen_meta"] = meta
+
+
+def mark_seen_whole(state, record_id, version, now=None):
+    if state is None or not record_id or type(version) is not int:
+        return
+    if now is None:
+        now = time.time()
+    seen = state.setdefault("seen", {})
+    seen.pop(record_id, None)
+    seen[record_id] = version
+    _sync_seen_meta(state, record_id, now)
+
+
+def mark_seen_span(state, record_id, version, offset, end, total_bytes, now=None):
+    if state is None or not record_id or type(version) is not int or end <= offset:
+        return
+    if now is None:
+        now = time.time()
+    seen = state.setdefault("seen", {})
+    old = seen.get(record_id)
+    if type(old) is int and old == version:
+        return
+    existing = []
+    if isinstance(old, dict) and old.get("version") == version:
+        for item in old.get("spans", []):
+            if isinstance(item, dict):
+                existing.append((int(item.get("offset", 0)), int(item.get("end", 0)), bool(item.get("eof"))))
+    eof = bool(total_bytes > 0 and end >= total_bytes)
+    items = sorted([*existing, (offset, end, eof)], key=lambda x: (x[0], x[1]))
+    merged = []
+    for off, cur_end, cur_eof in items:
+        if not merged or off > merged[-1][1]:
+            merged.append([off, cur_end, cur_eof])
+        else:
+            if cur_end > merged[-1][1]:
+                merged[-1][1] = cur_end
+            merged[-1][2] = merged[-1][2] or cur_eof
+    seen.pop(record_id, None)
+    seen[record_id] = dict(version=version, spans=[dict(offset=o, end=e, eof=f) for o, e, f in merged])
+    _sync_seen_meta(state, record_id, now)
+
+
+def record_eager_seen(state, bodies, now=None):
+    if state is None or not bodies:
+        return
+    if now is None:
+        now = time.time()
+    for candidate in bodies:
+        response = candidate.get("response", {})
+        if response.get("source_extent") == "partial_span":
+            rec = response.get("selection", {}).get("record", {})
+            span = response.get("span", {})
+            if rec and span:
+                mark_seen_span(state, rec.get("record_id"), rec.get("version"),
+                               span.get("offset", 0), span.get("end", 0), span.get("total_bytes", 0), now)
+            continue
+        rec = response.get("selection", {}).get("record")
+        if rec:
+            mark_seen_whole(state, rec.get("record_id"), rec.get("version"), now)
+        for comp in response.get("competing", []):
+            crec = comp.get("record")
+            if crec:
+                mark_seen_whole(state, crec.get("record_id"), crec.get("version"), now)
+
+
+def load_inbox_seen_state(state_dir, session, config, event):
+    if not recall_dedup_enabled(config):
+        return None, False, False
+    path = Path(state_dir) / (session + ".json")
+    existed = path.exists()
+    state = {}
+    if existed:
+        try:
+            decoded = json.loads(path.read_text())
+        except (OSError, ValueError, TypeError):
+            return None, existed, False
+        if not isinstance(decoded, dict):
+            return None, existed, False
+        state = decoded
+    try:
+        prepare_seen_state(state, config, event)
+    except HookError:
+        return None, existed, False
+    return state, existed, True
+
+
+def save_inbox_seen_state(state_dir, session, state, existed):
+    if state is None:
+        return
+    if not existed and not state.get("seen"):
+        return
+    save_state(Path(state_dir) / (session + ".json"), state)
+
+
+def capture_cache_lookup(state, entry, dedup):
+    if not dedup or not isinstance(state, dict) or not isinstance(entry, dict):
+        return None
+    sha = entry.get("body_sha256", "")
+    rec_id = entry.get("record_id", "")
+    version = entry.get("version")
+    if not re.fullmatch(r"[0-9a-f]{64}", sha) or not rec_id or type(version) is not int or version <= 0:
+        return None
+    cache = state.get("capture_cache")
+    if not isinstance(cache, dict):
+        return None
+    item = cache.get(rec_id)
+    if not isinstance(item, dict) or type(item.get("version")) is not int or item.get("version") != version:
+        return None
+    if item.get("body_sha256") != sha:
+        return None
+    if entry.get("class") and item.get("class") != entry["class"]:
+        return None
+    if entry.get("kind") and item.get("kind") != entry["kind"]:
+        return None
+    body = item.get("body")
+    if not isinstance(body, str) or hashlib.sha256(body.encode()).hexdigest() != sha:
+        return None
+    cache.pop(rec_id, None)
+    cache[rec_id] = item
+    return {"record_id": rec_id, "version": version, "class": item.get("class", ""),
+            "kind": item.get("kind", ""), "body": body}
+
+
+def capture_cache_store(state, entry, record, dedup):
+    if not dedup or not isinstance(state, dict) or not isinstance(record, dict) or not isinstance(entry, dict):
+        return
+    sha = entry.get("body_sha256", "")
+    rec_id = record.get("record_id", "")
+    version = record.get("version")
+    body = record.get("body")
+    if (not re.fullmatch(r"[0-9a-f]{64}", sha) or rec_id != entry.get("record_id")
+            or type(version) is not int or version != entry.get("version") or not isinstance(body, str)):
+        return
+    if len(body.encode()) > MAX_CAPTURE_CACHE_BYTES or hashlib.sha256(body.encode()).hexdigest() != sha:
+        return
+    cache = state.get("capture_cache")
+    if not isinstance(cache, dict):
+        cache = {}
+    cache.pop(rec_id, None)
+    cache[rec_id] = {
+        "version": version,
+        "body_sha256": sha,
+        "class": record.get("class", entry.get("class", "")) if isinstance(record.get("class", entry.get("class", "")), str) else "",
+        "kind": record.get("kind", entry.get("kind", "")) if isinstance(record.get("kind", entry.get("kind", "")), str) else "",
+        "body": body,
+    }
+    total_bytes = sum(len(v.get("body", "").encode()) for v in cache.values())
+    while len(cache) > MAX_CAPTURE_CACHE_COUNT or total_bytes > MAX_CAPTURE_CACHE_BYTES:
+        first_key = next(iter(cache))
+        evicted = cache.pop(first_key)
+        total_bytes -= len(evicted.get("body", "").encode())
+    if not cache:
+        state.pop("capture_cache", None)
+    else:
+        state["capture_cache"] = cache
+
+
 def candidate_groups(entries):
     """Keep competing index positions together, in their original server order."""
     by_key = {(entry["record_id"], entry["version"]): entry for entry in entries}
@@ -1283,9 +1620,11 @@ def optional_delivery_view(candidate):
     return dict(candidate, response=dict(response, selection=selection))
 
 
-def render_agent_candidates(selected, result, budget, status, bodies=(), inspection=None, measure=None, observer=None):
+def render_agent_candidates(selected, result, budget, status, bodies=(), inspection=None, measure=None, observer=None, state=None):
     measure = measure or (lambda text: len(text.encode()))
     observer_config = getattr(observer, 'config', None)
+    dedup = state is not None and recall_dedup_enabled(observer_config)
+    seen = state.get("seen", {}) if isinstance(state, dict) else {}
     view_name = (observer_config.get('recall_view', 'full')
                  if isinstance(observer_config, dict) else 'full')
     if view_name not in ('full', 'compact/1'):
@@ -1345,15 +1684,20 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
                if (entry["record_id"], entry["version"]) not in delivered]
     packed = []
     packing_stop = 'end'
+    preview_slots = 0
     for group in candidate_groups(entries):
-        if len(packed) + len(group) > 3:
+        if preview_slots + len(group) > 3:
             packing_stop = 'preview_limit'
             break
+        if dedup and seen_covers_group(seen, group):
+            preview_slots += len(group)
+            continue
         group = [{key: value for key, value in entry.items() if key != "pull_command"} for entry in group]
         candidate = render([*packed, *group])
         if measure(candidate) - base_bytes > preview_bytes:
             packing_stop = 'preview_context_budget'
             break
+        preview_slots += len(group)
         packed.extend(group)
         text = candidate
     status.update(outcome="delegated", candidate_previews=len(packed), candidate_body_records=len(delivered))
@@ -1417,17 +1761,19 @@ def fit_optional_excerpt(entry, candidate, render, deadline):
         return best
 
 
-def eager_agent_candidates(memory, result, budget, status, deadline, measure=None):
+def eager_agent_candidates(memory, result, budget, status, deadline, measure=None, state=None):
+    dedup = state is not None and recall_dedup_enabled(memory.config)
+    seen = state.get("seen", {}) if isinstance(state, dict) else {}
     selected = result.get("selected", [])
     entries = result.get("index", [])
     # A whole body needs a checked immutable identity; legacy/test envelopes may
     # offer only previews, which remain available without speculative reads.
     if not any(re.fullmatch(r"[0-9a-f]{64}", entry.get("body_sha256", "")) for entry in entries):
-        return render_agent_candidates(selected, result, budget, status, measure=measure, observer=memory)
+        return render_agent_candidates(selected, result, budget, status, measure=measure, observer=memory, state=state)
     inspection = dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={})
     bodies = []
     oversized = None
-    text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure, observer=memory)
+    text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure, observer=memory, state=state)
     if status["outcome"] != "delegated":
         return text
     if (status["native_allowance_bytes"] < budget // 2
@@ -1437,6 +1783,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
         # cannot fit beside that fixed context.
         status["candidate_inspection"] = inspection
         return text
+    skipped_seen = 0
     for group in candidate_groups(entries):
         trace_observe(memory, 'route', 'candidate_start', group)
         if bodies:
@@ -1450,15 +1797,18 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             future = dict(inspection, refusals={**inspection["refusals"], **possible_refusals})
             try:
                 render_agent_candidates(selected, result, budget, dict(status, rejected=dict(status["rejected"])),
-                                        bodies, future, measure=measure, observer=memory)
+                                        bodies, future, measure=measure, observer=memory, state=state)
             except ContextRefused:
                 trace_observe(memory, 'route', 'protected_body_budget', group)
                 break
-        if inspection["delivered_records"] + len(group) > 2:
+        if skipped_seen + inspection["delivered_records"] + len(group) > 2:
             inspection["refusals"]["record_limit"] = 1
             trace_observe(memory, 'route', 'record_limit', group)
             oversized = None
             break
+        if dedup and seen_covers_group(seen, group):
+            skipped_seen += len(group)
+            continue
         if not all(re.fullmatch(r"[0-9a-f]{64}", entry.get("body_sha256", "")) for entry in group):
             inspection["refusals"]["unverifiable_identity"] = 1
             trace_observe(memory, 'route', 'unverifiable_identity', group)
@@ -1492,7 +1842,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             trace_observe(memory, 'validated', 'whole', pulled)
             candidate = dict(pull_arguments=group[0]["pull_arguments"], response=pulled)
             tentative = dict(inspection, delivered_records=inspection["delivered_records"] + len(group))
-            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative, measure=measure, observer=memory)
+            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative, measure=measure, observer=memory, state=state)
             bodies.append(candidate)
             inspection = tentative
             continue
@@ -1547,9 +1897,9 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
                                               lambda item: render_agent_candidates(
                                                   selected, result, budget, status, [*bodies, item],
                                                   dict(inspection, delivered_records=inspection["delivered_records"] + 1),
-                                                  measure=measure, observer=memory))
+                                                  measure=measure, observer=memory, state=state))
             tentative = dict(inspection, delivered_records=inspection["delivered_records"] + 1)
-            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative, measure=measure, observer=memory)
+            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative, measure=measure, observer=memory, state=state)
             bodies.append(candidate)
             inspection = tentative
         except BudgetRefused:
@@ -1577,7 +1927,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
         tentative = dict(inspection, delivered_records=1)
         try:
             fitted = fit_optional_excerpt(entry, candidate, lambda item: render_agent_candidates(
-                selected, result, budget, status, [item], tentative, measure=measure, observer=memory), deadline)
+                selected, result, budget, status, [item], tentative, measure=measure, observer=memory, state=state), deadline)
         except ContextRefused:
             trace_observe(memory, 'route', 'fit_refused', [entry])
             if time.monotonic() >= deadline:
@@ -1590,8 +1940,10 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
     # silent truncation or a relevance/success assertion.
     while True:
         try:
-            text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure, observer=memory)
+            text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure, observer=memory, state=state)
             status["candidate_inspection"] = inspection
+            if dedup and state is not None and bodies:
+                record_eager_seen(state, bodies)
             return text
         except ContextRefused:
             # Later refusal metadata also costs bytes. Optional openings yield
@@ -1741,7 +2093,7 @@ def claude_boundary_error(config, event, error):
         return error
 
 
-def claude_agent_context(memory, event, result, budget, status, deadline):
+def claude_agent_context(memory, event, result, budget, status, deadline, state=None):
     """Called under the existing session lock; no synthetic native turn identity."""
     _, path, ledger = claude_ledger(memory.config, event["session_id"])
     selected = result.get("selected", [])
@@ -1785,7 +2137,7 @@ def claude_agent_context(memory, event, result, budget, status, deadline):
             grant["required"]["pending"] = True
             persist()
             raise RequiredContextRefused("whole required Claude context exceeds initial allowance")
-        text = eager_agent_candidates(memory, result, remaining, status, deadline, measure=measure)
+        text = eager_agent_candidates(memory, result, remaining, status, deadline, measure=measure, state=state)
         identity = dict(native_owner=owner, boundary="ordinary_prompt")
         if task_key:
             identity.update(recall_task_key=task_key, boundary="launcher_task")
@@ -1966,7 +2318,7 @@ def codex_agent_context(memory, event, result, budget, status, deadline, state):
         # even if later optional candidate work becomes unavailable.
         persist_current()
     if eligible and not grant["granted"]:
-        text = eager_agent_candidates(memory, result, remaining, status, deadline, measure=cost)
+        text = eager_agent_candidates(memory, result, remaining, status, deadline, measure=cost, state=state)
         if status["outcome"] == "delegated":
             grant["granted"] = True
             grant["reserved_native_bytes"] = status["native_allowance_bytes"]
@@ -2370,9 +2722,10 @@ def admit_previews(memory, event, intent, sources, status, deadline):
 
 def verified_candidate(memory, event, intent, result, seen, status, deadline, budget):
     """Inspect a bounded union of lexical and semantic bodies, then decide once."""
+    dedup = recall_dedup_enabled(memory.config)
     selected = list(result.get("selected", []))
     sources = [("lexical", dict(result, index=[entry for entry in result.get("index", [])
-                                             if seen.get(entry["record_id"]) != entry["version"]]))]
+                                             if not (dedup and seen_covers_entry(seen, entry))]))]
     if len(intent["words"]) >= 2 and not intent["startup"]:
         offset, preview_count = 0, 0
         for page_number in range(SEMANTIC_PAGE_LIMIT):
@@ -2393,7 +2746,7 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
             if status["discovery"] != "ready":
                 break
             entries = [entry for entry in found.get("index", [])
-                       if seen.get(entry["record_id"]) != entry["version"]][:SEMANTIC_PREVIEW_LIMIT - preview_count]
+                       if not (dedup and seen_covers_entry(seen, entry))][:SEMANTIC_PREVIEW_LIMIT - preview_count]
             sources.append(("semantic" if page_number == 0 else "semantic:" + str(offset), dict(found, index=entries)))
             preview_count += len(entries)
             status["semantic_pages"] = page_number + 1
@@ -2428,7 +2781,7 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
     for channel, entry in admitted:
         receipt = receipt_keys[channel]
         identity = (entry["record_id"], entry["version"])
-        if seen.get(entry["record_id"]) == entry["version"] or identity in accepted_full_versions:
+        if (dedup and seen_covers_entry(seen, entry)) or identity in accepted_full_versions:
             continue
         if memory.receipt_credits[receipt] == 0:
             status["preview_admitted"] -= 1
@@ -2562,13 +2915,7 @@ def recall(memory, event, state=None):
     state["last_recall"] = status = dict(at=time.time(), hook_event_name=event["hook_event_name"],
                                         outcome="empty", records=[], bytes=0,
                                         discovery="lexical", inspected=0, rejected={})
-    if event["hook_event_name"] == "SessionStart":
-        state["seen"] = {}  # new/resumed/compacted context needs fresh delivery
-    if "retained_record_ids" in event:
-        retained = event["retained_record_ids"]
-        if not isinstance(retained, list) or any(not isinstance(i, str) for i in retained):
-            raise HookError("invalid retained context identities")
-        state["seen"] = {k: v for k, v in state.get("seen", {}).items() if k in retained}
+    prepare_seen_state(state, memory.config, event)
     seen = state.setdefault("seen", {})
     notification = (event["hook_event_name"] == "UserPromptSubmit"
                     and not event.get("workstream", "").strip()
@@ -2617,7 +2964,7 @@ def recall(memory, event, state=None):
     if not (bound_codex(memory.config) or bound_claude(memory.config)) and len(render_recall(selected, []).encode()) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
     if bound_claude(memory.config):
-        text = claude_agent_context(memory, event, result, budget, status, deadline)
+        text = claude_agent_context(memory, event, result, budget, status, deadline, state=state)
         status.update(elapsed_seconds=round(time.monotonic() - started, 3),
                       discovery="deferred" if status.get("optional_deferred") else bound_discovery)
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
@@ -2630,13 +2977,14 @@ def recall(memory, event, state=None):
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
                 if text else {})
     if mode == "agent_tools" and not defer_optional:
-        text = eager_agent_candidates(memory, result, budget, status, deadline)
+        text = eager_agent_candidates(memory, result, budget, status, deadline, state=state)
         status.update(discovery="agent_tools", bytes=len(text.encode()),
                       elapsed_seconds=round(time.monotonic() - started, 3))
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
                 if text else {})
-    entries = [] if defer_optional else [entry for entry in result.get("index", [])
-                                        if seen.get(entry["record_id"]) != entry["version"]][:RECALL_CANDIDATES]
+    dedup = recall_dedup_enabled(memory.config)
+    entries = [] if defer_optional else [entry for entry in result.get("index", [])[:RECALL_CANDIDATES]
+                                        if not (dedup and seen_covers_entry(seen, entry))]
     previews = [entry for entry in entries if relevant(entry, intent)]
     entries = previews + [entry for entry in entries if entry not in previews]
     chosen = pulled = None
@@ -2711,9 +3059,12 @@ def recall(memory, event, state=None):
             text = warning + text
     # Remember body delivery only. A preview with an expiring handle must remain
     # discoverable until its body has actually been offered to this context.
-    if expanded_id and pulled.get("source_extent") != "partial_span":
-        seen[expanded_id] = chosen["version"]
-        state["seen"] = dict(list(seen.items())[-256:])
+    if expanded_id and dedup:
+        if pulled.get("source_extent") == "partial_span":
+            span = pulled["span"]
+            mark_seen_span(state, expanded_id, chosen["version"], span["offset"], span["end"], span["total_bytes"])
+        else:
+            mark_seen_whole(state, expanded_id, chosen["version"])
     partial = pulled is not None and pulled.get("source_extent") == "partial_span"
     status.update(outcome="recalled", bytes=len(text.encode()),
                                  records=[{key: entry[key] for key in ("record_id", "version")} for entry in packed],
@@ -2873,33 +3224,39 @@ def workstream_prefix(event):
     return "Handoff: " + clip(project_root(event).name.replace('"', ""), 40) + " / "
 
 
-def handoff_candidates(memory, event, messages, state):
+def handoff_candidates(memory, event, messages, state, dedup=False):
     prompt = "\n".join(m["text"] for m in messages if m["role"] == "user")
     intent = retrieval_intent(dict(event, hook_event_name="UserPromptSubmit", prompt=prompt), state)
     result = memory.search(intent["query"], room=32000, entities=intent["files"], kinds=["note"])
     records = []
     entries = [e for e in result.get("index", []) if relevant(e, intent)][:2]
     for entry in entries:
-        try:
-            record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
-        except BudgetRefused:
-            break  # Keep already-read optional candidates within this receipt's budget.
+        record = capture_cache_lookup(state, entry, dedup)
+        if record is None:
+            try:
+                record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
+            except BudgetRefused:
+                break  # Keep already-read optional candidates within this receipt's budget.
+            capture_cache_store(state, entry, record, dedup)
         if record.get("class") == "A" and record["body"].startswith(workstream_prefix(event)) and " / Claude session " not in record["body"].split("\n", 1)[0]:
             records.append(record)
     return records
 
 
-def durable_candidates(memory, event, messages):
+def durable_candidates(memory, event, messages, cache_state=None, dedup=False):
     # Narrow discovery by the latest owner direction plus current file hints.
     prompt = "\n".join(m["text"] for m in messages if m["role"] == "user")
     intent = retrieval_intent(dict(event, hook_event_name="UserPromptSubmit", prompt=prompt), {})
     result = memory.search(intent["query"], room=32000, entities=intent["files"], kinds=DURABLE_KINDS)
     records = []
     for entry in [e for e in result.get("index", []) if relevant(e, intent)][:3]:
-        try:
-            record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
-        except BudgetRefused:
-            break  # Unsupplied matching topics still require reconciliation before a write.
+        record = capture_cache_lookup(cache_state, entry, dedup)
+        if record is None:
+            try:
+                record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
+            except BudgetRefused:
+                break  # Unsupplied matching topics still require reconciliation before a write.
+            capture_cache_store(cache_state, entry, record, dedup)
         if record.get("class") == "A" and record["kind"] in DURABLE_KINDS and len(record["body"].encode()) <= NOTE_BYTES:
             records.append(record)
     return records
@@ -3107,9 +3464,15 @@ def capture(memory, event, state=None):
         state.update(captured_digest=digest, captured_messages=len(messages))
         record_capture_status(state, "courtesy")
         return {}
-    previous = memory.checkpoint(state.get("workstream", title_for(event)))
-    handoffs = handoff_candidates(memory, event, messages, state)
-    candidates = durable_candidates(memory, event, messages)
+    dedup = recall_dedup_enabled(memory.config)
+    workstream_title = state.get("workstream", title_for(event))
+    if (isinstance(memory, Memory) and "checkpoint" not in memory.__dict__
+            and type(memory).checkpoint is _UNPATCHED_MEMORY_CHECKPOINT):
+        previous = memory.checkpoint_with_cache(workstream_title, state=state, dedup=dedup)
+    else:
+        previous = memory.checkpoint(workstream_title)
+    handoffs = handoff_candidates(memory, event, messages, state, dedup=dedup)
+    candidates = durable_candidates(memory, event, messages, cache_state=state, dedup=dedup)
     excerpt = {"project": str(project_root(event)), "event": event["hook_event_name"],
                "explicit_workstream": event.get("workstream") or None,
                "previous_checkpoint": previous["body"] if previous else None,
@@ -3201,7 +3564,8 @@ def handle(config, event, *, _inbox_resolved=False):
 
 
 CAPTURE_STATE_FIELDS = ("captured_digest", "captured_messages", "capture_snapshot_marker",
-                        "codex_capture_marker", "capture_pending", "last_capture")
+                        "codex_capture_marker", "capture_pending", "last_capture",
+                        "capture_cache", "compaction_epoch")
 CAPTURE_COMMIT_WAIT_SECONDS = 5
 CAPTURE_HOOK_SECONDS = 150  # installed Codex/Claude captures and Hermes/OpenCode adapters
 CAPTURE_COMMIT_MARGIN_SECONDS = 5
@@ -3282,6 +3646,8 @@ def capture_event(memory, event, path, lock_path, hook_started):
             _trace_note(stage="capture")
             prior = state.pop("capture_snapshot_marker", None)
             result = capture(memory, event, state)
+            if event["hook_event_name"] == "PreCompact":
+                state["compaction_epoch"] = (state.get("compaction_epoch") if type(state.get("compaction_epoch")) is int else 0) + 1
             if state.get("last_capture", {}).get("outcome") in {
                     "unchanged", "courtesy", "saved", "nothing_selected"}:
                 state.pop("capture_pending", None)

@@ -143,6 +143,8 @@ class OpenCodeAmbientTests(unittest.TestCase):
             status = body.get('last_recall', {})
             for key in ('at', 'elapsed_seconds', 'duration_ms'):
                 if key in status: self.measurement(status[key]); status[key] = 0
+            for rec in body.get('seen_meta', {}).get('records', {}).values():
+                if 'at' in rec: self.measurement(rec['at']); rec['at'] = 0
             if self.f.event['hook_event_name'] in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure'):
                 hints = body.get('hints', {})
                 for bucket in ('files', 'searches'):

@@ -169,7 +169,7 @@ class ReceiptAccountingTests(unittest.TestCase):
                          dict(large1=500, large2=500))
         result, state = self.recall(cli, budget=3000)
         self.assertIn('hookSpecificOutput', result)
-        self.assertEqual(state['seen'], {})  # a span does not mark the whole source delivered
+        self.assertEqual(state['seen'], {'large1': {'version': 1, 'spans': [{'offset': 0, 'end': 500, 'eof': False}]}})
         self.assertEqual(state['last_recall']['partial_record'], 'large1')
         self.assertEqual(cli.credits, 1)
         self.assertEqual(cli.pulls, [('large1', 'full'), ('large2', 'full'), ('small', 'full')])
@@ -192,7 +192,7 @@ class ReceiptAccountingTests(unittest.TestCase):
         cli.credits = 1
         result, state = self.recall(cli, budget=3000)
         self.assertIn('"source_extent":"partial_span"', result['hookSpecificOutput']['additionalContext'])
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {'large': {'version': 1, 'spans': [{'offset': 0, 'end': 500, 'eof': False}]}})
         self.assertEqual(cli.credits, 0)
         self.assertEqual(cli.pulls, [('large', 'full')])
         self.assertEqual(state['last_recall']['receipt_pull_calls'], {'lexical': 1})

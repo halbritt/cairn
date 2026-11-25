@@ -62,7 +62,7 @@ class SelectorFittingTests(unittest.TestCase):
         self.assertIn('Renew the original lease', inspected[-1]['body'])
         self.assertIn('Renew the original lease', output)
         self.assertLessEqual(len(output.encode()), 9500)
-        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['seen'], {'useful': {'version': 1, 'spans': [{'offset': 5000, 'end': 5100, 'eof': False}]}})
         self.assertNotIn('selector_input_budget', state['last_recall']['rejected'])
 
     def test_missing_unsafe_or_oversized_excerpt_keeps_required_context(self):

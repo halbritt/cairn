@@ -192,6 +192,11 @@ class BoundMemoryCase(unittest.TestCase):
                         if measurement is not None:
                             self.assertIn(type(measurement), (int, float))
                             self.assertGreaterEqual(measurement, 0)
+                for rec in body.get('seen_meta', {}).get('records', {}).values():
+                    measurement = rec.pop('at', None)
+                    if measurement is not None:
+                        self.assertIn(type(measurement), (int, float))
+                        self.assertGreaterEqual(measurement, 0)
                 result[path.name] = body
         return result
 

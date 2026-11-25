@@ -15,11 +15,11 @@ import (
 
 // claudeRecall is the reached Claude Start/prompt consumer. Unbound calls retain
 // ordinary Source recall; a binding must be resolved by the checked entry.
-func claudeRecall(ctx context.Context, client *memoryclient.Client, config, event, state, status *value.Value, project string, meter *recallSelectorMeter) (string, error) {
+func claudeRecall(ctx context.Context, client *memoryclient.Client, config, event, state, status *value.Value, project string, env map[string][]rune, meter *recallSelectorMeter) (string, error) {
 	if owner := event.Get("prompt_id"); owner != nil && owner.Kind == value.String && !validText(owner) {
 		return "", &value.Error{Class: "UnicodeEncodeError", Message: "invalid Claude prompt owner text"}
 	}
-	return ordinaryRecall(ctx, client, config, event, state, status, project, meter)
+	return ordinaryRecall(ctx, client, config, event, state, status, project, env, meter)
 }
 
 func requiredMemoryOutput(config, event *value.Value, err error, diagnostic string) Result {
@@ -38,7 +38,7 @@ func claudeFailure(config, event *value.Value, err error) Result {
 
 // claudeAgentContext runs under the existing memory session lock. Its owner is
 // a real host prompt label, never a fabricated Codex native turn or API identity.
-func claudeAgentContext(ctx context.Context, client *memoryclient.Client, config, event, result, selected, status *value.Value, index []indexview.Entry, budget int) (string, error) {
+func claudeAgentContext(ctx context.Context, client *memoryclient.Client, config, event, state *value.Value, env map[string][]rune, result, selected, status *value.Value, index []indexview.Entry, budget int) (string, error) {
 	path, err := claudeLedgerPath(config, event)
 	if err != nil {
 		return "", err
@@ -127,7 +127,7 @@ func claudeAgentContext(ctx context.Context, client *memoryclient.Client, config
 		if cost(body) > remaining {
 			return refuse("whole required Claude context exceeds initial allowance")
 		}
-		body, err = eagerCandidates(ctx, client, config, selected, result, index, remaining, status, cost)
+		body, err = eagerCandidatesWithSeen(ctx, client, config, state, env, selected, result, index, remaining, status, cost)
 		if err != nil {
 			return "", err
 		}

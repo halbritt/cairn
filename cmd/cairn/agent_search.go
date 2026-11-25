@@ -73,7 +73,7 @@ func newAgentSearchFlags() (*flag.FlagSet, *agentSearchOptions) {
 	return f, options
 }
 
-func agentSearch(ctx context.Context, client *localapi.Client, args []string, socket, tokenFile string, input io.Reader) (agentSearchView, error) {
+func agentSearch(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, args []string, socket, tokenFile string, input io.Reader) (agentSearchView, error) {
 	f, options := newAgentSearchFlags()
 	if err := f.Parse(args); err != nil {
 		return agentSearchView{}, invalid(err.Error())
@@ -131,7 +131,11 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	if err != nil {
 		return agentSearchView{}, err
 	}
-	return indexview.RetrieveCLI(ctx, indexview.NewClientTransport(client, nil), prepared, []string{executable, "agent", "--socket", socket, "--token-file", tokenFile})
+	view, err := indexview.RetrieveCLI(ctx, indexview.NewClientTransport(client, nil), prepared, []string{executable, "agent", "--socket", socket, "--token-file", tokenFile})
+	if err == nil {
+		recordAgentSearchHandles(session, socket, tokenFile, prepared.Request.Scope, view)
+	}
+	return view, err
 }
 
 func presentAgentSearch(result core.IndexResult, request string, command []string, room int) (agentSearchView, error) {
@@ -145,6 +149,7 @@ type agentPullOptions struct {
 	offset  *int
 	length  *int
 	opening *int
+	force   *bool
 }
 
 func newAgentPullFlags(operation string) (*flag.FlagSet, *agentPullOptions) {
@@ -155,11 +160,12 @@ func newAgentPullFlags(operation string) (*flag.FlagSet, *agentPullOptions) {
 	options.length = f.Int("length", 0, "maximum source bytes to return; clipped at EOF")
 	if operation == "pull" {
 		options.opening = f.Int("opening-bytes", 0, "override source opening length (1-768); zero uses receipt policy; requires --length")
+		options.force = f.Bool("force", false, "re-read even if already delivered in this session")
 	}
 	return f, options
 }
 
-func agentPull(ctx context.Context, client *localapi.Client, operation string, args []string) (json.RawMessage, error) {
+func agentPull(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, socketPath, tokenPath, operation string, args []string) (json.RawMessage, error) {
 	f, options := newAgentPullFlags(operation)
 	if err := f.Parse(args); err != nil {
 		return nil, invalid(err.Error())
@@ -172,11 +178,17 @@ func agentPull(ctx context.Context, client *localapi.Client, operation string, a
 		}
 	})
 	endpoint := "expand"
+	var expandReq core.ExpandRequest
 	if operation == "pull" {
 		if f.NArg() != 2 {
 			return nil, invalid("agent pull requires RECEIPT_UUID HANDLE_UUID")
 		}
-		payload = core.ExpandRequest{RequestID: *options.request, ReceiptID: f.Arg(0), Handle: f.Arg(1), Span: span, OpeningBytes: *options.opening}
+		expandReq = core.ExpandRequest{RequestID: *options.request, ReceiptID: f.Arg(0), Handle: f.Arg(1), Span: span, OpeningBytes: *options.opening, Force: *options.force}
+		if hit, ok := checkCLIPullDedup(session, socketPath, tokenPath, expandReq); ok {
+			rawHit, err := json.Marshal(hit)
+			return json.RawMessage(rawHit), err
+		}
+		payload = expandReq
 	} else {
 		if f.NArg() != 4 {
 			return nil, invalid("agent pull-evidence requires RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256")
@@ -186,5 +198,8 @@ func agentPull(ctx context.Context, client *localapi.Client, operation string, a
 	}
 	var result json.RawMessage
 	err := client.Call(ctx, endpoint, payload, &result)
+	if err == nil && operation == "pull" {
+		recordCLIPullResult(session, socketPath, tokenPath, expandReq, result)
+	}
 	return result, err
 }

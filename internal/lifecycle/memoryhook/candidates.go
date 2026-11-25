@@ -64,6 +64,10 @@ func candidateGroups(entries *value.Value) ([][]*value.Value, error) {
 // renderCandidates delegates real preview context and reserves the remaining
 // native allowance. All sizes include the actual bound hook envelope.
 func renderCandidates(config, selected, result *value.Value, budget int, status *value.Value, measure func(string) int, progress *candidateProgress, observers ...candidateObserver) (string, error) {
+	return renderCandidatesWithSeen(config, nil, false, selected, result, budget, status, measure, progress, observers...)
+}
+
+func renderCandidatesWithSeen(config, seen *value.Value, dedup bool, selected, result *value.Value, budget int, status *value.Value, measure func(string) int, progress *candidateProgress, observers ...candidateObserver) (string, error) {
 	compact := value.SameText(config.Get("recall_view"), "compact/1")
 	cue := agentToolsCue
 	if compact {
@@ -164,10 +168,15 @@ func renderCandidates(config, selected, result *value.Value, budget int, status 
 		return "", err
 	}
 	packingStop := "end"
+	previewSlots := 0
 	for _, group := range groups {
-		if len(packed)+len(group) > 3 {
+		if previewSlots+len(group) > 3 {
 			packingStop = "preview_limit"
 			break
+		}
+		if dedup && seenCoversGroup(seen, group) {
+			previewSlots += len(group)
+			continue
 		}
 		candidate := append([]*value.Value{}, packed...)
 		for _, entry := range group {
@@ -181,6 +190,7 @@ func renderCandidates(config, selected, result *value.Value, budget int, status 
 			packingStop = "preview_context_budget"
 			break
 		}
+		previewSlots += len(group)
 		packed, body = candidate, next
 	}
 	status.Set("outcome", value.Text("delegated"))

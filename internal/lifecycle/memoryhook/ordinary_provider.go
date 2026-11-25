@@ -76,6 +76,7 @@ type providerRecall struct {
 	ctx                                 context.Context
 	client                              *memoryclient.Client
 	config, event, status, result, seen *value.Value
+	dedup                               bool
 	intent                              recallIntent
 	budget                              int
 	project                             string
@@ -101,7 +102,7 @@ func sourceReceipt(s providerSource) string {
 func (p *providerRecall) unseen(entries *value.Value, limit int) *value.Value {
 	result := array()
 	for _, entry := range entries.Items {
-		if old := p.seen.Get(text(entry.Get("record_id"))); old != nil && captureEqual(old, entry.Get("version")) {
+		if p.dedup && seenCoversEntry(p.seen, entry) {
 			continue
 		}
 		result.Items = append(result.Items, entry)
@@ -473,7 +474,7 @@ func (p *providerRecall) choose() (*value.Value, *value.Value, error) {
 	for _, preview := range admitted {
 		entry, receipt := preview.entry, receipts[preview.channel]
 		identity := candidateKey(entry)
-		if old := p.seen.Get(text(entry.Get("record_id"))); old != nil && captureEqual(old, entry.Get("version")) || full[identity] {
+		if p.dedup && seenCoversEntry(p.seen, entry) || full[identity] {
 			continue
 		}
 		if p.client.Accounting().ReceiptCredits[receipt] == 0 {

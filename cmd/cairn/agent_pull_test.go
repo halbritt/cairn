@@ -92,3 +92,99 @@ func TestAgentPullOpeningFlagForwarded(t *testing.T) {
 		t.Fatalf("opening flag: %v calls=%d", err, calls.Load())
 	}
 }
+
+func TestAgentPullSessionDedupForceAndOptOut(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("CAIRN_SESSION_ID", "test-cli-dedup-session")
+	var expandCalls atomic.Int32
+	var version atomic.Int32
+	version.Store(1)
+	args := agentCaptureAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/expand":
+			expandCalls.Add(1)
+			var req core.ExpandRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+			}
+			v := int(version.Load())
+			var span *core.NoteSpan
+			body := "complete body"
+			if req.Span != nil {
+				body = ""
+				span = &core.NoteSpan{
+					ByteSpan: core.ByteSpan{Offset: req.Span.Offset, End: req.Span.Offset + req.Span.Length, TotalBytes: 500, Body: "part"},
+				}
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"schema": "cairn.response/1",
+				"ok":     true,
+				"status": "OK",
+				"data": core.Expansion{
+					Selection: core.Selection{
+						Record: core.Record{
+							RecordID: "11111111-1111-4111-8111-111111111111",
+							Version:  v,
+							Class:    "A",
+							Draft:    core.Draft{Kind: "note", Body: body},
+						},
+					},
+					Span:             span,
+					CreditsRemaining: 3,
+					BytesRemaining:   20000,
+				},
+			})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	})
+
+	// 1. First span pull hits API
+	res, err := run(context.Background(), append(append([]string{}, args...), "pull", "--request-id", "r1", "--offset", "0", "--length", "50", "receipt-1", "handle-1"), strings.NewReader(""))
+	if err != nil || expandCalls.Load() != 1 {
+		t.Fatalf("first span pull failed: err=%v calls=%d", err, expandCalls.Load())
+	}
+
+	// 2. Same span with new request-id returns already_delivered with 0 API calls
+	res, err = run(context.Background(), append(append([]string{}, args...), "pull", "--request-id", "r2", "--offset", "0", "--length", "50", "receipt-1", "handle-1"), strings.NewReader(""))
+	if err != nil || expandCalls.Load() != 1 {
+		t.Fatalf("repeat span pull failed: err=%v calls=%d", err, expandCalls.Load())
+	}
+	var hit map[string]any
+	if err := json.Unmarshal(res.(json.RawMessage), &hit); err != nil || hit["already_delivered"] != true {
+		t.Fatalf("expected already_delivered=true, got %s err=%v", res, err)
+	}
+
+	// 3. --force bypasses dedup
+	_, err = run(context.Background(), append(append([]string{}, args...), "pull", "--force", "--request-id", "r3", "--offset", "0", "--length", "50", "receipt-1", "handle-1"), strings.NewReader(""))
+	if err != nil || expandCalls.Load() != 2 {
+		t.Fatalf("--force failed: err=%v calls=%d", err, expandCalls.Load())
+	}
+
+	// 4. Whole pull misses span cache and hits API
+	_, err = run(context.Background(), append(append([]string{}, args...), "pull", "--request-id", "r4", "receipt-1", "handle-1"), strings.NewReader(""))
+	if err != nil || expandCalls.Load() != 3 {
+		t.Fatalf("whole pull failed: err=%v calls=%d", err, expandCalls.Load())
+	}
+
+	// 5. Repeat whole pull via stdin JSON returns already_delivered unless "force": true
+	res, err = run(context.Background(), append(append([]string{}, args...), "pull"), strings.NewReader(`{"request_id":"r5","receipt_id":"receipt-1","handle":"handle-1"}`))
+	if err != nil || expandCalls.Load() != 3 {
+		t.Fatalf("stdin repeat pull failed: err=%v calls=%d", err, expandCalls.Load())
+	}
+	hit = nil
+	if err := json.Unmarshal(res.(json.RawMessage), &hit); err != nil || hit["already_delivered"] != true {
+		t.Fatalf("expected stdin already_delivered=true, got %s err=%v", res, err)
+	}
+	_, err = run(context.Background(), append(append([]string{}, args...), "pull"), strings.NewReader(`{"request_id":"r6","receipt_id":"receipt-1","handle":"handle-1","force":true}`))
+	if err != nil || expandCalls.Load() != 4 {
+		t.Fatalf("stdin force=true failed: err=%v calls=%d", err, expandCalls.Load())
+	}
+
+	// 6. CAIRN_RECALL_DEDUP=0 disables dedup
+	t.Setenv("CAIRN_RECALL_DEDUP", "0")
+	_, err = run(context.Background(), append(append([]string{}, args...), "pull", "--request-id", "r7", "receipt-1", "handle-1"), strings.NewReader(""))
+	if err != nil || expandCalls.Load() != 5 {
+		t.Fatalf("CAIRN_RECALL_DEDUP=0 failed: err=%v calls=%d", err, expandCalls.Load())
+	}
+}

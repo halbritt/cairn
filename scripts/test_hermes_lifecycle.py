@@ -81,10 +81,12 @@ class HermesBoundaryTests(unittest.TestCase):
         with patch.object(self.provider,'invoke',side_effect=invoke):
             for turn in ('one','one','two'):
                 self.provider.pre_turn(session_id=self.provider.session_id,turn_id=turn,user_message='continue')
-        self.assertEqual(len(calls),2)
-        self.assertEqual(self.provider.context,'version-2')
-        self.assertEqual(calls[0][1]['source'],'resume')
-        self.assertEqual(calls[0][1]['retained_record_ids'],[])
+        self.assertEqual(len(calls),3)
+        self.assertEqual([c[0] for c in calls],['SessionStart','UserPromptSubmit','UserPromptSubmit'])
+        self.assertEqual(self.provider.context,'version-3')
+        self.assertEqual(calls[0][1]['source'],'startup')
+        self.assertEqual(calls[1][1]['source'],'resume')
+        self.assertNotIn('retained_record_ids',calls[1][1])
 
     def test_opt_out_and_child_run_do_not_recall(self):
         with patch.object(self.provider,'invoke') as invoke, patch.dict(os.environ,CAIRN_LIFECYCLE_DISABLED='1'):
@@ -99,7 +101,7 @@ class HermesBoundaryTests(unittest.TestCase):
             with self.assertLogs(plugin.logger,level='WARNING') as logs:
                 self.provider.on_pre_compress([dict(role='user',content='PRIVATE')])
                 self.provider.on_session_end([dict(role='user',content='PRIVATE')])
-        self.assertEqual(run.call_count,2)
+        self.assertEqual(run.call_count,3)
         self.assertNotIn('PRIVATE',str(logs.output))
 
     def test_status_tracks_failure_then_retry_without_stale_recall_overwrite(self):
@@ -185,7 +187,7 @@ class HermesBoundaryTests(unittest.TestCase):
             self.assertEqual(events,['SessionEnd'])
             self.provider.on_pre_compress([])
             self.provider.on_session_end([])
-            self.assertEqual(events,['SessionEnd','PreCompact'])
+            self.assertEqual(events,['SessionEnd','PreCompact','SessionStart'])
 
     def test_shutdown_releases_registrations_and_session_switch_keeps_identity(self):
         self.provider.context='old context'
@@ -218,7 +220,7 @@ class HermesBoundaryTests(unittest.TestCase):
             self.provider.pre_turn(session_id='current',turn_id='current-turn',conversation_history=current)
             self.provider.on_session_switch('stale-queued-new')
             self.provider.on_session_end([dict(role='user',content='Previous work.')])
-            self.assertEqual(invoke.call_count,1)
+            self.assertEqual(invoke.call_count,2)
             self.provider.post_turn(session_id='current',conversation_history=current)
             self.assertEqual(self.provider.session_id,'current')
 
@@ -241,7 +243,7 @@ class HermesBoundaryTests(unittest.TestCase):
         with patch.object(self.provider, 'invoke', return_value={}) as invoke:
             self.provider.pre_turn(session_id=self.provider.session_id, turn_id='next', user_message='next question',
                                    conversation_history=second)
-            self.assertEqual(invoke.call_count, 1)
+            self.assertEqual(invoke.call_count, 2)
             self.provider.post_turn(session_id=self.provider.session_id, conversation_history=second)
         record = plugin.read_control(self.home, self.provider.control_key)
         self.assertEqual(record['pending_digest'], plugin.dialogue_digest(plugin.dialogue(second)))
@@ -323,6 +325,46 @@ class HermesBoundaryTests(unittest.TestCase):
         messages=[dict(role='user',content='Old project secret topic'),dict(role='assistant',content='Old answer'),
                   dict(role='user',content='Current migration'),dict(role='assistant',content='Tests remain')]
         self.assertEqual(provider.selected_dialogue(messages),[dict(role='user',text='Current migration'),dict(role='assistant',text='Tests remain')])
+
+    def test_seen_persists_across_turns_and_resets_on_startup_and_compress(self):
+        events = []
+        state_dir = self.home / 'state'
+        config = dict(cairn='cairn', socket='socket', token_file='token', repo='shared',
+                      harness='hermes', recall_mode='agent_tools', state_dir=str(state_dir))
+        entry = dict(record_id='11111111-1111-4111-8111-111111111111', version=1, kind='note',
+                     summary='Keep postgres policy.', body_sha256='', pull_arguments=dict(receipt_id='r', handle='h'))
+        import hashlib
+        body = 'Keep postgres policy.'
+        entry['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
+        search_res = dict(status='READY', selected=[], omitted={}, index=[entry])
+        pulled = dict(selection=dict(record=dict(record_id=entry['record_id'], version=1, body=body, **{'class': 'A'}), mandatory=False))
+
+        def invoke(event, **fields):
+            events.append((event, fields))
+            payload = dict(hook_event_name=event, session_id=self.provider.session_id, cwd=str(self.home), **fields)
+            if event in ('SessionStart', 'UserPromptSubmit'):
+                res_search = dict(search_res, index=[]) if (event == 'SessionStart' and fields.get('source') == 'compact') else search_res
+                with patch.object(hook.Memory, 'search', return_value=res_search), \
+                     patch.object(hook.Memory, 'call', return_value=pulled):
+                    return hook.handle(config, payload)
+            return {}
+
+        with patch.object(self.provider, 'invoke', side_effect=invoke):
+            # Turn 1: SessionStart(startup) + UserPromptSubmit -> delivers and marks seen
+            self.provider.pre_turn(session_id=self.provider.session_id, turn_id='t1', user_message='check postgres policy')
+            self.assertIn('Keep postgres policy.', self.provider.context)
+            state_path = next(state_dir.glob('*.json'))
+            self.assertEqual(json.loads(state_path.read_text())['seen'], {entry['record_id']: 1})
+            # Turn 2: no SessionStart, no retained_record_ids=[] -> seen persists and dedups
+            self.provider.pre_turn(session_id=self.provider.session_id, turn_id='t2', user_message='check postgres policy again')
+            self.assertNotIn('Keep postgres policy.', self.provider.context)
+            self.assertEqual(json.loads(state_path.read_text())['seen'], {entry['record_id']: 1})
+            # Compress triggers PreCompact + SessionStart(compact) -> clears seen so Turn 3 delivers again
+            self.provider.pre_command(command='compress', session_key=self.provider.session_id)
+            self.assertEqual(json.loads(state_path.read_text())['seen'], {})
+            self.provider.pre_turn(session_id=self.provider.session_id, turn_id='t3', user_message='check postgres policy after compact')
+            self.assertIn('Keep postgres policy.', self.provider.context)
+        self.assertEqual([e[0] for e in events], ['SessionStart', 'UserPromptSubmit', 'UserPromptSubmit', 'PreCompact', 'SessionStart', 'UserPromptSubmit'])
 
 
 if __name__=='__main__':

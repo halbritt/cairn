@@ -216,6 +216,9 @@ with (nullcontext() if bridge else patch.object(hook,'load_inbox_recall',return_
                     # Only wall/elapsed measurements differ between the real processes.
                     for key in ('at','duration_ms','elapsed_seconds'):
                         body['last_recall'].pop(key,None)
+                for rec in body.get('seen_meta',{}).get('records',{}).values():
+                    at=rec.pop('at',None)
+                    if at is not None:self.assertGreaterEqual(at,0)
                 result[path.name] = body
         return result
 

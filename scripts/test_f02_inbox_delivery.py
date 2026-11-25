@@ -186,6 +186,7 @@ class InboxDeliveryProcesses(unittest.TestCase):
             if path.suffix=='.lock' or path.is_dir():continue
             obj=json.loads(path.read_text())
             for grant in obj.get('grants',{}).values():grant.pop('at',None)
+            for rec in obj.get('seen_meta',{}).get('records',{}).values():rec.pop('at',None)
             result[path.name]=obj
         return result
 
