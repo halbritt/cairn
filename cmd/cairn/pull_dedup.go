@@ -82,6 +82,16 @@ func cliPullDedupPath(session *core.AgentSessionRef, socketPath, tokenPath strin
 	if err != nil || base == "" {
 		return "", err
 	}
+	if socketPath != "" {
+		if abs, err := filepath.Abs(socketPath); err == nil {
+			socketPath = abs
+		}
+	}
+	if tokenPath != "" {
+		if abs, err := filepath.Abs(tokenPath); err == nil {
+			tokenPath = abs
+		}
+	}
 	var key string
 	switch {
 	case session != nil:
@@ -171,6 +181,23 @@ func pruneCLIPullDedup(state *cliPullDedupState, now int64) {
 
 	if len(state.SeenRequests) > cliPullDedupMaxReqs {
 		state.SeenRequests = state.SeenRequests[len(state.SeenRequests)-cliPullDedupMaxReqs:]
+	}
+
+	if len(state.ReceiptScopes) > 0 {
+		referenced := make(map[string]struct{}, len(keptHandles))
+		for _, h := range keptHandles {
+			if h.ReceiptID != "" {
+				referenced[h.ReceiptID] = struct{}{}
+			}
+		}
+		for receiptID := range state.ReceiptScopes {
+			if _, ok := referenced[receiptID]; !ok {
+				delete(state.ReceiptScopes, receiptID)
+			}
+		}
+		if len(state.ReceiptScopes) == 0 {
+			state.ReceiptScopes = nil
+		}
 	}
 }
 
@@ -275,13 +302,16 @@ func checkCLIPullDedup(session *core.AgentSessionRef, socketPath, tokenPath stri
 			if req.Span != nil && (ref.RequiresWhole || d.RequiresWhole) {
 				return false
 			}
+			if ref.RequiresWhole && !d.RequiresWhole {
+				return false
+			}
 			covered := false
 			if d.WholeVersion == ref.Version {
 				covered = true
 			} else if req.Span != nil {
 				reqEnd := req.Span.Offset + req.Span.Length
 				for _, s := range d.Spans[ref.Version] {
-					if s.Offset <= req.Span.Offset && (s.End >= reqEnd || s.EOF) && req.OpeningBytes <= s.OpeningBytes {
+					if s.Offset <= req.Span.Offset && (s.End >= reqEnd || s.EOF) && cliOpeningBytesCovered(req.OpeningBytes, s.OpeningBytes) {
 						covered = true
 						break
 					}
@@ -355,7 +385,7 @@ func recordCLIPullResult(session *core.AgentSessionRef, socketPath, tokenPath st
 				d.Spans = make(map[int][]cliPullSpan)
 			}
 			eof := exp.Span.TotalBytes > 0 && exp.Span.End >= exp.Span.TotalBytes
-			d.Spans[rec.Version] = append(d.Spans[rec.Version], cliPullSpan{
+			d.Spans[rec.Version] = mergeCLIPullSpans(d.Spans[rec.Version], cliPullSpan{
 				Offset:       exp.Span.Offset,
 				End:          exp.Span.End,
 				EOF:          eof,
@@ -373,6 +403,77 @@ func recordCLIPullResult(session *core.AgentSessionRef, socketPath, tokenPath st
 				}
 			}
 		}
+		pruneCLIPullDedup(state, now)
+		return true
+	})
+}
+
+func cliOpeningBytesCovered(requested, delivered int) bool {
+	if requested == 0 {
+		return delivered == 0 || delivered >= 96
+	}
+	return requested <= delivered
+}
+
+func mergeCLIPullSpans(existing []cliPullSpan, added cliPullSpan) []cliPullSpan {
+	if added.OpeningBytes == 0 {
+		out := make([]cliPullSpan, 0, len(existing)+1)
+		merged := added
+		for _, cur := range existing {
+			if cur.OpeningBytes != merged.OpeningBytes || cur.End < merged.Offset || merged.End < cur.Offset {
+				out = append(out, cur)
+				continue
+			}
+			if cur.Offset < merged.Offset {
+				merged.Offset = cur.Offset
+			}
+			if cur.End > merged.End {
+				merged.End = cur.End
+			}
+			merged.EOF = merged.EOF || cur.EOF
+		}
+		return append(out, merged)
+	}
+	return append(existing, added)
+}
+
+func isCLIRecordMutation(operation string) bool {
+	switch operation {
+	case "edit", "revise", "append", "replace", "set-sections", "cite", "delete", "supersede":
+		return true
+	default:
+		return false
+	}
+}
+
+func invalidateCLIPullDedup(session *core.AgentSessionRef, socketPath, tokenPath, recordID string) {
+	if !cliPullDedupEnabled() || recordID == "" {
+		return
+	}
+	path, err := cliPullDedupPath(session, socketPath, tokenPath)
+	if err != nil {
+		return
+	}
+	if _, err := os.Stat(path); err != nil {
+		return
+	}
+	withCLIPullDedupLock(session, socketPath, tokenPath, func(state *cliPullDedupState, now int64) bool {
+		if len(state.Delivered) == 0 {
+			return false
+		}
+		kept := make([]cliPullDelivered, 0, len(state.Delivered))
+		removed := false
+		for _, d := range state.Delivered {
+			if d.RecordID == recordID {
+				removed = true
+				continue
+			}
+			kept = append(kept, d)
+		}
+		if !removed {
+			return false
+		}
+		state.Delivered = kept
 		pruneCLIPullDedup(state, now)
 		return true
 	})

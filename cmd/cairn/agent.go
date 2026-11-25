@@ -354,10 +354,14 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	if sub.Dispatch != nil {
 		return sub.Dispatch(ctx, client, session, socketPath, tokenPath, f.Args()[1:], input)
 	}
-	return callAgentJSONOperation(ctx, client, sub, input)
+	return callAgentJSONOperationWithSession(ctx, client, session, socketPath, tokenPath, sub, input)
 }
 
 func callAgentJSONOperation(ctx context.Context, client *localapi.Client, sub agentSubcommandSpec, input io.Reader) (any, error) {
+	return callAgentJSONOperationWithSession(ctx, client, nil, "", "", sub, input)
+}
+
+func callAgentJSONOperationWithSession(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, socketPath, tokenPath string, sub agentSubcommandSpec, input io.Reader) (any, error) {
 	operation := sub.Operation
 	limit := localapi.RequestBodyLimit(operation)
 	body, err := io.ReadAll(io.LimitReader(input, limit+1))
@@ -422,6 +426,18 @@ func callAgentJSONOperation(ctx context.Context, client *localapi.Client, sub ag
 		}
 		if err != nil {
 			return nil, err
+		}
+	}
+	if isCLIRecordMutation(operation) {
+		var recRef struct {
+			RecordID string `json:"record_id"`
+		}
+		_ = json.Unmarshal(result, &recRef)
+		if recRef.RecordID == "" {
+			_ = json.Unmarshal(body, &recRef)
+		}
+		if recRef.RecordID != "" {
+			invalidateCLIPullDedup(session, socketPath, tokenPath, recRef.RecordID)
 		}
 	}
 	return result, nil

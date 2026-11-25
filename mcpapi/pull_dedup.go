@@ -149,13 +149,16 @@ func (t *pullDedupTracker) checkPull(args core.ExpandRequest) (pullAlreadyDelive
 	if args.Span != nil && (ref.requiresWhole || rec.requiresWhole) {
 		return pullAlreadyDelivered{}, false
 	}
+	if ref.requiresWhole && !rec.requiresWhole {
+		return pullAlreadyDelivered{}, false
+	}
 	covered := false
 	if rec.wholeVersion == ref.version {
 		covered = true
 	} else if args.Span != nil {
 		reqEnd := args.Span.Offset + args.Span.Length
 		for _, s := range rec.spans[ref.version] {
-			if s.offset <= args.Span.Offset && (s.end >= reqEnd || s.eof) && args.OpeningBytes <= s.openingBytes {
+			if s.offset <= args.Span.Offset && (s.end >= reqEnd || s.eof) && openingBytesCovered(args.OpeningBytes, s.openingBytes) {
 				covered = true
 				break
 			}
@@ -263,18 +266,20 @@ func (t *pullDedupTracker) touchRecordLocked(recordID string) {
 	t.recordOrder = append(t.recordOrder, recordID)
 }
 
+func openingBytesCovered(requested, delivered int) bool {
+	if requested == 0 {
+		return delivered == 0 || delivered >= 96
+	}
+	return requested <= delivered
+}
+
 func mergePullSpans(existing []pullSpanRange, added pullSpanRange) []pullSpanRange {
 	if added.openingBytes == 0 {
 		// Merge overlapping/adjacent ranges with compatible opening coverage.
 		out := make([]pullSpanRange, 0, len(existing)+1)
 		merged := added
-		inserted := false
 		for _, cur := range existing {
 			if cur.openingBytes != merged.openingBytes || cur.end < merged.offset || merged.end < cur.offset {
-				if !inserted && merged.offset < cur.offset {
-					out = append(out, merged)
-					inserted = true
-				}
 				out = append(out, cur)
 				continue
 			}
@@ -286,10 +291,7 @@ func mergePullSpans(existing []pullSpanRange, added pullSpanRange) []pullSpanRan
 			}
 			merged.eof = merged.eof || cur.eof
 		}
-		if !inserted {
-			out = append(out, merged)
-		}
-		return out
+		return append(out, merged)
 	}
 	return append(existing, added)
 }
