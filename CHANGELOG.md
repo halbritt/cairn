@@ -15,6 +15,13 @@ and MCP processes.
 
 ## 2026-11-24
 
+- `scripts/local-store.sh start` no longer fails with exit 7 on a host whose
+  default `pg_config` names a PostgreSQL server without pgvector. A new store
+  uses the newest installed server that provides the extension, and an existing
+  store keeps its own major version; `CAIRN_PG_BIN` still overrides the choice.
+- The retained-package unit census no longer refuses an owned `0755` retained
+  source directory during its final readback after admitting it (CAIRN-745), and
+  a changed retained source member reports `census pin changed` again.
 - Retired the Python semantic worker. `scripts/semantic_rank.py`,
   `scripts/embedding_worker.py`, the FastEmbed installer path and the Python-only
   qualification tooling (S-01 reference/refusal audit, S-04R Python closure, the
