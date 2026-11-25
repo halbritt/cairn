@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/outputbound"
 	"github.com/halbritt/cairn/localapi"
 	"github.com/halbritt/cairn/mcpapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -27,8 +28,9 @@ func mcpFlags(f *flag.FlagSet) *mcpOptions {
 	f.StringVar(&o.config.Scope.TaskID, "task", "", "host task identity (required unless --codex-thread)")
 	f.StringVar(&o.config.Scope.RunID, "run", "", "host run identity (required unless --codex-thread)")
 	f.BoolVar(&o.config.CodexThread, "codex-thread", false, "group searches by Codex tool-call thread metadata instead of --task/--run")
-	f.IntVar(&o.config.AvailableTokens, "tokens", 32000, "memory input room per tool result")
-	f.IntVar(&o.config.MaxTokens, "max-tokens", 1000000, "maximum explicit search input room and pull output; --tokens remains the default")
+	f.IntVar(&o.config.AvailableTokens, "tokens", 16000, "memory input room per tool result")
+	f.IntVar(&o.config.MaxTokens, "max-tokens", 160000, "maximum explicit search input room and pull output; --tokens remains the default")
+	f.IntVar(&o.config.OutputMaxBytes, "output-max-bytes", outputbound.DefaultOutputMaxBytes, "maximum bounded output bytes for non-strict tools (0 = unbounded)")
 	f.StringVar(&o.config.SearchView, "search-view", "", "optional model-facing search presentation: compact/1")
 	f.StringVar(&o.config.ToolProfile, "tool-profile", "", "optional shorter model-facing tool descriptions: compact/1 (search/pull), compact/2 (all tools)")
 	f.BoolVar(&o.config.Messaging, "messaging", false, "also expose session inbox tools (agents, send, inbox, ack, complete, renew, event status)")
@@ -66,6 +68,9 @@ func (o *mcpOptions) validate(positional int) error {
 	if o.pins != (core.ContextPins{}) {
 		o.config.Context = &o.pins
 	}
+	if o.config.OutputMaxBytes == 0 {
+		o.config.UnboundedOutput = true
+	}
 	return o.config.Validate()
 }
 
@@ -87,6 +92,20 @@ func serveMCP(ctx context.Context, args []string) error {
 	}
 	if err := o.validate(f.NArg()); err != nil {
 		return err
+	}
+	outputMaxSet := false
+	f.Visit(func(option *flag.Flag) {
+		if option.Name == "output-max-bytes" {
+			outputMaxSet = true
+		}
+	})
+	if !outputMaxSet {
+		resolved := outputbound.ResolveMaxBytes(-1, "CAIRN_MCP_OUTPUT_MAX_BYTES", "CAIRN_TOOL_OUTPUT_MAX_BYTES")
+		o.config.OutputMaxBytes = resolved
+		o.config.UnboundedOutput = resolved == 0
+	} else if outputbound.ResolveMaxBytes(o.config.OutputMaxBytes, "CAIRN_MCP_OUTPUT_MAX_BYTES") == 0 {
+		o.config.OutputMaxBytes = 0
+		o.config.UnboundedOutput = true
 	}
 	// The host conversation is declared by the launcher, never inferred from
 	// the model or account. Codex declares it per tool call instead. Generated

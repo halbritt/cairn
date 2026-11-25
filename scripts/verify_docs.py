@@ -269,7 +269,7 @@ def discover_cli_schema(repo_root):
     cmd_dir = os.path.join(repo_root, "cmd", "cairn")
     commands = set([
         "version", "help", "mcp", "opencode-config", "codex-config", "claude-config",
-        "claude-channel", "opencode-install", "serve", "schedule-serve", "run",
+        "claude-channel", "opencode-install", "exec-bounded", "serve", "schedule-serve", "run",
         "capture-evidence", "checkpoint", "recovery-export", "recovery-inspect",
         "recovery-reapply", "adopt-context", "agents", "machine", "relay", "wake",
         "watch", "agent", "clients", "remember", "search", "list", "get",

@@ -242,17 +242,17 @@ export const agents = validatedTool({
     if (args.agent === "self") {
       const { ref, found } = await selfSession(config, context)
       if (!found) throw new Error(`IDENTITY_UNKNOWN: no session found for ${ref.agent_id}`)
-      return render({ agents: [viewAgent(found, true)], more: false }, config)
+      return renderBounded({ agents: [viewAgent(found, true)], more: false }, config)
     }
     if (args.agent) {
       const ordinal = parseAgentOrdinal(args.agent)
       if (ordinal !== undefined) {
         const agent = await agentByOrdinal(config, context, ordinal)
-        return render({ agents: [viewAgent(agent, false)], more: false }, config)
+        return renderBounded({ agents: [viewAgent(agent, false)], more: false }, config)
       }
       if (!isUUID(args.agent)) throw new Error("INVALID_REQUEST: agent must be self, agent-N or an agent UUID")
       const page = await queryDirectory(config, context, { agent_id: args.agent, include_offline: true, limit: 1 })
-      return render({
+      return renderBounded({
         agents: (page.agents ?? []).map(a => viewAgent(a, false)),
         ...(page.next_after ? { next_after: page.next_after } : {}),
         more: Boolean(page.more),
@@ -265,7 +265,7 @@ export const agents = validatedTool({
     if (args.include_offline) query.include_offline = true
     if (args.after) query.after = args.after
     const page = await queryDirectory(config, context, query)
-    return render({
+    return renderBounded({
       agents: (page.agents ?? []).map(a => viewAgent(a, false)),
       ...(page.next_after ? { next_after: page.next_after } : {}),
       more: Boolean(page.more),
@@ -636,7 +636,7 @@ export const event_status = validatedTool({
     }, ref) as {
       event: DeliveryRecord["event"], deliveries?: DeliveryRecord[], next_after?: string, more?: boolean,
     }
-    return render({
+    return renderBounded({
       event_id: status.event.event_id, kind: status.event.kind,
       ...(status.event.summary ? { summary: status.event.summary } : {}),
       ...(status.event.blocker ? { blocker: true } : {}),

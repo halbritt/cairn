@@ -297,7 +297,7 @@ func (c *CLI) markDigestJournalCommitted(dir string, native, attempt, delivery *
 	return c.writeState(intentPath, rec)
 }
 
-func (c *CLI) compactDigestOperation(ctx context.Context, config *value.Value, dir, handle, op, disposition, code, itemSelector string, native, attempt, delivery *value.Value, out io.Writer) (int, error) {
+func (c *CLI) compactDigestOperation(ctx context.Context, config *value.Value, dir, handle, op, disposition, code, itemSelector string, outputMaxBytes int, native, attempt, delivery *value.Value, out io.Writer) (int, error) {
 	if !value.SameText(native.Get("admission_kind"), "digest") {
 		return 0, nativeRefusal("INVALID_HOST", "compact inbox delivery changed")
 	}
@@ -346,12 +346,12 @@ func (c *CLI) compactDigestOperation(ctx context.Context, config *value.Value, d
 		return 0, c.output(out, nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "digest", true, "context", native), false)
 	}
 	if op == "read" {
-		return c.compactDigestRead(ctx, config, attempt, itemsVal.Items, itemSelector, out)
+		return c.compactDigestRead(ctx, config, dir, attempt, itemsVal.Items, itemSelector, outputMaxBytes, out)
 	}
 	return c.compactDigestSettle(ctx, config, dir, handle, disposition, code, itemSelector, native, attempt, delivery, session, attID, itemsVal.Items, statusFinished, out)
 }
 
-func (c *CLI) compactDigestRead(ctx context.Context, config, attempt *value.Value, items []*value.Value, itemSelector string, out io.Writer) (int, error) {
+func (c *CLI) compactDigestRead(ctx context.Context, config *value.Value, dir string, attempt *value.Value, items []*value.Value, itemSelector string, outputMaxBytes int, out io.Writer) (int, error) {
 	if itemSelector != "" {
 		it, err := selectDigestItemBySelector(items, itemSelector)
 		if err != nil {
@@ -388,7 +388,7 @@ func (c *CLI) compactDigestRead(ctx context.Context, config, attempt *value.Valu
 		if rt := ev.Get("routing"); rt != nil && rt.Kind == value.Object && value.Truth(rt) {
 			readOut.Set("routing", rt)
 		}
-		return 0, c.output(out, readOut, false)
+		return 0, c.writeBoundedCompactRead(out, readOut, outputMaxBytes, c.compactSpoolDir(dir), true)
 	}
 	outItems := &value.Value{Kind: value.Array, Items: make([]*value.Value, 0, len(items))}
 	for _, it := range items {
@@ -432,7 +432,7 @@ func (c *CLI) compactDigestRead(ctx context.Context, config, attempt *value.Valu
 		outItems.Items = append(outItems.Items, entry)
 	}
 	supCount := nativeOr(attempt.Get("digest_superseded_count"), value.IntegerText("0"))
-	return 0, c.output(out, nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "digest", true, "superseded_count", supCount, "items", outItems), false)
+	return 0, c.writeBoundedCompactRead(out, nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "digest", true, "superseded_count", supCount, "items", outItems), outputMaxBytes, c.compactSpoolDir(dir), true)
 }
 
 func (c *CLI) compactDigestSettle(ctx context.Context, config *value.Value, dir, handle, disposition, code, itemSelector string, native, attempt, delivery, session, attID *value.Value, items []*value.Value, statusFinished bool, out io.Writer) (int, error) {

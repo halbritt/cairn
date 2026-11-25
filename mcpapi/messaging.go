@@ -170,32 +170,32 @@ type agentsResult struct {
 
 func (t messagingTools) agents(ctx context.Context, request *mcp.CallToolRequest, args agentsArgs) (*mcp.CallToolResult, any, error) {
 	one := func(agent core.AgentInstance, withExecution bool) (*mcp.CallToolResult, any, error) {
-		return toolResult(agentsResult{Agents: []agentView{viewAgent(agent, withExecution)}}, nil, t.config.AvailableTokens)
+		return t.boundedToolResult(agentsResult{Agents: []agentView{viewAgent(agent, withExecution)}}, nil, t.config.AvailableTokens)
 	}
 	if args.Agent != "" && (args.Project != "" || args.Harness != "" || args.State != "" || args.IncludeOffline || args.After != 0 || args.Limit != 0) {
-		return toolResult(nil, messagingError("INVALID_REQUEST", "agent selects one session and cannot combine with listing filters"), 0)
+		return t.boundedToolResult(nil, messagingError("INVALID_REQUEST", "agent selects one session and cannot combine with listing filters"), 0)
 	}
 	if args.Agent == "self" {
 		ref, found, err := t.self(ctx, request, "", "")
 		if err != nil {
-			return toolResult(nil, err, 0)
+			return t.boundedToolResult(nil, err, 0)
 		}
 		if found == nil {
-			return toolResult(nil, messagingError("IDENTITY_UNKNOWN", "no session found for "+ref.AgentID), 0)
+			return t.boundedToolResult(nil, messagingError("IDENTITY_UNKNOWN", "no session found for "+ref.AgentID), 0)
 		}
 		return one(*found, true)
 	}
 	if ordinal, ok := agentOrdinal(args.Agent); ok {
 		agent, err := t.byOrdinal(ctx, ordinal)
 		if err != nil {
-			return toolResult(nil, err, 0)
+			return t.boundedToolResult(nil, err, 0)
 		}
 		return one(agent, false)
 	}
 	query := core.AgentDirectoryQuery{Project: args.Project, Harness: args.Harness, State: args.State, IncludeOffline: args.IncludeOffline, After: args.After, Limit: args.Limit}
 	if args.Agent != "" {
 		if uuid.Validate(args.Agent) != nil {
-			return toolResult(nil, messagingError("INVALID_REQUEST", "agent must be self, agent-N or an agent UUID"), 0)
+			return t.boundedToolResult(nil, messagingError("INVALID_REQUEST", "agent must be self, agent-N or an agent UUID"), 0)
 		}
 		query = core.AgentDirectoryQuery{AgentID: args.Agent, IncludeOffline: true, Limit: 1}
 	} else if query.Limit == 0 {
@@ -203,13 +203,13 @@ func (t messagingTools) agents(ctx context.Context, request *mcp.CallToolRequest
 	}
 	page, err := t.directory(ctx, query)
 	if err != nil {
-		return toolResult(nil, err, 0)
+		return t.boundedToolResult(nil, err, 0)
 	}
 	result := agentsResult{Agents: make([]agentView, 0, len(page.Agents)), NextAfter: page.NextAfter, More: page.More}
 	for _, agent := range page.Agents {
 		result.Agents = append(result.Agents, viewAgent(agent, false))
 	}
-	return toolResult(result, nil, t.config.AvailableTokens)
+	return t.boundedToolResult(result, nil, t.config.AvailableTokens)
 }
 
 type sendArgs struct {
@@ -746,12 +746,12 @@ type eventDeliveryStatus struct {
 func (t messagingTools) eventStatus(ctx context.Context, request *mcp.CallToolRequest, args eventStatusArgs) (*mcp.CallToolResult, any, error) {
 	ref, _, err := t.self(ctx, request, args.AgentID, args.ExecutionID)
 	if err != nil {
-		return toolResult(nil, err, 0)
+		return t.boundedToolResult(nil, err, 0)
 	}
 	var status core.EventStatus
 	err = t.client.ForAgentSession(ref).Call(ctx, "event-inspect", core.EventStatusRequest{EventID: strings.TrimPrefix(args.EventID, "cairn:"), After: args.After, Limit: args.Limit}, &status)
 	if err != nil {
-		return toolResult(nil, err, 0)
+		return t.boundedToolResult(nil, err, 0)
 	}
 	result := eventStatusResult{EventID: status.Event.EventID, Kind: status.Event.Kind, Summary: status.Event.Summary, Blocker: status.Event.Blocker, Action: status.Event.Action, Supersedes: status.Event.Supersedes, ExpectNextBy: status.Event.ExpectNextBy, ExpectBy: status.Event.ExpectBy, Header: status.Event.Header(), Routing: status.Event.Routing, From: status.Event.From, To: status.Event.Destination, CreatedAt: status.Event.CreatedAt, Deliveries: make([]eventDeliveryStatus, 0, len(status.Deliveries)), NextAfter: status.NextAfter, More: status.More}
 	for _, d := range status.Deliveries {
@@ -761,7 +761,7 @@ func (t messagingTools) eventStatus(ctx context.Context, request *mcp.CallToolRe
 		}
 		result.Deliveries = append(result.Deliveries, entry)
 	}
-	return toolResult(result, nil, t.config.AvailableTokens)
+	return t.boundedToolResult(result, nil, t.config.AvailableTokens)
 }
 
 const messagingIdentityNote = " Your session inbox is found from this conversation's registered native session; pass agent_id and execution_id only if that lookup fails."

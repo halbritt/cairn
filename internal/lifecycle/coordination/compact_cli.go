@@ -10,12 +10,14 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"unicode/utf8"
 
 	"github.com/halbritt/cairn/internal/lifecycle/journal"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
+	"github.com/halbritt/cairn/internal/outputbound"
 )
 
 func sourceContains(container, key *value.Value) (bool, error) {
@@ -154,9 +156,86 @@ func compactFresh(issued *value.Value, now float64) (bool, error) {
 	return issued.Number <= now && now < issued.Number+3600, nil
 }
 
+func (c *CLI) compactCommandOutputMax(a cliArgs) (int, error) {
+	if a.has("--full-output") {
+		return 0, nil
+	}
+	if a.has("--output-max-bytes") {
+		raw := strings.TrimSpace(a.get("--output-max-bytes"))
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 || n > 1000000 {
+			return 0, nativeRefusal("INVALID_REQUEST", "--output-max-bytes must be an integer between 0 and 1000000")
+		}
+		return outputbound.ResolveMaxBytesWithLookup(n, c.env, "CAIRN_CLI_OUTPUT_MAX_BYTES", "CAIRN_TOOL_OUTPUT_MAX_BYTES"), nil
+	}
+	return outputbound.ResolveMaxBytesWithLookup(-1, c.env, "CAIRN_CLI_OUTPUT_MAX_BYTES", "CAIRN_TOOL_OUTPUT_MAX_BYTES"), nil
+}
+
+func (c *CLI) compactSpoolDir(stateDir string) string {
+	for _, name := range []string{outputbound.EnvToolOutputDir, "XDG_STATE_HOME", "HOME"} {
+		if v := strings.TrimSpace(c.env(name)); v != "" {
+			return outputbound.DefaultSpoolDirWithLookup(c.env)
+		}
+	}
+	if stateDir != "" {
+		return filepath.Join(stateDir, "tool-output")
+	}
+	return outputbound.DefaultSpoolDir()
+}
+
+func (c *CLI) writeBoundedCompactRead(out io.Writer, readOut *value.Value, maxBytes int, spoolDir string, digest bool) error {
+	if maxBytes <= 0 {
+		return c.output(out, readOut, false)
+	}
+	var rawBuf bytes.Buffer
+	if err := c.profile().Write(SiteCLIOutput, &rawBuf, readOut); err != nil {
+		return err
+	}
+	if rawBuf.Len() <= maxBytes {
+		_, err := out.Write(rawBuf.Bytes())
+		return err
+	}
+	fullPath, err := outputbound.SpoolRaw(rawBuf.Bytes(), spoolDir, "json")
+	if err != nil {
+		return err
+	}
+	totalBytes := rawBuf.Len()
+	copyMeta := func(dst *value.Value) {
+		if digest {
+			dst.Set("digest", value.Boolean(true))
+		}
+		for _, k := range []string{"kind", "sender", "source", "superseded_count", "ordinal", "delivery_id"} {
+			if v := readOut.Get(k); v != nil && v.Kind != value.Null {
+				dst.Set(k, v)
+			}
+		}
+	}
+	for capBytes := max(128, maxBytes-256); capBytes >= 64; capBytes = capBytes * 3 / 4 {
+		excerpt, omitted := outputbound.BuildExcerpt(rawBuf.Bytes(), capBytes, fullPath)
+		bounded := nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "truncated", true, "total_bytes", totalBytes, "omitted_bytes", omitted, "full_output_path", fullPath, "excerpt", excerpt)
+		copyMeta(bounded)
+		var cand bytes.Buffer
+		if err := c.profile().Write(SiteCLIOutput, &cand, bounded); err != nil {
+			return err
+		}
+		if cand.Len() <= maxBytes {
+			_, err := out.Write(cand.Bytes())
+			return err
+		}
+		if capBytes == 64 {
+			break
+		}
+	}
+	fallback := nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "truncated", true, "total_bytes", totalBytes, "omitted_bytes", totalBytes, "full_output_path", fullPath)
+	if digest {
+		fallback.Set("digest", value.Boolean(true))
+	}
+	return c.output(out, fallback, false)
+}
+
 func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.Writer) (int, error) {
 	const prog = "cairn-inbox"
-	a, err := parseCLI(argv, prog, map[string]int{"--code": 1, "--item": 1})
+	a, err := parseCLI(argv, prog, map[string]int{"--code": 1, "--item": 1, "--output-max-bytes": 1, "--full-output": 0})
 	if err != nil {
 		return 0, err
 	}
@@ -199,6 +278,13 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	}
 	if a.has("--item") && op != "read" && op != "settle" {
 		return 0, nativeRefusal("INVALID_REQUEST", "--item applies only to read or settle")
+	}
+	if op != "read" && (a.has("--output-max-bytes") || a.has("--full-output")) {
+		return 0, nativeRefusal("INVALID_REQUEST", "--output-max-bytes and --full-output apply only to read")
+	}
+	outputMaxBytes, err := c.compactCommandOutputMax(a)
+	if err != nil {
+		return 0, err
 	}
 	root, err := c.compactRoot()
 	if err != nil {
@@ -427,7 +513,7 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 		return 0, nativeRefusal("UNSUPPORTED_CONTROL", "request deliveries complete via finish_reply, not compact settle or advance")
 	}
 	if value.SameText(attempt.Get("admission_kind"), "digest") {
-		return c.compactDigestOperation(ctx, config, dir, handle, op, disposition, a.get("--code"), a.get("--item"), native, attempt, delivery, out)
+		return c.compactDigestOperation(ctx, config, dir, handle, op, disposition, a.get("--code"), a.get("--item"), outputMaxBytes, native, attempt, delivery, out)
 	}
 	if a.has("--item") {
 		return 0, nativeRefusal("INVALID_REQUEST", "--item applies only to notice digests")
@@ -507,7 +593,7 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 		if rt := event.Get("routing"); rt != nil && rt.Kind == value.Object && value.Truth(rt) {
 			readOut.Set("routing", rt)
 		}
-		return 0, c.output(out, readOut, false)
+		return 0, c.writeBoundedCompactRead(out, readOut, outputMaxBytes, c.compactSpoolDir(dir), false)
 	}
 	if op == "inspect" {
 		return 0, c.output(out, nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "context", native), false)

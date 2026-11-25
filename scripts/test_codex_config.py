@@ -66,7 +66,7 @@ class CodexConfigTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         server = tomllib.loads(result.stdout.decode())['mcp_servers']['cairn']
         self.assertTrue(server['required'])
-        self.assertEqual(server['args'], ['mcp', *args[:-1], '--tokens', '32000'])
+        self.assertEqual(server['args'], ['mcp', *args[:-1], '--tokens', '16000'])
 
     def test_invalid_cli_is_stderr_only(self):
         result = self.render('--socket', '/missing.sock')

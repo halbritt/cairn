@@ -86,6 +86,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "exec-bounded" {
+		code, err := execBoundedCommand(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cairn exec-bounded: %v\n", err)
+		}
+		os.Exit(code)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "claude-channel" {
 		err := serveClaudeChannel(ctx, os.Args[2:])
 		if errors.Is(err, flag.ErrHelp) {

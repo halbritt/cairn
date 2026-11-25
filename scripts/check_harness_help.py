@@ -17,7 +17,7 @@ def check(binary):
                                         env=environment, text=True, capture_output=True, timeout=5)
                 assert result.returncode == 0 and not result.stderr, (command, result.returncode, result.stderr)
                 for expected in ('Usage: cairn ' + command, '-socket string', 'Cairn Unix socket (required)',
-                                 '-token-file string', '-repo string', '-tokens int', 'default 32000'):
+                                 '-token-file string', '-repo string', '-tokens int', 'default 16000'):
                     assert expected in result.stdout, (command, expected, result.stdout)
             for args in ([], ['--unknown-flag'], ['--', '--help']):
                 result = subprocess.run([binary, command, *args], cwd=directory, env=environment,

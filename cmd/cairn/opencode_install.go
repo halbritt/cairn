@@ -15,19 +15,21 @@ import (
 
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/integrations/opencode"
+	"github.com/halbritt/cairn/internal/outputbound"
 )
 
 type openCodeSettings struct {
-	Executable string            `json:"executable"`
-	Socket     string            `json:"socket"`
-	TokenFile  string            `json:"token_file"`
-	Repo       string            `json:"repo"`
-	Tokens     int               `json:"tokens"`
-	MaxTokens  int               `json:"max_tokens"`
-	TaskID     string            `json:"task_id,omitempty"`
-	RunID      string            `json:"run_id,omitempty"`
-	Messaging  bool              `json:"messaging,omitempty"`
-	Context    map[string]string `json:"context,omitempty"`
+	Executable     string            `json:"executable"`
+	Socket         string            `json:"socket"`
+	TokenFile      string            `json:"token_file"`
+	Repo           string            `json:"repo"`
+	Tokens         int               `json:"tokens"`
+	MaxTokens      int               `json:"max_tokens"`
+	OutputMaxBytes int               `json:"output_max_bytes"`
+	TaskID         string            `json:"task_id,omitempty"`
+	RunID          string            `json:"run_id,omitempty"`
+	Messaging      bool              `json:"messaging,omitempty"`
+	Context        map[string]string `json:"context,omitempty"`
 }
 
 type installedFile struct {
@@ -58,8 +60,9 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	f.StringVar(&settings.Socket, "socket", "", "Cairn Unix socket (required)")
 	f.StringVar(&settings.TokenFile, "token-file", "", "provisioned ordinary agent token path (required)")
 	f.StringVar(&settings.Repo, "repo", "", "canonical repository identity (required)")
-	f.IntVar(&settings.Tokens, "tokens", 32000, "memory input room per tool result")
-	f.IntVar(&settings.MaxTokens, "max-tokens", 1000000, "maximum explicit search input room and tool output; --tokens remains the default")
+	f.IntVar(&settings.Tokens, "tokens", 16000, "memory input room per tool result")
+	f.IntVar(&settings.MaxTokens, "max-tokens", 160000, "maximum explicit search input room and tool output; --tokens remains the default")
+	f.IntVar(&settings.OutputMaxBytes, "output-max-bytes", outputbound.DefaultOutputMaxBytes, "maximum bounded output bytes for non-strict tools (0 = unbounded)")
 	f.StringVar(&settings.TaskID, "task", "", "optional declared task scope shared across native sessions")
 	f.StringVar(&settings.RunID, "run", "", "optional declared run scope; requires --task, otherwise use each native session ID")
 	f.BoolVar(&settings.Messaging, "messaging", false, "also install session inbox tools (agents, send, inbox, ack, complete, renew, event_status)")
@@ -90,6 +93,9 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	}
 	if settings.MaxTokens < settings.Tokens || settings.MaxTokens > 1000000 {
 		return result, invalid("maximum input room must be between the default room and 1000000")
+	}
+	if settings.OutputMaxBytes < 0 || settings.OutputMaxBytes > 1000000 {
+		return result, invalid("output max bytes must be between 0 and 1000000")
 	}
 	for name, value := range map[string]string{"task": settings.TaskID, "run": settings.RunID} {
 		provided := false

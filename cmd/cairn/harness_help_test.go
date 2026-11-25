@@ -25,7 +25,7 @@ func TestHarnessConfigurationHelp(t *testing.T) {
 			if !errors.Is(err, flag.ErrHelp) {
 				t.Fatalf("help signal lost: %v", err)
 			}
-			for _, want := range []string{"Usage: cairn " + tc.name, "-socket string", "Cairn Unix socket (required)", "-token-file string", "-tokens int", "default 32000", tc.extra} {
+			for _, want := range []string{"Usage: cairn " + tc.name, "-socket string", "Cairn Unix socket (required)", "-token-file string", "-tokens int", "default 16000", "-output-max-bytes int", tc.extra} {
 				if !strings.Contains(out.String(), want) {
 					t.Fatalf("help omits %q: %s", want, out.String())
 				}

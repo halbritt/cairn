@@ -23,6 +23,9 @@ type Config struct {
 	Scope           core.Scope
 	AvailableTokens int
 	MaxTokens       int
+	OutputMaxBytes  int
+	UnboundedOutput bool
+	ToolOutputDir   string
 	Context         *core.ContextPins
 	CodexThread     bool
 	SearchView      string
@@ -95,6 +98,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxTokens != 0 && (c.MaxTokens < c.AvailableTokens || c.MaxTokens > 1000000) {
 		return fmt.Errorf("MCP maximum input room must be between the default room and 1000000")
+	}
+	if c.OutputMaxBytes < 0 || c.OutputMaxBytes > 1000000 {
+		return fmt.Errorf("MCP output max bytes must be between 0 and 1000000")
 	}
 	return nil
 }
@@ -237,7 +243,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build, active opt-in search_view and tool_profile, and declared search memory_budget_bytes and min_pull_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Reports whether this facade preserves paired source openings, and whether the API declares its reader guard and the authenticated principal's receipt binding; both stay unknown without a recognized declaration and neither shows that any other reader is ready. Does not identify installed Python code or other clients. No retries, restarts or writes."}), tools.clientInfo)
 	destructive := true
 	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assess", Description: "Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse the complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. For qualitative review with uncertain acceptance, use task_outcome=unknown, failure_domain=unknown, failure_kind=\"\", evidence_ids=[], and record observations, alternatives, costs and uncertainty in reason (8-4000 trimmed characters); name your method. Other outcomes require selected evidence IDs. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request."}), tools.assess)
-	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assessments", Description: "Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read this before writing or interpreting a task outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. Returns evidence IDs without bodies, at most 1000 versions; there is no pagination. The configured output budget applies without silent truncation."}), tools.assessments)
+	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assessments", Description: "Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read this before writing or interpreting a task outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. Returns evidence IDs without bodies, at most 1000 versions; there is no pagination. Oversized output returns a bounded excerpt with full_output_path."}), tools.assessments)
 	mcp.AddTool(server, profiledTool(config.ToolProfile, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_history", Description: "Inspect retained versions of a known record for comparison. Omit version to list newest-first metadata (limit defaults to 20, maximum 100); follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Optional span selects a byte excerpt of that version and omits the full body; UTF-8 fragments use body_base64. Results are historical, not current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls."}), tools.history)
 	if err := addRetrievalTools(server, tools); err != nil {
 		return nil, err
@@ -371,7 +377,7 @@ func (c Config) readAllowance(available, memory *int) (room, allowance int, err 
 func (t memoryTools) assessments(ctx context.Context, _ *mcp.CallToolRequest, args assessmentsArgs) (*mcp.CallToolResult, any, error) {
 	var result []core.Assessment
 	err := t.client.Call(ctx, "assessments", args, &result)
-	return toolResult(result, err, t.config.AvailableTokens)
+	return t.boundedToolResult(result, err, t.config.AvailableTokens)
 }
 
 func (t memoryTools) assess(ctx context.Context, _ *mcp.CallToolRequest, args core.AssessmentRequest) (*mcp.CallToolResult, any, error) {
@@ -383,7 +389,7 @@ func (t memoryTools) assess(ctx context.Context, _ *mcp.CallToolRequest, args co
 func (t memoryTools) pullEvidence(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandEvidenceRequest) (*mcp.CallToolResult, any, error) {
 	var result json.RawMessage
 	err := t.client.Call(ctx, "expand-evidence", args, &result)
-	return t.retrievalToolResult(result, err, t.config.maxTokens())
+	return t.boundedRetrievalOutput(result, err, t.config.AvailableTokens)
 }
 
 // searchScope resolves the host's grouping labels, not an execution attestation.

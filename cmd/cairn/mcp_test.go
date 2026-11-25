@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -19,8 +20,13 @@ func TestMCPScopeOptions(t *testing.T) {
 		{[]string{"--codex-thread", "--repo", "*"}, false},
 		{[]string{"--codex-thread", "--tokens", "255"}, false},
 		{[]string{"--codex-thread", "--max-tokens", "160000"}, true},
-		{[]string{"--codex-thread", "--max-tokens", "31000"}, false},
+		{[]string{"--codex-thread", "--max-tokens", "15000"}, false},
+		{[]string{"--codex-thread", "--tokens", "32000", "--max-tokens", "31000"}, false},
 		{[]string{"--codex-thread", "--max-tokens", "1000001"}, false},
+		{[]string{"--codex-thread", "--output-max-bytes", "0"}, true},
+		{[]string{"--codex-thread", "--output-max-bytes", "8000"}, true},
+		{[]string{"--codex-thread", "--output-max-bytes", "-1"}, false},
+		{[]string{"--codex-thread", "--output-max-bytes", "1000001"}, false},
 		{[]string{"--codex-thread", "--search-view", "compact/1"}, true},
 		{[]string{"--codex-thread", "--search-view", "compact/2"}, false},
 		{[]string{"--codex-thread", "--tool-profile", "compact/1"}, true},
@@ -148,5 +154,48 @@ func TestDefaultCoordinationStateRoot(t *testing.T) {
 	t.Setenv("CAIRN_HOME", cairnHome)
 	if got := defaultCoordinationStateRoot(); got != customState {
 		t.Fatalf("CAIRN_HOME override: got %q, want %q", got, customState)
+	}
+}
+
+func TestOutputMaxBytesAndTokensDefaultsInMCPCommand(t *testing.T) {
+	f := flags("mcp")
+	o := mcpFlags(f)
+	if err := f.Parse([]string{"--socket", "/api.sock", "--token-file", "/agent.token", "--repo", "repo", "--codex-thread"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.validate(f.NArg()); err != nil {
+		t.Fatal(err)
+	}
+	if o.config.AvailableTokens != 16000 || o.config.MaxTokens != 160000 || o.config.OutputMaxBytes != 12000 || o.config.UnboundedOutput {
+		t.Fatalf("unexpected defaults: %+v", o.config)
+	}
+	command, err := o.command("/cairn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(command, " ")
+	if !strings.Contains(joined, "--tokens 16000") || strings.Contains(joined, "--max-tokens") || strings.Contains(joined, "--output-max-bytes") {
+		t.Fatalf("default command unexpectedly emitted overrides: %q", command)
+	}
+
+	for _, tc := range []struct {
+		flagVal string
+		wantArg string
+	}{{"0", "0"}, {"8000", "8000"}} {
+		f2 := flags("mcp")
+		o2 := mcpFlags(f2)
+		if err := f2.Parse([]string{"--socket", "/api.sock", "--token-file", "/agent.token", "--repo", "repo", "--codex-thread", "--output-max-bytes", tc.flagVal}); err != nil {
+			t.Fatal(err)
+		}
+		if err := o2.validate(f2.NArg()); err != nil {
+			t.Fatal(err)
+		}
+		cmd2, err := o2.command("/cairn")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(strings.Join(cmd2, " "), "--output-max-bytes "+tc.wantArg) {
+			t.Fatalf("expected --output-max-bytes %s in %q", tc.wantArg, cmd2)
+		}
 	}
 }

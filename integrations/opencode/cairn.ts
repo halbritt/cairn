@@ -1,9 +1,10 @@
 // Install as .opencode/tools/cairn.ts; connection settings belong in .opencode/cairn.json.
 import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { execFile } from "node:child_process"
-import { createHash } from "node:crypto"
-import { readFile } from "node:fs/promises"
-import { isAbsolute } from "node:path"
+import { createHash, randomUUID } from "node:crypto"
+import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises"
+import { homedir } from "node:os"
+import { isAbsolute, join } from "node:path"
 import type { ZodRawShape } from "zod"
 
 const z = tool.schema
@@ -41,8 +42,9 @@ const settingsSchema = z.object({
   socket: absolutePath,
   token_file: absolutePath,
   repo: z.string().min(1).refine(value => value !== "*"),
-  tokens: z.number().int().min(256).max(1000000).default(32000),
-  max_tokens: z.number().int().min(256).max(1000000).default(1000000),
+  tokens: z.number().int().min(256).max(1000000).default(16000),
+  max_tokens: z.number().int().min(256).max(1000000).default(160000),
+  output_max_bytes: z.number().int().min(0).max(1000000).default(12000),
   task_id: declaredScope.optional(),
   run_id: declaredScope.optional(),
   messaging: z.boolean().optional(),
@@ -73,6 +75,160 @@ function searchScope(config: Settings, context: ToolContext) {
   return { repo: config.repo, task_id: config.task_id ?? "opencode/" + session, run_id: config.run_id ?? session }
 }
 
+const diagnosticLineRegex = /(error|panic|fatal|fail|exception|traceback|assert|exit code|signal|refused|stack)/i
+
+function isTruthyEnv(value: string | undefined): boolean {
+  if (!value) return false
+  const normalized = value.trim().toLowerCase()
+  return normalized === "1" || normalized === "true" || normalized === "yes"
+}
+
+function effectiveOutputMaxBytes(config: Settings): number {
+  if (isTruthyEnv(process.env.CAIRN_UNBOUNDED_TOOL_OUTPUT)) return 0
+  for (const name of ["CAIRN_OPENCODE_OUTPUT_MAX_BYTES", "CAIRN_TOOL_OUTPUT_MAX_BYTES"]) {
+    const raw = process.env[name]?.trim()
+    if (raw && /^\d+$/.test(raw)) {
+      const parsed = Number(raw)
+      if (Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 1000000) return parsed
+    }
+  }
+  return config.output_max_bytes
+}
+
+function resolveSpoolDir(): string {
+  const override = process.env.CAIRN_TOOL_OUTPUT_DIR?.trim()
+  if (override && isAbsolute(override)) return override
+  const xdg = process.env.XDG_STATE_HOME?.trim()
+  if (xdg && isAbsolute(xdg)) return join(xdg, "cairn", "tool-output")
+  return join(homedir(), ".local", "share", "cairn", "tool-output")
+}
+
+async function spoolRawOutput(raw: string, ext = "log"): Promise<string> {
+  const dir = resolveSpoolDir()
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  const info = await lstat(dir)
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new Error("spool directory must be a real directory")
+  }
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")
+  const safeExt = ext.replace(/[^a-zA-Z0-9]/g, "") || "log"
+  const finalPath = join(dir, `${stamp}-${randomUUID()}.${safeExt}`)
+  const tmpPath = join(dir, `.spool-${randomUUID()}`)
+  const handle = await open(tmpPath, "wx", 0o600)
+  try {
+    await handle.writeFile(raw, "utf8")
+  } finally {
+    await handle.close()
+  }
+  try {
+    await rename(tmpPath, finalPath)
+  } catch (err) {
+    await unlink(tmpPath).catch(() => {})
+    throw err
+  }
+  return finalPath
+}
+
+function slicePrefixUTF8(text: string, maxBytes: number): { prefix: string, endBytes: number } {
+  const raw = Buffer.from(text, "utf8")
+  if (maxBytes <= 0 || raw.length === 0) return { prefix: "", endBytes: 0 }
+  if (raw.length <= maxBytes) return { prefix: text, endBytes: raw.length }
+  let cut = maxBytes
+  while (cut > 0 && (raw[cut]! & 0xc0) === 0x80) cut--
+  if (cut === 0) return { prefix: "", endBytes: 0 }
+  const half = Math.floor(cut / 2)
+  const searchStart = Math.max(half, cut - 256)
+  for (let i = cut - 1; i >= searchStart; i--) {
+    if (raw[i] === 0x0a) {
+      const cand = i > 0 && raw[i - 1] === 0x0d ? i - 1 : i
+      if (cand > 0) { cut = cand; break }
+    }
+  }
+  return { prefix: raw.subarray(0, cut).toString("utf8"), endBytes: cut }
+}
+
+function sliceSuffixUTF8(text: string, maxBytes: number): { suffix: string, startBytes: number } {
+  const raw = Buffer.from(text, "utf8")
+  const total = raw.length
+  if (maxBytes <= 0 || total === 0) return { suffix: "", startBytes: total }
+  if (total <= maxBytes) return { suffix: text, startBytes: 0 }
+  let start = total - maxBytes
+  while (start < total && (raw[start]! & 0xc0) === 0x80) start++
+  if (start >= total) return { suffix: "", startBytes: total }
+  const windowEnd = Math.min(total, start + Math.min(256, Math.floor((total - start) / 2)))
+  for (let i = start; i < windowEnd; i++) {
+    if (raw[i] === 0x0a && i + 1 < total) {
+      start = i + 1
+      break
+    }
+  }
+  return { suffix: raw.subarray(start).toString("utf8"), startBytes: start }
+}
+
+function extractDiagnosticLines(middle: string, maxBytes: number): { lines: string[], bytes: number } {
+  if (maxBytes <= 0 || middle === "") return { lines: [], bytes: 0 }
+  const seen = new Set<string>()
+  const lines: string[] = []
+  let used = 0
+  for (const rawLine of middle.split("\n")) {
+    const clean = rawLine.replace(/\r$/, "")
+    const trimmed = clean.trim()
+    if (!trimmed || !diagnosticLineRegex.test(trimmed) || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    const sep = lines.length > 0 ? 1 : 0
+    const remaining = maxBytes - used - sep
+    if (remaining <= 0) break
+    const bounded = Buffer.byteLength(clean, "utf8") > remaining
+      ? slicePrefixUTF8(clean, remaining).prefix : clean
+    if (!bounded) break
+    lines.push(bounded)
+    used += sep + Buffer.byteLength(bounded, "utf8")
+  }
+  return { lines, bytes: used }
+}
+
+function buildExcerptText(raw: string, maxBytes: number, fullPath: string): { excerpt: string, omittedBytes: number } {
+  const total = Buffer.byteLength(raw, "utf8")
+  if (maxBytes <= 0 || total <= maxBytes) return { excerpt: raw, omittedBytes: 0 }
+  const rawBuf = Buffer.from(raw, "utf8")
+  const footerTemplate = `\n[... omitted ${total} of ${total} bytes; full output: ${fullPath} ...]\n`
+  const diagHeader = "\n[... diagnostic lines from omitted middle ...]\n"
+  const markerReserve = Buffer.byteLength(footerTemplate, "utf8") + Buffer.byteLength(diagHeader, "utf8")
+  if (maxBytes <= markerReserve + 32) {
+    const compactFooter = `\n[... full output (${total} bytes): ${fullPath} ...]`
+    const footerBytes = Buffer.byteLength(compactFooter, "utf8")
+    if (footerBytes >= maxBytes) {
+      const trimmed = slicePrefixUTF8(compactFooter, maxBytes)
+      return { excerpt: trimmed.prefix, omittedBytes: Math.max(1, total - trimmed.endBytes) }
+    }
+    const head = slicePrefixUTF8(raw, maxBytes - footerBytes)
+    return { excerpt: head.prefix + compactFooter, omittedBytes: Math.max(1, total - head.endBytes) }
+  }
+  const contentBudget = maxBytes - markerReserve
+  const headBudget = Math.floor(contentBudget * 35 / 100)
+  const diagBudget = Math.floor(contentBudget * 30 / 100)
+  const tailBudget = contentBudget - headBudget - diagBudget
+  let head = slicePrefixUTF8(raw, headBudget)
+  let tail = sliceSuffixUTF8(rawBuf.subarray(head.endBytes).toString("utf8"), tailBudget)
+  let middle = rawBuf.subarray(head.endBytes, head.endBytes + tail.startBytes).toString("utf8")
+  let diag = extractDiagnosticLines(middle, diagBudget)
+  if (diag.lines.length === 0 && diagBudget > 0) {
+    const extraHead = Math.floor(diagBudget / 2)
+    head = slicePrefixUTF8(raw, headBudget + extraHead)
+    tail = sliceSuffixUTF8(rawBuf.subarray(head.endBytes).toString("utf8"), tailBudget + (diagBudget - extraHead))
+    middle = rawBuf.subarray(head.endBytes, head.endBytes + tail.startBytes).toString("utf8")
+    diag = extractDiagnosticLines(middle, Math.floor(diagBudget / 4))
+  }
+  const included = head.endBytes + diag.bytes + Buffer.byteLength(tail.suffix, "utf8")
+  const omittedBytes = Math.max(1, total - included)
+  const footer = `\n[... omitted ${omittedBytes} of ${total} bytes; full output: ${fullPath} ...]\n`
+  const assembled = head.prefix + (diag.lines.length > 0 ? diagHeader + diag.lines.join("\n") : "") + footer + tail.suffix
+  if (Buffer.byteLength(assembled, "utf8") > maxBytes) {
+    return { excerpt: slicePrefixUTF8(assembled, maxBytes).prefix, omittedBytes }
+  }
+  return { excerpt: assembled, omittedBytes }
+}
+
 type SessionRef = { agent_id: string, execution_id: string }
 
 function call(config: Settings, context: ToolContext, args: string[], input?: unknown, session?: SessionRef): Promise<unknown> {
@@ -82,23 +238,73 @@ function call(config: Settings, context: ToolContext, args: string[], input?: un
   if ([config.executable, ...command].some(value => /[\uD800-\uDFFF]/u.test(value))) {
     return Promise.reject(new Error("INVALID_REQUEST: CLI arguments require well-formed Unicode"))
   }
+  const outMax = effectiveOutputMaxBytes(config)
   return new Promise((resolve, reject) => {
     const child = execFile(config.executable, command,
-      { encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024, signal: context.abort }, (error, stdout) => {
-        let response
-        try { response = JSON.parse(stdout) } catch {
-          reject(new Error("Cairn CLI failed without a valid response; check the local installation and connection"))
+      { encoding: "utf8", timeout: 30000, maxBuffer: 4 * 1024 * 1024, signal: context.abort }, async (error, stdout, stderr) => {
+        let response: { schema?: unknown, ok?: unknown, message?: unknown, data?: unknown } | undefined
+        try { response = JSON.parse(stdout) } catch { response = undefined }
+        if (response !== undefined) {
+          if (!error && response.schema === "cairn.response/1" && response.ok === true) {
+            resolve(response.data)
+            return
+          }
+          const base = typeof response.message === "string" && response.message.trim() !== ""
+            ? response.message : "Cairn CLI request failed"
+          const extraErr = typeof stderr === "string" ? stderr.trim() : ""
+          let combined = extraErr && !base.includes(extraErr) ? `${base}; stderr: ${extraErr}` : base
+          if (outMax > 0 && Buffer.byteLength(combined, "utf8") > outMax) {
+            try {
+              const fullPath = await spoolRawOutput(combined, "log")
+              const bounded = buildExcerptText(combined, outMax, fullPath)
+              combined = bounded.excerpt
+            } catch {
+              combined = slicePrefixUTF8(combined, outMax).prefix
+            }
+          }
+          reject(new Error(combined))
           return
         }
-        if (error || response.schema !== "cairn.response/1" || response.ok !== true) {
-          reject(new Error(response.message ?? "Cairn CLI request failed"))
-          return
+        const errCode = typeof (error as { code?: unknown } | null)?.code === "number" ? (error as { code: number }).code : undefined
+        const errSignal = error?.signal ?? undefined
+        const meta: string[] = []
+        if (errCode !== undefined) meta.push(`exit_code=${errCode}`)
+        if (errSignal) meta.push(`signal=${errSignal}`)
+        const diag = [typeof stderr === "string" ? stderr.trim() : "", typeof stdout === "string" ? stdout.trim() : ""]
+          .filter(Boolean).join("\n") || error?.message || "no response output"
+        let detail = diag
+        if (outMax > 0 && Buffer.byteLength(diag, "utf8") > outMax) {
+          try {
+            const fullPath = await spoolRawOutput(diag, "log")
+            detail = buildExcerptText(diag, outMax, fullPath).excerpt
+          } catch {
+            detail = slicePrefixUTF8(diag, outMax).prefix
+          }
         }
-        resolve(response.data)
+        const label = meta.length > 0 ? `Cairn CLI failed (${meta.join(", ")})` : "Cairn CLI failed without a valid response"
+        reject(new Error(`${label}: ${detail}`))
       })
     child.stdin?.on("error", () => reject(new Error("Cairn CLI input pipe failed")))
     child.stdin?.end(input === undefined ? undefined : JSON.stringify(input))
   })
+}
+
+async function renderBounded(value: unknown, config: Settings, room?: number): Promise<string> {
+  const outMax = effectiveOutputMaxBytes(config)
+  const compact = JSON.stringify(value)
+  if (outMax === 0) return compact
+  const limit = room !== undefined ? Math.min(room, outMax) : outMax
+  if (Buffer.byteLength(compact, "utf8") <= limit) return compact
+  const pretty = JSON.stringify(value, null, 2)
+  const total_bytes = Buffer.byteLength(pretty, "utf8")
+  const full_output_path = await spoolRawOutput(pretty, "json")
+  for (let cap = Math.max(128, limit - 256); cap >= 64; cap = Math.floor(cap * 3 / 4)) {
+    const { excerpt, omittedBytes } = buildExcerptText(pretty, cap, full_output_path)
+    const encoded = JSON.stringify({ truncated: true, total_bytes, omitted_bytes: omittedBytes, full_output_path, excerpt })
+    if (Buffer.byteLength(encoded, "utf8") <= limit) return encoded
+    if (cap === 64) break
+  }
+  return JSON.stringify({ truncated: true, total_bytes, omitted_bytes: total_bytes, full_output_path })
 }
 
 function render(value: unknown, config: Settings, room = config.tokens) {
@@ -275,7 +481,7 @@ export const assessments = validatedTool({
   args: { receipt_id: z.string().uuid() },
   async execute(args, context) {
     const config = await settings("assessments", context)
-    return render(await call(config, context, ["assessments"], args), config)
+    return renderBounded(await call(config, context, ["assessments"], args), config)
   },
 })
 
@@ -320,7 +526,10 @@ export const pull_evidence = validatedTool({
     span: z.object({ offset: z.number().int().min(0).max(1048575), length: z.number().int().min(1).max(1048576) }).strict().optional() },
   async execute(args, context) {
     const config = await settings("pull_evidence", context)
-    return render(await call(config, context, ["expand-evidence"], args), config, config.max_tokens)
+    const outMax = effectiveOutputMaxBytes(config)
+    const result = await call(config, context, ["expand-evidence"], args)
+    if (outMax === 0) return renderBounded(result, config)
+    return renderBounded(result, config, Math.min(config.tokens, outMax))
   },
 })
 

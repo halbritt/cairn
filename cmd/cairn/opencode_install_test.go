@@ -296,3 +296,44 @@ func TestOpenCodeInstallMessagingAndConfigDir(t *testing.T) {
 		t.Fatalf("config-dir tools/cairn.ts missing: %v", err)
 	}
 }
+
+func TestOpenCodeInstallOutputBoundDefaultsAndOptOut(t *testing.T) {
+	project := t.TempDir()
+	if _, err := installOpenCode(installArgs(project), "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(project, ".opencode/cairn.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings openCodeSettings
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings.Tokens != 16000 || settings.MaxTokens != 160000 || settings.OutputMaxBytes != 12000 {
+		t.Fatalf("unexpected default bounds: %+v (%s)", settings, raw)
+	}
+
+	optOut := t.TempDir()
+	if _, err := installOpenCode(append(installArgs(optOut), "--output-max-bytes", "0"), "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	rawOptOut, err := os.ReadFile(filepath.Join(optOut, ".opencode/cairn.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settingsOptOut openCodeSettings
+	if err := json.Unmarshal(rawOptOut, &settingsOptOut); err != nil {
+		t.Fatal(err)
+	}
+	if settingsOptOut.OutputMaxBytes != 0 {
+		t.Fatalf("opt-out output_max_bytes lost: %s", rawOptOut)
+	}
+
+	for _, bad := range []string{"-1", "1000001"} {
+		badProj := t.TempDir()
+		if _, err := installOpenCode(append(installArgs(badProj), "--output-max-bytes", bad), "/cairn"); core.Code(err) != "INVALID_REQUEST" {
+			t.Fatalf("invalid --output-max-bytes %s accepted: %v", bad, err)
+		}
+	}
+}

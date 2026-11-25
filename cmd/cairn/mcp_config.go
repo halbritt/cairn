@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/halbritt/cairn/internal/outputbound"
 )
 
 func (o *mcpOptions) command(executable string) ([]string, error) {
@@ -25,8 +27,13 @@ func (o *mcpOptions) command(executable string) ([]string, error) {
 		command = append(command, "--task", o.config.Scope.TaskID, "--run", o.config.Scope.RunID)
 	}
 	command = append(command, "--tokens", strconv.Itoa(o.config.AvailableTokens))
-	if o.config.MaxTokens != 1000000 {
+	if o.config.MaxTokens != 160000 {
 		command = append(command, "--max-tokens", strconv.Itoa(o.config.MaxTokens))
+	}
+	if o.config.UnboundedOutput {
+		command = append(command, "--output-max-bytes", "0")
+	} else if o.config.OutputMaxBytes != outputbound.DefaultOutputMaxBytes {
+		command = append(command, "--output-max-bytes", strconv.Itoa(o.config.OutputMaxBytes))
 	}
 	if o.config.SearchView != "" {
 		command = append(command, "--search-view", o.config.SearchView)
