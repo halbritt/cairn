@@ -1,91 +1,105 @@
 # Roadmap
 
-Cairn's direction is persistent, inspectable memory and dependable coordination
-for agents working across sessions and tools. The core workflows are available;
-remaining work concerns their integration, operating limits, and demonstrated
-usefulness. See [capabilities and limits](implementation-status.md) for the
-current surface and [contributing](developer/contributing.md) to work on it.
+Cairn is the memory and coordination kernel for agents that work across
+sessions and tools. **It stores and delivers; it does not act.** Herdr starts,
+watches and wakes agent panes. Plane tracks work. Cairn holds what agents
+remember and carries what they say to each other.
+[Decision 0022](decisions/0022-kernel-boundary-and-swarm-view.md) records this
+boundary and what it excludes.
 
-## Memory that earns its context cost
+This page lists direction and open work. Plane holds the work items and their
+state. See [capabilities and limits](implementation-status.md) for what the
+source does today.
 
-Make relevant knowledge available with little repeated setup, while keeping
-retrieval bounded and remembered advice correctable. Work includes better
-recall for large notes, project applicability, and accounting for memory's cost
-across a complete workflow. Source-level optimizations require evaluation before
-being enabled broadly; the [token-efficiency plan](plans/token-efficiency-2026-10-23.md)
-records its opt-in and acceptance gates.
+## Now
 
-## Reliable session continuity and coordination
+### Larger agent teams within the context limit (CAIRN-807)
 
-Strengthen recall, selected capture, and handoffs around compaction and session
-restart. Coordination needs host-specific evidence for admission, draft
-preservation, cancellation, process cleanup, and recovery under provider failure.
-A database transition or successful fixture does not close the corresponding
-native-host acceptance requirement. The [coordination plan](plans/agent-coordination-v1.md)
-and [request-control guide](request-controls.md) retain those contracts.
+The limit on swarm size is agent context, so this work comes first. Compact
+inbox delivery, digests and auto-settle are on by default (CAIRN-808), and
+recall no longer re-injects records already in context (CAIRN-809). Tool
+output entering agent context is bounded on the host (PROXIMAL-15). Open:
 
-The source now supports [bounded event admission](event-admission.md), separate
-reply capacity and persistent producer rates. Remaining operating work includes
-choosing limits for real workloads, observing pressure before enforcement, and
-verifying upgraded writers and native integrations on each installation. The
-[rollout guide](operator/event-admission-rollout.md) describes those gates.
-Synthetic overload and restore fixtures do not establish a production workload's
-safe limits or demonstrate reduced model cost.
+- Compact delivery on the Agy, OpenCode and Hermes adapters (CAIRN-811) and
+  the remaining batch and overflow gaps (CAIRN-812).
+- Less coordination fan-out, and an action on every notice (CAIRN-813,
+  CAIRN-814).
+- No wakes for retired recipients and no interruption of a peer in the middle
+  of a task (CAIRN-815).
+- Capture observations and delivery accounting per session (CAIRN-816). The
+  swarm view's context column depends on this.
+- Compact views for MCP and hooks (CAIRN-810).
+- Every remaining opt-in capability is switched on or removed (CAIRN-817), per
+  [decision 0021](decisions/0021-activation-is-part-of-done.md).
 
-## Lifecycle and recovery
+### Hybrid runtime (CAIRN-301)
 
-Keep evidence current, make retention and deletion effects inspectable, and
-verify restores against independently retained expectations. Cover the callers
-that must act on inspection results: [library helpers](reference/lifecycle-slices.md)
-for budgeting, quarantine, restore detection, and runtime mediation are bounded
-parts of these workflows. Their existence does not establish end-to-end
-integration or deployment.
+Go takes over the lifecycle logic that Python held, and a Rust worker serves
+semantic inference ([decision 0020](decisions/0020-hybrid-runtime.md)). Source
+for both is published. The remaining gates are qualification of each complete
+watcher unit, the production transition (R-07) and retirement of the Python
+runtime (R-08, CAIRN-785). The
+[campaign status](plans/hybrid-runtime-campaign-status.md) lists what is open,
+and the [release contract](plans/hybrid-runtime-contracts/release.md#work-items-and-release-gates)
+holds the criteria.
 
-The [hybrid runtime campaign](plans/hybrid-runtime-implementation.md) plans to
-move lifecycle policy to Go and semantic inference to a separate Rust worker.
-Its release sequence keeps staging, complete-unit qualification, production
-cutover and retirement separate. R-06 includes the documentation audit, but also
-requires R-03, R-04, R-05, S-05 and S-04R and qualification of drain, switch,
-restart and rollback for each complete watcher unit. Documentation preparation
-alone leaves those requirements open. R-07 performs the production transition;
-R-08 waits for its observation and rollback gates before retirement. The
-[release contract](plans/hybrid-runtime-contracts/release.md#work-items-and-release-gates)
-retains the full criteria, including source/model identity and native evidence.
+### Weekly task evaluation (CAIRN-107)
 
-## Assess task value without narrowing it to an evaluator
+A paired evaluation runs weekly with a usage pre-check and a second grader, to
+show whether memory helps agents finish useful work. Retrieval, citation or a
+successful capture does not establish that benefit. The
+[task-evaluation plan](plans/task-evaluation.md) describes the method.
 
-Evaluate whether memory helps agents finish useful work and reduces repeated
-mistakes. Evidence can include controlled comparisons, reviewed task outcomes,
-qualitative improvements, or benefits accumulated across sessions. Record the
-source, reasoning, alternative explanations, and unknown costs.
+## Next: the swarm view (CAIRN-826)
 
-Retrieval, citation, or successful capture alone does not establish benefit.
-Task-level measurements should include the cost of retrieval, maintenance,
-recovery, and auxiliary model work. The [use/outcome guide](use-outcome-loop.md)
-and [task-evaluation plan](plans/task-evaluation.md) describe the available
-records and evaluation approach.
+One live page per swarm over state that Cairn already holds. It answers four
+questions: who is in the swarm and what each agent is doing; who is talking to
+whom and what is pending; what needs the owner; which agents are running out
+of context room. The owner starts a swarm exactly as today, and no agent's
+prompt grows because the view exists. The
+[design](plans/swarm-view-design.md) was approved on 2026-11-25.
 
-## Design constraints
+| Step | Work item | Result |
+| --- | --- | --- |
+| V1 | CAIRN-828 | A swarm is recorded as a campaign from the owner's description. |
+| V2 | CAIRN-829 | Roster: read API, live stream and a page that shows who is in a swarm. |
+| V3 | CAIRN-830 | Message flow and pending work; waits activated on the live store. |
+| V4 | CAIRN-831 | What needs the owner, at the top of the page. |
+| V5 | CAIRN-832 | Context room for each agent. Needs CAIRN-816. |
+| V6 | CAIRN-833 | Operator actions, limited to verbs Cairn already has. |
+| V7 | CAIRN-834 | Single-wake routing: an unaddressed post wakes one agent. |
+| V8 | CAIRN-835 | Single-holder custody with a lease on campaign ledger items. |
+| V9 | CAIRN-836 | A byte budget and a record for every model-visible injection. |
+| V10 | CAIRN-837 | Activate the view, remove the Work View page, verify on a real swarm. |
+| V11 | CAIRN-840 | Decide the fate of the remaining work features. |
 
-The operational store remains PostgreSQL. Cairn targets a trusted, single-user
-environment; project names and session metadata do not create new authentication
-boundaries. Preserve store-owned attribution and explicit authority contracts.
-Keep ordinary memory inexpensive to correct and remove, with stronger retention
-and audit rules where evidence or authority requires them.
+The prerequisites (CAIRN-808, CAIRN-809 and PROXIMAL-15) have landed, so V1
+can start.
 
-Automatic promotion, universal immutable history, and broad runtime enforcement
-are not assumptions a client may make. Future adapters and ranking experiments
-must preserve the current eligibility, privacy, and refusal contracts. Use
-local disposable validation for changes; do not depend on GitHub CI.
+## Later
 
-## Detailed plans and history
+- Compact communication contract (cd1): repair validation, references and
+  examples, then adopt it by default (CAIRN-819 to CAIRN-822).
+- Isolated Agy print-mode sessions without accidental enrollment (CAIRN-818).
+- A fast full test run (CAIRN-804) and the `/proc/locks` race (CAIRN-788).
+- A single read of outstanding commitments for a replacement lead. This is the
+  strongest candidate from the swarm view reviews; it has no work item yet.
 
-[Plans](plans/README.md) retain individual requirements, dependencies, and
-acceptance criteria. The [roadmap development record](history/roadmap-log.md)
-preserves the earlier requirement IDs and chronological discussions. Its status
-claims must be read with the dated evidence and current source; it is not an
-installation guide or a blanket completion statement.
+## Not planned
 
-Keep this page about direction and remaining acceptance work. Document current
-behavior in feature guides, user-visible changes in the [changelog](../CHANGELOG.md),
-and specific test or deployment observations in [verification records](verification/README.md).
+Cairn does not start or stop agent sessions, manage worktrees, control
+compaction, choose models, poll GitHub or CI, or become the task tracker of
+record. A swarm controller, a native task board, model failover, a chat
+product and multi-user rooms are out. The owner may revisit orchestration
+inside Cairn when Striatum-next lands (forecast March to May 2027).
+
+## Constraints
+
+- PostgreSQL is the operational store.
+- Cairn targets a trusted, single-user host. Project names and session
+  metadata do not create authentication boundaries.
+- Validation is local; nothing depends on GitHub CI
+  ([decision 0018](decisions/0018-local-validation-without-github-ci.md)).
+- Anything that wakes an agent goes through the event fabric.
+- The repository holds current contracts and decisions, not run records
+  ([decision 0023](decisions/0023-repository-holds-current-contracts.md)).
