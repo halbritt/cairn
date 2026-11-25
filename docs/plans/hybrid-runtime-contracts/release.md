@@ -261,6 +261,32 @@ What still needs the Python files on disk:
 - The Hermes plugin glue (`integrations/hermes/*.py`) runs inside Hermes and
   stays.
 
+##### Source removal (CAIRN-311, 2026-11-24)
+
+Removed from source, because no installed generation, kept cell or Hermes
+path uses them:
+
+| Removed | What it was |
+| --- | --- |
+| `scripts/install-claude-hooks.py`, `install-codex-hooks.py`, `install-opencode-hooks.py` | Direct memory-hook installers that copied the Python engine into `~/.local/share/cairn/{claude,codex,opencode}-hooks`. Staging replaced them. Hermes keeps their engine-config retention helpers in `install-hermes-integration.py`. |
+| `scripts/install-recall-dispatch.py` | Wrapped the direct Claude engine command with `recall_dispatch.py`. Staged Go rows cannot be wrapped. |
+| `scripts/check_opencode_lifecycle.py`, `check_claude_capture_observation_native.py`, `check_claude_capture_observation_native_disposable.py` | Live checks that built their fixtures only through those installers. |
+| Installer-only test cases | Their test cases were removed. Hermes now covers the behaviour it still uses. |
+
+Python that stays in source, and why:
+
+| Kept | Why |
+| --- | --- |
+| The 18 `/1` closure members in `integrations/lifecycle/` | The three bound cells above have no Go route and stay Python by owner decision, so `/1` staging stays and is tested. Hermes runs the complete bundle (`lifecycle_bundle.stage_runtime`). Member bytes and the 17-member inventory are unchanged. `recall_dispatch.py` is a member that nothing installed runs. |
+| `scripts/stage_lifecycle_compatibility.py`, `stage_lifecycle_hooks.py` | Staging, `publish-settings` and `reverse-settings`. The rollback is republishing a previous generation, so these are the rollback tooling. |
+| `scripts/install-agent-coordination.py` | Go has no replacement for rendering the coordination binding configs that staging copies. It also installs the Hermes coordination plugin and installed archon's Codex launcher shim. Its direct Codex, Claude, Agy and OpenCode hook rows are superseded by staging. Native checks still use them to build disposable fixtures for the Python engine. |
+| `scripts/launch-codex-coordination.py` | Live on archon: `~/.local/bin/codex` runs `python3 ~/.local/share/cairn/coordination/launch-codex-coordination.py` on every Codex start. It needs a Go port before it can be removed. |
+| `scripts/install-hermes-integration.py`, `integrations/hermes/*.py` | Hermes is kept by owner decision. |
+| R-06/R-07 transition evidence (`check_r06_*`, `check_r07_*`, `disposable_host.py`) | These generate evidence for recorded gates. The offline Python `/2` cold restore (`check_r06_lifecycle_offline_restore.py`) is retired by the rollback decision. `check_r07_bootstrap_reverse.py` still imports it, together with `semantic_python_closure.py`, which belongs to the semantic removal, so both are cut after that. |
+| `integrations/lifecycle/operations/` | Inactive runtime-operations candidates (F1/F3), not lifecycle hooks. |
+| Frozen trials and the SDK (`trials/`, `scripts/trial_*`) | Preserved by R-08. They name the removed installers only in comments. |
+| Unrelated tooling | `install-wake-service.py` (Go `cairn wake serve` units), `install-development-checkpoint.py`, `provision-event-profiles.py`, the docs and design checks. |
+
 The owner-controlled, versioned host hook configuration independently fixes
 the approved absolute interpreter and verified vector `V`: `-I -S -c`
 followed by the reviewed stdlib-only verifier literal, the receipt absolute
