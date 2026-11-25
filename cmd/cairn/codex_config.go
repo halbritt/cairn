@@ -11,6 +11,7 @@ func writeCodexConfig(out io.Writer, args []string, executable string) error {
 	f := flags("codex-config")
 	o := mcpFlags(f)
 	required := f.Bool("required", false, "require Cairn to connect before Codex starts")
+	disableStartupUpdate := f.Bool("disable-startup-update-check", false, "emit root check_for_update_on_startup = false before [mcp_servers.cairn]")
 	if err := parseHarnessFlags(f, args, out); err != nil {
 		return err
 	}
@@ -36,12 +37,16 @@ func writeCodexConfig(out io.Writer, args []string, executable string) error {
 	if o.config.Messaging {
 		messagingTools = `, "cairn_agents", "cairn_send", "cairn_inbox", "cairn_ack", "cairn_complete", "cairn_renew", "cairn_event_status"`
 	}
-	_, err = fmt.Fprintf(out, `[mcp_servers.cairn]
+	prefix := ""
+	if *disableStartupUpdate {
+		prefix = "check_for_update_on_startup = false\n\n"
+	}
+	_, err = fmt.Fprintf(out, `%s[mcp_servers.cairn]
 command = %s
 args = [%s]
 enabled_tools = ["cairn_search", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_prepare_note", "cairn_edit", "cairn_history", "cairn_assessments", "cairn_assess", "cairn_client_info"%s]
 required = %t
 startup_timeout_sec = 15
-`, quoted[0], strings.Join(quoted[1:], ", "), messagingTools, *required)
+`, prefix, quoted[0], strings.Join(quoted[1:], ", "), messagingTools, *required)
 	return err
 }

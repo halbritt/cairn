@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/halbritt/cairn/internal/lifecycle/codexlaunch"
 	"github.com/halbritt/cairn/internal/lifecycle/journal"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
@@ -29,6 +30,27 @@ func (c *CLI) WatchCommand(ctx context.Context, a cliArgs, errOut io.Writer) (in
 	configDir, err := c.pathText(value.Text(a.get("--config-dir")))
 	if err != nil {
 		return 0, err
+	}
+	var codexWrapper, codexBinary, codexLauncher string
+	hasWrapper := a.has("--codex-wrapper")
+	hasBinary := a.has("--codex-binary")
+	hasLauncher := a.has("--codex-launcher")
+	if hasWrapper || hasBinary || hasLauncher {
+		if !hasWrapper || !hasBinary || !hasLauncher {
+			return 0, parseFail("coordination.py", "watch requires all three of --codex-wrapper, --codex-binary and --codex-launcher")
+		}
+		if codexWrapper, err = c.pathText(value.Text(a.get("--codex-wrapper"))); err != nil {
+			return 0, err
+		}
+		if codexBinary, err = c.pathText(value.Text(a.get("--codex-binary"))); err != nil {
+			return 0, err
+		}
+		if codexLauncher, err = c.pathText(value.Text(a.get("--codex-launcher"))); err != nil {
+			return 0, err
+		}
+		if !filepath.IsAbs(codexWrapper) || !filepath.IsAbs(codexBinary) || !filepath.IsAbs(codexLauncher) {
+			return 0, parseFail("coordination.py", "watch: --codex-wrapper, --codex-binary and --codex-launcher must be absolute paths")
+		}
 	}
 	if c.Compatibility != nil {
 		initialMatches, _ := filepath.Glob(filepath.Join(configDir, "*.json"))
@@ -59,6 +81,15 @@ func (c *CLI) WatchCommand(ctx context.Context, a cliArgs, errOut io.Writer) (in
 	defer func() { _ = lease.Close() }()
 	for !watchStopped(stopCh) {
 		started := c.monotonicSeconds()
+		if codexWrapper != "" {
+			if changed, reason, werr := codexlaunch.EnsureWrapper(codexWrapper, codexLauncher, codexBinary); werr != nil {
+				if errOut != nil {
+					_, _ = fmt.Fprintf(errOut, "Cairn presence: failed to repair Codex wrapper %s: %v\n", codexWrapper, werr)
+				}
+			} else if changed && errOut != nil {
+				_, _ = fmt.Fprintf(errOut, "Cairn presence: repaired drifted Codex wrapper %s (%s)\n", codexWrapper, reason)
+			}
+		}
 		matches, _ := filepath.Glob(filepath.Join(configDir, "*.json"))
 		sort.Strings(matches)
 		if c.Compatibility != nil {

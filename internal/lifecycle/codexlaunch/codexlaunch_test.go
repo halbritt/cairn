@@ -104,7 +104,15 @@ func newFixture(t *testing.T, extra ...string) *fixture {
 	t.Helper()
 	work := t.TempDir()
 	f := &fixture{t: t, work: work, runtime: filepath.Join(work, "runtime")}
-	f.env = append(os.Environ(),
+	env := make([]string, 0, len(os.Environ())+6)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "HOME=") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	f.env = append(env,
+		"HOME="+work,
 		"CODEXLAUNCH_ROLE=launcher",
 		"XDG_RUNTIME_DIR="+f.runtime,
 		"LAUNCHER_LOG="+filepath.Join(work, "log.jsonl"),
@@ -372,6 +380,14 @@ func TestUsageRefusals(t *testing.T) {
 		{[]string{"--", "resume"}, "an installed codex is required"},
 		{[]string{"--codex"}, "expected one argument"},
 		{[]string{"--codex", "codex", "--"}, "must be an absolute path"},
+		{[]string{"--codex", "/bin/true", "--wrapper"}, "argument --wrapper: expected one argument"},
+		{[]string{"--codex", "/bin/true", "--wrapper", "relative"}, "--wrapper must be an absolute path"},
+		{[]string{"--codex", "/bin/true", "--launcher", "relative"}, "--launcher must be an absolute path"},
+		{[]string{"--codex", "/bin/true", "--ensure-wrapper", "resume"}, "--ensure-wrapper does not accept Codex arguments"},
+		{[]string{"--disable-startup-update"}, "--disable-startup-update requires --config-toml PATH"},
+		{[]string{"--disable-startup-update", "--config-toml", "rel.toml"}, "--config-toml must be an absolute path"},
+		{[]string{"--disable-startup-update", "--ensure-wrapper", "--codex", "/bin/true", "--config-toml", "/tmp/c.toml"}, "cannot combine --disable-startup-update and --ensure-wrapper"},
+		{[]string{"--codex", "/bin/true", "--config-toml", "/tmp/c.toml"}, "--config-toml requires --disable-startup-update"},
 		{[]string{"--codex", "/bin/true", "--owner-origin-manifest", "/m", "--"}, "owner-origin launches are not ported"},
 		{[]string{"--owner-origin-host-config=/h", "--codex", "/bin/true"}, "owner-origin launches are not ported"},
 	} {
@@ -420,6 +436,10 @@ func TestClassify(t *testing.T) {
 			Classification{Command: "go", ServerConfig: []string{"-c", "k=v", "--enable", "f", "--disable=g", "-p", "work", "--profile=home", "--config=x=1"}}},
 		{[]string{"-c"}, Classification{ServerConfig: []string{"-c"}}},
 		{[]string{"--model=gpt", "--sandbox", "read-only"}, Classification{ServerConfig: []string{}}},
+		{[]string{"update"}, Classification{Update: true, Command: "update", ServerConfig: []string{}}},
+		{[]string{"update", "--help"}, Classification{Direct: true, Command: "update", ServerConfig: []string{}}},
+		{[]string{"--remote", "unix:///s", "update"}, Classification{Direct: true, ExplicitRemote: true, Command: "update", ServerConfig: []string{}}},
+		{[]string{"--", "update"}, Classification{ServerConfig: []string{}}},
 	} {
 		if got := Classify(tc.argv); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("Classify(%q) = %+v, want %+v", tc.argv, got, tc.want)
@@ -454,5 +474,240 @@ func TestInstalledCodexOptionsAreClassified(t *testing.T) {
 		if len(name) > 1 && !KnownOption(name) {
 			t.Errorf("unclassified global option %s", name)
 		}
+	}
+}
+
+func inodeOf(t *testing.T, path string) uint64 {
+	t.Helper()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("unexpected stat sys type %T", info.Sys())
+	}
+	return st.Ino
+}
+
+func TestCodexUpdateRewrapsSymlinkWithoutTouchingTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		exitCode int
+	}{
+		{name: "success", exitCode: 0},
+		{name: "nonzero", exitCode: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			work := t.TempDir()
+			binDir := filepath.Join(work, ".local", "bin")
+			if err := os.MkdirAll(binDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			wrapperPath := filepath.Join(binDir, "codex")
+			launcherPath := filepath.Join(work, "cairn-codex-launch")
+			if err := os.WriteFile(launcherPath, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			realCodex := filepath.Join(work, "real-codex")
+			script := fmt.Sprintf("#!/bin/sh\nln -sfn %s %s\nexit %d\n", shellQuote(realCodex), shellQuote(wrapperPath), tc.exitCode)
+			if err := os.WriteFile(realCodex, []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			beforeBytes := []byte(script)
+			beforeInode := inodeOf(t, realCodex)
+
+			// Seed initial wrapper as a symlink or regular file; Launcher should restore after update.
+			if changed, _, err := EnsureWrapper(wrapperPath, launcherPath, realCodex); err != nil || !changed {
+				t.Fatalf("initial EnsureWrapper failed: changed=%v err=%v", changed, err)
+			}
+
+			var diagnostic bytes.Buffer
+			launcher := Launcher{
+				WrapperPath: wrapperPath,
+				SelfPath:    launcherPath,
+				Exec: func(string, []string, []string) error {
+					t.Fatal("update must not use Exec")
+					return nil
+				},
+			}
+			gotCode := launcher.Run([]string{"--codex", realCodex, "--wrapper", wrapperPath, "--launcher", launcherPath, "--", "update"}, []string{"HOME=" + work}, &diagnostic)
+			if gotCode != tc.exitCode {
+				t.Fatalf("exit code = %d, want %d (diag=%q)", gotCode, tc.exitCode, diagnostic.String())
+			}
+
+			info, err := os.Lstat(wrapperPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o700 {
+				t.Fatalf("wrapper not restored to 0700 regular file: mode=%v", info.Mode())
+			}
+			wantContent, err := RenderWrapper(launcherPath, realCodex, wrapperPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotContent, err := os.ReadFile(wrapperPath)
+			if err != nil || string(gotContent) != wantContent {
+				t.Fatalf("wrapper content = %q, want %q (err=%v)", string(gotContent), wantContent, err)
+			}
+			afterBytes, err := os.ReadFile(realCodex)
+			if err != nil || !bytes.Equal(afterBytes, beforeBytes) || inodeOf(t, realCodex) != beforeInode {
+				t.Fatalf("realCodex was modified through symlink!")
+			}
+			if !strings.Contains(diagnostic.String(), "restored wrapper") {
+				t.Fatalf("expected restoration diagnostic, got %q", diagnostic.String())
+			}
+		})
+	}
+}
+
+func TestEnsureWrapperSymlinkDriftAndNoOp(t *testing.T) {
+	work := t.TempDir()
+	wrapperPath := filepath.Join(work, ".local", "bin", "codex")
+	launcherPath := filepath.Join(work, "cairn-codex-launch")
+	realCodex := filepath.Join(work, "real-codex")
+	sentinel := []byte("#!/bin/sh\n# real-codex-sentinel\n")
+	if err := os.WriteFile(launcherPath, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(realCodex, sentinel, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	realInode := inodeOf(t, realCodex)
+
+	// 1. Missing wrapper -> creates 0700 regular file.
+	changed, reason, err := EnsureWrapper(wrapperPath, launcherPath, realCodex)
+	if err != nil || !changed || reason != "missing" {
+		t.Fatalf("missing: changed=%v reason=%q err=%v", changed, reason, err)
+	}
+	firstInode := inodeOf(t, wrapperPath)
+
+	// 2. Unchanged -> no-op, preserves inode.
+	changed, reason, err = EnsureWrapper(wrapperPath, launcherPath, realCodex)
+	if err != nil || changed || reason != "" || inodeOf(t, wrapperPath) != firstInode {
+		t.Fatalf("noop: changed=%v reason=%q err=%v", changed, reason, err)
+	}
+
+	// 3. Mode drift -> repaired.
+	if err := os.Chmod(wrapperPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	changed, reason, err = EnsureWrapper(wrapperPath, launcherPath, realCodex)
+	if err != nil || !changed || reason != "mode" {
+		t.Fatalf("mode drift: changed=%v reason=%q err=%v", changed, reason, err)
+	}
+
+	// 4. Content drift -> repaired.
+	if err := os.WriteFile(wrapperPath, []byte("#!/bin/sh\necho tampered\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	changed, reason, err = EnsureWrapper(wrapperPath, launcherPath, realCodex)
+	if err != nil || !changed || reason != "content_drift" {
+		t.Fatalf("content drift: changed=%v reason=%q err=%v", changed, reason, err)
+	}
+
+	// 5. Symlink drift -> atomically replaced without modifying realCodex.
+	if err := os.Remove(wrapperPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realCodex, wrapperPath); err != nil {
+		t.Fatal(err)
+	}
+	changed, reason, err = EnsureWrapper(wrapperPath, launcherPath, realCodex)
+	if err != nil || !changed || reason != "symlink" {
+		t.Fatalf("symlink drift: changed=%v reason=%q err=%v", changed, reason, err)
+	}
+	gotSentinel, err := os.ReadFile(realCodex)
+	if err != nil || !bytes.Equal(gotSentinel, sentinel) || inodeOf(t, realCodex) != realInode {
+		t.Fatal("realCodex modified during symlink repair")
+	}
+
+	// 6. --ensure-wrapper CLI flag repairs missing/drifted wrapper cleanly.
+	if err := os.Remove(wrapperPath); err != nil {
+		t.Fatal(err)
+	}
+	var diag bytes.Buffer
+	code := Launcher{}.Run([]string{"--ensure-wrapper", "--codex", realCodex, "--wrapper", wrapperPath, "--launcher", launcherPath}, []string{"HOME=" + work}, &diag)
+	if code != 0 {
+		t.Fatalf("--ensure-wrapper exited %d: %s", code, diag.String())
+	}
+	if info, err := os.Lstat(wrapperPath); err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("wrapper not restored via --ensure-wrapper: info=%v err=%v", info, err)
+	}
+}
+
+func TestDisableStartupUpdateCheck(t *testing.T) {
+	work := t.TempDir()
+
+	// 1. Creates new file when missing.
+	missingCfg := filepath.Join(work, ".codex", "config.toml")
+	changed, err := DisableStartupUpdateCheck(missingCfg)
+	if err != nil || !changed {
+		t.Fatalf("missing config: changed=%v err=%v", changed, err)
+	}
+	data, err := os.ReadFile(missingCfg)
+	if err != nil || string(data) != "check_for_update_on_startup = false\n" {
+		t.Fatalf("unexpected new config: %q (err=%v)", string(data), err)
+	}
+
+	// 2. Idempotent no-op when already false (preserves inode).
+	beforeIno := inodeOf(t, missingCfg)
+	changed, err = DisableStartupUpdateCheck(missingCfg)
+	if err != nil || changed || inodeOf(t, missingCfg) != beforeIno {
+		t.Fatalf("expected no-op, got changed=%v err=%v", changed, err)
+	}
+
+	// 3. Inserts before first [table] header when starting with a table.
+	tableFirst := filepath.Join(work, "table-first.toml")
+	if err := os.WriteFile(tableFirst, []byte("[mcp_servers.cairn]\ncommand = \"/bin/cairn\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err = DisableStartupUpdateCheck(tableFirst)
+	if err != nil || !changed {
+		t.Fatalf("table-first: changed=%v err=%v", changed, err)
+	}
+	gotTableFirst, _ := os.ReadFile(tableFirst)
+	wantTableFirst := "check_for_update_on_startup = false\n\n[mcp_servers.cairn]\ncommand = \"/bin/cairn\"\n"
+	if string(gotTableFirst) != wantTableFirst {
+		t.Fatalf("got:\n%s\nwant:\n%s", string(gotTableFirst), wantTableFirst)
+	}
+
+	// 4. Inserts into root table before [projects] when root keys exist, and updates true -> false.
+	rootKeys := filepath.Join(work, "root-keys.toml")
+	if err := os.WriteFile(rootKeys, []byte("model = \"gpt-5\"\ncheck_for_update_on_startup = true\n\n[projects.\"/x\"]\ntrust_level = \"trusted\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err = DisableStartupUpdateCheck(rootKeys)
+	if err != nil || !changed {
+		t.Fatalf("root-keys: changed=%v err=%v", changed, err)
+	}
+	gotRoot, _ := os.ReadFile(rootKeys)
+	wantRoot := "model = \"gpt-5\"\ncheck_for_update_on_startup = false\n\n[projects.\"/x\"]\ntrust_level = \"trusted\"\n"
+	if string(gotRoot) != wantRoot {
+		t.Fatalf("got:\n%s\nwant:\n%s", string(gotRoot), wantRoot)
+	}
+
+	// 5. Refuses symlink config.toml.
+	symCfg := filepath.Join(work, "sym.toml")
+	if err := os.Symlink(rootKeys, symCfg); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := DisableStartupUpdateCheck(symCfg); err == nil || changed {
+		t.Fatalf("expected symlink refusal, got changed=%v err=%v", changed, err)
+	}
+
+	// 6. CLI flag --disable-startup-update --config-toml works.
+	cliCfg := filepath.Join(work, "cli.toml")
+	if err := os.WriteFile(cliCfg, []byte("model = \"o3\"\n\n[mcp_servers.cairn]\ncommand = \"cairn\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var diag bytes.Buffer
+	if code := (Launcher{}).Run([]string{"--disable-startup-update", "--config-toml", cliCfg}, []string{"HOME=" + work}, &diag); code != 0 {
+		t.Fatalf("CLI --disable-startup-update exited %d: %s", code, diag.String())
+	}
+	gotCLI, _ := os.ReadFile(cliCfg)
+	if !strings.HasPrefix(string(gotCLI), "model = \"o3\"\ncheck_for_update_on_startup = false\n\n[mcp_servers.cairn]") {
+		t.Fatalf("unexpected CLI updated TOML:\n%s", string(gotCLI))
 	}
 }

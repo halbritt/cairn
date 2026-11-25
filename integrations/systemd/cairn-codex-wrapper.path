@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch Codex CLI wrapper for external overwrite drift
+
+[Path]
+PathChanged=%h/.local/bin/codex
+TriggerLimitIntervalSec=10s
+TriggerLimitBurst=5
+Unit=cairn-codex-wrapper.service
+
+[Install]
+WantedBy=default.target

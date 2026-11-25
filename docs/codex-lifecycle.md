@@ -261,7 +261,7 @@ behind the `codex` command:
 
 ```sh
 #!/bin/sh
-exec /path/to/cairn-codex-launch --codex /path/to/real/codex -- "$@"
+exec /path/to/cairn-codex-launch --codex /path/to/real/codex --wrapper /path/to/codex-wrapper -- "$@"
 ```
 
 For an interactive start (bare TUI, prompt, `resume`, `fork`) it runs
@@ -272,3 +272,23 @@ signalled. Non-interactive subcommands (`exec`, `mcp`, `login`, …), `--help`,
 `--version` and any start that already names `--remote` exec the real codex
 unchanged. It does not select the owner-origin route; that stays with
 `scripts/launch-codex-coordination.py`.
+
+`codex update` is executed as a child process (with `SIGTERM`/`SIGHUP`/`SIGINT`
+forwarding) instead of `exec`, and after it exits `cairn-codex-launch`
+atomically restores the wrapper script via temporary file + `0700` + `rename`
+without touching or following symlinks to the underlying `codex` binary. To
+prevent Codex's standalone auto-updater from replacing `~/.local/bin/codex` on
+startup, set `check_for_update_on_startup = false` in the root TOML table of
+each Codex `config.toml` (or run
+`cairn-codex-launch --disable-startup-update --config-toml PATH`, or pass
+`--disable-startup-update-check` to `cairn codex-config` for a new standalone
+config).
+
+For automatic drift self-heal, pass `--codex-wrapper`, `--codex-binary`, and
+`--codex-launcher` to `cairn-lifecycle coordination watch` (which checks and
+repairs the wrapper on each watch tick) and/or install the user units
+`integrations/systemd/cairn-codex-wrapper.path` and
+`integrations/systemd/cairn-codex-wrapper.service`. To turn off wrapper
+self-heal and startup update suppression, remove `check_for_update_on_startup = false`
+from `config.toml`, disable `cairn-codex-wrapper.path`, and remove the
+`--codex-*` flags from `cairn-presence.service`.

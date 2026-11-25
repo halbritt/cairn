@@ -22,6 +22,12 @@ configuration you intend to use; avoid duplicate entries with the same name.
 The generator uses an absolute executable path, so install Cairn at a stable
 location before generating a persistent entry.
 
+When creating a standalone `config.toml` for a Cairn-wrapped Codex binary, pass
+`--disable-startup-update-check` to emit `check_for_update_on_startup = false`
+in the root TOML table before `[mcp_servers.cairn]`. Root-table TOML keys must
+appear before any `[table]` header when editing an existing `config.toml`; see
+[Codex lifecycle](../codex-lifecycle.md#idle-wake-needs-the-launcher).
+
 `--codex-thread` groups searches by Codex tool-call thread metadata. For a batch
 with explicit labels, replace it with `--task TASK --run RUN`; do not combine the
 two modes. Missing native thread metadata is refused in thread mode. These labels

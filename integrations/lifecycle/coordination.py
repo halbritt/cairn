@@ -5628,6 +5628,9 @@ def main():
     parser.add_argument("--event")
     parser.add_argument("--config-dir", type=Path)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--codex-wrapper", help="watch: path to the Codex launcher wrapper script")
+    parser.add_argument("--codex-binary", help="watch: path to the real Codex executable")
+    parser.add_argument("--codex-launcher", help="watch: path to the cairn-codex-launch executable")
     parser.add_argument("--native-session-id", help="recover-refused-wake: the held native session")
     parser.add_argument("--agent-id", help="configure-session-inbox: the live Cairn agent UUID")
     parser.add_argument("--compact-inbox", action="store_true", help="configure-session-inbox: enable compact notice/response delivery")
@@ -5769,6 +5772,12 @@ def main():
         else:
             if args.config_dir is None:
                 parser.error("watch requires --config-dir")
+            codex_opts = (args.codex_wrapper, args.codex_binary, args.codex_launcher)
+            if any(v is not None for v in codex_opts):
+                if not all(v is not None for v in codex_opts):
+                    parser.error("watch requires all three of --codex-wrapper, --codex-binary and --codex-launcher")
+                if not all(os.path.isabs(v) and '\x00' not in v and '\r' not in v and '\n' not in v for v in codex_opts):
+                    parser.error("watch: --codex-wrapper, --codex-binary and --codex-launcher must be absolute paths")
             stop = threading.Event()
             signal.signal(signal.SIGTERM, lambda *_: stop.set())
             signal.signal(signal.SIGINT, lambda *_: stop.set())

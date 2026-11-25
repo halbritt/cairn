@@ -1,0 +1,8 @@
+[Unit]
+Description=Restore Cairn Codex launcher wrapper atomically if drifted
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cairn-codex-launch --ensure-wrapper --codex %h/.codex/packages/standalone/current/bin/codex --wrapper %h/.local/bin/codex
+UMask=0077
+NoNewPrivileges=yes

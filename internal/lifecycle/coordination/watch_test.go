@@ -663,3 +663,84 @@ func TestCodexIdleWakeStaleBusyDecisionsAndObservation(t *testing.T) {
 		t.Fatalf("expected state=idle and delivered_since_idle=false, got %v", st)
 	}
 }
+
+func TestWatchOnceHealsDriftedCodexWrapper(t *testing.T) {
+	root := t.TempDir()
+	procRoot := procFixtureRoot(t)
+	cli, _, _ := newTestWatchCLI(t, root, procRoot)
+	cfgDir := filepath.Join(root, "configs")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	wrapper := filepath.Join(root, "bin", "codex")
+	binary := filepath.Join(root, "real", "codex")
+	launcher := filepath.Join(root, "bin", "cairn-codex-launch")
+	if err := os.MkdirAll(filepath.Dir(wrapper), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(binary), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := []byte("#!/bin/sh\n# untouched-real-codex\n")
+	writePrivateFile(t, binary, sentinel, 0o700)
+	writePrivateFile(t, launcher, []byte("#!/bin/sh\nexit 0\n"), 0o700)
+
+	// 1. Without --codex-* flags, watch --once does not create or modify wrapper.
+	var out, errOut bytes.Buffer
+	code, err := cli.RunCLI(context.Background(), []string{"watch", "--config-dir", cfgDir, "--once"}, strings.NewReader(""), &out, &errOut)
+	if err != nil || code != 0 {
+		t.Fatalf("watch --once without codex flags failed: code=%d err=%v errOut=%q", code, err, errOut.String())
+	}
+	if _, statErr := os.Lstat(wrapper); !os.IsNotExist(statErr) {
+		t.Fatalf("wrapper should not exist without --codex-* flags, got err=%v", statErr)
+	}
+
+	// 2. Partial --codex-* flags fail with exit 2.
+	out.Reset()
+	errOut.Reset()
+	code, err = cli.RunCLI(context.Background(), []string{"watch", "--config-dir", cfgDir, "--once", "--codex-wrapper", wrapper}, strings.NewReader(""), &out, &errOut)
+	if err != nil || code != 2 || !strings.Contains(errOut.String(), "--codex-wrapper, --codex-binary and --codex-launcher") {
+		t.Fatalf("expected exit 2 for partial codex flags, got code=%d err=%v errOut=%q", code, err, errOut.String())
+	}
+
+	// 3. Symlink drift is atomically replaced with 0700 regular wrapper without touching binary.
+	if err := os.Symlink(binary, wrapper); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	errOut.Reset()
+	code, err = cli.RunCLI(context.Background(), []string{
+		"watch", "--config-dir", cfgDir, "--once",
+		"--codex-wrapper", wrapper,
+		"--codex-binary", binary,
+		"--codex-launcher", launcher,
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil || code != 0 {
+		t.Fatalf("watch --once with codex flags failed: code=%d err=%v errOut=%q", code, err, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "repaired drifted Codex wrapper") {
+		t.Fatalf("expected repair log in errOut, got %q", errOut.String())
+	}
+	info, statErr := os.Lstat(wrapper)
+	if statErr != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("expected 0700 regular wrapper, got info=%v err=%v", info, statErr)
+	}
+	gotBinary, readErr := os.ReadFile(binary)
+	if readErr != nil || !bytes.Equal(gotBinary, sentinel) {
+		t.Fatalf("binary modified during wrapper repair: err=%v", readErr)
+	}
+
+	// 4. Subsequent tick is a silent no-op.
+	out.Reset()
+	errOut.Reset()
+	code, err = cli.RunCLI(context.Background(), []string{
+		"watch", "--config-dir", cfgDir, "--once",
+		"--codex-wrapper", wrapper,
+		"--codex-binary", binary,
+		"--codex-launcher", launcher,
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil || code != 0 || errOut.Len() != 0 {
+		t.Fatalf("expected silent no-op on second tick, got code=%d err=%v errOut=%q", code, err, errOut.String())
+	}
+}

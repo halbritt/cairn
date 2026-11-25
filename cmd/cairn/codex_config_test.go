@@ -43,3 +43,25 @@ func TestCodexConfigRejectsInvalidInputBeforeOutput(t *testing.T) {
 		t.Fatalf("output failure lost: %v", err)
 	}
 }
+
+func TestCodexConfigDisableStartupUpdateCheckFlag(t *testing.T) {
+	base := []string{"--socket", "/api.sock", "--token-file", "/agent.token", "--repo", "repo", "--codex-thread"}
+
+	var defOut bytes.Buffer
+	if err := writeCodexConfig(&defOut, base, "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(defOut.String(), "check_for_update_on_startup") {
+		t.Fatalf("default codex-config must omit check_for_update_on_startup: %s", defOut.String())
+	}
+
+	var optOut bytes.Buffer
+	if err := writeCodexConfig(&optOut, append(append([]string{}, base...), "--disable-startup-update-check"), "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	got := optOut.String()
+	wantPrefix := "check_for_update_on_startup = false\n\n[mcp_servers.cairn]\n"
+	if !strings.HasPrefix(got, wantPrefix) {
+		t.Fatalf("expected prefix %q, got:\n%s", wantPrefix, got)
+	}
+}
