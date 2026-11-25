@@ -20,7 +20,11 @@ func TestSessionInboxPendingCountsBusyBacklogWithoutClaiming(t *testing.T) {
 	}
 	var events []string
 	for _, kind := range []string{"request", "notice", "notice"} {
-		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
+		action := ""
+		if kind == "notice" {
+			action = "review"
+		}
+		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Action: action, Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,7 +66,7 @@ func TestSessionInboxPendingIgnoresFreshWorkerSessions(t *testing.T) {
 	var err error
 	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 	a := f.register(nativeAgent{Binding: "fresh-cue", Harness: "claude", State: "busy", Mode: "fresh-worker"})
-	if _, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest); err != nil {
+	if _, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest); err != nil {
 		t.Fatal(err)
 	}
 	pending, err := receiver.SessionInboxPending(ctx, AgentSessionRef{a.AgentID, a.ExecutionID}, dest)
@@ -79,7 +83,11 @@ func TestSessionInboxPendingLatestArrivalBeyondCountLimit(t *testing.T) {
 	ref := sessionRef(a)
 	publish := func(kind string) AgentEvent {
 		t.Helper()
-		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
+		action := ""
+		if kind == "notice" {
+			action = "review"
+		}
+		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Action: action, Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,12 +144,12 @@ func TestSessionInboxPendingLatestUsesDeliveryEligibility(t *testing.T) {
 			sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 			a := f.register(nativeAgent{Binding: "eligibility", Harness: "claude", State: "busy"})
 			ref := sessionRef(a)
-			request := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}
+			request := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}
 			older, err := sender.PublishEvent(ctx, request, dest)
 			if err != nil {
 				t.Fatal(err)
 			}
-			request.RequestID, request.Kind = uuid.NewString(), "request"
+			request.RequestID, request.Kind, request.Action = uuid.NewString(), "request", ""
 			publicationDest := dest
 			if exclusion == "private" {
 				draft := projectNote(source.Scope.Repo)
@@ -234,7 +242,7 @@ func TestSessionInboxPendingRejectsReplacedExecution(t *testing.T) {
 	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "current", NativeSessionID: "current", Metadata: existingSessionMetadata("claude", "busy")}
 	a := f.registerRequest(registration, receiver, dest)
-	if _, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest); err != nil {
+	if _, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest); err != nil {
 		t.Fatal(err)
 	}
 	registration.RequestID = uuid.NewString()

@@ -57,7 +57,7 @@ func TestCoordinatorHandoffThresholdsRoleInboxContinuityZeroLostOrDuplicateMessa
 	// M1 -> role/alpha/root settled by root1 BEFORE handoff (must NEVER be duplicated to root2).
 	m1, err := leadAView.CampaignSend(ctx, CampaignSendRequest{
 		Repo: f.repo, Campaign: "alpha", OpKey: "lead-m1", Body: "Settled report M1", Shareable: true,
-		Publication: PublishEventRequest{Kind: "notice", Destination: EventDestination{Type: "agent", Name: "role/alpha/root"}},
+		Publication: PublishEventRequest{Kind: "notice", Action: "review", Destination: EventDestination{Type: "agent", Name: "role/alpha/root"}},
 	}, f.dest)
 	if err != nil || m1.Event.Routing == nil || m1.Event.Routing.OutOfChain || m1.Event.Routing.RoleAddress != "role/alpha/root" {
 		t.Fatalf("M1 to role/alpha/root should be in-chain: %+v %v", m1, err)
@@ -75,7 +75,7 @@ func TestCoordinatorHandoffThresholdsRoleInboxContinuityZeroLostOrDuplicateMessa
 	// M2 -> role/alpha/root stays pending in root1's inbox at handoff time; R1 dispatched by root1 to leadA before handoff.
 	m2, err := leadAView.CampaignSend(ctx, CampaignSendRequest{
 		Repo: f.repo, Campaign: "alpha", OpKey: "lead-m2", Body: "In-flight pending report M2", Shareable: true,
-		Publication: PublishEventRequest{Kind: "notice", Destination: EventDestination{Type: "agent", Name: "role/alpha/root"}},
+		Publication: PublishEventRequest{Kind: "notice", Action: "review", Destination: EventDestination{Type: "agent", Name: "role/alpha/root"}},
 	}, f.dest)
 	if err != nil {
 		t.Fatal(err)
@@ -143,13 +143,13 @@ func TestCoordinatorHandoffThresholdsRoleInboxContinuityZeroLostOrDuplicateMessa
 	// M3 -> role/alpha/root; M4 -> blocker on topic team.alpha; M5 -> reply to pre-handoff R1 addressed to old root1.Inbox!
 	m3, err := leadAView.CampaignSend(ctx, CampaignSendRequest{
 		Repo: f.repo, Campaign: "alpha", OpKey: "lead-m3", Body: "Post-handoff report M3 to role address", Shareable: true,
-		Publication: PublishEventRequest{Kind: "notice", Destination: EventDestination{Type: "agent", Name: "role/alpha/root"}},
+		Publication: PublishEventRequest{Kind: "notice", Action: "review", Destination: EventDestination{Type: "agent", Name: "role/alpha/root"}},
 	}, f.dest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	m4, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Blocker: true, Summary: "Topic blocker M4",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Blocker: true, Summary: "Topic blocker M4",
 		Ref: RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version}, Destination: EventDestination{Type: "topic", Name: "team.alpha"},
 	}, f.dest)
 	if err != nil {
@@ -216,7 +216,7 @@ func TestCoordinatorHandoffThresholdsRoleInboxContinuityZeroLostOrDuplicateMessa
 		t.Fatal(err)
 	}
 	dupEv, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Blocker: true, Summary: "Shared topic event before Handoff 2",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Blocker: true, Summary: "Shared topic event before Handoff 2",
 		Ref: RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version}, Destination: EventDestination{Type: "topic", Name: "team.alpha"},
 	}, f.dest)
 	if err != nil {
@@ -245,7 +245,7 @@ func TestCoordinatorHandoffThresholdsRoleInboxContinuityZeroLostOrDuplicateMessa
 	}
 	m6, err := leadAView.CampaignSend(ctx, CampaignSendRequest{
 		Repo: f.repo, Campaign: "alpha", OpKey: "lead-m6", Body: "Post-second-handoff report M6", Shareable: true,
-		Publication: PublishEventRequest{Kind: "notice", Destination: EventDestination{Type: "agent", Name: "role/alpha/root"}},
+		Publication: PublishEventRequest{Kind: "notice", Action: "review", Destination: EventDestination{Type: "agent", Name: "role/alpha/root"}},
 	}, f.dest)
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +291,7 @@ func TestCoordinatorHandoffBusyGuardAuthorizationAndSensitivityIsolation(t *test
 	// Active unexpired leased delivery on root blocks handoff with AGENT_BUSY until settled!
 	if _, err := leadView.CampaignSend(ctx, CampaignSendRequest{
 		Repo: f.repo, Campaign: "guards", OpKey: "busy-msg", Body: "Leased message", Shareable: true,
-		Publication: PublishEventRequest{Kind: "notice", Destination: EventDestination{Type: "agent", Name: "role/guards/root"}},
+		Publication: PublishEventRequest{Kind: "notice", Action: "review", Destination: EventDestination{Type: "agent", Name: "role/guards/root"}},
 	}, f.dest); err != nil {
 		t.Fatal(err)
 	}
@@ -332,14 +332,14 @@ func TestCoordinatorHandoffBusyGuardAuthorizationAndSensitivityIsolation(t *test
 	}
 	_, err = localRootView.CampaignSend(ctx, CampaignSendRequest{
 		Repo: f.repo, Campaign: "privcamp", OpKey: "leak-attempt", Body: "Shareable msg to local role", Shareable: true,
-		Publication: PublishEventRequest{Kind: "notice", Destination: EventDestination{Type: "agent", Name: "role/privcamp/root"}},
+		Publication: PublishEventRequest{Kind: "notice", Action: "review", Destination: EventDestination{Type: "agent", Name: "role/privcamp/root"}},
 	}, localDst)
 	requireCode(t, err, "DESTINATION_PROHIBITED")
 
 	// Pending local-sensitivity inbox delivery blocks handoff to a hosted successor session!
 	if _, err := leadView.CampaignSend(ctx, CampaignSendRequest{
 		Repo: f.repo, Campaign: "guards", OpKey: "local-pending-msg", Body: "Local secret message", Shareable: false,
-		Publication: PublishEventRequest{Kind: "notice", Destination: EventDestination{Type: "agent", Name: "role/guards/root"}},
+		Publication: PublishEventRequest{Kind: "notice", Action: "review", Destination: EventDestination{Type: "agent", Name: "role/guards/root"}},
 	}, localDst); err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +447,7 @@ func TestCoordinatorHandoffResponseGroupInboundRequestAndPredecessorResumption(t
 	resumed1 := f.register(nativeAgent{Binding: "rg-coord", Native: "rg-sess-1"})
 	resumed1View := f.view(sessionRef(resumed1))
 	postResumeEv, err := resumed1View.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Summary: "Unrelated post-resumption event",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Summary: "Unrelated post-resumption event",
 		Ref: RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version}, Destination: EventDestination{Type: "agent", Name: resumed1.Inbox},
 	}, f.dest)
 	if err != nil || postResumeEv.Destination.Name != resumed1.Inbox {
@@ -455,4 +455,41 @@ func TestCoordinatorHandoffResponseGroupInboundRequestAndPredecessorResumption(t
 	}
 	_, err = root2View.AgentEventStatus(ctx, EventStatusRequest{EventID: postResumeEv.EventID}, f.dest)
 	requireCode(t, err, "NOT_FOUND")
+}
+
+func TestTeamCampaignDefaultsAndExplicitZeroOptOut(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	root := f.register(nativeAgent{Binding: "def-coord"})
+	rootView := f.view(sessionRef(root))
+
+	// Creating a campaign without threshold args populates non-NULL defaults.
+	camp, err := rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: "defaults", RootAgent: root.Inbox,
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if camp.MaxCoordinatorAgeSeconds == nil || *camp.MaxCoordinatorAgeSeconds != DefaultMaxCoordinatorAgeSeconds ||
+		camp.MaxCoordinatorCompactions == nil || *camp.MaxCoordinatorCompactions != DefaultMaxCoordinatorCompactions {
+		t.Fatalf("expected default thresholds (%d, %d), got age=%v comp=%v",
+			DefaultMaxCoordinatorAgeSeconds, DefaultMaxCoordinatorCompactions, camp.MaxCoordinatorAgeSeconds, camp.MaxCoordinatorCompactions)
+	}
+
+	// Explicit 0 clears thresholds; unrelated updates preserve cleared nil state.
+	zero := 0
+	cleared, err := rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: "defaults",
+		MaxCoordinatorAgeSeconds: &zero, MaxCoordinatorCompactions: &zero, ExpectedRevision: camp.Revision,
+	}, f.dest)
+	if err != nil || cleared.MaxCoordinatorAgeSeconds != nil || cleared.MaxCoordinatorCompactions != nil {
+		t.Fatalf("expected zero opt-out to clear thresholds: %+v %v", cleared, err)
+	}
+	updated, err := rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: "defaults",
+		OutOfChainPolicy: "reroute", ExpectedRevision: cleared.Revision,
+	}, f.dest)
+	if err != nil || updated.MaxCoordinatorAgeSeconds != nil || updated.MaxCoordinatorCompactions != nil {
+		t.Fatalf("expected unrelated update to keep cleared thresholds nil: %+v %v", updated, err)
+	}
 }

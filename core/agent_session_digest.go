@@ -211,7 +211,7 @@ func (s *Store) readSessionDigestItems(ctx context.Context, tx pgx.Tx, attemptID
 func loadDigestCandidatesTx(ctx context.Context, tx pgx.Tx, repo, inbox string, allowLocal, excludeActionNone, forUpdate bool) ([]digestCandidate, error) {
 	q := `SELECT d.delivery_id::text,e.event_id::text,COALESCE(e.notice_action,''),e.publisher,` + digestTopicKeyExpr + `,e.sensitivity,COALESCE(m.lifecycle='active' AND v.payload_deleted_by IS NULL,false),d.available_at,e.created_at FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) LEFT JOIN cairn.memory_record m ON m.record_id=e.record_id LEFT JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=e.version WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND ` + requestAdmissionOpen + ` AND ` + wakeHold + ` AND ` + sessionInboxHold + ` AND ` + waitNotificationAdmissionOpen + ` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp()))` + sessionInboxFYIFilter
 	if excludeActionNone {
-		q += ` AND COALESCE(e.notice_action,'')<>'none'`
+		q += ` AND NOT (` + sessionInboxAutoSettleSafe + `)`
 	}
 	q += ` ORDER BY e.position`
 	if forUpdate {
@@ -324,11 +324,12 @@ func (s *Store) SessionInboxDigestReady(ctx context.Context, req SessionInboxDig
 	}
 	if req.AutoSettleActionNone {
 		var headID, headEventID, headKind, headAction string
-		err = tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.event_id::text,e.kind,COALESCE(e.notice_action,'')`+sessionInboxEligible+` LIMIT 1`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&headID, &headEventID, &headKind, &headAction)
+		var headAutoSafe bool
+		err = tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.event_id::text,e.kind,COALESCE(e.notice_action,''),(`+sessionInboxAutoSettleSafe+`)`+sessionInboxEligible+` LIMIT 1`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&headID, &headEventID, &headKind, &headAction, &headAutoSafe)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return out, err
 		}
-		if err == nil && headKind == "notice" && headAction == "none" {
+		if err == nil && headKind == "notice" && headAction == "none" && headAutoSafe {
 			return SessionInboxDigestReady{DeliveryID: headID, EventID: headEventID, Action: "none", Kind: "notice"}, nil
 		}
 	}
@@ -360,19 +361,22 @@ func (s *Store) claimSessionDigestAttempt(ctx context.Context, tx pgx.Tx, a Agen
 	if req.AutoSettleActionNone {
 		for i := 0; i < maxAutoSettleBatch; i++ {
 			var noneID, noneEventID string
-			err := tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.event_id::text`+sessionInboxEligibleBase+` AND e.kind='notice' AND COALESCE(e.notice_action,'')='none' ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&noneID, &noneEventID)
+			err := tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.event_id::text`+sessionInboxEligibleBase+` AND (`+sessionInboxAutoSettleSafe+`) ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&noneID, &noneEventID)
 			if errors.Is(err, pgx.ErrNoRows) {
 				break
 			}
 			if err != nil {
 				return out, err
 			}
-			_, skip, err := autoSettleActionNoneDeliveryTx(ctx, tx, noneID, noneEventID, dest.AllowLocal)
+			outcome, err := autoSettleActionNoneDeliveryTx(ctx, tx, noneID, noneEventID, dest.AllowLocal)
 			if err != nil {
 				return out, err
 			}
-			if skip || (req.DeliveryID != "" && noneID == req.DeliveryID) {
+			if outcome == autoSettleLocalHidden || (req.DeliveryID != "" && noneID == req.DeliveryID) {
 				return commit(nil)
+			}
+			if outcome == autoSettleUnsafe {
+				break
 			}
 		}
 	}

@@ -140,12 +140,15 @@ func (s *Store) AdvanceSessionInbox(ctx context.Context, req SessionInboxAdvance
 					if i == maxAutoSettleBatch {
 						return endBatch("batch_limit")
 					}
-					_, skip, err := autoSettleActionNoneDeliveryTx(ctx, tx, nextID, eventID, dest.AllowLocal)
+					outcome, err := autoSettleActionNoneDeliveryTx(ctx, tx, nextID, eventID, dest.AllowLocal)
 					if err != nil {
 						return empty, err
 					}
-					if skip {
+					if outcome == autoSettleLocalHidden {
 						return endBatch("empty")
+					}
+					if outcome == autoSettleUnsafe {
+						break
 					}
 					nextID = ""
 					continue

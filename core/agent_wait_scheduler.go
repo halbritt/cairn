@@ -471,8 +471,8 @@ FOR SHARE OF m`, rv.recordID, rv.version, item.collection).Scan(&rSens, &rLife, 
 		}
 
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(
-			event_id, repo, kind, record_id, version, sensitivity, destination_type, destination_name, publisher, created_at)
-			VALUES($1, $2, 'notice', $3, 1, $4, 'agent', $5, $6, clock_timestamp())
+			event_id, repo, kind, notice_action, record_id, version, sensitivity, destination_type, destination_name, publisher, created_at)
+			VALUES($1, $2, 'notice', 'review', $3, 1, $4, 'agent', $5, $6, clock_timestamp())
 			ON CONFLICT (event_id) DO NOTHING`,
 			item.noticeEventUUID, item.collection, item.sourceRecordUUID, noticeSensitivity, recipient, s.channel.Principal)
 		if err != nil {

@@ -131,7 +131,7 @@ func TestPoolCapacityRefusalRotatesPublisherAndPreservesReplyReserve(t *testing.
 	}
 	// A notice consumes this producer/worker pair without creating executable
 	// worker work, so another publisher can still use the worker's spare slots.
-	_, err = publisher.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: worker.channel.Principal}}, dest)
+	_, err = publisher.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: worker.channel.Principal}}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}

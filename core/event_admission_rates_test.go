@@ -297,7 +297,7 @@ func TestEventRatesRequireCompleteDatabaseSchemaBeforeEnforcement(t *testing.T) 
 	if _, err = s.pool.Exec(ctx, `UPDATE cairn.agent_event_admission_policy SET policy=jsonb_set(policy,'{mode}','"enforce"') WHERE repo=$1`, repo); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Repo: repo, Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "topic", Name: "empty"}}, Destination{Name: "local", AllowLocal: true})
+	_, err = s.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Repo: repo, Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "topic", Name: "empty"}}, Destination{Name: "local", AllowLocal: true})
 	requireCode(t, err, "FEATURE_UNAVAILABLE")
 }
 

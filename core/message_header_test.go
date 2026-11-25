@@ -64,7 +64,7 @@ func TestEventSummaryHeaderPersistenceAndValidation(t *testing.T) {
 
 	for _, bad := range []string{"   ", "line1\nline2", "tab\there", "esc\x1b[31m", "bidi\u202eoverride", "sep\u2028line", strings.Repeat("a", 281)} {
 		_, err := leadView.PublishEvent(ctx, PublishEventRequest{
-			RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Summary: bad,
+			RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Summary: bad,
 			Ref:         RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 			Destination: EventDestination{Type: "agent", Name: coord.Inbox},
 		}, f.dest)
@@ -110,5 +110,37 @@ func TestEventSummaryHeaderPersistenceAndValidation(t *testing.T) {
 	}
 	if reissued.Summary != ev.Summary || reissued.ExpectBy == nil || !reissued.ExpectBy.Equal(due) {
 		t.Fatalf("ReissueEvent lost header fields: %+v", reissued)
+	}
+}
+
+func TestPublishEventRequiresSummaryOver280Bytes(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	peer := f.register(nativeAgent{Binding: "pub-summary-peer"})
+	senderView := f.view(sessionRef(f.register(nativeAgent{Binding: "pub-summary-sender"})))
+
+	longDraft := projectNote(f.repo)
+	longDraft.Sensitivity = "shareable"
+	longDraft.Body = strings.Repeat("x", MaxEventSummaryBytes+1)
+	longRec, err := senderView.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: longDraft})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = senderView.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review",
+		Ref:         RecordVersionRef{RecordID: longRec.RecordID, Version: 1},
+		Destination: EventDestination{Type: "agent", Name: peer.Inbox},
+	}, f.dest)
+	requireCode(t, err, "INVALID_REQUEST")
+
+	ev, err := senderView.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review",
+		Summary:     "Concise >280B summary",
+		Ref:         RecordVersionRef{RecordID: longRec.RecordID, Version: 1},
+		Destination: EventDestination{Type: "agent", Name: peer.Inbox},
+	}, f.dest)
+	if err != nil || ev.Summary != "Concise >280B summary" {
+		t.Fatalf("PublishEvent with summary on >280B record failed: %+v %v", ev, err)
 	}
 }

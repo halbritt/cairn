@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -352,6 +353,9 @@ func dispatchLedgerSubcommand(
 		if opKey == "" || kind == "" {
 			return nil, invalid("ledger " + subcommand + " requires --op-key and --kind")
 		}
+		if kind == "notice" && action == "" && os.Getenv("CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION") != "1" {
+			return nil, invalid("notice events require --action (none, review, or decide); also set --supersedes TOPIC for repeatable updates and --summary when body exceeds 280 bytes")
+		}
 		choices := 0
 		var dest core.EventDestination
 		var poolReqs *core.PoolRequirements
@@ -413,6 +417,9 @@ func dispatchLedgerSubcommand(
 		}
 		if len(body) == 0 || len(body) > 65536 || strings.TrimSpace(string(body)) == "" || !utf8.Valid(body) {
 			return nil, invalid("ledger send requires 1-65536 bytes of nonblank UTF-8 text on stdin")
+		}
+		if len(body) > core.MaxEventSummaryBytes && summary == "" {
+			return nil, invalid("ledger send requires --summary (1-280 single-line UTF-8 bytes) when body exceeds 280 bytes; state what changed in --summary and keep uncompressed details in body")
 		}
 		return callOp("ledger-send", core.CampaignSendRequest{
 			Repo: repo, Campaign: campaign, OpKey: opKey, Body: string(body),

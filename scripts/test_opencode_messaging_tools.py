@@ -249,10 +249,11 @@ class OpenCodeMessagingToolsTests(unittest.TestCase):
             ("unknown-self", "cairn_agents", {"agent": "self"}),
             ("bind-session", "cairn_remember", {"request_id": str(uuid.uuid4()), "body": "bind session", "scope": "run"}),
             ("self-lookup", "cairn_agents", {"agent": "self"}),
-            ("stopped-send", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-12", "body": "Hi"}),
-            ("long-no-summary", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-9", "body": "x" * 281}),
-            ("long-with-summary", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-9", "summary": "Long OpenCode report", "body": "x" * 281}),
-            ("valid-send", "cairn_send", {"request_id": send_req, "to": "agent-9", "body": "Synthetic notice.", "urgency": "urgent"}),
+            ("stopped-send", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-12", "action": "review", "body": "Hi"}),
+            ("notice-no-action", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-9", "body": "Missing action"}),
+            ("long-no-summary", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-9", "action": "review", "body": "x" * 281}),
+            ("long-with-summary", "cairn_send", {"request_id": str(uuid.uuid4()), "to": "agent-9", "action": "review", "summary": "Long OpenCode report", "body": "x" * 281}),
+            ("valid-send", "cairn_send", {"request_id": send_req, "to": "agent-9", "action": "review", "body": "Synthetic notice.", "urgency": "urgent"}),
             ("inbox-peek", "cairn_inbox", {"peek": True}),
             ("inbox-claim", "cairn_inbox", {"lease_seconds": 600}),
             ("renew-lease", "cairn_renew", {"delivery_id": delivery_id, "lease_id": lease_id, "lease_seconds": 900}),
@@ -344,6 +345,7 @@ class OpenCodeMessagingToolsTests(unittest.TestCase):
         tool_outputs = {m["tool_call_id"]: m["content"] for m in final_messages if m.get("role") == "tool"}
         self.assertIn("IDENTITY_UNKNOWN", str(tool_outputs["unknown-self"]))
         self.assertIn("RECIPIENT_STOPPED", str(tool_outputs["stopped-send"]))
+        self.assertIn("none, review, or decide", str(tool_outputs["notice-no-action"]))
         self.assertIn("is required when body exceeds 280 bytes", str(tool_outputs["long-no-summary"]))
         self.assertEqual(json.loads(tool_outputs["long-with-summary"])["summary"], "Long OpenCode report")
 

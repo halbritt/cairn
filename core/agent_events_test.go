@@ -279,6 +279,7 @@ func TestAgentEventsPublishRetryExactVersionAndAtomicCompletion(t *testing.T) {
 		t.Fatalf("retry: %+v %v", again, err)
 	}
 	req.Kind = "notice"
+	req.Action = "review"
 	_, err = a.PublishEvent(ctx, req, dest)
 	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
 	if _, err = a.Revise(ctx, ReviseRequest{uuid.NewString(), r.RecordID, 1, r.Scope.Repo, "changed source"}); err != nil {
@@ -474,7 +475,7 @@ func TestAgentEventsIdentityAndVisibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{private.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}
+	req := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{private.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}
 	_, err = a.PublishEvent(ctx, req, dest)
 	requireCode(t, err, "NOT_FOUND")
 	_, err = a.PublishEvent(ctx, req, Destination{"local", true})

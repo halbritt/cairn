@@ -337,7 +337,7 @@ func TestMessagingToolsAreOptIn(t *testing.T) {
 func TestSendResolvesSessionAndRecipient(t *testing.T) {
 	f := newMessagingFixture(t, Config{NativeSessionID: "native-self"})
 	request := uuid.NewString()
-	args := map[string]any{"request_id": request, "to": "agent-9", "body": "Synthetic notice.", "urgency": "urgent"}
+	args := map[string]any{"request_id": request, "to": "agent-9", "action": "review", "body": "Synthetic notice.", "urgency": "urgent"}
 	result := f.ok(t, "cairn_send", args)
 	calls := f.api.taken()
 	if got := operations(calls); !reflect.DeepEqual(got, []string{"agent-directory", "agent-directory", "create", "event-publish"}) {
@@ -385,7 +385,7 @@ func TestSendResolvesSessionAndRecipient(t *testing.T) {
 	if got := f.api.taken(); !reflect.DeepEqual(operations(got), []string{"agent-directory", "event-publish"}) || got[1].Body["causation_id"] != requestEvent || !reflect.DeepEqual(got[1].Body["ref"], map[string]any{"record_id": resultRecord, "version": float64(2)}) {
 		t.Fatalf("source publication: %+v", got)
 	}
-	f.ok(t, "cairn_send", map[string]any{"request_id": uuid.NewString(), "to": "topic/builds", "body": "Local.", "shareable": false})
+	f.ok(t, "cairn_send", map[string]any{"request_id": uuid.NewString(), "to": "topic/builds", "action": "none", "body": "Local.", "shareable": false})
 	if got := f.api.taken(); got[1].Body["draft"].(map[string]any)["sensitivity"] != "local" || !reflect.DeepEqual(got[2].Body["destination"], map[string]any{"type": "topic", "name": "builds"}) {
 		t.Fatalf("local topic send: %+v", got)
 	}
@@ -395,7 +395,7 @@ func TestSendRefusesBeforeWriting(t *testing.T) {
 	f := newMessagingFixture(t, Config{NativeSessionID: "native-self"})
 	f.agents = append(f.agents, fixtureAgent(12, uuid.NewString(), uuid.NewString(), "native-stopped", false, true))
 	base := func(change map[string]any) map[string]any {
-		args := map[string]any{"request_id": uuid.NewString(), "to": "agent-9", "body": "Synthetic."}
+		args := map[string]any{"request_id": uuid.NewString(), "to": "agent-9", "action": "review", "body": "Synthetic."}
 		for key, value := range change {
 			if value == nil {
 				delete(args, key)
@@ -415,6 +415,7 @@ func TestSendRefusesBeforeWriting(t *testing.T) {
 		{map[string]any{"body": " \n"}, "nonblank UTF-8"},
 		{map[string]any{"kind": "two words"}, "kind must be"},
 		{map[string]any{"kind": "request", "urgency": "urgent"}, "notices only"},
+		{map[string]any{"action": nil}, "none, review, or decide"},
 		{map[string]any{"urgency": "soon"}, "routine or urgent"},
 		{map[string]any{"to": "agent-12"}, "RECIPIENT_STOPPED"},
 		{map[string]any{"to": "agent-8"}, "NOT_FOUND"},
@@ -903,10 +904,10 @@ func TestSendAndInboxNoticeIntentFields(t *testing.T) {
 		"request_id": uuid.NewString(), "to": "agent-9", "body": "Bad.", "action": "none", "urgency": "urgent",
 	}, "urgent")
 	f.refused(t, "cairn_send", map[string]any{
-		"request_id": uuid.NewString(), "to": "agent-9", "body": "Bad.", "expect_next_by": "0000-01-01T00:00:00Z",
+		"request_id": uuid.NewString(), "to": "agent-9", "action": "review", "body": "Bad.", "expect_next_by": "0000-01-01T00:00:00Z",
 	}, "expect_next_by")
 	f.refused(t, "cairn_send", map[string]any{
-		"request_id": uuid.NewString(), "to": "agent-9", "body": "Bad.", "expect_by": "2026-11-20T12:00:00Z",
+		"request_id": uuid.NewString(), "to": "agent-9", "action": "review", "body": "Bad.", "expect_by": "2026-11-20T12:00:00Z",
 	}, "requests")
 	if len(f.api.taken()) != 0 {
 		t.Fatal("invalid notice intent fields wrote before refusing")
@@ -965,7 +966,7 @@ func TestMessageHeaderRequirementAnd9579ByteTruncationAndPull(t *testing.T) {
 
 	// Sending >280 bytes without summary refuses before any API write.
 	f.refused(t, "cairn_send", map[string]any{
-		"request_id": uuid.NewString(), "to": "agent-9", "kind": "notice", "body": longBody,
+		"request_id": uuid.NewString(), "to": "agent-9", "kind": "notice", "action": "decide", "body": longBody,
 	}, "summary")
 	if len(f.api.taken()) != 0 {
 		t.Fatal("oversized body without summary wrote before refusing")
@@ -1131,14 +1132,14 @@ func TestSendAcceptsCampaignRoleAddressAndResolvedRouting(t *testing.T) {
 	sess := connect(t, ctx, server)
 	for _, roleTarget := range []string{"role/alpha/root", "agent/role/alpha/root"} {
 		res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_send", Arguments: map[string]any{
-			"request_id": uuid.NewString(), "to": roleTarget, "body": "Status report to role inbox",
+			"request_id": uuid.NewString(), "to": roleTarget, "action": "review", "body": "Status report to role inbox",
 		}})
 		if err != nil || res.IsError {
 			t.Fatalf("cairn_send(%s) failed: %+v %v", roleTarget, res, err)
 		}
 	}
 	badRes, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_send", Arguments: map[string]any{
-		"request_id": uuid.NewString(), "to": "role/alpha", "body": "Malformed role target",
+		"request_id": uuid.NewString(), "to": "role/alpha", "action": "review", "body": "Malformed role target",
 	}})
 	if err != nil || !badRes.IsError {
 		t.Fatalf("expected malformed role/alpha to fail, got %+v %v", badRes, err)

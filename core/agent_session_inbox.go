@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -118,27 +120,70 @@ func (s *Store) SessionInboxReady(ctx context.Context, ref AgentSessionRef, dest
 	return out, err
 }
 
-func autoSettleActionNoneDeliveryTx(ctx context.Context, tx pgx.Tx, deliveryID, eventID string, allowLocal bool) (bool, bool, error) {
-	var sensitivity string
-	var payloadAvailable bool
-	err := tx.QueryRow(ctx, `SELECT m.sensitivity, (m.lifecycle = 'active' AND v.payload_deleted_by IS NULL)
+type autoSettleOutcome int
+
+const (
+	autoSettleHandled autoSettleOutcome = iota
+	autoSettleFailedUnavailable
+	autoSettleLocalHidden
+	autoSettleUnsafe
+)
+
+const sessionInboxAutoSettleSafe = `e.kind='notice' AND COALESCE(e.notice_action,'')='none' AND NOT e.blocker AND COALESCE(e.notice_policy->>'urgency','')<>'urgent' AND (e.notice_policy IS NULL OR (jsonb_typeof(e.notice_policy)='object' AND e.notice_policy->>'version'='1' AND COALESCE(e.notice_policy->>'urgency','') IN ('','routine'))) AND COALESCE(e.notice_delivery,'') IN ('','next_organic_turn') AND EXISTS(SELECT 1 FROM cairn.memory_record mr JOIN cairn.record_version rv ON rv.record_id=mr.record_id AND rv.version=e.version WHERE mr.record_id=e.record_id AND ((mr.lifecycle<>'active' OR rv.payload_deleted_by IS NOT NULL) OR (btrim(rv.body)<>'' AND (COALESCE(e.summary,'')<>'' OR octet_length(rv.body)<=280) AND position('[... truncated ' in rv.body)=0)))`
+
+func autoSettleActionNoneDeliveryTx(ctx context.Context, tx pgx.Tx, deliveryID, eventID string, allowLocal bool) (autoSettleOutcome, error) {
+	var kind, action, noticeDelivery, summary, eventSensitivity, recSensitivity, body string
+	var blocker, refExists, payloadAvailable bool
+	var noticePolicyRaw []byte
+	err := tx.QueryRow(ctx, `SELECT e.kind, COALESCE(e.notice_action, ''), e.blocker, e.notice_policy, COALESCE(e.notice_delivery, ''), COALESCE(e.summary, ''), e.sensitivity,
+		(m.record_id IS NOT NULL AND v.record_id IS NOT NULL), COALESCE(m.sensitivity, ''),
+		COALESCE(m.lifecycle = 'active' AND v.payload_deleted_by IS NULL, false), COALESCE(v.body, '')
 		FROM cairn.agent_event e
-		JOIN cairn.memory_record m ON m.record_id = e.record_id
-		JOIN cairn.record_version v ON v.record_id = m.record_id AND v.version = e.version
-		WHERE e.event_id = $1`, eventID).Scan(&sensitivity, &payloadAvailable)
+		LEFT JOIN cairn.memory_record m ON m.record_id = e.record_id
+		LEFT JOIN cairn.record_version v ON v.record_id = m.record_id AND v.version = e.version
+		WHERE e.event_id = $1`, eventID).Scan(
+		&kind, &action, &blocker, &noticePolicyRaw, &noticeDelivery, &summary, &eventSensitivity,
+		&refExists, &recSensitivity, &payloadAvailable, &body,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, false, settleDelivery(ctx, tx, deliveryID, "failed", "source_unavailable", nil, nil, false)
+		return autoSettleUnsafe, nil
 	}
 	if err != nil {
-		return false, false, err
+		return autoSettleUnsafe, err
 	}
-	if sensitivity != "shareable" && !allowLocal {
-		return false, true, nil
+	if kind != "notice" || action != "none" || blocker {
+		return autoSettleUnsafe, nil
+	}
+	if noticeDelivery != "" && noticeDelivery != "next_organic_turn" {
+		return autoSettleUnsafe, nil
+	}
+	if len(noticePolicyRaw) > 0 {
+		var pol NoticeWakePolicy
+		if err := json.Unmarshal(noticePolicyRaw, &pol); err != nil {
+			return autoSettleUnsafe, nil
+		}
+		if pol.Version != 1 || (pol.Urgency != "" && pol.Urgency != "routine") || pol.DeferSeconds < 0 || pol.DeferSeconds > 60 {
+			return autoSettleUnsafe, nil
+		}
+	}
+	if eventSensitivity != "shareable" && !allowLocal {
+		return autoSettleLocalHidden, nil
+	}
+	if !refExists {
+		return autoSettleUnsafe, nil
+	}
+	if recSensitivity != "shareable" && !allowLocal {
+		return autoSettleLocalHidden, nil
 	}
 	if !payloadAvailable {
-		return false, false, settleDelivery(ctx, tx, deliveryID, "failed", "source_unavailable", nil, nil, false)
+		return autoSettleFailedUnavailable, settleDelivery(ctx, tx, deliveryID, "failed", "source_unavailable", nil, nil, false)
 	}
-	return true, false, settleDelivery(ctx, tx, deliveryID, "handled", "auto_settled_none", nil, nil, false)
+	if !utf8.ValidString(body) || strings.TrimSpace(body) == "" ||
+		(summary == "" && len(body) > MaxEventSummaryBytes) ||
+		strings.Contains(body, "[... truncated ") {
+		return autoSettleUnsafe, nil
+	}
+	return autoSettleHandled, settleDelivery(ctx, tx, deliveryID, "handled", "auto_settled_none", nil, nil, false)
 }
 
 // SettleSessionActionNone settles up to maxAutoSettleBatch consecutive eligible
@@ -193,17 +238,24 @@ func (s *Store) SettleSessionActionNone(ctx context.Context, req SessionInboxSet
 				return res, err
 			}
 			if kind == "notice" && action == "none" && i < maxAutoSettleBatch {
-				handled, skip, err := autoSettleActionNoneDeliveryTx(ctx, tx, id, eventID, dest.AllowLocal)
+				outcome, err := autoSettleActionNoneDeliveryTx(ctx, tx, id, eventID, dest.AllowLocal)
 				if err != nil {
 					return res, err
 				}
-				if skip {
-					break
-				}
-				if handled {
+				switch outcome {
+				case autoSettleHandled:
 					res.Settled = append(res.Settled, id)
+					continue
+				case autoSettleFailedUnavailable:
+					continue
+				case autoSettleLocalHidden:
+					// Hidden local record cannot be surfaced or settled on hosted dest.
+				case autoSettleUnsafe:
+					if a.Online && a.Metadata.State == "idle" {
+						res.Ready = SessionInboxReadiness{DeliveryID: id, EventID: eventID, Action: action}
+					}
 				}
-				continue
+				break
 			}
 			if a.Online && a.Metadata.State == "idle" {
 				res.Ready = SessionInboxReadiness{DeliveryID: id, EventID: eventID, Action: action}
@@ -392,12 +444,15 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 			if i == maxAutoSettleBatch {
 				return commit(nil)
 			}
-			_, skip, err := autoSettleActionNoneDeliveryTx(ctx, tx, id, eventID, dest.AllowLocal)
+			outcome, err := autoSettleActionNoneDeliveryTx(ctx, tx, id, eventID, dest.AllowLocal)
 			if err != nil {
 				return out, err
 			}
-			if skip {
+			if outcome == autoSettleLocalHidden {
 				return commit(nil)
+			}
+			if outcome == autoSettleUnsafe {
+				break
 			}
 			if req.DeliveryID != "" && id == req.DeliveryID {
 				return commit(nil)

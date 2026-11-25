@@ -121,7 +121,7 @@ func TestEventPressureScopedAndFanoutSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	topic, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{r.RecordID, r.Version}, Destination: EventDestination{Type: "topic", Name: "pressure"}}, dest)
+	topic, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{r.RecordID, r.Version}, Destination: EventDestination{Type: "topic", Name: "pressure"}}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestEventPressureScopedAndFanoutSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{record.RecordID, 1}, Destination: EventDestination{Type: "agent", Name: b.channel.Principal}}, Destination{Name: "local", AllowLocal: true})
+	_, err = a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{record.RecordID, 1}, Destination: EventDestination{Type: "agent", Name: b.channel.Principal}}, Destination{Name: "local", AllowLocal: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestEventPressureDisposableMixedWorkload(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version}
-	base := PublishEventRequest{Kind: "notice", Ref: source, Repo: repo, Destination: EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID}}
+	base := PublishEventRequest{Kind: "notice", Action: "review", Ref: source, Repo: repo, Destination: EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID}}
 	for _, kind := range []string{"direct", "topic"} {
 		req := base
 		req.RequestID = uuid.NewString()

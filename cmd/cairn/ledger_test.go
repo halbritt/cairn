@@ -154,4 +154,11 @@ func TestLedgerCLIAndCampaignSendWithoutJournal(t *testing.T) {
 	if _, err := run(ctx, []string{"ledger", "handoff", "--socket", sock, "--token-file", tok, "--campaign", "alpha", "--if-needed", "--new-binding", "coord-alpha", "--new-native-session", "sess-new"}, strings.NewReader("")); err != nil || lastPath != "/v1/ledger-handoff" || lastBody["only_if_threshold_reached"] != true {
 		t.Fatalf("ledger handoff failed: path=%s body=%+v err=%v", lastPath, lastBody, err)
 	}
+	// 11. ledger publish/send require --action on notices and --summary when >280B
+	if _, err := run(ctx, []string{"ledger", "publish", "--socket", sock, "--token-file", tok, "--campaign", "alpha", "--op-key", "op-no-act", "--to", "agent/w1", "--kind", "notice", "--version", "1", srcRecID}, strings.NewReader("")); err == nil || !strings.Contains(err.Error(), "none, review, or decide") {
+		t.Fatalf("expected missing --action refusal on ledger publish, got %v", err)
+	}
+	if _, err := run(ctx, []string{"ledger", "send", "--socket", sock, "--token-file", tok, "--campaign", "alpha", "--op-key", "op-no-sum", "--to", "agent/w1", "--kind", "notice", "--action", "review", "--stdin"}, strings.NewReader(strings.Repeat("x", 281))); err == nil || !strings.Contains(err.Error(), "280 bytes") {
+		t.Fatalf("expected missing --summary refusal on >280B ledger send, got %v", err)
+	}
 }

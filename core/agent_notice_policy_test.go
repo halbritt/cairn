@@ -16,7 +16,7 @@ func TestRoutineNoticePolicyDefersOnlyItsOwnWakeAndKeepsRetryDeadline(t *testing
 	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 	agent := f.register(nativeAgent{Binding: "routine-notice"})
 	ref := sessionRef(agent)
-	request := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	request := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: agent.Inbox},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}
@@ -90,7 +90,7 @@ func TestSustainedRoutineArrivalsKeepFixedDeadlinesAndDrainOriginalOrder(t *test
 	}
 	items := make([]publishedNotice, 0, 3)
 	for i := 0; i < 3; i++ {
-		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 			Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 			Destination:  EventDestination{Type: "agent", Name: agent.Inbox},
 			NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)
@@ -175,7 +175,7 @@ func TestRoutineNoticePressureOverflowKeepsDeadlinesUrgentAndEverySource(t *test
 			t.Fatal(err)
 		}
 		sourceRef := RecordVersionRef{RecordID: source.RecordID, Version: source.Version}
-		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 			Ref: sourceRef, Destination: EventDestination{Type: "agent", Name: agent.Inbox},
 			NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)
 		if err != nil {
@@ -301,7 +301,7 @@ func TestRoutineNoticePressureOverflowKeepsDeadlinesUrgentAndEverySource(t *test
 func TestNoticePolicyValidationAndImmediateDefault(t *testing.T) {
 	ctx := context.Background()
 	sender, receiver, source, dest := eventFixture(t)
-	base := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	base := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination: EventDestination{Type: "agent", Name: receiver.channel.Principal}}
 	for _, tc := range []struct {
@@ -317,6 +317,9 @@ func TestNoticePolicyValidationAndImmediateDefault(t *testing.T) {
 		bad := base
 		bad.RequestID = uuid.NewString()
 		bad.Kind = tc.kind
+		if tc.kind != "notice" {
+			bad.Action = ""
+		}
 		bad.NoticePolicy = &tc.policy
 		_, err := sender.PublishEvent(ctx, bad, dest)
 		requireCode(t, err, "INVALID_REQUEST")
@@ -341,7 +344,7 @@ func TestRoutineNoticePublicationRollsBackWhenDeliveryInsertFails(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer sender.pool.Exec(ctx, fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON cairn.agent_delivery; DROP FUNCTION IF EXISTS cairn.%s()`, trigger, trigger))
-	request := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	request := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: receiver.channel.Principal},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}
@@ -385,7 +388,7 @@ func TestRoutineTopicFanoutSharesOneFixedAvailability(t *testing.T) {
 		}
 	}
 	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(),
-		Kind: "notice", Ref: RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
+		Kind: "notice", Action: "review", Ref: RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "topic", Name: "routine-status"},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)
 	if err != nil {
@@ -414,7 +417,7 @@ func TestRoutineNoticeSurvivesStoreReopenUrgentNoticeAndPublisherFlush(t *testin
 	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 	agent := f.register(nativeAgent{Binding: "routine-reopen"})
 	ref := sessionRef(agent)
-	publication := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	publication := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: agent.Inbox},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}
@@ -435,7 +438,7 @@ func TestRoutineNoticeSurvivesStoreReopenUrgentNoticeAndPublisherFlush(t *testin
 	if ready, err := receiver.SessionInboxReady(ctx, ref, dest); err != nil || ready.DeliveryID != "" {
 		t.Fatalf("reopen woke deferred routine notice early: %+v %v", ready, err)
 	}
-	urgent, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	urgent, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref: publication.Ref, Destination: publication.Destination,
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "urgent", DeferSeconds: 0}}, dest)
 	if err != nil {

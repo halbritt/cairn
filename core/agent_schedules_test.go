@@ -47,7 +47,7 @@ func TestScheduleCancellationRacesWithFiring(t *testing.T) {
 	ctx := context.Background()
 	_, consumer, op, source, dest := reissueFixture(t)
 	for range 8 {
-		scheduled, err := op.ScheduleEvent(ctx, ScheduleEventRequest{RequestID: uuid.NewString(), NotBefore: time.Now().Add(-time.Second), GraceSeconds: 300, Publication: PublishEventRequest{Repo: source.Scope.Repo, Kind: "notice", Ref: RecordVersionRef{source.RecordID, 1}, Destination: EventDestination{"agent", consumer.channel.Principal}}})
+		scheduled, err := op.ScheduleEvent(ctx, ScheduleEventRequest{RequestID: uuid.NewString(), NotBefore: time.Now().Add(-time.Second), GraceSeconds: 300, Publication: PublishEventRequest{Repo: source.Scope.Repo, Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, 1}, Destination: EventDestination{"agent", consumer.channel.Principal}}})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -133,7 +133,11 @@ func (f *nativeFixture) operator() *Store {
 // returns the event with its single delivery id.
 func (f *nativeFixture) publish(kind, inbox string) (AgentEvent, string) {
 	f.t.Helper()
-	return f.publishRequest(f.sender, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{Type: "agent", Name: inbox}})
+	action := ""
+	if kind == "notice" {
+		action = "review"
+	}
+	return f.publishRequest(f.sender, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Action: action, Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{Type: "agent", Name: inbox}})
 }
 
 // publishRequest publishes an explicit request through the given profile and

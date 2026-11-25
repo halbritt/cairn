@@ -109,7 +109,7 @@ func TestTokenEfficiencyPanelNativeEventSetups(t *testing.T) {
 		receiver := testStore(t, Channel{Principal: "agent:panel-single-worker-" + uuid.NewString(), Repo: repo})
 		ref := fixture.createEventSource(t, sender, row.Setup.Events[0])
 		notice, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(),
-			Kind: row.Setup.Events[0].Kind, Ref: ref,
+			Kind: row.Setup.Events[0].Kind, Action: "review", Ref: ref,
 			Destination: EventDestination{Type: "agent", Name: receiver.channel.Principal}}, dest)
 		if err != nil || notice.Ref != ref || notice.Kind != "notice" || notice.NoticePolicy != nil {
 			t.Fatalf("native single notice: %+v %v", notice, err)
@@ -207,11 +207,13 @@ func TestTokenEfficiencyPanelNativeEventSetups(t *testing.T) {
 				for _, event := range row.Setup.Events {
 					ref := fixture.createEventSource(t, sender, event)
 					var noticePolicy *NoticeWakePolicyRequest
+					action := ""
 					if event.Kind == "notice" {
 						noticePolicy = policy
+						action = "review"
 					}
 					published, publishErr := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(),
-						Kind: event.Kind, Ref: ref, Destination: EventDestination{Type: "agent", Name: agent.Inbox},
+						Kind: event.Kind, Action: action, Ref: ref, Destination: EventDestination{Type: "agent", Name: agent.Inbox},
 						NoticePolicy: noticePolicy}, dest)
 					if publishErr != nil || published.Ref != ref || published.Kind != event.Kind {
 						t.Fatalf("%s publication %s: %+v %v", arm, event.ID, published, publishErr)

@@ -150,7 +150,7 @@ func TestClosureEnforcementRequiresReconciliationAndBoundsRecipient(t *testing.T
 	}
 	setClosurePolicy(t, repo, "enforce", 100, 1)
 	// Notices create no obligation and are not gated by closure capacity.
-	if _, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{r.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}, dest); err != nil {
+	if _, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{r.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}, dest); err != nil {
 		t.Fatal(err)
 	}
 	first, err := a.PublishEvent(ctx, requestTo(r, b.channel.Principal), dest)

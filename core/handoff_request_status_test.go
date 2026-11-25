@@ -291,7 +291,7 @@ func TestHandoffRequestStatusKeepsEventVisibilityIndependentOfHandoffReadability
 		}
 	}
 	request := publishRequest(t, publisher, source, dest, EventDestination{"topic", "review"}, hourGroup("all"))
-	notice, err := publisher.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, 1}, Destination: EventDestination{"agent", worker.channel.Principal}}, dest)
+	notice, err := publisher.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, 1}, Destination: EventDestination{"agent", worker.channel.Principal}}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}

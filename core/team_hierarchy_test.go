@@ -99,7 +99,7 @@ func TestTeamHierarchyAcceptanceRoutineToLeadAndBlockerEscalationOrMatchingSubsc
 
 	// WorkerA routine notice on topic reaches leadA ONLY — neither leadB nor root!
 	routineEv, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Summary: "Routine worker progress",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Summary: "Routine worker progress",
 		Ref: srcRef, Destination: EventDestination{Type: "topic", Name: topic},
 	}, f.dest)
 	if err != nil {
@@ -111,7 +111,7 @@ func TestTeamHierarchyAcceptanceRoutineToLeadAndBlockerEscalationOrMatchingSubsc
 
 	// WorkerA blocker on topic does NOT reach root while root's subscription excludes blockers; reaches leadA.
 	unmatchedBlocker, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Blocker: true, Summary: "Worker hit schema lock blocker",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Blocker: true, Summary: "Worker hit schema lock blocker",
 		Ref: srcRef, Destination: EventDestination{Type: "topic", Name: topic},
 	}, f.dest)
 	if err != nil {
@@ -139,7 +139,7 @@ func TestTeamHierarchyAcceptanceRoutineToLeadAndBlockerEscalationOrMatchingSubsc
 		t.Fatal(err)
 	}
 	routineEv2, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Summary: "Second routine progress",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Summary: "Second routine progress",
 		Ref: srcRef, Destination: EventDestination{Type: "topic", Name: topic},
 	}, f.dest)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestTeamHierarchyAcceptanceRoutineToLeadAndBlockerEscalationOrMatchingSubsc
 	assertEmpty("root still ignores routine 2", rootView)
 
 	matchedBlocker, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Blocker: true, Summary: "Urgent CI blocker",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Blocker: true, Summary: "Urgent CI blocker",
 		Ref: srcRef, Destination: EventDestination{Type: "topic", Name: topic},
 	}, f.dest)
 	if err != nil {
@@ -160,7 +160,7 @@ func TestTeamHierarchyAcceptanceRoutineToLeadAndBlockerEscalationOrMatchingSubsc
 
 	// 2. Direct out-of-chain publication: warn policy vs reroute policy vs reply closure exemption.
 	warnEv, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Summary: "Out of chain under warn",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Summary: "Out of chain under warn",
 		Ref: srcRef, Destination: EventDestination{Type: "agent", Name: root.Inbox},
 	}, f.dest)
 	if err != nil {
@@ -179,7 +179,7 @@ func TestTeamHierarchyAcceptanceRoutineToLeadAndBlockerEscalationOrMatchingSubsc
 		t.Fatal(err)
 	}
 	reroutedEv, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Summary: "Worker trying to message root directly",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Summary: "Worker trying to message root directly",
 		Ref: srcRef, Destination: EventDestination{Type: "agent", Name: root.Inbox},
 	}, f.dest)
 	if err != nil {
@@ -194,7 +194,7 @@ func TestTeamHierarchyAcceptanceRoutineToLeadAndBlockerEscalationOrMatchingSubsc
 
 	// Root sending directly to workerA (skipping leadA) reroutes through leadA; leadA sending to root is in-chain.
 	downReroute, err := rootView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Summary: "Root downward skip",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Summary: "Root downward skip",
 		Ref: srcRef, Destination: EventDestination{Type: "agent", Name: workerA.Inbox},
 	}, f.dest)
 	if err != nil || downReroute.Destination.Name != leadA.Inbox || downReroute.Routing == nil || !downReroute.Routing.Rerouted {
@@ -389,7 +389,7 @@ func TestTeamHierarchyAuthorizationCyclesAndSensitivityIsolation(t *testing.T) {
 	// Shareable event under local reroute campaign is NOT rerouted (does not leak local lead into shareable Destination) and redacts Routing on hosted reads & replay!
 	pubReqID := uuid.NewString()
 	evLocalPubShareable, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: pubReqID, Repo: f.repo, Kind: "notice",
+		RequestID: pubReqID, Repo: f.repo, Kind: "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination: EventDestination{Type: "agent", Name: root.Inbox},
 	}, localDest)
@@ -398,7 +398,7 @@ func TestTeamHierarchyAuthorizationCyclesAndSensitivityIsolation(t *testing.T) {
 	}
 	// Replay of the exact same RequestID on hosted destination must redact Routing!
 	evReplayHosted, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: pubReqID, Repo: f.repo, Kind: "notice",
+		RequestID: pubReqID, Repo: f.repo, Kind: "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination: EventDestination{Type: "agent", Name: root.Inbox},
 	}, f.dest)
@@ -414,7 +414,7 @@ func TestTeamHierarchyAuthorizationCyclesAndSensitivityIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	shareableTopicEv, err := workerAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination: EventDestination{Type: "topic", Name: localSubTopic},
 	}, f.dest)
@@ -424,5 +424,97 @@ func TestTeamHierarchyAuthorizationCyclesAndSensitivityIsolation(t *testing.T) {
 	stTopicHosted, err := workerAView.AgentEventStatus(ctx, EventStatusRequest{EventID: shareableTopicEv.EventID}, f.dest)
 	if err != nil || len(stTopicHosted.Deliveries) != 0 {
 		t.Fatalf("shareable topic publication leaked local campaign direct_reports_only edge: %+v %v", stTopicHosted.Deliveries, err)
+	}
+}
+
+func TestMultiRecipientFanoutScopingSupersedesAndNonSuppression(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	root := f.register(nativeAgent{Binding: "fan-root"})
+	leadA := f.register(nativeAgent{Binding: "fan-lead-a"})
+	leadB := f.register(nativeAgent{Binding: "fan-lead-b"})
+	workerA := f.register(nativeAgent{Binding: "fan-worker-a"})
+	workerB := f.register(nativeAgent{Binding: "fan-worker-b"})
+	unrelated := f.register(nativeAgent{Binding: "fan-unrelated"})
+
+	rootView := f.view(sessionRef(root))
+	leadAView := f.view(sessionRef(leadA))
+	leadBView := f.view(sessionRef(leadB))
+	workerAView := f.view(sessionRef(workerA))
+	workerBView := f.view(sessionRef(workerB))
+	unrelatedView := f.view(sessionRef(unrelated))
+
+	if _, err := rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: "fanout", RootAgent: root.Inbox, OutOfChainPolicy: "reroute",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []SetTeamMemberRequest{
+		{RequestID: uuid.NewString(), Repo: f.repo, Campaign: "fanout", Member: leadA.Inbox, Lead: root.Inbox, Role: "lead"},
+		{RequestID: uuid.NewString(), Repo: f.repo, Campaign: "fanout", Member: leadB.Inbox, Lead: root.Inbox, Role: "lead"},
+		{RequestID: uuid.NewString(), Repo: f.repo, Campaign: "fanout", Member: workerA.Inbox, Lead: leadA.Inbox, Role: "worker"},
+		{RequestID: uuid.NewString(), Repo: f.repo, Campaign: "fanout", Member: workerB.Inbox, Lead: leadB.Inbox, Role: "worker"},
+	} {
+		if _, err := rootView.SetTeamMember(ctx, m, f.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	topic := "team.fanout"
+	if _, err := rootView.SetSubscription(ctx, SubscriptionRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Topic: topic, Active: true,
+		Filter: DefaultCampaignSubscriptionFilter("root"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, lv := range []*Store{leadAView, leadBView} {
+		if _, err := lv.SetSubscription(ctx, SubscriptionRequest{
+			RequestID: uuid.NewString(), Repo: f.repo, Topic: topic, Active: true,
+			Filter: DefaultCampaignSubscriptionFilter("lead"),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	srcRef := RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version}
+	// Identical retransmissions with same supersedes key reach leadA only and leave a single active pending delivery.
+	ev1, err := workerAView.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review",
+		Supersedes: "workerA/progress", Summary: "Progress v1", Ref: srcRef,
+		Destination: EventDestination{Type: "topic", Name: topic},
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev2, err := workerAView.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review",
+		Supersedes: "workerA/progress", Summary: "Progress v1", Ref: srcRef,
+		Destination: EventDestination{Type: "topic", Name: topic},
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st1, err := workerAView.AgentEventStatus(ctx, EventStatusRequest{EventID: ev1.EventID}, f.dest)
+	if err != nil || len(st1.Deliveries) != 1 || st1.Deliveries[0].State != "ignored" || st1.Deliveries[0].Code != "superseded" || st1.Deliveries[0].SupersededBy != ev2.EventID {
+		t.Fatalf("expected ev1 superseded by ev2 for leadA only: %+v %v", st1, err)
+	}
+	// Irrelevant subscribers receive zero injected messages.
+	for _, idleView := range []*Store{rootView, leadBView, workerBView, unrelatedView} {
+		nx, nErr := idleView.NextEvent(ctx, NextEventRequest{Repo: f.repo, LeaseSeconds: 60}, f.dest)
+		if nErr != nil || nx.Delivery != nil {
+			t.Fatalf("expected irrelevant subscriber empty, got %+v %v", nx, nErr)
+		}
+	}
+	// Materially changed directive / blocker is NOT suppressed and reaches root + leadA immediately.
+	blk, err := workerAView.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "decide", Blocker: true,
+		Summary: "Conflict requires root decision", Ref: srcRef,
+		Destination: EventDestination{Type: "topic", Name: topic},
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stBlk, err := workerAView.AgentEventStatus(ctx, EventStatusRequest{EventID: blk.EventID}, f.dest)
+	if err != nil || len(stBlk.Deliveries) != 2 {
+		t.Fatalf("expected blocker delivered to leadA and root, got %+v %v", stBlk, err)
 	}
 }

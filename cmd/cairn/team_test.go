@@ -80,7 +80,7 @@ func TestTeamCLIAndFilteredSubscribeAndReroutedSend(t *testing.T) {
 
 	// Rerouted `cairn agent send --blocker` succeeds and records routing in sendResult!
 	jPath := filepath.Join(dir, "send.journal.json")
-	sendRes, err := run(ctx, []string{"agent", "--socket", sock, "--token-file", tok, "send", "--journal", jPath, "--repo", "repo", "--stdin", "--shareable", "--kind", "notice", "--blocker", "--to", "agent/root"}, strings.NewReader("Blocker details"))
+	sendRes, err := run(ctx, []string{"agent", "--socket", sock, "--token-file", tok, "send", "--journal", jPath, "--repo", "repo", "--stdin", "--shareable", "--kind", "notice", "--action", "decide", "--blocker", "--to", "agent/root"}, strings.NewReader("Blocker details"))
 	if err != nil {
 		t.Fatalf("rerouted agent send failed: %v", err)
 	}
@@ -90,5 +90,26 @@ func TestTeamCLIAndFilteredSubscribeAndReroutedSend(t *testing.T) {
 	}
 	if decoded.Routing == nil || !decoded.Routing.Rerouted || decoded.Routing.EffectiveDestination.Name != "agent/lead" {
 		t.Fatalf("expected rerouted routing on sendResult, got %+v", decoded)
+	}
+
+	// --no-coordinator-limits clears both limits with 0.
+	if _, err := run(ctx, []string{"team", "set-campaign", "--socket", sock, "--token-file", tok, "--repo", "repo", "--campaign", "alpha", "--no-coordinator-limits"}, strings.NewReader("")); err != nil || lastBody["max_coordinator_age_seconds"] != float64(0) || lastBody["max_coordinator_compactions"] != float64(0) {
+		t.Fatalf("expected --no-coordinator-limits to send 0 thresholds: body=%+v err=%v", lastBody, err)
+	}
+	// subscribe with --actions defaults include_blockers=true unless --blockers=false; --all-events clears filter.
+	if _, err := run(ctx, []string{"subscribe", "--socket", sock, "--token-file", tok, "--repo", "repo", "--request-id", uuid.NewString(), "--topic", "team.alpha", "--actions", "decide"}, strings.NewReader("")); err != nil {
+		t.Fatalf("subscribe with --actions failed: %v", err)
+	}
+	if lastBody["filter"].(map[string]any)["include_blockers"] != true {
+		t.Fatalf("expected include_blockers=true default with --actions, got %+v", lastBody["filter"])
+	}
+	if _, err := run(ctx, []string{"subscribe", "--socket", sock, "--token-file", tok, "--repo", "repo", "--request-id", uuid.NewString(), "--topic", "team.alpha", "--all-events"}, strings.NewReader("")); err != nil {
+		t.Fatalf("subscribe --all-events failed: %v", err)
+	}
+	if lastBody["filter"] != nil {
+		t.Fatalf("expected nil filter for --all-events, got %+v", lastBody["filter"])
+	}
+	if _, err := run(ctx, []string{"subscribe", "--socket", sock, "--token-file", tok, "--repo", "repo", "--request-id", uuid.NewString(), "--topic", "team.alpha", "--all-events", "--actions", "decide"}, strings.NewReader("")); err == nil {
+		t.Fatal("expected --all-events combined with --actions to fail")
 	}
 }

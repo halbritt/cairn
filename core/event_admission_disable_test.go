@@ -229,7 +229,7 @@ func TestEventAdmissionDisableAndReenableWithOutstandingWork(t *testing.T) {
 	// One charged publication after re-enable refills only from the policy
 	// update, never across the disabled interval, and never to a full burst.
 	before := collectionPublicationBucket(t, enforcedBuckets)
-	if _, err = coordinator.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: EventDestination{Type: "topic", Name: "disable-empty-root"}}, dest); err != nil {
+	if _, err = coordinator.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: EventDestination{Type: "topic", Name: "disable-empty-root"}}, dest); err != nil {
 		t.Fatal(err)
 	}
 	after := collectionPublicationBucket(t, admissionBuckets(t, op, repo))

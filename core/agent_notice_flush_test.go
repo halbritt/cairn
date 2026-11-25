@@ -11,7 +11,7 @@ import (
 func TestNoticeFlushReleasesOriginalDeliveryWithPublisherAuthority(t *testing.T) {
 	ctx := context.Background()
 	sender, receiver, source, dest := eventFixture(t)
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: receiver.channel.Principal},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)
@@ -54,7 +54,7 @@ func TestNoticeFlushReleasesOriginalDeliveryWithPublisherAuthority(t *testing.T)
 			t.Fatalf("retry changed flush decision: %+v %v", again, err)
 		}
 	}
-	other, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	other, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: receiver.channel.Principal},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)
@@ -77,7 +77,7 @@ func TestNoticeFlushClassifiesReadyLeasedAndTerminalFanout(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "topic", Name: "flush-test"},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)
@@ -121,7 +121,7 @@ func TestNoticeFlushClassifiesReadyLeasedAndTerminalFanout(t *testing.T) {
 func TestNoticeFlushRejectsImmediatePolicy(t *testing.T) {
 	ctx := context.Background()
 	sender, receiver, source, dest := eventFixture(t)
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination: EventDestination{Type: "agent", Name: receiver.channel.Principal}}, dest)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestNoticeFlushParallelClaimPreservesOneOriginalDelivery(t *testing.T) {
 	defer cancel()
 	f := newNativeFixture(t)
 	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: receiver.channel.Principal},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)
@@ -201,7 +201,7 @@ func TestNoticeFlushParallelClaimPreservesOneOriginalDelivery(t *testing.T) {
 func TestNoticeFlushExactRetryAfterSourceForgetting(t *testing.T) {
 	ctx := context.Background()
 	sender, receiver, source, dest := eventFixture(t)
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: receiver.channel.Principal},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)

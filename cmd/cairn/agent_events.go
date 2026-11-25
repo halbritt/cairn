@@ -41,8 +41,8 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
   complete --request-id UUID --lease UUID --stdin [--shareable] [--kind note] [--task TASK] [--run RUN] DELIVERY_UUID
   retry --lease UUID DELIVERY_UUID
   renew --lease UUID [--lease-seconds N] DELIVERY_UUID
-  subscribe --request-id UUID --topic TOPIC [--kinds K1,K2] [--actions A1,A2] [--urgencies U1,U2] [--blockers] [--direct-reports-only | --subtree-only]
-      (sets the full subscription filter state; omitting filter flags configures an unfiltered subscription)
+  subscribe --request-id UUID --topic TOPIC ([--kinds K1,K2] [--actions A1,A2] [--urgencies U1,U2] [--blockers] [--direct-reports-only | --subtree-only] | --all-events)
+      (sets the full subscription filter state; filtered --kinds/--actions/--urgencies preserve blockers by default unless --blockers=false; --all-events clears filters for diagnostic observers)
   unsubscribe --request-id UUID --topic TOPIC
   subscriptions [--topic AFTER_TOPIC]
   events [--after POSITION] [--topic TOPIC] [--limit N]
@@ -143,6 +143,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	subBlockers := f.Bool("blockers", false, "include or match blocker events in subscription filter")
 	subDirectReports := f.Bool("direct-reports-only", false, "only deliver topic events from direct campaign reports")
 	subSubtree := f.Bool("subtree-only", false, "only deliver topic events from campaign subtree subordinates")
+	subAllEvents := f.Bool("all-events", false, "explicitly subscribe without filters (for diagnostic observers)")
 	state := f.String("state", "", "response group state filter (open|collected|partial|incomplete); closure state filter (reserved|delivered|released)")
 	obligation := f.String("obligation", "", "closure obligation filter (request_reply|group_reply|pool_reply|wait_notice)")
 	afterReservation := f.String("after-reservation", "", "exclusive closure reservation UUID cursor")
@@ -178,7 +179,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	case "renew":
 		allowed += "lease lease-seconds "
 	case "subscribe":
-		allowed += "repo agent request-id topic kinds actions urgencies blockers direct-reports-only subtree-only "
+		allowed += "repo agent request-id topic kinds actions urgencies blockers direct-reports-only subtree-only all-events "
 	case "unsubscribe":
 		allowed += "repo agent request-id topic "
 	case "subscriptions":
@@ -441,6 +442,9 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		if *eventBlocker && *noticeAction == "none" {
 			return nil, invalid("--blocker cannot combine with --action none")
 		}
+		if *kind == "notice" && *noticeAction == "" && os.Getenv("CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION") != "1" {
+			return nil, invalid("notice events require --action (none, review, or decide); also set --supersedes TOPIC for repeatable updates and --summary when source body exceeds 280 bytes")
+		}
 		operation = "event-publish"
 		req = core.PublishEventRequest{
 			Summary:            *eventSummary,
@@ -490,13 +494,25 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 				return out, nil
 			}
 			var subFilterFlags bool
+			var hasAttrFilter bool
+			var blockersSet bool
 			f.Visit(func(fl *flag.Flag) {
 				switch fl.Name {
-				case "kinds", "actions", "urgencies", "blockers", "direct-reports-only", "subtree-only":
+				case "kinds", "actions", "urgencies":
+					subFilterFlags = true
+					hasAttrFilter = true
+				case "blockers":
+					subFilterFlags = true
+					blockersSet = true
+				case "direct-reports-only", "subtree-only":
 					subFilterFlags = true
 				}
 			})
-			if subFilterFlags {
+			if *subAllEvents {
+				if subFilterFlags {
+					return nil, invalid("--all-events cannot combine with subscription filter flags")
+				}
+			} else if subFilterFlags {
 				ks, err := splitCSV(*subKinds)
 				if err != nil {
 					return nil, err
@@ -509,11 +525,15 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 				if err != nil {
 					return nil, err
 				}
+				includeBlockers := *subBlockers
+				if hasAttrFilter && !blockersSet {
+					includeBlockers = true
+				}
 				cand := &core.SubscriptionFilter{
 					Kinds:             ks,
 					Actions:           as,
 					Urgencies:         us,
-					IncludeBlockers:   *subBlockers,
+					IncludeBlockers:   includeBlockers,
 					DirectReportsOnly: *subDirectReports,
 					SubtreeOnly:       *subSubtree,
 				}

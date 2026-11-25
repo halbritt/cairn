@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,12 +18,20 @@ func TestNoticeIntentPublishValidationAndOmissionCompatibility(t *testing.T) {
 	to := EventDestination{Type: "agent", Name: agent.Inbox}
 	due := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
 
-	legacy, err := sender.PublishEvent(ctx, PublishEventRequest{
+	_, err := sender.PublishEvent(ctx, PublishEventRequest{
 		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: to,
 	}, dest)
-	if err != nil || legacy.Action != "" || legacy.Supersedes != "" || legacy.ExpectNextBy != nil {
-		t.Fatalf("omitted intent fields changed legacy notice: %+v %v", legacy, err)
-	}
+	requireCode(t, err, "INVALID_REQUEST")
+
+	t.Run("legacy_optional_action_env_compatibility", func(t *testing.T) {
+		t.Setenv("CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION", "1")
+		legacy, err := sender.PublishEvent(ctx, PublishEventRequest{
+			RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: to,
+		}, dest)
+		if err != nil || legacy.Action != "" || legacy.Supersedes != "" || legacy.ExpectNextBy != nil {
+			t.Fatalf("omitted intent fields changed legacy notice under compatibility env: %+v %v", legacy, err)
+		}
+	})
 
 	reqID := uuid.NewString()
 	validReq := PublishEventRequest{
@@ -51,7 +60,7 @@ func TestNoticeIntentPublishValidationAndOmissionCompatibility(t *testing.T) {
 		{RequestID: uuid.NewString(), Kind: "request", Ref: ref, Destination: to, Supersedes: "stream/alpha"},
 		{RequestID: uuid.NewString(), Kind: "request", Ref: ref, Destination: to, ExpectNextBy: &due},
 		{RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: to, Action: "acknowledge"},
-		{RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: to, Supersedes: "bad topic space"},
+		{RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: to, Action: "review", Supersedes: "bad topic space"},
 		{RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: to, Action: "none",
 			NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "urgent"}},
 	} {
@@ -72,26 +81,26 @@ func TestNoticeIntentSupersedesPendingSameSenderAndTopicOnly(t *testing.T) {
 	toR2 := EventDestination{Type: "agent", Name: r2.Inbox}
 
 	n1, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toR1, Supersedes: "build/status",
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toR1, Supersedes: "build/status",
 	}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Another sender with the same topic must not supersede sender's pending notice.
 	nOther, err := otherSender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toR1, Supersedes: "build/status",
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toR1, Supersedes: "build/status",
 	}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Same sender with a different topic or different recipient must not supersede n1.
 	if _, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toR1, Supersedes: "build/other",
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toR1, Supersedes: "build/other",
 	}, dest); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toR2, Supersedes: "build/status",
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toR2, Supersedes: "build/status",
 	}, dest); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +111,7 @@ func TestNoticeIntentSupersedesPendingSameSenderAndTopicOnly(t *testing.T) {
 
 	// Same sender + same topic + same recipient settles n1 as superseded with recorded reason and provenance.
 	n2, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toR1, Supersedes: "build/status",
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toR1, Supersedes: "build/status",
 	}, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +140,7 @@ func TestNoticeIntentSupersedesPendingSameSenderAndTopicOnly(t *testing.T) {
 		t.Fatalf("claim nOther: %+v %v", claimed, err)
 	}
 	if _, err := otherSender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toR1, Supersedes: "build/status",
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toR1, Supersedes: "build/status",
 	}, dest); err != nil {
 		t.Fatal(err)
 	}
@@ -275,14 +284,14 @@ func TestNoticeIntentSensitivityForgottenSourceTopicAndReplayGuards(t *testing.T
 		t.Fatal(err)
 	}
 	t1, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: srcRef,
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: srcRef,
 		Destination: EventDestination{Type: "topic", Name: "builds"}, Supersedes: "builds/main",
 	}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t2, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: srcRef,
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: srcRef,
 		Destination: EventDestination{Type: "topic", Name: "builds"}, Supersedes: "builds/main",
 	}, dest)
 	if err != nil {
@@ -296,7 +305,7 @@ func TestNoticeIntentSensitivityForgottenSourceTopicAndReplayGuards(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: srcRef,
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: srcRef,
 		Destination: EventDestination{Type: "topic", Name: "builds"}, Supersedes: "builds/main",
 	}, dest); err != nil {
 		t.Fatal(err)
@@ -309,7 +318,7 @@ func TestNoticeIntentSensitivityForgottenSourceTopicAndReplayGuards(t *testing.T
 	// 2. Cross-sensitivity: a local notice must never supersede a shareable pending notice.
 	toR2 := EventDestination{Type: "agent", Name: r2.Inbox}
 	sNotice, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: srcRef, Destination: toR2, Supersedes: "sec/lane",
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: srcRef, Destination: toR2, Supersedes: "sec/lane",
 	}, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -322,7 +331,7 @@ func TestNoticeIntentSensitivityForgottenSourceTopicAndReplayGuards(t *testing.T
 	}
 	localDest := Destination{Name: "local", AllowLocal: true}
 	if _, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{RecordID: localRec.RecordID, Version: 1},
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{RecordID: localRec.RecordID, Version: 1},
 		Destination: toR2, Supersedes: "sec/lane",
 	}, localDest); err != nil {
 		t.Fatal(err)
@@ -367,5 +376,107 @@ func TestNoticeIntentSensitivityForgottenSourceTopicAndReplayGuards(t *testing.T
 	stForgotten, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: fNotice.EventID}, localDest)
 	if err != nil || stForgotten.Deliveries[0].State != "failed" || stForgotten.Deliveries[0].Code != "source_unavailable" {
 		t.Fatalf("expected failed/source_unavailable for forgotten auto-settled notice: %+v %v", stForgotten, err)
+	}
+}
+
+func TestNoticeIntentSafeAutoSettleGuardsAndIdempotency(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	ag := f.register(nativeAgent{Binding: "safe-autosettle"})
+	agRef := sessionRef(ag)
+	to := EventDestination{Type: "agent", Name: ag.Inbox}
+	op, _ := testOperator(t)
+
+	// 1. >280B notice body with summary auto-settles safely once; idempotent retry preserves Settled.
+	longDraft := projectNote(f.repo)
+	longDraft.Sensitivity = "shareable"
+	longDraft.Body = strings.Repeat("safe detail line\n", 25)
+	longRec, err := sender.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: longDraft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	safeEv, err := sender.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Kind: "notice", Action: "none",
+		Summary:     "Concise summary for >280B action:none notice",
+		Ref:         RecordVersionRef{RecordID: longRec.RecordID, Version: 1},
+		Destination: to,
+	}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settleID := uuid.NewString()
+	s1, err := receiver.SettleSessionActionNone(ctx, SessionInboxSettleNone{RequestID: settleID, Session: agRef}, dest)
+	if err != nil || len(s1.Settled) != 1 || s1.Ready.DeliveryID != "" {
+		t.Fatalf("expected safe >280B summarized notice to auto-settle: %+v %v", s1, err)
+	}
+	s1Replay, err := receiver.SettleSessionActionNone(ctx, SessionInboxSettleNone{RequestID: settleID, Session: agRef}, dest)
+	if err != nil || len(s1Replay.Settled) != 1 || s1Replay.Settled[0] != s1.Settled[0] {
+		t.Fatalf("expected idempotent settle replay: %+v %v", s1Replay, err)
+	}
+	stSafe, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: safeEv.EventID}, dest)
+	if err != nil || stSafe.Deliveries[0].State != "handled" || stSafe.Deliveries[0].Code != "auto_settled_none" {
+		t.Fatalf("expected handled/auto_settled_none: %+v %v", stSafe, err)
+	}
+
+	// 2. Legacy notice missing action, unknown policy version, truncated body, or >280B without summary NEVER auto-settles!
+	truncDraft := projectNote(f.repo)
+	truncDraft.Sensitivity = "shareable"
+	truncDraft.Body = "Partial output\n[... truncated 50 of 200 UTF-8 bytes; pull full source with cairn-inbox read abcdef0123456789 ...]"
+	truncRec, err := sender.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: truncDraft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	truncEv, err := sender.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Kind: "notice", Action: "none",
+		Summary:     "Notice pointing to truncated content",
+		Ref:         RecordVersionRef{RecordID: truncRec.RecordID, Version: 1},
+		Destination: to,
+	}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION", "1")
+	missingActionEv, err := sender.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Kind: "notice",
+		Ref: RecordVersionRef{RecordID: source.RecordID, Version: source.Version}, Destination: to,
+	}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noSummaryEv, err := sender.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Kind: "notice", Action: "none",
+		Summary: "Temp summary", Ref: RecordVersionRef{RecordID: longRec.RecordID, Version: 1}, Destination: to,
+	}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := op.pool.Exec(ctx, `UPDATE cairn.agent_event SET summary = NULL WHERE event_id = $1`, noSummaryEv.EventID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, ev := range []AgentEvent{truncEv, missingActionEv, noSummaryEv} {
+		// Neither SettleSessionActionNone nor SessionInboxDigestReady nor ClaimSessionInbox may auto-settle these!
+		res, err := receiver.SettleSessionActionNone(ctx, SessionInboxSettleNone{RequestID: uuid.NewString(), Session: agRef}, dest)
+		if err != nil || len(res.Settled) != 0 || res.Ready.EventID != ev.EventID {
+			t.Fatalf("unsafe notice %s was auto-settled or hidden: %+v %v", ev.EventID, res, err)
+		}
+		claim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{
+			RequestID: uuid.NewString(), Session: agRef, NativeTurnID: "turn-" + ev.EventID, AutoSettleActionNone: true,
+		}, dest)
+		if err != nil || claim.Attempt == nil || claim.Attempt.Delivery.Event.EventID != ev.EventID {
+			t.Fatalf("expected unsafe notice %s to remain claimable: %+v %v", ev.EventID, claim, err)
+		}
+		if _, err := f.view(agRef).CompleteEvent(ctx, CompleteEventRequest{
+			RequestID: uuid.NewString(), DeliveryID: claim.Attempt.Delivery.DeliveryID,
+			LeaseID: claim.Attempt.Delivery.LeaseID, Disposition: "handled",
+		}, dest); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{
+			RequestID: uuid.NewString(), Session: agRef, AttemptID: claim.Attempt.ID, Reason: "delivery_completed",
+		}, dest); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

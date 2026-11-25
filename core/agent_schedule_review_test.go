@@ -380,6 +380,7 @@ func TestScheduleIdempotentRetryAndConflict(t *testing.T) {
 	// Conflict 3: changed publication Kind with same RequestID.
 	conflictPub := req
 	conflictPub.Publication.Kind = "notice"
+	conflictPub.Publication.Action = "review"
 	_, err = op.ScheduleEvent(ctx, conflictPub)
 	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
 
@@ -432,8 +433,8 @@ func TestScheduleTopicMembershipSnapshottedAtFiring(t *testing.T) {
 		NotBefore:    time.Now().Add(time.Hour),
 		GraceSeconds: 300,
 		Publication: PublishEventRequest{
-			Repo:        repo,
-			Kind:        "notice",
+			Repo: repo,
+			Kind: "notice", Action: "review",
 			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 			Destination: EventDestination{Type: "topic", Name: topic},
 		},

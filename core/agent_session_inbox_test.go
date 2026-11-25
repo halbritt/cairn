@@ -15,7 +15,7 @@ func TestOrdinaryNativeTurnClaimBindsSelectedDelivery(t *testing.T) {
 	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 	a := f.register(nativeAgent{Binding: "native-prompt", State: "busy"})
 	ref := sessionRef(a)
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
+	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestSessionInboxReadinessRequiresCurrentIdlePresence(t *testing.T) {
 	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "idle-state", NativeSessionID: "idle-state", Metadata: existingSessionMetadata("codex", "busy")}
 	a := f.registerRequest(registration, receiver, dest)
 	ref := sessionRef(a)
-	_, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
+	_, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}

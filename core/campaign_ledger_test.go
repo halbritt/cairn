@@ -176,7 +176,7 @@ func TestCampaignLedgerIdempotentRetryPublishSendCompleteAckAndCrashStates(t *te
 	srcRef := RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version}
 	pubReq := CampaignPublishRequest{
 		Repo: f.repo, Campaign: "idem", OpKey: "pub-1",
-		Publication: PublishEventRequest{Kind: "notice", Ref: srcRef, Destination: EventDestination{Type: "agent", Name: worker.Inbox}, Summary: "Notice 1"},
+		Publication: PublishEventRequest{Kind: "notice", Action: "review", Ref: srcRef, Destination: EventDestination{Type: "agent", Name: worker.Inbox}, Summary: "Notice 1"},
 	}
 	ev1, err := rootView.CampaignPublish(ctx, pubReq, f.dest)
 	if err != nil {
@@ -445,7 +445,7 @@ func TestCampaignLedgerAuthorizationAndSensitivityIsolation(t *testing.T) {
 	requireCode(t, err, "DESTINATION_PROHIBITED")
 	if _, err := rootView.CampaignSend(ctx, CampaignSendRequest{
 		Repo: f.repo, Campaign: "authz", OpKey: "local-secret-op", Body: "local secret body", Shareable: false,
-		Publication: PublishEventRequest{Kind: "notice", Destination: EventDestination{Type: "agent", Name: leadA.Inbox}},
+		Publication: PublishEventRequest{Kind: "notice", Action: "review", Destination: EventDestination{Type: "agent", Name: leadA.Inbox}},
 	}, localDst); err != nil {
 		t.Fatalf("local CampaignSend without item_key failed: %v", err)
 	}

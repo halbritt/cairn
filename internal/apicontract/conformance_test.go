@@ -170,7 +170,7 @@ func TestRealRepliesConformToContract(t *testing.T) {
 	c.ok("remote", "agent-heartbeat", `{"agent_id":"`+agent.AgentID+`","execution_id":"`+agent.ExecutionID+`"}`)
 	c.ok("local", "agent-directory", `{}`)
 	c.ok("local", "agent-resolve", `{"harness":"codex"}`)
-	notice := c.ok("local", "event-publish", `{"request_id":"`+uuid.NewString()+`","destination":{"type":"agent","name":"agent/`+agent.AgentID+`"},"kind":"notice","ref":{"record_id":"`+record.RecordID+`","version":1}}`)
+	notice := c.ok("local", "event-publish", `{"request_id":"`+uuid.NewString()+`","destination":{"type":"agent","name":"agent/`+agent.AgentID+`"},"kind":"notice","action":"review","ref":{"record_id":"`+record.RecordID+`","version":1}}`)
 	var noticeEvent core.AgentEvent
 	if err := json.Unmarshal(notice, &noticeEvent); err != nil {
 		t.Fatal(err)
@@ -229,7 +229,7 @@ func TestRealRepliesConformToContract(t *testing.T) {
 	c.call(c.server, "local", "ledger-item-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","kind":"assignment","item_key":"slice-1","owner":"agent/`+hostedAgent.AgentID+`","status":"planned","summary":"Contract ledger assignment"}`, localCoordSession)
 	c.call(c.server, "local", "ledger-get", `{"campaign":"contract-camp"}`, localCoordSession)
 	c.ok("hosted", "ledger-sync-context", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","session":{"agent_id":"`+hostedAgent.AgentID+`","execution_id":"`+hostedAgent.ExecutionID+`"}}`)
-	c.call(c.server, "local", "ledger-publish", `{"campaign":"contract-camp","op_key":"pub-1","publication":{"destination":{"type":"agent","name":"agent/`+hostedAgent.AgentID+`"},"kind":"notice","ref":{"record_id":"`+record.RecordID+`","version":1}}}`, localCoordSession)
+	c.call(c.server, "local", "ledger-publish", `{"campaign":"contract-camp","op_key":"pub-1","publication":{"destination":{"type":"agent","name":"agent/`+hostedAgent.AgentID+`"},"kind":"notice","action":"review","ref":{"record_id":"`+record.RecordID+`","version":1}}}`, localCoordSession)
 	c.call(c.server, "local", "ledger-send", `{"campaign":"contract-camp","op_key":"send-1","body":"Contract ledger send","shareable":true,"publication":{"destination":{"type":"agent","name":"agent/`+hostedAgent.AgentID+`"},"kind":"request"}}`, localCoordSession)
 	claim1 := c.call(c.server, "hosted", "event-next", `{"lease_seconds":60}`, hostedSession)
 	var nx1 core.NextEventResult

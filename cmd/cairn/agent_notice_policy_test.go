@@ -22,9 +22,9 @@ func TestPublishNoticePolicyFlagsPreserveExplicitPublisherChoice(t *testing.T) {
 		t.Fatalf("notice policy help: %v %v", help, err)
 	}
 	for _, flags := range [][]string{
-		{"--notice-defer-seconds", "60"},
-		{"--notice-urgency", "urgent", "--notice-defer-seconds", "1"},
-		{"--notice-urgency", "routine", "--notice-defer-seconds", "61"},
+		{"--action", "review", "--notice-defer-seconds", "60"},
+		{"--action", "review", "--notice-urgency", "urgent", "--notice-defer-seconds", "1"},
+		{"--action", "review", "--notice-urgency", "routine", "--notice-defer-seconds", "61"},
 		{"--notice-urgency", "routine", "--kind", "request"},
 	} {
 		args := append([]string{"publish", "--request-id", uuid.NewString(), "--to", "agent:worker", "--kind", "notice", "--version", "1"}, flags...)
@@ -60,7 +60,7 @@ func TestPublishNoticePolicyFlagsPreserveExplicitPublisherChoice(t *testing.T) {
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
 	_, err = run(ctx, []string{"publish", "--socket", filepath.Join(root, "api.sock"), "--token-file", tokenPath,
-		"--request-id", uuid.NewString(), "--to", "agent:worker", "--kind", "notice", "--version", "1",
+		"--request-id", uuid.NewString(), "--to", "agent:worker", "--kind", "notice", "--action", "review", "--version", "1",
 		"--notice-urgency", "routine", "--notice-defer-seconds", "60", uuid.NewString()}, strings.NewReader(""))
 	if err != nil || received.NoticePolicy == nil || *received.NoticePolicy != (core.NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}) {
 		t.Fatalf("published notice policy: %+v %v", received.NoticePolicy, err)
@@ -118,14 +118,15 @@ func TestPublishAndSendNoticeIntentFlags(t *testing.T) {
 		{"--kind", "request", "--action", "decide"},
 		{"--kind", "request", "--supersedes", "stream/a"},
 		{"--kind", "request", "--expect-next-by", "2026-11-20T12:00:00Z"},
-		{"--kind", "notice", "--expect-by", "2026-11-20T12:00:00Z"},
+		{"--kind", "notice"},
+		{"--kind", "notice", "--action", "review", "--expect-by", "2026-11-20T12:00:00Z"},
 		{"--kind", "request", "--expect-by", "not-a-timestamp"},
-		{"--kind", "notice", "--summary", ""},
-		{"--kind", "notice", "--summary", "line1\nline2"},
-		{"--kind", "notice", "--summary", strings.Repeat("x", 281)},
+		{"--kind", "notice", "--action", "review", "--summary", ""},
+		{"--kind", "notice", "--action", "review", "--summary", "line1\nline2"},
+		{"--kind", "notice", "--action", "review", "--summary", strings.Repeat("x", 281)},
 		{"--kind", "notice", "--action", "bad"},
-		{"--kind", "notice", "--supersedes", "bad space"},
-		{"--kind", "notice", "--expect-next-by", "not-a-timestamp"},
+		{"--kind", "notice", "--action", "review", "--supersedes", "bad space"},
+		{"--kind", "notice", "--action", "review", "--expect-next-by", "not-a-timestamp"},
 		{"--kind", "notice", "--action", "none", "--notice-urgency", "urgent"},
 	} {
 		args := append([]string{"publish", "--request-id", uuid.NewString(), "--to", "agent:worker", "--version", "1"}, flags...)
@@ -173,5 +174,8 @@ func TestPublishAndSendNoticeIntentFlags(t *testing.T) {
 		"--expect-by", "2026-11-20T13:00:00Z", uuid.NewString()}, strings.NewReader(""))
 	if err != nil || received.ExpectBy == nil || received.Kind != "request" {
 		t.Fatalf("publish request expect-by field: %+v %v", received, err)
+	}
+	if _, err := run(ctx, []string{"agent", "--socket", filepath.Join(root, "api.sock"), "--token-file", tokenPath, "send", "--journal", filepath.Join(root, "noact.json"), "--repo", "r", "--stdin", "--kind", "notice", "--to", "agent:w"}, strings.NewReader("hello")); err == nil || !strings.Contains(err.Error(), "none, review, or decide") {
+		t.Fatalf("expected agent send missing --action refusal, got %v", err)
 	}
 }

@@ -17,11 +17,12 @@ import (
 const teamHelp = `Cairn team hierarchy configuration (authenticated API or --operator)
 
 Subcommands:
-  cairn team set-campaign --campaign NAME [--root-agent PRINCIPAL] [--out-of-chain-policy allow|warn|reroute] [--max-coordinator-age-seconds N] [--max-coordinator-compactions N] [--active | --inactive] [--expected-revision N] [--local | --shareable] [--request-id UUID]
+  cairn team set-campaign --campaign NAME [--root-agent PRINCIPAL] [--out-of-chain-policy allow|warn|reroute] [--max-coordinator-age-seconds N] [--max-coordinator-compactions N] [--no-coordinator-limits] [--active | --inactive] [--expected-revision N] [--local | --shareable] [--request-id UUID]
   cairn team set-member --campaign NAME --member PRINCIPAL [--lead PRINCIPAL] [--role lead|worker] [--active | --inactive] [--request-id UUID]
   cairn team get --campaign NAME
   cairn team list [--active-only] [--after CAMPAIGN] [--limit N]
 
+Defaults on campaign creation: max_coordinator_age_seconds=14400, max_coordinator_compactions=3 (pass 0 or --no-coordinator-limits to opt out).
 Common flags: --profile NAME | --token-file FILE | --operator, --socket PATH, --repo COLLECTION, --agent-id UUID, --execution-id UUID
 `
 
@@ -29,7 +30,8 @@ var teamSubcommandAllowedFlags = map[string]map[string]bool{
 	"set-campaign": {
 		"campaign": true, "root-agent": true, "out-of-chain-policy": true,
 		"max-coordinator-age-seconds": true, "max-coordinator-compactions": true,
-		"active": true, "inactive": true, "expected-revision": true,
+		"no-coordinator-limits": true,
+		"active":                true, "inactive": true, "expected-revision": true,
 		"local": true, "shareable": true, "request-id": true,
 	},
 	"set-member": {
@@ -76,8 +78,9 @@ func teamCommand(ctx context.Context, args []string, _ io.Reader, client *locala
 	expectedRev := f.Int64("expected-revision", 0, "expected current revision")
 	localOnly := f.Bool("local", false, "set sensitivity to local")
 	shareableFlag := f.Bool("shareable", false, "set sensitivity to shareable")
-	maxCoordAge := f.Int("max-coordinator-age-seconds", 0, "coordinator session age threshold in seconds (0 clears)")
-	maxCoordComp := f.Int("max-coordinator-compactions", 0, "coordinator session compaction threshold (0 clears)")
+	maxCoordAge := f.Int("max-coordinator-age-seconds", 0, "coordinator session age threshold in seconds (defaults to 14400 on create; 0 clears)")
+	maxCoordComp := f.Int("max-coordinator-compactions", 0, "coordinator session compaction threshold (defaults to 3 on create; 0 clears)")
+	noCoordLimits := f.Bool("no-coordinator-limits", false, "disable default coordinator age and compaction handoff limits")
 	activeOnly := f.Bool("active-only", false, "list only active campaigns")
 	after := f.String("after", "", "exclusive campaign cursor for pagination")
 	limit := f.Int("limit", 0, "page size")
@@ -173,11 +176,20 @@ func teamCommand(ctx context.Context, args []string, _ io.Reader, client *locala
 		sens = "shareable"
 	}
 	var maxAgePtr, maxCompPtr *int
-	if provided["max-coordinator-age-seconds"] {
-		maxAgePtr = maxCoordAge
-	}
-	if provided["max-coordinator-compactions"] {
-		maxCompPtr = maxCoordComp
+	if *noCoordLimits {
+		if provided["max-coordinator-age-seconds"] || provided["max-coordinator-compactions"] {
+			return nil, invalid("cannot combine --no-coordinator-limits with --max-coordinator-age-seconds or --max-coordinator-compactions")
+		}
+		zero := 0
+		maxAgePtr = &zero
+		maxCompPtr = &zero
+	} else {
+		if provided["max-coordinator-age-seconds"] {
+			maxAgePtr = maxCoordAge
+		}
+		if provided["max-coordinator-compactions"] {
+			maxCompPtr = maxCoordComp
+		}
 	}
 	return dispatchTeamSubcommand(ctx, subcommand, scopeRepo, *requestID, *campaign, *rootAgent, *outPolicy, *member, *lead, *role, activePtr, maxAgePtr, maxCompPtr, *expectedRev, sens, *activeOnly, *after, *limit, *token, *socket, *operatorMode, client, sessionRef)
 }

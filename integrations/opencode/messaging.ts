@@ -290,7 +290,7 @@ export const send = validatedTool({
     urgency: z.string().optional().describe("Notice wake policy: routine or urgent. Notices only."),
     summary: z.string().optional().describe("Short single-line header summarizing what changed or what is requested (1-280 UTF-8 bytes, separate from body; required when body exceeds 280 bytes)."),
     blocker: z.boolean().optional().describe("Mark this message as a blocker so filtered coordinator subscriptions and priority queues surface it immediately."),
-    action: z.string().optional().describe("Notice action intent: none, review or decide. Notices only."),
+    action: z.string().optional().describe("Required for notices: none, review or decide. Notices only."),
     supersedes: z.string().optional().describe("Sender-scoped topic key (1-128 ASCII letters, digits or _.:/-) that supersedes older pending notices from you. Notices only."),
     expect_next_by: z.string().optional().describe("Optional RFC3339 timestamp when the next update is expected. Notices only."),
     expect_by: z.string().optional().describe("Optional RFC3339 advisory deadline when completion or response is expected. Requests only."),
@@ -315,6 +315,9 @@ export const send = validatedTool({
     validateEventSummary(args.summary)
     if (args.blocker && args.action === "none") {
       throw new Error("INVALID_REQUEST: blocker cannot combine with action none")
+    }
+    if (kind === "notice" && (!args.action || args.action === "") && process.env.CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION !== "1") {
+      throw new Error("INVALID_REQUEST: notice messages require action: none, review, or decide (set action, plus supersedes for repeatable topics and summary when body exceeds 280 bytes)")
     }
     let notice_policy: { version: number, urgency: string } | undefined
     if (args.urgency) {

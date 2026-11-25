@@ -95,8 +95,8 @@ func TestAlternateAdmission_ScheduleFairSweepRotatesBlockedAndFencesRestore(t *t
 		NotBefore:    time.Now().Add(-2 * time.Second),
 		GraceSeconds: 300,
 		Publication: PublishEventRequest{
-			Repo:        repo,
-			Kind:        "notice",
+			Repo: repo,
+			Kind: "notice", Action: "review",
 			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 			Destination: EventDestination{Type: "topic", Name: "sched-topic"},
 		},
@@ -110,8 +110,8 @@ func TestAlternateAdmission_ScheduleFairSweepRotatesBlockedAndFencesRestore(t *t
 		NotBefore:    time.Now().Add(-1 * time.Second),
 		GraceSeconds: 300,
 		Publication: PublishEventRequest{
-			Repo:        repo,
-			Kind:        "notice",
+			Repo: repo,
+			Kind: "notice", Action: "review",
 			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 			Destination: EventDestination{Type: "agent", Name: consumerB.channel.Principal},
 		},
@@ -152,8 +152,8 @@ func TestAlternateAdmission_ScheduleFairSweepRotatesBlockedAndFencesRestore(t *t
 		NotBefore:    time.Now().Add(-time.Second),
 		GraceSeconds: 300,
 		Publication: PublishEventRequest{
-			Repo:        repo,
-			Kind:        "notice",
+			Repo: repo,
+			Kind: "notice", Action: "review",
 			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 			Destination: EventDestination{Type: "agent", Name: consumerB.channel.Principal},
 		},
@@ -207,8 +207,8 @@ func TestAlternateAdmission_ScheduleFairSweepRotatesBlockedAndFencesRestore(t *t
 		NotBefore:    time.Now().Add(-2 * time.Second),
 		GraceSeconds: 300,
 		Publication: PublishEventRequest{
-			Repo:        repo,
-			Kind:        "notice",
+			Repo: repo,
+			Kind: "notice", Action: "review",
 			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 			Destination: EventDestination{Type: "agent", Name: consumerB.channel.Principal},
 		},
@@ -221,8 +221,8 @@ func TestAlternateAdmission_ScheduleFairSweepRotatesBlockedAndFencesRestore(t *t
 		NotBefore:    time.Now().Add(-time.Second),
 		GraceSeconds: 300,
 		Publication: PublishEventRequest{
-			Repo:        repo,
-			Kind:        "notice",
+			Repo: repo,
+			Kind: "notice", Action: "review",
 			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 			Destination: EventDestination{Type: "topic", Name: "empty-unreconciled-peer"},
 		},
@@ -301,9 +301,9 @@ func TestAlternateAdmission_ReissueRollbackAndSameUUIDRetry(t *testing.T) {
 
 	// Fill consumer's normal backlog to MaxRecipientOutstanding=1 with a pending notice.
 	blockerEvt, err := pub.PublishEvent(ctx, PublishEventRequest{
-		RequestID:   uuid.NewString(),
-		Repo:        repo,
-		Kind:        "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination: EventDestination{Type: "agent", Name: consumer.channel.Principal},
 	}, dest)
@@ -392,9 +392,9 @@ func TestAlternateAdmission_PoolAdmitAndAssignTransferUnderLoweredLimits(t *test
 
 	// Saturate workerA's direct inbox (1 pending notice == MaxRecipientOutstanding=1).
 	if _, err = pub.PublishEvent(ctx, PublishEventRequest{
-		RequestID:   uuid.NewString(),
-		Repo:        repo,
-		Kind:        "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination: EventDestination{Type: "agent", Name: workerAStore.channel.Principal},
 	}, dest); err != nil {
@@ -460,9 +460,9 @@ func TestAlternateAdmission_PoolAdmitAndAssignTransferUnderLoweredLimits(t *test
 	blockedPoolEvt := poolPublish(t, pubBlocked, srcBlocked, dest, needs)
 	healthyPoolEvt := poolPublish(t, pub, source, dest, needs)
 	if _, err = pubBlocked.PublishEvent(ctx, PublishEventRequest{
-		RequestID:   uuid.NewString(),
-		Repo:        repo,
-		Kind:        "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: srcBlocked.RecordID, Version: srcBlocked.Version},
 		Destination: EventDestination{Type: "agent", Name: workerBStore.channel.Principal},
 	}, dest); err != nil {
@@ -509,9 +509,9 @@ func TestAlternateAdmission_QueuedQuietNoticeTransfersOnClaimAdvanceFlushAndRest
 	// 4th quiet notice must be refused at PublishEvent because queued organic notices count toward outstanding.
 	expiresAt := time.Now().UTC().Add(2 * time.Hour)
 	_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -611,9 +611,9 @@ func TestAlternateAdmission_QueuedQuietNoticeTransfersOnClaimAdvanceFlushAndRest
 		t.Fatal(err)
 	}
 	if _, err = f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:   uuid.NewString(),
-		Repo:        repo,
-		Kind:        "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination: EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 	}, f.dest); err != nil {
@@ -642,9 +642,9 @@ func TestAlternateAdmission_StoppedNoticeRollbackAndDeterministicSameUUIDRetry(t
 		t.Fatal(err)
 	}
 	if _, err = peer.PublishEvent(ctx, PublishEventRequest{
-		RequestID:   uuid.NewString(),
-		Repo:        repo,
-		Kind:        "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: peerNote.RecordID, Version: peerNote.Version},
 		Destination: EventDestination{Type: "agent", Name: f.sender.channel.Principal},
 	}, f.dest); err != nil {
@@ -753,9 +753,9 @@ func TestAlternateAdmission_StoppedNoticeRollbackAndDeterministicSameUUIDRetry(t
 	sender3 := testStore(t, Channel{Principal: "sender3-" + repo, Repo: repo})
 	for _, s := range []*Store{sender2, sender3} {
 		if _, err = s.PublishEvent(ctx, PublishEventRequest{
-			RequestID:   uuid.NewString(),
-			Repo:        repo,
-			Kind:        "notice",
+			RequestID: uuid.NewString(),
+			Repo:      repo,
+			Kind:      "notice", Action: "review",
 			Ref:         RecordVersionRef{RecordID: peerNote.RecordID, Version: peerNote.Version},
 			Destination: EventDestination{Type: "agent", Name: f.agent.Inbox},
 		}, f.dest); err != nil {
@@ -763,9 +763,9 @@ func TestAlternateAdmission_StoppedNoticeRollbackAndDeterministicSameUUIDRetry(t
 		}
 	}
 	if _, err = peer.PublishEvent(ctx, PublishEventRequest{
-		RequestID:   uuid.NewString(),
-		Repo:        repo,
-		Kind:        "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: peerNote.RecordID, Version: peerNote.Version},
 		Destination: EventDestination{Type: "agent", Name: sender3.channel.Principal},
 	}, f.dest); err != nil {
@@ -843,8 +843,8 @@ func TestEventAdmissionEvaluator_ScheduleStoppedAndOrganicAccounting(t *testing.
 		NotBefore:    time.Now().Add(-time.Second),
 		GraceSeconds: 300,
 		Publication: PublishEventRequest{
-			Repo:        repo,
-			Kind:        "notice",
+			Repo: repo,
+			Kind: "notice", Action: "review",
 			Ref:         RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 			Destination: EventDestination{Type: "topic", Name: "eval-topic"},
 		},
@@ -864,8 +864,8 @@ func TestEventAdmissionEvaluator_ScheduleStoppedAndOrganicAccounting(t *testing.
 	// recipient refuses cleanly, and FenceRestore releases the queued organic charge immediately.
 	n1 := f.publishNotice(t, "quiet-eval-1")
 	stoppedLikeReq := PublishEventRequest{
-		Repo:        repo,
-		Kind:        "notice",
+		Repo: repo,
+		Kind: "notice", Action: "review",
 		Destination: EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 	}
 	tx2, err := op.begin(ctx)
@@ -969,8 +969,8 @@ func TestAlternateAdmission_StoppedNoticeBlockedRaceDefersOnConcurrentPublish(t 
 	_ = waitForAdvisoryLockPIDs(t, ctx, op, "agent-events:"+repo, 1, early)
 
 	if _, err = peer.publishEventTx(ctx, holdTx, PublishEventRequest{
-		Repo:        repo,
-		Kind:        "notice",
+		Repo: repo,
+		Kind: "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: peerNote.RecordID, Version: peerNote.Version},
 		Destination: EventDestination{Type: "agent", Name: f.sender.channel.Principal},
 	}, f.dest, ""); err != nil {

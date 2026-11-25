@@ -144,8 +144,8 @@ func TestSuccessorDefaultBoundaryAndEndToEndTakeover(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = f.succView.PublishEvent(ctx, PublishEventRequest{
-		RequestID:     uuid.NewString(),
-		Kind:          "notice",
+		RequestID: uuid.NewString(),
+		Kind:      "notice", Action: "review",
 		Ref:           RecordVersionRef{RecordID: replyRec.RecordID, Version: replyRec.Version},
 		Destination:   EventDestination{Type: "agent", Name: f.senderSession.Inbox},
 		CausationID:   f.reqEvent.EventID,
@@ -162,8 +162,8 @@ func verifyAuthorizedTakeover(t *testing.T, f successorFixture, replyRec Record)
 
 	// Unselected event in the same repo stays NOT_FOUND even after authorization.
 	otherEvent, err := f.senderView.PublishEvent(ctx, PublishEventRequest{
-		RequestID:   uuid.NewString(),
-		Kind:        "notice",
+		RequestID: uuid.NewString(),
+		Kind:      "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination: EventDestination{Type: "agent", Name: f.predSession.Inbox},
 	}, f.dest)
@@ -496,8 +496,8 @@ func TestSuccessorSensitivityCrossCollectionAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	foreignEvent, err := foreignSender.PublishEvent(ctx, PublishEventRequest{
-		RequestID:   uuid.NewString(),
-		Kind:        "notice",
+		RequestID: uuid.NewString(),
+		Kind:      "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: foreignRec.RecordID, Version: foreignRec.Version},
 		Destination: EventDestination{Type: "agent", Name: f.predSession.Inbox},
 	}, f.dest)
@@ -559,8 +559,8 @@ func TestSuccessorSensitivityCrossCollectionAndExpiry(t *testing.T) {
 		t.Fatalf("local successor inspect local event: %v", err)
 	}
 	_, err = localSuccView.PublishEvent(ctx, PublishEventRequest{
-		RequestID:   uuid.NewString(),
-		Kind:        "notice",
+		RequestID: uuid.NewString(),
+		Kind:      "notice", Action: "review",
 		Ref:         RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination: EventDestination{Type: "agent", Name: f.senderSession.Inbox},
 		CausationID: localEvent.EventID,

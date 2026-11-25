@@ -147,7 +147,7 @@ func (f *scheduleDiagnosticFixture) configureEnforcedSchedules() {
 	for i, destination := range []core.EventDestination{{Type: "topic", Name: "diagnostic-overfull-topic"}, {Type: "agent", Name: f.responderInbox}} {
 		schedule, err := f.op.ScheduleEvent(f.ctx, core.ScheduleEventRequest{
 			RequestID: uuid.NewString(), NotBefore: time.Now().Add(time.Duration(i-2) * time.Second), GraceSeconds: 300,
-			Publication: core.PublishEventRequest{Repo: f.repo, Kind: "notice", Ref: f.source, Destination: destination},
+			Publication: core.PublishEventRequest{Repo: f.repo, Kind: "notice", Action: "review", Ref: f.source, Destination: destination},
 		})
 		if err != nil {
 			f.t.Fatal(err)

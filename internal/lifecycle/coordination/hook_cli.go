@@ -652,6 +652,11 @@ func (c *CLI) handleHookPostSession(ctx context.Context, ns *NativeSession, conf
 	if err := c.associateWake(ctx, config, state, ns.Path, observation); err != nil {
 		return nil, err
 	}
+	if value.SameText(observation.Get("event"), "SessionStart") && value.SameText(event.Get("source"), "compact") {
+		if err := c.recordCampaignCoordinatorCompaction(ctx, ns, config, observation); err != nil {
+			return nil, err
+		}
+	}
 	if value.SameText(observation.Get("phase"), "interrupted") {
 		return value.Mapping(), nil
 	}
@@ -764,6 +769,134 @@ func (c *CLI) handleHookInboxAndOutput(ctx context.Context, ns *NativeSession, c
 	return c.formatHookTurnOutput(ctx, ns, config, event, observation, wakeVal, inbox, bridgeDeadline, reports)
 }
 
+func (c *CLI) recordCampaignCoordinatorCompaction(ctx context.Context, ns *NativeSession, config, observation *value.Value) error {
+	if v, ok := c.lookupEnv("CAIRN_DISABLE_AUTO_LEDGER_COMPACTION"); ok && v == "1" {
+		return nil
+	}
+	if cfg := config.Get("auto_ledger_compaction"); cfg != nil && cfg.Kind == value.Bool && !cfg.Boolean {
+		return nil
+	}
+	if c.Host == nil || c.Host.Call == nil {
+		return nil
+	}
+	state := ns.Record
+	agent := state.Get("agent")
+	if agent == nil || agent.Kind != value.Object {
+		return nil
+	}
+	inbox := strings.TrimSpace(nativeText(agent.Get("inbox")))
+	if inbox == "" {
+		if aid := strings.TrimSpace(nativeText(agent.Get("agent_id"))); aid != "" {
+			inbox = "agent/" + aid
+		}
+	}
+	if inbox == "" {
+		return nil
+	}
+	repo := config.Get("repo")
+	var matched []string
+	after := ""
+	for pageNum := 0; pageNum < 10; pageNum++ {
+		req := nativeMap("repo", repo, "active_only", true, "limit", 100)
+		if after != "" {
+			req.Set("after", value.Text(after))
+		}
+		page, err := c.call(ctx, config, "team-campaign-list", req, NativeCallOptions{})
+		if err != nil {
+			code := nativeCode(err)
+			if code == "UNSUPPORTED_CONTROL" || code == "NOT_FOUND" || code == "UNSUPPORTED_OPERATION" {
+				return nil
+			}
+			return err
+		}
+		if page == nil || page.Kind != value.Object {
+			break
+		}
+		if camps := page.Get("campaigns"); camps != nil && camps.Kind == value.Array {
+			for _, camp := range camps.Items {
+				if camp == nil || camp.Kind != value.Object {
+					continue
+				}
+				if value.SameText(camp.Get("root_agent"), inbox) {
+					if name := strings.TrimSpace(nativeText(camp.Get("campaign"))); name != "" {
+						matched = append(matched, name)
+					}
+				}
+			}
+		}
+		if !value.Truth(page.Get("more")) {
+			break
+		}
+		after = nativeText(page.Get("next_after"))
+		if after == "" {
+			break
+		}
+	}
+	if len(matched) == 0 {
+		return nil
+	}
+	advisories := nativeList()
+	updatedAny := false
+	for _, campName := range matched {
+		reqID := ""
+		if pend := state.Get("pending_ledger_compaction"); pend != nil && pend.Kind == value.Object && value.SameText(pend.Get("campaign"), campName) {
+			reqID = strings.TrimSpace(nativeText(pend.Get("request_id")))
+		}
+		if reqID == "" {
+			reqID = c.newUUID()
+			state.Set("pending_ledger_compaction", nativeMap("campaign", campName, "request_id", reqID))
+			if err := ns.Save(); err != nil {
+				return err
+			}
+		}
+		status, err := c.call(ctx, config, "ledger-compaction", nativeMap("request_id", reqID, "repo", repo, "campaign", campName), NativeCallOptions{})
+		if err != nil {
+			code := nativeCode(err)
+			if code == "NOT_FOUND" || code == "INVALID_REQUEST" {
+				nativePop(state, "pending_ledger_compaction")
+				_ = ns.Save()
+				continue
+			}
+			return err
+		}
+		nativePop(state, "pending_ledger_compaction")
+		updatedAny = true
+		if status != nil && status.Kind == value.Object && value.Truth(status.Get("should_handoff")) {
+			var reasons []string
+			if rs := status.Get("reasons"); rs != nil && rs.Kind == value.Array {
+				for _, r := range rs.Items {
+					if t := strings.TrimSpace(nativeText(r)); t != "" {
+						reasons = append(reasons, t)
+					}
+				}
+			}
+			proposed := strings.TrimSpace(nativeText(status.Get("proposed_command")))
+			msg := fmt.Sprintf("Coordinator handoff threshold reached for campaign %s", campName)
+			if len(reasons) > 0 {
+				msg += " (" + strings.Join(reasons, "; ") + ")"
+			}
+			if proposed != "" {
+				msg += ". Run: " + proposed
+			}
+			advisories.Items = append(advisories.Items, value.Text(msg))
+		}
+	}
+	if updatedAny {
+		if ref, err := c.sessionRef(agent); err == nil {
+			if refreshed, hbErr := c.call(ctx, config, "agent-heartbeat", ref, NativeCallOptions{}); hbErr == nil && refreshed != nil {
+				state.Set("agent", refreshed)
+			}
+		}
+		if err := ns.Save(); err != nil {
+			return err
+		}
+	}
+	if len(advisories.Items) > 0 {
+		observation.Set("coordinator_handoff_advisories", advisories)
+	}
+	return nil
+}
+
 func (c *CLI) formatHookTurnOutput(ctx context.Context, ns *NativeSession, config, event, observation, wakeVal *value.Value, inbox string, bridgeDeadline float64, reports *[]InboxRecallReport) (*value.Value, error) {
 	state := ns.Record
 	agent := state.Get("agent")
@@ -792,6 +925,13 @@ func (c *CLI) formatHookTurnOutput(ctx context.Context, ns *NativeSession, confi
 		)
 		if value.Truth(wakeVal) {
 			message += "This conversation is linked to the current fresh-worker attempt. Complete its original slot delivery using CAIRN_WAKE_CONTEXT; do not claim a second inbox. "
+		}
+	}
+	if advisories := observation.Get("coordinator_handoff_advisories"); advisories != nil && advisories.Kind == value.Array {
+		for _, adv := range advisories.Items {
+			if txt := strings.TrimSpace(nativeText(adv)); txt != "" {
+				message += "\n" + txt
+			}
 		}
 	}
 	if inbox != "" {

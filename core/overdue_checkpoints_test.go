@@ -407,7 +407,7 @@ func TestOverdueCheckpointsAdversarialReviewRegressions(t *testing.T) {
 	}
 	// Subscriber ping on stream topic also must not satisfy.
 	if _, err := coordView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Supersedes: "lane-adv",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Supersedes: "lane-adv",
 		Ref:         RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination: EventDestination{Type: "agent", Name: leadA.Inbox},
 	}, f.dest); err != nil {
@@ -492,7 +492,7 @@ func TestOverdueCheckpointsAdversarialReviewRegressions(t *testing.T) {
 		}, f.dest)
 	}
 	if _, err := leadAView.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice",
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review",
 		ExpectNextBy: &pastDue,
 		Ref:          RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:  EventDestination{Type: "topic", Name: "team-notices"},

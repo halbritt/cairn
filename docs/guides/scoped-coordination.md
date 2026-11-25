@@ -344,9 +344,15 @@ Leads and workers report to `--to role/CAMPAIGN_NAME/root` (or `--reply-to
 role/CAMPAIGN_NAME/root`), so replacing a long-running coordinator session never requires
 notifying subordinates of a new inbox UUID.
 
-Configure coordinator age and compaction thresholds on `team set-campaign`, record
-compactions with `ledger compact`, inspect thresholds with `ledger handoff-check`, and
-atomically hand off to a fresh coordinator session with `ledger handoff`:
+Campaigns default to `max_coordinator_age_seconds: 14400` and
+`max_coordinator_compactions: 3` on creation (pass `0` or `--no-coordinator-limits`
+to opt out). Lifecycle `SessionStart` (`source=compact`) hooks automatically invoke
+`ledger-compaction` (`RecordCoordinatorCompaction`) when the session leads an
+active campaign unless `CAIRN_DISABLE_AUTO_LEDGER_COMPACTION=1` or config
+`auto_ledger_compaction: false` is set. You can also adjust thresholds on
+`team set-campaign`, record compactions manually with `ledger compact`, inspect
+thresholds with `ledger handoff-check`, and atomically hand off to a fresh
+coordinator session with `ledger handoff`:
 
 ```sh
 cairn team set-campaign --token-file "$COORD_TOKEN_FILE" \

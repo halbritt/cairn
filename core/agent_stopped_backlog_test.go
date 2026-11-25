@@ -21,7 +21,7 @@ func TestStoppedSessionDiagnosisVisibilityAndPrivacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherNotice, otherDelivery := func() (AgentEvent, string) {
-		e, err := other.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{otherNote.RecordID, otherNote.Version}, Destination: EventDestination{Type: "agent", Name: f.agent.Inbox}}, f.dest)
+		e, err := other.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{otherNote.RecordID, otherNote.Version}, Destination: EventDestination{Type: "agent", Name: f.agent.Inbox}}, f.dest)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -88,7 +88,7 @@ func TestStoppedSessionPublisherNotificationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pubEvt, err := pubView.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{Type: "agent", Name: f.agent.Inbox}}, f.dest)
+	pubEvt, err := pubView.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{Type: "agent", Name: f.agent.Inbox}}, f.dest)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -41,11 +41,17 @@ receiving full contexts until it is replaced.
 
 A compact notice or response names its kind, sender and exact source version,
 followed by its structured header (`Summary`, `Action`, and `Due` when declared)
-before any source body or preview. High-level send commands (`cairn agent send`
-and MCP/OpenCode `cairn_send`) accept `--summary TEXT` / `summary` (`1..280`
-single-line UTF-8 bytes) and require it whenever `body` exceeds `280` bytes so
-callers state what changed in the header and keep full uncompressed prose in the
-body.
+before any source body or preview. Every newly published `notice` requires an
+explicit `action` (`none`, `review`, or `decide`), and high-level and API
+publish/send commands (`cairn agent publish`, `cairn agent send`, `cairn ledger
+publish|send`, `event-publish`, and MCP/OpenCode `cairn_send`) accept
+`--summary TEXT` / `summary` (`1..280` single-line UTF-8 bytes) and require it
+whenever `body` exceeds `280` bytes so callers state what changed in the header
+and keep full uncompressed prose in the body. Missing `action`, unknown
+protocol versions, parse failures, unresolved references, or truncated/unsummarized
+oversized content never map to `action: none` or auto-settle (`auto_settled_none`
+applies only to valid, safe `action: none` notices; retries remain idempotent by
+request UUID).
 The hook reads the selected historical version through the existing hosted
 profile, checks its identity, full body length and SHA-256, and includes the
 whole source when it fits 4,096 UTF-8 bytes and the overall hook budget. An

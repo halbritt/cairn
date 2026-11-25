@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -272,12 +274,19 @@ func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destin
 	return e, err
 }
 
+func allowOptionalNoticeAction() bool {
+	return os.Getenv("CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION") == "1"
+}
+
 func (s *Store) normalizePublication(req PublishEventRequest, dest Destination) (PublishEventRequest, error) {
 	if err := ValidateEventSummary(req.Summary); err != nil {
 		return req, err
 	}
 	if req.Blocker && req.Action == "none" {
 		return req, failure("INVALID_REQUEST", "blocker events cannot combine with notice action none")
+	}
+	if req.Kind == "notice" && req.Action == "" && !allowOptionalNoticeAction() {
+		return req, failure("INVALID_REQUEST", "notice events require explicit action: none, review, or decide")
 	}
 	if req.Action != "" || req.Supersedes != "" || req.ExpectNextBy != nil {
 		if req.Kind != "notice" {
@@ -386,12 +395,16 @@ func (s *Store) eventSource(ctx context.Context, tx pgx.Tx, req PublishEventRequ
 		}
 	}
 	var sensitivity string
-	err := tx.QueryRow(ctx, `SELECT m.sensitivity FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND m.lifecycle='active' AND v.payload_deleted_by IS NULL AND (m.sensitivity='shareable' OR $4) FOR SHARE OF m`, req.Ref.RecordID, req.Ref.Version, req.Repo, dest.AllowLocal).Scan(&sensitivity)
+	var bodyBytes int
+	err := tx.QueryRow(ctx, `SELECT m.sensitivity, octet_length(v.body) FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND m.lifecycle='active' AND v.payload_deleted_by IS NULL AND (m.sensitivity='shareable' OR $4) FOR SHARE OF m`, req.Ref.RecordID, req.Ref.Version, req.Repo, dest.AllowLocal).Scan(&sensitivity, &bodyBytes)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", failure("NOT_FOUND", "source version unavailable")
 	}
 	if err != nil {
 		return "", err
+	}
+	if bodyBytes > MaxEventSummaryBytes && req.Summary == "" {
+		return "", failure("INVALID_REQUEST", fmt.Sprintf("summary (1-%d single-line UTF-8 bytes) is required when referenced record body exceeds %d bytes; state what changed in summary and keep uncompressed details in body", MaxEventSummaryBytes, MaxEventSummaryBytes))
 	}
 	if req.Resolution != nil {
 		metadataDest := dest

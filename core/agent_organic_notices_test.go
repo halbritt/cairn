@@ -190,9 +190,9 @@ func (f *organicFixture) publishNotice(t *testing.T, body string) AgentEvent {
 		t.Fatal(err)
 	}
 	ev, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            f.repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      f.repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -236,9 +236,9 @@ func TestOrganicNotices_PendingReservationDoesNotGrantPublishCapability(t *testi
 
 	// Publishing with next_organic_turn while binding is pending MUST refuse UNSUPPORTED_DELIVERY!
 	_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -251,9 +251,9 @@ func TestOrganicNotices_PendingReservationDoesNotGrantPublishCapability(t *testi
 
 	// Now publishing MUST succeed!
 	_, err = f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -275,9 +275,9 @@ func TestOrganicNotices_AC28_ZeroIdleWakes(t *testing.T) {
 
 	// Publish quiet notice
 	pubReq := PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -441,9 +441,9 @@ func TestOrganicNotices_FirstBindReplayClosure_CapturedSignatureAcrossExecutionR
 	now := time.Now().UTC()
 	expiresAt := now.Add(2 * time.Hour)
 	_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -597,9 +597,9 @@ func TestOrganicNotices_ClockWindowAndReplayOrder(t *testing.T) {
 	now := time.Now().UTC()
 	expiresAt := now.Add(2 * time.Hour)
 	_, err = f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -621,9 +621,9 @@ func TestOrganicNotices_ClockWindowAndReplayOrder(t *testing.T) {
 
 	// Now capability is active! Publish notice 2 after t0 root is frozen:
 	ev2, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -684,9 +684,9 @@ func TestOrganicNotices_DualUniquenessAndReplaySemantics(t *testing.T) {
 	now := time.Now().UTC()
 	expiresAt := now.Add(2 * time.Hour)
 	_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -765,9 +765,9 @@ func TestOrganicNotices_BurstLimitAndCutoff(t *testing.T) {
 	// Publish 4 notices
 	for i := 0; i < 4; i++ {
 		_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-			RequestID:       uuid.NewString(),
-			Repo:            repo,
-			Kind:            "notice",
+			RequestID: uuid.NewString(),
+			Repo:      repo,
+			Kind:      "notice", Action: "review",
 			Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 			Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 			NoticeDelivery:  "next_organic_turn",
@@ -892,9 +892,9 @@ func TestOrganicNotices_NoticePendingAndFlush(t *testing.T) {
 
 	// Publish 2 notices
 	ev1, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -905,9 +905,9 @@ func TestOrganicNotices_NoticePendingAndFlush(t *testing.T) {
 	}
 
 	ev2, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -977,9 +977,9 @@ func TestOrganicNotices_ExpiryAndSweeper(t *testing.T) {
 	expiresAt := now.Add(1 * time.Hour)
 
 	ev, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -1062,9 +1062,9 @@ func TestOrganicNotices_AC32_RaceAndQueueCaps(t *testing.T) {
 
 	// Publish one notice
 	ev, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -1429,9 +1429,9 @@ func TestOrganicNotices_MultiNoticeBurstAndCutoff(t *testing.T) {
 	// Publish 3 notices ahead of turn
 	for i := 1; i <= 3; i++ {
 		_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-			RequestID:       uuid.NewString(),
-			Repo:            repo,
-			Kind:            "notice",
+			RequestID: uuid.NewString(),
+			Repo:      repo,
+			Kind:      "notice", Action: "review",
 			Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 			Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 			NoticeDelivery:  "next_organic_turn",
@@ -1460,9 +1460,9 @@ func TestOrganicNotices_MultiNoticeBurstAndCutoff(t *testing.T) {
 	// Publish 4th and 5th notices AFTER Root R cutoff
 	for i := 4; i <= 5; i++ {
 		_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-			RequestID:       uuid.NewString(),
-			Repo:            repo,
-			Kind:            "notice",
+			RequestID: uuid.NewString(),
+			Repo:      repo,
+			Kind:      "notice", Action: "review",
 			Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 			Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 			NoticeDelivery:  "next_organic_turn",
@@ -1573,9 +1573,9 @@ func TestOrganicNotices_SameTurnOwnerSteering(t *testing.T) {
 	// Publish 2 notices
 	for i := 1; i <= 2; i++ {
 		_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-			RequestID:       uuid.NewString(),
-			Repo:            repo,
-			Kind:            "notice",
+			RequestID: uuid.NewString(),
+			Repo:      repo,
+			Kind:      "notice", Action: "review",
 			Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 			Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 			NoticeDelivery:  "next_organic_turn",
@@ -1663,9 +1663,9 @@ func TestOrganicNotices_AdvanceReplayGuard_Forget(t *testing.T) {
 	// Publish notice 1 and notice 2
 	for i := 1; i <= 2; i++ {
 		_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{
-			RequestID:       uuid.NewString(),
-			Repo:            repo,
-			Kind:            "notice",
+			RequestID: uuid.NewString(),
+			Repo:      repo,
+			Kind:      "notice", Action: "review",
 			Ref:             RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
 			Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 			NoticeDelivery:  "next_organic_turn",
@@ -1784,9 +1784,9 @@ func TestOrganicNotices_SettledForgottenAttemptRefusesNotFoundAcrossAttempts(t *
 
 	// Publish Notice 1 bound to record1
 	_, err = f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: record1.RecordID, Version: record1.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",
@@ -1798,9 +1798,9 @@ func TestOrganicNotices_SettledForgottenAttemptRefusesNotFoundAcrossAttempts(t *
 
 	// Publish Notice 2 bound to record2
 	_, err = f.publisher.PublishEvent(ctx, PublishEventRequest{
-		RequestID:       uuid.NewString(),
-		Repo:            repo,
-		Kind:            "notice",
+		RequestID: uuid.NewString(),
+		Repo:      repo,
+		Kind:      "notice", Action: "review",
 		Ref:             RecordVersionRef{RecordID: record2.RecordID, Version: record2.Version},
 		Destination:     EventDestination{Type: "agent", Name: "agent/" + f.sessionRef.AgentID},
 		NoticeDelivery:  "next_organic_turn",

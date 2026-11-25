@@ -314,7 +314,7 @@ func (s *Store) commitStoppedDeliveryNoticeTx(ctx context.Context, tx pgx.Tx, re
 		corr = eventID
 	}
 	newEventID := uuid.NewString()
-	if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,publisher,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id) VALUES($1,$2,$3,'notice',$4,$5,$6,'agent',$7,$8::uuid,$9::uuid)`,
+	if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,publisher,kind,notice_action,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id) VALUES($1,$2,$3,'notice','review',$4,$5,$6,'agent',$7,$8::uuid,$9::uuid)`,
 		newEventID, req.Repo, s.channel.Principal, rec.RecordID, rec.Version, sensitivity, publisher, eventID, corr,
 	); err != nil {
 		return out, err

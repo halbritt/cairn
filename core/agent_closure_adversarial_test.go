@@ -275,7 +275,7 @@ func TestClosureAdversarialExactReplyIdentityAndRetry(t *testing.T) {
 		t.Run("correlation="+correlation, func(t *testing.T) {
 			ctx := context.Background()
 			a, b, source, dest := eventFixture(t)
-			parent, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{"agent", b.channel.Principal}}, dest)
+			parent, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{"agent", b.channel.Principal}}, dest)
 			if err != nil {
 				t.Fatal(err)
 			}

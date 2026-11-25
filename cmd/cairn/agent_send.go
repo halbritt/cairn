@@ -181,6 +181,9 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	if *eventBlocker && *noticeAction == "none" {
 		return nil, invalid("--blocker cannot combine with --action none")
 	}
+	if *kind == "notice" && *noticeAction == "" && os.Getenv("CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION") != "1" {
+		return nil, invalid("notice events require --action (none, review, or decide); also set --supersedes TOPIC for repeatable updates and --summary when body exceeds 280 bytes")
+	}
 	var parsedExpectNextBy *time.Time
 	if provided["action"] || provided["supersedes"] || provided["expect-next-by"] {
 		if *kind != "notice" {

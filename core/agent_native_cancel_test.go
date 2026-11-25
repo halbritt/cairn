@@ -115,7 +115,7 @@ func TestNativeCancelFencesCompletionUntilCleanupConfirmed(t *testing.T) {
 	requireCode(t, err, "STALE_LEASE")
 
 	// Hold released: the inbox can accept a fresh delivery.
-	next, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{confirmed.Delivery.Event.Ref.RecordID, confirmed.Delivery.Event.Ref.Version}, Destination: EventDestination{"agent", "agent/" + ref.AgentID}}, dest)
+	next, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{confirmed.Delivery.Event.Ref.RecordID, confirmed.Delivery.Event.Ref.Version}, Destination: EventDestination{"agent", "agent/" + ref.AgentID}}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}

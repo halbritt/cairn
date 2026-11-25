@@ -21,7 +21,7 @@ func TestEventPressureAPIViewAndNoOperatorPolicyRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	var event core.AgentEvent
-	if err := client.Call(ctx, "event-publish", core.PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: core.RecordVersionRef{RecordID: note.RecordID, Version: 1}, Destination: core.EventDestination{Type: "agent", Name: registration.Inbox}}, &event); err != nil {
+	if err := client.Call(ctx, "event-publish", core.PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: core.RecordVersionRef{RecordID: note.RecordID, Version: 1}, Destination: core.EventDestination{Type: "agent", Name: registration.Inbox}}, &event); err != nil {
 		t.Fatal(err)
 	}
 	session := client.ForAgentSession(core.AgentSessionRef{AgentID: registration.AgentID, ExecutionID: registration.ExecutionID})

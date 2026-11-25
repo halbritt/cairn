@@ -22,7 +22,11 @@ func batchFixture(t *testing.T) (*Store, *Store, *Store, AgentInstance, RecordVe
 
 func publishBatchEvent(t *testing.T, sender *Store, agent AgentInstance, source RecordVersionRef, dest Destination, kind string) AgentEvent {
 	t.Helper()
-	event, err := sender.PublishEvent(context.Background(), PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Ref: source, Destination: EventDestination{Type: "agent", Name: agent.Inbox}}, dest)
+	action := ""
+	if kind == "notice" {
+		action = "review"
+	}
+	event, err := sender.PublishEvent(context.Background(), PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Action: action, Ref: source, Destination: EventDestination{Type: "agent", Name: agent.Inbox}}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +145,7 @@ func TestNativeNoticeBatchStopsForNewUrgentNotice(t *testing.T) {
 	if err != nil || claim.Attempt == nil {
 		t.Fatalf("claim: %+v %v", claim, err)
 	}
-	urgent, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: source,
+	urgent, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: source,
 		Destination:  EventDestination{Type: "agent", Name: agent.Inbox},
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "urgent", DeferSeconds: 0}}, dest)
 	if err != nil {

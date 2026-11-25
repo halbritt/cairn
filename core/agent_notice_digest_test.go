@@ -24,7 +24,7 @@ func TestNoticeDigestTwentyRoutineNoticesFromFourSendersOneTurn(t *testing.T) {
 	eventIDs := make([]string, 0, 20)
 	for round := 0; round < 5; round++ {
 		for sIdx, s := range senders {
-			action := ""
+			action := "none"
 			if (round+sIdx)%2 == 1 {
 				action = "review"
 			}
@@ -162,7 +162,7 @@ func TestNoticeDigestLatestPerSenderAndTopicAndSupersededCount(t *testing.T) {
 	var s1TopicLatest AgentEvent
 	for i := 0; i < 3; i++ {
 		ev, err := sender1.PublishEvent(ctx, PublishEventRequest{
-			RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toTopic,
+			RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toTopic,
 		}, dest)
 		if err != nil {
 			t.Fatal(err)
@@ -172,7 +172,7 @@ func TestNoticeDigestLatestPerSenderAndTopicAndSupersededCount(t *testing.T) {
 	var s1AlphaFirst, s1AlphaLatest AgentEvent
 	for i := 0; i < 5; i++ {
 		ev, err := sender1.PublishEvent(ctx, PublishEventRequest{
-			RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toCoord, Supersedes: "slot/alpha",
+			RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toCoord, Supersedes: "slot/alpha",
 		}, dest)
 		if err != nil {
 			t.Fatal(err)
@@ -194,7 +194,7 @@ func TestNoticeDigestLatestPerSenderAndTopicAndSupersededCount(t *testing.T) {
 	}
 	// sender2 publishes 1 notice on the same topic build-feed (kept separate because different sender!).
 	s2Topic, err := sender2.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toTopic,
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toTopic,
 	}, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -202,7 +202,7 @@ func TestNoticeDigestLatestPerSenderAndTopicAndSupersededCount(t *testing.T) {
 	// Simulate in-flight supersession after Ready returned readyChain.DeliveryID (s1TopicLatest):
 	// sender1 publishes one more notice on topic build-feed before ClaimSessionInbox runs!
 	s1TopicInFlight, err := sender1.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toTopic,
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toTopic,
 	}, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +258,7 @@ func TestNoticeDigestCrashPartialSettlementAndLeaseExpiry(t *testing.T) {
 	// 1. Crash during partial digest settlement preserves exact settled states and fails only unsettled items.
 	for i := 0; i < 5; i++ {
 		if _, err := sender.PublishEvent(ctx, PublishEventRequest{
-			RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toCoord,
+			RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toCoord,
 		}, dest); err != nil {
 			t.Fatal(err)
 		}
@@ -322,7 +322,7 @@ func TestNoticeDigestCrashPartialSettlementAndLeaseExpiry(t *testing.T) {
 	// 2. Lease expiry mid-digest: native hold excludes other consumers and accepts late settlement.
 	for i := 0; i < 3; i++ {
 		if _, err := sender.PublishEvent(ctx, PublishEventRequest{
-			RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toCoord,
+			RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toCoord,
 		}, dest); err != nil {
 			t.Fatal(err)
 		}
@@ -393,7 +393,7 @@ func TestNoticeDigestPriorityPreemptionAndGoalBoundary(t *testing.T) {
 
 	// Now an urgent notice arrives AFTER the 3 held FYI notices: it MUST preempt immediately!
 	urgentEv, err := sender.PublishEvent(ctx, PublishEventRequest{
-		RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toCoord,
+		RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: ref, Destination: toCoord,
 		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "urgent"},
 	}, dest)
 	if err != nil {

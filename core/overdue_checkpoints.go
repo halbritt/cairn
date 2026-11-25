@@ -1112,8 +1112,13 @@ func (s *Store) revalidateAndEmitOverdueBatchesTx(ctx context.Context, tx pgx.Tx
 			_, err = insertVersion(ctx, nested, noticeRecordID, 1, draft)
 		}
 		if err == nil {
+			overdueSum := "1 declared checkpoint or expect_by deadline is overdue."
+			if len(batch) > 1 {
+				overdueSum = fmt.Sprintf("%d declared checkpoints or expect_by deadlines are overdue.", len(batch))
+			}
 			pubReq := PublishEventRequest{
-				Action: "review",
+				Summary: overdueSum,
+				Action:  "review",
 				NoticePolicy: &NoticeWakePolicyRequest{
 					Version:      1,
 					Urgency:      "urgent",

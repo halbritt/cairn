@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -224,7 +225,7 @@ type sendArgs struct {
 	Urgency       string                 `json:"urgency,omitempty" jsonschema:"Notice wake policy: routine or urgent. Notices only."`
 	Summary       string                 `json:"summary,omitempty" jsonschema:"Short single-line header summarizing what changed or what is requested (1-280 UTF-8 bytes, separate from body; required when body exceeds 280 bytes)."`
 	Blocker       bool                   `json:"blocker,omitempty" jsonschema:"Mark this message as a blocker so filtered coordinator subscriptions and priority queues surface it immediately."`
-	Action        string                 `json:"action,omitempty" jsonschema:"Notice intent action: none, review or decide. Notices only."`
+	Action        string                 `json:"action,omitempty" jsonschema:"Required for notices (none, review or decide). Notices only."`
 	Supersedes    string                 `json:"supersedes,omitempty" jsonschema:"Sender-scoped topic key superseded by this notice. Notices only."`
 	ExpectNextBy  string                 `json:"expect_next_by,omitempty" jsonschema:"Optional RFC3339 time when the next update is expected. Notices only."`
 	ExpectBy      string                 `json:"expect_by,omitempty" jsonschema:"Optional RFC3339 advisory deadline when completion or response is expected. Requests only."`
@@ -308,6 +309,9 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 	}
 	if args.Blocker && args.Action == "none" {
 		return toolResult(nil, messagingError("INVALID_REQUEST", "blocker cannot combine with action none"), 0)
+	}
+	if args.Kind == "notice" && args.Action == "" && os.Getenv("CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION") != "1" {
+		return toolResult(nil, messagingError("INVALID_REQUEST", "notice messages require action: none, review, or decide (set action, plus supersedes for repeatable topics and summary when body exceeds 280 bytes)"), 0)
 	}
 	var policy *core.NoticeWakePolicyRequest
 	if args.Urgency != "" {

@@ -153,7 +153,7 @@ func TestStoppedInboxExpiryRetainsHeldAndTopicDeliveries(t *testing.T) {
 	if _, err = view.SetSubscription(ctx, SubscriptionRequest{RequestID: uuid.NewString(), Topic: "retired-review", Active: true}); err != nil {
 		t.Fatal(err)
 	}
-	topic, err := f.sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{"topic", "retired-review"}}, f.dest)
+	topic, err := f.sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{"topic", "retired-review"}}, f.dest)
 	if err != nil {
 		t.Fatal(err)
 	}

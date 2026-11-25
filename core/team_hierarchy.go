@@ -14,9 +14,25 @@ import (
 )
 
 const (
-	MaxTeamHierarchyDepth = 16
-	MaxCampaignMembers    = 256
+	MaxTeamHierarchyDepth            = 16
+	MaxCampaignMembers               = 256
+	DefaultMaxCoordinatorAgeSeconds  = 14400
+	DefaultMaxCoordinatorCompactions = 3
 )
+
+// DefaultCampaignSubscriptionFilter returns the recommended scoped subscription
+// filter for a campaign role so team topic broadcasts do not fan out routine
+// chatter while preserving blockers and decisions.
+func DefaultCampaignSubscriptionFilter(role string) *SubscriptionFilter {
+	switch role {
+	case "root":
+		return &SubscriptionFilter{Actions: []string{"decide", "complete"}, IncludeBlockers: true}
+	case "lead":
+		return &SubscriptionFilter{DirectReportsOnly: true, IncludeBlockers: true}
+	default:
+		return &SubscriptionFilter{DirectReportsOnly: true}
+	}
+}
 
 type SubscriptionFilter struct {
 	Kinds             []string `json:"kinds,omitempty"`
@@ -431,6 +447,14 @@ func (s *Store) SetTeamCampaign(ctx context.Context, req SetTeamCampaignRequest,
 		if errors.Is(err, pgx.ErrNoRows) {
 			if req.ExpectedRevision != 0 {
 				return empty, failure("VERSION_CONFLICT", "team campaign does not exist for expected_revision")
+			}
+			if req.MaxCoordinatorAgeSeconds == nil {
+				v := DefaultMaxCoordinatorAgeSeconds
+				maxAgePtr = &v
+			}
+			if req.MaxCoordinatorCompactions == nil {
+				v := DefaultMaxCoordinatorCompactions
+				maxCompPtr = &v
 			}
 			rootAgent := req.RootAgent
 			if rootAgent == "" {

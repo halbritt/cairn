@@ -66,7 +66,7 @@ func TestEventAdmissionAtomicSaturatedMemberAndRetry(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	req := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: b.channel.Principal}}
+	req := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: b.channel.Principal}}
 	for i := 0; i < 2; i++ {
 		req.RequestID = uuid.NewString()
 		if _, err := testAdmittedPublish(ctx, a, req, state, dest); err != nil {
@@ -126,7 +126,7 @@ func TestEventAdmissionConcurrentPublishersCannotOverspend(t *testing.T) {
 		wg.Add(1)
 		go func(p *Store) {
 			defer wg.Done()
-			_, err := testAdmittedPublish(ctx, p, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: b.channel.Principal}}, state, dest)
+			_, err := testAdmittedPublish(ctx, p, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: b.channel.Principal}}, state, dest)
 			errs <- err
 		}(publisher)
 	}
@@ -153,7 +153,7 @@ func TestEventAdmissionFanoutPairAndEmptyTopic(t *testing.T) {
 	ctx := context.Background()
 	a, b, source, dest := eventFixture(t)
 	state := testAdmissionState(t, a, source.Scope.Repo)
-	req := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: b.channel.Principal}}
+	req := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: b.channel.Principal}}
 	state.Policy.Limits.MaxRecipientOutstanding = 4
 	state.Policy.Limits.MaxProducerRecipientOutstanding = 1
 	if _, err := testAdmittedPublish(ctx, a, req, state, dest); err != nil {
@@ -227,6 +227,7 @@ func TestEventAdmissionValidatedClosureUsesProtectedCapacity(t *testing.T) {
 		t.Fatalf("validated reply blocked: %v", err)
 	}
 	req.Kind = "notice"
+	req.Action = "review"
 	req.RequestID = uuid.NewString()
 	if _, err = testAdmittedPublish(ctx, a, req, state, dest); err != nil {
 		t.Fatalf("protected reply double charged as ordinary delivery: %v", err)
@@ -267,7 +268,7 @@ func TestEventAdmissionSubscriptionRaceKeepsAtomicSnapshot(t *testing.T) {
 			changes <- err
 		}(i%2 == 0)
 		close(start)
-		event, err := testAdmittedPublish(ctx, a, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "topic", Name: "race"}}, state, dest)
+		event, err := testAdmittedPublish(ctx, a, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "topic", Name: "race"}}, state, dest)
 		if err != nil {
 			requireAdmissionDimension(t, err, "topic_recipients")
 		} else {

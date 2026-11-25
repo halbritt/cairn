@@ -1492,3 +1492,88 @@ func TestConsolidatedWakeWrapperMatchesCompatibilityAndPlain(t *testing.T) {
 		}
 	}
 }
+
+func TestCoordinationHookAutoLedgerCompactionOnSessionStartCompact(t *testing.T) {
+	root := t.TempDir()
+	cli, _ := newTestHookCLI(t, root)
+	stateDir := filepath.Join(root, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(root, "coord.json")
+	cfgData := `{"binding":"b-compact","harness":"claude","repo":"/repo","state_dir":"` + stateDir + `","cairn":"/bin/true","socket":"/tmp/s.sock","token_file":"/tmp/t.tok","native_delivery":false}`
+	if err := os.WriteFile(cfgPath, []byte(cfgData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cli.Host.OwnerProcess = func(_, _ *value.Value) (*value.Value, error) {
+		return nativeMap("pid", 1234, "start", 5678, "state", "S", "parent", 1, "boot", "boot-1"), nil
+	}
+
+	agentID := "301e246e-a3b7-498b-b6a7-3d84e592097f"
+	execID := "da3e0447-4f10-40f7-b64d-6b66de691ef2"
+	nativeID := "22b421c2-2298-41e9-8b0e-659ea2a72ed0"
+	inbox := "agent/" + agentID
+	rev := int64(1)
+	compactions := int64(0)
+	var ledgerCompactCalls int
+	cli.Host.Call = func(_ context.Context, _ *value.Value, op string, req *value.Value, _ NativeCallOptions) (*value.Value, error) {
+		switch op {
+		case "agent-register":
+			return nativeMap("agent_id", agentID, "execution_id", execID, "inbox", inbox, "display_name", "agent-1", "context_revision", rev, "metadata", req.Get("metadata")), nil
+		case "agent-heartbeat":
+			return nativeMap("agent_id", agentID, "execution_id", execID, "inbox", inbox, "display_name", "agent-1", "context_revision", rev, "metadata", nativeMap("state", "idle", "delivery_mode", "existing-session")), nil
+		case "team-campaign-list":
+			return nativeMap("campaigns", nativeList(nativeMap("campaign", "alpha", "root_agent", inbox, "active", true)), "more", false), nil
+		case "ledger-compaction":
+			ledgerCompactCalls++
+			compactions++
+			rev++
+			shouldHandoff := compactions >= 2
+			return nativeMap("campaign", "alpha", "compaction_count", compactions, "should_handoff", shouldHandoff, "reasons", nativeList(value.Text("compaction limit reached")), "proposed_command", "cairn ledger handoff --campaign alpha"), nil
+		default:
+			return nativeMap(), nil
+		}
+	}
+
+	// Initial SessionStart (startup) does NOT trigger ledger-compaction.
+	evStart := fmt.Sprintf(`{"hook_event_name":"SessionStart","source":"startup","session_id":%q,"cwd":%q}`, nativeID, root)
+	var out, errOut bytes.Buffer
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(evStart), &out, &errOut); err != nil || code != 0 {
+		t.Fatalf("startup SessionStart failed: code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	if ledgerCompactCalls != 0 {
+		t.Fatalf("expected 0 ledger-compaction calls on startup, got %d", ledgerCompactCalls)
+	}
+
+	// Compaction SessionStart (source=compact) #1 invokes ledger-compaction automatically.
+	out.Reset()
+	errOut.Reset()
+	evCompact := fmt.Sprintf(`{"hook_event_name":"SessionStart","source":"compact","session_id":%q,"cwd":%q}`, nativeID, root)
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(evCompact), &out, &errOut); err != nil || code != 0 {
+		t.Fatalf("compact SessionStart #1 failed: code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	if ledgerCompactCalls != 1 {
+		t.Fatalf("expected 1 ledger-compaction call, got %d", ledgerCompactCalls)
+	}
+
+	// Compaction #2 hits threshold and appends handoff advisory to hook output.
+	out.Reset()
+	errOut.Reset()
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(evCompact), &out, &errOut); err != nil || code != 0 {
+		t.Fatalf("compact SessionStart #2 failed: code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	if ledgerCompactCalls != 2 || !strings.Contains(out.String(), "Coordinator handoff threshold reached for campaign alpha") {
+		t.Fatalf("expected handoff advisory after 2nd compaction, calls=%d out=%s", ledgerCompactCalls, out.String())
+	}
+
+	// Explicit opt-out env suppresses automatic ledger-compaction.
+	t.Setenv("CAIRN_DISABLE_AUTO_LEDGER_COMPACTION", "1")
+	out.Reset()
+	errOut.Reset()
+	if code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath}, strings.NewReader(evCompact), &out, &errOut); err != nil || code != 0 {
+		t.Fatalf("compact SessionStart opt-out failed: code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	if ledgerCompactCalls != 2 {
+		t.Fatalf("expected opt-out env to skip ledger-compaction, got calls=%d", ledgerCompactCalls)
+	}
+}

@@ -129,7 +129,7 @@ func (f *eventScalingScenario) saturateWithHealthyTraffic() {
 		if i%2 != 0 {
 			publisher = f.healthyPublisher
 		}
-		intent := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: f.ref, Destination: EventDestination{Type: "agent", Name: f.stalled.channel.Principal}, CorrelationID: uuid.NewString()}
+		intent := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: f.ref, Destination: EventDestination{Type: "agent", Name: f.stalled.channel.Principal}, CorrelationID: uuid.NewString()}
 		publishers.Add(1)
 		go func() {
 			defer publishers.Done()
@@ -181,7 +181,7 @@ func (f *eventScalingScenario) collectStalledResults(results <-chan scalingPubli
 
 func (f *eventScalingScenario) refuseAtomicTopic() {
 	f.t.Helper()
-	f.topicIntent = PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: f.ref, Destination: EventDestination{Type: "topic", Name: "scaling-snapshot"}}
+	f.topicIntent = PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: f.ref, Destination: EventDestination{Type: "topic", Name: "scaling-snapshot"}}
 	_, err := f.coordinator.PublishEvent(f.ctx, f.topicIntent, f.dest)
 	requireAdmissionDimension(f.t, err, "recipient_outstanding")
 	if pressure, err := f.healthyWorker.EventPressure(f.ctx, EventPressureQuery{}, f.dest); err != nil || pressure.Reservoirs.PendingDeliveries != 0 || pressure.Reservoirs.LeasedDeliveries != 0 {
@@ -201,7 +201,7 @@ func (f *eventScalingScenario) refuseAtomicTopic() {
 func (f *eventScalingScenario) lowerLimitsBelowBacklog() {
 	f.t.Helper()
 	for range 2 {
-		if _, err := f.healthyPublisher.PublishEvent(f.ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: f.ref, Destination: EventDestination{Type: "agent", Name: f.coordinator.channel.Principal}}, f.dest); err != nil {
+		if _, err := f.healthyPublisher.PublishEvent(f.ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: f.ref, Destination: EventDestination{Type: "agent", Name: f.coordinator.channel.Principal}}, f.dest); err != nil {
 			f.t.Fatal(err)
 		}
 	}
@@ -355,7 +355,7 @@ func (f *eventScalingScenario) publishFreshRoots(sessions []*Store) (<-chan scal
 	var rootPublishers sync.WaitGroup
 	for _, publisher := range sessions {
 		for range 2 {
-			intent := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: f.ref, Destination: EventDestination{Type: "topic", Name: "scaling-empty-roots"}, CorrelationID: uuid.NewString()}
+			intent := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Action: "review", Ref: f.ref, Destination: EventDestination{Type: "topic", Name: "scaling-empty-roots"}, CorrelationID: uuid.NewString()}
 			rootPublishers.Add(1)
 			go func() {
 				defer rootPublishers.Done()
