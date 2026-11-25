@@ -24,7 +24,12 @@ home keeps its own binding; agents keep their conversation UUIDs across resume.
   while busy can trigger one Stop continuation.
 - Agy receives context at PreInvocation. A fully idle Stop can continue once to
   handle a queued message. It does not interrupt background work. A top-level
-  Agy conversation is woken through its Herdr pane when idle. An Agy subagent
+  Agy conversation is woken when idle by typing the wake prompt into its
+  terminal. When Agy was started through `cairn-term-launch`, the watcher does
+  that through the launcher's private socket and needs no terminal
+  multiplexer; see [Terminal wake launcher](#terminal-wake-launcher). A
+  session started without the launcher falls back to its Herdr pane, and has
+  no idle wake outside Herdr. An Agy subagent
   runs as a further conversation inside its parent's process. It registers as
   its own session, but it runs only when its parent messages it, and Herdr
   identifies the pane only with the parent. The watcher therefore reports
@@ -751,3 +756,31 @@ remaining presence and wake keys (`agent`, `process`, `idle_wake`,
 `wake_refusal`, `native_health`, `active_prompt` and the OpenCode cancel
 bookkeeping) are still written directly by their owners.
 
+## Terminal wake launcher
+
+Agy has no native route for queueing a prompt to an idle session; the terminal
+is the only way in. `cairn-term-launch` (Go, `cmd/cairn-term-launch`) runs the
+agent on a pseudo-terminal that it owns and relays the user's terminal to it.
+Put it behind the agent command:
+
+```sh
+#!/bin/sh
+exec /path/to/cairn-term-launch -- /path/to/real/agy "$@"
+```
+
+- It listens on `$XDG_RUNTIME_DIR/cairn-term-PID.sock` (mode 0600, private
+  directory required) and passes the path to the agent as
+  `CAIRN_TERMINAL_WAKE_SOCKET`.
+- The watcher reads that variable from the session process. It accepts the
+  socket only when it belongs to the same user and its listening process is an
+  ancestor of the session process, then asks whether the terminal is free, and
+  submits the wake prompt as text followed by a separate Enter (bracketed
+  paste when the agent enabled it).
+- The launcher refuses while the user has typed input that is not submitted,
+  or typed within the last three seconds. The watcher records that as
+  `terminal_target_focused` and tries again later. A failure after the prompt
+  was sent is `WAKE_UNCERTAIN` and is never resent automatically.
+- The wake record and its binding to the woken turn are the same as for the
+  Herdr route; only the `target` differs (`launcher_socket`, `launcher_pid`).
+- When stdin or stdout is not a terminal (print mode, pipes) it execs the
+  agent unchanged.

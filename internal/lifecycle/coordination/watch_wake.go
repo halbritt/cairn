@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/halbritt/cairn/internal/lifecycle/value"
@@ -942,7 +943,46 @@ func (c *CLI) herdrClientForState(config, state *value.Value) (wake.HerdrClient,
 	}, nil
 }
 
+// prepareLauncherWake handles a session whose terminal belongs to
+// cairn-term-launch. handled is false when the session has no launcher
+// socket, and the caller then falls back to the Herdr pane route.
+func (c *CLI) prepareLauncherWake(ctx context.Context, config, state, process, sref *value.Value, delivery, reqID, path string, cycle *value.Value, errOut io.Writer) (prepared *value.Value, handled bool, err error) {
+	launcher := wake.LauncherWake{ProcRoot: c.ProcRoot}
+	ref := wakeProcessRef(process)
+	socket, ok, err := launcher.Socket(ref)
+	if err != nil || !ok {
+		// An unreadable environment is reported by the Herdr route, which
+		// reads the same file.
+		return nil, false, nil
+	}
+	target, refusal, err := launcher.Prepare(ctx, socket, ref)
+	if err != nil {
+		return nil, true, wrapHerdrErr(err)
+	}
+	if refusal != nil {
+		return nil, true, c.noteWakeRefusal(config, state, delivery, refusal.Reason, refusal.Condition, cycle, errOut)
+	}
+	ready, err := c.querySessionInboxReady(ctx, config, state, sref)
+	if err != nil {
+		return nil, true, err
+	}
+	if nativeText(ready.Get("delivery_id")) != delivery {
+		return nil, true, nil
+	}
+	nativePop(state, "wake_refusal")
+	targetVal := nativeMap("launcher_socket", target.Socket, "launcher_pid", target.LauncherPID)
+	wakeRec := nativeMap("delivery_id", delivery, "request_id", reqID, "session", sref, "target", targetVal, "status", "uncertain", "attempted_at", float64(c.clock().UnixNano())/1e9)
+	state.Set("idle_wake", wakeRec)
+	if err := c.writeState(path, state); err != nil {
+		return nil, true, err
+	}
+	return nativeMap("environment", stringArray(), "wake", wakeRec, "process", process), true, nil
+}
+
 func (c *CLI) prepareTerminalWake(ctx context.Context, config, state, agent, process, sref *value.Value, delivery, reqID, path string, cycle *value.Value, errOut io.Writer) (*value.Value, error) {
+	if prepared, handled, err := c.prepareLauncherWake(ctx, config, state, process, sref, delivery, reqID, path, cycle, errOut); handled || err != nil {
+		return prepared, err
+	}
 	client, err := c.herdrClientForState(config, state)
 	if err != nil {
 		return nil, err
@@ -1147,6 +1187,17 @@ func (c *CLI) submitHermesQueueWake(ctx context.Context, config *value.Value, pa
 }
 
 func (c *CLI) submitTerminalWake(ctx context.Context, config, prepared, wakeRec *value.Value, text string) (*value.Value, error) {
+	if target := wakeRec.Get("target"); target != nil && value.Truth(target.Get("launcher_socket")) {
+		pid := 0
+		if v := target.Get("launcher_pid"); v != nil && v.Kind == value.Int {
+			pid, _ = strconv.Atoi(v.Integer)
+		}
+		launcher := wake.LauncherWake{ProcRoot: c.ProcRoot}
+		if err := launcher.Submit(ctx, wake.LauncherTarget{Socket: nativeText(target.Get("launcher_socket")), LauncherPID: pid}, wakeProcessRef(prepared.Get("process")), text); err != nil {
+			return nil, wrapHerdrErr(err)
+		}
+		return nativeMap("queued_id", nil, "started", true, "start_outcome", nil), nil
+	}
 	client, err := c.herdrClient(config)
 	if err != nil {
 		return nil, err
