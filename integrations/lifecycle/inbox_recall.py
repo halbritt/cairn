@@ -84,7 +84,7 @@ def _inbox_request_header_dict(pub):
 
 
 def session_compact_inbox_enabled(config, session):
-    capable = config.get('harness') in ('codex', 'claude') and bool(config.get('native_delivery'))
+    capable = config.get('harness') in ('codex', 'claude', 'agy', 'opencode', 'hermes') and bool(config.get('native_delivery'))
     compact = capable and config.get('compact_inbox_version') == 1
     if not isinstance(session, str) or not session:
         return compact
@@ -126,18 +126,20 @@ def session_compact_inbox_enabled(config, session):
     has_auto_settle = 'notice_auto_settle_version' in entry
     if not has_compact and not has_auto_settle:
         if not capable:
-            raise _grant_ledger.inbox_refusal('compact_inbox_version 1 requires Codex or Claude native delivery', 'command_context', 'compact_fallback')
+            raise _grant_ledger.inbox_refusal('compact_inbox_version 1 requires supported native delivery', 'command_context', 'compact_fallback')
         raise _grant_ledger.inbox_refusal('session inbox options are malformed', 'command_context', 'compact_fallback')
     if has_compact and (not capable or type(entry['compact_inbox_version']) is not int
             or entry['compact_inbox_version'] != 1):
-        raise _grant_ledger.inbox_refusal('compact_inbox_version 1 requires Codex or Claude native delivery', 'command_context', 'compact_fallback')
+        raise _grant_ledger.inbox_refusal('compact_inbox_version 1 requires supported native delivery', 'command_context', 'compact_fallback')
     if 'notice_batch_version' in entry and (
             type(entry['notice_batch_version']) is not int or entry['notice_batch_version'] != 1 or not has_compact):
-        raise _grant_ledger.inbox_refusal('notice_batch_version 1 requires compact Codex or Claude native delivery', 'command_context', 'compact_fallback')
+        raise _grant_ledger.inbox_refusal('notice_batch_version 1 requires compact native delivery', 'command_context', 'compact_fallback')
     has_digest = 'notice_digest_version' in entry
     if has_digest and (
             type(entry['notice_digest_version']) is not int or entry['notice_digest_version'] != 1 or not has_compact):
-        raise _grant_ledger.inbox_refusal('notice_digest_version 1 requires compact Codex or Claude native delivery', 'command_context', 'compact_fallback')
+        raise _grant_ledger.inbox_refusal('notice_digest_version 1 requires compact native delivery', 'command_context', 'compact_fallback')
+    if 'notice_batch_version' in entry and has_digest:
+        raise _grant_ledger.inbox_refusal('notice_batch_version and notice_digest_version are mutually exclusive', 'command_context', 'compact_fallback')
     if 'notice_digest_window_seconds' in entry and (
             not has_digest or type(entry['notice_digest_window_seconds']) is not int
             or not (1 <= entry['notice_digest_window_seconds'] <= 3600)):

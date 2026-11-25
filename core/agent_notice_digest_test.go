@@ -453,3 +453,164 @@ func TestNoticeDigestPriorityPreemptionAndGoalBoundary(t *testing.T) {
 		t.Fatalf("expected 3-item flushed digest, got %+v err=%v", claimedDigest, err)
 	}
 }
+
+func TestNoticeDigestOverflowBeyond64EmitsCountAndRefsAndLeavesPending(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	coord := f.register(nativeAgent{Binding: "digest-overflow-coord"})
+	sess := AgentSessionRef{AgentID: coord.AgentID, ExecutionID: coord.ExecutionID}
+	ref := RecordVersionRef{RecordID: source.RecordID, Version: source.Version}
+	toCoord := EventDestination{Type: "agent", Name: coord.Inbox}
+
+	// Publish 68 distinct FYI notices -> 64 claimed in first digest, 4 overflow deferred!
+	var eventIDs []string
+	for i := 0; i < 68; i++ {
+		ev, err := sender.PublishEvent(ctx, PublishEventRequest{
+			RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toCoord, Action: "review",
+		}, dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		eventIDs = append(eventIDs, ev.EventID)
+	}
+
+	firstClaim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{
+		RequestID: uuid.NewString(), Session: sess, NativeTurnID: "turn-overflow-1",
+		DigestWindowSeconds: 300, DigestFlushNow: true,
+	}, dest)
+	if err != nil || firstClaim.Attempt == nil {
+		t.Fatalf("first digest claim failed: %+v err=%v", firstClaim, err)
+	}
+	att1 := firstClaim.Attempt
+	if att1.AdmissionKind != "digest" || len(att1.DigestItems) != 64 {
+		t.Fatalf("expected 64 digest items, got kind=%q count=%d", att1.AdmissionKind, len(att1.DigestItems))
+	}
+	if att1.DigestOverflowCount != 4 || len(att1.DigestOverflowRefs) != 4 {
+		t.Fatalf("expected DigestOverflowCount=4 and 4 refs, got count=%d refs=%+v", att1.DigestOverflowCount, att1.DigestOverflowRefs)
+	}
+	for i, ov := range att1.DigestOverflowRefs {
+		if ov.EventID != eventIDs[64+i] || ov.DeliveryID == "" || ov.RecordID != source.RecordID || ov.Version != int64(source.Version) || ov.Kind != "notice" {
+			t.Fatalf("unexpected overflow ref[%d]: %+v (want event %s)", i, ov, eventIDs[64+i])
+		}
+	}
+
+	// Settle all 64 items (including a retry on item 1 to verify idempotency) and reconcile.
+	outcomes := make([]SessionDigestItemOutcome, len(att1.DigestItems))
+	for i, it := range att1.DigestItems {
+		outcomes[i] = SessionDigestItemOutcome{DeliveryID: it.Delivery.DeliveryID, LeaseID: it.Delivery.LeaseID, Disposition: "handled"}
+	}
+	if _, err := receiver.SettleSessionDigest(ctx, SessionInboxDigestSettle{
+		RequestID: uuid.NewString(), Session: sess, AttemptID: att1.ID, Outcomes: outcomes[:1],
+	}, dest); err != nil {
+		t.Fatal(err)
+	}
+	retryRes, err := receiver.SettleSessionDigest(ctx, SessionInboxDigestSettle{
+		RequestID: uuid.NewString(), Session: sess, AttemptID: att1.ID, Outcomes: outcomes,
+	}, dest)
+	if err != nil || retryRes.Remaining != 0 || !retryRes.Items[0].AlreadySettled {
+		t.Fatalf("expected idempotent retry settle with remaining=0, got %+v err=%v", retryRes, err)
+	}
+	if _, err := receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{
+		RequestID: uuid.NewString(), Session: sess, AttemptID: att1.ID, Reason: "delivery_completed",
+	}, dest); err != nil {
+		t.Fatal(err)
+	}
+
+	// The 4 deferred overflow items remain pending and arrive cleanly in the next digest turn!
+	secondClaim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{
+		RequestID: uuid.NewString(), Session: sess, NativeTurnID: "turn-overflow-2",
+		DigestWindowSeconds: 300, DigestFlushNow: true,
+	}, dest)
+	if err != nil || secondClaim.Attempt == nil {
+		t.Fatalf("second digest claim failed: %+v err=%v", secondClaim, err)
+	}
+	att2 := secondClaim.Attempt
+	if len(att2.DigestItems) != 4 || att2.DigestOverflowCount != 0 {
+		t.Fatalf("expected 4 remaining items with 0 overflow, got items=%d overflow=%d", len(att2.DigestItems), att2.DigestOverflowCount)
+	}
+	for i, it := range att2.DigestItems {
+		if it.Delivery.Event.EventID != eventIDs[64+i] {
+			t.Fatalf("second digest item[%d]=%s, want %s", i, it.Delivery.Event.EventID, eventIDs[64+i])
+		}
+	}
+}
+
+func TestNoticeDigestResponsePreemptsOpenWindowAndTriggersFlush(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	coord := f.register(nativeAgent{Binding: "digest-resp-coord"})
+	sess := AgentSessionRef{AgentID: coord.AgentID, ExecutionID: coord.ExecutionID}
+	ref := RecordVersionRef{RecordID: source.RecordID, Version: source.Version}
+	toCoord := EventDestination{Type: "agent", Name: coord.Inbox}
+
+	// Publish a prior request from coord -> sender so sender can publish a genuine response to coord.
+	coordView, err := receiver.ForAgentSession(sess, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqEv, err := coordView.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Kind: "request", Ref: ref, Destination: EventDestination{Type: "agent", Name: sender.channel.Principal},
+	}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Publish 2 routine FYI notices to coord -> held while 300s digest window is open.
+	for i := 0; i < 2; i++ {
+		if _, err := sender.PublishEvent(ctx, PublishEventRequest{
+			RequestID: uuid.NewString(), Kind: "notice", Ref: ref, Destination: toCoord, Action: "review",
+		}, dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ready0, err := receiver.SessionInboxDigestReady(ctx, SessionInboxDigestReadyRequest{
+		Session: sess, DigestWindowSeconds: 300,
+	}, dest)
+	if err != nil || ready0.DeliveryID != "" {
+		t.Fatalf("expected held FYI notices before response, got %+v err=%v", ready0, err)
+	}
+
+	// Now a response arrives: it must NOT be digested and must preempt immediately!
+	respEv, err := sender.PublishEvent(ctx, PublishEventRequest{
+		RequestID: uuid.NewString(), Kind: "response", Ref: ref, Destination: toCoord,
+		CausationID: reqEv.EventID, CorrelationID: reqEv.CorrelationID,
+	}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readyResp, err := receiver.SessionInboxDigestReady(ctx, SessionInboxDigestReadyRequest{
+		Session: sess, DigestWindowSeconds: 300,
+	}, dest)
+	if err != nil || readyResp.EventID != respEv.EventID || readyResp.Kind != "response" || readyResp.Digest {
+		t.Fatalf("expected immediate ordinary preemption for response, got %+v err=%v", readyResp, err)
+	}
+	claimedResp, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{
+		RequestID: uuid.NewString(), Session: sess, DeliveryID: readyResp.DeliveryID,
+		NativeTurnID: "turn-response", DigestWindowSeconds: 300,
+	}, dest)
+	if err != nil || claimedResp.Attempt == nil || claimedResp.Attempt.AdmissionKind != "ordinary" ||
+		claimedResp.Attempt.Delivery.Event.EventID != respEv.EventID {
+		t.Fatalf("expected ordinary single-item claim for response, got %+v err=%v", claimedResp, err)
+	}
+	if _, err := coordView.CompleteEvent(ctx, CompleteEventRequest{
+		RequestID: uuid.NewString(), DeliveryID: claimedResp.Attempt.Delivery.DeliveryID,
+		LeaseID: claimedResp.Attempt.Delivery.LeaseID, Disposition: "handled",
+	}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{
+		RequestID: uuid.NewString(), Session: sess, AttemptID: claimedResp.Attempt.ID, Reason: "delivery_completed",
+	}, dest); err != nil {
+		t.Fatal(err)
+	}
+
+	// digestDueTx must see the recent response (ue.kind='response') and flush the 2 held FYI notices immediately!
+	readyFlush, err := receiver.SessionInboxDigestReady(ctx, SessionInboxDigestReadyRequest{
+		Session: sess, DigestWindowSeconds: 300,
+	}, dest)
+	if err != nil || !readyFlush.Digest || readyFlush.Count != 2 {
+		t.Fatalf("expected held 2-item digest to flush immediately after response arrival, got %+v err=%v", readyFlush, err)
+	}
+}

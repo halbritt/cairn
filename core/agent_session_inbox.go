@@ -39,28 +39,30 @@ type SessionInboxReconcile struct {
 	Reason    string          `json:"reason"`
 }
 type SessionInboxAttempt struct {
-	ID                    string              `json:"attempt_id"`
-	Session               AgentSessionRef     `json:"session"`
-	CreatedAt             time.Time           `json:"created_at"`
-	FinishedAt            *time.Time          `json:"finished_at,omitempty"`
-	Reason                string              `json:"reason,omitempty"`
-	Delivery              AgentDelivery       `json:"delivery"`
-	NativeTurnID          string              `json:"native_turn_id,omitempty"`
-	TurnExclusive         bool                `json:"turn_exclusive,omitempty"`
-	BatchRoot             string              `json:"batch_root,omitempty"`
-	BatchIndex            int                 `json:"batch_index,omitempty"`
-	BatchLimit            int                 `json:"batch_limit,omitempty"`
-	CaptureGap            bool                `json:"capture_gap,omitempty"`
-	TurnStopState         string              `json:"turn_stop_state,omitempty"`
-	CaptureState          string              `json:"capture_state,omitempty"`
-	TerminalScan          string              `json:"terminal_scan,omitempty"`
-	Cancel                *SessionCancel      `json:"cancel,omitempty"`
-	Tools                 []SessionTool       `json:"tools,omitempty"`
-	AdmissionKind         string              `json:"admission_kind,omitempty"`
-	OrganicRoot           string              `json:"organic_root,omitempty"`
-	DigestSupersededCount int                 `json:"digest_superseded_count,omitempty"`
-	WakeDeliveryID        string              `json:"wake_delivery_id,omitempty"`
-	DigestItems           []SessionDigestItem `json:"digest_items,omitempty"`
+	ID                    string                     `json:"attempt_id"`
+	Session               AgentSessionRef            `json:"session"`
+	CreatedAt             time.Time                  `json:"created_at"`
+	FinishedAt            *time.Time                 `json:"finished_at,omitempty"`
+	Reason                string                     `json:"reason,omitempty"`
+	Delivery              AgentDelivery              `json:"delivery"`
+	NativeTurnID          string                     `json:"native_turn_id,omitempty"`
+	TurnExclusive         bool                       `json:"turn_exclusive,omitempty"`
+	BatchRoot             string                     `json:"batch_root,omitempty"`
+	BatchIndex            int                        `json:"batch_index,omitempty"`
+	BatchLimit            int                        `json:"batch_limit,omitempty"`
+	CaptureGap            bool                       `json:"capture_gap,omitempty"`
+	TurnStopState         string                     `json:"turn_stop_state,omitempty"`
+	CaptureState          string                     `json:"capture_state,omitempty"`
+	TerminalScan          string                     `json:"terminal_scan,omitempty"`
+	Cancel                *SessionCancel             `json:"cancel,omitempty"`
+	Tools                 []SessionTool              `json:"tools,omitempty"`
+	AdmissionKind         string                     `json:"admission_kind,omitempty"`
+	OrganicRoot           string                     `json:"organic_root,omitempty"`
+	DigestSupersededCount int                        `json:"digest_superseded_count,omitempty"`
+	DigestOverflowCount   int                        `json:"digest_overflow_count,omitempty"`
+	DigestOverflowRefs    []SessionDigestOverflowRef `json:"digest_overflow_refs,omitempty"`
+	WakeDeliveryID        string                     `json:"wake_delivery_id,omitempty"`
+	DigestItems           []SessionDigestItem        `json:"digest_items,omitempty"`
 }
 type SessionInboxResult struct {
 	Attempt *SessionInboxAttempt `json:"attempt"`
@@ -263,6 +265,15 @@ func (s *Store) readSessionInboxAttempt(ctx context.Context, tx pgx.Tx, id strin
 		return out, err
 	}
 	out.DigestItems, err = view.readSessionDigestItems(ctx, tx, id, dest)
+	if err != nil || out.FinishedAt != nil {
+		return out, err
+	}
+	var repo string
+	if err = tx.QueryRow(ctx, `SELECT repo FROM cairn.agent_session WHERE agent_id=$1`, ref.AgentID).Scan(&repo); err != nil {
+		return out, err
+	}
+	inbox := "agent/" + ref.AgentID
+	out.DigestOverflowCount, out.DigestOverflowRefs, err = loadDigestOverflowTx(ctx, tx, repo, inbox, dest.AllowLocal)
 	return out, err
 }
 

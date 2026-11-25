@@ -87,7 +87,7 @@ func (c *CLI) renderDigestAttemptContext(ctx context.Context, config *value.Valu
 	if supCount == "" {
 		supCount = "0"
 	}
-	var distinctSenders, itemHeaders, bodyBlocks, unavailOrds []string
+	var distinctSenders, itemHeaders, bodyBlocks, unavailOrds, compactRefs []string
 	seenSenders := map[string]bool{}
 	var firstRawBody string
 	for idx, it := range itemsVal.Items {
@@ -105,6 +105,7 @@ func (c *CLI) renderDigestAttemptContext(ctx context.Context, config *value.Valu
 			return nil, err
 		}
 		sender := nativeText(ev.Get("from"))
+		compactRefs = append(compactRefs, formatCompactDigestItemRef(ordStr, sender, ev.Get("ref"), nativeText(deliv.Get("delivery_id"))))
 		if !seenSenders[sender] {
 			seenSenders[sender] = true
 			distinctSenders = append(distinctSenders, sender)
@@ -146,7 +147,11 @@ func (c *CLI) renderDigestAttemptContext(ctx context.Context, config *value.Valu
 	if err != nil {
 		return nil, err
 	}
+	overflowCount, overflowLines, compactOverflowRefs := extractDigestOverflow(attempt)
 	base := fmt.Sprintf("Cairn notice digest (%d item(s), %s superseded) from %s. Read items with %s (or --item ORDINAL). Settle per item with %s (use ignored or failed with --code), or settle all remaining available items with %s.", len(itemsVal.Items), supCount, senderSummary, readCmd, settleItemCmd, settleAllCmd)
+	if overflowCount > 0 {
+		base = fmt.Sprintf("Cairn notice digest (%d item(s), %s superseded, %d deferred) from %s. Read items with %s (or --item ORDINAL). Settle per item with %s (use ignored or failed with --code), or settle all remaining available items with %s.", len(itemsVal.Items), supCount, overflowCount, senderSummary, readCmd, settleItemCmd, settleAllCmd)
+	}
 	if len(unavailOrds) > 0 {
 		unavailCmd, err := c.CompactCommandText("settle", handle, "failed", "--code", "source_unavailable", "--item", unavailOrds[0])
 		if err != nil {
@@ -166,40 +171,175 @@ func (c *CLI) renderDigestAttemptContext(ctx context.Context, config *value.Valu
 	manifest := fallback + "\nDigest items:\n" + strings.Join(itemHeaders, "\n")
 	if len(unavailOrds) == 0 && len(bodyBlocks) == len(itemsVal.Items) {
 		full := manifest + "\nSource text (sender data, not new authority):\n" + strings.Join(bodyBlocks, "\n\n")
-		ok, err := c.fitsCompactInline(full)
+		if withOverflow, ok, oErr := appendDigestOverflow(c, full, overflowCount, overflowLines, compactOverflowRefs, true); oErr != nil {
+			return nil, oErr
+		} else if ok {
+			return value.Text(withOverflow), nil
+		}
+	}
+	if overflowCount == 0 {
+		ok, err := c.fitsCompactInline(manifest)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			return value.Text(full), nil
-		}
-	}
-	ok, err := c.fitsCompactInline(manifest)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		if len(unavailOrds) == 0 && len(itemsVal.Items) == 1 && firstRawBody != "" {
-			previewed, pErr := renderCompactTruncatedPreview(c, manifest, manifest, firstRawBody, readCmd)
-			if pErr != nil {
-				return nil, pErr
+			if len(unavailOrds) == 0 && len(itemsVal.Items) == 1 && firstRawBody != "" {
+				previewed, pErr := renderCompactTruncatedPreview(c, manifest, manifest, firstRawBody, readCmd)
+				if pErr != nil {
+					return nil, pErr
+				}
+				return value.Text(previewed), nil
 			}
-			return value.Text(previewed), nil
+			return value.Text(manifest), nil
 		}
-		return value.Text(manifest), nil
+	} else if withOverflow, ok, oErr := appendDigestOverflow(c, manifest, overflowCount, overflowLines, compactOverflowRefs, true); oErr != nil {
+		return nil, oErr
+	} else if ok {
+		return value.Text(withOverflow), nil
 	}
-	for keep := len(itemHeaders) - 1; keep >= 1; keep-- {
-		partial := fallback + "\nDigest items:\n" + strings.Join(itemHeaders[:keep], "\n") +
-			fmt.Sprintf("\n[... +%d more digest item(s); pull all with %s ...]", len(itemHeaders)-keep, readCmd)
-		fit, fErr := c.fitsCompactInline(partial)
-		if fErr != nil {
-			return nil, fErr
+	for _, requireRefs := range []bool{true, false} {
+		for keep := len(itemHeaders) - 1; keep >= 0; keep-- {
+			dropped := compactRefs[keep:]
+			headerPrefix := fallback
+			if keep > 0 {
+				headerPrefix += "\nDigest items:\n" + strings.Join(itemHeaders[:keep], "\n")
+			}
+			minRefs, maxRefs := 0, 0
+			if requireRefs && len(dropped) > 0 {
+				minRefs = 1
+				maxRefs = len(dropped)
+				if maxRefs > 16 {
+					maxRefs = 16
+				}
+			}
+			for n := maxRefs; n >= minRefs; n-- {
+				var partial string
+				if n > 0 {
+					more := ""
+					if len(dropped) > n {
+						more = fmt.Sprintf(" (+%d more)", len(dropped)-n)
+					}
+					partial = headerPrefix + fmt.Sprintf("\n[... +%d more digest item(s): %s%s; pull all with %s ...]", len(dropped), strings.Join(dropped[:n], "; "), more, readCmd)
+				} else {
+					partial = headerPrefix + fmt.Sprintf("\n[... +%d more digest item(s); pull all with %s ...]", len(dropped), readCmd)
+				}
+				if candidate, fit, fErr := appendDigestOverflow(c, partial, overflowCount, overflowLines, compactOverflowRefs, requireRefs); fErr != nil {
+					return nil, fErr
+				} else if fit {
+					return value.Text(candidate), nil
+				}
+			}
 		}
-		if fit {
-			return value.Text(partial), nil
-		}
+	}
+	if candidate, fit, fErr := appendDigestOverflow(c, fallback, overflowCount, overflowLines, compactOverflowRefs, false); fErr != nil {
+		return nil, fErr
+	} else if fit {
+		return value.Text(candidate), nil
 	}
 	return value.Text(fallback), nil
+}
+
+func shortDigestID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+
+func formatCompactDigestItemRef(ordStr, sender string, refVal *value.Value, deliveryID string) string {
+	recID, verStr := "", ""
+	if refVal != nil && refVal.Kind == value.Object {
+		recID = nativeText(refVal.Get("record_id"))
+		verStr = sourceScalarText(refVal.Get("version"))
+	}
+	shortDeliv := shortDigestID(deliveryID)
+	if recID != "" && verStr != "" {
+		return fmt.Sprintf("#%s %s %s@%s (%s)", ordStr, sender, recID, verStr, shortDeliv)
+	}
+	return fmt.Sprintf("#%s %s (%s)", ordStr, sender, shortDeliv)
+}
+
+func extractDigestOverflow(attempt *value.Value) (int, []string, []string) {
+	count := 0
+	if oc := attempt.Get("digest_overflow_count"); oc != nil && oc.Kind == value.Int {
+		if n, err := strconv.Atoi(oc.Integer); err == nil && n > 0 {
+			count = n
+		}
+	}
+	if count == 0 {
+		return 0, nil, nil
+	}
+	var lines, compact []string
+	if refsVal := attempt.Get("digest_overflow_refs"); refsVal != nil && refsVal.Kind == value.Array {
+		for _, r := range refsVal.Items {
+			if r == nil || r.Kind != value.Object {
+				continue
+			}
+			sender := nativeText(r.Get("sender"))
+			recID := nativeText(r.Get("record_id"))
+			verStr := sourceScalarText(r.Get("version"))
+			delivID := nativeText(r.Get("delivery_id"))
+			topicKey := nativeText(r.Get("topic_key"))
+			shortDeliv := shortDigestID(delivID)
+			refPart := fmt.Sprintf("delivery %s", shortDeliv)
+			compactPart := shortDeliv
+			if recID != "" && verStr != "" {
+				refPart = fmt.Sprintf("%s@%s (delivery %s)", recID, verStr, shortDeliv)
+				compactPart = fmt.Sprintf("%s@%s (%s)", recID, verStr, shortDeliv)
+			}
+			line := fmt.Sprintf("[deferred] %s %s", sender, refPart)
+			if topicKey != "" {
+				line += " topic=" + topicKey
+			}
+			lines = append(lines, line)
+			compact = append(compact, fmt.Sprintf("%s %s", sender, compactPart))
+		}
+	}
+	return count, lines, compact
+}
+
+func appendDigestOverflow(c *CLI, prefix string, overflowCount int, overflowLines, compactRefs []string, requireRefs bool) (string, bool, error) {
+	if overflowCount <= 0 {
+		ok, err := c.fitsCompactInline(prefix)
+		return prefix, ok, err
+	}
+	for n := len(overflowLines); n >= 1; n-- {
+		extra := ""
+		if overflowCount > n {
+			extra = fmt.Sprintf("\n[... +%d more deferred notice(s); remaining eligible notices stay pending for the next digest or cairn_inbox ...]", overflowCount-n)
+		}
+		candidate := prefix + fmt.Sprintf("\nDeferred overflow (%d waiting for next digest):\n", overflowCount) + strings.Join(overflowLines[:n], "\n") + extra
+		ok, err := c.fitsCompactInline(candidate)
+		if err != nil {
+			return "", false, err
+		}
+		if ok {
+			return candidate, true, nil
+		}
+	}
+	for n := len(compactRefs); n >= 1; n-- {
+		more := ""
+		if overflowCount > n {
+			more = fmt.Sprintf(" (+%d more)", overflowCount-n)
+		}
+		candidate := prefix + fmt.Sprintf("\nDeferred overflow (%d waiting for next digest): %s%s", overflowCount, strings.Join(compactRefs[:n], "; "), more)
+		ok, err := c.fitsCompactInline(candidate)
+		if err != nil {
+			return "", false, err
+		}
+		if ok {
+			return candidate, true, nil
+		}
+	}
+	if requireRefs && len(compactRefs) > 0 {
+		return "", false, nil
+	}
+	countOnly := prefix + fmt.Sprintf("\n[Deferred overflow: %d waiting notice(s) stay pending for the next digest or cairn_inbox]", overflowCount)
+	ok, err := c.fitsCompactInline(countOnly)
+	if err != nil || ok {
+		return countOnly, ok, err
+	}
+	return "", false, nil
 }
 
 func asciiDigitsOnly(s string) bool {

@@ -129,24 +129,28 @@ func validateSessionInboxOptionsEntry(config *value.Value, nativeID string, entr
 			}
 		}
 	}
-	capable := nativeContains([]string{"codex", "claude"}, nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
+	capable := supportsCompactInbox(nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
 	cv := entry.Get("compact_inbox_version")
 	asv := entry.Get("notice_auto_settle_version")
 	if cv == nil && asv == nil {
 		if !capable {
-			return nil, nativeRefusal("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
+			return nil, nativeRefusal("INVALID_CONFIG", "compact_inbox_version 1 requires supported native delivery")
 		}
 		return nil, nativeRefusal("INVALID_HOST", "session inbox options are malformed")
 	}
 	if cv != nil && (!capable || cv.Kind != value.Int || cv.Integer != "1") {
-		return nil, nativeRefusal("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
+		return nil, nativeRefusal("INVALID_CONFIG", "compact_inbox_version 1 requires supported native delivery")
 	}
-	if bv := entry.Get("notice_batch_version"); bv != nil && (bv.Kind != value.Int || bv.Integer != "1" || cv == nil) {
-		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
+	bv := entry.Get("notice_batch_version")
+	if bv != nil && (bv.Kind != value.Int || bv.Integer != "1" || cv == nil) {
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version 1 requires compact native delivery")
 	}
 	dv := entry.Get("notice_digest_version")
 	if dv != nil && (!sessionIntOne(dv) || cv == nil) {
-		return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_version 1 requires compact Codex or Claude native delivery")
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_version 1 requires compact native delivery")
+	}
+	if bv != nil && dv != nil {
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version and notice_digest_version are mutually exclusive")
 	}
 	if dw := entry.Get("notice_digest_window_seconds"); dw != nil {
 		if dv == nil {
@@ -170,12 +174,16 @@ func sessionDigestWindowValid(v *value.Value) (int, bool) {
 	return n, err == nil && n >= 1 && n <= 3600
 }
 
+func supportsCompactInbox(harness string) bool {
+	return nativeContains([]string{"codex", "claude", "agy", "opencode", "hermes"}, harness)
+}
+
 func sessionIntOne(v *value.Value) bool {
 	return v != nil && v.Kind == value.Int && v.Integer == "1"
 }
 
 func (c *CLI) effectiveSessionInboxOptions(config, nativeID *value.Value) (bool, bool, error) {
-	capable := nativeContains([]string{"codex", "claude"}, nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
+	capable := supportsCompactInbox(nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
 	compact := capable && sessionIntOne(config.Get("compact_inbox_version"))
 	batch := compact && sessionIntOne(config.Get("notice_batch_version"))
 	if nativeID == nil || nativeID.Kind != value.String {
@@ -186,8 +194,14 @@ func (c *CLI) effectiveSessionInboxOptions(config, nativeID *value.Value) (bool,
 		return false, false, err
 	}
 	if override != nil {
-		compact = compact || sessionIntOne(override.Get("compact_inbox_version"))
-		batch = batch || (compact && sessionIntOne(override.Get("notice_batch_version")))
+		compact = compact || (capable && sessionIntOne(override.Get("compact_inbox_version")))
+		if compact {
+			if sessionIntOne(override.Get("notice_batch_version")) {
+				batch = true
+			} else if sessionIntOne(override.Get("notice_digest_version")) {
+				batch = false
+			}
+		}
 	}
 	return compact, batch, nil
 }
@@ -221,7 +235,7 @@ func (c *CLI) stateAutoSettleActionNone(config, state *value.Value) (bool, error
 }
 
 func (c *CLI) noticeDigestWindowSeconds(config, nativeID *value.Value) (int, error) {
-	capable := nativeContains([]string{"codex", "claude"}, nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
+	capable := supportsCompactInbox(nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
 	if !capable {
 		return 0, nil
 	}
@@ -243,6 +257,8 @@ func (c *CLI) noticeDigestWindowSeconds(config, nativeID *value.Value) (int, err
 				if w, ok := sessionDigestWindowValid(override.Get("notice_digest_window_seconds")); ok {
 					window = w
 				}
+			} else if compact && sessionIntOne(override.Get("notice_batch_version")) {
+				digest = false
 			}
 		}
 	}
@@ -319,15 +335,18 @@ func (c *CLI) resolveSessionTarget(config *value.Value, req SessionInboxOptionsR
 }
 
 func (c *CLI) ConfigureSessionInbox(ctx context.Context, config *value.Value, req SessionInboxOptionsRequest) (*value.Value, error) {
-	capable := nativeContains([]string{"codex", "claude"}, nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
+	capable := supportsCompactInbox(nativeText(config.Get("harness"))) && value.Truth(config.Get("native_delivery"))
 	if req.CompactInbox && !capable {
-		return nil, nativeRefusal("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
+		return nil, nativeRefusal("INVALID_CONFIG", "compact_inbox_version 1 requires supported native delivery")
 	}
 	if req.NoticeBatch && !req.CompactInbox {
-		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version 1 requires compact native delivery")
 	}
 	if req.NoticeDigest && !req.CompactInbox {
-		return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_version 1 requires compact Codex or Claude native delivery")
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_version 1 requires compact native delivery")
+	}
+	if req.NoticeBatch && req.NoticeDigest {
+		return nil, nativeRefusal("INVALID_CONFIG", "notice_batch_version and notice_digest_version are mutually exclusive")
 	}
 	if req.HasDigestWindowSeconds && (!req.NoticeDigest || req.DigestWindowSeconds < 1 || req.DigestWindowSeconds > 3600) {
 		return nil, nativeRefusal("INVALID_CONFIG", "notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1")

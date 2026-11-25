@@ -47,8 +47,13 @@ func TestStage2ValidateConfigSourceOrder(t *testing.T) {
 			c.Set("remind_unacknowledged_turn_end", value.IntegerText("1"))
 		}},
 		{"reminder_bool", "remind_unacknowledged_turn_end requires a boolean", func(c *value.Value) { c.Set("remind_unacknowledged_turn_end", value.IntegerText("1")) }},
-		{"compact_exact_int", "compact_inbox_version 1 requires Codex or Claude native delivery", func(c *value.Value) { c.Set("compact_inbox_version", value.Boolean(true)) }},
-		{"batch_compact", "notice_batch_version 1 requires compact Codex or Claude native delivery", func(c *value.Value) { c.Set("notice_batch_version", value.IntegerText("1")) }},
+		{"compact_exact_int", "compact_inbox_version 1 requires supported native delivery", func(c *value.Value) { c.Set("compact_inbox_version", value.Boolean(true)) }},
+		{"batch_compact", "notice_batch_version 1 requires compact native delivery", func(c *value.Value) { c.Set("notice_batch_version", value.IntegerText("1")) }},
+		{"batch_digest_exclusive", "notice_batch_version and notice_digest_version are mutually exclusive", func(c *value.Value) {
+			c.Set("compact_inbox_version", value.IntegerText("1"))
+			c.Set("notice_batch_version", value.IntegerText("1"))
+			c.Set("notice_digest_version", value.IntegerText("1"))
+		}},
 		{"wake_true", "idle_wakeup requires an absolute Herdr executable and native_delivery (true is accepted only for the OpenCode bridge)", func(c *value.Value) { c.Set("idle_wakeup", value.Boolean(true)) }},
 		{"channel_dir_first", "claude_channel_sessions requires an absolute claude_channel_dir", func(c *value.Value) {
 			c.Set("claude_channel_sessions", value.Boolean(true))

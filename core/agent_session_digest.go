@@ -16,10 +16,22 @@ const (
 	defaultDigestWindowSec = 300
 )
 
+const maxDigestOverflowRefs = 16
+
 type SessionDigestItem struct {
 	Ordinal  int           `json:"ordinal"`
 	TopicKey string        `json:"topic_key,omitempty"`
 	Delivery AgentDelivery `json:"delivery"`
+}
+
+type SessionDigestOverflowRef struct {
+	DeliveryID string `json:"delivery_id"`
+	EventID    string `json:"event_id"`
+	Sender     string `json:"sender,omitempty"`
+	TopicKey   string `json:"topic_key,omitempty"`
+	RecordID   string `json:"record_id,omitempty"`
+	Version    int64  `json:"version,omitempty"`
+	Kind       string `json:"kind"`
 }
 
 type SessionInboxDigestReadyRequest struct {
@@ -222,6 +234,34 @@ func loadDigestCandidatesTx(ctx context.Context, tx pgx.Tx, repo, inbox string, 
 	return out, rows.Err()
 }
 
+func loadDigestOverflowTx(ctx context.Context, tx pgx.Tx, repo, inbox string, allowLocal bool) (int, []SessionDigestOverflowRef, error) {
+	where := ` FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND ` + requestAdmissionOpen + ` AND ` + wakeHold + ` AND ` + sessionInboxHold + ` AND ` + waitNotificationAdmissionOpen + ` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp()))` + sessionInboxFYIFilter
+	var total int
+	if err := tx.QueryRow(ctx, `SELECT count(*)`+where, repo, inbox, allowLocal).Scan(&total); err != nil {
+		return 0, nil, err
+	}
+	if total == 0 {
+		return 0, nil, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT d.delivery_id::text,e.event_id::text,e.publisher,`+digestTopicKeyExpr+`,COALESCE(e.record_id::text,''),COALESCE(e.version,0),e.kind`+where+` ORDER BY e.position LIMIT $4`, repo, inbox, allowLocal, maxDigestOverflowRefs)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer rows.Close()
+	refs := make([]SessionDigestOverflowRef, 0, min(total, maxDigestOverflowRefs))
+	for rows.Next() {
+		var r SessionDigestOverflowRef
+		if err := rows.Scan(&r.DeliveryID, &r.EventID, &r.Sender, &r.TopicKey, &r.RecordID, &r.Version, &r.Kind); err != nil {
+			return 0, nil, err
+		}
+		refs = append(refs, r)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, nil, err
+	}
+	return total, refs, nil
+}
+
 func digestDueTx(ctx context.Context, tx pgx.Tx, repo, inbox string, allowLocal bool, candidates []digestCandidate, windowSeconds int, flushNow bool) (bool, error) {
 	if len(candidates) == 0 {
 		return false, nil
@@ -252,7 +292,7 @@ func digestDueTx(ctx context.Context, tx pgx.Tx, repo, inbox string, allowLocal 
 		minCreated = *linMinCreated
 	}
 	var due bool
-	err := tx.QueryRow(ctx, `SELECT ($4::timestamptz + make_interval(secs => $5) <= clock_timestamp()) OR EXISTS(SELECT 1 FROM cairn.agent_delivery ud JOIN cairn.agent_event ue USING(event_id) WHERE ue.repo=$1 AND ud.consumer=$2 AND (ue.sensitivity='shareable' OR $3) AND ue.created_at>=$6 AND (ue.kind='request' OR ue.blocker OR ue.kind='blocker' OR COALESCE(ue.notice_policy->>'urgency','')='urgent' OR COALESCE(ue.notice_action,'')='decide'))`, repo, inbox, allowLocal, minAvail, float64(windowSeconds), minCreated).Scan(&due)
+	err := tx.QueryRow(ctx, `SELECT ($4::timestamptz + make_interval(secs => $5) <= clock_timestamp()) OR EXISTS(SELECT 1 FROM cairn.agent_delivery ud JOIN cairn.agent_event ue USING(event_id) WHERE ue.repo=$1 AND ud.consumer=$2 AND (ue.sensitivity='shareable' OR $3) AND ue.created_at>=$6 AND (ue.kind='request' OR ue.kind='response' OR ue.blocker OR ue.kind='blocker' OR COALESCE(ue.notice_policy->>'urgency','')='urgent' OR COALESCE(ue.notice_action,'')='decide'))`, repo, inbox, allowLocal, minAvail, float64(windowSeconds), minCreated).Scan(&due)
 	return due, err
 }
 

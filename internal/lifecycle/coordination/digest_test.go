@@ -204,3 +204,122 @@ func TestNoticeDigestSessionOptionsWakeRenderAndSettleLifecycle(t *testing.T) {
 		t.Fatalf("unexpected final per-item states: %v", itemStates)
 	}
 }
+
+func TestNoticeDigestOverflowRefsWithinBudgetAndRetryIdempotency(t *testing.T) {
+	f := stage2Compact(t)
+	nativePop(f.config, "notice_batch_version")
+	f.config.Set("harness", value.Text("agy"))
+	f.config.Set("notice_digest_version", value.IntegerText("1"))
+	f.config.Set("notice_digest_window_seconds", value.IntegerText("300"))
+	cfgPath := filepath.Join(f.root, "bindings", "agy-digest.json")
+	stage2WriteValue(t, f.p, cfgPath, f.config)
+	coordPath, err := f.c.statePath(f.config, stage2Agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate an outer CLAUDE_SESSION_ID in env; agy compact CLI must ignore it!
+	t.Setenv("CLAUDE_SESSION_ID", "foreign-claude-session")
+
+	// Build 64 digest items so manifest > 4,096 B, plus 6 store overflow items (digest_overflow_count=6).
+	baseDeliv := f.state.Get("inbox_attempt").Get("delivery")
+	items := &value.Value{Kind: value.Array}
+	bodies := map[string]string{}
+	for i := 1; i <= 64; i++ {
+		d := nativeClone(baseDeliv)
+		dID := "10000000-0000-4000-8000-000000000" + string([]byte{byte('0' + i/100), byte('0' + (i/10)%10), byte('0' + i%10)})
+		rID := "20000000-0000-4000-8000-000000000" + string([]byte{byte('0' + i/100), byte('0' + (i/10)%10), byte('0' + i%10)})
+		d.Set("delivery_id", value.Text(dID))
+		d.Get("event").Set("from", value.Text("agent/sender"))
+		d.Get("event").Set("ref", nativeMap("record_id", rID, "version", 1))
+		items.Items = append(items.Items, nativeMap("ordinal", i, "topic_key", "topic/long-name-padding-"+rID, "delivery", d))
+		bodies[rID] = "short note body"
+	}
+	overflowRefs := &value.Value{Kind: value.Array, Items: []*value.Value{
+		nativeMap("delivery_id", "99990001-0000-4000-8000-000000000001", "event_id", "88880001-0000-4000-8000-000000000001", "sender", "agent/overflow-one", "topic_key", "topic/ov1", "record_id", "30000001-0000-4000-8000-000000000001", "version", 1, "kind", "notice"),
+		nativeMap("delivery_id", "99990002-0000-4000-8000-000000000002", "event_id", "88880002-0000-4000-8000-000000000002", "sender", "agent/overflow-two", "topic_key", "topic/ov2", "record_id", "30000002-0000-4000-8000-000000000002", "version", 2, "kind", "notice"),
+	}}
+
+	att := nativeClone(f.state.Get("inbox_attempt"))
+	att.Set("admission_kind", value.Text("digest"))
+	att.Set("digest_superseded_count", value.IntegerText("0"))
+	att.Set("digest_overflow_count", value.IntegerText("6"))
+	att.Set("digest_overflow_refs", overflowRefs)
+	att.Set("digest_items", items)
+	f.state.Set("inbox_attempt", att)
+	_ = os.Remove(filepath.Join(f.root, "state", "fixture", "intents", stage2Attempt+".json"))
+	_ = os.Remove(f.index)
+	_ = os.Remove(f.contextPath)
+	stage2WriteValue(t, f.p, coordPath, f.state)
+
+	allSettled := false
+	f.c.Host.Call = func(_ context.Context, _ *value.Value, op string, req *value.Value, _ NativeCallOptions) (*value.Value, error) {
+		switch op {
+		case "session-inbox-digest-renew":
+			return nativeClone(att), nil
+		case "history":
+			recID := nativeText(req.Get("record_id"))
+			txt := bodies[recID]
+			sum := sha256.Sum256([]byte(txt))
+			ver := nativeMap("version", 1, "payload_available", true, "body", txt, "body_bytes", len(txt), "body_sha256", hex.EncodeToString(sum[:]))
+			return nativeMap("record_id", recID, "historical", true, "versions", &value.Value{Kind: value.Array, Items: []*value.Value{ver}}), nil
+		case "session-inbox-digest-settle":
+			ocs := req.Get("outcomes").Items
+			settled := &value.Value{Kind: value.Array}
+			for _, oc := range ocs {
+				settled.Items = append(settled.Items, nativeMap("ordinal", 1, "delivery_id", nativeText(oc.Get("delivery_id")), "state", nativeText(oc.Get("disposition"))))
+			}
+			if len(ocs) == 64 {
+				allSettled = true
+			}
+			rem := 64
+			if allSettled {
+				rem = 0
+			}
+			return nativeMap("attempt_id", att.Get("attempt_id"), "items", settled, "remaining", rem), nil
+		case "session-inbox-reconcile":
+			if !allSettled && nativeText(req.Get("reason")) == "delivery_completed" {
+				return nil, nativeRefusal("DELIVERY_ACTIVE", "native digest has unsettled deliveries")
+			}
+			closed := nativeClone(att)
+			closed.Set("finished_at", value.Text("2026-11-25T00:00:00Z"))
+			closed.Set("reason", req.Get("reason"))
+			return closed, nil
+		default:
+			t.Fatalf("unexpected op %s", op)
+			return nil, nil
+		}
+	}
+
+	rendered, err := f.c.RenderActiveAttemptContext(context.Background(), f.config, f.state, coordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txt := nativeText(rendered)
+	if len(txt) > 4096 {
+		t.Fatalf("rendered digest exceeded 4096 bytes: %d", len(txt))
+	}
+	if !strings.Contains(txt, "6 deferred") {
+		t.Fatalf("expected 6 deferred in summary, got: %s", txt)
+	}
+	if !strings.Contains(txt, "more digest item(s):") || !strings.Contains(txt, "Deferred overflow (6") || !strings.Contains(txt, "agent/overflow-one") {
+		t.Fatalf("expected explicit dropped + deferred overflow refs, got: %s", txt)
+	}
+
+	ctxVal, err := f.c.read(f.contextPath, SiteCompactContextRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle := nativeText(ctxVal.Get("compact_handle"))
+	// Settle item 1 twice idempotently (even with outer CLAUDE_SESSION_ID set), then settle remaining!
+	for i := 0; i < 2; i++ {
+		code, res, stderr := stage2CLIResult(t, f.c, "inbox", "compact", "settle", "--item", "1", handle, "handled")
+		if code != 0 || stderr != "" || res.Get("remaining").Integer != "64" {
+			t.Fatalf("settle --item 1 attempt %d failed: code=%d stderr=%q res=%v", i+1, code, stderr, res)
+		}
+	}
+	code, resAll, stderr := stage2CLIResult(t, f.c, "inbox", "compact", "settle", handle, "handled")
+	if code != 0 || stderr != "" || resAll.Get("remaining").Integer != "0" {
+		t.Fatalf("final settle failed: code=%d stderr=%q res=%v", code, stderr, resAll)
+	}
+}

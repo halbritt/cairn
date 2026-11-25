@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/halbritt/cairn/internal/lifecycle/value"
@@ -85,14 +86,30 @@ func TestSessionInboxOptionsCapabilityAndTamperGuards(t *testing.T) {
 	nativePop(f.config, "compact_inbox_version")
 	nativePop(f.config, "notice_batch_version")
 
-	// Excluded harness (agy) refuses per-session compact opt-in with INVALID_CONFIG.
-	agyCfg := nativeClone(f.config)
-	agyCfg.Set("harness", value.Text("agy"))
-	agyCfgPath := filepath.Join(f.root, "bindings", "agy.json")
-	stage2WriteValue(t, f.p, agyCfgPath, agyCfg)
-	code, _, stderr := stage2CLIResult(t, f.c, "configure-session-inbox", "--config", agyCfgPath, "--native-session-id", "sess-1", "--compact-inbox")
+	// Unsupported harness (unknown) refuses per-session compact opt-in with INVALID_CONFIG.
+	badCfg := nativeClone(f.config)
+	badCfg.Set("harness", value.Text("unknown"))
+	badCfgPath := filepath.Join(f.root, "bindings", "unknown.json")
+	stage2WriteValue(t, f.p, badCfgPath, badCfg)
+	code, _, stderr := stage2CLIResult(t, f.c, "configure-session-inbox", "--config", badCfgPath, "--native-session-id", "sess-1", "--compact-inbox")
 	if code != 1 || stderr == "" {
-		t.Fatalf("expected INVALID_CONFIG exit 1 for agy, got code=%d stderr=%q", code, stderr)
+		t.Fatalf("expected INVALID_CONFIG exit 1 for unknown harness, got code=%d stderr=%q", code, stderr)
+	}
+
+	// agy, opencode, and hermes native bindings accept compact inbox, digest, and reject batch+digest together.
+	for _, h := range []string{"agy", "opencode", "hermes"} {
+		hCfg := nativeClone(f.config)
+		hCfg.Set("harness", value.Text(h))
+		hCfgPath := filepath.Join(f.root, "bindings", h+".json")
+		stage2WriteValue(t, f.p, hCfgPath, hCfg)
+		code, hRes, hErr := stage2CLIResult(t, f.c, "configure-session-inbox", "--config", hCfgPath, "--native-session-id", "sess-"+h, "--compact-inbox", "--notice-digest", "--digest-window-seconds", "180")
+		if code != 0 || hErr != "" || hRes.Get("compact_inbox_version").Integer != "1" || hRes.Get("notice_digest_version").Integer != "1" || hRes.Get("notice_digest_window_seconds").Integer != "180" {
+			t.Fatalf("expected %s compact+digest opt-in to succeed, got code=%d err=%q res=%v", h, code, hErr, hRes)
+		}
+		code, _, rejErr := stage2CLIResult(t, f.c, "configure-session-inbox", "--config", hCfgPath, "--native-session-id", "sess-"+h, "--compact-inbox", "--notice-batch", "--notice-digest")
+		if code != 2 || !strings.Contains(rejErr, "cannot combine --notice-batch and --notice-digest") {
+			t.Fatalf("expected batch+digest rejection for %s, got code=%d err=%q", h, code, rejErr)
+		}
 	}
 
 	// Group-writable session-options file fails closed with INVALID_HOST.

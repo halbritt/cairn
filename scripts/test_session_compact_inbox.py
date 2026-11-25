@@ -359,20 +359,34 @@ else:
 
     def test_excluded_harnesses_and_tampered_options_fail_closed(self):
         self._run_hook(self.coord_id, "SessionStart")
-        # Excluded harness (agy) refuses per-session compact opt-in.
-        agy_cfg = dict(json.loads(self.coord_cfg_path.read_text()), harness="agy", binding="agy-one",
-                       state_dir=str(self.coord_root / "state" / "agy-one"))
-        agy_cfg.pop("inbox_recall_binding", None)
-        agy_path = self.coord_root / "bindings" / "agy-one.json"
-        agy_path.write_text(json.dumps(agy_cfg))
-        agy_path.chmod(0o600)
+        # Unsupported harness and non-native bindings refuse per-session compact opt-in.
+        bad_cfg = dict(json.loads(self.coord_cfg_path.read_text()), harness="unknown", binding="unknown-one",
+                       state_dir=str(self.coord_root / "state" / "unknown-one"))
+        bad_cfg.pop("inbox_recall_binding", None)
+        bad_path = self.coord_root / "bindings" / "unknown-one.json"
+        bad_path.write_text(json.dumps(bad_cfg))
+        bad_path.chmod(0o600)
         res = subprocess.run(
-            [sys.executable, "-B", str(INSTALLER), "--binding", "agy-one", "--root", str(self.coord_root),
+            [sys.executable, "-B", str(INSTALLER), "--binding", "unknown-one", "--root", str(self.coord_root),
              "--session", self.coord_id, "--compact-inbox"],
             capture_output=True, text=True, env=self._env(), timeout=10,
         )
         self.assertEqual(res.returncode, 2)
-        self.assertIn("Codex or Claude", res.stderr)
+        self.assertIn("INVALID_CONFIG", res.stderr)
+
+        non_native_cfg = dict(json.loads(self.coord_cfg_path.read_text()), harness="agy", binding="agy-nonnative",
+                              native_delivery=False, state_dir=str(self.coord_root / "state" / "agy-nonnative"))
+        non_native_cfg.pop("inbox_recall_binding", None)
+        non_native_path = self.coord_root / "bindings" / "agy-nonnative.json"
+        non_native_path.write_text(json.dumps(non_native_cfg))
+        non_native_path.chmod(0o600)
+        res_nn = subprocess.run(
+            [sys.executable, "-B", str(INSTALLER), "--binding", "agy-nonnative", "--root", str(self.coord_root),
+             "--session", self.coord_id, "--compact-inbox"],
+            capture_output=True, text=True, env=self._env(), timeout=10,
+        )
+        self.assertEqual(res_nn.returncode, 2)
+        self.assertIn("supported binding with --native-delivery", res_nn.stderr)
 
         # Group-writable session-options file refuses hook admission and inbox_recall with command_context/compact_fallback.
         cfg = json.loads(self.coord_cfg_path.read_text())
@@ -952,6 +966,202 @@ class PublicGoV3SessionCompactTests(unittest.TestCase):
             )
             self.assertEqual(go_res.returncode, 0, go_res.stderr)
             self.assertEqual(json.loads(go_res.stdout)["status"], "cleared")
+
+    def test_a1_adapters_compact_digest_auto_settle_and_batch_digest_rejection(self):
+        from integrations.lifecycle import coordination as engine, inbox_recall
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            home = root / "home"
+            bin_dir = home / ".local/bin"
+            bin_dir.mkdir(parents=True, mode=0o700)
+            token = root / "token"
+            token.write_text("fixture-token")
+            token.chmod(0o600)
+            coord_root = root / "coordination"
+            env = dict(os.environ, HOME=str(home), PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+
+            work_dir = root / "work"
+            (work_dir / ".git").mkdir(parents=True)
+            (home / ".gemini/antigravity").mkdir(parents=True, mode=0o700)
+            (home / ".config/opencode").mkdir(parents=True, mode=0o700)
+            (home / ".hermes").mkdir(parents=True, mode=0o700)
+
+            fake_cairn = root / "fake-cairn"
+            fake_cairn.write_text('#!/usr/bin/env python3\nimport json, sys\nprint(json.dumps({"schema": "cairn.response/1", "ok": True, "data": {"state": "handled", "attempts": 1}}))\n')
+            fake_cairn.chmod(0o700)
+            for harness, settings_path, binding_name in (
+                ("agy", home / ".gemini/antigravity/hooks.json", "agy-one"),
+                ("opencode", home / ".config/opencode", "opencode-one"),
+                ("hermes", home / ".hermes", "hermes-one"),
+            ):
+                res = subprocess.run(
+                    [sys.executable, "-B", str(INSTALLER), "--harness", harness, "--binding", binding_name,
+                     "--settings", str(settings_path), "--root", str(coord_root), "--cairn", str(fake_cairn),
+                     "--socket", str(root / "api.sock"), "--token-file", str(token),
+                     "--no-service", "--native-delivery"],
+                    capture_output=True, text=True, env=env, timeout=20,
+                )
+                self.assertEqual(res.returncode, 0, res.stderr)
+                cfg_path = coord_root / "bindings" / f"{binding_name}.json"
+                cfg = json.loads(cfg_path.read_text())
+                self.assertEqual(cfg["compact_inbox_version"], 1)
+                self.assertEqual(cfg["notice_digest_version"], 1)
+                self.assertEqual(cfg["notice_digest_window_seconds"], 300)
+                self.assertEqual(cfg["notice_auto_settle_version"], 1)
+                self.assertNotIn("notice_batch_version", cfg)
+                py_cfg = engine.load_config(cfg_path)
+                self.assertEqual(engine.notice_digest_window_seconds(py_cfg, f"sess-{harness}"), 300)
+                self.assertTrue(engine.auto_settle_action_none_enabled(py_cfg, f"sess-{harness}"))
+                self.assertEqual(engine.effective_session_inbox_options(py_cfg, f"sess-{harness}"), (True, False))
+                self.assertTrue(inbox_recall.session_compact_inbox_enabled(py_cfg, f"sess-{harness}"))
+
+                # Go parity: reject simultaneous --notice-batch + --notice-digest.
+                bad_go = subprocess.run(
+                    [str(self.lifecycle_bin), "coordination", "configure-session-inbox",
+                     "--config", str(cfg_path), "--native-session-id", f"sess-{harness}",
+                     "--compact-inbox", "--notice-batch", "--notice-digest"],
+                    capture_output=True, text=True, env=env, timeout=10,
+                )
+                self.assertNotEqual(bad_go.returncode, 0)
+                self.assertIn("--notice-batch and --notice-digest", bad_go.stderr)
+
+            # Verify agy PreInvocation injects compact >4096B truncated notice with read handle (<9500B),
+            # and cairn-inbox read/settle succeed even if outer CLAUDE_SESSION_ID is set!
+            agy_cfg_path = coord_root / "bindings" / "agy-one.json"
+            agy_cfg = engine.load_config(agy_cfg_path)
+            agy_state_dir = Path(agy_cfg["state_dir"])
+            agy_state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            proc = engine.process_reference(os.getpid())
+            agy_sid = "agy-conv-1"
+            agent_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            exec_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+            att_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+            deliv_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+            lease_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+            ev_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+            rec_id = "11111111-1111-4111-8111-111111111112"
+            long_body = ("Agy compact notice line with UTF-8 data.\n" * 200)
+            long_sha = hashlib.sha256(long_body.encode()).hexdigest()
+            ev = dict(event_id=ev_id, kind="notice", position=1, created_at="2026-11-25T00:00:00Z",
+                      **{"from": "agent/coordinator"}, action="ack",
+                      ref=dict(record_id=rec_id, version=1))
+            deliv = dict(delivery_id=deliv_id, lease_id=lease_id, state="leased", event=ev)
+            attempt = dict(attempt_id=att_id, session=dict(agent_id=agent_id, execution_id=exec_id),
+                           delivery=deliv, admission_kind="ordinary")
+            agent = dict(agent_id=agent_id, execution_id=exec_id, inbox="agent/agy-one",
+                         display_name="agent-agy", native_session_id=agy_sid, context_revision=1,
+                         metadata=dict(state="busy", workspace=str(work_dir), project="cairn", delivery_mode="existing-session"))
+            sp = engine.state_path(agy_cfg, agy_sid)
+            engine.write_state(sp, dict(agent=agent, process=proc, workspace=str(work_dir),
+                                       inbox_intent=dict(request_id=att_id, session=dict(agent_id=agent_id, execution_id=exec_id)),
+                                       inbox_attempt=attempt))
+            settled_calls = []
+
+            def fake_call(cfg, op, body, *args, **kwargs):
+                if op == "agent-heartbeat":
+                    return agent
+                if op == "session-inbox-reconcile":
+                    if body.get("reason") == "delivery_completed" and not settled_calls:
+                        raise engine.CoordinationError("DELIVERY_ACTIVE", "delivery is still leased")
+                    return dict(attempt, finished_at="2026-11-25T00:00:00Z")
+                if op == "event-renew":
+                    return deliv
+                if op == "history":
+                    return dict(record_id=rec_id, historical=True,
+                                versions=[dict(version=1, payload_available=True, body=long_body,
+                                               body_bytes=len(long_body.encode()), body_sha256=long_sha)])
+                if op == "event-ack":
+                    settled_calls.append(body)
+                    return dict(delivery_id=deliv_id, state=body["disposition"])
+                raise AssertionError(f"unexpected op {op}")
+
+            with mock.patch.object(engine, "call", side_effect=fake_call), \
+                    mock.patch.object(engine, "owner_process", return_value=proc), \
+                    mock.patch.object(engine, "process_alive", return_value=True), \
+                    mock.patch.dict(os.environ, dict(env, CAIRN_INBOX_ROOT=str(coord_root), CLAUDE_SESSION_ID="foreign-claude-id"), clear=True):
+                out = engine.handle(agy_cfg, dict(hook_event_name="PreInvocation", conversationId=agy_sid,
+                                                  workspacePaths=[str(work_dir)]), "PreInvocation")
+                self.assertEqual(set(out), {"injectSteps"})
+                eph = out["injectSteps"][0]["ephemeralMessage"]
+                self.assertLess(len(eph.encode()), 9500)
+                self.assertIn("truncated", eph)
+                self.assertIn("cairn-inbox read ", eph)
+                self.assertIn("cairn-inbox settle ", eph)
+                ctx_file = json.loads((agy_state_dir / "inbox" / f"{att_id}.json").read_text())
+                handle = ctx_file["compact_handle"]
+                buf = io.StringIO()
+                with mock.patch.object(sys, "stdout", buf):
+                    rc_read = engine.compact_inbox_command(["read", handle])
+                self.assertEqual(rc_read, 0)
+                self.assertEqual(json.loads(buf.getvalue())["body"], long_body)
+                buf2 = io.StringIO()
+                with mock.patch.object(sys, "stdout", buf2):
+                    rc_settle = engine.compact_inbox_command(["settle", handle, "handled"])
+                self.assertEqual(rc_settle, 0)
+                self.assertEqual(json.loads(buf2.getvalue())["status"], "handled")
+
+            # Verify opencode & hermes TurnStart render compact digest with overflow refs <= 4096B.
+            for h_name in ("opencode", "hermes"):
+                h_cfg = engine.load_config(coord_root / "bindings" / f"{h_name}-one.json")
+                Path(h_cfg["state_dir"]).mkdir(parents=True, exist_ok=True, mode=0o700)
+                h_sid = f"ses-{h_name}-1"
+                h_agent = dict(agent, native_session_id=h_sid, inbox=f"agent/{h_name}-one")
+                h_items = []
+                for idx in range(1, 65):
+                    d_id = f"10000000-0000-4000-8000-000000000{idx:03d}"
+                    r_id = f"20000000-0000-4000-8000-000000000{idx:03d}"
+                    h_items.append(dict(
+                        ordinal=idx, topic_key=f"topic/item-{idx}-{r_id}",
+                        delivery=dict(delivery_id=d_id, lease_id=lease_id, state="leased",
+                                      event=dict(event_id=ev_id, kind="notice", position=idx,
+                                                 created_at="2026-11-25T00:00:00Z", **{"from": "agent/sender"},
+                                                 action="ack", ref=dict(record_id=r_id, version=1))),
+                    ))
+                h_att = dict(attempt_id=att_id, session=dict(agent_id=agent_id, execution_id=exec_id),
+                             admission_kind="digest", digest_superseded_count=0,
+                             digest_overflow_count=3,
+                             digest_overflow_refs=[dict(delivery_id="99990001-0000-4000-8000-000000000001",
+                                                        event_id="88880001-0000-4000-8000-000000000001",
+                                                        sender="agent/overflow-py", topic_key="topic/ov-py",
+                                                        record_id="30000001-0000-4000-8000-000000000001",
+                                                        version=1, kind="notice")],
+                             digest_items=h_items, delivery=h_items[0]["delivery"])
+                h_sp = engine.state_path(h_cfg, h_sid)
+                engine.write_state(h_sp, dict(agent=h_agent, process=proc, workspace=str(work_dir),
+                                             inbox_intent=dict(request_id=att_id, session=dict(agent_id=agent_id, execution_id=exec_id)),
+                                             inbox_attempt=h_att))
+                small_body = "short note"
+                small_sha = hashlib.sha256(small_body.encode()).hexdigest()
+
+                def fake_digest_call(cfg, op, body, *args, **kwargs):
+                    if op == "agent-heartbeat":
+                        return h_agent
+                    if op == "session-inbox-control":
+                        return dict(attempt=h_att)
+                    if op == "session-inbox-reconcile":
+                        if body.get("reason") == "delivery_completed":
+                            raise engine.CoordinationError("DELIVERY_ACTIVE", "digest is still leased")
+                        return dict(h_att, finished_at="2026-11-25T00:00:00Z")
+                    if op == "session-inbox-digest-renew":
+                        return h_att
+                    if op == "history":
+                        return dict(record_id=body["record_id"], historical=True,
+                                    versions=[dict(version=1, payload_available=True, body=small_body,
+                                                   body_bytes=len(small_body.encode()), body_sha256=small_sha)])
+                    raise AssertionError(f"unexpected op {op}")
+
+                with mock.patch.object(engine, "call", side_effect=fake_digest_call), \
+                        mock.patch.object(engine, "owner_process", return_value=proc), \
+                        mock.patch.object(engine, "process_alive", return_value=True), \
+                        mock.patch.dict(os.environ, env, clear=True):
+                    ev_payload = dict(hook_event_name="TurnStart", session_id=h_sid,
+                                      cwd=str(work_dir), turn_id=f"turn-{h_name}-1", host_pid=os.getpid())
+                    out_h = engine.handle(h_cfg, ev_payload, "TurnStart")
+                    ctx_text = out_h["hookSpecificOutput"]["additionalContext"]
+                    self.assertLess(len(ctx_text.encode()), 9500)
+                    self.assertIn("3 deferred", ctx_text)
+                    self.assertIn("more digest item(s):", ctx_text)
+                    self.assertIn("agent/overflow-py", ctx_text)
 
 
 if __name__ == "__main__":

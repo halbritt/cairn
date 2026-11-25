@@ -1,10 +1,10 @@
 # Compact native notices and responses
 
-CAIRN-216 adds `compact_inbox_version: 1` for Codex and Claude native delivery.
+CAIRN-216 / CAIRN-811 enable `compact_inbox_version: 1` for Codex, Claude, Agy, OpenCode, and Hermes native delivery.
 `scripts/install-agent-coordination.py --native-delivery` enables
 `compact_inbox_version: 1`, `notice_digest_version: 1`
 (`notice_digest_window_seconds: 300`, without `notice_batch_version`), and
-`notice_auto_settle_version: 1` by default for Codex and Claude bindings (and
+`notice_auto_settle_version: 1` by default for Codex, Claude, Agy, OpenCode, and Hermes bindings (and
 places `cairn-inbox` on the account's `~/.local/bin` path). Pass
 `--no-compact-inbox`, `--no-notice-digest` (or `--digest-window-seconds 0`), or
 `--no-auto-settle-action-none` to opt a binding out of any of these defaults.
@@ -91,9 +91,11 @@ measured model-token savings.
 ## Bounded notice batches
 
 Add `--notice-batch` to an installation (or `--session`/`--agent-id` call) to
-opt that Codex or Claude binding or session into `notice_batch_version: 1`.
-Batching is opt-in and mutually exclusive with `notice_digest_version: 1`: on
-binding installation `--notice-batch` suppresses the default digest (or pass
+opt that native binding or session into `notice_batch_version: 1`.
+Batching is opt-in and mutually exclusive with `notice_digest_version: 1`:
+simultaneous `notice_batch_version: 1` and `notice_digest_version: 1` are
+rejected by config validation, session-options validation, and installer flags.
+On binding installation `--notice-batch` suppresses the default digest (or pass
 `--notice-batch --no-notice-digest`). This requires schema 067 and its
 preceding migrations. A new native session must load the changed hooks; if inbox
 recall is enabled, use the manifest repinning procedure above.
@@ -125,26 +127,32 @@ its session hold until the normal turn-end reconciliation.
 
 `scripts/install-agent-coordination.py --native-delivery` enables
 `notice_digest_version: 1` (schema 088) with `notice_digest_window_seconds: 300`
-by default on Codex and Claude native bindings (pass `--no-notice-digest` or
-`--digest-window-seconds 0` to opt out). Pass `--notice-digest` (and optional
-`--digest-window-seconds SECONDS` in `1..3600`, defaulting to `300`) alongside
-`--compact-inbox` to enable digests for an individual coordinator session.
+by default on Codex, Claude, Agy, OpenCode, and Hermes `--native-delivery`
+bindings (pass `--no-notice-digest` or `--digest-window-seconds 0` to opt out).
+Pass `--notice-digest` (and optional `--digest-window-seconds SECONDS` in
+`1..3600`, defaulting to `300`) alongside `--compact-inbox` to enable digests
+for an individual coordinator session (cannot be combined with `--notice-batch`).
 
 In digest mode:
 
 - Routine and `action: review` notices are held without waking an idle session
   while the digest window is open.
-- Priority arrivals (`request` events, `response` events, `urgency: urgent`
-  notices, and `action: decide` notices) are never held behind a digest and
-  preempt immediately.
+- Priority arrivals (`request` events, `response` events, `blocker` notices,
+  `urgency: urgent` notices, and `action: decide` notices) are never held
+  behind a digest and preempt immediately (`response` events are never digested
+  so replies arrive promptly).
 - Held FYI notices become due as one digest turn when the digest window timer
-  fires, after a `request`, `urgency: urgent` notice, or `action: decide`
-  notice arrives while they were waiting, or at a goal-continuation / unbound
-  turn boundary.
+  fires, after a `request`, `response`, `blocker`, `urgency: urgent` notice, or
+  `action: decide` notice arrives while they were waiting, or at a
+  goal-continuation / unbound turn boundary.
 - A digest keeps the latest notice per `(sender, topic)` (using explicit
   `supersedes` keys or `topic/<name>` destinations while keeping distinct
   untopiced direct notices up to 64 items), reports `superseded_count`, and
   retains per-delivery leases and native hold protection across all items.
+- When eligible FYI notices exceed 64 items (`maxDigestItems`) or rendered
+  manifest items exceed the 4,096 B compact hook budget, the rendered digest
+  emits an explicit deferred overflow count and bounded deferred references
+  while leaving overflow items `pending` for the next digest (or `cairn_inbox`).
 - Inspect or read items with `cairn-inbox read HANDLE` or
   `cairn-inbox read HANDLE --item ORDINAL`. Settle individual items with their
   own outcome (`cairn-inbox settle HANDLE ignored --code unsupported_kind --item 3`),

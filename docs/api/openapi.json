@@ -13673,6 +13673,40 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.SessionDigestItemOutcome"
       },
+      "core.SessionDigestOverflowRef": {
+        "properties": {
+          "delivery_id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "record_id": {
+            "type": "string"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "topic_key": {
+            "type": "string"
+          },
+          "version": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delivery_id",
+          "event_id",
+          "kind"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionDigestOverflowRef"
+      },
       "core.SessionDigestSettledItem": {
         "properties": {
           "already_settled": {
@@ -13845,6 +13879,20 @@
           "digest_items": {
             "items": {
               "$ref": "#/components/schemas/core.SessionDigestItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "digest_overflow_count": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "digest_overflow_refs": {
+            "items": {
+              "$ref": "#/components/schemas/core.SessionDigestOverflowRef"
             },
             "type": [
               "array",

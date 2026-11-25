@@ -102,14 +102,18 @@ func ValidateConfig(config *value.Value) (*value.Value, error) {
 	if v := config.Get("remind_unacknowledged_turn_end"); v != nil && v.Kind != value.Bool {
 		return fail("remind_unacknowledged_turn_end requires a boolean")
 	}
-	if v := config.Get("compact_inbox_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !nativeContains([]string{"codex", "claude"}, h) || !value.Truth(config.Get("native_delivery"))) {
-		return fail("compact_inbox_version 1 requires Codex or Claude native delivery")
+	compactCapable := nativeContains([]string{"codex", "claude", "agy", "opencode", "hermes"}, h) && value.Truth(config.Get("native_delivery"))
+	if v := config.Get("compact_inbox_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !compactCapable) {
+		return fail("compact_inbox_version 1 requires supported native delivery")
 	}
-	if v := config.Get("notice_batch_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !sessionIntOne(config.Get("compact_inbox_version")) || !nativeContains([]string{"codex", "claude"}, h) || !value.Truth(config.Get("native_delivery"))) {
-		return fail("notice_batch_version 1 requires compact Codex or Claude native delivery")
+	if v := config.Get("notice_batch_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !sessionIntOne(config.Get("compact_inbox_version")) || !compactCapable) {
+		return fail("notice_batch_version 1 requires compact native delivery")
 	}
-	if v := config.Get("notice_digest_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !sessionIntOne(config.Get("compact_inbox_version")) || !nativeContains([]string{"codex", "claude"}, h) || !value.Truth(config.Get("native_delivery"))) {
-		return fail("notice_digest_version 1 requires compact Codex or Claude native delivery")
+	if v := config.Get("notice_digest_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !sessionIntOne(config.Get("compact_inbox_version")) || !compactCapable) {
+		return fail("notice_digest_version 1 requires compact native delivery")
+	}
+	if sessionIntOne(config.Get("notice_batch_version")) && sessionIntOne(config.Get("notice_digest_version")) {
+		return fail("notice_batch_version and notice_digest_version are mutually exclusive")
 	}
 	if dw := config.Get("notice_digest_window_seconds"); dw != nil {
 		if !sessionIntOne(config.Get("notice_digest_version")) {
@@ -647,6 +651,9 @@ func (c *CLI) runRecoveryWithIO(ctx context.Context, argv []string, in io.Reader
 		}
 		if a.has("--clear-session-options") && (a.has("--compact-inbox") || a.has("--notice-batch") || a.has("--notice-digest") || a.has("--digest-window-seconds") || a.has("--auto-settle-action-none")) {
 			return 0, parseFail(prog, "configure-session-inbox cannot combine --clear-session-options with --compact-inbox, --notice-batch, --notice-digest or --auto-settle-action-none")
+		}
+		if a.has("--notice-batch") && a.has("--notice-digest") {
+			return 0, parseFail(prog, "configure-session-inbox: cannot combine --notice-batch and --notice-digest")
 		}
 		if a.has("--notice-batch") && !a.has("--compact-inbox") {
 			return 0, parseFail(prog, "configure-session-inbox: --notice-batch requires --compact-inbox")

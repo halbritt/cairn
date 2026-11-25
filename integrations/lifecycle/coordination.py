@@ -1920,6 +1920,7 @@ def state_path(config, native):
 
 
 SESSION_INBOX_OPTIONS_SCHEMA = "cairn.session-inbox-options/1"
+COMPACT_INBOX_HARNESSES = ("codex", "claude", "agy", "opencode", "hermes")
 
 
 def session_options_path(config, native):
@@ -1979,23 +1980,25 @@ def read_session_inbox_options(config, native):
         raise CoordinationError("INVALID_HOST", "session inbox options are malformed")
     if "updated_at" in entry and not _finite_timestamp(entry["updated_at"]):
         raise CoordinationError("INVALID_HOST", "session inbox options timestamp is invalid")
-    capable = config.get("harness") in ("codex", "claude") and bool(config.get("native_delivery"))
+    capable = config.get("harness") in COMPACT_INBOX_HARNESSES and bool(config.get("native_delivery"))
     has_compact = "compact_inbox_version" in entry
     has_auto_settle = "notice_auto_settle_version" in entry
     if not has_compact and not has_auto_settle:
         if not capable:
-            raise CoordinationError("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
+            raise CoordinationError("INVALID_CONFIG", "compact_inbox_version 1 requires supported native delivery")
         raise CoordinationError("INVALID_HOST", "session inbox options are malformed")
     if has_compact and (not capable or type(entry["compact_inbox_version"]) is not int
             or entry["compact_inbox_version"] != 1):
-        raise CoordinationError("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
+        raise CoordinationError("INVALID_CONFIG", "compact_inbox_version 1 requires supported native delivery")
     if "notice_batch_version" in entry and (
             type(entry["notice_batch_version"]) is not int or entry["notice_batch_version"] != 1 or not has_compact):
-        raise CoordinationError("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
+        raise CoordinationError("INVALID_CONFIG", "notice_batch_version 1 requires compact native delivery")
     has_digest = "notice_digest_version" in entry
     if has_digest and (
             type(entry["notice_digest_version"]) is not int or entry["notice_digest_version"] != 1 or not has_compact):
-        raise CoordinationError("INVALID_CONFIG", "notice_digest_version 1 requires compact Codex or Claude native delivery")
+        raise CoordinationError("INVALID_CONFIG", "notice_digest_version 1 requires compact native delivery")
+    if "notice_batch_version" in entry and has_digest:
+        raise CoordinationError("INVALID_CONFIG", "notice_batch_version and notice_digest_version are mutually exclusive")
     if "notice_digest_window_seconds" in entry and (
             not has_digest or type(entry["notice_digest_window_seconds"]) is not int
             or not (1 <= entry["notice_digest_window_seconds"] <= 3600)):
@@ -2007,13 +2010,17 @@ def read_session_inbox_options(config, native):
 
 
 def effective_session_inbox_options(config, native):
-    capable = config.get("harness") in ("codex", "claude") and bool(config.get("native_delivery"))
+    capable = config.get("harness") in COMPACT_INBOX_HARNESSES and bool(config.get("native_delivery"))
     compact = capable and config.get("compact_inbox_version") == 1
     batch = compact and config.get("notice_batch_version") == 1
     override = read_session_inbox_options(config, native)
     if override is not None:
-        compact = compact or (type(override.get("compact_inbox_version")) is int and override["compact_inbox_version"] == 1)
-        batch = batch or (compact and type(override.get("notice_batch_version")) is int and override["notice_batch_version"] == 1)
+        compact = compact or (capable and type(override.get("compact_inbox_version")) is int and override["compact_inbox_version"] == 1)
+        if compact:
+            if type(override.get("notice_batch_version")) is int and override["notice_batch_version"] == 1:
+                batch = True
+            elif type(override.get("notice_digest_version")) is int and override["notice_digest_version"] == 1:
+                batch = False
     return compact, batch
 
 
@@ -2035,7 +2042,7 @@ def state_auto_settle_action_none(config, state):
 
 
 def notice_digest_window_seconds(config, native):
-    capable = config.get("harness") in ("codex", "claude") and bool(config.get("native_delivery"))
+    capable = config.get("harness") in COMPACT_INBOX_HARNESSES and bool(config.get("native_delivery"))
     if not capable:
         return 0
     compact = type(config.get("compact_inbox_version")) is int and config["compact_inbox_version"] == 1
@@ -2053,6 +2060,8 @@ def notice_digest_window_seconds(config, native):
                 ov_win = override.get("notice_digest_window_seconds")
                 if type(ov_win) is int and 1 <= ov_win <= 3600:
                     window = ov_win
+            elif compact and type(override.get("notice_batch_version")) is int and override["notice_batch_version"] == 1:
+                digest = False
     return window if digest else 0
 
 
@@ -2105,12 +2114,14 @@ def configure_session_inbox(config, *, native_session_id=None, agent_id=None,
                             compact_inbox=False, notice_batch=False,
                             notice_digest=False, digest_window_seconds=None,
                             auto_settle_action_none=False, clear=False):
-    if compact_inbox and (config.get("harness") not in ("codex", "claude") or not config.get("native_delivery")):
-        raise CoordinationError("INVALID_CONFIG", "compact_inbox_version 1 requires Codex or Claude native delivery")
+    if compact_inbox and (config.get("harness") not in COMPACT_INBOX_HARNESSES or not config.get("native_delivery")):
+        raise CoordinationError("INVALID_CONFIG", "compact_inbox_version 1 requires supported native delivery")
     if notice_batch and not compact_inbox:
-        raise CoordinationError("INVALID_CONFIG", "notice_batch_version 1 requires compact Codex or Claude native delivery")
+        raise CoordinationError("INVALID_CONFIG", "notice_batch_version 1 requires compact native delivery")
     if notice_digest and not compact_inbox:
-        raise CoordinationError("INVALID_CONFIG", "notice_digest_version 1 requires compact Codex or Claude native delivery")
+        raise CoordinationError("INVALID_CONFIG", "notice_digest_version 1 requires compact native delivery")
+    if notice_batch and notice_digest:
+        raise CoordinationError("INVALID_CONFIG", "notice_batch_version and notice_digest_version are mutually exclusive")
     if digest_window_seconds is not None and (
             not notice_digest or type(digest_window_seconds) is not int or not (1 <= digest_window_seconds <= 3600)):
         raise CoordinationError("INVALID_CONFIG", "notice_digest_window_seconds requires integer 1..3600 with notice_digest_version 1")
@@ -2755,7 +2766,8 @@ def compact_inbox_command(argv):
         raise CoordinationError('STALE_SESSION', 'compact inbox handle no longer belongs to this live attempt')
     if not caller_descends_from(owner_process):
         raise CoordinationError('NOT_THIS_SESSION', 'compact inbox caller is outside the native process tree')
-    native_env = os.environ.get('CODEX_THREAD_ID' if config['harness'] == 'codex' else 'CLAUDE_SESSION_ID')
+    env_key = 'CODEX_THREAD_ID' if config['harness'] == 'codex' else ('CLAUDE_SESSION_ID' if config['harness'] == 'claude' else '')
+    native_env = os.environ.get(env_key) if env_key else ''
     if native_env and native_env != native:
         raise CoordinationError('NOT_THIS_SESSION', 'compact inbox handle belongs to another native conversation')
     delivery = attempt['delivery']
@@ -3621,13 +3633,77 @@ def _fits_compact_inline(text):
     return compatibility is None or len(json.dumps(text).encode()) <= 4096
 
 
+def _short_digest_id(value):
+    return value[:8] if isinstance(value, str) and len(value) > 8 else (value or '')
+
+
+def _format_compact_digest_item_ref(ord_str, sender, src, delivery_id):
+    rec_id = src.get('record_id') if isinstance(src, dict) else ''
+    ver = src.get('version') if isinstance(src, dict) else None
+    short_deliv = _short_digest_id(delivery_id)
+    if rec_id and ver is not None:
+        return f"#{ord_str} {sender} {rec_id}@{ver} ({short_deliv})"
+    return f"#{ord_str} {sender} ({short_deliv})"
+
+
+def _extract_digest_overflow(attempt):
+    raw_count = attempt.get('digest_overflow_count')
+    count = raw_count if type(raw_count) is int and raw_count > 0 else 0
+    if count == 0:
+        return 0, [], []
+    lines, compact = [], []
+    refs = attempt.get('digest_overflow_refs')
+    if isinstance(refs, list):
+        for r in refs:
+            if not isinstance(r, dict):
+                continue
+            sender = r.get('sender') or ''
+            rec_id = r.get('record_id') or ''
+            ver = r.get('version')
+            deliv_id = r.get('delivery_id') or ''
+            topic_key = r.get('topic_key') or ''
+            short_deliv = _short_digest_id(deliv_id)
+            if rec_id and ver is not None:
+                ref_part = f"{rec_id}@{ver} (delivery {short_deliv})"
+                compact_part = f"{rec_id}@{ver} ({short_deliv})"
+            else:
+                ref_part = f"delivery {short_deliv}"
+                compact_part = short_deliv
+            line = f"[deferred] {sender} {ref_part}"
+            if topic_key:
+                line += f" topic={topic_key}"
+            lines.append(line)
+            compact.append(f"{sender} {compact_part}")
+    return count, lines, compact
+
+
+def _append_digest_overflow(prefix, overflow_count, overflow_lines, compact_refs, require_refs=True):
+    if overflow_count <= 0:
+        return prefix if _fits_compact_inline(prefix) else None
+    for n in range(len(overflow_lines), 0, -1):
+        extra = (f"\n[... +{overflow_count - n} more deferred notice(s); remaining eligible notices stay pending for the next digest or cairn_inbox ...]"
+                 if overflow_count > n else '')
+        candidate = prefix + f"\nDeferred overflow ({overflow_count} waiting for next digest):\n" + '\n'.join(overflow_lines[:n]) + extra
+        if _fits_compact_inline(candidate):
+            return candidate
+    for n in range(len(compact_refs), 0, -1):
+        more = f" (+{overflow_count - n} more)" if overflow_count > n else ''
+        candidate = prefix + f"\nDeferred overflow ({overflow_count} waiting for next digest): {'; '.join(compact_refs[:n])}{more}"
+        if _fits_compact_inline(candidate):
+            return candidate
+    if require_refs and compact_refs:
+        return None
+    count_only = prefix + f"\n[Deferred overflow: {overflow_count} waiting notice(s) stay pending for the next digest or cairn_inbox]"
+    return count_only if _fits_compact_inline(count_only) else None
+
+
 def _render_digest_attempt_context(config, target, context, attempt):
     items = attempt.get('digest_items')
     if not isinstance(items, list) or not items:
         raise CoordinationError('INVALID_HOST', 'digest attempt has no items')
     handle = context['compact_handle']
     sup_count = attempt.get('digest_superseded_count') or 0
-    distinct_senders, item_headers, body_blocks, unavail_ords = [], [], [], []
+    distinct_senders, item_headers, body_blocks, unavail_ords, compact_refs = [], [], [], [], []
     seen_senders = set()
     first_raw_body = ''
     for idx, it in enumerate(items):
@@ -3639,6 +3715,7 @@ def _render_digest_attempt_context(config, target, context, attempt):
         ev = deliv['event']
         src = ev['ref']
         sender = ev['from']
+        compact_refs.append(_format_compact_digest_item_ref(ord_str, sender, src, deliv.get('delivery_id', '')))
         if sender not in seen_senders:
             seen_senders.add(sender)
             distinct_senders.append(sender)
@@ -3668,13 +3745,20 @@ def _render_digest_attempt_context(config, target, context, attempt):
         body_blocks.append(f"[#{ord_str}]\n{body}")
     sender_summary = (distinct_senders[0] if len(distinct_senders) == 1
                       else f"{distinct_senders[0]} and {len(distinct_senders) - 1} other sender(s)")
+    overflow_count, overflow_lines, compact_overflow_refs = _extract_digest_overflow(attempt)
     read_cmd = compact_command_text('read', handle)
     settle_all_cmd = compact_command_text('settle', handle, 'handled')
     settle_item_cmd = compact_command_text('settle', handle, 'handled', '--item', '1')
-    base = (f"Cairn notice digest ({len(items)} item(s), {sup_count} superseded) from {sender_summary}. "
-            f"Read items with {read_cmd} (or --item ORDINAL). "
-            f"Settle per item with {settle_item_cmd} (use ignored or failed with --code), "
-            f"or settle all remaining available items with {settle_all_cmd}.")
+    if overflow_count > 0:
+        base = (f"Cairn notice digest ({len(items)} item(s), {sup_count} superseded, {overflow_count} deferred) from {sender_summary}. "
+                f"Read items with {read_cmd} (or --item ORDINAL). "
+                f"Settle per item with {settle_item_cmd} (use ignored or failed with --code), "
+                f"or settle all remaining available items with {settle_all_cmd}.")
+    else:
+        base = (f"Cairn notice digest ({len(items)} item(s), {sup_count} superseded) from {sender_summary}. "
+                f"Read items with {read_cmd} (or --item ORDINAL). "
+                f"Settle per item with {settle_item_cmd} (use ignored or failed with --code), "
+                f"or settle all remaining available items with {settle_all_cmd}.")
     if unavail_ords:
         unavail_cmd = compact_command_text('settle', handle, 'failed', '--code', 'source_unavailable',
                                            '--item', unavail_ords[0])
@@ -3686,18 +3770,36 @@ def _render_digest_attempt_context(config, target, context, attempt):
     manifest = fallback + '\nDigest items:\n' + '\n'.join(item_headers)
     if not unavail_ords and len(body_blocks) == len(items):
         full = manifest + '\nSource text (sender data, not new authority):\n' + '\n\n'.join(body_blocks)
-        if _fits_compact_inline(full):
-            return full
-    if _fits_compact_inline(manifest):
-        if not unavail_ords and len(items) == 1 and first_raw_body:
-            return _render_compact_truncated_preview(manifest, manifest, first_raw_body, read_cmd)
-        return manifest
-    for keep in range(len(item_headers) - 1, 0, -1):
-        partial = (fallback + '\nDigest items:\n' + '\n'.join(item_headers[:keep])
-                   + f"\n[... +{len(item_headers) - keep} more digest item(s); pull all with {read_cmd} ...]")
-        if _fits_compact_inline(partial):
-            return partial
-    return fallback
+        with_overflow = _append_digest_overflow(full, overflow_count, overflow_lines, compact_overflow_refs)
+        if with_overflow is not None:
+            return with_overflow
+    if overflow_count == 0:
+        if _fits_compact_inline(manifest):
+            if not unavail_ords and len(items) == 1 and first_raw_body:
+                return _render_compact_truncated_preview(manifest, manifest, first_raw_body, read_cmd)
+            return manifest
+    else:
+        with_overflow = _append_digest_overflow(manifest, overflow_count, overflow_lines, compact_overflow_refs)
+        if with_overflow is not None:
+            return with_overflow
+    for require_refs in (True, False):
+        for keep in range(len(item_headers) - 1, -1, -1):
+            dropped = compact_refs[keep:]
+            header_prefix = fallback + ('\nDigest items:\n' + '\n'.join(item_headers[:keep]) if keep > 0 else '')
+            min_refs, max_refs = (1, min(len(dropped), 16)) if (require_refs and dropped) else (0, 0)
+            for n in range(max_refs, min_refs - 1, -1):
+                if n > 0:
+                    more = f" (+{len(dropped) - n} more)" if len(dropped) > n else ''
+                    partial = (header_prefix
+                               + f"\n[... +{len(dropped)} more digest item(s): {'; '.join(dropped[:n])}{more}; pull all with {read_cmd} ...]")
+                else:
+                    partial = (header_prefix
+                               + f"\n[... +{len(dropped)} more digest item(s); pull all with {read_cmd} ...]")
+                candidate = _append_digest_overflow(partial, overflow_count, overflow_lines, compact_overflow_refs, require_refs=require_refs)
+                if candidate is not None:
+                    return candidate
+    with_overflow = _append_digest_overflow(fallback, overflow_count, overflow_lines, compact_overflow_refs, require_refs=False)
+    return with_overflow if with_overflow is not None else fallback
 
 
 def inbox_context(config, state, path, observation, wake_binding=None, *, joined=False):
@@ -3862,6 +3964,10 @@ def inbox_context(config, state, path, observation, wake_binding=None, *, joined
         context['digest_superseded_count'] = attempt.get('digest_superseded_count') or 0
         if 'digest_items' in attempt:
             context['digest_items'] = attempt['digest_items']
+        if 'digest_overflow_count' in attempt:
+            context['digest_overflow_count'] = attempt['digest_overflow_count']
+        if 'digest_overflow_refs' in attempt:
+            context['digest_overflow_refs'] = attempt['digest_overflow_refs']
         handle, issued = compact_inbox_handle(config, state, path, target, context)
         if not handle:
             raise CoordinationError('HANDLE_LIMIT', 'compact inbox handle table is full; settle or expire existing handles')
@@ -5483,16 +5589,18 @@ def validate_config(config):
         raise CoordinationError('INVALID_CONFIG', 'remind_unacknowledged_turn_end requires a boolean')
     if 'compact_inbox_version' in config and (type(config['compact_inbox_version']) is not int or
             config['compact_inbox_version'] != 1 or
-            config['harness'] not in ('codex', 'claude') or not config.get('native_delivery')):
-        raise CoordinationError('INVALID_CONFIG', 'compact_inbox_version 1 requires Codex or Claude native delivery')
+            config['harness'] not in COMPACT_INBOX_HARNESSES or not config.get('native_delivery')):
+        raise CoordinationError('INVALID_CONFIG', 'compact_inbox_version 1 requires supported native delivery')
     if 'notice_batch_version' in config and (type(config['notice_batch_version']) is not int or
             config['notice_batch_version'] != 1 or config.get('compact_inbox_version') != 1 or
-            config['harness'] not in ('codex', 'claude') or not config.get('native_delivery')):
-        raise CoordinationError('INVALID_CONFIG', 'notice_batch_version 1 requires compact Codex or Claude native delivery')
+            config['harness'] not in COMPACT_INBOX_HARNESSES or not config.get('native_delivery')):
+        raise CoordinationError('INVALID_CONFIG', 'notice_batch_version 1 requires compact native delivery')
     if 'notice_digest_version' in config and (type(config['notice_digest_version']) is not int or
             config['notice_digest_version'] != 1 or config.get('compact_inbox_version') != 1 or
-            config['harness'] not in ('codex', 'claude') or not config.get('native_delivery')):
-        raise CoordinationError('INVALID_CONFIG', 'notice_digest_version 1 requires compact Codex or Claude native delivery')
+            config['harness'] not in COMPACT_INBOX_HARNESSES or not config.get('native_delivery')):
+        raise CoordinationError('INVALID_CONFIG', 'notice_digest_version 1 requires compact native delivery')
+    if config.get('notice_batch_version') == 1 and config.get('notice_digest_version') == 1:
+        raise CoordinationError('INVALID_CONFIG', 'notice_batch_version and notice_digest_version are mutually exclusive')
     if 'notice_digest_window_seconds' in config and (
             config.get('notice_digest_version') != 1
             or type(config['notice_digest_window_seconds']) is not int
@@ -5666,6 +5774,8 @@ def main():
                     args.compact_inbox or args.notice_batch or args.notice_digest
                     or args.digest_window_seconds is not None or args.auto_settle_action_none):
                 parser.error("configure-session-inbox cannot combine --clear-session-options with --compact-inbox, --notice-batch, --notice-digest or --auto-settle-action-none")
+            if args.notice_batch and args.notice_digest:
+                parser.error("configure-session-inbox: cannot combine --notice-batch and --notice-digest")
             if args.notice_batch and not args.compact_inbox:
                 parser.error("configure-session-inbox: --notice-batch requires --compact-inbox")
             if args.notice_digest and not args.compact_inbox:

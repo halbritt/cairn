@@ -48,6 +48,8 @@ def install_compact_inbox_launcher(root, home):
     target.chmod(0o700)
 
 
+COMPACT_INBOX_HARNESSES = ('codex', 'claude', 'agy', 'opencode', 'hermes')
+
 INBOX_OPTION_KEYS = (
     'compact_inbox_version',
     'notice_batch_version',
@@ -463,8 +465,8 @@ def configure_installed_session(args, home):
         return '--binding does not match installed binding configuration', None
     if args.harness and installed.get('harness') != args.harness:
         return '--harness does not match installed binding configuration', None
-    if args.compact_inbox and (installed.get('harness') not in ('codex', 'claude') or not installed.get('native_delivery')):
-        return '--compact-inbox requires an installed Codex or Claude binding with --native-delivery', None
+    if args.compact_inbox and (installed.get('harness') not in COMPACT_INBOX_HARNESSES or not installed.get('native_delivery')):
+        return '--compact-inbox requires an installed supported binding with --native-delivery', None
     if args.auto_settle_action_none and not installed.get('native_delivery'):
         return '--auto-settle-action-none requires an installed binding with --native-delivery', None
     native = engine.resolve_session_target(installed, native_session_id=args.session, agent_id=args.agent_id)
@@ -510,21 +512,21 @@ def main():
     parser.add_argument('--model', default='')
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
     parser.add_argument('--compact-inbox', action='store_true',
-                        help='enable compact notice/response delivery (default on for Codex and Claude --native-delivery)')
+                        help='enable compact notice/response delivery (default on for supported --native-delivery bindings)')
     parser.add_argument('--no-compact-inbox', action='store_true',
-                        help='opt a Codex or Claude --native-delivery binding out of compact notice/response delivery')
+                        help='opt a supported --native-delivery binding out of compact notice/response delivery')
     parser.add_argument('--notice-batch', action='store_true',
                         help='opt a compact native binding into bounded already-waiting notice batches (mutually exclusive with --notice-digest)')
     parser.add_argument('--notice-digest', action='store_true',
-                        help='enable FYI notice digests on a compact native binding or session (default on for Codex and Claude --native-delivery)')
+                        help='enable FYI notice digests on a compact native binding or session (default on for supported --native-delivery bindings)')
     parser.add_argument('--no-notice-digest', action='store_true',
-                        help='opt a Codex or Claude --native-delivery binding out of FYI notice digests')
+                        help='opt a supported --native-delivery binding out of FYI notice digests')
     parser.add_argument('--digest-window-seconds', type=int,
                         help='FYI notice digest window in seconds (1..3600, or 0 to disable default digest on binding install)')
     parser.add_argument('--auto-settle-action-none', action='store_true',
-                        help='enable settling action:none notices without a model turn (default on for Codex and Claude --native-delivery)')
+                        help='enable settling action:none notices without a model turn (default on for supported --native-delivery bindings)')
     parser.add_argument('--no-auto-settle-action-none', action='store_true',
-                        help='opt a Codex or Claude --native-delivery binding out of settling action:none notices without a model turn')
+                        help='opt a supported --native-delivery binding out of settling action:none notices without a model turn')
     parser.add_argument('--opencode-cancel-trial', action='store_true',
                         help='opt in the OpenCode binding to the request-cancellation trial (requires native delivery and idle wakeup)')
     parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work; also installs Herdr\'s native integration in the selected account home through the installed herdr CLI when missing')
@@ -563,17 +565,17 @@ def main():
         parser.error('cannot combine --auto-settle-action-none and --no-auto-settle-action-none')
     if args.notice_batch and args.notice_digest:
         parser.error('cannot combine --notice-batch and --notice-digest')
-    if args.compact_inbox and (args.harness not in ('codex', 'claude') or not args.native_delivery):
-        parser.error('--compact-inbox requires --harness codex|claude --native-delivery')
-    if args.no_compact_inbox and (args.harness not in ('codex', 'claude') or not args.native_delivery):
-        parser.error('--no-compact-inbox requires --harness codex|claude --native-delivery')
-    if args.no_notice_digest and (args.harness not in ('codex', 'claude') or not args.native_delivery):
-        parser.error('--no-notice-digest requires --harness codex|claude --native-delivery')
+    if args.compact_inbox and (args.harness not in COMPACT_INBOX_HARNESSES or not args.native_delivery):
+        parser.error('--compact-inbox requires --harness codex|claude|agy|opencode|hermes --native-delivery')
+    if args.no_compact_inbox and (args.harness not in COMPACT_INBOX_HARNESSES or not args.native_delivery):
+        parser.error('--no-compact-inbox requires --harness codex|claude|agy|opencode|hermes --native-delivery')
+    if args.no_notice_digest and (args.harness not in COMPACT_INBOX_HARNESSES or not args.native_delivery):
+        parser.error('--no-notice-digest requires --harness codex|claude|agy|opencode|hermes --native-delivery')
     if args.auto_settle_action_none and not args.native_delivery:
         parser.error('--auto-settle-action-none requires --native-delivery')
     if args.no_auto_settle_action_none and not args.native_delivery:
         parser.error('--no-auto-settle-action-none requires --native-delivery')
-    capable_compact = args.harness in ('codex', 'claude') and args.native_delivery
+    capable_compact = args.harness in COMPACT_INBOX_HARNESSES and args.native_delivery and not args.no_herdr
     compact_inbox = args.compact_inbox or (capable_compact and not args.no_compact_inbox)
     if args.notice_batch and not compact_inbox:
         parser.error('--notice-batch requires --compact-inbox')

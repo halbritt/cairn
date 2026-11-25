@@ -81,12 +81,16 @@ func TestSessionCompactInboxEnabledPerSessionAndGuards(t *testing.T) {
 		},
 		{
 			raw:     validJSON,
-			cfgMod:  func(c *value.Value) { c.Set("harness", value.Text("agy")) },
-			wantMsg: "compact_inbox_version 1 requires Codex or Claude native delivery",
+			cfgMod:  func(c *value.Value) { c.Set("harness", value.Text("unknown")) },
+			wantMsg: "compact_inbox_version 1 requires supported native delivery",
 		},
 		{
 			raw:     `{"binding":"claude-two","compact_inbox_version":1,"native_session_id":"coord-session","notice_batch_version":2,"schema":"cairn.session-inbox-options/1"}`,
-			wantMsg: "notice_batch_version 1 requires compact Codex or Claude native delivery",
+			wantMsg: "notice_batch_version 1 requires compact native delivery",
+		},
+		{
+			raw:     `{"binding":"claude-two","compact_inbox_version":1,"native_session_id":"coord-session","notice_batch_version":1,"notice_digest_version":1,"schema":"cairn.session-inbox-options/1"}`,
+			wantMsg: "notice_batch_version and notice_digest_version are mutually exclusive",
 		},
 		{
 			raw:     `{"binding":"claude-two","native_session_id":"coord-session","notice_auto_settle_version":2,"schema":"cairn.session-inbox-options/1"}`,

@@ -736,7 +736,7 @@ func inboxCommand(config *value.Value, id inboxIdentity, compact bool) (*value.V
 }
 
 func sessionCompactInboxEnabled(config *value.Value, session string) (bool, error) {
-	capable := (value.SameText(config.Get("harness"), "codex") || value.SameText(config.Get("harness"), "claude")) && value.Truth(config.Get("native_delivery"))
+	capable := (value.SameText(config.Get("harness"), "codex") || value.SameText(config.Get("harness"), "claude") || value.SameText(config.Get("harness"), "agy") || value.SameText(config.Get("harness"), "opencode") || value.SameText(config.Get("harness"), "hermes")) && value.Truth(config.Get("native_delivery"))
 	compact := capable && number(config.Get("compact_inbox_version")) == 1
 	if session == "" {
 		return compact, nil
@@ -815,19 +815,23 @@ func validateInboxSessionOptions(entry *value.Value, binding, session string, ca
 	asv := entry.Get("notice_auto_settle_version")
 	if cv == nil && asv == nil {
 		if !capable {
-			return "compact_inbox_version 1 requires Codex or Claude native delivery", false
+			return "compact_inbox_version 1 requires supported native delivery", false
 		}
 		return "session inbox options are malformed", false
 	}
 	if cv != nil && (!capable || !nativeIntOne(cv)) {
-		return "compact_inbox_version 1 requires Codex or Claude native delivery", false
+		return "compact_inbox_version 1 requires supported native delivery", false
 	}
-	if bv := entry.Get("notice_batch_version"); bv != nil && (!nativeIntOne(bv) || cv == nil) {
-		return "notice_batch_version 1 requires compact Codex or Claude native delivery", false
+	bv := entry.Get("notice_batch_version")
+	if bv != nil && (!nativeIntOne(bv) || cv == nil) {
+		return "notice_batch_version 1 requires compact native delivery", false
 	}
 	dv := entry.Get("notice_digest_version")
 	if dv != nil && (!nativeIntOne(dv) || cv == nil) {
-		return "notice_digest_version 1 requires compact Codex or Claude native delivery", false
+		return "notice_digest_version 1 requires compact native delivery", false
+	}
+	if bv != nil && dv != nil {
+		return "notice_batch_version and notice_digest_version are mutually exclusive", false
 	}
 	if dw := entry.Get("notice_digest_window_seconds"); dw != nil {
 		if dv == nil || dw.Kind != value.Int {

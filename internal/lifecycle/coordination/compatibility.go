@@ -2392,6 +2392,12 @@ func (c *CLI) finalizeAttemptContext(ctx context.Context, ns *NativeSession, con
 		if di := attempt.Get("digest_items"); di != nil {
 			native.Set("digest_items", di)
 		}
+		if oc := attempt.Get("digest_overflow_count"); oc != nil {
+			native.Set("digest_overflow_count", oc)
+		}
+		if or := attempt.Get("digest_overflow_refs"); or != nil {
+			native.Set("digest_overflow_refs", or)
+		}
 		handle, issued, err := c.CompactInboxHandle(config, state, statePath, target, native)
 		if err != nil {
 			return nil, err

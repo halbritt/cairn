@@ -350,12 +350,21 @@ class ScratchOpenCodeBinding(unittest.TestCase):
     def test_default_herdr_install_is_unchanged_for_the_owner_home(self):
         # Herdr's own OpenCode home still gets the existing coverage, with the Herdr path recorded.
         home = self.home / '.config/opencode'
+        (self.home / '.local/bin').mkdir(parents=True, exist_ok=True)
         herdr = self.bin / 'herdr'
         herdr.write_text(HERDR)
         (self.bin / 'herdr.json').write_text(json.dumps(dict(
             status=[f'opencode: current (v11) ({home}/plugins/herdr-agent-state.js)'], after=[], install_fails=False)))
         self.settings = home
-        result = self.install('--native-delivery', '--idle-wakeup')
+        with mock.patch.dict(os.environ, {'PATH': f"{self.home / '.local/bin'}:{self.bin}:/usr/bin:/bin"}):
+            command = [sys.executable, '-B', str(INSTALLER), '--harness', 'opencode', '--binding', 'scratch',
+                       '--settings', str(self.settings), '--root', str(self.root), '--cairn', str(self.cairn),
+                       '--socket', str(self.scratch / 'api.sock'), '--token-file', str(self.token),
+                       '--repo', 'fixture:scratch', '--no-service', '--native-delivery', '--idle-wakeup']
+            environment = dict(os.environ, HOME=str(self.home))
+            for name in ('HERDR_ENV', 'HERDR_SOCKET_PATH', 'CAIRN_COORDINATION_CONFIG'):
+                environment.pop(name, None)
+            result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Herdr opencode integration is current', result.stdout)
         self.assertEqual(self.binding()['idle_wakeup'], str(herdr.resolve()))
@@ -397,8 +406,11 @@ class CompactInboxInstaller(unittest.TestCase):
                       harness='codex', native_delivery=True, compact_inbox_version=1,
                       notice_batch_version=1)
         self.assertEqual(installer.engine.validate_config(config), config)
+        for harness in ('claude', 'agy', 'opencode', 'hermes'):
+            self.assertEqual(installer.engine.validate_config(dict(config, harness=harness))['harness'], harness)
         for override in (dict(notice_batch_version=True), dict(notice_batch_version=2),
-                         dict(compact_inbox_version=0), dict(harness='agy'),
+                         dict(compact_inbox_version=0), dict(harness='unknown'),
+                         dict(notice_digest_version=1),
                          dict(native_delivery=False)):
             with self.subTest(override=override), self.assertRaises(installer.engine.CoordinationError) as caught:
                 installer.engine.validate_config(dict(config, **override))
@@ -409,9 +421,10 @@ class CompactInboxInstaller(unittest.TestCase):
                       state_dir='/fixture/state', repo='fixture', binding='fixture',
                       harness='codex', native_delivery=True, compact_inbox_version=1)
         self.assertEqual(installer.engine.validate_config(config), config)
-        self.assertEqual(installer.engine.validate_config(dict(config, harness='claude'))['harness'], 'claude')
+        for harness in ('claude', 'agy', 'opencode', 'hermes'):
+            self.assertEqual(installer.engine.validate_config(dict(config, harness=harness))['harness'], harness)
         for override in (dict(compact_inbox_version=True), dict(compact_inbox_version=0),
-                         dict(compact_inbox_version=2), dict(harness='agy'),
+                         dict(compact_inbox_version=2), dict(harness='unknown'),
                          dict(native_delivery=False)):
             with self.subTest(override=override), self.assertRaises(installer.engine.CoordinationError) as caught:
                 installer.engine.validate_config(dict(config, **override))
@@ -574,7 +587,8 @@ class CompactInboxInstaller(unittest.TestCase):
             settings = home / '.claude/settings.json'
             settings.parent.mkdir(parents=True)
 
-            # Non-native codex install and opencode native install do not enable compact/digest/auto-settle.
+            # Non-native codex install does not enable compact/digest/auto-settle;
+            # supported native installs (including agy, opencode, hermes) default-enable them and honor opt-outs.
             code, _, err, _ = self._run_installer(
                 home, coord_root, home / '.codex/hooks.json', token, harness='codex', binding='codex-plain')
             self.assertEqual(code, 0, err)
@@ -582,13 +596,32 @@ class CompactInboxInstaller(unittest.TestCase):
             for key in installer.INBOX_OPTION_KEYS:
                 self.assertNotIn(key, codex_plain)
 
+            (home / '.config/opencode').mkdir(parents=True, exist_ok=True)
+            (home / '.hermes').mkdir(parents=True, exist_ok=True)
+            for h_name, h_settings, b_name in (
+                ('opencode', home / '.config/opencode', 'oc-native'),
+                ('agy', home / '.gemini/antigravity/hooks.json', 'agy-native'),
+                ('hermes', home / '.hermes', 'hermes-native'),
+            ):
+                code, _, err, _ = self._run_installer(
+                    home, coord_root, h_settings, token, '--native-delivery',
+                    harness=h_name, binding=b_name)
+                self.assertEqual(code, 0, err)
+                h_cfg = json.loads((coord_root / 'bindings' / f'{b_name}.json').read_text())
+                self.assertEqual(h_cfg['compact_inbox_version'], 1)
+                self.assertEqual(h_cfg['notice_digest_version'], 1)
+                self.assertEqual(h_cfg['notice_digest_window_seconds'], 300)
+                self.assertEqual(h_cfg['notice_auto_settle_version'], 1)
+                self.assertNotIn('notice_batch_version', h_cfg)
+
             code, _, err, _ = self._run_installer(
                 home, coord_root, home / '.config/opencode', token, '--native-delivery',
+                '--no-compact-inbox', '--no-auto-settle-action-none',
                 harness='opencode', binding='oc-native')
             self.assertEqual(code, 0, err)
-            oc_cfg = json.loads((coord_root / 'bindings' / 'oc-native.json').read_text())
+            oc_opt_out = json.loads((coord_root / 'bindings' / 'oc-native.json').read_text())
             for key in installer.INBOX_OPTION_KEYS:
-                self.assertNotIn(key, oc_cfg)
+                self.assertNotIn(key, oc_opt_out)
 
             bad_cases = [
                 ('--native-delivery', '--compact-inbox', '--no-compact-inbox'),

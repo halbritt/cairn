@@ -472,12 +472,16 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	if !descends {
 		return 0, nativeRefusal("NOT_THIS_SESSION", "compact inbox caller is outside the native process tree")
 	}
-	envKey := "CLAUDE_SESSION_ID"
+	envKey := ""
 	if value.SameText(config.Get("harness"), "codex") {
 		envKey = "CODEX_THREAD_ID"
+	} else if value.SameText(config.Get("harness"), "claude") {
+		envKey = "CLAUDE_SESSION_ID"
 	}
-	if env := c.env(envKey); env != "" && !value.SameText(nativeID, env) {
-		return 0, nativeRefusal("NOT_THIS_SESSION", "compact inbox handle belongs to another native conversation")
+	if envKey != "" {
+		if env := c.env(envKey); env != "" && !value.SameText(nativeID, env) {
+			return 0, nativeRefusal("NOT_THIS_SESSION", "compact inbox handle belongs to another native conversation")
+		}
 	}
 	delivery, err := nativeRequired(attempt, "delivery")
 	if err != nil {
