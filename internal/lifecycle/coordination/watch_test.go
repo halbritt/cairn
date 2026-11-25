@@ -744,3 +744,51 @@ func TestWatchOnceHealsDriftedCodexWrapper(t *testing.T) {
 		t.Fatalf("expected silent no-op on second tick, got code=%d err=%v errOut=%q", code, err, errOut.String())
 	}
 }
+
+func TestWatchOnceRefusesSymlinkedCodexWrapperParent(t *testing.T) {
+	root := t.TempDir()
+	procRoot := procFixtureRoot(t)
+	cli, _, _ := newTestWatchCLI(t, root, procRoot)
+	cfgDir := filepath.Join(root, "configs")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	realParent := filepath.Join(root, "real_parent")
+	if err := os.MkdirAll(realParent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	symParent := filepath.Join(root, "sym_parent")
+	if err := os.Symlink(realParent, symParent); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(root, "real", "codex")
+	launcher := filepath.Join(root, "bin", "cairn-codex-launch")
+	if err := os.MkdirAll(filepath.Dir(binary), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(launcher), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(t, binary, []byte("#!/bin/sh\nexit 0\n"), 0o700)
+	writePrivateFile(t, launcher, []byte("#!/bin/sh\nexit 0\n"), 0o700)
+
+	// Symlinked wrapper parent logs refusal to errOut, keeps watch loop alive (exit 0), and leaves real_parent untouched.
+	symWrapper := filepath.Join(symParent, "codex")
+	var out, errOut bytes.Buffer
+	code, err := cli.RunCLI(context.Background(), []string{
+		"watch", "--config-dir", cfgDir, "--once",
+		"--codex-wrapper", symWrapper,
+		"--codex-binary", binary,
+		"--codex-launcher", launcher,
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil || code != 0 {
+		t.Fatalf("watch --once should log error without crashing: code=%d err=%v errOut=%q", code, err, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "failed to repair Codex wrapper") || !strings.Contains(errOut.String(), "refusing symlink") {
+		t.Fatalf("expected symlinked-parent refusal logged to errOut, got %q", errOut.String())
+	}
+	if entries, readErr := os.ReadDir(realParent); readErr != nil || len(entries) != 0 {
+		t.Fatalf("real_parent modified through symlinked wrapper parent: entries=%v err=%v", entries, readErr)
+	}
+}

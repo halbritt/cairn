@@ -637,6 +637,88 @@ func TestEnsureWrapperSymlinkDriftAndNoOp(t *testing.T) {
 	}
 }
 
+func TestEnsureWrapperRefusesSymlinkedParentDirectory(t *testing.T) {
+	work := t.TempDir()
+	realParent := filepath.Join(work, "real_parent")
+	if err := os.MkdirAll(realParent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	symParent := filepath.Join(work, "sym_parent")
+	if err := os.Symlink(realParent, symParent); err != nil {
+		t.Fatal(err)
+	}
+	launcherPath := filepath.Join(work, "cairn-codex-launch")
+	realCodex := filepath.Join(work, "real-codex")
+	if err := os.WriteFile(launcherPath, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(realCodex, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Direct symlinked parent when target file does not exist inside real_parent.
+	symWrapper := filepath.Join(symParent, "codex")
+	if changed, reason, err := EnsureWrapper(symWrapper, launcherPath, realCodex); err == nil || changed || reason != "" {
+		t.Fatalf("expected symlinked-parent refusal (missing leaf), got changed=%v reason=%q err=%v", changed, reason, err)
+	}
+	if entries, err := os.ReadDir(realParent); err != nil || len(entries) != 0 {
+		t.Fatalf("real_parent modified through symlinked parent: entries=%v err=%v", entries, err)
+	}
+
+	// 2. CLI --ensure-wrapper refuses symlinked parent with non-zero exit.
+	var diag bytes.Buffer
+	if code := (Launcher{}).Run([]string{"--ensure-wrapper", "--codex", realCodex, "--wrapper", symWrapper, "--launcher", launcherPath}, []string{"HOME=" + work}, &diag); code != 1 {
+		t.Fatalf("CLI --ensure-wrapper on symlinked parent exited %d, want 1 (%s)", code, diag.String())
+	}
+	if _, statErr := os.Lstat(filepath.Join(realParent, "codex")); !os.IsNotExist(statErr) {
+		t.Fatalf("real_parent/codex created through symlinked parent: err=%v", statErr)
+	}
+
+	// 3. Nested non-existent subdirectory under symlinked parent (sym_parent/sub/codex) is refused before MkdirAll.
+	nestedMissing := filepath.Join(symParent, "sub", "codex")
+	if changed, _, err := EnsureWrapper(nestedMissing, launcherPath, realCodex); err == nil || changed {
+		t.Fatalf("expected nested symlinked-parent refusal (missing sub), got changed=%v err=%v", changed, err)
+	}
+	if _, statErr := os.Lstat(filepath.Join(realParent, "sub")); !os.IsNotExist(statErr) {
+		t.Fatalf("real_parent/sub created through symlinked parent: err=%v", statErr)
+	}
+
+	// 4. Direct symlinked parent when real_parent/codex ALREADY exists (both drifted and valid) refuses without reading/modifying.
+	existingReal := filepath.Join(realParent, "codex")
+	sentinel := []byte("#!/bin/sh\n# existing-real-parent-file\n")
+	if err := os.WriteFile(existingReal, sentinel, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	beforeIno := inodeOf(t, existingReal)
+	if changed, _, err := EnsureWrapper(symWrapper, launcherPath, realCodex); err == nil || changed {
+		t.Fatalf("expected symlinked-parent refusal (existing leaf), got changed=%v err=%v", changed, err)
+	}
+	if got, err := os.ReadFile(existingReal); err != nil || !bytes.Equal(got, sentinel) || inodeOf(t, existingReal) != beforeIno {
+		t.Fatalf("existing real_parent/codex was modified through symlinked parent")
+	}
+
+	// 5. Nested existing subdirectory under symlinked parent (real_parent/sub already exists) is also refused.
+	existingSub := filepath.Join(realParent, "sub")
+	if err := os.MkdirAll(existingSub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if changed, _, err := EnsureWrapper(nestedMissing, launcherPath, realCodex); err == nil || changed {
+		t.Fatalf("expected nested symlinked-parent refusal (existing sub), got changed=%v err=%v", changed, err)
+	}
+	if entries, err := os.ReadDir(existingSub); err != nil || len(entries) != 0 {
+		t.Fatalf("real_parent/sub modified through symlinked parent: entries=%v err=%v", entries, err)
+	}
+
+	// 6. Non-directory parent (regular file) is refused.
+	fileParent := filepath.Join(work, "not-a-dir")
+	if err := os.WriteFile(fileParent, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, _, err := EnsureWrapper(filepath.Join(fileParent, "codex"), launcherPath, realCodex); err == nil || changed {
+		t.Fatalf("expected non-directory parent refusal, got changed=%v err=%v", changed, err)
+	}
+}
+
 func TestDisableStartupUpdateCheck(t *testing.T) {
 	work := t.TempDir()
 
@@ -709,5 +791,58 @@ func TestDisableStartupUpdateCheck(t *testing.T) {
 	gotCLI, _ := os.ReadFile(cliCfg)
 	if !strings.HasPrefix(string(gotCLI), "model = \"o3\"\ncheck_for_update_on_startup = false\n\n[mcp_servers.cairn]") {
 		t.Fatalf("unexpected CLI updated TOML:\n%s", string(gotCLI))
+	}
+}
+
+func TestDisableStartupUpdateCheckRefusesSymlinkedParentDirectory(t *testing.T) {
+	work := t.TempDir()
+	realCfgDir := filepath.Join(work, "real_cfg_dir")
+	if err := os.MkdirAll(realCfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	symCfgDir := filepath.Join(work, "sym_cfg_dir")
+	if err := os.Symlink(realCfgDir, symCfgDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Missing config.toml under symlinked parent directory is refused without creating real_cfg_dir/config.toml.
+	symCfg := filepath.Join(symCfgDir, "config.toml")
+	if changed, err := DisableStartupUpdateCheck(symCfg); err == nil || changed {
+		t.Fatalf("expected symlinked-parent refusal (missing config.toml), got changed=%v err=%v", changed, err)
+	}
+	if entries, err := os.ReadDir(realCfgDir); err != nil || len(entries) != 0 {
+		t.Fatalf("real_cfg_dir modified through symlinked parent: entries=%v err=%v", entries, err)
+	}
+
+	// 2. CLI --disable-startup-update --config-toml under symlinked parent exits 1.
+	var diag bytes.Buffer
+	if code := (Launcher{}).Run([]string{"--disable-startup-update", "--config-toml", symCfg}, []string{"HOME=" + work}, &diag); code != 1 {
+		t.Fatalf("CLI --disable-startup-update on symlinked parent exited %d, want 1 (%s)", code, diag.String())
+	}
+	if _, statErr := os.Lstat(filepath.Join(realCfgDir, "config.toml")); !os.IsNotExist(statErr) {
+		t.Fatalf("real_cfg_dir/config.toml created through symlinked parent: err=%v", statErr)
+	}
+
+	// 3. Nested missing subdirectory under symlinked parent (sym_cfg_dir/sub/config.toml) is refused.
+	nestedSymCfg := filepath.Join(symCfgDir, "sub", "config.toml")
+	if changed, err := DisableStartupUpdateCheck(nestedSymCfg); err == nil || changed {
+		t.Fatalf("expected nested symlinked-parent refusal, got changed=%v err=%v", changed, err)
+	}
+	if _, statErr := os.Lstat(filepath.Join(realCfgDir, "sub")); !os.IsNotExist(statErr) {
+		t.Fatalf("real_cfg_dir/sub created through symlinked parent: err=%v", statErr)
+	}
+
+	// 4. Existing config.toml inside real_cfg_dir is NOT read or updated through sym_cfg_dir.
+	realCfg := filepath.Join(realCfgDir, "config.toml")
+	before := []byte("model = \"gpt-5\"\ncheck_for_update_on_startup = true\n")
+	if err := os.WriteFile(realCfg, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeIno := inodeOf(t, realCfg)
+	if changed, err := DisableStartupUpdateCheck(symCfg); err == nil || changed {
+		t.Fatalf("expected symlinked-parent refusal (existing config.toml), got changed=%v err=%v", changed, err)
+	}
+	if got, err := os.ReadFile(realCfg); err != nil || !bytes.Equal(got, before) || inodeOf(t, realCfg) != beforeIno {
+		t.Fatalf("existing real_cfg_dir/config.toml modified through symlinked parent")
 	}
 }

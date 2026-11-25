@@ -667,6 +667,9 @@ func EnsureWrapper(wrapperPath, launcherPath, codexPath string) (bool, string, e
 	if !launcherInfo.Mode().IsRegular() || launcherInfo.Mode().Perm()&0o111 == 0 {
 		return false, "", fmt.Errorf("launcher %s is not an executable regular file", launcherPath)
 	}
+	if err := verifySafeParentDir(wrapperPath); err != nil {
+		return false, "", err
+	}
 
 	reason := ""
 	info, err := os.Lstat(wrapperPath)
@@ -692,11 +695,8 @@ func EnsureWrapper(wrapperPath, launcherPath, codexPath string) (bool, string, e
 		}
 	}
 
-	dir := filepath.Dir(wrapperPath)
-	if _, derr := os.Lstat(dir); errors.Is(derr, os.ErrNotExist) {
-		if merr := os.MkdirAll(dir, 0o700); merr != nil {
-			return false, "", merr
-		}
+	if perr := ensureParentDir(filepath.Dir(wrapperPath)); perr != nil {
+		return false, "", perr
 	}
 	if werr := writeFileAtomic(wrapperPath, ".codex-wrapper-*", []byte(want), 0o700); werr != nil {
 		return false, "", werr
@@ -710,13 +710,13 @@ func DisableStartupUpdateCheck(configPath string) (bool, error) {
 	if err := validateCleanAbsPath("configPath", configPath); err != nil {
 		return false, err
 	}
+	if err := verifySafeParentDir(configPath); err != nil {
+		return false, err
+	}
 	info, err := os.Lstat(configPath)
 	if errors.Is(err, os.ErrNotExist) {
-		dir := filepath.Dir(configPath)
-		if _, derr := os.Lstat(dir); errors.Is(derr, os.ErrNotExist) {
-			if merr := os.MkdirAll(dir, 0o700); merr != nil {
-				return false, merr
-			}
+		if perr := ensureParentDir(filepath.Dir(configPath)); perr != nil {
+			return false, perr
 		}
 		if werr := writeFileAtomic(configPath, ".codex-config-*", []byte("check_for_update_on_startup = false\n"), 0o600); werr != nil {
 			return false, werr
@@ -814,6 +814,70 @@ func readFileNoFollow(path string) ([]byte, error) {
 	f := os.NewFile(uintptr(fd), path)
 	defer f.Close()
 	return io.ReadAll(io.LimitReader(f, 4<<20))
+}
+
+func verifySafeParentDir(path string) error {
+	dir := filepath.Dir(path)
+	cur := dir
+	for {
+		info, err := os.Lstat(cur)
+		if errors.Is(err, os.ErrNotExist) {
+			parent := filepath.Dir(cur)
+			if parent == cur {
+				return err
+			}
+			cur = parent
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing symlink parent directory %s", cur)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("parent path %s is not a directory", cur)
+		}
+		break
+	}
+
+	euid := uint32(os.Geteuid())
+	for anc := filepath.Dir(cur); anc != filepath.Dir(anc); anc = filepath.Dir(anc) {
+		info, err := os.Lstat(anc)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Uid == euid && anc != "/tmp" && anc != "/var/tmp" && anc != "/var" {
+				return fmt.Errorf("refusing symlink ancestor directory %s", anc)
+			}
+		}
+		if !info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("ancestor path %s is not a directory", anc)
+		}
+	}
+	return nil
+}
+
+func ensureParentDir(dir string) error {
+	if _, err := os.Lstat(dir); errors.Is(err, os.ErrNotExist) {
+		if merr := os.MkdirAll(dir, 0o700); merr != nil {
+			return merr
+		}
+	} else if err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing symlink parent directory %s", dir)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("parent path %s is not a directory", dir)
+	}
+	return nil
 }
 
 func writeFileAtomic(path, pattern string, data []byte, perm os.FileMode) error {
