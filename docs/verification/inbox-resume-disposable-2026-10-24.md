@@ -43,7 +43,7 @@ and `bash -n scripts/test-postgres.sh` passed locally. The repository-wide
 ## Native Claude compaction/resume boundary
 
 Source review found two complementary but unjoined local fixtures. The native
-Claude lifecycle check in [`check_claude_lifecycle.py`](../../scripts/check_claude_lifecycle.py)
+Claude lifecycle check in [`check_claude_lifecycle.py`](https://github.com/halbritt/cairn/blob/c0c6ddce699b474d1d31b93fe5705c9c0688afb9/scripts/check_claude_lifecycle.py)
 resumes a session, sends the real `/compact` command, observes `PreCompact` and
 `SessionStart:compact`, then verifies a later `--resume`. Its stored checkpoint
 is a lifecycle handoff; it does not include an outstanding agent delivery or

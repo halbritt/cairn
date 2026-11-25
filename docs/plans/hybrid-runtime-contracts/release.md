@@ -270,7 +270,7 @@ path uses them:
 | --- | --- |
 | `scripts/install-claude-hooks.py`, `install-codex-hooks.py`, `install-opencode-hooks.py` | Direct memory-hook installers that copied the Python engine into `~/.local/share/cairn/{claude,codex,opencode}-hooks`. Staging replaced them. Hermes keeps their engine-config retention helpers in `install-hermes-integration.py`. |
 | `scripts/install-recall-dispatch.py` | Wrapped the direct Claude engine command with `recall_dispatch.py`. Staged Go rows cannot be wrapped. |
-| `scripts/check_opencode_lifecycle.py`, `check_claude_capture_observation_native.py`, `check_claude_capture_observation_native_disposable.py` | Live checks that built their fixtures only through those installers. |
+| `scripts/check_claude_lifecycle.py`, `check_opencode_lifecycle.py`, `check_claude_capture_observation_native.py`, `check_claude_capture_observation_native_disposable.py` | Live checks that built their fixtures only through those installers. |
 | Installer-only test cases | Their test cases were removed. Hermes now covers the behaviour it still uses. |
 
 Python that stays in source, and why:
