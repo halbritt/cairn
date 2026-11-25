@@ -1287,11 +1287,47 @@ def bootstrap_cases(cluster, images, root, *, race=False):
         f.host.close()
 
 
+class ProcessReceipts:
+    """Observe collector subprocesses without replacing Popen or any product API.
+
+    Moved here from the retired offline Python /2 cold-restore check
+    (CAIRN-311); this check is its only remaining user.
+    """
+
+    def __init__(self, evidence):
+        self.evidence, self.processes = Path(evidence), {}
+
+    def observe(self, frame, event, value):
+        if event != 'return':
+            return
+        code = frame.f_code
+        if code is subprocess.Popen.__init__.__code__:
+            process = frame.f_locals['self']
+            if getattr(process, 'pid', None) is not None:
+                argv = frame.f_locals['args']
+                argv = argv if isinstance(argv, (list,tuple)) else [argv]
+                self.processes[process.pid] = dict(pid=process.pid, argv=list(map(str,argv)), exit=None)
+        elif code in (subprocess.Popen.wait.__code__, subprocess.Popen.poll.__code__) and isinstance(value,int):
+            process = frame.f_locals['self']
+            if process.pid in self.processes:
+                self.processes[process.pid]['exit'] = value
+
+    def __enter__(self):
+        require(sys.getprofile() is None, 'collector already has a profiler')
+        sys.setprofile(self.observe)
+        return self
+
+    def __exit__(self, *error):
+        sys.setprofile(None)
+        if self.evidence.is_dir():
+            (self.evidence/'collector-processes.json').write_text(
+                json.dumps(list(self.processes.values()), sort_keys=True, indent=2) + '\n')
+
+
 def source_pins():
     files = {ref.split(':')[0] for ref in GAPS.values()}
     files.update(('go.mod', 'go.sum', 'scripts/disposable_host.py',
                   'scripts/check_r06_unit_control.py', 'scripts/check_r06_status_consumer.py',
-                  'scripts/check_r06_lifecycle_offline_restore.py',
                   'scripts/check_r07_bootstrap_reverse.py', 'scripts/test_r07_bootstrap_reverse.py',
                   'docs/verification/r07-bootstrap-reverse.md',
                   'internal/lifecycle/coordination/shared_unit_bootstrap.go',
@@ -1317,8 +1353,7 @@ def run(evidence, *, bootstrap_only=False, effects_only=False, production_shape_
     scratch = Path(tempfile.mkdtemp(prefix='r07-bootstrap-', dir=Path.home() / '.cache'))
     cluster = None
     process_receipts = []
-    # This existing observer records Popen/wait outcomes without replacing them.
-    from check_r06_lifecycle_offline_restore import ProcessReceipts
+    # This observer records Popen/wait outcomes without replacing them.
     environment = dict(os.environ)
     try:
         with ProcessReceipts(evidence) as observer:

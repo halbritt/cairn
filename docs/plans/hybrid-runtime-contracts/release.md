@@ -271,6 +271,7 @@ path uses them:
 | `scripts/install-claude-hooks.py`, `install-codex-hooks.py`, `install-opencode-hooks.py` | Direct memory-hook installers that copied the Python engine into `~/.local/share/cairn/{claude,codex,opencode}-hooks`. Staging replaced them. Hermes keeps their engine-config retention helpers in `install-hermes-integration.py`. |
 | `scripts/install-recall-dispatch.py` | Wrapped the direct Claude engine command with `recall_dispatch.py`. Staged Go rows cannot be wrapped. |
 | `scripts/check_claude_lifecycle.py`, `check_opencode_lifecycle.py`, `check_claude_capture_observation_native.py`, `check_claude_capture_observation_native_disposable.py` | Live checks that built their fixtures only through those installers. |
+| `scripts/check_r06_lifecycle_offline_restore.py`, `test_r06_lifecycle_offline_restore.py` | The offline Python `/2` cold restore. The rollback decision keeps no offline Python closure. |
 | Installer-only test cases | Their test cases were removed. Hermes now covers the behaviour it still uses. |
 
 Python that stays in source, and why:
@@ -282,7 +283,7 @@ Python that stays in source, and why:
 | `scripts/install-agent-coordination.py` | Go has no replacement for rendering the coordination binding configs that staging copies. It also installs the Hermes coordination plugin and installed archon's Codex launcher shim. Its direct Codex, Claude, Agy and OpenCode hook rows are superseded by staging. Native checks still use them to build disposable fixtures for the Python engine. |
 | `scripts/launch-codex-coordination.py` | Live on archon: `~/.local/bin/codex` runs `python3 ~/.local/share/cairn/coordination/launch-codex-coordination.py` on every Codex start. It needs a Go port before it can be removed. |
 | `scripts/install-hermes-integration.py`, `integrations/hermes/*.py` | Hermes is kept by owner decision. |
-| R-06/R-07 transition evidence (`check_r06_*`, `check_r07_*`, `disposable_host.py`) | These generate evidence for recorded gates. The offline Python `/2` cold restore (`check_r06_lifecycle_offline_restore.py`) is retired by the rollback decision. `check_r07_bootstrap_reverse.py` still imports it, together with `semantic_python_closure.py`, which belongs to the semantic removal, so both are cut after that. |
+| R-06/R-07 transition evidence (`check_r06_*`, `check_r07_*`, `disposable_host.py`) | These generate evidence for recorded gates. The offline Python `/2` cold restore (`check_r06_lifecycle_offline_restore.py` and its test) is removed under the rollback decision. `check_r07_bootstrap_reverse.py` keeps the process-receipt observer it borrowed from that check. |
 | `integrations/lifecycle/operations/` | Inactive runtime-operations candidates (F1/F3), not lifecycle hooks. |
 | Frozen trials and the SDK (`trials/`, `scripts/trial_*`) | Preserved by R-08. They name the removed installers only in comments. |
 | Unrelated tooling | `install-wake-service.py` (Go `cairn wake serve` units), `install-development-checkpoint.py`, `provision-event-profiles.py`, the docs and design checks. |

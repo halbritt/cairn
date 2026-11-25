@@ -1,5 +1,11 @@
 # Retained Python /2 cold restoration
 
+> **Retired (CAIRN-311, 2026-11-24).** The owner decided that rollback is
+> republish or roll forward, with no offline Python closure. The fixture and its
+> test were removed; they are at
+> [c0c6ddce](https://github.com/halbritt/cairn/tree/c0c6ddce699b474d1d31b93fe5705c9c0688afb9/scripts).
+> This record is kept as history.
+
 This finite fixture preserves the genuinely selected `/2` literal Python argv.
 It does not use a `/3` compatibility receipt or change its verifier. The real
 `OwnedUnit.stage_legacy` producer and unchanged strict retained inspector supply
