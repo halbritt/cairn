@@ -18,13 +18,18 @@ def installed_paths():
     launcher = Path(shutil.which("codex") or "").resolve()
     if not launcher.is_file():
         raise unittest.SkipTest("installed Codex CLI is unavailable")
-    text = launcher.read_text(encoding="utf-8")
-    match = re.search(r'^REAL="([^"]+)"$', text, re.MULTILINE)
-    if not match:
-        raise unittest.SkipTest("Codex launcher does not expose its installed package entry")
-    entry = Path(match.group(1))
-    root = entry.parent.parent / "node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin"
-    host = root / "codex-code-mode-host"
+    if launcher.read_bytes()[:4] == b"\x7fELF":
+        # Standalone release: the native CLI ships the code-mode host beside it.
+        entry, host = launcher, launcher.parent / "codex-code-mode-host"
+    else:
+        # npm package: a shell launcher names the Node entry in REAL="...".
+        text = launcher.read_text(encoding="utf-8")
+        match = re.search(r'^REAL="([^"]+)"$', text, re.MULTILINE)
+        if not match:
+            raise unittest.SkipTest("Codex launcher does not expose its installed package entry")
+        entry = Path(match.group(1))
+        root = entry.parent.parent / "node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin"
+        host = root / "codex-code-mode-host"
     if not entry.is_file() or not host.is_file():
         raise unittest.SkipTest("installed Codex package lacks app-server or code-mode host")
     return entry, host
@@ -43,6 +48,7 @@ class RemoteCodeModeHostTests(unittest.TestCase):
         self.assertEqual(result["reason"],
                          "remote_code_mode_host_did_not_isolate_functions_exec")
         self.assertEqual(result["provider_call"], False)
+        self.assertTrue(result["cli"].startswith("codex-cli "), result["cli"])
         self.assertEqual(result["benign_exec"], "passed")
         self.assertEqual(result["bwrap_direct_read"], "denied")
         self.assertEqual(result["marker_read"], "leaked")

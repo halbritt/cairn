@@ -272,7 +272,11 @@ def run_probe(root: Path, codex_entry: Path, host_bin: Path) -> dict:
         else:
             raise TimeoutError("remote_code_mode_host_listener_timeout")
 
-        app_command = ["/usr/bin/node", str(codex_entry), "app-server", "--listen",
+        # The npm package ships a Node entry; the standalone release is the native binary.
+        launch = ["/usr/bin/node", str(codex_entry)] if codex_entry.suffix == ".js" else [str(codex_entry)]
+        cli_version = subprocess.run([*launch, "--version"], capture_output=True, text=True,
+                                     env=env, timeout=10, check=True).stdout.strip()
+        app_command = [*launch, "app-server", "--listen",
                        "stdio://", "--code-mode-host", f"http://127.0.0.1:{mode_port}",
                        "--enable", "code_mode", "--enable", "code_mode_host",
                        "--enable", "code_mode_only", "--enable", "code_mode_interrupt"]
@@ -324,7 +328,7 @@ def run_probe(root: Path, codex_entry: Path, host_bin: Path) -> dict:
                       result="refused" if stub_state["marker_leaked"] else "passed",
                       reason=("remote_code_mode_host_did_not_isolate_functions_exec"
                               if stub_state["marker_leaked"] else None),
-                      cli="codex-cli 0.164.0",
+                      cli=cli_version,
                       route="app-server --code-mode-host over loopback HTTP/2 gRPC",
                       tool_host="codex-code-mode-host under external bwrap",
                       provider_call=False, responses_route="loopback fixture only",

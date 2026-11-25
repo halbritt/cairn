@@ -145,3 +145,13 @@ host-supplied, startup-fixed allowlist that covers generated and dynamic tools,
 and a provider-free fixture proves Cairn search/pull available while all
 process/filesystem execution paths are absent or denied without exposing auth
 to model-facing code.
+
+## Standalone Codex re-run (2026-11-24)
+
+The host now installs the standalone native Codex release instead of the npm
+package. The test finds the native binary and its sibling `codex-code-mode-host`
+and starts the app-server directly; the npm Node entry is still supported. The
+report now records the CLI's own `--version` instead of a fixed string. Against
+`codex-cli 0.171.0` the probe gives the same refusal: benign exec passed, direct
+bwrap read denied, marker leaked through `functions.exec`, interrupt at 2.002 s,
+process groups cleaned.
