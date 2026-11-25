@@ -246,3 +246,29 @@ background Stop hook then ran one selection after the sixth new message, which
 correctly saved nothing from a trivial exchange, and later short turns started
 no further selection. That run exercised the mechanics. Whether the retrieved
 memory improves Codex's work remains unmeasured.
+
+## Idle wake needs the launcher
+
+The presence watcher wakes an idle Codex session by queueing a prompt through a
+Codex app-server socket. It finds that socket only from an explicit
+`--listen unix://…` or `--remote unix://…` on the session's own command line.
+There is no terminal or Herdr fallback for Codex: a session started as plain
+`codex` receives Cairn work at its next turn boundary and is never woken while
+idle (the watcher logs "no native Codex queue endpoint").
+
+`cairn-codex-launch` (Go, `cmd/cairn-codex-launch`) provides the socket. Put it
+behind the `codex` command:
+
+```sh
+#!/bin/sh
+exec /path/to/cairn-codex-launch --codex /path/to/real/codex -- "$@"
+```
+
+For an interactive start (bare TUI, prompt, `resume`, `fork`) it runs
+`codex app-server --listen unix://$XDG_RUNTIME_DIR/queue-PID.sock`, then the TUI
+as `codex --remote unix://…`, forwards configuration options to both, and stops
+the app-server and removes the socket when the TUI ends or the launcher is
+signalled. Non-interactive subcommands (`exec`, `mcp`, `login`, …), `--help`,
+`--version` and any start that already names `--remote` exec the real codex
+unchanged. It does not select the owner-origin route; that stays with
+`scripts/launch-codex-coordination.py`.
