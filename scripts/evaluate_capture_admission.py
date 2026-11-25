@@ -64,7 +64,7 @@ def run_case(event, confirmed, addition, selector, *, source_failure=False, hook
         return dict(structured_output={"empty": EMPTY, "correction": CORRECTION,
                                        "handoff": HANDOFF, "changed_decision": CHANGED_DECISION}[selector])
 
-    def source(*_args):
+    def source(*_args, **_kwargs):
         if source_failure:
             raise hook.HookError("synthetic source refusal", code="PAYLOAD_UNAVAILABLE")
         return []
