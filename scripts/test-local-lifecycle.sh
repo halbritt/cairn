@@ -3,7 +3,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 test_root="$(mktemp -d /tmp/cairn-lifecycle.XXXXXXXX)"
 export CAIRN_HOME="$test_root/store"
-pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
+# Same server as scripts/local-store.sh picks for a new cluster; exported so the
+# store script, fixtures and cleanup all use it.
+source scripts/pg-bin.sh
+pg_bin="${CAIRN_PG_BIN:-$(cairn_pg_bin)}"
+export CAIRN_PG_BIN="$pg_bin"
 cleanup() {
     if [[ -f "$CAIRN_HOME/data/postmaster.pid" ]]; then
         "$pg_bin/pg_ctl" -D "$CAIRN_HOME/data" -m immediate -w stop >/dev/null

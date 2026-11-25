@@ -5,7 +5,9 @@ umask 077
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 cairn_binary="${CAIRN_BINARY:-$project_dir/bin/cairn}"
 store_dir="${CAIRN_HOME:-$HOME/.local/share/cairn}"
-pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
+# An existing cluster keeps its major version; a new one needs pgvector (scripts/pg-bin.sh).
+source "$project_dir/scripts/pg-bin.sh"
+pg_bin="${CAIRN_PG_BIN:-$(cairn_pg_bin "$store_dir/data")}"
 case "$store_dir" in /*) ;; *) printf '%s\n' 'CAIRN_HOME must be absolute' >&2; exit 2;; esac
 if [[ "$store_dir" == *"'"* || "$store_dir" == *$'\n'* || "$store_dir" == *' '* ]]; then
     printf '%s\n' 'The local cluster directory cannot contain quotes, spaces or newlines' >&2
