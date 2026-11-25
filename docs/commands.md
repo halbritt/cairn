@@ -326,7 +326,9 @@ describes the separate failure contract.
   - `--semantic-command PATH`: One-shot local CPU scoring executable.
   - `--semantic-stream-command PATH`: Persistent local CPU scoring executable.
   - `--embedding-command PATH`: Dedicated vector embedding worker.
+  - `--semantic-rust-config FILE`: Rust worker configuration (`rank`, `stream` or `embed`).
   - `--semantic-idle-timeout DURATION`: Idle worker shutdown timeout.
+  - The command flags take any executable implementing the worker protocol, such as a staged Rust launcher; the Python worker is retired.
 - `cairn opencode-install`: Installs Cairn OpenCode adapter with support for:
   - `--tokens N` and `--max-tokens N`: Per-turn and upper-bound token limits.
   - `--task TASK` and `--run RUN`: Scoped execution context.

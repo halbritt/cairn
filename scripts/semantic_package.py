@@ -1,7 +1,7 @@
 """Build and stage an offline semantic worker; never select a live service path.
 
 Payload, rendered launcher and observation-manifest addresses are independent.
-The default installer remains the Python installer. See docs/semantic-package.md.
+The installer has only this Rust staging mode. See docs/semantic-package.md.
 """
 import argparse
 from contextlib import contextmanager

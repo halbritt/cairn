@@ -25,7 +25,6 @@ from types import SimpleNamespace
 
 import check_r06_unit_control as control
 from disposable_host import HostRefusal, OwnedCluster, pairs_unique, pg_bindir, private_dir, require, run_sql, stop_process, write_private
-import semantic_python_closure as semantic
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,107 +48,7 @@ GAPS = {
     'target_retained2': 'internal/lifecycle/coordination/shared_unit_control_target.go:loadUnitTarget',
     'fixed_identity': 'internal/lifecycle/coordination/shared_unit_control.go:unitControlPairIdentity',
     'fixture_scope': 'internal/lifecycle/coordination/shared_unit_census.go:inspectWatchUnitCensus',
-    'semantic_selection': 'scripts/semantic_python_closure.py:verify_generation',
-    'semantic_home': 'scripts/semantic_python_closure.py:private_home',
 }
-
-
-def stage_semantic_reverse(payload, original_config, stage, home, *, expected_control=None, publications=None):
-    """Publish selected S-04R files through the maintained immutable publisher.
-
-    Does not execute the retained interpreter/model or change an API service.
-    The operator keeps the existing API's other arguments and credentials.
-    """
-    source = semantic.verify_generation(payload['path'], payload['descriptor'])
-    descriptor = payload['descriptor']
-    require(payload['address'] == semantic.digest(semantic.canonical(descriptor)),
-            'semantic reverse payload address mismatch')
-    stage, home = Path(stage), Path(home)
-    semantic.private_home(home, stage)
-    require(not list(home.iterdir()), 'semantic reverse HOME must initially be empty')
-    if publications is not None:
-        publications = semantic.absolute(publications)
-        private_dir(publications)
-        require(not list(publications.iterdir()), 'new empty publication-reference directory required')
-        for protected in (source, stage, home):
-            require(publications != protected and not publications.is_relative_to(protected)
-                    and not protected.is_relative_to(publications), 'publication-reference directory overlaps selected generation/HOME')
-
-    def copy_members(pending):
-        for name, item in sorted(descriptor['entries'].items()):
-            if name == '.':
-                continue
-            path = pending / name
-            if item['type'] == 'directory':
-                path.mkdir(mode=0o700)
-            elif item['type'] == 'symlink':
-                path.symlink_to(item['target'])
-            else:
-                with path.open('xb') as stream:
-                    observed = semantic.regular(source / name, stream)
-                    stream.flush()
-                    os.fchmod(stream.fileno(), item['mode'])
-                    os.fsync(stream.fileno())
-                require(observed == item, 'selected semantic source changed while copying')
-        semantic.verify_generation(source, descriptor)
-
-    with semantic.stage_root(stage, (source,)) as root:
-        target = semantic.publish_generation(root / 'payloads', descriptor, copy_members)
-    relocated = dict(address=target.name, path=str(target), descriptor=descriptor)
-    controls = semantic.render_python_controls(stage, relocated, original_config, home)
-    if expected_control is not None:
-        require(controls['address'] == expected_control,
-                'relocated semantic control differs from selected descriptor; no API changed')
-    semantic.verify_generation(controls['path'], controls['descriptor'])
-    references = {}
-    if publications is not None:
-        for role, selected in (('payload', relocated), ('controls', controls)):
-            path = publications / (role + '.json')
-            write_private(path, json.dumps(selected, sort_keys=True) + '\n')
-            references[role] = str(path)
-    # These are the actual cairn serve selectors. They are a command tail, not
-    # a made-up JSON configuration consumed by the API.
-    flags = ['--embedding-command', controls['launchers']['embed'],
-             '--semantic-command', controls['launchers']['rank'],
-             '--semantic-stream-command', controls['launchers']['stream']]
-    return dict(schema='cairn.r07-semantic-reverse-stage/1',
-                payload=dict(path=relocated['path'], address=relocated['address']),
-                controls={key: controls[key] for key in ('path', 'address', 'payload_address', 'launchers')},
-                home=str(home), serve_selector_flags=flags,
-                publications=references,
-                qualification='selected-file integrity only; runtime/ABI/effects unqualified',
-                service_actions=0, model_executions=0)
-
-
-def read_selected_json(path, pin):
-    path = semantic.absolute(path)
-    content = io.BytesIO()
-    observed = semantic.regular(path, content)
-    require(observed['sha256'] == pin, 'selected JSON pin changed')
-    return json.loads(content.getvalue(), object_pairs_hook=pairs_unique)
-
-
-def operator_semantic_reverse(plan_path, plan_sha, publications=None):
-    plan = read_selected_json(plan_path, plan_sha)
-    require(isinstance(plan, dict), 'semantic reverse selection must be an object')
-    require(set(plan) == {'schema', 'payload', 'source_payload', 'original_config',
-                         'stage', 'home', 'expected_control'}, 'unknown semantic reverse selection field')
-    require(plan['schema'] == 'cairn.r07-semantic-reverse-selection/1', 'unknown semantic reverse schema')
-    for key in ('payload', 'original_config'):
-        require(isinstance(plan[key], dict) and set(plan[key]) == {'path', 'sha256'}
-                and all(isinstance(value, str) for value in plan[key].values()),
-                'semantic reverse requires exact path/hash descriptors')
-    require(all(isinstance(plan[key], str) for key in ('source_payload', 'stage', 'home', 'expected_control')),
-            'semantic reverse requires literal path/control selections')
-    payload = read_selected_json(plan['payload']['path'], plan['payload']['sha256'])
-    payload['path'] = plan['source_payload']
-    original = semantic.absolute(plan['original_config']['path'])
-    require(semantic.regular(original)['sha256'] == plan['original_config']['sha256'],
-            'original selected venv configuration changed')
-    require(len(plan['expected_control']) == 64 and
-            all(c in '0123456789abcdef' for c in plan['expected_control']), 'explicit control address required')
-    return stage_semantic_reverse(payload, original, plan['stage'], plan['home'],
-                                  expected_control=plan['expected_control'], publications=publications)
 
 
 def metadata(path):
@@ -282,37 +181,6 @@ def raw_filesystem_rehearsal(root):
                     complete_writer_fence='not established', operator_bootstrap='unsupported')
     finally:
         stop_process(owner, timeout=5, label='R07 owned primitive child')
-
-
-def semantic_file_fixture(root):
-    """Existing S04R selected-file contracts on inert files; never execute them."""
-    root = Path(root)
-    root.mkdir(mode=0o700)
-    inputs, stage, home = root / 'inputs', root / 'stage', root / 'worker-home'
-    inputs.mkdir(mode=0o700)
-    stage.mkdir(mode=0o700)
-    home.mkdir(mode=0o700)
-    roles = {'python': ('bin/python3.11',), 'site': (),
-             'workers': ('semantic_rank.py', 'embedding_worker.py'),
-             'native': ('ld-linux-x86-64.so.2',), 'locale': (), 'gconv': (),
-             'model': semantic.MODEL_FILES}
-    for role, members in roles.items():
-        directory = inputs / role
-        directory.mkdir(mode=0o700)
-        for name in members:
-            target = directory / name
-            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            target.write_bytes(b'INERT S04R FILE CONTRACT FIXTURE; NEVER EXECUTED\n')
-            target.chmod(0o500 if role in ('python', 'native') else 0o400)
-    seal = semantic.seal_inputs({role: inputs / role for role in roles}, {'fixture': 'inert files; no model/runtime qualification'})
-    payload = semantic.publish_payload(stage, seal)
-    config = root / 'original-pyvenv.cfg'
-    config.write_text('home = /fixture-original/python/bin\ninclude-system-site-packages = false\n')
-    controls = semantic.render_python_controls(stage, payload, config, home)
-    semantic.verify_generation(payload['path'], payload['descriptor'])
-    semantic.verify_generation(controls['path'], controls['descriptor'])
-    semantic.private_home(home, stage)
-    return payload, controls, home, stage
 
 
 def process_ref(process):
@@ -1462,11 +1330,6 @@ def run(evidence, *, bootstrap_only=False, effects_only=False, production_shape_
                 primitive_root = scratch / 'primitive'
                 primitive_root.mkdir(mode=0o700)
                 control.write(evidence / 'filesystem-primitive.json', raw_filesystem_rehearsal(primitive_root))
-                payload, controls, home, stage = semantic_file_fixture(scratch / 'semantic')
-                control.write(evidence / 'semantic-file-contract.json', dict(
-                    payload_address=payload['address'], control_address=controls['address'],
-                    private_home=str(home), result='inert selected-file contract only',
-                    accepted_s04r_exact_selection='unknown', runtime_qualification='not run'))
             images = control.build(scratch)
             if effects_only or production_shape_only:
                 images['stager'] = scratch / 'tools/stager'
@@ -1564,31 +1427,15 @@ def run(evidence, *, bootstrap_only=False, effects_only=False, production_shape_
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument('--evidence', type=Path)
-    mode.add_argument('--semantic-reverse-selection', type=Path,
-                      help='operator staging only; immutable files and exact serve selectors, no execution')
-    parser.add_argument('--sha256', help='exact semantic reverse selection pin')
-    parser.add_argument('--publication-dir', type=Path,
-                        help='new empty owned0700 directory for payload/control file-verifier references')
+    parser.add_argument('--evidence', type=Path, required=True)
     parser.add_argument('--bootstrap-only', action='store_true', help='focus new bootstrap cases; do not repeat the independent checked-control fixtures')
     parser.add_argument('--effects-only', action='store_true', help='focused real API/PG exchange and exact retained2 reverse, with systemd observation fixtures')
     parser.add_argument('--production-shape-only', action='store_true', help='real8+1+1 shared CLI fixture-fence proof and default active-worker refusal')
     args = parser.parse_args()
-    if args.semantic_reverse_selection is not None:
-        try:
-            result = operator_semantic_reverse(args.semantic_reverse_selection, args.sha256, args.publication_dir)
-        except (HostRefusal, semantic.ClosureError, OSError, ValueError) as error:
-            print(json.dumps(dict(schema='cairn.r07-semantic-reverse-stage/1', error=str(error),
-                                  service_actions=0, model_executions=0)))
-            return 1
-    else:
-        require(args.sha256 is None, '--sha256 requires --semantic-reverse-selection')
-        require(args.publication_dir is None, '--publication-dir requires --semantic-reverse-selection')
-        require(not (args.effects_only and args.bootstrap_only), 'choose one focused fixture')
-        require(sum((args.bootstrap_only, args.effects_only, args.production_shape_only)) <= 1, 'choose one focused fixture')
-        result = run(args.evidence.absolute(), bootstrap_only=args.bootstrap_only, effects_only=args.effects_only,
-                     production_shape_only=args.production_shape_only)
+    require(not (args.effects_only and args.bootstrap_only), 'choose one focused fixture')
+    require(sum((args.bootstrap_only, args.effects_only, args.production_shape_only)) <= 1, 'choose one focused fixture')
+    result = run(args.evidence.absolute(), bootstrap_only=args.bootstrap_only, effects_only=args.effects_only,
+                 production_shape_only=args.production_shape_only)
     print(json.dumps(result, sort_keys=True))
 
 

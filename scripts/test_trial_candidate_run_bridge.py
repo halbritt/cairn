@@ -50,7 +50,10 @@ class BridgeTests(unittest.TestCase):
         (harness.parent/'trial_task_eval.py').write_text(
             '# synthetic\nselected = credentials_source()\na.add_argument("--original-limits")\n')
         # The original-execution seam prepares the declared config and launcher through trial_embedding_launch.
-        config, launcher = embedding_fixture(self.root)
+        patchers = []
+        config, launcher = embedding_fixture(self.root, patchers)
+        for patcher in patchers:
+            self.addCleanup(patcher.stop)
         self.f.profile['embedding'].update(config=config, worker=pin(launcher))
         # The original-execution seam reads a structured model-identity declaration.
         self.f.profile['embedding']['model_identity'] = write_pin(self.root/'model-identity.json', dict(

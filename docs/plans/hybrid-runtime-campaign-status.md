@@ -93,7 +93,7 @@ are unchanged. The six required named tests per backend and two retained-ranking
 fixture tests passed under `-race`, with no skips. Input-integrity controls and
 owned cluster shutdown passed. These selected observations do not establish
 broader runtime or production qualification. The
-[indexed comparison procedure](../semantic-worker-comparison.md#indexed-pythonrust-comparison)
+[indexed comparison procedure](../semantic-worker-comparison.md#indexed-pythonrust-comparison-retired)
 records its inputs, selectors and limits.
 
 The S-02 stream follow-through adds an external, test-only observer around the

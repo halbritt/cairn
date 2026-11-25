@@ -27,7 +27,7 @@ The arithmetic sequence comes from step 4 of
 [`semantic/4`](../../docs/plans/hybrid-runtime-contracts/semantic.md#strict-score-arithmetic-and-indexed-parity),
 Git blob `a44b916cf7e48ed579c95f7b4d60fd1914788874`, lines 144-180, and the
 accumulator/max/clamp/round sequence in
-[`semantic_rank.py`](../../scripts/semantic_rank.py#L111-L117),
+`semantic_rank.py`,
 Git blob `3af5ba61ee38450bdb074b6ac97c37338059fd05`, lines 111-117.
 
 The fixtures use independent literal expected integers. They include the

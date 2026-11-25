@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 import trial_embedding_launch as launch
+import trial_embedding_fixture
 
 
 def pin(path):
@@ -24,8 +25,9 @@ class LaunchTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.modules = self.root/'modules'
         self.modules.mkdir()
-        for name in ('embedding_worker.py', 'semantic_rank.py'):
-            shutil.copyfile(Path(__file__).with_name(name), self.modules/name)
+        patcher = trial_embedding_fixture.write_sources(self.modules)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.python = self.root/'python'
         self.python.write_text('#!/bin/sh\nexit 99\n')
         self.python.chmod(0o700)

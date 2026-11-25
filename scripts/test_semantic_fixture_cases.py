@@ -73,7 +73,6 @@ class BlockModelImports:
    raise ImportError('forbidden model dependency: '+fullname)
 sys.meta_path.insert(0,BlockModelImports())
 import semantic_fixture_cases
-import capture_semantic_fixtures
 assert len(semantic_fixture_cases.ranking_cases())==19
 assert len(semantic_fixture_cases.embedding_cases())==15
 """

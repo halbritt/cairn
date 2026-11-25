@@ -1,5 +1,10 @@
 # Semantic transition fixtures and Release runbook
 
+> **Updated 2026-11-24.** The real Python/Rust cases (`--real-case1`..`8`,
+> `--case8-controls`) and their Go tests were removed with the Python semantic
+> worker. `check_semantic_transition.py` now runs only the deterministic
+> protocol-worker matrix. The case records below are retained evidence.
+
 S-05 / CAIRN-328 supplies a disposable Python → Rust → the same retained Python
 transition and this mode-preserving runbook. The finite deliverable follows the
 2026-11-12 campaign closure decision and uses the retained real-worker evidence
@@ -22,24 +27,11 @@ mise run host:exec --timeout 15m --weight 1 -- \
   --artifact-dir "$HOME/.cache/semantic-transition-$(date +%Y%m%dT%H%M%S)"
 ```
 
-To exercise the competing-writer round trip with already accepted immutable
-Python and Rust artifacts, use a fresh output directory:
-
-```sh
-mise run host:exec --timeout 25m --weight 1 -- \
-  python3 -I -B scripts/check_semantic_transition.py --real-case8 \
-  --artifact-dir /absolute/new-case8-artifacts \
-  --python-selection /absolute/accepted-python/qualified-selection \
-  --rust-fixtures /absolute/accepted-rust/observed/fixtures
-```
-
 The host entry point calls the unchanged
 `scripts/test_hybrid_runtime_operations.py` wrapper. It preserves normal host
 tools and uses a private network/PID namespace, protected home and owned private
 PostgreSQL cluster. Fixture database cleanup cannot select a production database.
-Accepted package/launcher bytes are checked before execution; the Python stage
-is read-only and the Rust copy retains its original private layout. Do not
-regenerate selections or substitute aliases to make a run pass.
+Do not substitute aliases to make a run pass.
 
 Retain `execution-inputs.json`, `isolation.json`, `result.json`,
 `artifacts/report.json`, `artifacts/tests.jsonl`, source inventories, executable

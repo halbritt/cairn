@@ -36,9 +36,6 @@ func transitionAPIProcess(t *testing.T, d *transitionDB) (func(string, ...string
 	token := "disposable-s05-" + uuid.NewString()
 	identities := filepath.Join(home, "identities.json")
 	collection := "s05-api"
-	if os.Getenv("CAIRN_TRANSITION_REAL_SELECTION") != "" {
-		collection = "s05-a"
-	}
 	if err := os.WriteFile(identities, []byte(transitionJSON([]map[string]string{{"token_sha256": transitionHash(token), "principal": "s05-fixture-api", "repo": collection, "role": "agent", "destination": "local"}})), 0600); err != nil {
 		t.Fatal(err)
 	}

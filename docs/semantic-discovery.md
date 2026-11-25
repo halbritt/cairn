@@ -80,35 +80,29 @@ PostgreSQL embeddings, bounded hybrid discovery and matched passage spans. It is
 selected with `--embedding-command`; the search/pull interface stays the same.
 The following command modes retain their existing request-scoring behavior.
 
-The optional worker uses FastEmbed 0.8.0 and a local quantized
-`BAAI/bge-small-en-v1.5` model. It does not require a model server or GPU. Prepare
-its separate Python environment and downloaded model with:
+The supported worker is the offline Rust package for the local quantized
+`BAAI/bge-small-en-v1.5` model. It does not require a model server or GPU. Stage it
+with `bash scripts/install-semantic.sh --stage-rust` as described in
+[the package guide](semantic-package.md); staging does not modify running services.
+Select it explicitly, either through one
+[`--semantic-rust-config` file](semantic-worker-comparison.md#rust-workers-through-go)
+or through a staged launcher:
 
 ```sh
-bash scripts/install-semantic.sh
+cairn serve --semantic-command /absolute/staged/launchers/rank
+cairn serve --semantic-stream-command /absolute/staged/launchers/stream
 ```
 
-This requires `uv` and obtains Python 3.11 if necessary. The installer writes
-under `${CAIRN_HOME:-$HOME/.local/share/cairn}/semantic`, records model-file hashes
-and prints the worker command. It does not modify running services. Configure the
-existing API process explicitly:
-
-```sh
-cairn serve --semantic-command "$HOME/.local/share/cairn/semantic/worker"
-```
-
-To reuse the loaded model between requests, select the alternative launcher:
-
-```sh
-cairn serve --semantic-stream-command "$HOME/.local/share/cairn/semantic/worker-stream"
-```
+The earlier Python CPU worker (FastEmbed 0.8.0 in a separate virtual environment)
+is retired. The installer no longer prepares it, and no command mode falls back to
+it.
 
 Choose one command mode. The streaming worker starts on the first eligible query
 and by default exits after 30 seconds without scoring work. Hosts with spaced
 follow-up searches can retain the same loaded model and vector cache longer:
 
 ```sh
-cairn serve --semantic-stream-command "$HOME/.local/share/cairn/semantic/worker-stream" \
+cairn serve --semantic-stream-command /absolute/staged/launchers/stream \
   --semantic-idle-timeout 5m
 ```
 
@@ -159,20 +153,17 @@ The [passage-reuse comparison](verification/semantic-chunk-cache-2026-09-10.md)
 records localized-edit timing and the remaining cold cost. The earlier
 [whole-note cache comparison](verification/semantic-vector-cache-2026-09-09.md)
 remains as historical evidence.
-Existing custom one-shot workers continue to use `--semantic-command`.
-Prepared Rust workers have a separate, explicit
-[`--semantic-rust-config` selection](semantic-worker-comparison.md#rust-workers-through-go).
-It cannot be combined with a legacy command mode and does not change the default
-worker selection or install a runtime.
+The command modes accept any executable that implements these protocols, such as
+a staged Rust launcher. The `--semantic-rust-config` selection cannot be combined
+with a command mode and does not change the default worker selection or install a
+runtime.
 
-Use the printed path if `CAIRN_HOME` is customized. A systemd installation must
-include that argument in its `ExecStart`; restart the API after changing the
-configuration. The worker uses the prepared model snapshot with offline loading.
-Downloads happen during preparation, not retrieval. Reinstalling can update
-transitive Python dependencies or upstream model files; the scoring fingerprint
-records the actual files, dependency versions and algorithm settings used.
+A systemd installation must include the selected argument in its `ExecStart`;
+restart the API after changing the configuration. The worker uses the staged model
+files offline. Nothing is downloaded during preparation or retrieval. The scoring
+fingerprint records the actual files and algorithm settings used.
 For streaming mode, that fingerprint describes the model loaded by the current
-child. Restart the API after updating worker code, packages or model files for
+child. Restart the API after staging a new package for
 immediate adoption; otherwise the next child starts after idle release or failure.
 
 The host configures the executable. Agents cannot supply a command or model path.

@@ -228,6 +228,15 @@ class PackageTests(unittest.TestCase):
         self.assertFalse((self.root / 'legacy-home').exists())
         self.assertFalse((self.root / 'legacy-cairn').exists())
 
+    def test_installer_without_rust_branch_refuses_retired_python_install(self):
+        env = dict(os.environ, HOME=str(self.root / 'legacy-home'), CAIRN_HOME=str(self.root / 'legacy-cairn'))
+        script = Path(__file__).with_name('install-semantic.sh')
+        p = subprocess.run(['/bin/bash', str(script)], env=env, capture_output=True)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn(b'Python semantic worker is retired', p.stderr)
+        self.assertFalse((self.root / 'legacy-home').exists())
+        self.assertFalse((self.root / 'legacy-cairn').exists())
+
     def test_verbose_cargo_build_script_lines_do_not_hide_binary_artifacts(self):
         # Actual first package build (2026-11-11) failed after compiling because
         # Cargo mixes -vv build-script text into its JSON output stream.

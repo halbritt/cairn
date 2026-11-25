@@ -2,8 +2,8 @@
 
 `scripts/install-semantic.sh --stage-rust` stages an explicit offline package in
 an owned disposable directory. It does not select a service command, edit
-configuration, restart a service or modify the existing Python environment.
-Invoking the installer without this option retains the Python installer.
+configuration or restart a service. The installer has no other mode: the
+Python CPU worker is retired, and invoking it without `--stage-rust` exits 2.
 
 Run package builds and focused tests inside the campaign's unchanged
 `scripts/test_hybrid_runtime_operations.py` wrapper. Native acceptance uses the

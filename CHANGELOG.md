@@ -13,6 +13,19 @@ See the [implementation log](docs/history/implementation-log.md) for dated deplo
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+## 2026-11-24
+
+- Retired the Python semantic worker. `scripts/semantic_rank.py`,
+  `scripts/embedding_worker.py`, the FastEmbed installer path and the Python-only
+  qualification tooling (S-01 reference/refusal audit, S-04R Python closure, the
+  live Python/Rust indexed comparison and the real S-05 transition cases) are
+  removed. The Rust worker is the only supported implementation; stage it with
+  `install-semantic.sh --stage-rust`, which is now the installer's only mode.
+  The `serve` worker flags still accept any executable implementing the worker
+  protocol, such as a staged Rust launcher. No mode falls back to another worker.
+- Added `cairn semantic-requeue`, an operator command that re-derives every current
+  version under the selected embedding identity in place.
+
 ## 2026-11-17
 
 - Added [development checkpoints](docs/development-checkpoints.md) for selected

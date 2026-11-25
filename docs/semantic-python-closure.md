@@ -1,5 +1,10 @@
 # Retained Python closure
 
+> **Retired 2026-11-24.** The Python semantic worker, `semantic_python_closure.py`
+> and `check_semantic_python_closure.py` were removed from the repository; the
+> release contract already dropped the offline Python closure (aaedbba5). This
+> page keeps the accepted S-04R record; its commands no longer run.
+
 ## Accepted campaign target
 
 The 2026-11-12 owner-directed reset, `cb71136b-cd84-4fc2-b84f-eb247b975548/v1`,

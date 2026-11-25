@@ -20,6 +20,7 @@ import trial_task_eval as te
 import trial_original_execution as original
 import trial_one_run_override as one_run_override
 import trial_weekly_run as weekly
+import trial_embedding_fixture
 import trial_weekly_accounts as weekly_accounts
 from trial_capacity_adapter import adapt
 from test_trial_capacity_adapter import Inputs
@@ -30,12 +31,18 @@ NOW_DT = paired.utc(NOW)
 ACCOUNTS = ['account-A', 'account-B']
 
 
-def embedding_fixture(root):
-    """A closed trial_embedding_launch config and its rendered launcher (no model, no worker run)."""
+def embedding_fixture(root, patchers=None):
+    """A closed trial_embedding_launch config and its rendered launcher (no model, no worker run).
+
+    The retired Python sources are replaced by inert placeholders whose digests
+    are patched into the launcher's pin for the caller's test only.
+    """
     semantic = root / 'semantic'
     semantic.mkdir()
-    for name in ('embedding_worker.py', 'semantic_rank.py'):
-        shutil.copyfile(Path(__file__).with_name(name), semantic / name)
+    patcher = trial_embedding_fixture.write_sources(semantic)
+    patcher.start()
+    if patchers is not None:
+        patchers.append(patcher)
     python = semantic / 'python'
     python.write_text('#!/bin/sh\nexit 99\n')
     python.chmod(0o700)
@@ -406,7 +413,10 @@ class WeeklyRunTests(unittest.TestCase):
         self.select()
 
     def embedding_fixture(self):
-        self.embedding_config, worker = embedding_fixture(self.root)
+        patchers = []
+        self.embedding_config, worker = embedding_fixture(self.root, patchers)
+        for patcher in patchers:
+            self.addCleanup(patcher.stop)
         return worker
 
     def recall_blob(self, commit, name):

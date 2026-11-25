@@ -92,14 +92,15 @@ every current document's `indexed_at` is later than the requeue.
 
 ## Model and process ownership
 
-The prepared local CPU model is `BAAI/bge-small-en-v1.5` through FastEmbed 0.8.0.
-The embedding worker returns 384-dimensional vectors and original UTF-8 byte
+The local CPU model is `BAAI/bge-small-en-v1.5`, served by the staged Rust embed
+worker ([package guide](semantic-package.md)). The earlier Python FastEmbed worker
+is retired. The embedding worker returns 384-dimensional vectors and original UTF-8 byte
 spans. It normally uses 128-token windows with a 96-token stride, including the
 final shorter window. For unusually token-dense notes, the stride increases to
 cover the whole source within 256 passages. Each passage is checked against the
-model's input limit. The model identity includes model files, package versions,
-encoder configuration, the passage worker's source hash and its imported scorer's
-source hash.
+model's input limit. The model identity is the worker-reported `model_sha256`
+derivation identity, separate from the executable hash; the package records the
+model, native runtime and source identities it was staged from.
 
 The API owns separate persistent worker processes for query and document
 embedding. Background work cannot occupy the query worker. A concurrent query
@@ -168,21 +169,26 @@ and eligibility, so a formerly valid hit cannot authorize stale delivery.
 
 ## Configure and verify
 
-Prepare the local worker, make the extension available, and apply the repository's
+Stage the Rust package, make the extension available, and apply the repository's
 normal installer migration before selecting the backend:
 
 ```sh
-bash scripts/install-semantic.sh
+bash scripts/install-semantic.sh --stage-rust ...   # see docs/semantic-package.md
 cairn migrate
-cairn serve --embedding-command "$HOME/.local/share/cairn/semantic/worker-embeddings"
+cairn serve --semantic-rust-config /absolute/path/semantic-rust-embed.json
 ```
 
-Use the installation's existing database and identity configuration. The
-installer does not change a running service. Choose one of `--embedding-command`,
-`--semantic-command`, `--semantic-stream-command` or the explicit
+Use the installation's existing database and identity configuration. Staging
+does not change a running service. Choose one of `--embedding-command` (an
+executable implementing the embedding protocol, such as a staged `embed`
+launcher), `--semantic-command`, `--semantic-stream-command` or the explicit
 [`--semantic-rust-config` selection](semantic-worker-comparison.md#rust-workers-through-go);
 they cannot be combined. Rust mode `embed` uses the same asynchronous index owner
-and separate query/document processes. No worker is selected by default.
+and separate query/document processes. No worker is selected by default, and no
+mode falls back to another worker. A missing or invalid worker configuration or
+executable stops `cairn serve` at startup. If the selected worker fails at run
+time, semantic discovery reports itself unavailable, search returns labelled
+lexical results and the API logs `semantic indexing unavailable`.
 `--semantic-idle-timeout` applies only to the request-scoring stream worker.
 
 The existing search interface remains:
@@ -202,7 +208,7 @@ tables or roll back migrations as an ordinary configuration change.
 Local regression coverage includes more than 64 eligible notes, source passage
 location, partial coverage, invalid-result fallback, frozen replay, competing
 positions, persistence across restart, concurrent editing, deletion and worker
-shutdown. An optional real-model check uses `CAIRN_EMBEDDING_WORKER` together
+shutdown. An optional real-model check uses `CAIRN_RUST_EMBED_TEST_CONFIG` together
 with the disposable PostgreSQL test harness. These checks establish implemented
 contracts. They do not establish fewer agent mistakes, less user intervention,
 or acceptable latency across real active agents; those are outcome-trial criteria.

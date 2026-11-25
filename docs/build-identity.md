@@ -23,7 +23,7 @@ module version and available VCS kind, revision and commit time. `vcs_modified`
 is `true` or `false` when stamped and `null` when unknown. A source archive,
 unstamped build or `go build -buildvcs=false` may lack a revision; absence does
 not mean a clean checkout. These values describe the executable's build, not
-the current working tree or installed Python worker.
+the current working tree or an installed semantic worker.
 
 The API exposes the same server object at authenticated `POST /v1/version` with
 `{}`. It uses the ordinary response envelope and reads no repository data.

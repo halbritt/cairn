@@ -227,7 +227,7 @@ def parse_process_maps(raw):
 def held_mapping_device(fd, info):
     """Btrfs stat dev differs from maps dev; use a readonly nonexec same-FD map.
 
-    This is the maintained check_semantic_python_closure.mapped_file method,
+    This is the method the retired Python closure checker used (mapped_file),
     using the observer's FD path so caller mount namespaces need not coincide.
     """
     path = os.readlink('/proc/self/fd/' + str(fd))

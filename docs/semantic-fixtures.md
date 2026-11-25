@@ -1,5 +1,10 @@
 # Semantic reference fixtures
 
+> **Retired 2026-11-24.** `capture_semantic_fixtures.py` and its tests were removed
+> with the Python semantic worker. `semantic_fixture_cases.py` remains the input
+> producer for the Rust comparison and stream evidence tools. The capture/import
+> commands below no longer run.
+
 [semantic/4](plans/hybrid-runtime-contracts/semantic.md) defines acceptance.
 The input module and capture/import CLI implement the S-01a preparation
 surface. They do not accept S-01, Rust parity, packaging or deployment.

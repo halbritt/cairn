@@ -50,39 +50,6 @@
     "positive_documents": 6,
     "prepared_tests": 23
   },
-  "python_tests": {
-    "test_embedding_worker.PassageContractTest": [
-      "test_long_query_embeds_one_original_unicode_prefix",
-      "test_actual_tokenizer_long_and_short_queries",
-      "test_imported_scorer_change_invalidates_worker_identity",
-      "test_utf8_spans_address_original_bytes_and_cover_tail",
-      "test_maximum_token_density_stays_bounded_without_truncating"
-    ],
-    "test_semantic_stream.SemanticStreamTest": [
-      "test_reuses_scorer_but_passes_current_request_each_time",
-      "test_bad_framing_or_hash_refuses_before_loading_model",
-      "test_eof_without_request_does_not_initialize",
-      "test_second_invalid_request_does_not_score_or_emit_result"
-    ],
-    "test_semantic_cache.SemanticCacheTest": [
-      "test_repeated_notes_only_embed_the_new_query",
-      "test_changed_body_reembeds_but_metadata_does_not",
-      "test_appending_to_long_note_reuses_unchanged_passages",
-      "test_removed_sources_are_not_retained_for_later_requests",
-      "test_mixed_hits_misses_duplicates_and_long_notes_preserve_scores",
-      "test_cache_hits_do_not_bypass_chunk_budget",
-      "test_duplicate_passages_share_inference_without_retaining_text_or_views",
-      "test_unique_chunk_retention_is_bounded_and_replaced_after_success",
-      "test_invalid_embedding_does_not_publish_a_partial_cache"
-    ],
-    "test_semantic_cache_resume.SemanticResumeTest": [
-      "test_fresh_scorer_restores_exact_passages_through_stream",
-      "test_changed_removed_and_mismatched_model_recompute_only_current_inputs",
-      "test_bad_snapshot_refuses_without_scoring_or_output",
-      "test_full_capacity_round_trip_preserves_vector_ownership",
-      "test_old_host_shape_and_late_restore_refusal"
-    ]
-  },
   "go_tests": [
     "TestWorkerAcceptanceRank",
     "TestWorkerAcceptanceStream",

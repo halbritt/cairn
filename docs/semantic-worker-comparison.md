@@ -188,60 +188,16 @@ made. Raw traces and caches stay in the external output directory.
 The observer's mechanics tests are in `scripts/test_semantic_stream_evidence.py`;
 protocol fixtures and selected observations remain separate from full acceptance.
 
-## Indexed Python/Rust comparison
+## Indexed Python/Rust comparison (retired)
 
-`TestIndexedPythonRustComparison` in `semantic/indexed_comparison_test.go`
-uses the real `Index.Search` and compiler integration on one owned disposable
-PostgreSQL/pgvector database. It creates the source records once, then rebuilds
-their derivations sequentially with the prepared Python worker and the Rust
-embedding worker through their existing Go owners. Producer model identities
-are recorded separately; the embedding algorithm must agree.
-
-The committed `semantic/testdata/indexed-comparison-inventory.json` binds the
-17 workload queries, nine query boundaries and their input hashes. The test
-also verifies the original workload bytes and each source's UUID5 alias,
-version, body and body hash before creating the disposable source records.
-Additional cases exercise actual equal-distance duplicate-text vectors,
-partial coverage and unavailable coverage. SQL result order and compiler
-returned order are preserved separately. Only the specified passage digest
-uses a copy sorted by record ID; it does not reorder either observed result.
-
-The selected isolated run on PostgreSQL 18.6/pgvector 0.8.7 processed 15 source
-jobs and stored 21 passages per backend. Across 29 cases per backend, all 326
-paired SQL hits and 137 paired compiler entries matched exactly, including
-versions, hashes, original UTF-8 spans, integer scores, projections, discovery
-state and coverage. Each compiler receipt replayed with its original seal.
-Partial coverage was ready at 11/12; unavailable coverage was 0/12. The closest
-positive SQL-distance gap among the frozen queries was
-`1.522471887227539e-6` for `failure-lessons`, an observation without a new quality
-threshold. The 29 query vectors and 21 stored-passage vectors were all bit-exact
-between backends and passed the existing cosine tolerance. Indexed integer
-assertions remain exact; Go `math.Round` and pgvector own these scores.
-
-Run this test inside `scripts/semantic_acceptance_isolation.py`, with private
-PGDATA, Unix socket, OS home and cache, networking disabled and assets read-only.
-Configure `CAIRN_TEST_DATABASE_URL`, `CAIRN_EMBEDDING_WORKER`,
-`CAIRN_RUST_EMBED_TEST_CONFIG`, `CAIRN_INDEXED_COMPARISON_INPUT` and
-`CAIRN_INDEXED_COMPARISON_REPORT`. The Rust configuration's `source_root` names
-the pinned checkout. Generate input from the unchanged
-`scripts/semantic_fixture_cases.py`: its first 17 `ranking_cases()` and the
-nine query entries from `embedding_cases()`. Input contains `workload_sha256`,
-12 `notes` and 26 ordered `cases` with `id`, `query` and `family`
-(`workload` or `query-boundary`). Write inputs and reports outside the checkout.
-
-```sh
-# Inside that boundary, after configuring both real backends and the owned DSN:
-go test -race -count=1 -run '^TestIndexedPythonRustComparison$' ./semantic
-```
-
-The three required real-model tests select Python or Rust with
-`CAIRN_REAL_EMBEDDING_BACKEND=python` or `rust`; the unset selector preserves
-legacy worker selection and skipping. The six named tests per backend and two
-retained-ranking fixture tests passed with `-race`, with no skips. Fixture store
-tests remain distinct from model evidence. Three input controls refused changed
-query bytes, source bodies and case order. The private clusters stopped cleanly.
-The initial invalid harness memory budget is retained as a failed attempt; its
-correction changes no worker deadline, score policy or production behavior.
+`TestIndexedPythonRustComparison` compared the prepared Python and Rust
+embedding workers through the real `Index.Search` on one disposable database.
+Across 29 cases per backend, all 326 paired SQL hits and 137 compiler entries
+matched exactly, and the query and stored-passage vectors were bit-exact. The
+test, its inventory and the Python worker were removed on 2026-11-24 after the
+Rust worker became the only supported backend. The real-model embedding tests
+now select Rust only: set `CAIRN_RUST_EMBED_TEST_CONFIG`; any
+`CAIRN_REAL_EMBEDDING_BACKEND` other than empty or `rust` fails.
 
 ## Fixed workers and evidence gates
 
@@ -307,10 +263,8 @@ none bypasses a gate. Model phases additionally require:
   `accepted` field cannot replace this record. No such accepted evidence receipt
   is created by the harness; missing qualification stays a failure.
 
-- `--python`: the prepared Python interpreter; `--go-test-binary`: a semantic
-  test binary compiled with `go test -c`; `--go-test2json`: the installed Go
-  `test2json` executable. The prepared tokenizer must be a uniquely named
-  `tokenizer.json` asset in the reference manifest.
+- `--go-test-binary`: a semantic test binary compiled with `go test -c`;
+  `--go-test2json`: the installed Go `test2json` executable.
 - The reviewed `scripts/semantic_fixture_cases.py` producer. Its
   `ranking_cases()`/`embedding_cases()` IDs, order and explicit
   `expected: "accepted"` fields must match the committed inventory. No fallback
@@ -321,14 +275,14 @@ The current review binding pins the isolation module against `source_commit`;
 it does not bind the running comparator or inventory bytes and names the
 campaign's S-R1 UUID directly. Future actual evidence review must cover those
 facts. A fabricated JSON verdict cannot establish that review or actual
-acceptance. The Go and prepared-Python test lanes also lack per-invocation
-runtime binding; their smoke/skip results do not qualify an actual worker.
+acceptance. The Go test lane also lacks per-invocation runtime binding; its
+smoke/skip results do not qualify an actual worker.
 
 The checked-in
 [inventory](../semantic/testdata/executable-harness/reference-inventory.json)
 names 19 ranking cases (269 score entries), 38 cold/warm stream replies per
 worker plus a separate fresh restore, nine positive queries, six positive
-documents, 23 prepared Python tests, 21 Go process tests and three real-worker
+documents, 21 Go process tests and three real-worker
 Go entry points. A fresh direct-process restore is reported separately from
 actual Go idle expiry. `TestWorkerAcceptanceStream` keeps the production
 30-second idle timer and waits 31 seconds before its restore request.
@@ -486,32 +440,12 @@ The module also has a nonmodel CLI: `--read-only` (repeatable), `--output-dir`,
 `--timeout`, optional `--require-ort`, then `-- COMMAND ...`. The CLI is a test
 boundary, not a new production worker argv configuration interface.
 
-## Legacy Python comparison
+## Legacy Python comparison (retired)
 
-Omitting `--phase` retains the earlier `--python`, `--model-dir`, `--baseline`
-and `--candidate` script mode, with two repeated storage cases after the shared
-19-case producer. It still alternates launch order and reports wall time, CPU
-time and RSS under its exploratory 20-second inner deadline. Wall time now
-includes the isolation launch overhead; it is not a production-latency claim.
-
-Legacy measurements are written beneath the actual writable isolation output,
-so `/usr/bin/time` files remain host-visible after home cleanup. The measurement
-plumbing has a compiled-fixture test that requires no fake model qualification.
-
-Legacy model execution also requires `--raw-qualification`, its pinned digest
-and the bound review receipt (with a null catalog digest for this exploratory
-mode). Besides the common
-schema/state/review/wrapper fields, `legacy_roles.baseline`/`candidate` bind the
-exact `argv`, `script_sha256`, `python_sha256`, nonempty `model_assets` paths and
-digests, and the three retained frozen-baseline arrays. Missing qualification
-prints `semantic comparison refused:` and exits nonzero before starting a worker.
-This mode explicitly runs Python scripts; it is distinct from fixed executable
-mode.
-
-Open tooling notes remain: legacy runtime pins do not have the fixed manifest's
-nonempty ORT/NumPy/OpenBLAS validation, and rare setup or direct cleanup waits
-can still expose `subprocess.TimeoutExpired`. Neither note is an actual-evidence
-acceptance claim or permission to execute an unqualified lane.
+The earlier script mode (`--python`, `--model-dir`, `--baseline`, `--candidate`)
+and the prepared-Python unit-test lane were removed with the Python worker on
+2026-11-24. `--phase` is now required; the comparator runs only fixed
+executable manifests and the Go test lane.
 
 Revert the harness files and opt-in test file to remove this tooling. No installed
 worker, model asset, environment profile, service or production database is

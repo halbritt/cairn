@@ -6,31 +6,26 @@ import (
 	"testing"
 )
 
-// Selected acceptance runs use the same Go owner for each actual backend.
+// Selected acceptance runs use the Go owner with the Rust embed worker, the
+// only supported backend. A stale non-Rust selection fails instead of skipping.
 func realEmbeddingForTest(t *testing.T) *CommandEmbedder {
 	t.Helper()
 	backend := os.Getenv("CAIRN_REAL_EMBEDDING_BACKEND")
-	var model *CommandEmbedder
-	var err error
-	switch backend {
-	case "rust":
-		config, readErr := ReadRustWorkerConfig(os.Getenv("CAIRN_RUST_EMBED_TEST_CONFIG"))
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		model, err = RustEmbeddingCommand(context.Background(), config)
-	case "", "python":
-		path := os.Getenv("CAIRN_EMBEDDING_WORKER")
-		if path == "" {
-			if backend == "python" {
-				t.Fatal("selected Python backend requires CAIRN_EMBEDDING_WORKER")
-			}
-			t.Skip("requires a prepared local embedding worker")
-		}
-		model, err = EmbeddingCommand(context.Background(), path)
-	default:
-		t.Fatalf("unknown real embedding backend %q", backend)
+	if backend != "" && backend != "rust" {
+		t.Fatalf("unsupported real embedding backend %q; only rust remains", backend)
 	}
+	path := os.Getenv("CAIRN_RUST_EMBED_TEST_CONFIG")
+	if path == "" {
+		if backend == "rust" {
+			t.Fatal("selected Rust backend requires CAIRN_RUST_EMBED_TEST_CONFIG")
+		}
+		t.Skip("requires a prepared Rust embed worker configuration")
+	}
+	config, err := ReadRustWorkerConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := RustEmbeddingCommand(context.Background(), config)
 	if err != nil {
 		t.Fatal(err)
 	}

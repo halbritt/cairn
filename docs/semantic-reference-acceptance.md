@@ -1,7 +1,12 @@
 # S-01 reference evidence
 
-The committed [inventory](../scripts/testdata/semantic-reference-inventory.json)
-and [runner](../scripts/check_semantic_reference.py) separate retained reference
+> **Retired 2026-11-24.** The Python semantic worker and this S-01 tooling
+> (`check_semantic_reference.py`, the `semantic_refusal_*` modules, their inventory
+> and ledgers) were removed from the repository. This page keeps the accepted
+> evidence record; its commands no longer run.
+
+The committed inventory
+and runner separate retained reference
 evidence, fresh model-free tests and unresolved acceptance criteria. Raw model
 replies, native binaries, arrays and generated reports stay outside Git.
 
@@ -101,12 +106,12 @@ separate S-04/S-05 owners.
 
 ## Per-case refusal ledger
 
-[The ledger](../scripts/testdata/semantic-refusal-ledger.json) binds the existing
+The ledger binds the existing
 19 F-RANK, 25 F-STREAM, 19 F-EMBED, ten F-PROCESS and five F-IDENTITY IDs to
 source hashes/anchors, fixture inputs and six expected disposition fields:
 Go error/result, discovery/coverage, process exit/kill, stdout prefix, cache
 custody and restarts. The separate
-[input catalogue](../scripts/testdata/semantic-refusal-inputs.json) expands 238
+input catalogue expands 238
 named boundaries. These authored recipes are expectations, not execution
 records. Accepted boundaries such as 128 occurrences, ignored keys, echoed
 version types, wrong-model cache and omitted legacy projection remain successes.
@@ -125,7 +130,7 @@ workers or owners:
   before model construction. The model path is deliberately nonexistent.
 - `processes --driver NATIVE_ELF --output NEW` exercises the unchanged Go owners
   against disposable process doubles. Build
-  [the native driver](../scripts/testdata/semantic-refusal-driver/main.go) inside
+  the native driver inside
   the unchanged isolation wrapper. Raw Go results survive alongside errors.
   Per-process traces retain actual exit/kill status, group signals, direct-child
   waits and stdout bytes received by Go. These fixtures do not use a real model.
@@ -179,7 +184,7 @@ ownership are unchanged.
 ## Residual observations and exact report reuse
 
 `audit --reuse-accepted` selects only the four report hashes in
-[the accepted baseline](../scripts/testdata/semantic-refusal-baseline.json),
+the accepted baseline,
 from revision `91a97fdb862e190ea196704b3c446dab06be2b2b` and review
 `97fee45b-2a15-4a79-9387-9884d8bad48d/v1`. The baseline metadata has a fixed
 digest in the reader. Its 23 actor/source hashes must still match, and each old

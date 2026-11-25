@@ -52,10 +52,6 @@ func (w transitionWorker) rustConfig(t *testing.T) RustWorkerConfig {
 }
 
 func transitionRoundTrip(t *testing.T) {
-	if os.Getenv("CAIRN_TRANSITION_REAL_SELECTION") != "" {
-		transitionRealRoundTrip(t)
-		return
-	}
 	d := transitionDatabase(t)
 	python := transitionFixture(t, "python-like")
 	rust := transitionFixture(t, "rust-like")
@@ -115,10 +111,6 @@ func transitionRoundTrip(t *testing.T) {
 }
 
 func transitionRestart(t *testing.T) {
-	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "2" {
-		transitionRealRestart(t)
-		return
-	}
 	d := transitionDatabase(t)
 	w := transitionFixture(t, "restart")
 	d.source(t, "s05-a", "restart source é")
@@ -143,10 +135,6 @@ func transitionRestart(t *testing.T) {
 }
 
 func transitionDeathDeadline(t *testing.T) {
-	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "3" {
-		transitionRealDeathDeadline(t)
-		return
-	}
 	for _, fault := range []string{"die", "caller-deadline"} {
 		t.Run(fault, func(t *testing.T) {
 			d := transitionDatabase(t)
@@ -187,10 +175,6 @@ func transitionDeathDeadline(t *testing.T) {
 }
 
 func transitionEdit(t *testing.T) {
-	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "4" {
-		transitionRealEdit(t)
-		return
-	}
 	d := transitionDatabase(t)
 	w := transitionFixture(t, "edit")
 	note := d.source(t, "s05-a", "old source é")
@@ -219,10 +203,6 @@ func transitionEdit(t *testing.T) {
 }
 
 func transitionDeleteForget(t *testing.T) {
-	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "5" {
-		transitionRealDeleteForget(t)
-		return
-	}
 	for _, operation := range []string{"delete", "forget"} {
 		t.Run(operation, func(t *testing.T) {
 			d := transitionDatabase(t)
@@ -278,10 +258,6 @@ func transitionForget(t *testing.T, d *transitionDB, n core.SemanticNote) {
 }
 
 func transitionLeaseBacklog(t *testing.T) {
-	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "6" {
-		transitionRealLeaseBacklog(t)
-		return
-	}
 	d := transitionDatabase(t)
 	w := transitionFixture(t, "lease")
 	note := d.source(t, "s05-a", "lease source")
@@ -320,10 +296,6 @@ func transitionLeaseBacklog(t *testing.T) {
 }
 
 func transitionPartial(t *testing.T) {
-	if os.Getenv("CAIRN_TRANSITION_REAL_CASE") == "7" {
-		transitionRealPartial(t)
-		return
-	}
 	d := transitionDatabase(t)
 	w := transitionFixture(t, "partial")
 	a := d.source(t, "s05-a", "coverage source one")

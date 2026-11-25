@@ -110,22 +110,6 @@ class ExecutableComparisonTest(unittest.TestCase):
             self.assertEqual(report["status"], "failed")
             self.assertEqual(report["failures"][0]["error_type"], "AttributeError")
 
-    def test_legacy_resource_measurement_is_in_the_writable_host_mount(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            worker = self.compile_worker(root, "native", 1, "a" * 64)
-            with SemanticIsolation(
-                read_only_paths=[worker], output_dir=root / "isolation"
-            ) as boundary:
-                completed, stats = comparison.measure_legacy_worker(
-                    boundary, [str(worker)], b"{}", "fixture"
-                )
-                self.assertEqual(completed.returncode, 0, completed.stderr)
-                path = Path(stats["measurement"])
-                self.assertTrue(boundary.output_dir in path.parents)
-                self.assertGreater(stats["max_rss_kib"], 0)
-            self.assertTrue(path.is_file())
-
     def test_stream_frame_limits_match_the_shared_unchanged_go_reader_cases(self):
         inventory = json.loads(
             (
@@ -357,22 +341,8 @@ class ExecutableComparisonTest(unittest.TestCase):
                 comparison.verify_go_events(
                     b"\n".join(json.dumps(e).encode() for e in events), expected
                 )
-        for changed in (
-            dict(tests_ran=0),
-            dict(skipped=["Case.test"]),
-            dict(ids=["Wrong.test"]),
-        ):
-            report = dict(tests_ran=1, skipped=[], successful=True, ids=["Case.test"])
-            report.update(changed)
-            with (
-                self.subTest(report=report),
-                self.assertRaises(comparison.ComparisonFailure),
-            ):
-                comparison.verify_python_events(report, ["Case.test"])
 
-    def test_missing_assets_cells_and_legacy_qualification_fail_before_a_worker_starts(
-        self,
-    ):
+    def test_missing_assets_and_cells_fail_before_a_worker_starts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             worker = self.compile_worker(root, "worker", 1, "a" * 64)
@@ -445,27 +415,14 @@ class ExecutableComparisonTest(unittest.TestCase):
                         dict(schema="cairn.semantic-reference-catalog/1", cells=cells),
                         inventory,
                     )
-            legacy = subprocess.run(
-                [
-                    "/usr/bin/python3",
-                    "-B",
-                    str(script),
-                    "--output",
-                    str(root / "legacy"),
-                    "--python",
-                    "/usr/bin/python3",
-                    "--model-dir",
-                    str(root),
-                    "--baseline",
-                    str(worker),
-                    "--candidate",
-                    str(worker),
-                ],
+            retired = subprocess.run(
+                ["/usr/bin/python3", "-B", str(script), "--output", str(root / "retired"),
+                 "--python", "/usr/bin/python3", "--baseline", str(worker)],
                 capture_output=True,
                 timeout=10,
             )
-            self.assertNotEqual(legacy.returncode, 0)
-            self.assertIn(b"raw-output qualification", legacy.stderr)
+            self.assertEqual(retired.returncode, 2)
+            self.assertFalse((root / "retired").exists())
 
     def test_pairwise_cosine_failure_is_independent_from_vector_angle(self):
         with tempfile.TemporaryDirectory() as directory:

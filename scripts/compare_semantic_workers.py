@@ -4,14 +4,12 @@ from pathlib import Path
 import argparse
 import hashlib
 import json
-import platform
 import subprocess
 import time
 import os
 import base64
 import selectors
 import math
-import sys
 import stat
 import pwd
 import shutil
@@ -957,76 +955,8 @@ def verify_go_events(raw, expected):
     return dict(tests_ran=len(ran), tests_passed=len(passed), skipped=0)
 
 
-def verify_python_events(document, expected):
-    if (
-        not expected
-        or document.get("skipped")
-        or not document.get("successful")
-        or document.get("tests_ran") != len(expected)
-        or sorted(document.get("ids", [])) != sorted(expected)
-    ):
-        raise ComparisonFailure(
-            "required Python tests skipped, failed, missing or zero-ran"
-        )
-    return dict(tests_ran=len(expected), skipped=0)
-
-
-_PYTHON_TEST_DRIVER = """
-import json,sys,unittest
-sys.path.insert(0,sys.argv[1])
-names=json.loads(sys.argv[2]); ids=[]; skipped=[]
-class ObservedResult(unittest.TextTestResult):
- def startTest(self,test):
-  ids.append(test.id());super().startTest(test)
- def addSkip(self,test,reason):
-  skipped.append(test.id());super().addSkip(test,reason)
-suite=unittest.TestLoader().loadTestsFromNames(names)
-result=unittest.TextTestRunner(resultclass=ObservedResult,verbosity=2).run(suite)
-print(json.dumps(dict(schema='cairn.semantic-test-events/1',ids=ids,skipped=skipped,
- tests_ran=result.testsRun,successful=result.wasSuccessful())))
-"""
-
-
 def run_required_tests(args, inventory, isolation, reference, candidate, root):
-    expected = [
-        group + "." + method
-        for group, methods in inventory["python_tests"].items()
-        for method in methods
-    ]
-    tokenizer = [
-        asset["path"]
-        for asset in reference["assets"]
-        if Path(asset["path"]).name == "tokenizer.json"
-    ]
-    if len(tokenizer) != 1:
-        raise ComparisonFailure("one prepared tokenizer asset is required")
-    env = dict(WORKER_ENV, CAIRN_EMBEDDING_TOKENIZER=tokenizer[0])
-    tested = isolation.run(
-        [
-            str(args.python),
-            "-I",
-            "-B",
-            "-c",
-            _PYTHON_TEST_DRIVER,
-            str(Path(__file__).parent),
-            json.dumps(list(inventory["python_tests"])),
-        ],
-        env=env,
-        timeout=60,
-        stdout_limit=1048576,
-    )
-    (root / "python-tests.stdout").write_bytes(tested.stdout)
-    (root / "python-tests.stderr").write_bytes(tested.stderr)
-    if tested.returncode:
-        raise ComparisonFailure("prepared Python test command failed")
-    events = [
-        json.loads(line)
-        for line in tested.stdout.splitlines()
-        if line.startswith(b'{"schema": "cairn.semantic-test-events/1"')
-    ]
-    if len(events) != 1:
-        raise ComparisonFailure("missing Python test observation")
-    verified_python = verify_python_events(events[0], expected)
+    env = dict(WORKER_ENV)
     modes = {
         "rank": "CAIRN_SEMANTIC_WORKER",
         "stream": "CAIRN_SEMANTIC_STREAM_WORKER",
@@ -1077,7 +1007,7 @@ def run_required_tests(args, inventory, isolation, reference, candidate, root):
                 ),
             )
         verified_go[role] = verify_go_events(tested.stdout, selected)
-    return dict(python=verified_python, go=verified_go)
+    return dict(go=verified_go)
 
 
 def persist_bytes(document, root):
@@ -1146,12 +1076,10 @@ def acceptance_main(args):
             )
             if any(
                 value is None
-                for value in (args.python, args.go_test_binary, args.go_test2json)
+                for value in (args.go_test_binary, args.go_test2json)
             ):
-                raise ComparisonFailure(
-                    "prepared Python and Go test executables are required"
-                )
-            for path in (args.python, args.go_test_binary, args.go_test2json):
+                raise ComparisonFailure("prepared Go test executables are required")
+            for path in (args.go_test_binary, args.go_test2json):
                 fixed_executable(path)
             from semantic_fixture_cases import ranking_cases, embedding_cases
 
@@ -1208,8 +1136,6 @@ def acceptance_main(args):
             mounts.update(
                 (
                     Path(__file__).parent,
-                    args.python.parent.parent,
-                    args.python.resolve().parent.parent,
                     args.go_test_binary.parent,
                     args.go_test2json.parent,
                     root / "go-inputs.json",
@@ -1336,195 +1262,12 @@ def acceptance_main(args):
     return 1 if report["failures"] else 0
 
 
-def measure_legacy_worker(isolation, command, request, label):
-    if Path(label).name != label:
-        raise ComparisonFailure("invalid resource measurement label")
-    measure = isolation.output_dir / (label + "-resources.json")
-    invocation = [
-        "/usr/bin/time",
-        "-f",
-        '{"user_seconds":%U,"system_seconds":%S,"max_rss_kib":%M}',
-        "-o",
-        str(measure),
-        "/usr/bin/timeout",
-        "--kill-after=1",
-        "20",
-        *command,
-    ]
-    started = time.monotonic()
-    completed = isolation.run(
-        invocation,
-        input=request,
-        timeout=25,
-        stdout_limit=65536,
-        role=label,
-        mode="legacy",
-    )
-    stats = json.loads(measure.read_text().splitlines()[-1])
-    stats.update(
-        wall_seconds=time.monotonic() - started,
-        exit_code=completed.returncode,
-        measurement=str(measure),
-    )
-    return completed, stats
-
-
-def legacy_main(args):
-    """Preserved exploratory Python-script mode, now behind the same test boundary."""
-    root = args.output.absolute()
-    project = Path(__file__).resolve().parents[1]
-    if root.exists() or root == project or project in root.parents:
-        raise ComparisonFailure("use a new artifact directory outside the repository")
-    python = args.python.absolute()
-    fixed_executable(python)
-    workers = dict(
-        baseline=args.baseline.resolve(strict=True),
-        candidate=args.candidate.resolve(strict=True),
-    )
-    model = args.model_dir.resolve(strict=True)
-    commands = {
-        role: [str(python), str(worker), "--model-dir", str(model)]
-        for role, worker in workers.items()
-    }
-    if args.raw_qualification is None:
-        raise ComparisonFailure(
-            "legacy model runs require reviewed wrapper raw-output qualification"
-        )
-    require_review_receipt(args)
-    proof = checked_json_artifact(
-        args.raw_qualification, args.raw_qualification_sha256, "raw qualification"
-    )
-    if (
-        proof.get("schema") != "cairn.semantic-raw-qualification/1"
-        or proof.get("state") != "qualified"
-        or not proof.get("review_record")
-        or proof.get("wrapper_profile") != "default"
-        or proof.get("wrapper_sha256")
-        != file_digest(Path(__file__).with_name("semantic_acceptance_isolation.py"))
-    ):
-        raise ComparisonFailure(
-            "legacy raw qualification is unreviewed or for another wrapper"
-        )
-    for role, command in commands.items():
-        bound = proof["legacy_roles"][role]
-        if (
-            bound["argv"] != command
-            or bound["script_sha256"] != file_digest(workers[role])
-            or bound["python_sha256"] != file_digest(python)
-        ):
-            raise ComparisonFailure(
-                "legacy qualification does not bind the selected command"
-            )
-        if not bound.get("model_assets"):
-            raise ComparisonFailure(
-                "legacy qualification requires a model asset inventory"
-            )
-        for asset in bound["model_assets"]:
-            path = Path(asset["path"])
-            if (
-                not path.is_absolute()
-                or model not in path.parents
-                or file_digest(path) != asset["sha256"]
-            ):
-                raise ComparisonFailure("legacy model asset missing or changed")
-        for name, expected in RAW_BASELINE.items():
-            array = bound["arrays"][name]
-            if array["sha256"] != expected or file_digest(array["path"]) != expected:
-                raise ComparisonFailure(
-                    "legacy raw arrays differ from the frozen baseline"
-                )
-    from semantic_fixture_cases import ranking_cases
-
-    cases = ranking_cases()
-    if len(cases) != 19:
-        raise ComparisonFailure("reviewed19-case producer inventory is required")
-    cases += [dict(cases[0], id="repeat-storage-" + str(i)) for i in range(2)]
-    root = new_output_root(root, project)
-    plan = dict(
-        source_commit=subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=project, text=True
-        ).strip(),
-        commands=commands,
-        phase="legacy-exploratory",
-        model_acceptance=False,
-        deadline_seconds=20,
-        order="alternate baseline/candidate first across cases",
-        boundary="offline namespace, disposable OS home, one-shot Python script through output",
-        metrics=[
-            "wall_seconds including namespace launch",
-            "CPU_seconds",
-            "max_RSS_KiB",
-            "exact integer scores",
-        ],
-        script_sha256={role: file_digest(worker) for role, worker in workers.items()},
-        platform=platform.platform(),
-        raw_qualification_sha256=file_digest(args.raw_qualification),
-    )
-    (root / "plan.json").write_text(json.dumps(plan, indent=2) + "\n")
-    rows = []
-    mounts = {
-        python.parent.parent,
-        python.resolve().parent.parent,
-        model,
-        *[w.parent for w in workers.values()],
-    }
-    with SemanticIsolation(
-        read_only_paths=sorted(mounts), output_dir=root / "isolation"
-    ) as isolation:
-        for index, case in enumerate(cases):
-            row = dict(id=case["id"], conditions={})
-            raw = json.dumps({k: case[k] for k in ("query", "notes")}).encode()
-            (root / (case["id"] + "-request.json")).write_bytes(raw)
-            order = (
-                ("baseline", "candidate")
-                if index % 2 == 0
-                else ("candidate", "baseline")
-            )
-            for role in order:
-                completed, stats = measure_legacy_worker(
-                    isolation, commands[role], raw, case["id"] + "-" + role
-                )
-                isolation.invocation_runtime(
-                    completed.invocation,
-                    proof["legacy_roles"][role]["runtime_libraries"],
-                )
-                (root / (case["id"] + "-" + role + ".stdout")).write_bytes(
-                    completed.stdout
-                )
-                (root / (case["id"] + "-" + role + ".stderr")).write_bytes(
-                    completed.stderr
-                )
-                if completed.returncode == 0:
-                    stats["result"] = json.loads(completed.stdout)
-                row["conditions"][role] = stats
-            a, b = row["conditions"]["baseline"], row["conditions"]["candidate"]
-            row["exact_scores_equal"] = (
-                a["result"]["scores"] == b["result"]["scores"]
-                if a["exit_code"] == b["exit_code"] == 0
-                else None
-            )
-            if row["exact_scores_equal"] is not None:
-                row["speedup"] = a["wall_seconds"] / b["wall_seconds"]
-            rows.append(row)
-            (root / "report.json").write_text(
-                json.dumps(dict(plan=plan, rows=rows), indent=2) + "\n"
-            )
-            print(
-                json.dumps(dict(id=case["id"], exact=row["exact_scores_equal"])),
-                flush=True,
-            )
-        isolation.runtime_evidence(require_ort=True)
-    return 0 if all(row["exact_scores_equal"] for row in rows) else 1
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--python", type=Path)
-    parser.add_argument("--model-dir", type=Path)
-    parser.add_argument("--baseline", type=Path)
-    parser.add_argument("--candidate", type=Path)
-    parser.add_argument("--phase", choices=("mechanics", "reference", "rank", "embed"))
+    parser.add_argument(
+        "--phase", required=True, choices=("mechanics", "reference", "rank", "embed")
+    )
     parser.add_argument(
         "--inventory",
         type=Path,
@@ -1542,32 +1285,9 @@ def main():
     parser.add_argument("--go-test-binary", type=Path)
     parser.add_argument("--go-test2json", type=Path)
     args = parser.parse_args()
-    if args.phase:
-        if args.baseline_manifest is None or args.candidate_manifest is None:
-            parser.error("fixed worker manifests are required for acceptance")
-        if any((args.baseline, args.candidate, args.model_dir)):
-            parser.error(
-                "Python-script legacy mode and fixed-executable acceptance are separate"
-            )
-        return acceptance_main(args)
-    if any(
-        value is None
-        for value in (args.python, args.model_dir, args.baseline, args.candidate)
-    ):
-        parser.error("legacy mode requires --python --model-dir --baseline --candidate")
-    try:
-        return legacy_main(args)
-    except (
-        ComparisonFailure,
-        IsolationError,
-        OSError,
-        ValueError,
-        KeyError,
-        ImportError,
-        AttributeError,
-    ) as error:
-        print("semantic comparison refused: " + str(error), file=sys.stderr)
-        return 1
+    if args.baseline_manifest is None or args.candidate_manifest is None:
+        parser.error("fixed worker manifests are required for acceptance")
+    return acceptance_main(args)
 
 
 if __name__ == "__main__":
