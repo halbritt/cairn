@@ -1,4 +1,5 @@
 """Installed lifecycle entrypoints run without a checkout or provider access."""
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -61,6 +62,15 @@ class InstalledLifecycleTests(unittest.TestCase):
         if not skill.exists():
             skill.write_text('Selected synthetic fixture skill.\n')
         hermes.install(home, native, self.config['claude'], skill)
+        # The installed MCP launch names its harness explicitly; without the
+        # label the facade reports this client as `unknown`.
+        label = 'hermes/profile/' + hashlib.sha256(str(home).encode()).hexdigest()[:16]
+        server = json.loads((home / 'config.yaml').read_text())['mcp_servers']['cairn']
+        self.assertEqual(server['command'], native['executable'])
+        self.assertEqual(server['args'], [
+            'mcp', '--socket', native['socket'], '--token-file', native['token_file'], '--repo', native['repo'],
+            '--task', label, '--run', label, '--search-view', 'compact/1', '--tool-profile', 'compact/2',
+            '--client-harness', 'hermes'])
         binding = json.loads((home / 'cairn-lifecycle.json').read_text())
         return Path(binding['script']), Path(binding['engine_config'])
 

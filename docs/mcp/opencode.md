@@ -40,10 +40,14 @@ Generate an OpenCode configuration entry with explicit retrieval labels:
 cairn opencode-config \
   --socket "$CAIRN_HOME/api.sock" \
   --token-file "$CAIRN_HOME/agent.token" \
-  --repo "$CAIRN_COLLECTION" --task investigate-storage --run attempt-1
+  --repo "$CAIRN_COLLECTION" --task investigate-storage --run attempt-1 \
+  --client-harness opencode
 ```
 
-Merge the generated `mcp.cairn` entry into your OpenCode configuration. For
+Merge the generated `mcp.cairn` entry into your OpenCode configuration.
+`--client-harness opencode` makes the generated launch report that label in
+[observed clients](../client-observations.md); the generator adds no label of
+its own, and without the flag the harness is `unknown`. For
 local `llama.cpp` endpoints (such as `qwen3.8-27b` on `:8081`), pass
 `--llamacpp-structured` (and optional `--llamacpp-url` / `--llamacpp-model`) to
 emit a `provider.llamacpp` block with `chat_template_kwargs.enable_thinking=false`

@@ -13,7 +13,7 @@ cairn claude-config \
   --socket "$CAIRN_HOME/api.sock" \
   --token-file "$CAIRN_HOME/agent.token" \
   --repo "$CAIRN_COLLECTION" --task investigate-storage --run attempt-1 \
-  --tool-profile compact/2 > cairn-claude.json
+  --client-harness claude --tool-profile compact/2 > cairn-claude.json
 claude --mcp-config cairn-claude.json
 ```
 
@@ -35,7 +35,8 @@ stdio command and absolute paths. Example generated configuration shape:
         "--run", "RUN",
         "--tokens", "16000",
         "--search-view", "compact/1",
-        "--tool-profile", "compact/2"
+        "--tool-profile", "compact/2",
+        "--client-harness", "claude"
       ]
     }
   }
@@ -46,8 +47,8 @@ The generator resolves executable, socket, and token paths to absolute paths
 without reading credentials or connecting to Cairn. It forwards `--tokens`
 (default `16000`) and the existing MCP flags (`--revision`, `--workspace-sha256`,
 `--task-class`, `--task-phase`, `--binding`, `--capability`, `--search-view`,
-`--tool-profile`, `--messaging`). It forwards `--client-harness LABEL` (for
-example `claude`) only when you pass it; without it,
+`--tool-profile`, `--messaging`). It forwards `--client-harness LABEL` (`claude`
+in the command above) only when you pass it; without it,
 [observed clients](../client-observations.md) lists this connection with harness
 `unknown`. Paths, quotes, and whitespace are JSON
 encoded. Arguments must be valid UTF-8 without NUL bytes and cannot contain

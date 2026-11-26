@@ -147,7 +147,7 @@ Configure harnesses as on the central host, passing the canonical collection:
 ```sh
 cairn claude-config --socket ~/.local/share/cairn/api.sock \
   --token-file ~/.local/share/cairn/hosted-agent.token \
-  --repo /projects/shared-memory --task TASK --run RUN
+  --repo /projects/shared-memory --task TASK --run RUN --client-harness claude
 ```
 
 Remote profiles use the hosted destination: local-only notes are not returned

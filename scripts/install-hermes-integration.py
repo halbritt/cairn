@@ -185,9 +185,12 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
     # Hermes shares one MCP connection within a profile. These are profile labels,
     # while automatic lifecycle operations use the actual Hermes session ID.
     label = 'hermes/profile/' + hashlib.sha256(str(home).encode()).hexdigest()[:16]
+    # This installer writes the Hermes configuration, so it is the explicit
+    # configuration that names the harness; `cairn mcp` never infers the label.
     args = [
         'mcp', '--socket', native['socket'], '--token-file', native['token_file'], '--repo', native['repo'],
-        '--task', label, '--run', label, '--search-view', 'compact/1', '--tool-profile', 'compact/2']
+        '--task', label, '--run', label, '--search-view', 'compact/1', '--tool-profile', 'compact/2',
+        '--client-harness', 'hermes']
     config.setdefault('mcp_servers', {})['cairn'] = dict(command=native['executable'], args=args, timeout=30, connect_timeout=10)
     memory['provider'] = 'cairn'
     backup = home / 'config.yaml.before-cairn'

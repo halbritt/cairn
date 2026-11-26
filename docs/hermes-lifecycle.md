@@ -26,6 +26,12 @@ The installer copies the adapter and engine into `plugins/cairn`, writes
 `cairn-lifecycle.json` and `cairn/engine.json`, and installs `skills/cairn/SKILL.md`.
 It also installs and enables the `cairn-controls` commands plugin.
 It adds `mcp_servers.cairn` and `memory.provider: cairn`, retaining other settings.
+The MCP launch passes `--client-harness hermes`, so [observed clients](client-observations.md)
+lists this connection with harness `hermes`. An installation made before this label
+existed reports `unknown` until its launch has the flag. Running the installer again
+rewrites the whole `mcp_servers.cairn` entry and the lifecycle binding from its own
+options, so arguments added by hand or by another tool are not kept; to keep them,
+append `--client-harness hermes` to the existing `args` instead.
 It refuses to replace another external provider. The first original configuration
 is backed up as `config.yaml.before-cairn`; subsequent installation is idempotent.
 Configuration is written atomically as JSON, which Hermes's YAML reader accepts.

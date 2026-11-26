@@ -14,7 +14,7 @@ cairn codex-config \
   --socket "$CAIRN_HOME/api.sock" \
   --token-file "$CAIRN_HOME/agent.token" \
   --repo "$CAIRN_COLLECTION" --codex-thread \
-  --tool-profile compact/2
+  --client-harness codex --tool-profile compact/2
 ```
 
 The generated TOML uses `[mcp_servers.cairn]`. Merge that block into the Codex
@@ -40,9 +40,9 @@ note, and pull its complete body. Then use the
 [search](../guides/memory-search.md) and [capture](../guides/memory-capture.md)
 workflows during real tasks. Capture only selected reusable information.
 
-Pass `--client-harness codex` to have the generated launch report that label in
-[observed clients](../client-observations.md). The generator adds no label of
-its own; without the flag the harness is `unknown`.
+`--client-harness codex` in the command above makes the generated launch report
+that label in [observed clients](../client-observations.md). The generator adds
+no label of its own; without the flag the harness is `unknown`.
 
 `--required` makes the generated entry require a connection at startup. Leave it
 off when Cairn should be optional. Tool availability does not force an agent to

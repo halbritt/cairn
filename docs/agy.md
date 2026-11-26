@@ -20,7 +20,7 @@ agy mcp add cairn -- "$cairn_bin" mcp \
   --socket /absolute/path/to/api.sock \
   --token-file /absolute/path/to/agent.token \
   --repo /path/to/collection --task investigate-storage --run agy-1 \
-  --tokens 32000
+  --client-harness agy --tokens 32000
 agy mcp list
 ```
 

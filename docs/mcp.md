@@ -432,7 +432,7 @@ tool-call metadata. Generate its TOML entry with an installed Cairn binary:
 cairn codex-config \
   --socket "$HOME/.local/share/cairn/api.sock" \
   --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$PWD" --codex-thread > ./cairn-codex.toml
+  --repo "$PWD" --codex-thread --client-harness codex > ./cairn-codex.toml
 ```
 
 Use the repository identity authorized by the profile; a worktree may need the
@@ -522,7 +522,7 @@ cairn opencode-config \
   --socket "$HOME/.local/share/cairn/api.sock" \
   --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
   --repo "/projects/shared-memory" --task actual-task-id --run actual-run-id \
-  > ./cairn-opencode.json
+  --client-harness opencode > ./cairn-opencode.json
 ```
 
 The output is an OpenCode JSON configuration fragment, without a Cairn response
@@ -555,7 +555,8 @@ IDs. Add the entry to the configuration owned by the launching host:
         "--socket", "/absolute/path/to/api.sock",
         "--token-file", "/absolute/path/to/hosted-agent.token",
         "--repo", "/absolute/path/to/repository",
-        "--task", "actual-task-id", "--run", "actual-run-id"
+        "--task", "actual-task-id", "--run", "actual-run-id",
+        "--client-harness", "opencode"
       ],
       "enabled": true
     }
