@@ -1759,6 +1759,73 @@ def daemon_worker_of(worker, daemon):
             and same_process(supervisor['ref'], daemon))
 
 
+AGY_PROCESS_NAMES = frozenset(('agy', 'antigravity', 'antigravity-cli'))
+
+
+def _is_agy_process(argv, comm, exe):
+    if argv and argv[0]:
+        if Path(argv[0]).name.lower() in AGY_PROCESS_NAMES:
+            return True
+    if comm and comm.strip().lower() in AGY_PROCESS_NAMES:
+        return True
+    if exe and Path(exe).name.lower() in AGY_PROCESS_NAMES:
+        return True
+    return False
+
+
+def _has_agy_print_flag(argv):
+    if not argv or len(argv) <= 1:
+        return False
+    for arg in argv[1:]:
+        if arg == '--':
+            break
+        if arg in ('-p', '--print', '-p=true', '--print=true'):
+            return True
+    return False
+
+
+def isolated_agy_print_session(proc_root='/proc', start_pid=None):
+    """True when the nearest Agy/Antigravity ancestor was invoked with -p or --print."""
+    pid = os.getppid() if start_pid is None else start_pid
+    seen = set()
+    root = Path(proc_root or '/proc')
+    for _ in range(32):
+        if pid < 2 or pid in seen:
+            break
+        seen.add(pid)
+        proc_dir = root / str(pid)
+        try:
+            stat_raw = (proc_dir / 'stat').read_text(encoding='utf-8', errors='replace')
+            end = stat_raw.rfind(')')
+            if end < 0:
+                return False
+            fields = stat_raw[end + 1:].split()
+            if len(fields) < 2:
+                return False
+            parent = int(fields[1])
+        except (OSError, ValueError):
+            return False
+        try:
+            comm = (proc_dir / 'comm').read_text(encoding='utf-8', errors='replace').strip()
+        except OSError:
+            comm = ''
+        try:
+            exe = os.readlink(proc_dir / 'exe')
+        except OSError:
+            exe = ''
+        try:
+            raw_cmd = (proc_dir / 'cmdline').read_bytes()[:65536]
+            argv = [part.decode('utf-8', 'replace') for part in raw_cmd.split(b'\0') if part]
+        except OSError:
+            argv = []
+        if _is_agy_process(argv, comm, exe):
+            return _has_agy_print_flag(argv)
+        if parent <= 1 or parent == pid:
+            break
+        pid = parent
+    return False
+
+
 def valid_native_session_id(value):
     return _hook_admission.valid_native_session_id(value)
 
@@ -5211,7 +5278,11 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
         return bool(wake)
 
     # Environment, account home and the tool-cue vocabulary are one admission decision.
-    admission = _hook_admission.guard('coordination', config, event, event_name, wake_accepted=accept_wake)
+    admission = _hook_admission.guard(
+        'coordination', config, event, event_name,
+        wake_accepted=accept_wake,
+        isolated_session=lambda: isolated_agy_print_session(),
+    )
     if not admission.run:
         return {}  # Disabled, another account's merged hooks, or a wake-less child.
     if admission.phase == 'cue':

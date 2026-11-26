@@ -1577,3 +1577,217 @@ func TestCoordinationHookAutoLedgerCompactionOnSessionStartCompact(t *testing.T)
 		t.Fatalf("expected opt-out env to skip ledger-compaction, got calls=%d", ledgerCompactCalls)
 	}
 }
+
+func TestIsolatedAgyPrintProcAncestryDetection(t *testing.T) {
+	cli := &CLI{}
+
+	t.Run("direct_and_subshell_print_flags", func(t *testing.T) {
+		cases := []struct {
+			name   string
+			setup  func(t *testing.T, root string) int
+			expect bool
+		}{
+			{
+				name: "direct_agy_short_p",
+				setup: func(t *testing.T, root string) int {
+					writeProcessFixture(t, root, processFixture{pid: 100, parent: 1, start: 10, comm: "agy", argv: []string{"/home/owner/.local/bin/agy", "-p", "summarize"}})
+					return 100
+				},
+				expect: true,
+			},
+			{
+				name: "subshell_agy_long_print",
+				setup: func(t *testing.T, root string) int {
+					writeProcessFixture(t, root, processFixture{pid: 100, parent: 1, start: 10, comm: "agy", argv: []string{"agy", "--model", "gemini", "--print", "summarize"}})
+					writeProcessFixture(t, root, processFixture{pid: 101, parent: 100, start: 11, comm: "sh", argv: []string{"/bin/sh", "-c", "inbox hook"}})
+					return 101
+				},
+				expect: true,
+			},
+			{
+				name: "antigravity_and_cli_equals_true",
+				setup: func(t *testing.T, root string) int {
+					writeProcessFixture(t, root, processFixture{pid: 200, parent: 1, start: 20, comm: "antigravity-cli", argv: []string{"/opt/antigravity/antigravity", "--print=true"}})
+					writeProcessFixture(t, root, processFixture{pid: 201, parent: 200, start: 21, comm: "bash", argv: []string{"bash", "-c", "hook"}})
+					return 201
+				},
+				expect: true,
+			},
+			{
+				name: "interactive_agy_with_substring_args",
+				setup: func(t *testing.T, root string) int {
+					writeProcessFixture(t, root, processFixture{pid: 300, parent: 1, start: 30, comm: "agy", argv: []string{"agy", "--print-timeout", "30s", "/tmp/-p/repo", "hello -p --print world", "--print=false", "--", "-p"}})
+					writeProcessFixture(t, root, processFixture{pid: 301, parent: 300, start: 31, comm: "sh", argv: []string{"/bin/sh", "-c", "agy -p in shell string"}})
+					return 301
+				},
+				expect: false,
+			},
+			{
+				name: "nested_agy_print_inside_interactive_agy",
+				setup: func(t *testing.T, root string) int {
+					writeProcessFixture(t, root, processFixture{pid: 400, parent: 1, start: 40, comm: "agy", argv: []string{"agy"}})
+					writeProcessFixture(t, root, processFixture{pid: 401, parent: 400, start: 41, comm: "bash", argv: []string{"bash"}})
+					writeProcessFixture(t, root, processFixture{pid: 402, parent: 401, start: 42, comm: "agy", argv: []string{"agy", "-p=true"}})
+					writeProcessFixture(t, root, processFixture{pid: 403, parent: 402, start: 43, comm: "sh", argv: []string{"sh", "-c", "hook"}})
+					return 403
+				},
+				expect: true,
+			},
+			{
+				name: "missing_pid_and_cycle_fail_open",
+				setup: func(t *testing.T, root string) int {
+					writeProcessFixture(t, root, processFixture{pid: 500, parent: 501, start: 50, comm: "sh", argv: []string{"sh"}})
+					writeProcessFixture(t, root, processFixture{pid: 501, parent: 500, start: 51, comm: "bash", argv: []string{"bash"}})
+					return 500
+				},
+				expect: false,
+			},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				root := procFixtureRoot(t)
+				startPID := tc.setup(t, root)
+				if got := cli.isolatedSessionAt(root, startPID); got != tc.expect {
+					t.Fatalf("isolatedSessionAt() = %v, want %v", got, tc.expect)
+				}
+			})
+		}
+	})
+}
+
+func TestHelperAgyPrintHookChild(t *testing.T) {
+	if os.Getenv("CAIRN_TEST_AGY_HOOK_CHILD") != "1" {
+		return
+	}
+	root := os.Getenv("CAIRN_TEST_AGY_ROOT")
+	cfgPath := os.Getenv("CAIRN_TEST_AGY_CFG")
+	evName := os.Getenv("CAIRN_TEST_AGY_EVENT")
+	payload := os.Getenv("CAIRN_TEST_AGY_PAYLOAD")
+
+	cli, _ := newTestHookCLI(t, root)
+	cli.Host.OwnerProcess = nil
+	cli.ProcRoot = "/proc"
+
+	var out, errOut bytes.Buffer
+	code, err := cli.RunCLI(context.Background(), []string{"hook", "--config", cfgPath, "--event", evName}, strings.NewReader(payload), &out, &errOut)
+	if err != nil || code != 0 {
+		t.Fatalf("child RunCLI failed: code=%d err=%v stderr=%q", code, err, errOut.String())
+	}
+	if _, err := os.Stdout.Write(out.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHookCommandAgyPrintIsolationSubprocess(t *testing.T) {
+	testBin, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name        string
+		agyArgs     []string
+		viaSubshell bool
+		eventName   string
+		extraEnv    map[string]string
+		wantEnroll  bool
+	}{
+		{name: "direct_agy_p_preinvocation", agyArgs: []string{"-p", "hi"}, eventName: "PreInvocation", wantEnroll: false},
+		{name: "direct_agy_p_stop", agyArgs: []string{"-p", "hi"}, eventName: "Stop", wantEnroll: false},
+		{name: "direct_agy_p_session_start", agyArgs: []string{"-p", "hi"}, eventName: "SessionStart", wantEnroll: false},
+		{name: "subshell_agy_print_preinvocation", agyArgs: []string{"--model", "gemini", "--print", "hi"}, viaSubshell: true, eventName: "PreInvocation", wantEnroll: false},
+		{name: "allow_print_enrollment_opt_in", agyArgs: []string{"-p", "hi"}, eventName: "PreInvocation", extraEnv: map[string]string{"CAIRN_ALLOW_PRINT_ENROLLMENT": "1"}, wantEnroll: true},
+		{name: "interactive_agy_enrolls", agyArgs: []string{"--continue"}, viaSubshell: true, eventName: "PreInvocation", wantEnroll: true},
+		{name: "interactive_agy_watcher_ignore_skips", agyArgs: []string{"--continue"}, eventName: "PreInvocation", extraEnv: map[string]string{"CAIRN_WATCHER_IGNORE": "1"}, wantEnroll: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			stateDir := filepath.Join(root, "state")
+			if err := os.MkdirAll(stateDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			apiLog := filepath.Join(root, "api-calls.log")
+			cairnStub := filepath.Join(root, "cairn-stub")
+			stubScript := fmt.Sprintf(`#!/bin/sh
+op=""
+for a in "$@"; do
+  op="$a"
+done
+printf '%%s\n' "$op" >> %q
+case "$op" in
+  agent-register|agent-context|agent-heartbeat)
+    printf '{"ok":true,"data":{"agent_id":"767f45f2-9a3e-4171-833d-34c44100d60b","execution_id":"9d124ee1-bde5-418b-a05e-6fe03f25c772","display_name":"agent-1","inbox":"agent/767f45f2-9a3e-4171-833d-34c44100d60b","context_revision":1,"metadata":{"state":"busy","delivery_mode":"existing-session","workspace":%q}}}\n'
+    ;;
+  *)
+    printf '{"ok":true,"data":{}}\n'
+    ;;
+esac
+`, apiLog, root)
+			writePrivateFile(t, cairnStub, []byte(stubScript), 0o700)
+
+			cfgPath := filepath.Join(root, "agy.json")
+			cfgData := fmt.Sprintf(`{"binding":"agy-one","harness":"agy","repo":"/repo","state_dir":%q,"cairn":%q,"socket":"/tmp/s.sock","token_file":"/tmp/t.tok","process_names":["agy"],"native_delivery":false}`, stateDir, cairnStub)
+			writePrivateFile(t, cfgPath, []byte(cfgData), 0o600)
+
+			agyBin := filepath.Join(root, "agy")
+			var agyBody string
+			if tc.viaSubshell {
+				agyBody = fmt.Sprintf("#!/bin/sh\n/bin/sh -c '%s -test.run=^TestHelperAgyPrintHookChild$'\n", testBin)
+			} else {
+				agyBody = fmt.Sprintf("#!/bin/sh\n%s -test.run=^TestHelperAgyPrintHookChild$\n", testBin)
+			}
+			writePrivateFile(t, agyBin, []byte(agyBody), 0o700)
+
+			payload := fmt.Sprintf(`{"hook_event_name":%q,"conversationId":"87122e6e-dcaf-45e1-98c4-ec0fd318b5a0","workspacePaths":[%q],"modelName":"gemini","fullyIdle":true}`, tc.eventName, root)
+			cmd := exec.Command(agyBin, tc.agyArgs...)
+			env := make([]string, 0, len(os.Environ())+8)
+			for _, kv := range os.Environ() {
+				k, _, _ := strings.Cut(kv, "=")
+				switch k {
+				case "CAIRN_COORDINATION_DISABLED", "CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD", "CAIRN_WAKE_CONTEXT", "CAIRN_WATCHER_IGNORE", "CAIRN_ALLOW_PRINT_ENROLLMENT":
+					continue
+				}
+				env = append(env, kv)
+			}
+			env = append(env,
+				"CAIRN_TEST_AGY_HOOK_CHILD=1",
+				"CAIRN_TEST_AGY_ROOT="+root,
+				"CAIRN_TEST_AGY_CFG="+cfgPath,
+				"CAIRN_TEST_AGY_EVENT="+tc.eventName,
+				"CAIRN_TEST_AGY_PAYLOAD="+payload,
+			)
+			for k, v := range tc.extraEnv {
+				env = append(env, k+"="+v)
+			}
+			cmd.Env = env
+			outBytes, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("agy wrapper failed: %v\n%s", err, string(outBytes))
+			}
+
+			_, logErr := os.Stat(apiLog)
+			entries, readErr := os.ReadDir(stateDir)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if tc.wantEnroll {
+				if logErr != nil {
+					t.Fatalf("expected agent-register API call, got stat err=%v\n%s", logErr, string(outBytes))
+				}
+				if len(entries) == 0 {
+					t.Fatalf("expected native session state file in %s", stateDir)
+				}
+			} else {
+				if !os.IsNotExist(logErr) {
+					rawLog, _ := os.ReadFile(apiLog)
+					t.Fatalf("expected zero API calls, got:\n%s", string(rawLog))
+				}
+				if len(entries) != 0 {
+					t.Fatalf("expected zero session state files, found %d", len(entries))
+				}
+				if !strings.Contains(string(outBytes), "{}") {
+					t.Fatalf("expected empty JSON hook output, got %q", string(outBytes))
+				}
+			}
+		})
+	}
+}

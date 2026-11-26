@@ -25,6 +25,8 @@ MEMORY_MARKER = ".cairn-no-memory"
 COORDINATION_MARKER = ".cairn-no-coordination"
 LIFECYCLE_DISABLE_VARIABLES = ("CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD")
 COORDINATION_DISABLE_VARIABLE = "CAIRN_COORDINATION_DISABLED"
+WATCHER_IGNORE_VARIABLE = "CAIRN_WATCHER_IGNORE"
+ALLOW_PRINT_ENROLLMENT_VARIABLE = "CAIRN_ALLOW_PRINT_ENROLLMENT"
 WAKE_CONTEXT_VARIABLE = "CAIRN_WAKE_CONTEXT"
 HOME_VARIABLES = {"claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME"}
 NATIVE_ID_BYTES = 256
@@ -62,7 +64,7 @@ KINDS = {
                          disable=LIFECYCLE_DISABLE_VARIABLES, wake_context_excludes=True,
                          explicit_project=False, identity="native"),
     "inbox_recall": dict(markers=(MEMORY_MARKER, COORDINATION_MARKER),
-                         disable=LIFECYCLE_DISABLE_VARIABLES + (COORDINATION_DISABLE_VARIABLE,),
+                         disable=LIFECYCLE_DISABLE_VARIABLES + (COORDINATION_DISABLE_VARIABLE, WATCHER_IGNORE_VARIABLE),
                          wake_context_excludes=True, explicit_project=True, identity="shaped"),
 }
 
@@ -149,7 +151,7 @@ IDENTITY_MESSAGES = frozenset({"missing or invalid host session identity", "inva
                                "invalid Hermes session identity", "host session identity must be a UUID"})
 
 
-def disabled(kind, environ=None, *, wake_accepted=False):
+def disabled(kind, environ=None, *, wake_accepted=False, config=None, isolated_session=None):
     """The environment reason this kind must not run, or None.
 
     ``wake_accepted`` (a bool, or a callable consulted only when a guard would
@@ -161,19 +163,30 @@ def disabled(kind, environ=None, *, wake_accepted=False):
     rules = KINDS[kind]
     if kind == "coordination" and environ.get(COORDINATION_DISABLE_VARIABLE) == "1":
         return "coordination_disabled"
+    if kind == "coordination" and environ.get(WATCHER_IGNORE_VARIABLE) == "1":
+        return "watcher_ignored"
     guarded = any(environ.get(name) == "1" for name in rules["disable"])
     waking = bool(rules["wake_context_excludes"] and environ.get(WAKE_CONTEXT_VARIABLE))
-    if kind == "coordination" and (guarded or waking):
+    isolated = False
+    if (not guarded and not waking and kind in ("coordination", "inbox_recall")
+            and isinstance(config, dict) and config.get("harness") == "agy"
+            and environ.get(ALLOW_PRINT_ENROLLMENT_VARIABLE) != "1"
+            and isolated_session is not None):
+        isolated = bool(isolated_session() if callable(isolated_session) else isolated_session)
+    if kind == "coordination" and (guarded or waking or isolated):
         if wake_accepted() if callable(wake_accepted) else bool(wake_accepted):
             return None
     if guarded:
         return "disabled_env"
     if waking:
         return "wake_context"
+    if isolated:
+        return "isolated_print"
     return None
 
 
-def guard(kind, config, event, event_name=None, *, environ=None, probe=PROBE, wake_accepted=False):
+def guard(kind, config, event, event_name=None, *, environ=None, probe=PROBE, wake_accepted=False,
+          isolated_session=None):
     """Environment, account-home and (for the tool cue) event admission, without validating the body.
 
     ``decide`` is guard plus body validation plus the privacy walk; coordination's
@@ -183,16 +196,18 @@ def guard(kind, config, event, event_name=None, *, environ=None, probe=PROBE, wa
     name = event_name or (event.get("hook_event_name") if event else None)
     if kind == "coordination" and environ.get(COORDINATION_DISABLE_VARIABLE) == "1":
         return _skip(kind, "coordination_disabled", event=name)
+    if kind == "coordination" and environ.get(WATCHER_IGNORE_VARIABLE) == "1":
+        return _skip(kind, "watcher_ignored", event=name)
     if other_account_home(config, environ, probe):
         return _skip(kind, "other_account_home", event=name)
     if kind == "coordination" and name == CUE_EVENT:
         if config.get("harness") not in CUE_HARNESSES:
             return _skip(kind, "unsupported_event", event=name)
-        reason = disabled(kind, environ)
+        reason = disabled(kind, environ, config=config, isolated_session=isolated_session)
         if reason:
             return _skip(kind, reason, event=name)
         return Admission(kind, "run", event=name, phase="cue", native_id=event.get("session_id"))
-    reason = disabled(kind, environ, wake_accepted=wake_accepted)
+    reason = disabled(kind, environ, wake_accepted=wake_accepted, config=config, isolated_session=isolated_session)
     if reason:
         return _skip(kind, reason, event=name)
     return Admission(kind, "run", event=name)
@@ -314,12 +329,14 @@ def observe(config, event, event_name=None, *, probe=PROBE):
                      owner_observation=owner_observation)
 
 
-def decide(kind, config, event, event_name=None, *, environ=None, probe=PROBE, wake_accepted=False):
+def decide(kind, config, event, event_name=None, *, environ=None, probe=PROBE, wake_accepted=False,
+           isolated_session=None):
     """Decide one hook invocation for ``kind`` (memory, coordination or inbox_recall)."""
     environ = os.environ if environ is None else environ
     rules = KINDS[kind]
     name = event_name or (event.get("hook_event_name") if event else None)
-    admission = guard(kind, config, event, name, environ=environ, probe=probe, wake_accepted=wake_accepted)
+    admission = guard(kind, config, event, name, environ=environ, probe=probe, wake_accepted=wake_accepted,
+                      isolated_session=isolated_session)
     if not admission.run or admission.phase == "cue" or event is None:
         return admission
     if kind == "coordination":

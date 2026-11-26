@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -374,6 +375,146 @@ class CoordinationInstall(unittest.TestCase):
                     self.assertEqual(interrupt["timeout"], 2)
                 else:
                     self.assertNotIn("Interrupt", events)
+
+
+class AgyPrintIsolation(unittest.TestCase):
+    def test_hook_admission_watcher_ignore_and_isolated_print_parity(self):
+        admission = coordination._hook_admission
+        agy_cfg = dict(harness="agy")
+        agy_ev = dict(hook_event_name="PreInvocation", conversationId="c-1", workspacePaths=["/tmp"], modelName="gemini")
+        probe = admission.TableProbe(directories={"/tmp"})
+
+        res = admission.decide("coordination", agy_cfg, agy_ev, environ={"CAIRN_WATCHER_IGNORE": "1", "CAIRN_ALLOW_PRINT_ENROLLMENT": "1"},
+                               probe=probe, wake_accepted=lambda: (_ for _ in ()).throw(AssertionError("consulted wake")))
+        self.assertEqual((res.verdict, res.reason), ("skip", "watcher_ignored"))
+        self.assertEqual(admission.decide("inbox_recall", agy_cfg, dict(hook_event_name="SessionStart", session_id="c-1", cwd="/tmp"),
+                                          environ={"CAIRN_WATCHER_IGNORE": "1"}, probe=probe).reason, "disabled_env")
+        self.assertTrue(admission.decide("memory", dict(harness="claude"),
+                                         dict(hook_event_name="SessionStart", session_id="11111111-1111-4111-8111-111111111111", cwd="/tmp"),
+                                         environ={"CAIRN_WATCHER_IGNORE": "1"}, probe=probe).run)
+        for non_literal in ("0", "true"):
+            self.assertTrue(admission.decide("coordination", agy_cfg, agy_ev,
+                                             environ={"CAIRN_WATCHER_IGNORE": non_literal}, probe=probe).run)
+
+        for ev_name in ("PreInvocation", "Stop", "SessionStart"):
+            res = admission.decide("coordination", agy_cfg, dict(agy_ev, hook_event_name=ev_name),
+                                   environ={}, probe=probe, isolated_session=lambda: True)
+            self.assertEqual((res.verdict, res.reason), ("skip", "isolated_print"))
+
+        self.assertTrue(admission.decide("coordination", agy_cfg, agy_ev,
+                                         environ={"CAIRN_ALLOW_PRINT_ENROLLMENT": "1"},
+                                         probe=probe, isolated_session=lambda: True).run)
+        self.assertTrue(admission.decide("coordination", agy_cfg, agy_ev,
+                                         environ={"CAIRN_LIFECYCLE_CHILD": "1", "CAIRN_WAKE_CONTEXT": "/tmp/wake.json"},
+                                         probe=probe, wake_accepted=lambda: True, isolated_session=lambda: True).run)
+        self.assertTrue(admission.decide("coordination", dict(harness="claude"),
+                                         dict(hook_event_name="SessionStart", session_id="11111111-1111-4111-8111-111111111111", cwd="/tmp"),
+                                         environ={}, probe=probe,
+                                         isolated_session=lambda: (_ for _ in ()).throw(AssertionError("non-agy checked"))).run)
+
+    def test_isolated_agy_print_session_proc_ancestry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def write_proc(pid, ppid, comm, argv):
+                d = root / str(pid)
+                d.mkdir()
+                fields = ["S", str(ppid), "1", "1"] + ["0"] * 18
+                (d / "stat").write_text(f"{pid} ({comm}) " + " ".join(fields) + "\n")
+                (d / "comm").write_text(comm + "\n")
+                (d / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
+
+            write_proc(100, 1, "agy", ["/home/owner/.local/bin/agy", "-p", "hi"])
+            write_proc(101, 100, "sh", ["/bin/sh", "-c", "hook"])
+            self.assertTrue(coordination.isolated_agy_print_session(root, 100))
+            self.assertTrue(coordination.isolated_agy_print_session(root, 101))
+
+            write_proc(200, 1, "antigravity-cli", ["/opt/antigravity/antigravity", "--print=true"])
+            write_proc(201, 200, "bash", ["bash", "-c", "hook"])
+            self.assertTrue(coordination.isolated_agy_print_session(root, 201))
+
+            write_proc(300, 1, "agy", ["agy", "--print-timeout", "30s", "/tmp/-p/repo", "hello -p world", "--print=false", "--", "-p"])
+            write_proc(301, 300, "sh", ["/bin/sh", "-c", "agy -p inside string"])
+            self.assertFalse(coordination.isolated_agy_print_session(root, 301))
+
+            write_proc(400, 1, "agy", ["agy"])
+            write_proc(401, 400, "bash", ["bash"])
+            write_proc(402, 401, "agy", ["agy", "--print"])
+            write_proc(403, 402, "sh", ["sh"])
+            self.assertTrue(coordination.isolated_agy_print_session(root, 403))
+
+            write_proc(500, 501, "sh", ["sh"])
+            write_proc(501, 500, "bash", ["bash"])
+            self.assertFalse(coordination.isolated_agy_print_session(root, 500))
+
+    def test_hook_subprocess_skips_agy_print_and_enrolls_interactive(self):
+        cases = (
+            ("direct_p_preinvocation", ["-p", "hi"], False, "PreInvocation", {}, False),
+            ("direct_p_stop", ["-p", "hi"], False, "Stop", {}, False),
+            ("subshell_print", ["--model", "gemini", "--print", "hi"], True, "PreInvocation", {}, False),
+            ("allow_print_opt_in", ["-p", "hi"], False, "PreInvocation", {"CAIRN_ALLOW_PRINT_ENROLLMENT": "1"}, True),
+            ("interactive_enrolls", ["--continue"], True, "PreInvocation", {}, True),
+            ("watcher_ignore", ["--continue"], False, "PreInvocation", {"CAIRN_WATCHER_IGNORE": "1"}, False),
+        )
+        for name, agy_args, via_subshell, event_name, extra_env, want_enroll in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                state_dir = root / "state"
+                state_dir.mkdir(mode=0o700)
+                api_log = root / "api.log"
+                cairn_stub = root / "cairn-stub"
+                cairn_stub.write_text(
+                    f"#!{sys.executable}\nimport json, pathlib, sys\n"
+                    f"op = sys.argv[-1]\n"
+                    f"with pathlib.Path({str(api_log)!r}).open('a') as f: f.write(op + '\\n')\n"
+                    f"if op in ('agent-register', 'agent-context', 'agent-heartbeat'):\n"
+                    f"    print(json.dumps(dict(ok=True, data=dict("
+                    f"agent_id='767f45f2-9a3e-4171-833d-34c44100d60b', "
+                    f"execution_id='9d124ee1-bde5-418b-a05e-6fe03f25c772', "
+                    f"display_name='agent-1', inbox='agent/767f45f2-9a3e-4171-833d-34c44100d60b', "
+                    f"context_revision=1, metadata=dict(state='busy', delivery_mode='existing-session', workspace={directory!r})))))\n"
+                    f"else:\n"
+                    f"    print(json.dumps(dict(ok=True, data=dict())))\n"
+                )
+                cairn_stub.chmod(0o700)
+                cfg_path = root / "agy.json"
+                cfg_path.write_text(json.dumps(dict(
+                    binding="agy-one", harness="agy", repo="/repo", state_dir=str(state_dir),
+                    cairn=str(cairn_stub), socket="/tmp/s.sock", token_file="/tmp/t.tok",
+                    process_names=["agy"], native_delivery=False,
+                )))
+                payload = json.dumps(dict(
+                    hook_event_name=event_name, conversationId="87122e6e-dcaf-45e1-98c4-ec0fd318b5a0",
+                    workspacePaths=[str(root)], modelName="gemini", fullyIdle=True,
+                ))
+                hook_cmd = shlex.join([
+                    sys.executable, str(ROOT / "integrations/lifecycle/coordination.py"),
+                    "hook", "--config", str(cfg_path), "--event", event_name,
+                ])
+                if via_subshell:
+                    body = f"#!/bin/sh\n/bin/sh -c {shlex.quote(hook_cmd)}\n"
+                else:
+                    body = f"#!/bin/sh\n{hook_cmd}\n"
+                agy_bin = root / "agy"
+                agy_bin.write_text(body)
+                agy_bin.chmod(0o700)
+
+                env = dict(os.environ)
+                for key in ("CAIRN_COORDINATION_DISABLED", "CAIRN_LIFECYCLE_DISABLED",
+                            "CAIRN_LIFECYCLE_CHILD", "CAIRN_WAKE_CONTEXT",
+                            "CAIRN_WATCHER_IGNORE", "CAIRN_ALLOW_PRINT_ENROLLMENT"):
+                    env.pop(key, None)
+                env.update(extra_env)
+
+                proc = subprocess.run([str(agy_bin), *agy_args], input=payload, text=True,
+                                      capture_output=True, env=env, timeout=10)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                if want_enroll:
+                    self.assertTrue(api_log.exists(), proc.stdout + proc.stderr)
+                    self.assertTrue(any(state_dir.iterdir()))
+                else:
+                    self.assertFalse(api_log.exists(), proc.stdout + proc.stderr)
+                    self.assertEqual(list(state_dir.iterdir()), [])
+                    self.assertEqual(json.loads(proc.stdout.strip()), {})
 
 
 if __name__ == "__main__":

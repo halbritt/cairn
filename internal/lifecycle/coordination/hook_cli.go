@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/halbritt/cairn/internal/lifecycle/admission"
 	"github.com/halbritt/cairn/internal/lifecycle/binding"
@@ -234,14 +235,15 @@ func (c *CLI) handleHookInner(ctx context.Context, config, event *value.Value, e
 		evNameVal = value.Text(eventName)
 	}
 	decision, err := admission.Decide(admission.Invocation{
-		Kind:         "coordination",
-		Config:       config,
-		Event:        event,
-		EventName:    evNameVal,
-		Environment:  c.admissionEnvironment(),
-		Home:         c.admissionHomeFunc(),
-		Filesystem:   c.admissionProbe(),
-		WakeAccepted: acceptWake,
+		Kind:            "coordination",
+		Config:          config,
+		Event:           event,
+		EventName:       evNameVal,
+		Environment:     c.admissionEnvironment(),
+		Home:            c.admissionHomeFunc(),
+		Filesystem:      c.admissionProbe(),
+		WakeAccepted:    acceptWake,
+		IsolatedSession: c.isolatedSessionFunc(),
 	})
 	if err != nil {
 		return nil, err
@@ -288,7 +290,7 @@ func (c *CLI) admissionEnvironment() map[string][]rune {
 			env[k] = admission.PathPoints(v)
 		}
 	}
-	for _, k := range []string{"CAIRN_LIFECYCLE_DISABLED", "CAIRN_COORDINATION_DISABLED", "CAIRN_MEMORY_DISABLED", "CAIRN_INBOX_RECALL_DISABLED", "CAIRN_CODEX_OWNER_ORIGIN_LAUNCH_ID", "HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "HERMES_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "CAIRN_WAKE_CONTEXT"} {
+	for _, k := range []string{"CAIRN_LIFECYCLE_DISABLED", "CAIRN_COORDINATION_DISABLED", "CAIRN_WATCHER_IGNORE", "CAIRN_ALLOW_PRINT_ENROLLMENT", "CAIRN_MEMORY_DISABLED", "CAIRN_INBOX_RECALL_DISABLED", "CAIRN_CODEX_OWNER_ORIGIN_LAUNCH_ID", "HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "HERMES_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "CAIRN_WAKE_CONTEXT"} {
 		if c.LookupEnv != nil {
 			if v, ok := c.LookupEnv(k); ok {
 				env[k] = admission.PathPoints(v)
@@ -302,6 +304,94 @@ func (c *CLI) admissionEnvironment() map[string][]rune {
 		}
 	}
 	return env
+}
+
+func (c *CLI) isolatedSessionFunc() func() (bool, error) {
+	return func() (bool, error) {
+		if c.Host != nil && c.Host.OwnerProcess != nil && (c.ProcRoot == "" || c.ProcRoot == "/proc") {
+			return false, nil
+		}
+		return c.isolatedSessionAt(c.ProcRoot, os.Getppid()), nil
+	}
+}
+
+func isAgyProcessName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "agy", "antigravity", "antigravity-cli":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAgyProcess(argv []string, comm, exe string) bool {
+	if len(argv) > 0 && argv[0] != "" && isAgyProcessName(filepath.Base(argv[0])) {
+		return true
+	}
+	if comm != "" && isAgyProcessName(comm) {
+		return true
+	}
+	if exe != "" && isAgyProcessName(filepath.Base(exe)) {
+		return true
+	}
+	return false
+}
+
+func hasAgyPrintFlag(argv []string) bool {
+	if len(argv) <= 1 {
+		return false
+	}
+	for _, arg := range argv[1:] {
+		if arg == "--" {
+			break
+		}
+		if arg == "-p" || arg == "--print" || arg == "-p=true" || arg == "--print=true" {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *CLI) isolatedSessionAt(root string, startPID int) bool {
+	root = procRoot(root)
+	pid := startPID
+	seen := make(map[int]bool, 16)
+	for depth := 0; depth < 32 && pid >= 2; depth++ {
+		if seen[pid] {
+			break
+		}
+		seen[pid] = true
+		stat, err := readProcessStatAt(root, pid)
+		if err != nil {
+			return false
+		}
+		directory := filepath.Join(root, strconv.Itoa(pid))
+		var comm string
+		if rawComm, err := os.ReadFile(filepath.Join(directory, "comm")); err == nil && utf8.Valid(rawComm) {
+			comm = pythonStrip(string(rawComm))
+		}
+		exe, _ := os.Readlink(filepath.Join(directory, "exe"))
+		var argv []string
+		if f, err := os.Open(filepath.Join(directory, "cmdline")); err == nil {
+			raw, readErr := io.ReadAll(io.LimitReader(f, 65536))
+			closeErr := f.Close()
+			if readErr == nil && closeErr == nil {
+				for _, part := range bytes.Split(raw, []byte{0}) {
+					if len(part) != 0 {
+						argv = append(argv, strings.ToValidUTF8(string(part), "\ufffd"))
+					}
+				}
+			}
+		}
+		if isAgyProcess(argv, comm, exe) {
+			return hasAgyPrintFlag(argv)
+		}
+		if stat.parent <= 1 || stat.parent == pid {
+			break
+		}
+		pid = stat.parent
+	}
+	return false
 }
 
 func (c *CLI) admissionHomeFunc() func() ([]rune, error) {

@@ -27,6 +27,8 @@ type Probe interface {
 // Filesystem implements the source probe, including its conversion/errors.
 // WakeAccepted supplies the caller's already-established wake decision; nil
 // means false. Admission never authenticates that decision or grants authority.
+// IsolatedSession supplies the caller's process-tree check for non-interactive
+// isolated sessions (such as Agy invoked with -p / --print); nil means false.
 type Invocation struct {
 	Kind                     string
 	Config, Event, EventName *value.Value
@@ -34,6 +36,7 @@ type Invocation struct {
 	Home                     func() ([]rune, error)
 	Filesystem               Probe
 	WakeAccepted             func() (bool, error)
+	IsolatedSession          func() (bool, error)
 }
 
 // Decision retains source optional fields and opaque host values. A nil Value
@@ -230,6 +233,9 @@ func guard(in Invocation, name *value.Value) (*Decision, error) {
 	if in.Kind == "coordination" && equal(in.Environment["CAIRN_COORDINATION_DISABLED"], []rune("1")) {
 		return decision(in.Kind, "skip", "coordination_disabled", "", name), nil
 	}
+	if in.Kind == "coordination" && equal(in.Environment["CAIRN_WATCHER_IGNORE"], []rune("1")) {
+		return decision(in.Kind, "skip", "watcher_ignored", "", name), nil
+	}
 	if err := requireObject(in.Config); err != nil {
 		return nil, err
 	}
@@ -299,12 +305,26 @@ func disabled(in Invocation, consultWake bool) (string, error) {
 	if in.Kind == "coordination" && equal(in.Environment["CAIRN_COORDINATION_DISABLED"], []rune("1")) {
 		return "coordination_disabled", nil
 	}
+	if in.Kind == "coordination" && equal(in.Environment["CAIRN_WATCHER_IGNORE"], []rune("1")) {
+		return "watcher_ignored", nil
+	}
 	guarded := equal(in.Environment["CAIRN_LIFECYCLE_DISABLED"], []rune("1")) || equal(in.Environment["CAIRN_LIFECYCLE_CHILD"], []rune("1"))
 	if in.Kind == "inbox_recall" {
-		guarded = guarded || equal(in.Environment["CAIRN_COORDINATION_DISABLED"], []rune("1"))
+		guarded = guarded || equal(in.Environment["CAIRN_COORDINATION_DISABLED"], []rune("1")) || equal(in.Environment["CAIRN_WATCHER_IGNORE"], []rune("1"))
 	}
 	waking := in.Kind != "memory" && len(in.Environment["CAIRN_WAKE_CONTEXT"]) != 0
-	if in.Kind == "coordination" && (guarded || waking) && consultWake && in.WakeAccepted != nil {
+	isolated := false
+	if !guarded && !waking && (in.Kind == "coordination" || in.Kind == "inbox_recall") &&
+		in.Config != nil && stringIs(in.Config.Get("harness"), "agy") &&
+		!equal(in.Environment["CAIRN_ALLOW_PRINT_ENROLLMENT"], []rune("1")) &&
+		in.IsolatedSession != nil {
+		var err error
+		isolated, err = in.IsolatedSession()
+		if err != nil {
+			return "", err
+		}
+	}
+	if in.Kind == "coordination" && (guarded || waking || isolated) && consultWake && in.WakeAccepted != nil {
 		accepted, err := in.WakeAccepted()
 		if err != nil {
 			return "", err
@@ -318,6 +338,9 @@ func disabled(in Invocation, consultWake bool) (string, error) {
 	}
 	if waking {
 		return "wake_context", nil
+	}
+	if isolated {
+		return "isolated_print", nil
 	}
 	return "", nil
 }

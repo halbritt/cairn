@@ -301,3 +301,112 @@ func tagged(v *value.Value) any {
 	}
 	panic("invalid test Value kind")
 }
+
+func TestWatcherIgnoreAndAgyPrintIsolation(t *testing.T) {
+	probe := &fixtureProbe{directories: [][]rune{[]rune("/work/repo")}}
+	agyEvent := decoded(t, `{"hook_event_name":"PreInvocation","conversationId":"c-1","workspacePaths":["/work/repo"],"modelName":"gemini"}`)
+	agyStop := decoded(t, `{"hook_event_name":"Stop","conversationId":"c-1","workspacePaths":["/work/repo"],"modelName":"gemini","fullyIdle":true}`)
+	agyCfg := decoded(t, `{"harness":"agy"}`)
+	claudeCfg := decoded(t, `{"harness":"claude"}`)
+	claudeEvent := decoded(t, `{"hook_event_name":"SessionStart","session_id":"11111111-1111-4111-8111-111111111111","cwd":"/work/repo"}`)
+
+	// CAIRN_WATCHER_IGNORE=1 skips coordination (even with null config or accepted wake) and inbox_recall, leaves memory alone.
+	res, err := Decide(Invocation{
+		Kind:         "coordination",
+		Config:       decoded(t, `null`),
+		Event:        agyEvent,
+		Environment:  map[string][]rune{"CAIRN_WATCHER_IGNORE": []rune("1"), "CAIRN_ALLOW_PRINT_ENROLLMENT": []rune("1")},
+		WakeAccepted: func() (bool, error) { t.Fatal("wake must not be consulted when watcher ignored"); return true, nil },
+	})
+	if err != nil || res.Verdict != "skip" || res.Reason != "watcher_ignored" {
+		t.Fatalf("CAIRN_WATCHER_IGNORE coordination = %+v, %v", res, err)
+	}
+	res, err = Decide(Invocation{
+		Kind:        "inbox_recall",
+		Config:      agyCfg,
+		Event:       decoded(t, `{"hook_event_name":"SessionStart","session_id":"c-1","cwd":"/work/repo"}`),
+		Environment: map[string][]rune{"CAIRN_WATCHER_IGNORE": []rune("1")},
+		Filesystem:  probe,
+	})
+	if err != nil || res.Verdict != "skip" || res.Reason != "disabled_env" {
+		t.Fatalf("CAIRN_WATCHER_IGNORE inbox_recall = %+v, %v", res, err)
+	}
+	res, err = Decide(Invocation{
+		Kind:        "memory",
+		Config:      claudeCfg,
+		Event:       claudeEvent,
+		Environment: map[string][]rune{"CAIRN_WATCHER_IGNORE": []rune("1")},
+		Filesystem:  probe,
+	})
+	if err != nil || !res.Run() {
+		t.Fatalf("CAIRN_WATCHER_IGNORE must not silence memory: %+v, %v", res, err)
+	}
+	// Non-literal "0" / "true" values do not trigger CAIRN_WATCHER_IGNORE.
+	for _, val := range []string{"0", "true"} {
+		res, err = Decide(Invocation{
+			Kind:        "coordination",
+			Config:      agyCfg,
+			Event:       agyEvent,
+			Environment: map[string][]rune{"CAIRN_WATCHER_IGNORE": []rune(val)},
+			Filesystem:  probe,
+		})
+		if err != nil || !res.Run() {
+			t.Fatalf("CAIRN_WATCHER_IGNORE=%q unexpectedly skipped: %+v, %v", val, res, err)
+		}
+	}
+
+	// Agy isolated print skips PreInvocation and Stop cleanly.
+	for _, ev := range []*value.Value{agyEvent, agyStop} {
+		res, err = Decide(Invocation{
+			Kind:            "coordination",
+			Config:          agyCfg,
+			Event:           ev,
+			Environment:     map[string][]rune{},
+			Filesystem:      probe,
+			IsolatedSession: func() (bool, error) { return true, nil },
+		})
+		if err != nil || res.Verdict != "skip" || res.Reason != "isolated_print" {
+			t.Fatalf("isolated agy print = %+v, %v", res, err)
+		}
+	}
+
+	// CAIRN_ALLOW_PRINT_ENROLLMENT=1 opts isolated print runs back in.
+	res, err = Decide(Invocation{
+		Kind:            "coordination",
+		Config:          agyCfg,
+		Event:           agyEvent,
+		Environment:     map[string][]rune{"CAIRN_ALLOW_PRINT_ENROLLMENT": []rune("1")},
+		Filesystem:      probe,
+		IsolatedSession: func() (bool, error) { t.Fatal("isolated check should be bypassed"); return true, nil },
+	})
+	if err != nil || !res.Run() {
+		t.Fatalf("CAIRN_ALLOW_PRINT_ENROLLMENT=1 = %+v, %v", res, err)
+	}
+
+	// Authorized fresh-worker wakes (CAIRN_WAKE_CONTEXT + WakeAccepted=true) enroll even when isolated print is active.
+	res, err = Decide(Invocation{
+		Kind:            "coordination",
+		Config:          agyCfg,
+		Event:           agyEvent,
+		Environment:     map[string][]rune{"CAIRN_LIFECYCLE_CHILD": []rune("1"), "CAIRN_WAKE_CONTEXT": []rune("/tmp/wake.json")},
+		Filesystem:      probe,
+		WakeAccepted:    func() (bool, error) { return true, nil },
+		IsolatedSession: func() (bool, error) { return true, nil },
+	})
+	if err != nil || !res.Run() {
+		t.Fatalf("authorized wake worker should enroll: %+v, %v", res, err)
+	}
+
+	// Non-agy harnesses (e.g. claude --print) are not affected by IsolatedSession.
+	res, err = Decide(Invocation{
+		Kind:            "coordination",
+		Config:          claudeCfg,
+		Event:           claudeEvent,
+		Environment:     map[string][]rune{},
+		Filesystem:      probe,
+		IsolatedSession: func() (bool, error) { t.Fatal("non-agy must not call IsolatedSession"); return true, nil },
+	})
+	if err != nil || !res.Run() {
+		t.Fatalf("non-agy harness = %+v, %v", res, err)
+	}
+}
