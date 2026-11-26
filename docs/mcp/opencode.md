@@ -43,7 +43,12 @@ cairn opencode-config \
   --repo "$CAIRN_COLLECTION" --task investigate-storage --run attempt-1
 ```
 
-Merge the generated `mcp.cairn` entry into your OpenCode configuration. The
+Merge the generated `mcp.cairn` entry into your OpenCode configuration. For
+local `llama.cpp` endpoints (such as `qwen3.8-27b` on `:8081`), pass
+`--llamacpp-structured` (and optional `--llamacpp-url` / `--llamacpp-model`) to
+emit a `provider.llamacpp` block with `chat_template_kwargs.enable_thinking=false`
+on structured/runtime turns while preserving an unrestricted interactive model
+when `--allow-thinking` or `CAIRN_OPENCODE_ALLOW_THINKING=1` is set. The
 optional `--memory-only` output denies all tools except Cairn search and body
 pull. It is a restricted inspection configuration, not an option that merely
 hides coordination tools; do not use it for an ordinary coding session.

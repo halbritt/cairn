@@ -16,6 +16,103 @@ import tempfile
 import threading
 import time
 
+ALLOW_THINKING_ENV = "CAIRN_OPENCODE_ALLOW_THINKING"
+
+
+class StructuredOutputError(RuntimeError):
+    """Raised when a structured completion does not yield valid bounded JSON."""
+
+
+class ReasoningBudgetExhaustedError(StructuredOutputError):
+    """Raised when reasoning consumes the output budget without usable content."""
+
+
+def is_truthy_env(value):
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def resolve_thinking_options(*, disable_thinking=False, structured=False, allow_thinking=None):
+    """Return model options bounding thinking on structured turns.
+
+    Structured extraction/communication turns always set enable_thinking=False
+    so reasoning cannot silently swallow JSON output. Non-structured turns may
+    re-enable unrestricted thinking via allow_thinking=True or
+    CAIRN_OPENCODE_ALLOW_THINKING=1.
+    """
+    if allow_thinking is None:
+        allow_thinking = is_truthy_env(os.environ.get(ALLOW_THINKING_ENV))
+    if structured:
+        return {"chat_template_kwargs": {"enable_thinking": False}}
+    if disable_thinking and not allow_thinking:
+        return {"chat_template_kwargs": {"enable_thinking": False}}
+    return {}
+
+
+def build_structured_chat_request(prompt, *, model="qwen3.8-27b", max_tokens=512, temperature=0, allow_thinking=None):
+    """Build a bounded OpenAI-compatible structured completion request."""
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    payload.update(resolve_thinking_options(structured=True, allow_thinking=allow_thinking))
+    return payload
+
+
+def extract_structured_completion_json(response, *, require_object=True):
+    """Parse a chat completion JSON payload, failing visibly on empty/reasoning exhaustion."""
+    if not isinstance(response, dict):
+        raise StructuredOutputError("chat completion response must be a JSON object")
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise StructuredOutputError("chat completion response missing choices")
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        raise StructuredOutputError("chat completion choice must be an object")
+    finish_reason = choice.get("finish_reason")
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        raise StructuredOutputError("chat completion choice missing message")
+    content = message.get("content")
+    reasoning_content = message.get("reasoning_content")
+    has_reasoning = isinstance(reasoning_content, str) and bool(reasoning_content.strip())
+    usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+    completion_tokens = usage.get("completion_tokens")
+
+    if not isinstance(content, str) or not content.strip():
+        if finish_reason == "length" or has_reasoning:
+            raise ReasoningBudgetExhaustedError(
+                f"reasoning exhausted token budget with empty content "
+                f"(finish_reason={finish_reason!r}, reasoning_bytes={len(reasoning_content or '')}, "
+                f"completion_tokens={completion_tokens!r})"
+            )
+        raise StructuredOutputError(
+            f"structured completion returned empty content (finish_reason={finish_reason!r})"
+        )
+
+    stripped = content.strip()
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        if finish_reason == "length":
+            raise ReasoningBudgetExhaustedError(
+                f"structured completion truncated at token budget before valid JSON "
+                f"(finish_reason='length', content_bytes={len(stripped)}, "
+                f"reasoning_bytes={len(reasoning_content or '')}): {exc}"
+            ) from exc
+        raise StructuredOutputError(
+            f"structured completion returned invalid JSON (finish_reason={finish_reason!r}): {exc}"
+        ) from exc
+
+    if require_object and not isinstance(parsed, dict):
+        raise StructuredOutputError(
+            f"structured completion expected JSON object, got {type(parsed).__name__}"
+        )
+    return parsed
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -23,7 +120,10 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--cairn-binary")
     parser.add_argument("--disable-thinking", action="store_true", help="verify forwarding of the local model thinking override")
+    parser.add_argument("--structured", action="store_true", help="require bounded non-thinking structured turn options unless --allow-thinking overrides non-structured mode")
+    parser.add_argument("--allow-thinking", action="store_true", help="explicit off-switch: re-enable unrestricted thinking on non-structured turns (also via CAIRN_OPENCODE_ALLOW_THINKING=1)")
     parser.add_argument("--check-edit", action="store_true", help="exercise read then edit through the installed harness against a disposable file")
+    parser.add_argument("--simulate-budget-exhaustion", action="store_true", help="simulate finish_reason=length with reasoning_content and empty content to verify visible failure")
     args = parser.parse_args()
     binary = str(Path(args.binary).resolve(strict=True))
     observed = []
@@ -52,7 +152,11 @@ def main():
             chunk = {"id": "fixture", "object": "chat.completion.chunk", "created": 1,
                      "model": "fixture", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Fixture received."}, "finish_reason": None}]}
             finish_reason = "stop"
-            if args.check_edit and request.get("tools") and edit_stage < 2:
+            if args.simulate_budget_exhaustion:
+                chunk["choices"][0]["delta"] = {"role": "assistant", "reasoning_content": "Exhausted token budget inside reasoning."}
+                finish_reason = "length"
+                observation["simulated_finish_reason"] = "length"
+            elif args.check_edit and request.get("tools") and edit_stage < 2:
                 tool = "read" if edit_stage == 0 else "edit"
                 arguments = {"filePath": str(work / "edit-fixture.txt")}
                 if tool == "edit":
@@ -86,9 +190,13 @@ def main():
                           "options": {"baseURL": f"http://127.0.0.1:{server.server_port}/v1", "apiKey": "synthetic-fixture"},
                           "models": {"fixture": {"name": "Fixture", "limit": {"context": 32000, "output": 1000}}}}}}
             config_path = root / "opencode.json"
-            if args.disable_thinking:
-                config["provider"]["cairn-fixture"]["models"]["fixture"]["options"] = {
-                    "chat_template_kwargs": {"enable_thinking": False}}
+            model_options = resolve_thinking_options(
+                disable_thinking=args.disable_thinking,
+                structured=args.structured,
+                allow_thinking=True if args.allow_thinking else None,
+            )
+            if model_options:
+                config["provider"]["cairn-fixture"]["models"]["fixture"]["options"] = model_options
             if args.check_edit:
                 config["permission"] = {"edit": "allow", "read": "allow", "bash": "deny"}
             config_path.write_text(json.dumps(config))
@@ -122,9 +230,32 @@ def main():
                 timed_out = True
                 os.killpg(process.pid, signal.SIGKILL)
                 stdout, stderr = process.communicate()
+            trace_events = []
+            for raw_line in stdout.splitlines():
+                try:
+                    trace_events.append(json.loads(raw_line))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    pass
+            has_text_or_tool = any(
+                (ev.get("type") == "text" and bool((ev.get("part") or {}).get("text", "").strip()))
+                or ev.get("type") == "tool_use"
+                for ev in trace_events if isinstance(ev, dict)
+            )
+            budget_exhausted = (
+                any(
+                    ev.get("type") == "step_finish"
+                    and (ev.get("part") or {}).get("reason") == "length"
+                    and ((ev.get("part") or {}).get("tokens") or {}).get("output", 0) == 0
+                    for ev in trace_events if isinstance(ev, dict)
+                )
+                or any(o.get("simulated_finish_reason") == "length" for o in observed)
+            ) and not has_text_or_tool
             report = {"schema": "cairn.adapter-probe/1", "binary": binary, "version": version,
                       "through_cairn_wrapper": bool(args.cairn_binary),
-                      "thinking_override_requested": args.disable_thinking,
+                      "thinking_override_requested": bool(model_options),
+                      "structured_mode": args.structured,
+                      "allow_thinking_override": args.allow_thinking or is_truthy_env(os.environ.get(ALLOW_THINKING_ENV)),
+                      "reasoning_budget_exhausted": budget_exhausted,
                       "edit_probe_requested": args.check_edit,
                       "edit_observed": args.check_edit and (work / "edit-fixture.txt").read_text() == "after\n",
                       "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
@@ -135,8 +266,8 @@ def main():
                       "limits": ["Synthetic local endpoint, no model capability evaluation", "No runtime mediation", "No live user configuration conformance claim"]}
             Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
             print(json.dumps(report, indent=2))
-            override_missing = args.disable_thinking and (not observed or observed[0]["enable_thinking"] is not False)
-            if not report["first_model_request_contains_canary"] or process.returncode != 0 or override_missing or (args.check_edit and not report["edit_observed"]):
+            override_missing = bool(model_options) and (not observed or observed[0]["enable_thinking"] is not False)
+            if not report["first_model_request_contains_canary"] or process.returncode != 0 or override_missing or budget_exhausted or (args.check_edit and not report["edit_observed"]):
                 # This environment contains only synthetic inputs; diagnostic output is safe.
                 print(stderr.decode(errors="replace")[-4000:])
                 raise SystemExit(1)

@@ -566,3 +566,39 @@ func TestMalformedAndUnrelatedLines(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOpenCodeStreamReasoningBudgetExhaustionFailsVisibly(t *testing.T) {
+	s := newProviderStream("opencode", func(f *core.ProviderFailure) error {
+		t.Fatalf("reasoning exhaustion should not synthesize provider failure classification: %+v", f)
+		return nil
+	})
+	exhausted := `{"type":"step_finish","part":{"reason":"length","tokens":{"input":78,"output":0,"reasoning":2048}}}` + "\n"
+	if _, err := s.Write([]byte(exhausted)); err != nil {
+		t.Fatal(err)
+	}
+	err := s.Close()
+	if !errors.Is(err, ErrOpenCodeReasoningBudgetExhausted) {
+		t.Fatalf("expected ErrOpenCodeReasoningBudgetExhausted, got %v", err)
+	}
+	if err := s.Close(); !errors.Is(err, ErrOpenCodeReasoningBudgetExhausted) {
+		t.Fatalf("second Close did not retain exhaustion error: %v", err)
+	}
+}
+
+func TestOpenCodeStreamBoundedStructuredOutputSucceeds(t *testing.T) {
+	s := newProviderStream("opencode", func(f *core.ProviderFailure) error {
+		t.Fatalf("unexpected provider failure: %+v", f)
+		return nil
+	})
+	for _, line := range []string{
+		`{"type":"text","part":{"text":"{\"ok\":true}"}}`,
+		`{"type":"step_finish","part":{"reason":"stop","tokens":{"input":38,"output":20,"reasoning":0}}}`,
+	} {
+		if _, err := s.Write([]byte(line + "\n")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("bounded valid output failed: %v", err)
+	}
+}

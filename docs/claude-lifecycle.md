@@ -271,7 +271,9 @@ harness framing is not measured.
 With a search tool that exposes
 `memory_budget_bytes`, set that field to the remaining memory allowance. The
 existing `available_tokens` field supplies the separate available input-context
-room used by optional-memory policy. It is not the model's maximum context
+room used by optional-memory policy, measured in conservative UTF-8 bytes
+(`utf8-byte-upper-bound/1`, not provider BPE tokens; Claude/Gemini BPE
+calibration `+-2-4%` remains unmeasured). It is not the model's maximum context
 window. If free input room is unknown and both facade and API support the memory
 cap, omit `available_tokens` and supply the remaining allowance as
 `memory_budget_bytes`. This uses the configured policy default, not measured free

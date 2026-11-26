@@ -188,7 +188,9 @@ admission.
 experiment; a single arm cannot establish a memory comparison. Older scenarios
 without an explicit experiment kind default to `harness_calibration`. The optional
 `--disable-thinking` sends `chat_template_kwargs.enable_thinking=false` through
-the custom provider. This is a per-request model setting; the default leaves it
+the custom provider unless the explicit off-switch `--allow-thinking` or
+`CAIRN_OPENCODE_ALLOW_THINKING=1` re-enables unrestricted thinking on
+non-structured turns. This is a per-request model setting; the default leaves it
 unspecified. The installed OpenCode binary can be checked against a local fixture:
 
 ```sh

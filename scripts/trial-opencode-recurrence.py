@@ -270,6 +270,47 @@ def check_selection(package, records, arm):
                 available_tokens=package['semantic']['available_tokens'], optional_limit=package['semantic']['optional_limit'])
 
 
+ALLOW_THINKING_ENV = 'CAIRN_OPENCODE_ALLOW_THINKING'
+
+
+def _is_truthy_env(value):
+    return value is not None and str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def resolve_thinking_options(*, disable_thinking=False, structured=False, allow_thinking=None):
+    if allow_thinking is None:
+        allow_thinking = _is_truthy_env(os.environ.get(ALLOW_THINKING_ENV))
+    if structured:
+        return {'chat_template_kwargs': {'enable_thinking': False}}
+    if disable_thinking and not allow_thinking:
+        return {'chat_template_kwargs': {'enable_thinking': False}}
+    return {}
+
+
+def detect_reasoning_budget_exhaustion(trace, summary=None):
+    if summary is None:
+        summary = trace_summary(trace, [])
+    has_text_or_tool = any(
+        (item.get('type') == 'text' and bool(item.get('part', {}).get('text', '').strip()))
+        or item.get('type') == 'tool_use'
+        for item in trace if isinstance(item, dict)
+    )
+    finishes = summary.get('finish_reasons', {})
+    tokens = summary.get('reported_tokens', {})
+    length_exhausted = finishes.get('length', 0) > 0 and not has_text_or_tool and (
+        tokens.get('output', 0) == 0 or tokens.get('reasoning', 0) > 0
+    )
+    if length_exhausted:
+        return dict(
+            exhausted=True,
+            reason='reasoning_budget_exhausted',
+            message='model exhausted output token budget inside reasoning with empty content (finish_reason=length)',
+            finish_reasons=finishes,
+            reported_tokens=tokens,
+        )
+    return dict(exhausted=False, reason=None, message=None, finish_reasons=finishes, reported_tokens=tokens)
+
+
 def trace_summary(trace, selected_ids):
     # Keep bounded categories and counts, never tool arguments, output, or prose.
     tools, finishes, tokens = Counter(), Counter(), Counter()
@@ -324,6 +365,9 @@ def assess_arm(binary, environment, result, records, host):
     if not result['runtime_observed']:
         outcome, domain, kind = 'unknown', 'binding', 'adapter'
         reason = 'No model activity observed; mechanical failure cannot establish a model task failure.'
+    elif result.get('reasoning_budget_exhausted') and not result['gate']['passed']:
+        outcome, domain, kind = 'unknown', 'binding', 'reasoning_budget_exhausted'
+        reason = result.get('reasoning_budget_error') or 'Model exhausted its output budget inside reasoning with empty content (finish_reason=length).'
     elif not result['gate']['passed'] and result['gate'].get('actions') != ['fail'] and not result['outside_scope']:
         outcome, domain, kind = 'unknown', 'unknown', ''
         reason = 'The evaluator did not run the necessary behavioral condition to failure. A build or evaluation error needs separate diagnosis before task assessment.'
@@ -354,7 +398,7 @@ def assess_arm(binary, environment, result, records, host):
                 excluded_preflight_rows=len(joined['rows']) - len(rows), interpretation=joined['interpretation'])
 
 
-def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_tokens=65536, route=None, extended_budget=False, retain_final=False, output_tokens=8192):
+def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_tokens=65536, route=None, extended_budget=False, retain_final=False, output_tokens=8192, allow_thinking=None):
     for key in ('GPU_FLEET_LEASE_ID', 'GPU_FLEET_ENDPOINT_URL', 'GPU_FLEET_SERVED_MODEL'):
         if route is None and not os.environ.get(key):
             raise RuntimeError('run requires an active gpu-fleet-run environment')
@@ -388,6 +432,7 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
     if route['provider'] == 'trial-openrouter':
         report['relay_sha256'] = sha((PROJECT / 'scripts/trial_openrouter.py').read_bytes())
     report['settings'] = dict(arms=scenario['arms'], disable_thinking=disable_thinking,
+                              allow_thinking=bool(allow_thinking) if allow_thinking is not None else _is_truthy_env(os.environ.get(ALLOW_THINKING_ENV)),
                               context_tokens=context_tokens, output_limit=output_tokens, process_seconds=process_seconds, steps=steps,
                               work_budget='extended' if extended_budget else 'standard', retain_final=retain_final)
     try:
@@ -448,7 +493,7 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             private_file(config, json.dumps(dict(autoupdate=False, share='disabled', enabled_providers=[route['provider']],
                 provider={route['provider']:dict(npm='@ai-sdk/openai-compatible', name=route['binding'], options=dict(baseURL=route['endpoint'], apiKey=route['api_key']),
                      models={model:dict(name=model, limit=dict(context=context_tokens, output=output_tokens),
-                         options={'chat_template_kwargs': {'enable_thinking': False}} if disable_thinking else {})})},
+                         options=resolve_thinking_options(disable_thinking=disable_thinking, allow_thinking=allow_thinking))})},
                 agent=dict(build=dict(temperature=0, steps=steps)),
                 permission=dict(external_directory='deny', webfetch='deny', websearch='deny', task='deny', skill='deny', edit='allow', read='allow', bash={'*':'deny','go test*':'allow','go version*':'allow','gofmt*':'allow','git diff*':'allow','git status*':'allow','rg *':'allow','ls*':'allow','pwd':'allow'}))))
             child_env = dict(PATH='/opt/go/bin:/usr/bin:/bin', HOME='/trial-home', GOROOT='/opt/go', GOPATH='/trial-home/go', GOMODCACHE='/opt/gomod', GOCACHE='/trial-cache', GOTOOLCHAIN='local', GOPROXY='off',
@@ -499,15 +544,19 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             scored = gate(work, root, patch, trusted=trusted) if not outside else dict(passed=False, reason='write_scope_violation')
             if receipt.get('receipt_id') and (receipt['receipt_id'] != selected['receipt_id'] or receipt['seal'] != selected['seal']):
                 raise RuntimeError('wrapped execution did not use its checked host package')
+            summary = trace_summary(trace, [r['record_id'] for r in records])
+            budget_check = detect_reasoning_budget_exhaustion(trace, summary)
             arm_result = dict(arm=arm, process_exit=result.returncode, duration_seconds=round(elapsed,3), receipt=receipt,
                               host_attempt=dict(attempt_id=host.attempt_id, terminal=terminal, run_status=status,
                                                 observer='host:recurrence:' + arm, journal=str(host.root)),
                               gate=scored, changed_paths=paths, outside_scope=outside, patch_sha256=sha(patch),
                               model_stdout_sha256=sha(result.stdout), model_stderr_sha256=sha(result.stderr),
                               runtime_observed=any(e.get('type') in ('step_finish', 'tool_use', 'text') for e in trace),
+                              reasoning_budget_exhausted=budget_check['exhausted'],
+                              reasoning_budget_error=budget_check['message'],
                               launch_diagnostics=[line[:512] for line in result.stderr.decode(errors='replace').splitlines() if line.startswith('bwrap:')],
                               trace_events=len(trace), trace_types=sorted(set(str(e.get('type')) for e in trace)),
-                              trace_summary=trace_summary(trace, [r['record_id'] for r in records]),
+                              trace_summary=summary,
                               config_sha256=sha(config.read_bytes()),
                               selected_records=selected['selected_records'] if receipt.get('receipt_id') else [])
             if retain_final:
@@ -560,6 +609,7 @@ def main():
     p = sub.add_parser('run'); p.add_argument('--trial', required=True, type=Path); p.add_argument('--cairn', required=True, type=Path); p.add_argument('--opencode', required=True, type=Path)
     p.add_argument('--arm', choices=['repo_only', 'native_excerpt', 'cairn_h0'], help='one-arm harness calibration; not a memory comparison')
     p.add_argument('--disable-thinking', action='store_true', help='request chat_template_kwargs.enable_thinking=false from the local model')
+    p.add_argument('--allow-thinking', action='store_true', help='explicit off-switch: re-enable unrestricted thinking on non-structured local turns (also via CAIRN_OPENCODE_ALLOW_THINKING=1)')
     p.add_argument('--context-tokens', type=int, choices=[65536, 131072], default=65536,
                    help='verified model context; acquire a fleet lease supporting at least this value')
     from trial_openrouter import MODEL, MODEL_PRICES
@@ -588,7 +638,7 @@ def main():
                    max_output_tokens=args.output_tokens) as route:
             run_trial(root, args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, False, args.context_tokens, route, args.extended_budget, args.retain_final, args.output_tokens)
     else:
-        run_trial(args.trial.resolve(strict=True), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, args.disable_thinking, args.context_tokens, retain_final=args.retain_final)
+        run_trial(args.trial.resolve(strict=True), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, args.disable_thinking, args.context_tokens, retain_final=args.retain_final, allow_thinking=True if args.allow_thinking else None)
 
 
 if __name__ == '__main__':

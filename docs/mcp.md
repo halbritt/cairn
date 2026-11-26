@@ -65,7 +65,9 @@ searches without a context object.
 ## Retrieval budgets
 
 Supply [`available_tokens`](search-room.md) to set the available context for one
-search. It may be smaller than the startup `--tokens` default, or larger for an
+search in conservative UTF-8 bytes (`utf8-byte-upper-bound/1`, not provider BPE
+tokens; Claude/Gemini BPE calibration `+-2-4%` remains unmeasured, see
+[token audit errata](verification/token-audit-errata-2026-11-25.md)). It may be smaller than the startup `--tokens` default, or larger for an
 explicit read up to `--max-tokens`. It does not change subsequent calls. Repeat
 the allowance on retries and pages.
 

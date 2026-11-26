@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/halbritt/cairn/core"
 )
+
+// ErrOpenCodeReasoningBudgetExhausted indicates that OpenCode exhausted its
+// output budget inside reasoning (finish_reason=length, zero output/text/tools).
+var ErrOpenCodeReasoningBudgetExhausted = errors.New("opencode reasoning exhausted output budget without content")
 
 const maxLineBytes = 1024 * 1024 // 1 MiB line limit
 
@@ -22,16 +27,19 @@ const (
 // ignores tool output and malformed JSON, and invokes changed synchronously on
 // candidate failure transitions.
 type providerStream struct {
-	harness     string
-	changed     func(*core.ProviderFailure) error
-	buf         bytes.Buffer
-	oversized   bool
-	retainedErr error
-	current     *core.ProviderFailure
-	closed      bool
-	agySession  string
-	agyStep     int
-	agyError    bool
+	harness                    string
+	changed                    func(*core.ProviderFailure) error
+	buf                        bytes.Buffer
+	oversized                  bool
+	retainedErr                error
+	current                    *core.ProviderFailure
+	closed                     bool
+	agySession                 string
+	agyStep                    int
+	agyError                   bool
+	openCodeHasOutput          bool
+	openCodeReasoningExhausted bool
+	openCodeReasoningTokens    int64
 }
 
 func newProviderStream(harness string, changed func(*core.ProviderFailure) error) *providerStream {
@@ -122,6 +130,11 @@ func (s *providerStream) Close() error {
 			}
 		}
 		s.buf.Reset()
+	}
+
+	if s.harness == "opencode" && s.openCodeReasoningExhausted && !s.openCodeHasOutput {
+		s.retainedErr = fmt.Errorf("%w (finish_reason=length, reasoning_tokens=%d)", ErrOpenCodeReasoningBudgetExhausted, s.openCodeReasoningTokens)
+		return s.retainedErr
 	}
 
 	return s.retainedErr
@@ -336,6 +349,19 @@ func (s *providerStream) parseClaude(raw []byte) error {
 type opencodeLine struct {
 	Type  string         `json:"type"`
 	Error *opencodeError `json:"error"`
+	Part  *opencodePart  `json:"part"`
+}
+
+type opencodePart struct {
+	Text   string         `json:"text"`
+	Reason string         `json:"reason"`
+	Tokens opencodeTokens `json:"tokens"`
+}
+
+type opencodeTokens struct {
+	Input     int64 `json:"input"`
+	Output    int64 `json:"output"`
+	Reasoning int64 `json:"reasoning"`
 }
 
 type opencodeError struct {
@@ -353,26 +379,47 @@ func (s *providerStream) parseOpenCode(raw []byte) error {
 		return nil
 	}
 
-	if line.Type == "error" && line.Error != nil && line.Error.Name == "APIError" && line.Error.Data != nil {
-		if line.Error.Data.StatusCode == 429 {
-			return s.notify(&core.ProviderFailure{
-				Harness: "opencode",
-				Source:  "native-event",
-				Kind:    "rate_limit",
-				Code:    "opencode_http_429",
-				Status:  429,
-			})
+	switch line.Type {
+	case "text":
+		if line.Part != nil && strings.TrimSpace(line.Part.Text) != "" {
+			s.openCodeHasOutput = true
+			s.openCodeReasoningExhausted = false
 		}
-		if line.Error.Data.StatusCode == 402 {
-			return s.notify(&core.ProviderFailure{
-				Harness: "opencode",
-				Source:  "native-event",
-				Kind:    "billing",
-				Code:    "opencode_http_402",
-				Status:  402,
-			})
+	case "tool_use":
+		s.openCodeHasOutput = true
+		s.openCodeReasoningExhausted = false
+	case "step_finish":
+		if line.Part != nil {
+			if line.Part.Reason == "length" && line.Part.Tokens.Output == 0 && line.Part.Tokens.Reasoning > 0 && !s.openCodeHasOutput {
+				s.openCodeReasoningExhausted = true
+				s.openCodeReasoningTokens = line.Part.Tokens.Reasoning
+			} else if line.Part.Tokens.Output > 0 || (line.Part.Reason != "" && line.Part.Reason != "length") {
+				s.openCodeHasOutput = true
+				s.openCodeReasoningExhausted = false
+			}
 		}
-		return s.notify(nil)
+	case "error":
+		if line.Error != nil && line.Error.Name == "APIError" && line.Error.Data != nil {
+			if line.Error.Data.StatusCode == 429 {
+				return s.notify(&core.ProviderFailure{
+					Harness: "opencode",
+					Source:  "native-event",
+					Kind:    "rate_limit",
+					Code:    "opencode_http_429",
+					Status:  429,
+				})
+			}
+			if line.Error.Data.StatusCode == 402 {
+				return s.notify(&core.ProviderFailure{
+					Harness: "opencode",
+					Source:  "native-event",
+					Kind:    "billing",
+					Code:    "opencode_http_402",
+					Status:  402,
+				})
+			}
+			return s.notify(nil)
+		}
 	}
 
 	return nil

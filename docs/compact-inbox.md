@@ -90,7 +90,11 @@ keeps token paths, lease IDs and retry IDs in owner-only files. The native
 session is still responsible for handling the message before its turn ends.
 
 The retained audit's metadata projection is a representation baseline, not
-measured model-token savings.
+measured model-token savings. Compact inbox byte bounds (`4,096` UTF-8 bytes)
+and `available_tokens` retrieval budgets use conservative UTF-8 byte accounting
+(`utf8-byte-upper-bound/1`, not provider BPE tokens; Claude/Gemini BPE
+calibration `+-2-4%` remains unmeasured, see
+[token audit errata](verification/token-audit-errata-2026-11-25.md)).
 
 <a id="bounded-notice-batches-cairn-221"></a>
 

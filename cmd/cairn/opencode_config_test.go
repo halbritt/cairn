@@ -79,3 +79,62 @@ func TestOpenCodeConfigRejectsIncompleteInvocation(t *testing.T) {
 type configFailureWriter struct{ err error }
 
 func (w configFailureWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestOpenCodeConfigLocalLlamaCppStructuredAndOffSwitch(t *testing.T) {
+	base := []string{"--socket", "/missing.sock", "--token-file", "/missing.token", "--repo", "repo", "--task", "task", "--run", "run"}
+
+	// 1. Structured mode sets enable_thinking=false on both runtime and structured model
+	var out bytes.Buffer
+	if err := writeOpenCodeConfig(&out, append(append([]string{}, base...), "--llamacpp-structured"), "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	var structured openCodeMemoryConfig
+	if err := json.Unmarshal(out.Bytes(), &structured); err != nil {
+		t.Fatal(err)
+	}
+	provider := structured.Provider["llamacpp"]
+	if provider.Options["baseURL"] != "http://localhost:8081/v1" {
+		t.Fatalf("unexpected llamacpp baseURL: %+v", provider.Options)
+	}
+	baseModel := provider.Models["qwen3.8-27b"]
+	kwargs, _ := baseModel.Options["chat_template_kwargs"].(map[string]any)
+	if kwargs["enable_thinking"] != false {
+		t.Fatalf("expected enable_thinking=false on structured runtime model: %+v", baseModel.Options)
+	}
+	aliasModel := provider.Models["qwen3.8-27b-structured"]
+	aliasKwargs, _ := aliasModel.Options["chat_template_kwargs"].(map[string]any)
+	if aliasModel.ID != "qwen3.8-27b" || aliasKwargs["enable_thinking"] != false {
+		t.Fatalf("expected bounded structured alias model: %+v", aliasModel)
+	}
+
+	// 2. --allow-thinking flag re-enables unrestricted thinking on non-structured model while keeping structured alias bounded
+	out.Reset()
+	if err := writeOpenCodeConfig(&out, append(append([]string{}, base...), "--llamacpp-structured", "--allow-thinking"), "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	var allowed openCodeMemoryConfig
+	if err := json.Unmarshal(out.Bytes(), &allowed); err != nil {
+		t.Fatal(err)
+	}
+	if _, hasKwargs := allowed.Provider["llamacpp"].Models["qwen3.8-27b"].Options["chat_template_kwargs"]; hasKwargs {
+		t.Fatalf("expected --allow-thinking to keep non-structured model thinking unrestricted: %+v", allowed.Provider["llamacpp"].Models["qwen3.8-27b"].Options)
+	}
+	aliasKwargs2, _ := allowed.Provider["llamacpp"].Models["qwen3.8-27b-structured"].Options["chat_template_kwargs"].(map[string]any)
+	if aliasKwargs2["enable_thinking"] != false {
+		t.Fatalf("structured alias must remain bounded even with --allow-thinking: %+v", allowed.Provider["llamacpp"].Models["qwen3.8-27b-structured"])
+	}
+
+	// 3. Env off-switch CAIRN_OPENCODE_ALLOW_THINKING=1 also re-enables unrestricted thinking on non-structured model
+	t.Setenv("CAIRN_OPENCODE_ALLOW_THINKING", "1")
+	out.Reset()
+	if err := writeOpenCodeConfig(&out, append(append([]string{}, base...), "--llamacpp-structured"), "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	var envAllowed openCodeMemoryConfig
+	if err := json.Unmarshal(out.Bytes(), &envAllowed); err != nil {
+		t.Fatal(err)
+	}
+	if _, hasKwargs := envAllowed.Provider["llamacpp"].Models["qwen3.8-27b"].Options["chat_template_kwargs"]; hasKwargs {
+		t.Fatalf("expected CAIRN_OPENCODE_ALLOW_THINKING=1 to re-enable thinking: %+v", envAllowed.Provider["llamacpp"].Models["qwen3.8-27b"].Options)
+	}
+}
