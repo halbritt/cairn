@@ -22,8 +22,8 @@ interactive cancellation still need work. The owner rejected the premature compl
 features retain their triggers. See
 the September 16 acceptance checkpoint.
 
-The [2026-09-20 independent review](../verification/coordination-review-2026-09-20.md)
-verifies the dormant schema 049 cancellation core and bounded OpenCode/Hermes
+The 2026-09-20 independent review
+verified the dormant schema 049 cancellation core and bounded OpenCode/Hermes
 bridge repairs. Disposable database checks cover cleanup order, revocation and
 persisted holds. Native fixtures cover queue handoff, hook identity, isolated
 tool processes and explicit failure handling; provider/model boundaries remain

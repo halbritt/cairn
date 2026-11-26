@@ -1,8 +1,13 @@
 package core
 
-// CAIRN-116 search scale measurement (agent-235, 2026-09-30). Runs only with
-// CAIRN_SCALE_MEASURE=1 against a disposable cluster; procedure frozen in
-// docs/verification/search-scale-2026-09-30.md.
+// CAIRN-116 search scale measurement. Runs only with CAIRN_SCALE_MEASURE=1,
+// CAIRN_SCALE_OUT=DIR and a disposable CAIRN_TEST_DATABASE_URL:
+//
+//	go test -run TestScaleMeasure -timeout 15m ./core
+//
+// It creates 1,000, 5,000 and 10,000 generated notes and times six fixed
+// queries, one discarded warmup then five measured runs each. Require all
+// three completed rows before accepting a run.
 
 import (
 	"context"

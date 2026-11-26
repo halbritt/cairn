@@ -21,6 +21,11 @@ processes.
   and the plans for shipped work. Read a removed file with
   `git show fe5743f8:<path>`. See
   [decision 0023](docs/decisions/0023-repository-holds-current-contracts.md).
+- Removed 44 files that nothing called or cited: one-off retrieval and
+  selector comparisons from September, the notification latency bench, the
+  `experiments/live-latency` probe, the `trials/siwc` scaffold, three patch
+  manifests and five dated reports. Read a removed file with
+  `git show 75517cc5:<path>` (CAIRN-842).
 
 ## 2026-11-24
 
