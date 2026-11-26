@@ -77,6 +77,35 @@ review is active, verify pending state and absent readiness, then release the
 source and observe the review conclusion before notice handling. This runner
 and pause are not implemented by the preflight or Store probe.
 
+Two Go integration tests exercise source and event setup for six cases under
+`make test-integration`'s disposable PostgreSQL cluster.
+`core/token_efficiency_panel_materialization_test.go` checks A record
+creation/edit with retained history for `corrected_note`, governed C issuance
+and required-conflict refusal for `required_conflict_group`, and one request
+source/event with an identical publish retry and one delivery for
+`duplicate_send`. `core/token_efficiency_panel_events_test.go` checks a pending
+`single_notice`, exact request/response causation and responding writer for
+`actionable_response`, and four isolated publication setups for
+`routine_burst_urgent_request`. The burst test applies only the fixture's
+routine-notice policy per arm and checks availability. It checks urgent
+readiness in the batch and combined setups, where routine notices are deferred;
+it does not run batch transfer or handling. These tests use store-owned writer
+identity, a disposable test operator grant where needed, and fixture source
+and event fields.
+
+Other Go tests check selected Store behavior for fifteen more fixture IDs.
+`core/token_efficiency_panel_reply_test.go` follows native session claims,
+request settlement, and a result response for `small_request_result_reply`;
+its `completion_reply_lost` and `relay_uncertain_response` checks exercise
+idempotent Store operations without inducing transport loss or running journal
+recovery. `core/token_efficiency_panel_ownership_test.go` checks distinct
+recipient ownership for `concurrent_receivers` and a failed source read after
+operator deletion for `source_forgotten_before_read`.
+`core/token_efficiency_panel_memory_cases_test.go` creates and whole-pulls
+exact sources for `semantic_unavailable`, `wrong_project_memory`, and
+`meaningful_owner_correction`. These memory checks use a separate disposable
+database for each case so another case's required C conflict cannot alter
+retrieval under the fixture's shared repository scope.
 The [memory lifecycle probe](../../scripts/check_panel_memory_lifecycle.py)
 checks the real CLI/API search and pull surface on a disposable database for
 wrong-project source ranking, then checks stale-handle refusal and exact
@@ -107,11 +136,26 @@ authority and recall only; it does not pause or resume a native model turn or
 prove the remaining report was written. The controller launches no actor and no
 provider; the release gate remains deferred.
 
+`core/token_efficiency_panel_recovery_test.go` checks an expired lease under
+its current native hold, an offline presence with operator release and explicit
+reissue, and execution fencing for `lease_expiry`, `process_crash`, and
+`stale_execution`. Expired test presence is an observable offline boundary,
+not proof that a recipient process crashed.
 The [stale journal probe](../../scripts/check_panel_stale_journal.py)
 exercises a disposable CLI/API and native helper path for `stale_execution`: a
 pending old-execution completion is refused after reviewed reissue and execution
 rotation while the current execution can settle the successor. Its host turn
 and result text are synthetic, so it does not grade an actor task.
+`core/token_efficiency_panel_session_boundary_test.go` checks that a reported
+busy session has no ready routine notice until it reports idle, and that two
+notices keep their durable state across fresh client views for
+`busy_owner_task` and `compaction_before_after_settlement`. The busy check does
+not run the synthetic parser review, and fresh views do not invoke a harness
+compaction hook. `core/token_efficiency_panel_memory_followup_test.go` stores
+and whole-pulls the historical and current relay sources with a pending
+request for `long_source`, and the exact saved source for
+`unfinished_handoff`. The 120-copy exposure and actor pause/resume transitions
+remain unrun; the controller source-read setup above does not exercise them.
 
 The [process-crash child probe](../../scripts/check_panel_process_crash_child.py)
 kills a disposable native-claim child with `SIGKILL` after lease acquisition
@@ -127,6 +171,11 @@ the first. Host queue admission, model compaction and task outcome remain unrun.
 first selection in `setup.capture`; the controller does not yet execute it, and
 the hook's persisted state, actual provider selection, and task outcome remain
 unrun.
+
+The Go tests check setup or selected Store transitions for 21 fixture IDs. None
+grades an actor task, completes a paired model arm, or measures provider usage.
+The original six have source/event setup checks; the other fifteen Go checks
+are partial source, scheduling, or recovery checks.
 
 **Current preflight boundary:** the Python validator checks the fixture and
 export as data. It never inserts records, issues authority, applies arm
