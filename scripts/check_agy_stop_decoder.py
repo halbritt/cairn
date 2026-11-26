@@ -68,6 +68,9 @@ def main() -> int:
                 "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "TERM": "dumb", "HOME": str(home),
                 "ANTIGRAVITY_CLI_CONFIG_DIR": str(acct), "GEMINI_API_KEY": "r04-synthetic-unused",
                 "GOOGLE_GEMINI_BASE_URL": f"http://127.0.0.1:{server.server_port}", "NO_PROXY": "127.0.0.1,localhost",
+                # The check drives agy --print; since CAIRN-818 the hook skips
+                # enrollment for print sessions unless this opt-in is set.
+                "CAIRN_ALLOW_PRINT_ENROLLMENT": "1",
             }
             hooks_path = work / ".agents" / "hooks.json"
 
