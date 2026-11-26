@@ -382,6 +382,7 @@ class ProfileAndHookStagingTest(unittest.TestCase):
         item = fixture.message_item("msg_del", "delegated")
         for script_name in (
             "check_codex_inbox.py",
+            "check_codex_app_server_wake_join.py",
             "check_codex_compact_native.py",
             "check_codex_full_inbox_native.py",
         ):
