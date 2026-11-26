@@ -22,6 +22,9 @@ RECOVERY = frozenset(("pending", "retry_same_intent", "held", "committed", "unkn
 OPERATORS = frozenset(("none", "manual_retry", "self_drain", "intervention", "unknown"))
 MODEL_INVOCATION = frozenset(("not_started", "started", "unknown"))
 REMINDER_KINDS = frozenset(("turn_end", "waiting_work", "recovery_failure", "unspecified"))
+# The Store records a request-control sweep from polling paths that carry no
+# request id; every other recovery action is a request-driven mutation.
+ACTIONS_WITHOUT_REQUEST = frozenset(("request_control_sweep",))
 
 
 def read_evidence(path, max_observations):
@@ -81,11 +84,33 @@ def read_evidence(path, max_observations):
     return observations
 
 
+def recovery_action_request(action, value):
+    """Return the opaque request reference of one recovery action, or None.
+
+    A sweep has no request: the Store column is NULL, which ReviewEvents SQL
+    emits as JSON null and the Go RecoveryTransition struct re-encodes as "".
+    """
+    absent = value is None or value == ""
+    if action in ACTIONS_WITHOUT_REQUEST:
+        if not absent:
+            raise ValueError(f"{action} recovery action carries no request_id")
+        return None
+    if absent:
+        raise ValueError(f"{action} recovery action requires a request_id")
+    try:
+        return opaque(event_uuid(value))
+    except ValueError:
+        raise ValueError("recovery action request_id must be a UUID") from None
+
+
 def read_recovery_actions(path, max_actions=10000):
     """Read a selected ReviewEvents recovery-transition projection.
 
-    This records only the two Store-instrumented endpoint actions. It does not
-    treat an action as a final task outcome or as evidence of model usage.
+    This accepts the five Store-recorded recovery actions: native hold release,
+    event reissue, work cancellation, stopped-inbox expiry and the
+    request-control sweep. Only the sweep has no request id; its request is
+    reported as None. It does not treat an action as a final task outcome or as
+    evidence of model usage.
     """
     if path is None:
         return []
@@ -128,7 +153,7 @@ def read_recovery_actions(path, max_actions=10000):
         if key in seen:
             raise ValueError("duplicate recovery action identity")
         seen.add(key)
-        request = opaque(event_uuid(item.get("request_id")))
+        request = recovery_action_request(action, item.get("request_id"))
         actor = item.get("actor")
         if not isinstance(actor, str) or not actor or len(actor) > 256:
             raise ValueError("recovery action actor is required")

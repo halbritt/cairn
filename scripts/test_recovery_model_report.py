@@ -14,6 +14,7 @@ ATTEMPT = "44444444-4444-4444-8444-444444444444"
 RELATED_EVENT = "66666666-6666-4666-8666-666666666666"
 RELATED_DELIVERY = "88888888-8888-4888-8888-888888888888"
 RELATED_ATTEMPT = "99999999-9999-4999-8999-999999999999"
+REQUEST = "55555555-5555-4555-8555-555555555555"
 
 
 class RecoveryModelReportTests(unittest.TestCase):
@@ -101,6 +102,112 @@ class RecoveryModelReportTests(unittest.TestCase):
                  state_after="handled", observed_at="2026-10-25T10:00:00Z")])))
         with self.assertRaisesRegex(ValueError, "Store-observed"):
             recovery.read_recovery_actions(path)
+
+    def raw_action(self, action, **extra):
+        """One projection row shaped as the Store records that action."""
+        item = dict(event_id=EVENT, delivery_id=DELIVERY_ONE, attempt_id=None,
+                    related_event_id=None, revision=1, request_id=REQUEST,
+                    actor="operator:local", action=action, state_before="pending",
+                    state_after="failed", observed_at="2026-10-25T10:00:00Z")
+        item.update({
+            "native_hold_release": dict(outcome="hold_released", attempt_id=ATTEMPT,
+                                        state_before="leased"),
+            "event_reissue": dict(outcome="reissue_created", related_event_id=RELATED_EVENT,
+                                  state_before="failed"),
+            "work_cancel": dict(outcome="cancelled", attempt_id=ATTEMPT, state_before="leased"),
+            "stopped_inbox_expiry": dict(outcome="consumer_retired"),
+            "request_control_sweep": dict(outcome="admission_expired", request_id=None),
+        }[action])
+        item.update(extra)
+        return item
+
+    def read_actions(self, *items):
+        path = self.root / "actions.json"
+        path.write_text(json.dumps(dict(schema="cairn.recovery-action-evidence/1",
+                                        actions=list(items))))
+        return recovery.read_recovery_actions(path)
+
+    def test_each_store_recovery_action_is_read_with_its_request_identity(self):
+        for action in ("native_hold_release", "event_reissue", "work_cancel",
+                       "stopped_inbox_expiry"):
+            with self.subTest(action=action):
+                rows = self.read_actions(self.raw_action(action))
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["action"], action)
+                self.assertEqual(rows[0]["request"], opaque(REQUEST))
+        # An unclaimed manual cancellation has no attempt but still has its request.
+        rows = self.read_actions(self.raw_action("work_cancel", attempt_id=None,
+                                                 state_before="pending"))
+        self.assertIsNone(rows[0]["attempt"])
+        self.assertEqual(rows[0]["request"], opaque(REQUEST))
+
+    def test_request_control_sweep_without_request_is_read_and_reported(self):
+        # ReviewEvents SQL emits the NULL column as JSON null; the Go
+        # RecoveryTransition struct re-encodes it as an empty string.
+        for outcome in ("admission_expired", "task_deadline"):
+            for request_id in (None, ""):
+                with self.subTest(outcome=outcome, request_id=request_id):
+                    actions = self.read_actions(self.raw_action(
+                        "request_control_sweep", outcome=outcome, request_id=request_id))
+                    self.assertIsNone(actions[0]["request"])
+                    result = recovery.compile_report(self.workflow(), self.evidence([]), actions)
+                    row = result["recovery_actions"][0]
+                    self.assertEqual(row["action"]["action"], "request_control_sweep")
+                    self.assertEqual(row["action"]["outcome"], outcome)
+                    self.assertIsNone(row["action"]["request"])
+                    self.assertEqual(row["delivery_join"], "matched")
+                    self.assertEqual(row["attempt_join"], "not_applicable")
+                    self.assertNotIn("followup", row)
+                    self.assertEqual(result["recovery_action_coverage"],
+                                     {"matched": 1, "attempt_not_applicable": 1})
+                    encoded = json.loads(json.dumps(result))
+                    self.assertIsNone(encoded["recovery_actions"][0]["action"]["request"])
+                    self.assertNotIn(opaque(""), json.dumps(result))
+
+    def test_sweep_is_reported_beside_request_driven_actions(self):
+        actions = self.read_actions(
+            self.raw_action("request_control_sweep"),
+            self.raw_action("work_cancel", delivery_id=DELIVERY_TWO),
+            self.raw_action("request_control_sweep", delivery_id=RELATED_DELIVERY,
+                            outcome="task_deadline", request_id=""))
+        result = recovery.compile_report(self.workflow(), self.evidence([]), actions)
+        self.assertEqual([row["action"]["request"] for row in result["recovery_actions"]],
+                         [None, opaque(REQUEST), None])
+        self.assertEqual(result["recovery_action_coverage"],
+                         {"matched": 2, "missing": 1, "attempt_not_applicable": 2,
+                          "attempt_matched": 1})
+
+    def test_request_driven_action_without_request_id_refuses(self):
+        for action in ("native_hold_release", "event_reissue", "work_cancel",
+                       "stopped_inbox_expiry"):
+            for request_id in (None, ""):
+                with self.subTest(action=action, request_id=request_id):
+                    with self.assertRaisesRegex(
+                            ValueError, f"^{action} recovery action requires a request_id$"):
+                        self.read_actions(self.raw_action(action, request_id=request_id))
+            with self.subTest(action=action, request_id="missing key"):
+                item = self.raw_action(action)
+                del item["request_id"]
+                with self.assertRaisesRegex(
+                        ValueError, f"^{action} recovery action requires a request_id$"):
+                    self.read_actions(item)
+
+    def test_sweep_with_a_request_id_refuses(self):
+        for request_id in (REQUEST, "not-a-uuid", 7):
+            with self.subTest(request_id=request_id):
+                with self.assertRaisesRegex(
+                        ValueError, "^request_control_sweep recovery action carries no request_id$"):
+                    self.read_actions(self.raw_action("request_control_sweep",
+                                                      request_id=request_id))
+
+    def test_present_request_id_must_be_a_uuid(self):
+        for action in ("native_hold_release", "event_reissue", "work_cancel",
+                       "stopped_inbox_expiry"):
+            for request_id in ("not-a-uuid", "55555555-5555-4555-8555", 7, False, 0, [], {}):
+                with self.subTest(action=action, request_id=request_id):
+                    with self.assertRaisesRegex(
+                            ValueError, "^recovery action request_id must be a UUID$"):
+                        self.read_actions(self.raw_action(action, request_id=request_id))
 
     def test_reissue_links_exact_followup_delivery_and_keeps_settlement_separate_from_assessment(self):
         workflow = self.workflow()

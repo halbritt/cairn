@@ -39,7 +39,8 @@ only the selected `recovery_transitions` fields: `event_id`, `delivery_id`,
 `related_event_id`, `attempt_id`, `request_id`, `actor`, `action`, `outcome`,
 `state_before`, `state_after`, `revision`, and `observed_at`. The report
 validates action-specific identity (native hold release has its exact attempt;
-event reissue is delivery-scoped and has a related event), hashes all UUIDs and
+event reissue is delivery-scoped and has a related event; every action except
+`request_control_sweep` has a request id), hashes all UUIDs and
 the actor, then joins to workflow event/delivery and attempt identities. Keep
 the input local and private. It does not verify a hand-built file's provenance;
 the projection must come from an authorized local operator `ReviewEvents` read.
@@ -78,6 +79,29 @@ cancellation closed it), `stopped_inbox_expiry` (`consumer_retired`) and
 `request_control_sweep` (`admission_expired` or `task_deadline`, with no
 request id because sweeps run inside polling paths). None of them cover
 manual/off-band work or ordinary leasing, settlement and release.
+
+No command writes this envelope; build it from a `ReviewEvents` read. A sweep
+row's `request_id` is `""` in the JSON that `ReviewEvents` returns and null in
+the Store. The report accepts either spelling, and an absent key, and emits
+that action's `request` as null. It refuses a sweep row that has a request id,
+any other action without one, and a request id that is not a UUID:
+
+```json
+{
+  "event_id": "11111111-1111-4111-8111-111111111111",
+  "delivery_id": "55555555-5555-4555-8555-555555555555",
+  "related_event_id": null,
+  "attempt_id": null,
+  "request_id": null,
+  "actor": "operator:local",
+  "action": "request_control_sweep",
+  "outcome": "admission_expired",
+  "state_before": "pending",
+  "state_after": "failed",
+  "revision": 1,
+  "observed_at": "2026-10-25T10:05:00Z"
+}
+```
 
 For a `event_reissue`, the report follows its exact `related_event_id` into the
 workflow report. It emits the follow-up event's delivery refs, each delivery's
