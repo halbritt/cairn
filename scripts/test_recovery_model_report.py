@@ -209,6 +209,113 @@ class RecoveryModelReportTests(unittest.TestCase):
                             ValueError, "^recovery action request_id must be a UUID$"):
                         self.read_actions(self.raw_action(action, request_id=request_id))
 
+    def test_attempt_rule_accepts_what_the_store_records_for_each_action(self):
+        # core/schema/073 CHECK plus the recordRecoveryTransition call sites.
+        for action, attempt_id in (("native_hold_release", ATTEMPT),
+                                   ("native_hold_release", "drain-" + ATTEMPT),
+                                   ("event_reissue", None),
+                                   ("work_cancel", ATTEMPT),
+                                   ("work_cancel", None),
+                                   ("stopped_inbox_expiry", None),
+                                   ("request_control_sweep", None)):
+            with self.subTest(action=action, attempt_id=attempt_id):
+                rows = self.read_actions(self.raw_action(action, attempt_id=attempt_id))
+                self.assertEqual(rows[0]["attempt"],
+                                 None if attempt_id is None else opaque(attempt_id))
+        for action in ("event_reissue", "work_cancel", "stopped_inbox_expiry",
+                       "request_control_sweep"):
+            with self.subTest(action=action, attempt_id="missing key"):
+                item = self.raw_action(action)
+                del item["attempt_id"]
+                self.assertIsNone(self.read_actions(item)[0]["attempt"])
+
+    def test_hold_release_without_attempt_id_refuses(self):
+        message = "^native_hold_release recovery action requires an attempt_id$"
+        with self.assertRaisesRegex(ValueError, message):
+            self.read_actions(self.raw_action("native_hold_release", attempt_id=None))
+        item = self.raw_action("native_hold_release")
+        del item["attempt_id"]
+        with self.assertRaisesRegex(ValueError, message):
+            self.read_actions(item)
+
+    def test_action_without_attempt_refuses_an_attempt_id(self):
+        # Any present value refuses, valid or not: the Store column is NULL.
+        for action in ("event_reissue", "stopped_inbox_expiry", "request_control_sweep"):
+            for attempt_id in (ATTEMPT, "drain-" + ATTEMPT, "not-an-attempt", "", 7):
+                with self.subTest(action=action, attempt_id=attempt_id):
+                    with self.assertRaisesRegex(
+                            ValueError, f"^{action} recovery action carries no attempt_id$"):
+                        self.read_actions(self.raw_action(action, attempt_id=attempt_id))
+
+    def test_present_attempt_id_must_be_canonical(self):
+        for action in ("native_hold_release", "work_cancel"):
+            for attempt_id in ("not-an-attempt", ATTEMPT.replace("-", ""), "drain-", "", 7, False, 0, [], {}):
+                with self.subTest(action=action, attempt_id=attempt_id):
+                    with self.assertRaisesRegex(
+                            ValueError,
+                            "^recovery action attempt_id must be a canonical native or self-drain attempt$"):
+                        self.read_actions(self.raw_action(action, attempt_id=attempt_id))
+
+    def test_attempt_sets_cover_every_action_but_work_cancel(self):
+        self.assertEqual(recovery.ACTIONS_REQUIRING_ATTEMPT, {"native_hold_release"})
+        self.assertEqual(recovery.ACTIONS_WITHOUT_ATTEMPT,
+                         {"event_reissue", "stopped_inbox_expiry", "request_control_sweep"})
+
+    def test_uuid_refusal_names_the_field_that_was_read(self):
+        for field in ("event_id", "delivery_id"):
+            for value in ("not-a-uuid", None, 7):
+                with self.subTest(field=field, value=value):
+                    with self.assertRaisesRegex(
+                            ValueError, f"^recovery action {field} must be a UUID$"):
+                        self.read_actions(self.raw_action("work_cancel", **{field: value}))
+        for value in ("not-a-uuid", 7):
+            with self.subTest(field="related_event_id", value=value):
+                with self.assertRaisesRegex(
+                        ValueError, "^recovery action related_event_id must be a UUID$"):
+                    self.read_actions(self.raw_action("event_reissue", related_event_id=value))
+        for value in ("not-a-uuid", 7):
+            with self.subTest(reader="evidence", value=value):
+                with self.assertRaisesRegex(
+                        ValueError, "^recovery evidence delivery_id must be a UUID$"):
+                    self.evidence([self.observation(delivery_id=value)])
+
+    def test_action_limit_is_its_own_flag_and_defaults_to_the_observation_limit(self):
+        import contextlib, io, sys
+        from unittest import mock
+        workflow, evidence, actions = (self.root / name for name in
+                                       ("workflow.json", "evidence.json", "actions.json"))
+        workflow.write_text(json.dumps(self.workflow()))
+        self.evidence([self.observation()])
+        actions.write_text(json.dumps(dict(schema="cairn.recovery-action-evidence/1", actions=[
+            self.raw_action("work_cancel"),
+            self.raw_action("request_control_sweep", delivery_id=DELIVERY_TWO)])))
+
+        def run(name, *extra):
+            argv = ["recovery_model_report.py", "--workflow-report", str(workflow),
+                    "--recovery-evidence", str(evidence), "--recovery-actions", str(actions),
+                    "--output", str(self.root / name), *extra]
+            with mock.patch.object(sys, "argv", argv), \
+                    contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()) as stderr:
+                try:
+                    recovery.main()
+                except SystemExit as stop:
+                    return stop.code, stderr.getvalue()
+            return 0, ""
+
+        self.assertEqual(run("default.json"), (0, ""))
+        self.assertEqual(run("wide.json", "--max-observations", "1", "--max-actions", "2"), (0, ""))
+        with self.assertRaisesRegex(ValueError, "^recovery action evidence exceeds max-actions$"):
+            run("narrow.json", "--max-actions", "1")
+        # Without --max-actions the observation limit still bounds the actions.
+        with self.assertRaisesRegex(ValueError, "^recovery action evidence exceeds max-actions$"):
+            run("inherited.json", "--max-observations", "1")
+        code, stderr = run("zero.json", "--max-actions", "0")
+        self.assertEqual(code, 2)
+        self.assertIn("max-actions must be positive", stderr)
+        for name in ("narrow.json", "inherited.json", "zero.json"):
+            self.assertFalse((self.root / name).exists())
+
     def test_reissue_links_exact_followup_delivery_and_keeps_settlement_separate_from_assessment(self):
         workflow = self.workflow()
         workflow["workflows"].append(self.followup_workflow())

@@ -25,6 +25,23 @@ REMINDER_KINDS = frozenset(("turn_end", "waiting_work", "recovery_failure", "uns
 # The Store records a request-control sweep from polling paths that carry no
 # request id; every other recovery action is a request-driven mutation.
 ACTIONS_WITHOUT_REQUEST = frozenset(("request_control_sweep",))
+# The attempt rule per action, from the agent_recovery_transition CHECK
+# (core/schema/073) and every recordRecoveryTransition call site. A hold
+# release always names the attempt it released. Stopped-inbox expiry and the
+# sweep are NULL by the CHECK; a reissue is delivery-scoped and its only call
+# site passes none. Work cancellation is in neither set: it has the attempt
+# when a confirmed native cancellation closed one, and none otherwise.
+ACTIONS_REQUIRING_ATTEMPT = frozenset(("native_hold_release",))
+ACTIONS_WITHOUT_ATTEMPT = frozenset(("event_reissue", "stopped_inbox_expiry",
+                                     "request_control_sweep"))
+
+
+def named_uuid(subject, field, value):
+    """Canonical UUID text, or a refusal that names the field that was read."""
+    try:
+        return event_uuid(value)
+    except ValueError:
+        raise ValueError(f"{subject} {field} must be a UUID") from None
 
 
 def read_evidence(path, max_observations):
@@ -41,7 +58,7 @@ def read_evidence(path, max_observations):
         event = opaque(event_uuid(item.get("event_id")))
         delivery = item.get("delivery_id")
         if delivery is not None:
-            delivery = opaque(event_uuid(delivery))
+            delivery = opaque(named_uuid("recovery evidence", "delivery_id", delivery))
         raw_attempt = item.get("attempt_id")
         attempt = attempt_ref(raw_attempt)
         if raw_attempt is not None and attempt is None:
@@ -97,10 +114,26 @@ def recovery_action_request(action, value):
         return None
     if absent:
         raise ValueError(f"{action} recovery action requires a request_id")
-    try:
-        return opaque(event_uuid(value))
-    except ValueError:
-        raise ValueError("recovery action request_id must be a UUID") from None
+    return opaque(named_uuid("recovery action", "request_id", value))
+
+
+def recovery_action_attempt(action, value):
+    """Return the opaque attempt reference of one recovery action, or None.
+
+    The Store column is NULL when there is no attempt. ReviewEvents SQL emits
+    that as JSON null and the Go RecoveryTransition struct omits the key, so
+    only None is absent; an empty string is a present, invalid value.
+    """
+    if value is None:
+        if action in ACTIONS_REQUIRING_ATTEMPT:
+            raise ValueError(f"{action} recovery action requires an attempt_id")
+        return None
+    if action in ACTIONS_WITHOUT_ATTEMPT:
+        raise ValueError(f"{action} recovery action carries no attempt_id")
+    attempt = attempt_ref(value)
+    if attempt is None:
+        raise ValueError("recovery action attempt_id must be a canonical native or self-drain attempt")
+    return attempt
 
 
 def read_recovery_actions(path, max_actions=10000):
@@ -109,8 +142,9 @@ def read_recovery_actions(path, max_actions=10000):
     This accepts the five Store-recorded recovery actions: native hold release,
     event reissue, work cancellation, stopped-inbox expiry and the
     request-control sweep. Only the sweep has no request id; its request is
-    reported as None. It does not treat an action as a final task outcome or as
-    evidence of model usage.
+    reported as None. A hold release has its attempt, a work cancellation may
+    have one, and the other three have none. It does not treat an action as a
+    final task outcome or as evidence of model usage.
     """
     if path is None:
         return []
@@ -124,27 +158,26 @@ def read_recovery_actions(path, max_actions=10000):
     for item in source["actions"]:
         if not isinstance(item, dict):
             raise ValueError("invalid recovery action")
-        event = opaque(event_uuid(item.get("event_id")))
-        delivery = opaque(event_uuid(item.get("delivery_id")))
+        event = opaque(named_uuid("recovery action", "event_id", item.get("event_id")))
+        delivery = opaque(named_uuid("recovery action", "delivery_id", item.get("delivery_id")))
         related = item.get("related_event_id")
-        related = opaque(event_uuid(related)) if related else None
-        raw_attempt = item.get("attempt_id")
-        attempt = attempt_ref(raw_attempt)
+        related = opaque(named_uuid("recovery action", "related_event_id", related)) if related else None
         revision = item.get("revision")
         action, outcome = item.get("action"), item.get("outcome")
         before, after, observed = item.get("state_before"), item.get("state_after"), item.get("observed_at")
         expected = {"native_hold_release": ("hold_released",), "event_reissue": ("reissue_created",),
                     "work_cancel": ("cancelled",), "stopped_inbox_expiry": ("consumer_retired",),
                     "request_control_sweep": ("admission_expired", "task_deadline")}
-        if (raw_attempt is not None and attempt is None or type(revision) is not int or revision < 1 or
+        if (type(revision) is not int or revision < 1 or
                 action not in expected or outcome not in expected[action] or
                 before not in ("pending", "leased", "failed", "handled", "ignored") or
                 after not in ("pending", "leased", "failed", "handled", "ignored") or
-                (action == "native_hold_release" and (attempt is None or related is not None)) or
-                (action == "event_reissue" and (attempt is not None or related is None)) or
+                (action == "native_hold_release" and related is not None) or
+                (action == "event_reissue" and related is None) or
                 (action in ("work_cancel", "stopped_inbox_expiry", "request_control_sweep") and (related is not None or after != "failed")) or
                 not isinstance(observed, str)):
             raise ValueError("invalid Store-observed recovery action")
+        attempt = recovery_action_attempt(action, item.get("attempt_id"))
         try:
             datetime.fromisoformat(observed.replace("Z", "+00:00"))
         except ValueError as exc:
@@ -336,13 +369,19 @@ def main():
     parser.add_argument("--recovery-actions", type=Path,
                         help="optional private projection of Store ReviewEvents recovery_transitions")
     parser.add_argument("--max-observations", type=int, default=10000)
+    parser.add_argument("--max-actions", type=int,
+                        help="limit for --recovery-actions rows (default: the --max-observations value)")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.max_observations < 1:
         parser.error("max-observations must be positive")
+    if args.max_actions is None:
+        args.max_actions = args.max_observations
+    if args.max_actions < 1:
+        parser.error("max-actions must be positive")
     report = compile_report(json.loads(args.workflow_report.read_text()),
                             read_evidence(args.recovery_evidence, args.max_observations),
-                            read_recovery_actions(args.recovery_actions, args.max_observations))
+                            read_recovery_actions(args.recovery_actions, args.max_actions))
     descriptor = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         json.dump(report, stream, indent=2)

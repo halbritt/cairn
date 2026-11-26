@@ -40,7 +40,8 @@ only the selected `recovery_transitions` fields: `event_id`, `delivery_id`,
 `state_before`, `state_after`, `revision`, and `observed_at`. The report
 validates action-specific identity (native hold release has its exact attempt;
 event reissue is delivery-scoped and has a related event; every action except
-`request_control_sweep` has a request id), hashes all UUIDs and
+`request_control_sweep` has a request id; the attempt rule is in the table
+below), hashes all UUIDs and
 the actor, then joins to workflow event/delivery and attempt identities. Keep
 the input local and private. It does not verify a hand-built file's provenance;
 the projection must come from an authorized local operator `ReviewEvents` read.
@@ -102,6 +103,27 @@ any other action without one, and a request id that is not a UUID:
   "observed_at": "2026-10-25T10:05:00Z"
 }
 ```
+
+The report enforces the Store's attempt rule for each action, with one refusal
+message per case. Null and an absent key both mean no attempt; an empty string
+is a present value and is refused.
+
+| Action | `attempt_id` | Refusal |
+| --- | --- | --- |
+| `native_hold_release` | Required | `native_hold_release recovery action requires an attempt_id` |
+| `work_cancel` | Optional: present when a confirmed native cancellation closed the attempt | None for an absent value |
+| `event_reissue` | Never | `event_reissue recovery action carries no attempt_id` |
+| `stopped_inbox_expiry` | Never | `stopped_inbox_expiry recovery action carries no attempt_id` |
+| `request_control_sweep` | Never | `request_control_sweep recovery action carries no attempt_id` |
+
+A present `attempt_id` on `native_hold_release` or `work_cancel` that is not a
+canonical native or self-drain attempt is refused with `recovery action
+attempt_id must be a canonical native or self-drain attempt`. An `event_id`,
+`delivery_id`, `related_event_id` or `request_id` that is not a UUID is refused
+with a message that names that field.
+
+`--max-actions` limits the rows of `--recovery-actions`. When it is omitted, the
+`--max-observations` value (default 10000) is the limit for both inputs.
 
 For a `event_reissue`, the report follows its exact `related_event_id` into the
 workflow report. It emits the follow-up event's delivery refs, each delivery's
