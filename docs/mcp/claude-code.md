@@ -18,10 +18,44 @@ claude --mcp-config cairn-claude.json
 ```
 
 Use labels for the actual work. The output contains `mcpServers.cairn` with a
-stdio command and absolute paths. The generator does not install a server,
-modify Claude's permissions, or change other registrations. Keep the generated
-file local to your configuration workflow; it contains deployment paths and
-retrieval labels.
+stdio command and absolute paths. Example generated configuration shape:
+
+```json
+{
+  "mcpServers": {
+    "cairn": {
+      "type": "stdio",
+      "command": "/absolute/path/to/cairn",
+      "args": [
+        "mcp",
+        "--socket", "/absolute/path/to/api.sock",
+        "--token-file", "/absolute/path/to/agent.token",
+        "--repo", "REPOSITORY",
+        "--task", "TASK",
+        "--run", "RUN",
+        "--tokens", "16000",
+        "--search-view", "compact/1",
+        "--tool-profile", "compact/2"
+      ]
+    }
+  }
+}
+```
+
+The generator resolves executable, socket, and token paths to absolute paths
+without reading credentials or connecting to Cairn. It forwards `--tokens`
+(default `16000`) and the existing MCP flags (`--revision`, `--workspace-sha256`,
+`--task-class`, `--task-phase`, `--binding`, `--capability`, `--search-view`,
+`--tool-profile`, `--messaging`). Paths, quotes, and whitespace are JSON
+encoded. Arguments must be valid UTF-8 without NUL bytes and cannot contain
+`${`, because Claude interprets that syntax as environment-variable expansion
+and could alter a path or declared scope; resolve such values before generation.
+Missing scope, invalid flags, and unsupported scope modes fail nonzero on
+stderr with no configuration on stdout.
+
+The generator does not install a server, modify Claude's permissions, or change
+other registrations. Keep the generated file local to your configuration
+workflow; it contains deployment paths and retrieval labels.
 
 Claude configuration requires explicit task/run labels. `--codex-thread` is
 rejected. Reusing fixed labels combines retrieval observations from those
@@ -36,9 +70,9 @@ and pull it with the returned arguments. Follow
 The model's tool use remains subject to Claude's normal permissions.
 
 For persistent registration, use your installed Claude client's MCP configuration
-commands. The generated `mcpServers.cairn` object is the server entry; the whole
-document is the file accepted by `--mcp-config`. Regenerate the entry if you change
-its explicit scope or installed Cairn path.
+commands. Claude's `add-json` command takes the inner `mcpServers.cairn` object;
+`claude --mcp-config` takes the whole generated document. Regenerate the entry
+if you change its explicit scope or installed Cairn path.
 
 Optional [Claude lifecycle hooks](../claude-lifecycle.md) add automatic recall
 and selected capture. They are separate from MCP installation. See the

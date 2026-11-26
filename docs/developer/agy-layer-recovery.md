@@ -93,14 +93,10 @@ A kill before rename leaves the old selection or absence. A kill after rename
 leaves a complete committed NEW selection with unfinished bookkeeping; the
 next explicit checked recovery validates that new inode and finishes forward.
 The fixture records the NEW-active snapshots and verifies record/backup and
-selected bytes remain exact. It does not relabel the earlier 20 NEW-active
-observations or their old rollback results as a passing new run. Missing
-records refuse without guessing. These are owned SIGKILL tests, not power-loss
-or reboot tests. Exact candidate commands, image pins, counts and outcomes are
-recorded with the frozen candidate packet; independent acceptance is separate.
+selected bytes remain exact. Missing records refuse without guessing. These
+are owned SIGKILL tests, not power-loss or reboot tests.
 
 The durable-intent ordering coordinates checked publishers only. Point
-observations cannot exclude an uncooperating legacy writer after the last check. Full qualification
-still needs supported unit quiescence/exclusion and the separate installed
-transition decision. Native Agy, whole-unit refresh, common-image, store/auth,
-CAIRN-305 AC4, HC05 and production acceptance remain separate.
+observations cannot exclude an uncooperating legacy writer after the last check.
+This covers layer publication recovery only; native client execution, service
+unit refresh, and store/auth validation are separate.

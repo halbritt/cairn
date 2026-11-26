@@ -113,8 +113,6 @@ local-only destination prevents execution. Preparation errors use the normal
 Cairn JSON error envelope and omit prepared task/memory text. After successful
 replacement, output and exit status are the harness's own.
 
-Native OpenCode verification uses a scripted provider to check initial delivery,
-direct pulls, denied tool permissions and source changes. It does not establish
-model-selected use, task acceptance or memory benefit. Other harnesses with an
-argv input route can use their configured tool names, but are not qualified by
-this OpenCode check.
+Startup establishes initial delivery only; it does not establish
+model-selected tool use, task acceptance, or memory benefit. Other harnesses
+with an argv or stdin input route can use their configured tool names.

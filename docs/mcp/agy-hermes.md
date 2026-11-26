@@ -37,8 +37,8 @@ memory-provider slot; built-in `MEMORY.md` and `USER.md` remain independent.
 Follow [Hermes installation](../hermes-lifecycle.md#installation) for its Python
 environment, existing connection configuration, provider settings, and restart
 steps. The installer has deployment-specific defaults: inspect its `--help` and
-set paths for your installation. Installing the provider can require replacing
-a conflicting external provider, so review the existing configuration first.
+set paths for your installation. The installer refuses to replace a conflicting
+external provider, so review the existing configuration first.
 
 Explicit MCP tools and lifecycle requests use different retrieval labels:
 profile-level labels for shared MCP connections, actual session labels for the

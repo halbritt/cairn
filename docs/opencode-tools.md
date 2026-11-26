@@ -25,8 +25,12 @@ cairn opencode-install --project "$PWD" \
   --repo /absolute/path/to/canonical/repository
 ```
 
-The binary embeds its matching adapter. The command writes
-`.opencode/tools/cairn.ts` and `.opencode/cairn.json`, both owner-only, without
+Pass `--config-dir DIRECTORY` instead of `--project` to write `cairn.json` and
+`tools/cairn.ts` directly inside an existing OpenCode configuration directory
+(rather than `PROJECT/.opencode/`). `--project` and `--config-dir` are mutually
+exclusive. The binary embeds its matching adapter. The command writes
+`.opencode/tools/cairn.ts` and `.opencode/cairn.json` (or `tools/cairn.ts` and
+`cairn.json` under `--config-dir`), both owner-only, without
 requiring a source checkout. Connection paths are made absolute relative to the
 invoking directory, and the executable path names the binary running the command.
 The repository identity stays exactly as supplied. No token bytes are read and
@@ -46,7 +50,12 @@ credentials, edit Git exclusions, or start a harness. Keep the connection file
 out of Git and start a fresh OpenCode session to load the installed tools. Upgrade
 the API separately when a new tool feature requires it.
 
-Use `--tokens` to set the input-context ceiling (default 32,000). Optional `--revision`,
+Use `--tokens` to set the default memory input room per tool result (default
+16,000, range 256–1,000,000), `--max-tokens` to set the ceiling for explicit
+`available_tokens` overrides and `cairn_pull` output (default 160,000, range
+`tokens`–1,000,000), and `--output-max-bytes` to cap non-strict tool output
+(`cairn_assessments`, `cairn_pull_evidence`) and CLI error details (default
+12,000, range 0–1,000,000, where `0` is unbounded). Optional `--revision`,
 `--workspace-sha256`, `--task-class`, `--task-phase`, `--binding` and `--capability` flags populate
 the existing declared context settings; the API validates them on retrieval.
 Use optional `--task` and `--run` for [declared task scope](#continue-a-task-across-sessions).
@@ -65,7 +74,9 @@ The installed connection file has this shape and can also be maintained manually
   "socket": "/absolute/path/to/api.sock",
   "token_file": "/absolute/path/to/hosted-agent.token",
   "repo": "/absolute/path/to/canonical/repository",
-  "tokens": 32000
+  "tokens": 16000,
+  "max_tokens": 160000,
+  "output_max_bytes": 12000
 }
 ```
 
@@ -112,31 +123,22 @@ Use the [native review tools](use-outcome-loop.md#native-review-tools) to read
 and append qualitative assessments without shell access. These use receipt
 ownership under the configured API profile; agent reviews remain testimony.
 
-The installer does not add automatic startup retrieval. An isolated
-OpenCode 1.18.21 hook check
-found that the system-prompt hook also runs for auxiliary requests and is not
-gated by tool permissions. A direct search from that hook would need additional
-permission and lifecycle integration; the normal tools continue to use the
-native permission context.
+The installer does not add automatic startup retrieval; the system-prompt hook
+is not gated by tool permissions, so normal tools continue to use the native
+permission context. Use [explicit compact startup](compact-start.md) to preload
+an index through `cairn agent start` (with the same API principal), or install
+the optional [OpenCode lifecycle plugin](opencode-lifecycle.md).
 
-Use [explicit compact startup](compact-start.md) to preload an index through
-`cairn agent start`, then pull relevant sources with these normal tools. The
-launcher and tools must use the same API principal. This route does not install
-a system hook or change OpenCode permissions.
-
-OpenCode also initializes its own plugin SDK dependencies during startup. Its
-[v1.18.21 implementation](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/config/config.ts)
-requests the matching `@opencode-ai/plugin` package in its configuration
-directories. A fresh environment can therefore involve registry access before a
-Cairn tool runs. A startup investigation
-observed that work but did not reproduce an earlier timeout; dependency activity
-alone does not identify the cause of a stalled tool call.
+OpenCode initializes its `@opencode-ai/plugin` SDK dependencies in its
+configuration directories during startup, so a fresh environment can perform
+registry access before a Cairn tool runs.
 
 ## Scope and behavior
 
-Search accepts [`available_tokens`](search-room.md) to lower its input room for
-one call beneath the configured `tokens` ceiling. Omission keeps the configured
-default. This is actual free input-context room, not the model window size.
+Search accepts [`available_tokens`](search-room.md) to set input room for
+one call up to the configured `max_tokens` ceiling (default 160,000, configurable
+up to 1,000,000). Omission keeps the configured `tokens` default (16,000). This
+is actual free input-context room, not the model window size.
 
 Use optional `memory_budget_bytes` for a smaller memory allowance without
 reducing the input room used by optional-memory policy. It must be an integer
@@ -157,6 +159,15 @@ explicit reserve on the same request UUID conflicts. A retry does not replenish
 an already spent receipt; its returned remaining balance can be below the
 original reserve. Unsupported CLI/API options refuse; the adapter does not
 silently retry without them.
+
+`cairn_search` and `cairn_prepare_note` also accept optional
+`inspection_policy` (`"first-fitting-whole/1"` with the 24,000-byte expansion
+ceiling, or `"first-fitting-whole/2"` using the full declared
+`memory_budget_bytes` room). Supplying `inspection_policy` requires
+`memory_budget_bytes` and excludes `min_pull_bytes`. `cairn_search` also
+accepts `advisory_conflicts: true` to opt in to qualified competing advisory
+positions (all positions must be eligible together; pulling a marked position
+returns all competing positions under the shared budget).
 
 The adapter checks the UTF-8 size of its final serialized result, including
 `query_entities` and JSON escaping, against the effective allowance. With an
@@ -248,9 +259,6 @@ search request UUID; retained pulls keep their original receipt scope and still
 recheck eligibility. Capture continues to use its explicitly supplied scope,
 with ordinary `remember` defaulting to repository-wide notes.
 
-Update the CLI and bundled adapter to expose these settings. Existing API and
-database versions support them.
-
 ### Read selected sources
 
 Search returns full mandatory `selected` context and an ordered index. Pass each
@@ -273,12 +281,11 @@ If the result contains `browse.next_offset`, call `cairn_search` again with
 `{"browse": true, "offset": N}` using that value. Keep the same session and
 context. Every page repeats required instructions, and each page/pull consumes
 context in addition to prior calls. Pages read current state; edits and captures
-may shift positions. Update both the API service and CLI for paged browsing.
+may shift positions.
 
 For ranked continuation, start with `{"query":"relevant words","offset":0}`.
 Repeat with `page.next_offset`, preserving query, semantic mode, kinds, scope and
-context. Omit `offset` to keep unpaged behavior. Update the API, CLI and installed
-adapter together. Each page has its own budget and current-state ordering;
+context. Omit `offset` to keep unpaged behavior. Each page has its own budget and current-state ordering;
 restart if notes or semantic availability change. See the
 [complete paging contract](index-and-pull.md#agent-commands-without-request-json).
 
@@ -287,7 +294,7 @@ the [optional local semantic backend](semantic-discovery.md). Inspect
 `discovery.state`; unavailable scoring produces labelled lexical fallback.
 Similarity does not prove the note answers the question. Pull and verify the
 source. Semantic search cannot accompany browsing, and ordinary queries remain
-lexical. Update the API, CLI and adapter together to use this argument.
+lexical.
 
 Capture saves selected knowledge as ordinary A testimony. Optional `scope` is
 `repository` (default), `task`, or `run`, with the same [applicability choices](mcp.md#choose-capture-scope)
@@ -296,8 +303,7 @@ as MCP. Task/run capture uses the adapter's current search labels: configured
 Task capture spans runs of that task; run capture fixes both labels. Repository
 capture remains independent of session labels. Search context and pins are not
 inherited. Repeat the choice and effective scope for retries; changed stored
-scope under the same request UUID refuses. Update the bundled adapter to expose
-this argument; existing API/database versions suffice.
+scope under the same request UUID refuses.
 `kind` defaults to `note`; omitted `shareable` keeps the note local. Writes return
 only IDs, version and retry ID. For a text-only correction, edit accepts `body`, the pulled record ID and
 expected version, and a new request UUID. Stored draft metadata is preserved.
@@ -329,8 +335,18 @@ left unset in those settings for one call. Conflicting configured values refuse
 before retrieval. Tool arguments use `binding_id` and `capability_id`; the settings
 file keeps its existing `binding` and `capability` keys.
 
-`tokens` defaults to 32,000, with the same 256–1,000,000 range as MCP. The adapter
-uses the conservative UTF-8 byte bound and refuses oversized results rather than
+`tokens` defaults to 16,000 (range 256–1,000,000) and `max_tokens` defaults to
+160,000 (range `tokens`–1,000,000) as the ceiling for `available_tokens` and
+`cairn_pull` output. `output_max_bytes` defaults to 12,000 (range 0–1,000,000,
+where `0` is unbounded) for non-strict tool output (`cairn_assessments`,
+`cairn_pull_evidence`) and CLI error details. Set
+`CAIRN_UNBOUNDED_TOOL_OUTPUT=1` (`true`/`yes`) to disable output bounding,
+`CAIRN_OPENCODE_OUTPUT_MAX_BYTES` or `CAIRN_TOOL_OUTPUT_MAX_BYTES` to override
+`output_max_bytes`, and `CAIRN_TOOL_OUTPUT_DIR` (absolute path; defaults to
+`$XDG_STATE_HOME/cairn/tool-output` or `~/.local/share/cairn/tool-output`) to
+choose where oversized outputs are atomically spooled with mode `0600` alongside
+a bounded excerpt (`full_output_path`). The adapter
+uses the conservative UTF-8 byte bound and refuses oversized strict results rather than
 returning a partial body. A refused result can follow a committed write or pull;
 reuse the original request ID. OpenCode applies its own result truncation and
 task budgets separately. Each CLI child has a 30-second timeout and receives the
@@ -354,7 +370,9 @@ and permission/repository refusals, including malformed capture arguments. Remov
 ordinary memory records and the existing MCP/CLI alternatives.
 
 `cairn_pull` also accepts `span: {offset: 0, length: 4096}` for a partial A/B
-note. An index entry's `summary_span` can be copied into `span` to read the
+note, plus optional `opening_bytes` (0–768, requires `span`; 0 or omission uses
+the receipt policy) to override the exact same-source `source_opening` prefix
+length. An index entry's `summary_span` can be copied into `span` to read the
 exact preview source bytes, excluding synthetic omission markers. Its text,
 byte range and full/selected hashes appear in `span`, while
 `selection.record.body` is empty. Instructions require a whole pull. Use a new
@@ -367,7 +385,6 @@ for byte ranges of larger captured sources. Keep `expected_sha256` bound to the
 full object and use a new request UUID for each range. Selected bytes and their
 checksum appear separately in `span`; see the
 [evidence expansion contract](index-and-pull.md#index-and-expansion-contract).
-Update the API, CLI and installed adapter together before using this option.
 
 To check the separate normal-session argument path on OpenCode 1.18.21:
 
@@ -389,13 +406,12 @@ A changed upstream result requires review after a harness upgrade.
 direction. It also works with lexical or semantic queries. Required instructions
 always apply, and labels confer no authority. Keep the same kinds when following
 `browse.next_offset`. See [index and pull](index-and-pull.md) for the full contract.
-Update the API, CLI and bundled adapter together before using this argument.
 
 `cairn_edit` also accepts `evidence_citations` instead of `body` or `draft` to
 replace an ordinary note's captured source references. An explicit empty list
 clears the current references; text edits preserve them. The note remains A
 testimony. See [ordinary source citations](evidence-citations.md#ordinary-notes)
-for exact digests, optional passages and upgrade requirements.
+for exact digests and optional passages.
 
 Known failure signatures can also find reviewed lessons without shared query
 vocabulary. See [failure signature search](failure-signature-search.md) for the

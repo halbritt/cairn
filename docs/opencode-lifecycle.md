@@ -4,9 +4,7 @@ The optional native plugin uses Cairn's shared lifecycle engine for selective
 retrieval, separate durable notes, named workstreams and unchanged-capture
 suppression. Install it beside the existing native Cairn tools by staging a
 lifecycle generation and publishing its OpenCode plugin rows; see
-[lifecycle staging](operator/lifecycle-staging.md). The direct installer `scripts/install-opencode-hooks.py`, which
-copied the Python engine into `~/.local/share/cairn/opencode-hooks`, was
-retired in CAIRN-311. Unbound OpenCode memory runs the checked Go launcher.
+[lifecycle staging](operator/lifecycle-staging.md). Unbound OpenCode memory runs the checked Go launcher.
 Bound OpenCode memory has no Go route, so a generation that selects it is
 `/1` and runs the retained Python caller. The selector uses installed Claude
 with its existing provider credentials. This does not switch OpenCode's task
@@ -26,7 +24,8 @@ messages or adding memory to auxiliary title requests. Each new user message
 triggers selective search. A bounded set of memory blocks remains in subsequent
 request copies, so tool continuations retain context without accumulating copies.
 Combined memory context is at most 12,000 UTF-8 bytes per request. Replaced versions
-and evicted blocks become eligible for fresh retrieval. At most 128 top-level sessions
+and evicted blocks (including blocks whose message IDs are no longer in the
+request) become eligible for fresh retrieval. At most 128 top-level sessions
 are tracked per process; child sessions do not trigger automatic memory.
 
 Successful read/edit/write paths and diagnostic identifiers from failed tools
@@ -37,15 +36,17 @@ not acquire memory; subsequent task requests can retrieve it again.
 `session.idle` queues selected capture at turn completion. Disposal waits for
 queued capture to finish. Each session serializes memory operations. Capture reads
 up to 64 recent host messages, omits tool/reasoning/synthetic/compaction-summary
-content, and passes bounded dialogue directly to the Python process without a
-transcript file. The selector and save criteria are shared with
+content, bounds serialized dialogue to 24,000 UTF-8 bytes, and passes it directly
+over stdin without a transcript file. Hook subprocesses enforce a 150-second
+(150,000 ms) timeout and a 1 MiB output buffer (`maxBuffer`). The selector and save criteria are shared with
 [Claude lifecycle memory](claude-lifecycle.md). Completed selection, including
 null, suppresses duplicate extraction for unchanged dialogue. A normal idle turn
 can incur a separate model call; an abrupt kill can still lose a checkpoint.
 
-Set `CAIRN_LIFECYCLE_DISABLED=1` for one launch, or create `.cairn-no-memory` in the
-working directory, the project directory or any directory above them, to disable
-reads and capture. To uninstall, remove
+Set `CAIRN_LIFECYCLE_DISABLED=1` for one launch, or create `.cairn-no-memory` to
+disable reads and capture: the plugin skips invocation when `.cairn-no-memory` is
+in the working directory or worktree root, while the lifecycle engine walks
+ancestor directories above them. To uninstall, remove
 only `plugins/cairn-lifecycle.ts` and restart OpenCode. Memory-service and selector
 failures report a labelled warning; use explicit native tools when needed.
 

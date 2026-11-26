@@ -110,9 +110,9 @@ Codex now performs edits through its generic `exec` tool instead of
 Quoted identifiers and task terms still guide retrieval.
 
 Checkpoint selection uses the same Claude Code selector as the Claude,
-OpenCode and Hermes adapters. The installer defaults its model to
-`claude-sonnet-5`, and each selection runs one isolated `claude --print` call
-with no ordinary tools. Ambient semantic recall can make separate preview and
+OpenCode and Hermes adapters. Each selection uses the staged configuration's
+configured model (or the Claude CLI default when omitted) and runs one
+isolated `claude --print` call with no ordinary tools. Ambient semantic recall can make separate preview and
 body selector calls through the shared engine. The opt-in
 [`--recall-mode agent_tools` path](claude-lifecycle.md#optional-recall-through-the-task-agent)
 delegates optional inspection to the current task agent without those calls;
@@ -180,9 +180,7 @@ directory across resumes. The identity contract is present in the
 ## Install
 
 Install these hooks by staging a lifecycle generation, publishing its hook
-rows and repeating Codex trust; see [lifecycle staging](operator/lifecycle-staging.md). The direct installer
-`scripts/install-codex-hooks.py`, which copied the Python engine into
-`~/.local/share/cairn/codex-hooks`, was retired in CAIRN-311. New sessions
+rows and repeating Codex trust; see [lifecycle staging](operator/lifecycle-staging.md). New sessions
 load the published definitions; existing conversations need the checks below.
 Put `.cairn-no-memory` in a project (it applies to every directory below it)
 to opt it out, or set `CAIRN_LIFECYCLE_DISABLED=1` for one run.
@@ -239,14 +237,8 @@ The lifecycle engine (`integrations/lifecycle/memory.py`, used by every harness)
 
 Unit tests in `scripts/test_codex_lifecycle.py` cover rollout filtering,
 bounding, the Stop threshold (including a session far larger than the excerpt
-window), retry after a failed capture, continuation handling, task scope and
-installer idempotence. On 2026-09-23, Codex 0.156.1 accepted and trusted all
-four hooks in an isolated `CODEX_HOME`. A live session in the Cairn repository
-received injected "Cairn lifecycle memory" context at `UserPromptSubmit`. The
-background Stop hook then ran one selection after the sixth new message, which
-correctly saved nothing from a trivial exchange, and later short turns started
-no further selection. That run exercised the mechanics. Whether the retrieved
-memory improves Codex's work remains unmeasured.
+window), retry after a failed capture, continuation handling, and task scope.
+Whether the retrieved memory improves Codex's work remains unmeasured.
 
 ## Idle wake needs the launcher
 

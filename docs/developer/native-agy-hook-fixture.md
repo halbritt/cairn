@@ -9,12 +9,7 @@ lifecycle memory hook.
 
 These native observations use a frozen Agy 1.5.7 executable, SHA-256
 `5df525a2d6908989c57b897723caea66e00d7c4d2e24411f91ad306989574642`.
-Cases 1 to 33 were first accepted on Agy 1.5.6, SHA-256
-`7e5bbdcbf689354300500ba22d55c2ff1497e185ae18407325d480577a87db5d`.
-On 2026-11-12 the coordinator observed those unchanged 33 cases passing in two
-runs on frozen 1.5.7 at `67f6877a`. Those observations do not reproduce the
-earlier 1.5.6 runs. The full fixture below includes the three file-type cases
-on the selected 1.5.7 image.
+All 36 fixture cases run against this pinned 1.5.7 image.
 
 The real R-02 installer and R-04 renderer produce immutable selections A and B.
 The fixture copies their exact bytes to the target project's
@@ -51,12 +46,15 @@ between the layers or a general customization precedence rule.
 For installation, this means that the same Cairn hook in both layers runs and
 delivers context twice. The installer must select one active layer for a given
 Cairn hook and detect a conflicting copy in the other before writing. See
-[native presence installation](../agent-sessions.md#native-presence-adapters)
-and the [R-06 install requirements](../plans/hybrid-runtime-contracts/release.md#required-install-and-transition-behavior).
-The current installer does not implement cross-layer conflict detection: for
-Agy hook configuration, it reads and writes only the given `--settings` file.
-This native dispatch evidence does not qualify that future protection or the
-full cutover and rollback procedure.
+[native presence installation](../agent-sessions.md#native-presence-adapters),
+the [R-06 install requirements](../plans/hybrid-runtime-contracts/release.md#required-install-and-transition-behavior),
+and [checked Agy layer crash recovery](agy-layer-recovery.md).
+Lower-level `stage_lifecycle_hooks.py stage` / `publish-settings` targets only a
+single `--settings` file, whereas `stage_lifecycle_hooks.py publish-agy`
+(`cairn-stage-lifecycle agy-layer`) implements cross-layer conflict detection
+across `--account-home` and `--workspace`, refusing if the unselected layer
+contains Cairn dispatch or unknown hooks. This native dispatch fixture tests
+client aggregation and receipt refusal separately from that layer publisher.
 
 Each active hook file is pinned to the unmodified staged bytes and must have
 been opened by the native process. The trace must contain exactly the selected
@@ -243,6 +241,6 @@ Cross-account isolation remains unobserved, as do
 non-fully-idle Stop,
 Stop continuation, and child/subagent conversations. Namespace-local process
 evidence does not qualify the host presence watcher, host PID association or
-Herdr wake. This is not a code-image upgrade, real store/authentication test,
-complete activation-unit barrier, full R-04/R-05/R-06 qualification or ticket
-closure.
+Herdr wake. This fixture covers disposable native Agy hook dispatch and receipt
+refusal only; code-image upgrades, real store/authentication tests, and full
+activation-unit barriers are separate.

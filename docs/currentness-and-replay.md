@@ -79,12 +79,9 @@ browse, kind-filtered and semantic-discovery retrieval. Requests without a phase
 keep their previous schema and retry representation. The optional CBOR field is
 omitted when empty, preserving old receipt seals and historical recompilation.
 
-Upgrade every database reader before creating phase-pinned records. Older direct
-database readers ignore the new JSON constraint and are unsuitable for those
-records; replacing only the CLI while leaving an old API running is insufficient.
-Older binaries also cannot execute or recompile a new phase-bearing receipt.
-No database migration is needed, but reverting a reader alone after writing new
-constraints is unsupported.
+Direct database readers and API binaries must support `cairn.semantic/10` and
+`task_phase` constraints to evaluate, execute, or recompile phase-pinned
+records and receipts.
 
 Legacy unquoted lexical retrievals use `lexical-scope-recency/4`, which also filters fixed question
 framing words from lexical matches. New ordinary context index queries use the
@@ -129,7 +126,6 @@ before capture. Omit the option to save unpinned guidance.
 Retry with the same request UUID and identical pins and body. Changing pins under
 the same UUID is an idempotency conflict. Ordinary edits preserve pins, including
 body-only revisions; a differently applicable note requires a new selected capture.
-Phase-pinned records require the reader upgrade described above.
 
 ## Recompile a retained read set
 
@@ -181,8 +177,7 @@ Inspection returns no expansion handles or renewed credits. Query text remains
 transient, and the operation creates no new receipt, delivery or outcome row.
 
 The API's `run-package` operation still checks eligibility for current execution;
-historical inspection does not make an obsolete package launchable. Older API builds
-without this operation return `NOT_FOUND`; update CLI/API together.
+historical inspection does not make an obsolete package launchable.
 
 Explanation version 2 retains body digests and the evidence/authority/attribution
 facts needed for eligible candidates. This avoids duplicating their bodies while
@@ -199,8 +194,7 @@ returns the saved bytes and seal.
 
 This implements historical recompilation for read sets captured by this compiler.
 It does not invent the missing past observation history of older receipts or
-establish measured usefulness on real incidents. Real-history evaluation must
-separately distinguish original-time availability from later recurrence scenarios.
+establish measured usefulness on real incidents.
 
 ## Inspect retained candidate decisions
 

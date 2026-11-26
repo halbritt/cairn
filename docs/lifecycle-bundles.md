@@ -33,9 +33,10 @@ The bundle's identity covers its complete file set. It is separate from the
 identify the memory engine's own source bytes. The caller-origin wire shape is
 unchanged.
 
-Bound inbox profiles use `cairn.inbox-recall-binding/2`, which requires the
-complete bundle. An older reader must reject that contract instead of accepting a partial
-set of pins. Validation retains the bytes used for execution, including imported
+Current Go-checked staged bound inbox profiles use `cairn.inbox-recall-binding/3`,
+while legacy Python bundle parity retains `cairn.inbox-recall-binding/2`; both
+require the complete bundle. An older reader must reject an unsupported
+contract instead of accepting a partial set of pins. Validation retains the bytes used for execution, including imported
 helpers; a later file replacement must not silently select different code.
 Modules loaded for one bundle must not come from another bundle's process-wide
 import cache.

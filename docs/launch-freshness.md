@@ -38,7 +38,3 @@ execution/retrieval roles and single execution per observed host attempt. Only
 explicit database serialization/deadlock aborts are retried internally, with a
 bound. An ambiguous network or commit response is not retried into a launch;
 use [run status](run-status.md) for inspection.
-
-This check supports delayed native input delivery, but does not itself implement
-Striatum's observation producer, staged receipt consumption or host correspondence.
-Those requirements remain in the [native context direction](native-striatum-context.md).

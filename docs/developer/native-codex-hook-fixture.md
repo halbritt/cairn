@@ -26,9 +26,7 @@ selected native client defers that callback until its first turn.
 
 For unbound selections the current renderer uses checked Go `memory` for recall
 with H13 and `memory-capture` for PreCompact and asynchronous Stop with H150.
-The retained twelve-case native observations used Python memory and do not
-qualify these new routes. Coordination reaches the receipt-checked private
-Go image. Receipt refusals must leave Cairn API calls
+Coordination reaches the receipt-checked private Go image. Receipt refusals must leave Cairn API calls
 and lifecycle state unchanged. A native turn can complete after a hook refuses,
 so model completion and child-process refusal are checked separately.
 

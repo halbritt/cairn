@@ -140,40 +140,6 @@ This schema does not introduce a Hermes hook CLI, change provider selectors,
 or add Hermes to the hook-settings stager. Watcher policy and issued installed
 helper/context commands are separate contracts and are not rewritten here.
 
-## Current66 installed-data evidence
-
-Root1496's `20a933da/v1` selection accepts8 installed `/2` retained packages
-paired with8 disabled `/3` forward generations:8 cohorts/10 distinct members
-on3 hosts, with all10 actual associations reviewed. Shared Codex remains one
-cohort/three proofs; proximal Agy and Archon Codex memory are genuinely absent.
-The [current packet selection](../verification/r07-execution-packet-draft.md#current-66ca-staged-data-selection)
-records counts, actual outer-generation pin locator and exact custody limits.
-The raw17-file installed closures, original config/native argv and facade/delegate
-bytes were preserved. Forward18 uses the maintained guarded-source transform
-and aliases, not raw-source equality. Raw sidecar SHA remains distinct from its
-decoded map digest. These data readbacks do not execute a retained runtime.
-
-Talos's exact two source-parent0755-to0700 changes and recorded, unexecuted
-same-inode0755 inverse leave the current0700 source/data contract intact;
-bindings0755 is unchanged. Broader0755 source-parent support is not implemented.
-Actual staged pins do not fill strict operator plans, owner/callback/Scope or
-future runtime captures. BOTH selected Stage 2a, Go `/3` lifecycle selectors on
-proximal → archon → talos, leaving semantic exactly on its current retained
-Python route and keeping the earlier staged/verified Python semantic reverse/
-S04R closure intact. Stage 2b remains a separately admitted later Rust switch;
-all three qualified cases, Root raw-row/count review, sole1415 adequacy, any
-helper redesign with mise tests/review/landing and the binding plan remain
-required, off the 2a critical path. Existing host Rust material stays unused,
-not deleted; its failed-stream/unknown-cause limitations remain unchanged.
-The [selected packet order](../verification/r07-execution-packet-draft.md#selected-stage-2a-and-2b-order-with-rust-parked)
-keeps two observation records: each admitted 2a lifecycle lane needs >=24h
-since its last relevant change; 2b resets semantic and dependent lifecycle lanes
-for fresh >=24h and a full proximal semantic rebuild. R09/Python retirement is
-not selected and defaults to waiting for 2a, 2b and separately admitted Go-watcher
-observations. If Rust is still parked at the 2a window end, take current facts
-to BOTH. Aggregate Stage1, final1415 adequacy and Stage2 remain open; no clock
-starts from these data or this packet-order selection.
-
 ## Interim watcher and required Go adoption
 
 The initial R07 hook/binding cutover conditionally retains the current raw
@@ -193,22 +159,10 @@ forward exchange and restart on `/3`, stopped reverse and restart on the
 original selection, owner wake and settlement, and refusal to exchange while
 the watcher holds the lock. A held-lock refusal cannot be converted into a
 positive by weakening the fence or forcing the exchange. Any named watcher
-contract failure stops qualification and returns to both gatekeepers for a
-Go-selector decision before further implementation or widening. A partial run
-cannot qualify this boundary.
+contract failure stops the check; a partial run cannot qualify this boundary.
 
-Go watcher adoption is a required later step with its own admission, after
-the initial lifecycle cutover. It must select the supported Go unit, retain
-byte-exact reverse and the same lock identity, and preserve mixed-unit
-membership. The affected lane must then complete at least 24 hours of R08
-observation on the Go watcher before R08 completion and R09 removal of Python
-lifecycle code. Go adoption cannot be omitted or silently deferred into R09.
-This contract starts no R08 clock and admits no host operation.
-
-The presence90 drop-in's raw custody under the `0775` user-systemd/service.d
-parents remains OPEN and a hard exclusion. Existing unit/show observations do
-not replace the missing raw fragment/drop-in bytes and metadata. This package
-admits neither an alternative read nor a parent-mode repair.
+Go watcher adoption requires selecting the supported Go unit while preserving
+byte-exact reverse, the same lock identity, and mixed-unit membership.
 
 ## Issued inbox commands and final-image coverage
 
@@ -228,24 +182,6 @@ Go and Python `/3` frontends for bound, unbound-with-memory and coordination-onl
 profiles. They assert journal commitments, exact API arguments/results, separate
 neighbor delivery, and refusals before store effects. This proves frontend
 behavior with disposable protocol fixtures, not final-image roster adoption.
-
-The earlier 5275 full11 rehearsal did **not** execute issued inbox commands for
-its three unbound members. Its pinned driver
-`scripts/check_r06_agy_native_unit.py` at `5275bd3d` runs the primary scripted
-Agy hook sequence and includes two additional unbound profiles in producer/census
-inputs. The retained `actual-api-bridge-calls.json` contains 31 calls: registration,
-heartbeat/context, wake-attempts, event-watch and session-inbox-control; no claim,
-ack, completion, response publication or drain. The whole-case PASS therefore
-did not cover issued commands. The later current66 gate is now accepted as a **finite issued-command fixture**:
-Root's merged96 selects79 old+17 new keys,82 positive cases and14 negative
-groups/64 unique refusals. All80 old records and both c045 records remain in97
-retained records; the first24 are not added. Unsupported compact/batch remains
-valid no-emission/refusal coverage, not manufactured positives. Original90s
-native grants and900s ordinary drain remain unchanged. Claude channel state
-is synthetic. Old negative SQL equality remains collector testimony without
-raw snapshots; the new16 refusal snapshot pairs are retained. This closes the
-named finite fixture gate, not native adoption or full-design qualification.
-See the [R07 gate](../verification/r07-bootstrap-reverse.md#final-image-issued-inbox-gate).
 
 ```sh
 mise run test:unit -- scripts/test_issued_inbox_compatibility.py -v

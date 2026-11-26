@@ -16,10 +16,11 @@ network, no production sockets and no host process view. The ordinary Go
 
 The caller supplies an installed Rust/C toolchain, an offline Cargo source and
 all five model files and four native libraries. The build never downloads a
-model or library. For example, inside the wrapper:
+model or library. For example, inside the isolated wrapper (using a non-existent
+placeholder output path):
 
 ```sh
-make semantic-rust-build SEMANTIC_BUILD_DIR=/tmp/semantic-build
+make semantic-rust-build SEMANTIC_BUILD_DIR=/path/to/semantic-build
 ```
 
 The output directory must not exist. The helper uses Cargo `--locked --offline
@@ -48,10 +49,10 @@ independently checks their hashes. It does not infer trusted provenance from a
 filename or version label.
 
 ```sh
-mkdir -m 700 /tmp/semantic-stage
+mkdir -m 700 /path/to/semantic-stage
 bash scripts/install-semantic.sh --stage-rust \
-  --destination /tmp/semantic-stage --source-root /work \
-  --build /tmp/semantic-build --model-dir /opt/model \
+  --destination /path/to/semantic-stage --source-root /work \
+  --build /path/to/semantic-build --model-dir /opt/model \
   --ort /opt/runtime/ort/libonnxruntime.so.1.29.0 \
   --openblas /opt/runtime/numpy.libs/libscipy_openblas64_-32a4b2a6.so \
   --gfortran /opt/runtime/numpy.libs/libgfortran-040039e1-0352e75f.so.5.0.0 \
@@ -238,44 +239,3 @@ nonempty inventory must cover every managed active/restartable semantic host;
 the acceptance matrix requires `6*N` positive runs for `N >= 1` supported CPU
 classes, plus named negative cases and a live-staging/respawn fixture per class.
 Unknown effective CPU/library classes and unreachable hosts remain gaps.
-
-## Campaign status on 2026-11-11
-
-### Qualification decision on 2026-11-12
-
-The owner-directed reset `cb71136b-cd84-4fc2-b84f-eb247b975548/v1` selects
-`x86_64-unknown-linux-gnu` as the campaign target. The owner's subsequent
-confirmation `9d51dbc8-7b1b-45b5-ae57-e9c34ddecedc/v1` fixes the managed
-S-04/S-04R/R-07 rollout scope to Proximal (API, PostgreSQL and Rust semantic
-workers), Archon and Talos. A new host-roster decision is not a prerequisite
-for finishing the implementation. Live service or hook cutover still requires
-Release's reviewed R-06 candidate and the owner's R-07 grant.
-
-S-04 / CAIRN-327 accepts the retained target qualification: immutable packaging
-at `1945d6c4` (review `0d48fa5e/v1`) and the native-runtime fixture at
-`362feb80` (exact candidate `52294c07`, review `19a34503/v1`). Its retained
-`proof-05/native-report.json` has 23 passing cases: six direct/Go mode routes,
-15 library/asset/digest refusals, Python-absence and observer controls. Each
-positive route matches the retained reply and observes zero worker connect
-attempts and telemetry-store mutations. The existing package tests also cover
-staging, idle release and respawn without changing the selected launcher.
-Those reviewed implementation bytes remain on trunk; no duplicate model run
-is needed to declare this evidence accepted for the selected target.
-
-This qualifies the tested package and ABI inputs on the recorded x86_64 host.
-It is not an observation of installation on every roster machine. Release must
-verify destination ABI prerequisites and selected bytes before an authorized
-installation. CPU/FENV history, capacity and maximum-document timing remain
-reported limits rather than an open-ended new qualification campaign. Installed
-cutover and HC-02 still require the owner's R-07 grant.
-
-Semantic lead accepted S-02 / CAIRN-325 and S-03 / CAIRN-326 under the current
-owner-amended implementation criteria. S-03 landed through
-`f2c7253060c004c1e21d6601d49b95b607180166`; author result
-`952308bd-a9dd-480e-964f-8dc86af5a98e/1` and SAME1275 review
-`67404226-5cfc-4f3a-87c8-5347de33da6a/1` include the fulfilled documentation
-condition. This closes those implementation slices; it does not accept S-04,
-all-host qualification, runtime/production activation, controller transitions,
-retirement, R1-draft work or the outstanding CPU/FENV obligations. Historical
-failed attempts remain preserved. The retained R-01 characterization is partial
-Proximal evidence, not an authoritative complete host/ABI/CPU roster.

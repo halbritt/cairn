@@ -46,7 +46,7 @@ When `compatibility` (`InvocationContext`) is active on a bound Coordination
    control string. No Python callables (`revalidate`) cross the boundary.
 4. **Bounded stdout reply (`<= 256 KiB`, `exit 0`, empty `stderr`):**
    - Success: `{"ok": true, "message": "...", "trace_report"?: {...}, "meter_report"?: {...}}`
-   - Refusal: `{"ok": false, "error": {"class": "...", "message": "...", "code"?: "...", "errno"?: 11, "cairn_inbox_refusal": {"refusal_stage": "...", "refusal_reason": "...", ...}, "cairn_recall_failure"?: {...}}, "trace_report"?: {...}, "meter_report"?: {...}}`
+   - Refusal: `{"ok": false, "error": {"class": "...", "message": "...", "code"?: "...", "errno"?: 11, "reason"?: "...", "cairn_inbox_refusal": {"refusal_stage": "...", "refusal_reason": "...", ...}, "cairn_recall_failure"?: {...}}, "trace_report"?: {...}, "meter_report"?: {...}}`
    - Any non-zero exit code, non-empty `stderr`, oversized stdout, or malformed
      JSON frame raises `subprocess.SubprocessError('invalid inbox recall reply')`.
 
@@ -54,10 +54,12 @@ When `compatibility` (`InvocationContext`) is active on a bound Coordination
 
 On `ok: false` (or `subprocess.SubprocessError` / `TimeoutError`),
 `inbox_recall_output` raises the reconstructed exception (`ValueError`,
-`KeyError`, `TypeError`, `OSError` / `BlockingIOError`, `JSONDecodeError`,
-`UnicodeDecodeError`, `UnicodeEncodeError`, `CoordinationError(code, message)`,
-or `SubprocessError`) with `cairn_inbox_refusal` and optional
-`cairn_recall_failure` attached.
+`KeyError`, `TypeError`, `AttributeError`, `OSError` / `FileNotFoundError` /
+`PermissionError` / `BlockingIOError` / `FileExistsError` / `NotADirectoryError` /
+`IsADirectoryError` / `TimeoutError`, `JSONDecodeError`, `UnicodeDecodeError`,
+`UnicodeEncodeError`, `CoordinationError(code, message)`, or `SubprocessError`)
+with `cairn_inbox_refusal` and optional `cairn_recall_failure` (plus optional
+`code` / `reason` attributes when present) attached.
 
 Still inside `with session_lock(path):`, `coordination._handle` runs:
 1. `_grant_ledger.annotate_inbox_refusal(exc, refusal_stage)`

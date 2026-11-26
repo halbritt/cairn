@@ -67,24 +67,12 @@ Replace `/home/USER` with your absolute home directory. JSON does not expand
 
 ## Installation status
 
-The settings installer `scripts/install-recall-dispatch.py` was retired in
-CAIRN-311. It wrapped the direct Python engine command that the retired Claude
-memory-hook installer wrote. Staged generations publish checked Go launchers,
-which this dispatcher cannot wrap. `recall_dispatch.py` stays in the source
-tree only as one of the 17 `/1` closure members
-(`lifecycle_bundle.py:MODULE_FILES`); removing it would change that reviewed
-inventory. No installed hook runs it.
+No settings installer configures this dispatcher. Staged generations publish
+checked Go launchers, which this dispatcher cannot wrap, so no installed hook
+runs it. `recall_dispatch.py` remains in `lifecycle_bundle.py:MODULE_FILES`
+as one of the 17 `/1` closure members.
 
 ## Existing Codex sessions
-
-On 2026-11-07 (UTC), Codex 0.166.0's guarded
-[hook trust refresh](codex-lifecycle.md#existing-conversations) was verified in
-an existing conversation: the reviewed definitions became trusted, a natural
-turn end updated Cairn to idle, and pending inbox work automatically woke the
-same conversation. A changed recall dispatcher still requires its own native
-comparison proving that the selected candidate runs and other paths preserve
-the original behavior. A separate helper app-server's `hooks/list` is not that
-proof. Do not restart or replace a conversation solely to make a comparison run.
 
 A bounded deployment may retain the original command pathname and
 replace only that script with a small launcher. Preserve the original engine's
@@ -106,16 +94,17 @@ engine only if the live launcher still has the expected hash, so concurrent
 changes are not overwritten. This deployment does not modify capture logic or
 restore the database.
 
-The current engine's overall recall deadline is eleven seconds; its individual
-search timeout is at most five seconds. A five-second whole-hook target is a
-measurement criterion, not a configured deadline in this dispatcher.
+The lifecycle engine's overall recall deadline is eleven seconds for `ambient`
+recall and five seconds for `agent_tools` recall, with individual search calls
+capped at five seconds. A five-second whole-hook target is a measurement
+criterion, not a configured deadline in this dispatcher.
 
 ## Rollback
 
 - **Stop routing immediately, settings untouched:** delete or rename the route
   file. Every session then gets the original command on its next event.
 - **Remove the wrapper:** restore the exact original command in the two recall
-  hooks by hand. The rollback installer was retired with the install path.
+  hooks by hand.
 
 ## Residual risks
 

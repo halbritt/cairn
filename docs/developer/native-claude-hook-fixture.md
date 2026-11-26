@@ -12,12 +12,10 @@ SessionEnd with H150. Select `--profile bound-agent-tools` to use the existing
 enabled binding with `agent_tools` recall: SessionStart and UserPromptSubmit
 select checked Go `memory` with H13 and the same eight flags/stdin. The producer
 also selects Go for bound `agent_tools` PostToolUse/PostToolUseFailure; other
-bound tool modes retain Python. The fixture now preserves the original eleven
-start/prompt cases and adds two actual native Read cases per profile: one
-successful read and one missing-file failure. Earlier eleven-case observations
-do not qualify these new tool cases. The default `unbound` profile stays unbound.
-Historical eleven-case observations used Python memory; current route claims
-require a fresh run of the selected profile. Coordination reaches the receipt-checked
+bound tool modes retain Python. The fixture covers eleven start/prompt cases
+and two native Read cases per profile (`unbound` or `bound-agent-tools`): one
+successful read and one missing-file failure. The default profile is `unbound`.
+Coordination reaches the receipt-checked
 private Go image. `strace` binds each
 startup, prompt and tool hook's launcher to the program and literal argv it executes in the same PID,
 and checks that process's exit status. Native settings and hook-listing
@@ -62,8 +60,7 @@ A. This establishes a process restart with conversation continuity for the
 selected client version. In-process settings patches, filesystem watchers,
 interactive trust and MCP reconnection remain outside this check. The Go image
 is unchanged between selections; this is not a code-image upgrade or a full
-watcher-unit drain and activation proof. Full R-04/R-06 and production
-qualification remain separate.
+watcher-unit drain and activation proof.
 
 Select an executable and its expected SHA-256, and create an evidence directory
 outside the checkout. For example, with those paths in task-specific variables:

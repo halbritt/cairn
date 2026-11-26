@@ -70,17 +70,14 @@ Timeout and Python interruption clean up this invocation's process group before
 returning or propagating the interruption. Abrupt host death is not a clean
 shutdown guarantee, and this adds no public Store cancellation attestation.
 
-The admitted Foundation source `75e08273e37c086ed1fdce3a8c5ecb3ab5ecb4ab`
-adds unbound checked Hermes `PostToolUse` and `PostToolUseFailure` to the H13
-`memory` entry, alongside `SessionStart` and `UserPromptSubmit`. Tool results
-persist bounded file/error hints without API calls. Ambient recall with
-`semantic_fallback: true` uses the actual preview admission and body selection
-pipeline; lexical ambient and `agent_tools` remain separate supported modes.
-`PreCompact` and `SessionEnd` continue to select H150 `memory-capture`.
-The earlier image `38546557d686e77ea5c7abad3693ffe3c91eaddca451b021699481218427ca07`
-refuses the tool and provider-fallback cells. Its refusal tests and first
-qualification packet remain historical controls, separate from positive checks
-of an admitted image. Bare, pre-tool and bound Hermes entries remain unsupported.
+Under R-02/R-03 staging, unbound checked Hermes `PostToolUse` and
+`PostToolUseFailure` use the H13 `memory` entry alongside `SessionStart` and
+`UserPromptSubmit`; tool results persist bounded file/error hints without API
+calls. Ambient recall with `semantic_fallback: true` uses the preview admission
+and body selection pipeline, while lexical ambient and `agent_tools` remain
+separate supported modes. `PreCompact` and `SessionEnd` select H150
+`memory-capture`. Bare, pre-tool and bound Hermes entries are refused as
+unsupported.
 
 The focused fixture checks actual HermesCLI initialization, an unchanged
 cached selection, a fresh CLI loading another generation, and explicit reversal
@@ -101,8 +98,8 @@ paths. `scripts/check_r03_hermes_store.py` adds an owned PostgreSQL/API case usi
 frozen executables: real SDK retrieval and capture, stored note/observation
 effects, fixture-dialogue exclusion and observed service shutdown. Its required
 paths are explicit and its selector remains scripted. Use the installed probe's
-`--positive` mode with the admitted frozen images; the default preserves the
-earlier image's refusal controls. The Store probe's `--recall-mode ambient
+`--positive` mode to qualify admitted tool and provider-fallback rows; the default
+mode exercises baseline refusal controls. The Store probe's `--recall-mode ambient
 --semantic-fallback --positive-tools` case seeds five optional notes to require
 both real preview and body selection, then checks authenticated selected capture,
 deduplication, privacy, tool state and service cleanup. A refusal control never
@@ -201,25 +198,17 @@ request-format checks before recall is claimed for them.
 
 ## Verification
 
-Run focused boundary tests without Hermes:
+Run focused boundary regressions in `scripts/test_hermes_lifecycle.py` without Hermes:
 
 ```sh
 python3 -B -m unittest discover -s scripts -p 'test_*lifecycle.py'
 ```
 
-The native fixture uses Hermes and Claude against scripted model endpoints, a
-fresh PostgreSQL cluster, synthetic Slack events and a captured outbound
-transport. It never sends a real Slack message or uses the operational database:
-
-```sh
-~/.hermes/hermes-agent/venv/bin/python scripts/check_hermes_lifecycle.py \
-  --hermes-root ~/.hermes/hermes-agent --binary ~/.local/bin/cairn \
-  --claude ~/.local/bin/claude --output /tmp/cairn-hermes-native-check
-```
-
-The output directory must not exist. Synthetic transcripts and diagnostics stay
-outside the repository. Passing these mechanics does not measure long-term
-selection quality or task benefit.
+For installed-object and PostgreSQL/API verification against scripted model
+endpoints, run `scripts/check_r03_hermes_installed.py` and
+`scripts/check_r03_hermes_store.py` as described under
+[Receipt-selected memory staging](#receipt-selected-memory-staging). Passing
+these mechanics does not measure long-term selection quality or task benefit.
 
 Hermes enables bounded semantic discovery alongside lexical discovery. A weak
 lexical hit or precise file request does not suppress semantic candidates.

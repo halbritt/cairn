@@ -52,8 +52,8 @@ attempt evidence when reconciling such gaps.
 ## Signal-terminated workers
 
 A worker killed by a signal that the runner did not send is recorded with
-`process_state` `signaled` and the `signal` number, and no `exit_code`. Before
-migration 050 such a worker was recorded as `exited` with the synthetic exit
-code -1. The runner's own timeout and cancellation stay `timeout` and
+`process_state` `signaled` and the `signal` number, and no `exit_code` (legacy
+historical rows recorded `exited` with synthetic exit code `-1`). The runner's
+own timeout and cancellation stay `timeout` and
 `cancelled`. `cairn run` exits with 128 plus the signal number, following the
 shell convention; for example, SIGKILL gives 137.

@@ -107,8 +107,6 @@ Native later searches use their own real session scope; their association with
 an observed attempt is a separate host operation. Naming tools does not attest
 that a particular conversation or model consumed them.
 
-Migration 031 adds nullable reader metadata. Upgrade the API and CLI before using
-this mode. Old API decoders reject the new request field and have no `run-index`
-operation; old expansion readers do not recognize the designation. Ordinary
+The API must support `expansion_reader` and the `run-index` operation. Ordinary
 indexes without a designated reader and existing body execution keep their
-contracts. No semantic format or native tool schema changes are required.
+contracts.

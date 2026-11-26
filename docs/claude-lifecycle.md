@@ -437,10 +437,9 @@ No database or MCP server upgrade is needed.
 ## Install
 
 Install these hooks by staging a lifecycle generation and publishing its hook
-rows; see [lifecycle staging](operator/lifecycle-staging.md). The direct installer `scripts/install-claude-hooks.py`,
-which copied the Python engine into `~/.local/share/cairn/claude-hooks`, was
-retired in CAIRN-311. Staged rows run the checked Go launcher; only the bound
-cells that have no Go route still run the retained Python caller.
+rows; see [lifecycle staging](operator/lifecycle-staging.md). Staged rows run
+the checked Go launcher; only the bound cells that have no Go route still run
+the retained Python caller.
 
 To disable hooks for one launch, set `CAIRN_LIFECYCLE_DISABLED=1`. A
 `.cairn-no-memory` file in the working directory, or in any directory above it, disables both
@@ -541,9 +540,9 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   A completed process is not a valid applicability verdict. Preview and body
   selectors must return the CLI's `structured_output` field. Their prompts permit
   only the schema-generated `StructuredOutput` response tool; ordinary tools
-  and MCP remain disabled. This response tool was verified in Claude Code
-  2.1.285; its name is a CLI compatibility dependency. JSON written as response
-  text is not accepted as a substitute for that field. See the
+  and MCP remain disabled. The `StructuredOutput` tool name is a Claude Code
+  CLI compatibility dependency; JSON written as response text is not accepted
+  as a substitute for that field. See the
   [CLI output contract](https://code.claude.com/docs/en/headless).
   An attempted preview selector failure reports `discovery: verification_unavailable`. Invalid verdicts
   retain the aggregate rejection in `rejected` and a fixed `validation_error`
@@ -555,8 +554,7 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   body selection uses `index` and accepts -1 as a valid negative decision.
   Valid verdicts have no `validation_error`; their applicability remains a separate
   decision. These codes describe failed checks, not why a provider produced them.
-  Session state keeps the latest recall; the existing evaluation
-  observer preserves these fields per invocation. This does not add production
+  Session state keeps the latest recall; this does not add production
   history to `use-report` or establish the cause of a slow provider call. The
   per-prompt recall observation does report these times and selector figures
   (without the validation codes) to `use-report`; it still does not establish a cause.
@@ -576,7 +574,7 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
 - Selection has 35 seconds; individual Cairn commands have 5 seconds. Capture
   hooks have a 150-second host timeout to cover bounded candidate reads and up to four selected writes. Capture hashes the selected dialogue and selector contract before any memory/model call. An unchanged excerpt after a confirmed save or null selection skips extraction entirely. Host compaction summaries, local-command wrappers and duplicate transcript UUIDs do not count as new work. Failed writes leave the digest unchanged so another event can retry. A changed model/selector contract also invalidates the digest. Nested lifecycle hooks and transcript persistence
   are disabled for that call. Temporary working directories are removed on exit.
-- Checkpoints are at most 6,000 body bytes plus their title. Identical selected
+- Checkpoints are at most 4,500 body bytes plus their title. Identical selected
   bodies do not create revisions. Request IDs remain stable for an identical
   selected write; a changed model selection is new intent.
 - Missing services, timeouts, malformed selections and refused writes report a

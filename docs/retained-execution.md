@@ -59,11 +59,6 @@ launch occurs. Eligibility is checked again at the launch claim so a successful
 load does not authorize later stale delivery. Ambiguous claims still require
 [run-status inspection](run-status.md), never automatic execution retries.
 
-This is the Cairn execution component needed by the proposed native bridge.
-Striatum's observation acquisition, admitted ECR input, adapter integration and
-actual host correspondence remain required; this command alone does not prove
-native Striatum delivery.
-
 ## Kind-filtered runs
 
 Fresh `cairn run` and `cairn agent ... run` accept repeated `--kind`, using the
@@ -73,6 +68,3 @@ set with `--kind KIND` flags. Order and duplicate labels do not change intent;
 omitting the filter or supplying a different set returns `INVALID_REQUEST`
 before binding or launching. Retained execution does not recompile to satisfy a
 different filter. Omitted kinds continue to match unfiltered retained packages.
-
-Upgrade the CLI or embedded runner;
-this repair requires no API or schema change.

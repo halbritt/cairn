@@ -54,8 +54,10 @@ The server exposes these tools:
 | Diagnose the connection | `cairn_client_info` |
 
 Use the [tool reference](../reference/mcp-tools.md) for arguments and the
-[MCP contract](../mcp.md) for detailed behavior. Coordination commands are a
-separate CLI/API interface.
+[MCP contract](../mcp.md) for detailed behavior. Opt-in `cairn mcp --messaging`
+also exposes the seven session inbox tools (`cairn_agents`, `cairn_send`,
+`cairn_inbox`, `cairn_ack`, `cairn_complete`, `cairn_renew`, `cairn_event_status`),
+while full coordination remains a separate CLI/API interface.
 
 ## Control context use
 
@@ -69,13 +71,14 @@ it does not automatically read that source. See
 Tool profiles and search presentation are independent settings:
 
 - `--tool-profile compact/1` shortens search and pull tool descriptions.
-- `--tool-profile compact/2` shortens descriptions across all ten tools.
-- `--search-view compact/1` changes the search result presentation.
+- `--tool-profile compact/2` shortens descriptions across all exposed tools (default).
+- `--search-view compact/1` selects compact search result presentation (default; `full` is also supported).
 
 Tool profiles preserve tool names, schemas, and handlers. No fixed percentage
 saving applies to every host or tokenizer. `--tokens` supplies default result
-room; `--max-tokens` caps explicit larger requests. Budget the combined context
-from searches and pulls, not just each call in isolation.
+room (`16000` by default); `--max-tokens` caps explicit larger requests
+(`160000` by default). Budget the combined context from searches and pulls, not
+just each call in isolation.
 
 ## Troubleshoot connection failures
 

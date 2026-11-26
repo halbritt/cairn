@@ -27,8 +27,9 @@ cairn agent --token-file ~/.local/share/cairn/observer.token run \
 Token/socket flags precede `run`; the usual run flags follow it. Defaults and
 carrier behavior match `cairn run`. Process output stays on stdout/stderr; the
 final receipt envelope goes to stderr. A nonzero child exit returns CLI exit 1,
-a timeout 124 and cancellation 130. These are process observations, not task
-acceptance. Use stable task/run IDs from the host and retain the receipt beside
+a timeout 124, cancellation 130, and a signal-terminated child `128 + signal`.
+These are process observations, not task acceptance. Use stable task/run IDs from
+the host and retain the receipt beside
 its own attempt identity. If the host has already recorded that exact attempt,
 use [host attempt linkage](host-attempt-link.md) with `--attempt-id ATTEMPT_UUID`.
 
@@ -43,10 +44,12 @@ wrapper scripts cannot be identified this way: declare `--destination hosted`
 when they forward memory to a hosted provider. Launcher names do not establish
 provider identity. The API profile must also be configured `hosted`. The wrapper compares
 the compiled destination against the declared run destination before launch;
-it cannot turn a local-profile package into hosted input. For OpenCode 1.18.21,
-use `--carrier stdin` to preserve literal JSON. The positional prompt route adds
-quotes and escapes. [Observed index mode](observed-index.md) supplies bounded
-previews with ordinary-profile pulls; body compilation remains the default.
+it cannot turn a local-profile package into hosted input. Both `cairn run` and
+`cairn agent run` default `--carrier` to `stdin` (unlike `cairn agent start`,
+which defaults to `argv`). For OpenCode 1.18.21, keep `--carrier stdin` to
+preserve literal JSON; `--carrier argv` adds quotes and escapes.
+[Observed index mode](observed-index.md) supplies bounded previews with
+ordinary-profile pulls; body compilation remains the default.
 
 The existing [command and delivery digests](use-outcome-loop.md#command-and-delivery-digests)
 identify different parts of the invocation. The command digest excludes the
@@ -92,9 +95,6 @@ bounds the argument Cairn adds; other command arguments and environment limits
 can still cause process creation to fail. These are initial delivery limits, not
 aggregate accounting across later searches, expansions and model turns.
 
-The file option and argv preflight require a CLI update only. They use the
-existing API and database contracts.
-
 ## Custody and failures
 
 Before claiming a launch, Cairn [rechecks the retained memory](launch-freshness.md)
@@ -105,7 +105,7 @@ notes do not rerank or change the retained package.
 The host registers its locked, owned context directory through observer-only
 `register-context` before writing `context.txt`. The existing core gates require
 an owned, claimed, current receipt and available payload. Normal operator purge
-uses that registered copy and its ownership marker. The new endpoint records
+uses that registered copy and its ownership marker. This endpoint records
 filesystem observations; it does not write or remove files on the host's behalf.
 This remains a cooperative same-UID boundary, not isolation from hostile local
 processes that can access the same user's files.
@@ -136,9 +136,9 @@ Historical outcomes remain valid after a restore fence or policy change; fresh
 launch, binding and context registration still obey those gates.
 
 This provides authenticated H0 process observation and delivery for ordinary
-host invocations. It does not wire Striatum's sealed inputs, infer internal harness
-tool events or compaction, prove instruction obedience, or turn process exit into
-an acceptance decision. See [local API](local-api.md).
+host invocations. It does not infer internal harness tool events or compaction,
+prove instruction obedience, or turn process exit into an acceptance decision.
+See [local API](local-api.md).
 
 If process-group cleanup fails after the child exits, Cairn still writes the
 pending outcome and attempts to commit it. The command reports the cleanup error
