@@ -83,7 +83,7 @@ grant ledger, under its session lock. The other
 callback keeps that decision in either order. The host runs both callbacks in
 parallel, and the holder rewrites the grant ledger (bounded by compaction, below), so
 activation waits at most 1.5 s for a busy session lock, then refuses if it remains
-unavailable (250 ms vetoed a live wake under I/O load, CAIRN-184). Delivery takes
+unavailable. Delivery takes
 the same lock with the same bounded wait, capped by the bridge deadline. The
 activation wait precedes the handler deadline and can add up to 1.5 s to callback
 latency; neither wait bypasses the ledger or allocates a grant. This writes mode metadata only;
@@ -179,9 +179,8 @@ wait, shortens the lookup, not that reserve). Each attempt waits for the remaini
 window minus a one-second reserve, but at least two seconds while that much
 remains. A hung first attempt therefore leaves one retry window. After a slow
 successful lookup, the task-source read and optional recall get up to two more
-seconds within the window, and degrade on their own when that runs out
-(CAIRN-187: under host load one lookup exceeded four seconds and the former
-five-second cap refused the wake). Coordination admission and final lease renewal use the enclosing
+seconds within the window, and degrade on their own when that runs out.
+Coordination admission and final lease renewal use the enclosing
 hook deadline. This is not a measured five-second end-to-end latency guarantee.
 The normal coordination hook must have enough timeout for admission and cleanup.
 
@@ -192,8 +191,8 @@ when concurrent database updates exhaust its transaction retries; it is distinct
 from `IDEMPOTENCY_CONFLICT`, which remains a permanent refusal. Both calls use the
 same request UUID and query under the original deadline. The API's existing receipt idempotency and current-source
 checks still apply. The retry gains no work from a timed-out attempt: the API
-computes the search again before it matches the request ID to a stored receipt
-(a same-ID repeat measured as slow as the first call on 2026-10-21). This retries only a memory read, never an inbox claim or task.
+computes the search again before it matches the request ID to a stored receipt.
+This retries only a memory read, never an inbox claim or task.
 Permanent refusals, a second failure, or an exhausted deadline still refuse the
 native prompt without granting context. Older pinned engines keep one lookup.
 
@@ -211,7 +210,7 @@ untouched empty ledger before writing its own, so a failed first grant write sti
 leaves the marker without a ledger and every later delivery refuses, as before.
 
 When an admitted delivery writes its grant, the bridge also compacts that ledger
-(CAIRN-186), in the same write. Coordination holds one attempt per session and
+in the same write. Coordination holds one attempt per session and
 it is now this one, so no older attempt can still be recovered; every other
 reader asks only about the current prompt, launcher task or held attempt. The
 newest 64 grants stay whole, as do the active grant, launcher-task grants,
@@ -275,22 +274,21 @@ could not record `pending`, the known active selection still requires a fresh
 authenticated check across that prompt boundary; it is not silently cleared. Configuration or
 optional-service failures with no known requirement remain nonblocking.
 
-**Claude SessionStart failure does not stop the next model dispatch.** An isolated
-installed Claude 2.1.285 resume probe with a scripted localhost response observed
-another request after both exit 2 and exit-zero `continue: false`. This adapter
-therefore emits a labeled error and retains pending status at that boundary; it
-does not return a misleading stop decision. No PreCompact refusal or PreToolUse
-guard is added here. A model request or text-only answer can occur before a later
-supported prompt boundary. This is entry retrieval plus required refresh, not
-complete mandatory-context enforcement through every Claude continuation.
+**Claude SessionStart failure does not stop the next model dispatch.** Because
+Claude can still issue another request after `SessionStart` exit 2 or exit-zero
+`continue: false`, this adapter emits a labeled error and retains pending
+status at that boundary rather than returning a misleading stop decision. No
+PreCompact refusal or PreToolUse guard is added here. A model request or
+text-only answer can occur before a later supported prompt boundary. This is
+entry retrieval plus required refresh, not complete mandatory-context
+enforcement through every Claude continuation.
 
 Other harnesses are unsupported by this binding. Default unbound Claude memory
 and coordination behavior is preserved. This extension supplies no installer,
 channel activation, native-session restart, or measured task-benefit claim.
 
-Focused tests exercise
-public hook JSON/exit behavior and disposable transport fixtures; they do not
-establish task benefit, live lease races, model compliance, or host adoption.
+Hook JSON and transport boundaries alone do not establish task benefit, live
+lease races, model compliance, or host adoption.
 
 ### Optional local route diagnostics
 
@@ -330,7 +328,7 @@ currentness of claims within a note, useful action or comparative benefit.
 
 Coordination bindings also keep `remind_unacknowledged_turn_end` **off by default**
 (`false`, with no installer flag). When enabled in a binding config, blocking
-`Stop`/`TurnEnd` (`decision: "block"`, `internal/lifecycle/coordination/hook_cli.go:730-734`,
-`hook_inbox.go:85-88,175-185,318-324`) forces an extra full-context model turn
+`Stop`/`TurnEnd` (`decision: "block"`, `internal/lifecycle/coordination/hook_cli.go:848-852`,
+`hook_inbox.go:85-88,175-205,318-324`) forces an extra full-context model turn
 per unacknowledged item instead of letting compact/auto-settled delivery handle
 routine notices, and lacks measured task-value benefit.

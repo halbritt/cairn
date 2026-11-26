@@ -24,9 +24,8 @@ The cursor records **delivery arrival order**. Pool requests receive a delivery
 position when assigned, even when their publication predates other inbox work.
 Publication history from `cairn events --after` uses a different sequence and
 must not be used as an inbox watch cursor.
-Migration 043 assigned positions to deliveries that already existed when watch
-was introduced. Their first scan is retained inventory; those backfilled
-positions do not reconstruct historical arrival order. New deliveries use their
+Backfilled positions on older deliveries represent retained inventory rather
+than reconstructed historical arrival order. New deliveries use their
 assignment order.
 
 The CLI reads one page at a time. It polls every second when caught up, reads
@@ -59,11 +58,10 @@ results. Neither a watch observation nor a handled delivery proves task acceptan
 
 ## Store invariant
 
-Migration 043 adds `agent_delivery.position`. Publication and pool assignment
-hold the same per-collection transaction advisory lock through commit, so an
-inbox cursor cannot advance past an older uncommitted insertion. Every future
-delivery creator must preserve that ordering. Upgrade all API and worker writers
-together; do not run old and new delivery-writing code concurrently during rollout.
+`cairn.agent_delivery.position` orders deliveries by arrival. Publication and
+pool assignment hold the same per-collection transaction advisory lock through
+commit, so an inbox cursor cannot advance past an older uncommitted insertion.
+Every delivery creator must preserve that ordering.
 
 No broker, notification queue, new credentials or automatic request replay is
 introduced. Full-v1 operator recovery, scheduling and coordination work is tracked

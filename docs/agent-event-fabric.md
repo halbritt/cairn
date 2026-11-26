@@ -263,14 +263,15 @@ their own stable operation request IDs, and external effects require an
 idempotent destination. The service does not promise exactly-once arbitrary
 agent behavior. Multiple result effects are outside the atomic completion API.
 
-For a native request inbox context, `finish_reply` is an explicit caller-scoped
-command (invoked only when the recipient runs it rather than as a global toggle)
-that takes the selected result on stdin. It journals the completion and explicit
-reply intent under separate request UUIDs before calling the API, completes the
-delivery, and publishes a response citing that attempt's committed result
-version. The context fixes the original sender, publisher session, causation and
-correlation. The command does not choose the result or assert that the task was
-accepted. The separate `completion` and `response` commands remain available.
+For a native request inbox context, `finish-reply` (recorded under the context
+JSON `finish_reply` key) is an explicit caller-scoped subcommand (invoked only
+when the recipient runs it rather than as a global toggle) that takes the
+selected result on stdin. It journals the completion and explicit reply intent
+under separate request UUIDs before calling the API, completes the delivery, and
+publishes a response citing that attempt's committed result version. The context
+fixes the original sender, publisher session, causation and correlation. The
+command does not choose the result or assert that the task was accepted. The
+separate `completion` and `response` commands remain available.
 
 The command returns `cairn.finish-reply/1` data with `completion_committed`,
 `reply_pending`, `reply_committed`, `reply_refused`, and the exact confirmed
@@ -312,16 +313,15 @@ see [event pressure and admission policy](event-admission.md).
 
 ## Agent interface
 
-Named hosted profiles live in `~/.local/share/cairn/event-profiles/NAME.token`.
-Use `--profile worker-01` through `worker-07` for configured fresh-worker slots;
-the recipient address is `agent/worker-01`, etc. The legacy `codex`, `opencode`,
-`agy`, `claude` and `hermes` profiles remain available for manual inbox access.
-The profile selects an authenticated token, not a caller-supplied identity field.
-Operators can provision them with:
+Named hosted profiles live in `~/.local/share/cairn/event-profiles/NAME.token`,
+where `NAME` matches `[a-z][a-z0-9-]{0,63}` (for example, `--profile worker-01`
+for a worker slot with recipient address `agent/worker-01`, or `--profile codex`
+for a harness-named profile). The profile selects an authenticated token, not a
+caller-supplied identity field. Operators can provision them with:
 
 ```sh
 python3 scripts/provision-event-profiles.py --repo /path/to/collection \
-  worker-01 worker-02 worker-03 worker-04 worker-05 worker-06 worker-07
+  worker-01 worker-02
 systemctl --user restart cairn-api.service
 ```
 
@@ -362,7 +362,7 @@ rather than widening a one-off result solely to make it appear in other tasks.
 
 `ack --disposition ignored|failed --code CODE` records
 terminal failure/ignore. Read the referenced body using `cairn agent history`.
-Optional kind values include update, request, response and notice. Event kind
+Optional kind values include `update`, `request`, `response`, `failure` and `notice`. Event kind
 strings are bounded to the same topic-name syntax. CLI output follows the
 existing `cairn.response/1` envelope; an empty inbox returns `delivery: null`.
 
@@ -424,24 +424,16 @@ delays. Structured wake context, [watch](inbox-watch.md),
 now extend that path. [Response groups](response-groups.md) collect explicit
 replies against fixed delivery snapshots; priority, wildcard
 subscriptions and broker/distributed features retain their explicit triggers in
-the [coordination v1 plan](plans/agent-coordination-v1.md). That plan also tracks
-live identity, metadata and remaining interactive-session acceptance checks.
+the [coordination v1 plan](plans/agent-coordination-v1.md).
 
-## Acceptance
+## Delivery and usefulness boundary
 
-Required tests cover direct/offline delivery; independent topic fanout;
-subscribe/unsubscribe/resubscribe boundaries; unknown kinds; authenticated
-publisher/consumer identity and destination filtering; exact source versions;
-lost publish/complete responses; changed retry intent; concurrent claims;
-lease expiry and stale acknowledgments; atomic result rollback and duplicate
-completion; retry/renew/failure dispositions; cursor pagination under concurrent
-publication; API restart; forgotten source/result handling; and durable history,
-status and counters. Store changes run `make test-integration` and `make check`.
-An actual CLI flow against a disposable cluster must exercise two authenticated
-principals and an API restart. No production database is used for tests.
-
-Delivery acceptance is separate from measuring whether notifications improve
-real agent work. No automatic task launch or usefulness claim follows from tests.
+Delivery guarantees cover durable event storage, recipient isolation, lease
+fencing, and status reporting; they are separate from measuring whether
+notifications improve real agent work. No automatic task launch or usefulness
+claim follows from delivery. Store changes are verified with
+`make test-integration` and `make check` against disposable clusters, never a
+production database.
 
 ## Watch arrivals
 

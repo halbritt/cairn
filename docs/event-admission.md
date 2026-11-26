@@ -4,13 +4,11 @@ The event pressure interface reports retained queue state and offers a bounded,
 read-only admission preview. Observation support starts with migration 080.
 The complete enforcement contract requires migration 084 and a compatible binary.
 Policies start `disabled` in a newly created or migrated collection so uncalibrated
-limits never block work automatically. On the primary host collection
-(`/home/halbritt/git/cairn`), event admission is enabled in `mode: "observe"`
-(`revision: 1`, configured `2026-11-25T09:43:53Z`) to record pressure, fanout,
-and closure state with zero refusals and zero rate-bucket debits. Transitioning to
-`enforce` requires explicit owner approval of the calibrated limits (keep in
-`observe` until approved; disable via `cairn event-admission-configure` with
-`mode: "disabled"` at the current revision).
+limits never block work automatically. Use `mode: "observe"` to record pressure,
+fanout, and closure state with zero refusals and zero rate-bucket debits before
+calibrating and switching to `mode: "enforce"` (or disable via
+`cairn event-admission-configure` with `mode: "disabled"` at the current
+revision).
 Handling, retry, renewal, cancellation and accepted-work recovery remain available
 when fresh-work capacity or rate budgets are exhausted.
 
@@ -90,17 +88,6 @@ bound of four, closure bound of four and recipient closure bound of two. The
 rates and bursts are two units/second and four units. These small values expose
 boundaries in a disposable test; they are not measured production defaults.
 Use a new request UUID and the actual revision when adapting the fixture.
-
-On `/home/halbritt/git/cairn` (`revision: 1`, `observe` mode live since
-`2026-11-25T09:43:53Z`), the proposed `enforce` limits awaiting explicit owner
-approval (sized above observed peaks) are: `max_topic_recipients: 25`,
-`max_recipient_outstanding: 150` (`64` post-`stopped-inbox-expire`),
-`max_producer_recipient_outstanding: 100` (`40` post-cleanup),
-`max_collection_outstanding: 600`, `max_closure_reserved: 200`,
-`max_recipient_closure_reserved: 75`, `producer` 10/s burst 30 pubs / 20/s burst
-50 delivs, `owner` 20/s burst 50 pubs / 40/s burst 100 delivs, and `collection`
-30/s burst 60 pubs / 60/s burst 120 delivs. Keep `mode: "observe"` until the
-owner explicitly authorizes transitioning to `enforce`.
 
 All counts, rates and bursts must be positive finite integers at most one billion;
 topic fanout is at most 10,000. Separate persisted buckets charge the
@@ -233,5 +220,5 @@ make check
 The rate fixtures also exercise concurrent owner budgets, fractional refill,
 policy revisions, clock rewind, overflow limits, committed UUID retries, rejected
 multi-bucket rollback, a new store connection, and a real restore fence with
-subsequent refill. The campaign verification records distinguish integrated
-correctness from deployment and measured benefit.
+subsequent refill. Integrated admission enforcement is separate from deployed
+policy configuration and measured operational benefit.

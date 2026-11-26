@@ -12,11 +12,11 @@ does not make its contents eligible for hosted memory or model input.
 
 ## Build and upgrade together
 
-Use one complete source revision for the CLI, API, scheduler and browser. The
-work-coordination release includes migrations 075 through 079 together. Do not
-install a branch containing 077 without 076: migration history uses the ordered
-file position and digest. Installing that incomplete set makes later insertion
-of the missing migration incompatible with the recorded history.
+Use one complete source revision for the CLI, API, scheduler and browser. Work
+coordination requires migrations 075 through 079 together. Do not install a
+branch containing 077 without 076: migration history uses the ordered file
+position and digest. Installing that incomplete set makes later insertion of
+the missing migration incompatible with the recorded history.
 
 Follow the [deployment procedure](deployment.md) and
 [restore admission contract](../restore-admission.md) for the selected store.
@@ -54,8 +54,9 @@ cairn work show --project example --item ITEM_UUID --collection COLLECTION
 cairn work serve --project example --collection COLLECTION
 ```
 
-Open the launch URL printed by `work serve`. Keep that URL private: it establishes
-the browser's operator session. Use Refresh to request a new Plane observation;
+Open the loopback URL printed by `work serve` and enter the printed one-time
+terminal launch code (valid for 5 minutes) to establish the browser's operator
+session. Use Refresh to request a new Plane observation;
 ordinary page reads and coordination polling do not refresh Plane. A stale
 snapshot or failed current read is labelled. Auth rejection removes protected
 copied Plane fields from joined views; it does not silently serve an older
@@ -154,11 +155,13 @@ Publish an exact selected source using the existing sender profile:
 cairn publish --token-file "$CAIRN_TOKEN_FILE" \
   --agent-id SENDER_AGENT_UUID --execution-id SENDER_EXECUTION_UUID \
   --request-id NOTICE_REQUEST_UUID --to agent/RECIPIENT_UUID \
-  --kind notice --notice-delivery next_organic_turn \
+  --kind notice --action none --notice-delivery next_organic_turn \
   --notice-expires-at EXPIRY_RFC3339 --version SOURCE_VERSION SOURCE_UUID
 ```
 
-An unsupported recipient refuses quiet publication. A queued quiet notice does
+`--kind notice` requires `--action` (`none`, `review`, or `decide`) unless
+`CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION=1`, and requires `--summary` when the source
+body exceeds 280 bytes. An unsupported recipient refuses quiet publication. A queued quiet notice does
 not wake the conversation. Only a fresh, verified owner input admits its bounded
 batch; an API-created user message or an automatic queue turn is not that signal.
 The native integration reads and acknowledges each admitted exact source through
@@ -324,9 +327,3 @@ scripted model endpoint. It restores an older backup containing waits and a real
 native notice hold, reapplies a later source deletion, and verifies both old
 admission refusal and fresh work in the resumed conversation. The report records
 the selected executable, native package, fixture inputs and cleanup outcome.
-
-For the combined advice, wait and native-notice restore, schema078-to079 upgrade,
-and advice maintenance under a lower-support build, use the
-[receipt-bound recovery fixtures](../../tests/fixtures/work_advice/README.md).
-They share private builds from an exact commit and retain separate scenario
-results and cleanup evidence.

@@ -139,6 +139,11 @@ See [preview compatibility](preview-qualifier-limit.md#replay-and-compatibility)
 for cached facade choices and rollback/retry behavior. Generic API clients do
 not opt in on behalf of their callers.
 
+The independent optional `inspection_capabilities` sibling declares
+`cairn.inspection-capabilities/1` with the required boolean
+`first_fitting_whole_v1`, indicating search allocation policy support separately
+from `retrieval_capabilities`.
+
 ## Event admission contract
 
 The event catalog in `localapi/agent_events.go` binds `event-pressure`,
@@ -229,7 +234,9 @@ same `request_id` sent with and without protocol metadata commits one record.
   strictly against the generated schemas; the error code must also be in the
   inventory. The operations are version, create, get, history, index, agent
   register, heartbeat, directory and resolve, event publish, list, metrics,
-  subscribe and watch, session readiness and retraction preview.
+  subscribe and watch, session readiness, `session-delivery-observe`,
+  `event-inspect`, `handoff-request-status`, `preview-retract`, `refusal-stats`,
+  `event-next`, and the `team-*` and `ledger-*` coordination operations.
 - For every operation, it checks that an unknown field is refused by the
   decoder, that `null` and `{}` pass decoding, that a body over the documented
   limit is refused, and that case-insensitive keys work.

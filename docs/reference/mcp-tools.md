@@ -26,6 +26,7 @@ Search returns required context and optional previews with complete
 | --- | --- |
 | `query` | Search text; ASCII double quotes prefer exact case-sensitive passages without excluding every other lexical match |
 | `semantic` | Request semantic discovery for a nonempty query; inspect `discovery.state` for labelled lexical fallback |
+| `semantic_query` | Separate natural-language input for indexed semantic discovery only; requires `semantic: true` and a nonblank `query` (combined limit 4096 UTF-8 bytes, no `browse`) |
 | `browse` | Browse eligible previews without a query when vocabulary is unknown |
 | `entities` | At most 16 file/symbol hints, such as `[{"kind":"file","name":"core/store.go"}]` |
 | `kinds` | Filter fallible labels; required instructions still apply |
@@ -138,7 +139,8 @@ Historical wording does not establish current eligibility. See
 
 Read assessment history with `cairn_assessments` and the owned `receipt_id` before
 writing a review. `cairn_assess` takes that receipt, `expected_version` (zero for
-empty history), `request_id`, outcome/failure fields, `evidence_ids`, and `reason`.
+empty history), `request_id`, `method` (nonblank, at most 256 bytes),
+outcome/failure fields, `evidence_ids`, and `reason`.
 For a qualitative review with uncertain acceptance, use `task_outcome: "unknown"`,
 `failure_domain: "unknown"`, `failure_kind: ""`, and `evidence_ids: []`. Explain
 observations, costs, and uncertainty in the 8–4000-character reason. Other outcomes
@@ -165,8 +167,10 @@ directory entry whose native session ID equals the host conversation:
 when the flag is absent, or the tool-call `_meta.threadId` with `--codex-thread`.
 When the host supplies no native session ID (such as Agy or Hermes), `cairn mcp`
 resolves a unique online session whose coordination state under
-`$CAIRN_HOME/coordination/state` (or `--coordination-state-root`) matches the
-closest ancestor host process (`pid`, kernel `start` ticks, and `boot_id`).
+`$CAIRN_HOME/coordination/state` (falling back to
+`$XDG_DATA_HOME/cairn/coordination/state`, then
+`~/.local/share/cairn/coordination/state`, or `--coordination-state-root`)
+matches the closest ancestor host process (`pid`, kernel `start` ticks, and `boot_id`).
 When no single online session matches (for example when several conversations or
 subagents are active inside one host process), the tool refuses with
 `IDENTITY_UNKNOWN` or `IDENTITY_AMBIGUOUS`; pass `agent_id` and `execution_id`
@@ -175,11 +179,11 @@ and are not credentials; the API checks them on every call.
 
 | Tool | Purpose |
 | --- | --- |
-| `cairn_agents` | Read one session (`agent`: `self`, `agent-N` or a UUID) or list online sessions by exact `project`, `harness` or `state`. `self` also returns the execution UUID. |
-| `cairn_send` | Save `body` as a note under `coordination/<request_id>` and publish that version to `to` (`agent-N`, an agent UUID, `agent/NAME` or `topic/NAME`), or publish an existing `source`. `kind` is `notice` (default), `request` or `response`; `urgency`, `action` (`none`, `review`, `decide`), `supersedes`, and `expect_next_by` apply to notices. A stopped `agent-N` recipient refuses before any write. |
-| `cairn_inbox` | Claim the next delivery from the caller's inbox under a lease and return it with the exact source text; `peek` only counts waiting items. A source too large for the result is omitted and the claimed delivery is still returned. |
+| `cairn_agents` | Read one session (`agent`: `self`, `agent-N` or a UUID) or list online sessions by exact `project`, `harness` or `state` (with `include_offline`, `after`, and `limit`, default 25, max 100). `self` also returns the execution UUID. |
+| `cairn_send` | Save `body` as a note under `coordination/<request_id>` and publish that version to `to` (`agent-N`, an agent UUID, `agent/NAME`, `role/CAMPAIGN/ROLE`, or `topic/NAME`), or publish an existing `source`. `kind` is `notice` (default), `request`, or `response`. Across all event kinds, `body` (or a referenced `source` record's body) over 280 bytes requires `summary`. Notices require `action` (`none`, `review`, or `decide`) unless `CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION=1` and also accept `urgency`, `supersedes`, and `expect_next_by`. Other optional arguments are `blocker`, `expect_by` (requests only), `plain`, `shareable` (default `true`), `causation_id`, and `correlation_id`. A stopped `agent-N` recipient refuses before any write. |
+| `cairn_inbox` | Claim the next delivery from the caller's inbox under a lease and return it with the exact source text; `peek` only counts waiting items. When the source exceeds the result budget, `cairn_inbox` returns the claimed delivery with a truncated `body_preview` (`body_truncated`, `total_bytes`), `pull_source` (`cairn_history` arguments), and `body_omitted`, omitting `body_preview` only if even a minimal preview does not fit. |
 | `cairn_ack` | Record handling of a claimed notice or response. `ignored` and `failed` need a `code`. |
-| `cairn_complete` | Save `body` as the result of a claimed request, record handling, and publish the result to the requester as a response caused by the request. `reply_pending` reports a recorded completion whose response was not published. |
+| `cairn_complete` | Save `body` as the result of a claimed request, record handling, and publish the result to the requester as a response caused by the request (accepts `summary`, `reply` defaulting to `true` for requests, and `shareable` defaulting to `true`). `reply_pending` reports a recorded completion whose response was not published. |
 | `cairn_renew` | Extend the lease on a claimed delivery. |
 | `cairn_event_status` | Read an event's deliveries: consumer, state, attempts, lease, code and result reference. |
 

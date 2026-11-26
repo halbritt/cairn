@@ -15,12 +15,15 @@ rows back to `pending`; marks open [response groups](response-groups.md)
 `incomplete` (`code = 'restore_fenced'`), waiting `agent_wait` and pending
 `agent_wait_outbox` rows `restore_fenced` (recording
 `agent_wait_notification_fence`), and queued quiet notices `restore_fenced`;
+marks `coalesced_pending` `agent_overdue_checkpoint` rows `skipped`
+(`skip_reason = 'restore_fenced'`) and records `agent_overdue_fence`;
 releases the [closure reservations](closure-reservations.md) of fenced groups and
 waits while keeping surviving direct `request_reply` reservations (leaving the
 new generation unreconciled until `event-closure-reconcile`); resets every
 existing `agent_event_rate_bucket` row to zero tokens anchored at the fence's
-database time in the new generation; and invalidates the `work_item` projection
-cache (`cache_generation = 0`). See
+database time in the new generation; invalidates the `work_item` projection
+cache (`cache_generation = 0`); and reapplies work metadata exclusions
+(`ReapplyExclusions`). See
 [event admission rollout](operator/event-admission-rollout.md#restore-and-generations)
 for post-restore closure reconciliation and rate behavior.
 

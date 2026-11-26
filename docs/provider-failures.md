@@ -56,8 +56,9 @@ details field. It records `agy_http_429`, not a claim of exhausted subscription
 quota. A partial result at Agy's print timeout may carry this observation even
 with exit code zero. Unknown or missing envelopes remain unclassified.
 
-Configure Agy's print timeout below the supervisor timeout so it can emit its
-result before host cleanup; the installed 600-second worker uses `9m30s`.
+Configure Agy's print timeout below the supervisor `timeout_seconds` setting
+(10–3600s) so it can emit its result before host cleanup, for example `9m30s`
+for a 600-second worker.
 This leaves a margin, not a guarantee under arbitrary host stalls. Hard task
 deadlines can still stop a process before it emits a provider observation.
 
@@ -101,8 +102,8 @@ Store tests cover rollback of report and health together, separate account
 health, exact retries, explicit recovery, and retained failure after restore.
 Parser tests cover tool-output isolation, retry recovery, later server errors,
 chunk boundaries, oversized lines and persistence failures. The pool runtime
-probe exercises the real API/systemd path and retained quota rows through
-backup/restore. Its `--hermes` option uses the installed native binary and a local
+probe (`scripts/check_worker_pools.py`) exercises the real API/systemd path and
+retained quota rows through backup/restore. Its `--hermes` option uses the installed native binary and a local
 HTTP 429 provider. Its `--codex` option uses isolated Codex homes and a loopback
 `usage_limit_reached` provider for Plus/Pro variants, including native session
 association and slot suspension. No real account is charged or exhausted.

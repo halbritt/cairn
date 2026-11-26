@@ -146,8 +146,9 @@ cairn mcp --socket /path/to/api.sock --token-file /path/to/agent.token \
 ```
 
 `--codex-thread` derives scope from supported Codex thread metadata and is
-exclusive with explicit `--task` and `--run`. Optional `--tool-profile compact/1`
-or `compact/2` changes tool descriptions; `--search-view compact/1` changes result
+exclusive with explicit `--task` and `--run`. `--tool-profile` defaults to
+`compact/2` (`compact/1`, `compact/2`, or `full`) for tool descriptions, and
+`--search-view` defaults to `compact/1` (`compact/1` or `full`) for result
 presentation. Neither option grants access or changes note authority.
 
 ## Operate the service

@@ -59,7 +59,8 @@ when reapplication has repaired all known restrictive state.
 For forgotten sources, inspection accepts a current deletion only through an
 explicit retained mapping of original event, digest, subject and repository to
 that deletion event. It still verifies the deletion's payload and dependency
-exclusions. Later exports merge retained external expectations with local audit
+exclusions. When present in the export, reapplication also restores
+`work_exclusions`, `work_purges`, and `work_artifact_purge_fences`. Later exports merge retained external expectations with local audit
 and withdrawals; they do not silently discard known missing history. Conflicting
 expectations refuse. The retained union is staged in PostgreSQL and sources are
 validated one bounded record at a time. An application does not collect the whole
@@ -94,4 +95,4 @@ finish recoverable effects, rebuild known exclusions, verify retained state and
 compiler fixtures, then explicitly resume under the current root. Admission
 retains the missing original history and accepts only named deletion residuals.
 Source freshness, unknown newer events, lost dependency relations and physical
-backup restoration remain separate requirements. L9 remains incomplete.
+backup restoration remain separate requirements.

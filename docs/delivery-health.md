@@ -61,10 +61,7 @@ Anything else is refused with one of these conditions:
 | `terminal_host_unavailable` | The native process has no Herdr host environment. |
 
 The watcher log reports only pane counts. Pane IDs, terminal content and
-process environments are not included in the observation. Before 2026-10-21
-hosts reported every count other than one as `terminal_target_ambiguous`; those
-stored rows remain readable, but an older ambiguous report may describe zero
-matching panes. None of these conditions causes a pane to be selected, a prompt
+process environments are not included in the observation. None of these conditions causes a pane to be selected, a prompt
 to be injected, work to be replayed or a session to be restarted. With exactly
 one eligible pane, the watcher still revalidates pane, terminal, revision,
 state sequence, process ownership and Cairn readiness before submission; a
@@ -185,8 +182,8 @@ Groups show recipient, cause, freshness, applicability, oldest waiting age and
 a sample delivery. Request, response and notice counts remain separate. A new
 notice or an increasing age alone does not produce a changed request condition.
 Genuinely busy recipients and scheduled availability do not produce attention
-items; busy metadata with a current `native_idle_stale_busy`,
-`lifecycle_hooks_untrusted` or `native_transport_unavailable` host observation
+items; busy metadata with a current `native_idle_stale_busy` or
+`lifecycle_hooks_untrusted` host observation
 surfaces immediately at the normal attention cutoff.
 A route reported as available still warrants attention if the request remains
 unclaimed beyond the cutoff: route availability does not prove progress.
@@ -213,7 +210,7 @@ handling and recovery separate from clearing this presentation cache.
 Online sessions can also starve their own inbox. A coordinator that stays busy
 for hours never reaches the idle boundary its wake waits for, and a held native
 attempt with no open tool can sit for hours. Existing attention groups stay
-quiet for genuinely busy recipients without a stale-busy or transport-error host
+quiet for genuinely busy recipients without a stale-busy or untrusted-hooks host
 observation, so `attention.starved_sessions` reports these
 separately. It is a current snapshot of the same page, outside the
 `changed`/`cleared` cache, and does not alter the groups or their suppression.
@@ -223,7 +220,7 @@ backlog; filter by `consumer` or run `cairn delivery-alerts` without
 
 | Condition | Reported when |
 | --- | --- |
-| `pending_starved` | An online session has pending work (including an expired lease the store reports as waiting) older than 30 minutes while busy (or 10 minutes while idle or when a current `native_idle_stale_busy`, `lifecycle_hooks_untrusted` or `native_transport_unavailable` observation establishes native idle/error behind busy metadata), and no delivery to that inbox was handled within the same threshold. |
+| `pending_starved` | An online session has pending work (including an expired lease the store reports as waiting) older than 30 minutes while busy (or 10 minutes while idle or when a current `native_idle_stale_busy` or `lifecycle_hooks_untrusted` observation establishes native idle behind busy metadata), and no delivery to that inbox was handled within the same threshold. |
 | `hold_stalled` | An online session has a leased or held delivery older than one hour with no open tool call on its latest native attempt. Recent handling of other deliveries does not suppress it. |
 
 Each item names the inbox, agent and execution, display name when the sessions
@@ -271,20 +268,15 @@ commands in [event recovery](event-recovery.md) to decide what to do.
 
 The templates `deploy/cairn-delivery-alerts.service` and `.timer` schedule a run
 every ten minutes. Adapt their paths and install them as user units, then enable with
-`systemctl --user enable --now cairn-delivery-alerts.timer` (active on the primary
-host; disable with `systemctl --user disable --now cairn-delivery-alerts.timer`).
+`systemctl --user enable --now cairn-delivery-alerts.timer` (disable with
+`systemctl --user disable --now cairn-delivery-alerts.timer`).
 
 ## Operational review
 
-Delivery diagnostics should help an operator recognize stalled work and connect
-a refusal to its request without repeated journal inspection.
-
-With `cairn-delivery-alerts.timer` active, track when a useful condition first
-appears, when the operator notices it, and which action it informs, alongside
-repeated unchanged warnings, false alarms from intentional waiting, and clearing
-on progress. Incomplete coverage stays visible through the scan fields above.
-Synthetic tests establish the detection and Plane-bookkeeping mechanics only;
-exact production alert rates depend on the active workload.
+Delivery diagnostics help an operator recognize stalled work and connect a
+refusal to its request without repeated journal inspection. Incomplete scan
+coverage stays visible through the scan fields above, and exact alert rates
+depend on the active workload.
 
 Delivery diagnosis does not complete requests, initiate recovery, or change team
 structure.

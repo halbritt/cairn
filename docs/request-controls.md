@@ -109,16 +109,14 @@ unit or an unreadable final state retains the hold.
 
 Native cancellation (`opencode_cancel_enabled`) remains **off by default** in
 installed configurations. OpenCode is the only attesting adapter; Codex, Claude
-and Hermes cancellation is unsupported. The OpenCode adapter passed an owned
-real-model trial (C1 to C5) on 2026-09-24 against a disposable store, covering
-marker-preserving `bash`-only fixture workloads in one session. Keep
-`opencode_cancel_enabled` off by default because exclusive cancellable OpenCode
-turns hard-refuse all non-`bash` tools (`read`, `edit`, `write`, MCP) at
-`internal/lifecycle/coordination/hook_session.go:246-248`
-(`integrations/opencode/coordination.ts:518-530`), and externally killed `bash`
-trees never emit `TurnEnd`, leaving deliveries held indefinitely (C5 in that
-trial). The OpenCode host adapter retains the explicit opt-in installer
-flag `--opencode-cancel-trial` (which writes `opencode_cancel_enabled: true`)
+and Hermes cancellation is unsupported. `opencode_cancel_enabled` stays off
+by default because exclusive cancellable OpenCode turns hard-refuse all
+non-`bash` tools (`read`, `edit`, `write`, MCP) in
+`internal/lifecycle/coordination/hook_session.go` (and
+`integrations/opencode/coordination.ts`), and externally killed `bash` trees
+never emit `TurnEnd`, leaving deliveries held until manual reconciliation. The
+OpenCode host adapter retains the explicit opt-in installer flag
+`--opencode-cancel-trial` (which writes `opencode_cancel_enabled: true`)
 only after the request-specific native route, tool-capture plugin, and process
 scanner are installed together. At admission
 it probes the peer-verified bridge for both `cancel_request` and
@@ -171,13 +169,15 @@ session before any native call. It then calls native `cancelRequest` by request
 ID. It never uses a whole-session abort (`session/abort` stays refused) and
 never kills a process.
 
-`opencode_queue.cancel_request` returns three outcomes:
+`opencode_queue.cancel_request` (and its Go counterpart in
+`internal/lifecycle/wake/opencode.go`) returns three outcomes:
 
 - **accepted**: the native runner's cancellation settled.
-- **`CancelRefused`**: native code definitely did not act. Its reason is
-  `unavailable`, `unsupported`, `invalid`, `session_unavailable`,
-  `turn_mismatch`, `not_active` or `native_refused`.
-- **`CancelUncertain`**: native code may have acted. Never automatically resend.
+- **`CancelRefused`** (`OpenCodeCancelRefused` in Go): native code definitely
+  did not act. Its reason is `unavailable`, `unsupported`, `invalid`,
+  `session_unavailable`, `turn_mismatch`, `not_active` or `native_refused`.
+- **`CancelUncertain`** (`OpenCodeCancelUncertain` in Go): native code may
+  have acted. Never automatically resend.
 
 Acceptance is not evidence of a turn stop or tool cleanup; reconciliation still
 needs those host observations.
@@ -200,11 +200,10 @@ reply carries `cairn.tool_capture: true`. An exclusive turn refuses tools if
 `ToolStart` fails. An ordinary wake without capture support runs its tools
 normally; an admitted wake whose `TurnStart` hook fails refuses tools because
 its host state is unknown. The host currently admits only marked `bash` tools
-for this trial. `ToolEnd` alone does not prove
+under `opencode_cancel_enabled`. `ToolEnd` alone does not prove
 process termination; the host scans before reporting terminal tool state.
 Environment clearing can evade this scan, so this adapter does not establish
-general cleanup for arbitrary tool workloads. The trial fixture preserves the
-marker, and its independent `/proc` ledger checks for false release.
+general cleanup for arbitrary tool workloads.
 
 ## Sweep, review and recovery
 
@@ -236,8 +235,5 @@ successor to a failed delivery. It does not copy old admission or deadline times
 An unassigned closed pool request has no delivery to reissue; publishing new
 intent requires a new request UUID. Neither path erases the old failure.
 
-Stop the scheduler, supervisors, presence and affected native services before
-migration. Back up the store, apply 046 with the matching binary and restart API
-before consumers. Backup/restore retains these fields with their event/delivery
-history; existing restore fencing still governs executions. Do not downgrade to
-a binary that ignores stop decisions or deadlines.
+Backup/restore retains stop decisions and deadline fields with their
+event/delivery history; existing restore fencing still governs executions.

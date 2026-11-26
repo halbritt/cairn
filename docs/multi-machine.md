@@ -155,9 +155,11 @@ to them. The central API also refuses operations outside the remote allowlist:
 operator commands (including collection-wide event-admission and closure
 views/configuration), `wait-*` operations, quiet-notice native turn claim/advance,
 worker and wake operations, managed-context registration, remote process
-wrapping, cancellation capture, exclusive turns, and use/outcome recording
-(`delivery`, `outcome`, `assess-run`, reports). Lifecycle hooks that record uses
-and outcomes therefore get `AUTHORITY_DENIED` on a joining machine. Memory
+wrapping, cancellation capture, exclusive turns, and runner/protected recording
+or report operations (`delivery`, `outcome`, `assess-run`, `use-report`,
+`telemetry-report`, `run-report`). Those recording and report calls therefore
+get `AUTHORITY_DENIED` on a joining machine, whereas `usage`, `usage-coverage`,
+and `*-observation` operations remain allowed remotely. Memory
 search, notes, the directory, native inbox delivery, draining your own session
 inbox (`event-next` with that session's agent and execution IDs; `cairn inbox
 next --agent-id ... --execution-id ...` and lifecycle `inbox drain`),

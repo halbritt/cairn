@@ -147,5 +147,4 @@ trunk checked out nowhere or being rebased, unpushed trunk commits, a refused
 fast-forward with no push, and the hygiene and gc view of a left-behind trunk.
 Comparator protocol tests use
 a small executable at that external boundary; the evidence tool's own tests own
-record validation and fingerprint semantics. A deployed-tool demonstration checks
-the combined path separately.
+record validation and fingerprint semantics.

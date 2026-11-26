@@ -90,7 +90,8 @@ engine's `taskless_notification`, accepts this wording and the earlier one
 change therefore still binds and is still classified as a wake.
 
 The supported wrapper is `coordination.py inbox drain --config BINDING --agent-id A
---execution-id E`; the cue names it with this hook's binding path. It refuses
+--execution-id E` (mirrored by `cairn-lifecycle coordination inbox drain`); the
+cue names it with this hook's binding path. It refuses
 (`NOT_THIS_SESSION`) unless the binding's state holds that exact live, registered
 agent and execution. It also refuses (`NATIVE_ACTIVE`) while a native intent or
 attempt exists. Otherwise it claims one item with `event-next` under a 900-second
@@ -188,15 +189,13 @@ no channel wake, so enabling `claude_channel_dir` for an account never suppresse
 delivery to conversations that cannot receive channel wakes. Detection follows
 the process, so a resumed conversation is re-evaluated with its new launch.
 
-The bridge serves only the legacy MCP handshake. Since 2026-09-25, Claude Code
-(observed on 2.1.282 and 2.1.283) negotiates the sessionless revision
-(2026-07-28) when a server offers it,
-and then log "Channel notifications skipped: connection negotiated a modern
-protocol revision with no unsolicited notification path". The bridge still
-reported each wake `written`. The bridge therefore answers `server/discover`
-with "method not found", as a pre-2026 server does. Claude then falls back to
-`initialize`, and the bridge publishes its registry only after
-`notifications/initialized`. To check a session, look in Claude's
+The bridge serves only the legacy MCP handshake: if a server offers the
+sessionless MCP protocol revision (`2026-07-28`), Claude Code negotiates it and
+skips unsolicited channel notifications ("Channel notifications skipped:
+connection negotiated a modern protocol revision with no unsolicited notification
+path"). The bridge therefore answers `server/discover` with "method not found",
+so Claude falls back to `initialize`, and the bridge publishes its registry only
+after `notifications/initialized`. To check a session, look in Claude's
 `mcp-logs-cairn-events` log for `"protocolEra":"legacy"` and "Channel
 notifications registered".
 
@@ -224,8 +223,7 @@ launch, an unlisted conversation, a binding without `claude_channel_dir`, a
 missing bridge registry, a missing Codex/OpenCode/Hermes queue endpoint, or a
 prior wake for the same delivery still submitted or uncertain. The record is
 kept in session state so a 30-second cycle does not repeat it; a new delivery
-or changed reason logs again, and an emptied inbox clears it. Silence in the
-journal previously hid an account whose activation was incomplete for days.
+or changed reason logs again, and an emptied inbox clears it.
 
 Migration 048 adds an optional exact delivery and native turn pair to native
 claims. The explicit Codex Unix-listener route uses it: only the matching queued
@@ -237,10 +235,10 @@ Another turn cannot receive or finish the retained context. The context and
 operator review expose the selected `native_turn_id`; raw prompts are not stored.
 Other native routes retain their existing boundary behavior. A recorded turn
 ID pins delivery identity only; it does NOT establish exclusive request
-ownership, and interactive cancellation remains operationally unsupported.
-The dormant migration 049 contract allows cancellation solely for attempts
-that attest exclusive single-request turn ownership, which no installed
-adapter demonstrates. See [request controls](request-controls.md).
+ownership, and interactive cancellation remains unsupported unless an adapter
+attests exclusive single-request turn ownership (OpenCode's opt-in
+`--opencode-cancel-trial` mode, off by default). See
+[request controls](request-controls.md).
 
 One unfinished native attempt owns the session inbox. A normal inbox consumer
 cannot claim another item while that hold exists. Fresh-worker claims reject
@@ -368,7 +366,7 @@ ordinary memory context emitted into the same prompt (`ordinary_context`) and re
 output (`unadmitted_wake`); every kind keeps the hold.
 
 A bound Claude channel wake is refused before any claim when its native prompt cannot be a fresh
-request boundary (CAIRN-173). The hook keeps a bounded set of prompt ids it has seen, which survives
+request boundary. The hook keeps a bounded set of prompt ids it has seen, which survives
 `Stop`, so an earlier prompt id that reappears is a join, not a fresh prompt. It also reads the
 bridge ledger under the bridge's session lock: any grant for that native prompt (ordinary context,
 an earlier inbox delivery or required-only output), or an unreadable ledger, refuses the wake. A busy
@@ -394,9 +392,7 @@ The conversation's journal index must also hold no uncertain journal: a `pending
 response slot, an unreadable journal, or a malformed index keeps the marker. Earlier attempts whose
 agent never ran a journaled command (no intent file), or whose commands all settled (`committed` or
 `refused`), do not. Such entries can stay indexed indefinitely while a later command or reply is still
-possible, and they hold no delivery. Before 2026-10-21 any indexed entry kept the marker. A session
-that once ended a turn without completion therefore never received another channel wake, however often
-it went idle (agent-449, 28 deliveries). The reconciliation reads journals only. It does not replay or
+possible, and they hold no delivery. The reconciliation reads journals only. It does not replay or
 remove them.
 
 Unrelated attempts' journal entries do not establish progress on this refused attempt.
@@ -413,7 +409,7 @@ number, not `claude`. Hooks resolve their owner as the nearest ancestor that is
 named in `process_names`, or whose executable lies in a native Claude versions
 directory (`process_exe_dirs`, defaulting to `~/.local/share/claude/versions` for
 Claude), and that is not a daemon, pty host or spare. A hook that finds only
-supervisors refuses rather than binding the daemon (CAIRN-178). A conversation
+supervisors refuses rather than binding the daemon. A conversation
 that an earlier engine bound to its daemon is rebound to its worker on the
 worker's next hook; existing holds are kept.
 
@@ -446,7 +442,7 @@ operational records, using `coordination.py recover-native-refused-wake --config
 - **Which file it reads:** the session file is derived from the trusted binding's `config_home`, the held
   state's workspace and the session ID, never from the caller. It is opened without following symlinks,
   and only the three pinned byte ranges are read.
-- **What it requires** (the shape observed on Claude Code 2.1.285; any other shape is refused):
+- **What it requires** (any other shape is refused):
   - one contiguous enqueue, dequeue and refusal sequence;
   - an enqueue whose content is exactly this session's channel wake for the held delivery;
   - a `system`/`informational` warning with `preventContinuation`, whose content is exactly "UserPromptSubmit
@@ -531,7 +527,7 @@ journal and no-replay settlement checks still apply after discovery.
 A Codex queue turn can also end on a provider error after it received inbox context. For example,
 `task_complete` can carry `error.codex_error_info: usage_limit_exceeded` with no last agent message.
 Such a turn runs no `Stop` hook. The process stays alive and the watcher keeps renewing the lease, so
-the hold never settles, and later owner turns meet `NATIVE_TURN_MISMATCH` (CAIRN-179). Settle it
+the hold never settles, and later owner turns meet `NATIVE_TURN_MISMATCH`. Settle it
 explicitly with `coordination.py recover-codex-ended-turn --config BINDING --native-session-id S
 --attempt-id A --start-record OFF:LEN:SHA --end-record OFF:LEN:SHA`. Add `--check-only` first; it
 changes nothing. The command requires all of the following:
@@ -555,7 +551,7 @@ leaves `inbox_turn_ended` for the watcher's existing retry.
 A provider error can also end an ordinary Codex turn and leave the thread in `systemError` with busy
 presence and no held attempt. The watcher reads the latest `task_complete` of the live owner's open
 rollout (bounded tail, pinned by offset, length and SHA-256) and records its decision in host state as
-`codex_error_wake` (CAIRN-188):
+`codex_error_wake`:
 
 - `persistent`: `usage_limit_exceeded`, auth, request, HTTP 4xx (including 429) and unknown kinds keep
   the suppression above;
@@ -678,18 +674,7 @@ exact body. Settlement confirmation requires a successful handled reply with
 the matching delivery or compact handle and attempt count. The fixtures also
 read Store state independently to verify the exact delivery and its attempts.
 Diagnostic classifications remain bounded metadata; they do not alone establish
-successful source reading or settlement. Historical verification records retain
-the checks and limitations of their original runs.
-
-The native wake probe explicitly attaches its fixture observer to the queue
-module loaded by the validated installed bundle. Both its default and
-`--scripted-handled` modes require observer attachment and invocation, a queue
-receipt joined to the native user-message item and the hook's Store attempt,
-and successful watcher and runner exits. Scripted mode additionally requires
-the exact source read and one handled settlement. A missing observer is reported
-separately from a queue refusal; receipt acceptance followed by idle
-auto-dispatch can still establish the join when a later explicit start reports
-that the submission no longer exists.
+successful source reading or settlement.
 
 The Codex fixtures drive the app-server through one module,
 `scripts/codex_app_server_session.py`. It owns request matching, deadlines,
@@ -764,8 +749,9 @@ Put it behind the agent command:
 exec /path/to/cairn-term-launch -- /path/to/real/agy "$@"
 ```
 
-- It listens on `$XDG_RUNTIME_DIR/cairn-term-PID.sock` (mode 0600, private
-  directory required) and passes the path to the agent as
+- It listens on `$XDG_RUNTIME_DIR/cairn-term-PID.sock`, or
+  `/tmp/cairn-term-<uid>/cairn-term-PID.sock` when `XDG_RUNTIME_DIR` is unset
+  (mode 0600, private directory required), and passes the path to the agent as
   `CAIRN_TERMINAL_WAKE_SOCKET`.
 - The watcher reads that variable from the session process. It accepts the
   socket only when it belongs to the same user and its listening process is an

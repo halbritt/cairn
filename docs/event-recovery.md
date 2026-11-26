@@ -12,7 +12,7 @@ cairn coordination-review <<'JSON'
 JSON
 ```
 
-The response has four sections:
+The response has five sections (plus optional `attention` when requested):
 
 - `deliveries`: a bounded page of delivery metadata, current holds, latest native
   and wake attempts, selected failure reasons, linked receipt, latest recorded
@@ -20,6 +20,9 @@ The response has four sections:
 - `queued_requests`: accepted pool requests awaiting their first delivery, including
   newly reissued pool work. These use publication positions and their own
   `queued_after` and `queued_limit` paging fields.
+- `closed_pool_requests`: pool requests closed before assignment (see
+  [request controls](request-controls.md)), paged with `closed_after` and
+  `closed_limit`.
 - `sessions`: a paged directory including offline sessions. Inspect each session's
   `online` and metadata fields to find stale context.
 - `workers`: configured slot presence, health, reason, retry time and launch

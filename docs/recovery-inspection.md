@@ -56,8 +56,8 @@ retain each missing original segment through reapplication before retrying.
 
 A mismatch exits 7 with `INTEGRITY_FAILURE` and a report in `data`. Reasons include
 `AUDIT_MISSING`, `AUDIT_CHANGED`, `GRANT_REVIVED`, `RECORD_REVIVED`,
-`INSTRUCTION_REVIVED`, `PAYLOAD_EXCLUSION_MISSING`, and
-`CONTEXT_CUSTODY_MISSING`. `DEPENDENCY_EXCLUSION_MISSING` identifies a forgotten
+`INSTRUCTION_REVIVED`, `PAYLOAD_EXCLUSION_MISSING`, `CONTEXT_CUSTODY_MISSING`,
+`METADATA_EXCLUSION_MISSING`, and `ARTIFACT_PURGE_FENCE_MISSING`. `DEPENDENCY_EXCLUSION_MISSING` identifies a forgotten
 source whose retained relation descendants lack the exact deletion's exclusion.
 This check evaluates the complete retained closure inside PostgreSQL, however
 many descendants a source has accumulated since it was forgotten; the ordinary

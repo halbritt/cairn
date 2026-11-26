@@ -29,7 +29,7 @@ per request against an exact integer range, not by a matching major.
 | 1 (legacy) | The legacy wire behavior retained by build `b46a0e1`. Requests carry no protocol header. The relay forwards only `Authorization`, `Content-Type`, `Cairn-Agent-ID` and `Cairn-Execution-ID`. Responses carry no protocol field. |
 | 2 | Protocol 1 plus protocol declaration: the `Cairn-Protocol` request header, the envelope `protocol` object `{"min":M,"current":N}` on every reply (success and refusal), the same object in the `version` response, and a relay that forwards `Cairn-Protocol` and adds `Cairn-Relay-Protocol`. Operation bodies and semantics are unchanged from protocol 1. |
 
-This release declares server, relay and client range `[1, 2]`.
+The default build declares server, relay and client range `[1, 2]`.
 
 ## Observation additions
 
@@ -142,7 +142,7 @@ member keeps its exact bytes and order, including duplicate or differently
 cased keys, so an admitted request decodes, and is digested for idempotency,
 exactly as it would without the guard. A duplicate guard, or a case-variant
 spelling of it, is refused with `400`. A client never lets a caller supply the
-reserved field. This release's client minimum is 1, so it sends no guard and
+reserved field. The default build's client minimum is 1, so it sends no guard and
 legacy servers keep accepting its requests.
 
 **Relay**: forwards exactly one `Cairn-Protocol` value (duplicates are refused,
@@ -191,7 +191,7 @@ guard, because protocol 1 and 2 bodies and semantics are identical.
 ## Transition from the deployed release
 
 - Legacy clients and relays (`b46a0e1`) send no header. They are accepted as
-  protocol 1 while `min` is 1, which it is in this release.
+  protocol 1 while `min` is 1, which is the default.
 - A protocol 2 client behind a legacy relay loses its header and is treated as
   protocol 1. That is correct because protocol 2 bodies equal protocol 1 bodies.
 - A protocol 2 relay or client against a legacy server: the server ignores the
@@ -263,9 +263,7 @@ Limits:
   check. A client with a higher minimum is protected by the body guard, which
   depends on strict decoding. A hypothetical older server that ignored unknown
   fields would not be protected; no such Cairn release exists.
-- The full client, relay and server matrix with retry deduplication belongs to
-  root's independent harness (`scripts/check_api_version_skew.py`). This suite
-  targets refusals, raised minimums and status.
+- `scripts/check_protocol_skew.py` targets refusals, raised minimums and status.
 - The protocol claim is declaration metadata. A client that lies about its
   protocol gains nothing: authorization is unchanged, and a request body the
   server does not understand is refused.

@@ -29,9 +29,10 @@ binding:
   `86400`), persisted as `expires_at = granted_at + ttl`;
 - `granted_by`, `granted_at`, `reason`, and idempotent `request_id`.
 
-Authorization requires the predecessor session to have no unfinished native or
-wake delivery attempt. It does not move deliveries, create credentials, mark old
-deliveries handled, or execute predecessor work.
+Authorization requires the predecessor session to be offline or stopped
+(refusing with `SESSION_LIVE` if the predecessor is still online) and to have
+no unfinished native or wake delivery attempt. It does not move deliveries,
+create credentials, mark old deliveries handled, or execute predecessor work.
 
 ## Fencing, predecessor resumption, and revocation
 
@@ -48,9 +49,10 @@ caller's transaction:
 4. The target `event_id` is listed in `grant.event_ids` and belongs to `repo`.
 5. The predecessor session row still has `execution_id =
    grant.predecessor_execution_id` and `stopped OR expires_at <=
-   clock_timestamp()`. If the predecessor resumes registration (new
-   `execution_id`) or refreshes live presence, successor access under the grant
-   ceases immediately without deleting retained grant history.
+   clock_timestamp() OR database_generation <> current_generation`. If the
+   predecessor resumes registration (new `execution_id`) or refreshes live
+   presence, successor access under the grant ceases immediately without
+   deleting retained grant history.
 6. The event and source satisfy the caller's read/publication `Destination`
    (`sensitivity = 'shareable'` or `AllowLocal`).
 

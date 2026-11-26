@@ -172,11 +172,11 @@ request. A host supplies destination configuration separately. Compile retries
 return the same receipt while the semantic package is unchanged; changed source
 state returns `STALE_PACKAGE` and requires a new request.
 
-Query text is used transiently for lexical ranking. Semantic schema
-`cairn.semantic/2` and `/3` retain `query` as `sha256:<hex>`, without raw query text.
-The field name and CBOR shape stay compatible with historical v1 decoding;
-old receipts still replay their original bytes and query text. Retained context
-files likewise omit new raw task/query text. There is no raw-text opt-in.
+Query text is used transiently for lexical ranking. Current semantic schemas
+(`cairn.semantic/3` and later) retain `query` as `sha256:<hex>`, without raw
+query text. The field name and CBOR shape stay compatible with historical v1
+decoding; old receipts still replay their original bytes and query text. Retained
+context files likewise omit new raw task/query text. There is no raw-text opt-in.
 
 `cairn explain RECEIPT_UUID` returns protected candidate versions, gate reasons,
 ranking features, order and packing costs for the authenticated receipt owner.
@@ -328,8 +328,11 @@ describes the separate failure contract.
   - `--embedding-command PATH`: Dedicated vector embedding worker.
   - `--semantic-rust-config FILE`: Rust worker configuration (`rank`, `stream` or `embed`).
   - `--semantic-idle-timeout DURATION`: Idle worker shutdown timeout.
-  - The command flags take any executable implementing the worker protocol, such as a staged Rust launcher; the Python worker is retired.
+  - The command flags take any executable implementing the worker protocol, such as a staged Rust launcher.
 - `cairn opencode-install`: Installs Cairn OpenCode adapter with support for:
-  - `--tokens N` and `--max-tokens N`: Per-turn and upper-bound token limits.
+  - `--project DIR` / `--config-dir DIR`, `--socket PATH`, `--token-file FILE`, `--repo COLLECTION`: Target and connection flags (`--replace` updates differing adapter files).
+  - `--tokens N`, `--max-tokens N`, `--output-max-bytes N`: Per-turn, explicit upper-bound, and bounded non-strict output limits.
   - `--task TASK` and `--run RUN`: Scoped execution context.
+  - `--recent-files` and `--messaging`: Optional recent-file hints and session inbox tools.
   - Context pins: `--revision`, `--workspace-sha256`, `--task-class`, `--task-phase`, `--binding`, `--capability`.
+  - See [the CLI reference](reference/cli.md) and [OpenCode tools](opencode-tools.md) for full details.

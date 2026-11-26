@@ -23,8 +23,7 @@ encoding. The attempt path includes the server-info metadata and `resultType:
 "complete"` added by the installed MCP server. It seeds those fields through the
 public `CallToolResult` JSON interface before encoding. Boundary tests compare
 the callback's bytes with the real server's returned encoding; an SDK change to
-that representation requires revalidation. No SDK distribution inquiry is part
-of this implementation.
+that representation requires revalidation.
 
 Only a fully encoded result within the remaining budget reaches
 `SearchPublication.Prepared(ctx, encodedResult)`. The argument is an immutable

@@ -85,11 +85,8 @@ The bindings launch fresh Codex, Claude Code, Agy, OpenCode and Hermes workers; 
 settings are fixed by each installed binding. Selected result text can be shared;
 raw worker output remains local and is not committed or captured as memory.
 
-Required evidence: concurrent claims; request filtering; held expired leases;
-explicit completion versus exit zero; pre-launch backoff; stale renewal;
-API/supervisor restart; process-tree termination; actual native harness launch
-with a controlled provider; disposable database backup/restore and normal checks.
-Deployment and measured usefulness must be reported separately.
+Launch and delivery guarantees are separate from task outcomes; deployment and
+measured usefulness remain separate.
 
 ## Binding and service installation
 
@@ -126,10 +123,10 @@ Codex and Claude bindings explicitly select each account's configuration home
 through `/usr/bin/env`; no credentials are embedded in binding files. Every slot
 sets `CAIRN_EVENT_PROFILE` to its name for agent guidance. That variable selects
 a profile; authentication still comes from the corresponding token.
-Codex's [noninteractive contract](https://learn.chatgpt.com/docs/non-interactive-mode)
-and Agy's [headless contract](https://antigravity.google/docs/cli/headless/)
-were checked against the installed CLI help. Agy may exit zero after a tool
-permission denial, so explicit Cairn completion remains the handling criterion.
+See Codex's [noninteractive contract](https://learn.chatgpt.com/docs/non-interactive-mode)
+and Agy's [headless contract](https://antigravity.google/docs/cli/headless/). Agy
+may exit zero after a tool permission denial, so explicit Cairn completion
+remains the handling criterion.
 
 The worker appends the prompt as one argument. The profile's destination must be
 hosted; the observation token must have the observer role in the same collection.
@@ -180,7 +177,7 @@ All calls use the profile's normal authenticated Unix API; the server never
 executes a command. `cairn agent --token-file FILE OPERATION` accepts these JSON
 operations, with `--help` for examples:
 
-- `wake-claim`: `{request_id, repo?}`. Atomically claims the oldest eligible
+- `wake-claim`: `{request_id, repo?, worker_id?}`. Atomically claims the oldest eligible
   request and creates an attempt whose UUID is `request_id`. A retry of a
   successful claim returns its current attempt. An empty poll creates no attempt
   and may find work on a later call with that UUID, but can commit expiry,
@@ -193,7 +190,7 @@ operations, with `--help` for examples:
   inspection, up to 100 results, with an exclusive UUID cursor. UUID order is
   pagination order, not chronological order; use `created_at` for timing.
 - `wake-change`: `{request_id, attempt_id, operation, receipt_id?, process_state?,
-  reason?, session?}`. Operations are `start` (record launch intent), `enter` (one worker),
+  reason?, session?, provider_failure?}`. Operations are `start` (record launch intent), `enter` (one worker),
   `link` (runner receipt), `session` (the native `{agent_id, execution_id}`),
   `report` (process label), and `finish` (host confirmed
   unit stopped). Identical mutation retries use the same request UUID. A distinct

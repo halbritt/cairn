@@ -46,11 +46,10 @@ checksum differs`), and a missing file cannot be inserted later.
    singleton`). Its conflicting row-level tuple lock waits for already-admitted
    `FOR SHARE` transactions to finish, and its new tuple version causes waiting
    repeatable-read or serializable snapshots that started through `restore_admission`
-   before the migration committed to abort with SQLSTATE `40001`. In the verified
-   schema-079 baseline (`e09277f`), retrying `Bootstrap` then refuses with
-   `SCHEMA_MISMATCH` (exit code 4), and non-retrying `coordination-review` refuses with
-   `STORE_ERROR` (exit code 7). Those results do not establish a schema ceiling for
-   older binaries that never implemented one.
+   before the migration committed to abort with SQLSTATE `40001`. Binaries that
+   enforce a schema ceiling refuse on retry with `SCHEMA_MISMATCH` (exit code 4) or
+   `STORE_ERROR` (exit code 7) for non-retrying queries, whereas older binaries
+   without a schema ceiling do not enforce that limit.
 
    This barrier covers transactions that pass through that admission check. It is not
    a connection fence. An old process that already holds an open connection pool can
@@ -59,17 +58,15 @@ checksum differs`), and a missing file cannot be inserted later.
    stop every old direct-store process before migrating, and restart only upgraded binaries.
 4. Restart the API, then the scheduler, supervisors and consumers.
 
-Schema ceilings depend on the executable, not just the database version. The verified
-schema-079 baseline (`e09277f`) implements compatibility checks when opening a store
-and entering transactions through `beginLevel`. Against schema 084, it refuses with
-exit code 4 and `SCHEMA_MISMATCH` (`database schema version 84 exceeds supported
-version 79`). Direct-pool operations can bypass those transaction checks.
-
-The deployed schema-074 binary (`d2cccca`) predates these compatibility checks. In the
-2026-11-06 disposable upgrade check, its `migrate` command refused schema 084, but a
-fresh ordinary `create` command still committed a note after the upgrade. Migration
-refusal is therefore not proof that an old binary cannot write. Stop and replace every
-old direct-store process, including one-shot commands, and confirm no old PostgreSQL
+Schema ceilings depend on the executable, not just the database version. Current
+executables check schema compatibility when opening a store and entering
+transactions through `beginLevel`, refusing an unsupported newer schema with
+exit code 4 and `SCHEMA_MISMATCH` (`database schema version N exceeds supported
+version M`). Direct-pool operations can bypass those transaction checks, and older
+binaries that predate compatibility checks can still commit ordinary writes even
+when their `migrate` command refuses a newer schema. Migration refusal is
+therefore not proof that an old binary cannot write. Stop and replace every old
+direct-store process, including one-shot commands, and confirm no old PostgreSQL
 connections remain before migrating. API-only MCP facades and local channel bridges
 do not hold database connections; their harness conversations need not be stopped for
 the database migration. They retain their own build capabilities until restarted.
@@ -270,9 +267,7 @@ declaring it retired:
 This rollout does not change the token-efficiency rollout decision in
 [CAIRN-227](../plans/token-efficiency-2026-10-23.md), which stays in force. Durable
 acceptance is not a wake promise. For sessions that wait a long time on a retained
-wake, see the existing investigation
-[CAIRN-275](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/820e6579-781b-4be0-a90b-df8d46bfd4d7/)
-instead of renudging sessions. Bounded fanout limits delivery work per event; it does
+wake, see Plane issue CAIRN-275 instead of renudging sessions. Bounded fanout limits delivery work per event; it does
 not bound total workflow cost or prevent loops. No latency, cost or efficiency
 improvement has been measured.
 

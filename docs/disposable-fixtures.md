@@ -37,8 +37,7 @@ module's interface is the fixture's test surface.
 - `HookOwner.start(script, config, env)` runs lifecycle hooks in one long-lived
   synthetic owner process, one event per line (`send`, `hook`, `compact`).
 - Startup failures carry the fixed classes `classify_pg_start_failure` and
-  `classify_api_start_output` that the Codex wake-join fixture introduced; that
-  fixture now imports them from here.
+  `classify_api_start_output`.
 
 ## Runner
 
@@ -61,7 +60,8 @@ never supply an operational database. Keep CLI and child processes on
 The Go CLI suite's independent guard and manual-probe requirements are described
 in [testing](developer/testing.md#keep-cli-and-fixture-defaults-isolated).
 
-Fixtures that drive several
-services (`check_multi_machine.py`, `check_panel_relay_uncertain_response.py`,
-`check_protocol_skew.py`, `check_api_version_skew.py`) keep their own service
-helpers for now.
+Fixtures that drive several services (`check_multi_machine.py`,
+`check_panel_relay_uncertain_response.py`) use `ProvidedCluster.from_environment()`
+and `checked` from `scripts/disposable_host.py` while keeping their own
+multi-service helpers; `check_protocol_skew.py` drives its own multi-binary
+HTTPS setup against a provisioned database.

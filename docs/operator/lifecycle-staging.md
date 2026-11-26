@@ -33,52 +33,6 @@ The ordinary `./cmd/cairn` image remains the API/store CLI and its public
 `cairn lifecycle` command remains disabled. Configuration field `cairn` continues
 to select that ordinary API CLI; it is not replaced by the private image.
 
-## Current66 staged-data boundary
-
-Root1496 accepted the existing66ca FINAL5 and15 same-host role imports, then
-the actual eight forward disabled `/3` and eight retained installed `/2`
-generations across proximal, archon and talos. Eight cohorts cover ten members;
-shared Codex is one cohort with three proofs. This is lifecycle staged-data
-preparation, not aggregate Stage1 completion, native/runtime adoption or Stage2.
-The [current packet selection](../verification/r07-execution-packet-draft.md#current-66ca-staged-data-selection)
-names exact evidence, generation-pin locators and remaining captures.
-
-All ten retained associations preserve raw original profile/native argv/source17
-bytes. Forward source18 uses `guarded_sources` preflight-prefix transformation
-and declared aliases; do not compare its hashes to untransformed source or
-rewrite originals. Forward configuration selects the same-host API client;
-the receipt binary selects the distinct control role. No staged launcher,
-native/provider/API/store/PG or current Go bootstrap inspect ran in this phase.
-The three assemblies contain actual generation pins and nine unfilled captures
-per host; they are not strict executable plans. The first future post-layout
-gate inspects the disabled target before any exchange. Fresh real<30s fence and
-positive library/full-launch margins precede every exchange, with same-Scope
-final Recheck; reverse/rollback reuse the SAME ORIGINAL plan path and hash.
-
-OptionC changed only Talos coordination inode4610709 and opencode-hooks
-inode4349236 (dev64512),0755 to0700; parent0700 and bindings inode5269819/0755
-stayed unchanged. The same-inode0755 inverse is recorded, not run. Source/data
-parents still require0700; wider0755 support is only a nonblocking follow-up.
-All presence90/raw-drop-in,0775/state/PATH, failed-native, installed Agy1.5.9,
-shared-service/PG and production holds persist. Python watcher remains interim;
-later Go adoption needs its own admission and>=24h qualified Go R08 before R09.
-BOTH gatekeepers selected Stage 2a: selector-only Go `/3` lifecycle bootstrap
-and cutover, proximal → archon → talos, with the semantic service unchanged on
-its current retained Python route. The earlier staged/verified Python semantic
-reverse/S04R closure stays a prerequisite. Stage 2b is a later, separately
-admitted Rust semantic switch; Rust remains parked, with all qualification,
-raw-row/count review, sole1415 adequacy, any helper redesign/review/landing and
-binding-plan requirements retained off the 2a critical path. Existing Rust
-stage/binding material stays unused and is not deleted. See the
-[selected packet order](../verification/r07-execution-packet-draft.md#selected-stage-2a-and-2b-order-with-rust-parked).
-Each admitted 2a lifecycle lane needs >=24 continuous hours after its last
-relevant change. Stage 2b resets the semantic and dependent lifecycle lanes
-for fresh >=24h observation and the full proximal semantic rebuild. Keep two
-observation records. R09/Python retirement is not selected; by default it waits
-for 2a, 2b and Go-watcher observations. Rust still parked at the end of the 2a
-windows requires current facts to BOTH gatekeepers. Nothing here starts a clock
-or grants Stage2 execution admission.
-
 ## Versioned configuration generations
 
 `cairn-stage-lifecycle generation --root ABSOLUTE_RELEASE_DIRECTORY` reads a
@@ -175,8 +129,9 @@ The plan has exactly these fields:
 A plan that adds `"receipt_schema": "cairn.lifecycle-compatibility/2"`
 stages a Go-only generation and omits `sources`, `aliases` and `python`. It
 stages no snapshot, interpreter anchor, retained launcher or
-`retained-argv.json`. The receipt has only the `/2` fields (see release.md,
-"Go-only receipt"). `selection.json` keeps one checked Go vector per
+`retained-argv.json`. The receipt has only the `/2` fields (see
+[Go-only receipt](../plans/hybrid-runtime-contracts/release.md#go-only-receipt-2-cairn-785)).
+`selection.json` keeps one checked Go vector per
 role/timeout label (the image, the role and the eight flags) and an empty
 `launchers` map; `inspect` checks both.
 
@@ -483,9 +438,11 @@ staged hook `selection` (`{path, sha256}`), and `replace_commands`
 `settings-publish` snapshots the current live target, merges only the staged
 Cairn rows onto those current bytes (preserving intervening edits to foreign
 hooks and non-hook fields), and commits via `RENAME_EXCHANGE` after rechecking
-that the target did not change mid-write. `reverse-settings` (`--record PATH
---record-sha256 HEX`) restores the exchanged preimage and refuses if the target
-drifted after publication.
+that the target did not change mid-write. `reverse-settings` (`--stager PATH
+--stager-sha256 HEX --record PATH --record-sha256 HEX`, wrapping
+`cairn-stage-lifecycle settings-reverse --record PATH --record-sha256 HEX`)
+restores the exchanged preimage and refuses if the target drifted after
+publication.
 
 The installed renderer tests are `test_r04_hook_settings.py`; the standalone
 package check above also executes every rendered Codex and Claude row without
@@ -558,7 +515,7 @@ Every row records its `implementation` and `reason`. Current routing is:
 | --- | --- |
 | OpenCode unbound `agent_tools` SessionStart/UserPromptSubmit | Receipt-checked ordinary Go consumer; all selected profiles must be unbound. |
 | OpenCode unbound `agent_tools` PreToolUse/PostToolUse/PostToolUseFailure commands | Receipt-checked ordinary Go tool observation with the same H=13 and R-02 receipt/image/closure/profile/launcher checks. |
-| Bound Codex/Claude `agent_tools` SessionStart/UserPromptSubmit | Receipt-checked bound Go `memory` recall with H=13 and the actual shared activation decision. The retained Codex frontend already delegates to pinned Go; retained Claude recall exercises the Python body. Claude prompt staging includes ordinary owner/repeat and repaired reserved-wake Source pairs; the historical b45 RED remains retained. |
+| Bound Codex/Claude `agent_tools` SessionStart/UserPromptSubmit | Receipt-checked bound Go `memory` recall with H=13 and the actual shared activation decision. The retained Codex frontend already delegates to pinned Go; retained Claude recall exercises the Python body. Claude prompt staging includes ordinary owner/repeat and repaired reserved-wake Source pairs. |
 | Bound Claude `agent_tools` PostToolUse/PostToolUseFailure | Receipt-checked Go `memory` tool observation with H=13 and the same eight flags/stdin. File/search/error hints retain Source behavior without recall, capture or provider calls. Native tool-event qualification remains separate. |
 | Bound Codex/Claude ambient or omitted/default SessionStart/UserPromptSubmit | Retained Python selection. Enabled binding profile admission requires `agent_tools` in both Source and Go, so these modes remain refused before recall. Disabled binding provider fixtures do not establish enabled support. |
 | Bound Codex PreCompact/Stop and bound Claude PreCompact/SessionEnd | Receipt-checked bound Go capture with H=150, including the configured provider/selected-record writer. |
@@ -584,8 +541,7 @@ emitted Source/Go hint updates, disabled/required/owner exclusions, account and
 privacy boundaries, exact state/stream/request keys and immutable caller
 refusals. Typed configuration-data failures retain the optional Source
 entry/exit trace before stdin parsing; unavailable observers do not change the
-refusal. The earlier unavailable-row RED and fixture failures remain retained.
-These producer tests do not qualify native tool events or production use.
+refusal. These producer tests do not qualify native tool events or production use.
 
 The selected OpenCode plugin emits PostToolUse for its existing read/edit/write
 after-tool callback, and PostToolUseFailure for tool error updates. It has no

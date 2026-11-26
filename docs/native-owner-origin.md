@@ -15,14 +15,14 @@ instructions. It does not install a binary or change a running session.
 
 `next-turn-notices/1` (`cairn work features enable --feature next-turn-notices/1`)
 remains **off by default**: it requires this carried Codex `0.166.0` patch and
-the retired Python `launch-codex-coordination.py` launcher (not ported to the
-live Go `cairn-lifecycle` / `cairn-codex-launch` runtime). Standard Codex (`0.172.0`+),
+the Python `scripts/launch-codex-coordination.py` launcher (owner-origin launches
+are not ported to the Go `cairn-codex-launch` runtime). Unpatched Codex,
 Claude, OpenCode, Hermes, and Agy integrations retain ordinary/compact inbox delivery.
 
 ## Trust and input identity
 
-The coordination installer does not install this launcher (w26); run it
-explicitly. With an explicit verified manifest, `launch-codex-coordination.py` generates a
+The coordination installer does not install this launcher; run
+`scripts/launch-codex-coordination.py` explicitly. With an explicit verified manifest, `scripts/launch-codex-coordination.py` generates a
 random 32-byte connection proof. Separate inherited Unix socket descriptors
 carry it to the app-server and TUI; only descriptor numbers appear in argv.
 The bounded frame contains the contract magic, proof, and exact private socket
@@ -194,7 +194,8 @@ build receipt outside the repository. The upstream release tag's lockfile still
 names workspace packages `0.0.0`; the carried patch normalizes those names to the
 release's `0.166.0` workspace version. It does not update external dependencies.
 
-Focused checks cover the launcher lifecycle and native composer, queue, Core
-admission/recovery, transport authentication, and tracing behavior. Native checks
-and their final executed results are recorded in the patch bundle's README.
+Focused checks cover the launcher lifecycle (`scripts/test_codex_launcher.py`,
+`scripts/check_codex_organic_native.py`) and native composer, queue, Core
+admission/recovery, transport authentication, and tracing behavior (see
+`patches/codex-owner-origin/`).
 An API-driven inbox fixture alone does not validate actual composer origin.

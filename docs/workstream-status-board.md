@@ -1,6 +1,6 @@
 # Workstream status board
 
-`CAIRN-466` adds a bounded per-repository workstream status board so leads and
+Cairn provides a bounded per-repository workstream status board so leads and
 workers can publish routine progress, checkpoints, blockers, and decisions
 needed without sending inbox notices or waking a coordinator model turn.
 
@@ -37,7 +37,7 @@ operators may pass `--operator --repo REPO`):
 cairn status authorize --stream foundation --writer agent/WORKER_UUID
 cairn status authorize --stream foundation --writer agent/WORKER_UUID --revoke
 cairn status authorize --stream foundation --transfer-owner agent/SUCCESSOR_UUID
-cairn status authorize --operator --repo /home/halbritt/git/cairn --stream foundation --transfer-owner agent/SUCCESSOR_UUID
+cairn status authorize --operator --repo /projects/shared-memory --stream foundation --transfer-owner agent/SUCCESSOR_UUID
 ```
 
 ## Guarantees and limits
@@ -52,20 +52,22 @@ cairn status authorize --operator --repo /home/halbritt/git/cairn --stream found
   (including permission and ownership updates) with its authenticated `writer`,
   `owner`, and timestamp to `cairn.workstream_status_history`.
 - **Fixed byte budget**: each stream entry is capped at `2,048` UTF-8 bytes
-  total (`current`, `last_landed`, `blocker`, and `decision_needed` at most 512
-  bytes each; `detail` at most 1,024 bytes). Oversized updates refuse with
-  `BUDGET_REFUSED`.
+  total across `stream`, `state`, `current`, `last_landed`, `blocker`,
+  `decision_needed`, and `detail` (`current`, `last_landed`, `blocker`, and
+  `decision_needed` at most 512 bytes each; `detail` at most 1,024 bytes).
+  Oversized updates refuse with `BUDGET_REFUSED`.
 - **Ownership and authorization**: the initial writer becomes the stream's
   `owner`. Subsequent updates from other principals refuse with
   `AUTHORITY_DENIED` unless the owner or a local operator explicitly authorizes
-  them via `status authorize`.
+  them via `status authorize` (capped at `16` authorized writers per stream;
+  exceeding this refuses with `BUDGET_REFUSED`).
 - **Sensitivity isolation**: new streams default to `shareable`; updating an
   existing stream without `--local` or `--shareable` preserves its current
   sensitivity. `--local` requires a local destination, is hidden from hosted
   profiles without leaking stream existence, and a `shareable` stream cannot be
   downgraded to `local`.
 
-## Overdue checkpoint and `expect_by` notices (`CAIRN-467`)
+## Overdue checkpoint and `expect_by` notices
 
 When a non-`done` workstream entry declares `next_checkpoint`, a notice declares
 `expect_next_by`, or a request declares `expect_by` (`--expect-by RFC3339`),

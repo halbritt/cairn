@@ -83,8 +83,8 @@ admissible pool assignment could be claimed, not an empty pool.
 
 Slot liveness and account availability are separate. Health is `available`,
 `paused` or `unavailable`. Initial availability permits admission; it does not
-assert that a provider call succeeded. The current deployment maps each of the
-seven slots to one independent account binding.
+assert that a provider call succeeded. Configure each slot with an independent
+account binding.
 
 The existing slot profile can record an observation or perform explicit recovery
 using `worker-health`:

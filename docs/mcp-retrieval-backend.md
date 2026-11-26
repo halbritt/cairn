@@ -34,8 +34,10 @@ index call; the first successful capability choice remains latched. A later
 rollback refuses without retrying with different semantics. `Pull` forwards the
 complete expansion request, including its optional span and opening size.
 
-The facade still applies `presentSearch` and `toolResult` after the backend
-returns. Thus successful backend completion does not establish a publishable MCP
+The facade still applies `presentSearch` (through `searchView`) and
+`retrievalToolResult` (which invokes `toolResult` or compact
+`encodeToolResultInto`) after the backend returns. Thus successful backend
+completion does not establish a publishable MCP
 result: missing handles, projection errors or the encoded output budget can
 still refuse it. Core refusal codes and refusal IDs retain the ordinary error
 mapping; arbitrary transport details are sanitized. The backend must not treat
@@ -56,8 +58,8 @@ a principal or establish native MCP launch provenance. The read-only constructor
 is a trusted embedding seam, not a containment boundary against a malicious
 backend; even read operations can have the API's ordinary receipt effects.
 
-There is no trial gate, native command policy, broker transport, origin binding,
-current-attempt receipt ledger or protected credential builder in this change.
+This interface includes no trial gate, native command policy, broker transport,
+origin binding, current-attempt receipt ledger or protected credential builder.
 An eventual trial backend must debit the sole original attempt gate before any
 preview/version/index/expand effects, enforce original deadlines and resource
 limits, and bind actual results to that attempt. Store current-read validation
@@ -68,14 +70,14 @@ launcher behavior is inferred here.
 
 ## Verification
 
-The existing MCP unit and synthetic local HTTP fixtures cover ordinary preview
-caching across search/preparation/client-info, probe failures, distinct semantic
-queries and rollback behavior. New in-memory MCP sessions and synthetic local
-HTTP fixtures exercise exact two-tool discovery, absence of other tools,
-required-backend refusal, request normalization and fixed-context copying,
-source-view/pull round trips, early validation, API-error preservation,
-transport-detail sanitization and final envelope refusal. These tests use the
-real local backend and HTTP client; synthetic token files belong to temporary
-test directories. Database tests are skipped with `CAIRN_TEST_DATABASE_URL`
-unset. They do not prove store integration, native origin, runtime admission,
-workload fit, task benefit or full CAIRN107 acceptance.
+The MCP unit tests and synthetic local HTTP fixtures in `mcpapi/server_test.go`
+and `mcpapi/retrieval_test.go` cover ordinary preview caching across
+search/preparation/client-info, probe failures, distinct semantic queries and
+rollback behavior. In-memory MCP sessions and synthetic local HTTP fixtures
+exercise exact two-tool discovery, absence of other tools, required-backend
+refusal, request normalization and fixed-context copying, source-view/pull round
+trips, early validation, API-error preservation, transport-detail sanitization
+and final envelope refusal. These tests use the real local backend and HTTP
+client; synthetic token files belong to temporary test directories. Database
+tests are skipped with `CAIRN_TEST_DATABASE_URL` unset. They do not prove store
+integration, native origin, runtime admission, workload fit or task benefit.

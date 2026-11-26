@@ -84,10 +84,13 @@ and cancellation after publication.
 
 ## Service and restore
 
-`cairn schedule-serve --repo COLLECTION [--overdue-grace-seconds N]` ticks up to
-100 due occurrences once per second, with a 20-second call budget shared with
-the preceding bounded [request-control sweep](request-controls.md), wait timeout
-and outbox sweeps, and [overdue checkpoint sweep](workstream-status-board.md). The service reports readiness
+`cairn schedule-serve --repo COLLECTION [--once] [--overdue-grace-seconds N]`
+ticks up to 100 due occurrences once per second (or runs one tick and exits
+with `--once`), with a 20-second call budget per tick covering: the bounded
+[request-control sweep](request-controls.md) and notice-expiry sweep,
+scheduled occurrence firing, wait-timeout and wait-outbox sweeps (up to 50 wait
+notices), and the [overdue checkpoint sweep](workstream-status-board.md). The
+service reports readiness
 after its first successful tick and logs occurrence UUID/state/code only.
 The [user unit template](../integrations/systemd/cairn-scheduler.service) requires
 the local store service. Set its collection argument and executable paths for your

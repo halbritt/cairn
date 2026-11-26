@@ -18,8 +18,8 @@ cairn migrate
 Migrations live in `core/schema/`. They use a migration lock and transactional
 application. Binaries that implement schema compatibility checks run them at store
 opening and transaction entry; direct-pool helpers can bypass transaction checks.
-Older binaries can lack these checks: schema-074 `d2cccca` still accepted an ordinary
-write after a disposable upgrade to 084, although its `migrate` command refused.
+Older binaries that lack compatibility checks can still accept ordinary writes
+after a schema upgrade even when their `migrate` command refuses.
 The `cairn.restore_admission` tuple-update barrier in migrations 080 and 084 covers
 only transactions that enter `restore_admission`. Neither mechanism replaces stopping
 and upgrading every old direct-store process; see

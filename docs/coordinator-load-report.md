@@ -22,7 +22,7 @@ caller-supplied `output` destination and aggregate counts.
 PYTHONPATH=scripts python3 scripts/coordinator_load_report.py \
   --since 2026-11-06T05:09:00Z --until 2026-11-09T19:25:00Z \
   --harness codex \
-  --transcript "$HOME/.codex-3/sessions/2026/11/05/rollout.jsonl" \
+  --transcript "$HOME/.codex/sessions/YYYY/MM/DD/rollout.jsonl" \
   --coordination-state "$HOME/.local/share/cairn/coordination/state" \
   --output "$HOME/.cache/cairn-coordinator-load.json"
 ```

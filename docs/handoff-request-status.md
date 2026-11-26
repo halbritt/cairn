@@ -16,19 +16,10 @@ handoff's work is finished. Check current task evidence before explicitly
 revising a saved handoff. Existing lifecycle capture requires an explicit report
 that all work in that handoff is complete.
 
-Cairn does not currently infer handoff closure, change its ranking, or rewrite
-its history when a referenced request reaches a terminal delivery state.
-CAIRN-115's original automatic-closure proposal requires a corrected contract:
-any future status annotation must preserve event visibility, distinguish request
-handling from task outcome, and leave retained note bodies unchanged. The
-caller-scoped inspection endpoint below uses existing event permissions; it
-establishes no new status-sharing permission.
-
-The regression `TestHandoffLinksDoNotConferEventAccessOrTaskClosure` exercises two
-handled requests with no replies, a shareable handoff readable by a third
-principal, denied event/group reads for that principal, and unchanged retained
-note history. It characterizes existing behavior; it does not validate a future
-link or annotation feature.
+Cairn does not infer handoff closure, change ranking, or rewrite history when a
+referenced request reaches a terminal delivery state. The caller-scoped
+inspection endpoint below uses existing event permissions and establishes no new
+status-sharing permission.
 
 See [agent events](agent-event-fabric.md), [response groups](response-groups.md)
 and [record history](record-history.md) for the implemented contracts.
@@ -140,6 +131,5 @@ may use the existing refusal audit. It makes no model call.
   to observe transitions.
 - The view is not stored or shared; each caller must supply its own links.
 - Remote machine profiles do not yet have this operation.
-- It does not close, annotate or re-rank a handoff. The original automatic-closure
-  proposal remains unimplemented, and passing tests here do not show that the view
-  improves retrieval or handoff quality.
+- It does not close, annotate or re-rank a handoff, and status inspection does
+  not establish whether the view improves retrieval or handoff quality.

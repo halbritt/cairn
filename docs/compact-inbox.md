@@ -1,6 +1,7 @@
 # Compact native notices and responses
 
-CAIRN-216 / CAIRN-811 enable `compact_inbox_version: 1` for Codex, Claude, Agy, OpenCode, and Hermes native delivery.
+Native delivery enables `compact_inbox_version: 1` by default for Codex, Claude,
+Agy, OpenCode, and Hermes bindings.
 `scripts/install-agent-coordination.py --native-delivery` enables
 `compact_inbox_version: 1`, `notice_digest_version: 1`
 (`notice_digest_window_seconds: 300`, without `notice_batch_version`), and
@@ -54,10 +55,9 @@ applies only to valid, safe `action: none` notices; retries remain idempotent by
 request UUID).
 The hook reads the selected historical version through the existing hosted
 profile, checks its identity, full body length and SHA-256, and includes the
-whole source when it fits 4,096 UTF-8 bytes and the overall hook budget. An
-oversized source (for example, a 9,579-byte report against a 9,500-byte hook
-budget) is truncated on a clean line, word, or UTF-8 rune boundary with an
-explicit truncation marker and pull handle (`cairn-inbox read HANDLE`, which
+whole source when it fits 4,096 UTF-8 bytes and the overall hook budget. A
+source exceeding those bounds is truncated on a clean line, word, or UTF-8 rune
+boundary with an explicit truncation marker and pull handle (`cairn-inbox read HANDLE`, which
 also supports `read` and `inspect` on headered `request` deliveries).
 The agent runs `cairn-inbox read HANDLE` when it needs the complete source. Reading does
 not acknowledge delivery. The owner-only full context and original journaled
@@ -89,14 +89,10 @@ key; the existing profile and store checks remain the authority. The helper
 keeps token paths, lease IDs and retry IDs in owner-only files. The native
 session is still responsible for handling the message before its turn ends.
 
-The retained audit's metadata projection is a representation baseline, not
-measured model-token savings. Compact inbox byte bounds (`4,096` UTF-8 bytes)
-and `available_tokens` retrieval budgets use conservative UTF-8 byte accounting
-(`utf8-byte-upper-bound/1`, not provider BPE tokens; Claude/Gemini BPE
-calibration `+-2-4%` remains unmeasured, see
-[token audit errata](verification/token-audit-errata-2026-11-25.md)).
-
-<a id="bounded-notice-batches-cairn-221"></a>
+Compact inbox byte bounds (`4,096` UTF-8 bytes) and `available_tokens`
+retrieval budgets use conservative UTF-8 byte accounting
+(`utf8-byte-upper-bound/1`, an upper bound rather than measured provider BPE
+tokens or measured model-token savings).
 
 ## Bounded notice batches
 

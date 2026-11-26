@@ -130,8 +130,5 @@ same PostgreSQL transactions as their corresponding events. Restore preserves
 retained group history and closes open groups as incomplete, since a backup can
 omit later replies. Review before creating new intent. Reissuing an individual
 failed request does not copy the old group's membership or collection policy.
-
-Apply migration 047 with the matching API/CLI and supervisor binary. Stop the
-scheduler and consumers before migration, keep the existing profiles and trusted
-host model, then start API before consumers. No new credentials, general workflow
-engine, quorum policy or automatic replacement worker is introduced.
+No new credentials, general workflow engine, quorum policy or automatic
+replacement worker is introduced.

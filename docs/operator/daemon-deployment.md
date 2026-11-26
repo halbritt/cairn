@@ -13,23 +13,23 @@ Each has its own configuration and failure behavior.
 | `--semantic-command PATH` | A local scoring executable invoked for requests. |
 | `--semantic-stream-command PATH` | A reusable local scoring process. |
 | `--embedding-command PATH` | Persistent passage retrieval with a local embedding executable. |
-| `--semantic-rust-config FILE` | Rust worker configuration (`rank`, `stream`, or `embed`; active on host `cairn-api.service` via `zz-c301-api-rust.conf` drop-in). |
+| `--semantic-rust-config FILE` | Rust worker configuration (`rank`, `stream`, or `embed`). |
 
 The executable must implement Cairn's protocol; an arbitrary embedding CLI is
 not interchangeable. `--semantic-idle-timeout` applies only to
 `--semantic-stream-command` or a Rust `stream` config. The default reusable-worker
 idle lifetime is 30 seconds. A persistent embedding backend has a different lifecycle.
 
-On host `cairn-api.service`, `--semantic-rust-config` is configured via systemd
-drop-in (`zz-c301-api-rust.conf`) rather than hardcoding a machine-local config
-path in `deploy/cairn-api.service`; omit the flag to disable the Rust worker.
+Configure `--semantic-rust-config` via a systemd drop-in under
+`cairn-api.service.d/` rather than hardcoding a machine-local config path in
+`deploy/cairn-api.service`; omit the flag to disable the Rust worker.
 For `CAIRN_SOURCE_OPENING_BINDING`, `cairn serve` leaves binding disabled when unset
 or `""`; enable verified host principals via a `cairn-api.service.d` drop-in (see
 [`deploy/cairn-api-source-opening.conf`](../../deploy/cairn-api-source-opening.conf)
 and [source openings](../note-span-openings.md#enabling-binding-default-off)) after
-upgrading all host readers and relays. Delivery starvation alerts run via
-`deploy/cairn-delivery-alerts.timer` (`systemctl --user enable --now cairn-delivery-alerts.timer`,
-active on host; disable with `systemctl --user disable --now cairn-delivery-alerts.timer`).
+upgrading all host readers and relays. Delivery starvation alerts can be enabled
+via `deploy/cairn-delivery-alerts.timer` (`systemctl --user enable --now cairn-delivery-alerts.timer`;
+disable with `systemctl --user disable --now cairn-delivery-alerts.timer`).
 
 Follow [semantic discovery](../semantic-discovery.md) or
 [persistent retrieval](../persistent-semantic-retrieval.md) for setup and model
@@ -39,11 +39,14 @@ reported state; unavailable scoring can produce a labelled lexical fallback.
 ## Scheduled publication
 
 `cairn schedule-serve --repo COLLECTION` runs the operator's schedule and wait
-processor (`--once` runs a single pass and exits). Each bounded tick runs five
-steps in order: request-control expiry (`SweepRequestControls`), quiet-notice
+processor (`--once` runs a single pass and exits, and `--overdue-grace-seconds`
+sets the overdue grace period, defaulting to 60 seconds). Each bounded tick runs
+six steps in order: request-control expiry (`SweepRequestControls`), quiet-notice
 expiry (`SweepNoticeExpiries`), due one-shot schedule publication (`TickSchedules`,
-up to 100 rows), wait deadline settlement (`SweepWaitTimeouts`), and durable
-wait-notice publication (`DrainWaitOutbox`, up to 50 rows). It is not a pool
+up to 100 rows), wait deadline settlement (`SweepWaitTimeouts`), durable
+wait-notice publication (`DrainWaitOutbox`, up to 50 rows), and overdue
+checkpoint or `expect_by` notice sweep (`SweepOverdueDeadlines`, logging
+`overdue notices published=... coalesced=...` when non-zero). It is not a pool
 worker and does not execute an assignment itself.
 
 Under enforced [event admission](event-admission-rollout.md), a due schedule
@@ -51,10 +54,11 @@ refused for capacity, rates, or missing closure reconciliation stays `pending`
 with an updated `last_checked_at` so later due schedules, wait timeouts, and
 wait-outbox drains still make progress in the same tick. If post-commit refusal
 telemetry retention (`cairn.agent_event_admission_refusal`) fails after a
-refusal, `schedule-serve` logs `schedule refusal_diagnostics_unrecorded=N
-warning="..."` (`schedule-tick` returns `unrecorded_refusal_diagnostics` and
-`diagnostic_warning`) and continues the tick; transaction failures on real sweep
-or publication work still exit non-zero.
+refusal during schedule ticks or overdue sweeps, `schedule-serve` sums the
+unrecorded counts, logs `schedule refusal_diagnostics_unrecorded=N warning="..."`
+(`schedule-tick` returns `unrecorded_refusal_diagnostics` and `diagnostic_warning`),
+and continues the tick; transaction failures on real sweep or publication work
+still exit non-zero.
 
 Create schedules through `event-schedule` with an exact source version, due time,
 and grace period. Follow [event scheduling](../event-scheduling.md) for request

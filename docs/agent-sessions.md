@@ -135,13 +135,13 @@ one `cairn-presence.service` watcher. Supply an existing token file and a distin
 `--binding` for each account home. Codex and Claude hooks also check their active
 configuration home, so merged hook layers cannot register a conversation under
 another account. Codex hook trust is recorded through its installed app-server
-API for the four exact Cairn commands. Other hooks and settings are preserved.
+API for the six exact Cairn hook commands. Other hooks and settings are preserved.
 Its cwd-based trust check does not certify an already loaded thread; see
 [existing Codex conversations](codex-lifecycle.md#existing-conversations).
 
 ```sh
 python3 scripts/install-agent-coordination.py \
-  --harness codex --binding codex-two --settings "$HOME/.codex-harm/hooks.json"
+  --harness codex --binding codex-two --settings "$HOME/.codex-two/hooks.json"
 ```
 
 For Claude, `--settings` names its `settings.json`; for Agy, its `hooks.json`.
@@ -160,8 +160,7 @@ Installer conflict detection and the full transition remain
 [R-06 qualification requirements](plans/hybrid-runtime-contracts/release.md#required-install-and-transition-behavior).
 The current installer does not implement this check: for Agy hook configuration,
 it reads and writes only the given `--settings` file and does not inspect the
-other layer. The Herdr account-home mapping below still needs separate
-qualification before live installation.
+other layer.
 
 With `--idle-wakeup`, installation also covers the selected account home with
 Herdr's own native integration: it checks `herdr integration status` and runs
@@ -203,7 +202,8 @@ lives. A dead process is stopped; unavailable API calls allow the existing
 replace or stop a newer execution. A real hook can resume the unchanged native
 session after a database restore; the watcher cannot do that by itself.
 
-Codex/Claude use SessionStart, UserPromptSubmit, Stop and SessionEnd. Agy uses
+Claude uses `SessionStart`, `UserPromptSubmit`, `Stop`, `SessionEnd` and
+`PostToolUse`; Codex uses those five events plus `Interrupt`. Agy uses
 flat PreInvocation/Stop handlers and its `fullyIdle` observation. OpenCode uses
 request transformation and idle/delete/dispose events. Hermes uses pre/post-turn
 hooks and request middleware. Hermes gateway presence ends with each agent turn:
@@ -220,10 +220,6 @@ with `CAIRN_WAKE_CONTEXT` retain their separate supervisor lifecycle.
 Presence does not imply immediate idle-process wakeup. Opt-in
 [native inbox delivery](native-inbox.md) consumes queued events at supported
 turn boundaries with a durable ownership hold and explicit completion.
-Known metadata is reported context, not proof that an agent is working correctly.
-
-Tests use disposable PostgreSQL clusters and the real Unix API/CLI. They cover
-resume, same-account separation, context revision checks, visibility, execution
-fencing, API restart and backup/restore. Native probes exercise installed Codex,
-Claude, OpenCode and Hermes with fixture-only providers, plus an explicitly opted-in
-Agy model turn. These checks do not establish useful cross-agent task completion.
+Known metadata is reported context, not proof that an agent is working correctly,
+and presence or delivery behavior does not establish useful cross-agent task
+completion.
