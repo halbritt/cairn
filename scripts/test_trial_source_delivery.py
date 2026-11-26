@@ -40,31 +40,6 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(bad['items'],[],mutation)
         self.assertEqual(observe(dict(value,span=None))['status'],'unknown')
 
-    def test_observer_uses_only_emitted_payload_not_inspected_or_seen(self):
-        observer=Path(__file__).with_name('trial_hook_observer.py')
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);engine=root/'engine.py'
-            engine.write_text('import json\n'+'''def recall(config,event,state=None):
- state['last_recall']={'records':[{'record_id':'INSPECTED_NOT_DELIVERED'}]}
- state['seen']={'SEEN_NOT_DELIVERED':1}
- return {'hookSpecificOutput':{'additionalContext':'Cairn guidance\\n'+json.dumps(VIEW)}}
-def handle(config,event):return recall(config,event,{})
-def main():
- print(json.dumps(handle({}, {'hook_event_name':'UserPromptSubmit'})))
- return 0
-'''+ 'VIEW='+repr({'selected':[],'index':[],'candidate_bodies':[{'response':{'selection':selection()}}]})+'\n')
-            out=root/'observations.jsonl'
-            done=subprocess.run([sys.executable,str(observer),'--engine',str(engine),'--config',str(root/'unused'),'--observations',str(out)],capture_output=True,text=True,check=True)
-            row=json.loads(out.read_text());delivery=row['source_delivery']
-            self.assertEqual(delivery['status'],'observed')
-            self.assertEqual(delivery['items'][0]['record_id'],RID)
-            self.assertEqual(delivery['items'][0]['delivered_sha256'],sha(BODY.encode()))
-            self.assertEqual(delivery['items'][0]['extent'],'full_body')
-            self.assertNotIn('PRIVATE_BODY',json.dumps(row))
-            self.assertNotIn('INSPECTED_NOT_DELIVERED',json.dumps(delivery))
-            self.assertNotIn('SEEN_NOT_DELIVERED',json.dumps(delivery))
-            self.assertIn('PRIVATE_BODY',done.stdout)
-
     def test_preview_required_competing_whole_and_partial_are_distinct(self):
         from trial_source_delivery import hook_delivery
         raw=BODY.encode();part=raw[10:17]
@@ -163,55 +138,5 @@ def main():
         span.update(body=BODY[:2],sha256=sha(BODY[:2].encode()))
         valid=bind_origins(hook_delivery(hook({'expanded':{'selection':selection(body=''),'span':span}})),origins,bodies={'note':BODY})
         self.assertEqual(valid['items'][0]['input_id'],'note')
-
-    def test_labels_require_explicit_boolean_and_metadata_limits_are_visible(self):
-        from test_trial_task_prospective import fixture
-        from trial_task_input import freeze_input
-        from test_trial_native_observation import base,observe
-        with tempfile.TemporaryDirectory() as directory:
-            root=fixture(Path(directory)/'input');document=json.loads((root/'input.json').read_text())
-            document['cases'][0]['relevance_labels_complete']='yes'
-            (root/'input.json').write_text(json.dumps(document))
-            with self.assertRaisesRegex(ValueError,'explicit boolean'):freeze_input(root)
-        events=base()
-        for index in range(129):
-            events += [{'type':'assistant','message':{'content':[{'type':'tool_use','id':'toolu_'+str(index),'name':'mcp__cairn__cairn_pull','input':{}}]}},
-                       {'type':'user','message':{'content':[{'type':'tool_result','tool_use_id':'toolu_'+str(index),'is_error':True,'content':'PRIVATE_ERROR'}]}}]
-        result=observe(events)
-        self.assertEqual(len(result['source_deliveries']),128)
-        self.assertEqual(result['source_delivery_events_omitted'],1)
-        self.assertIn('source_delivery_limit',result['unknown'])
-
-    def test_native_deliveries_are_extracted_from_actual_results_and_successful_hooks(self):
-        from test_trial_native_observation import base, observe
-        text=hook({'selected':[selection()],'index':[]})+'\n'
-        events=base()+[
-            {'type':'system','subtype':'hook_started','hook_id':'hook','hook_event':'UserPromptSubmit'},
-            {'type':'system','subtype':'hook_response','hook_id':'hook','hook_event':'UserPromptSubmit','stdout':text,'outcome':'success','exit_code':0},
-            {'type':'assistant','message':{'content':[{'type':'tool_use','id':'toolu_pull','name':'mcp__cairn__cairn_pull','input':{'PRIVATE_QUERY':'never retain'}}]}},
-            {'type':'user','message':{'content':[{'type':'tool_result','tool_use_id':'toolu_pull','content':[{'type':'text','text':json.dumps({'selection':selection(OTHER,'second body')})}]}]}}]
-        rows=[dict(event='UserPromptSubmit',stdout_bytes=len(text.encode()),stdout_sha256=sha(text.encode()),exit_code=0,process_seconds=.1,
-                   memory_call_attempts=dict(search=1,pull=0,history=0,other=0,**{'pull-evidence':0}))]
-        observed=observe(events,rows)
-        deliveries=observed['source_deliveries']
-        self.assertEqual([x['channel'] for x in deliveries],['native','hook'])
-        self.assertEqual([x['delivery']['items'][0]['record_id'] for x in deliveries],[OTHER,RID])
-        self.assertNotIn('PRIVATE_',json.dumps(deliveries))
-        events[4]['outcome']='error'
-        self.assertEqual([x['channel'] for x in observe(events,rows)['source_deliveries']],['native'])
-
-    def test_unlabelled_prospective_relevance_is_unknown_and_legacy_preserved(self):
-        import trial_task_eval as te
-        case=dict(expected=[],acceptable=[])
-        memory=dict(delivered=['eligible-note'])
-        te.classify_relevance(memory,case,prospective=True)
-        self.assertEqual(memory['relevance_status'],'unknown_unlabelled')
-        self.assertNotIn('irrelevant',memory);self.assertNotIn('delivered_expected',memory)
-        declared=dict(case,relevance_labels_complete=True)
-        te.classify_relevance(memory,declared,prospective=True)
-        self.assertEqual(memory['irrelevant'],['eligible-note'])
-        legacy=dict(delivered=['eligible-note'])
-        te.classify_relevance(legacy,case)
-        self.assertEqual(legacy['irrelevant'],['eligible-note']);self.assertNotIn('relevance_status',legacy)
 
 if __name__=='__main__':unittest.main()

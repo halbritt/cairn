@@ -95,16 +95,11 @@ pins and validate the complete set before enabling it again. Custom state paths
 and existing configuration fields survive the explicit reinstall.
 
 Retain prior bundles for an explicit rollback. Automatic pruning is outside this
-change. Historical frozen trials and legacy `/2` bundles retain their original
+change. Legacy `/2` bundles retain their original
 source pins; they are not silently refreshed with current helper files. Live
 production bindings run Go `cairn-lifecycle` staged bundles (`go-rollout-*` via
 `cairn-stage-lifecycle`), while `/2` Python bundle contracts remain for parity
 checks.
-
-[Prospective trials](plans/task-evaluation.md) select an already staged bundle
-with an explicit sidecar pin. The historical weekly exporter
-retains its two-file contract and refuses current bundle code; selecting two
-source files cannot select their dependencies.
 
 ## Verification
 

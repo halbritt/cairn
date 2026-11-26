@@ -154,7 +154,7 @@ upgrade requirements distinct from passing tests.
 make test
 ```
 
-This runs Go tests, Python unit discovery, and the SDK spawn/IPC Node checks.
+This runs Go tests and Python unit discovery.
 Node-based checks require Node.js 24 or newer. Python checks involving native
 Codex queue connections need `websocket-client`. Model-report checks need
 `tiktoken==0.12.0`; an isolated invocation is:

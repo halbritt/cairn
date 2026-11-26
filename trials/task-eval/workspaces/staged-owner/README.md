@@ -1,3 +1,0 @@
-# rhumb
-
-Ride navigation app.

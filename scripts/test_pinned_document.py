@@ -9,13 +9,8 @@ import tempfile
 import unittest
 
 import pinned_document as pinned
-import trial_paired_request as paired
 
 
-RE_EXPORTED = ('FILE_LIMIT', 'PIN_LIMIT', 'Refusal', 'canonical_sha', 'decode_json', 'need',
-               'pin', 'pin_shape', 'plain_path', 'read_bytes', 'read_json', 'read_json_pin',
-               'read_pin_bytes', 'reject_nonfinite', 'scan_refusal', 'selected_bytes', 'shape',
-               'unique_object', 'utc', 'write_selected', 'write_selected_bytes')
 
 
 class PinnedDocumentTest(unittest.TestCase):
@@ -174,13 +169,6 @@ class PinnedDocumentTest(unittest.TestCase):
         self.refuses('changed', pinned.write_once, path, b'{"a": 2}\n', 'changed')
         self.assertEqual(path.read_bytes(), b'{"a": 1}\n')
 
-    # --- re-export ------------------------------------------------------------------
-    def test_trial_paired_request_re_exports_the_same_objects(self):
-        for name in RE_EXPORTED:
-            self.assertIs(getattr(paired, name), getattr(pinned, name), name)
-        self.assertIs(paired.Refusal, pinned.Refusal)
-        self.assertTrue(callable(paired.check_input_files))
-        self.assertTrue(callable(paired.identifier))
 
 
 if __name__ == '__main__':

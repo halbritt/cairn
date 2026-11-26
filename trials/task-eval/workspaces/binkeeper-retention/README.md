@@ -1,3 +1,0 @@
-# binkeeper
-
-Storage-bin inventory.

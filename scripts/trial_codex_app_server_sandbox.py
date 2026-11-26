@@ -1,4 +1,4 @@
-"""Build a narrow Codex app-server sandbox using the existing trial boundary."""
+"""Build a narrow Codex app-server sandbox from the fixture sandbox boundary."""
 import json
 import os
 from pathlib import Path
@@ -51,13 +51,13 @@ def write_launcher(path, *, workspace, profile, codex_entry, selected_auth,
     script = """#!/usr/bin/env python3
 import json, os, sys
 sys.path.insert(0, {scripts!r})
-import trial_task_eval
+import fixture_sandbox
 spec = json.loads({payload!r})
 env = {{'HOME': spec['profile'], 'CODEX_HOME': spec['profile'],
        'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}}
-command = trial_task_eval.sandbox_command(
+command = fixture_sandbox.sandbox_command(
     spec['workspace'], '.', spec['binds'], env,
-    ['/usr/bin/node', spec['codex_entry'], *sys.argv[1:]], harness='codex',
+    ['/usr/bin/node', spec['codex_entry'], *sys.argv[1:]],
     include_home_go=False)
 auth_fd = os.open(spec['selected_auth'], os.O_RDONLY)
 os.set_inheritable(auth_fd, True)

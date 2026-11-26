@@ -10,7 +10,15 @@ import copy
 import hashlib
 import json
 import re
-from trial_observation_storage import text_size_sha256
+
+
+def text_size_sha256(text):
+    digest, size = hashlib.sha256(), 0
+    for offset in range(0, len(text), 128):
+        fragment = text[offset:offset+128].encode('utf-8')
+        size += len(fragment)
+        digest.update(fragment)
+    return size, digest.hexdigest()
 
 UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 DIGEST = re.compile(r'[0-9a-f]{64}')

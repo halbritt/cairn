@@ -1,11 +1,9 @@
 """Pinned, size-bounded, owner-only, write-once JSON documents with typed refusals.
 
-One module owns the rules every trial and evaluation script applies to a document
+One module owns the rules a script applies to a document
 it pins, reads back or writes once: absolute plain paths without indirection,
 regular files only, bounded sizes, strict JSON (unique keys, finite numbers),
-canonical digests and owner-only write-once creation. ``trial_paired_request``
-re-exports the original names, so existing importers and pinned sources keep
-working; new callers import this module directly.
+canonical digests and owner-only write-once creation.
 
 Refusals carry a fixed public code and never a path, payload or exception text.
 """

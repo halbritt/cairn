@@ -173,7 +173,7 @@ The opt-in compatibility check uses an independently retained d6 API/facade and
 an owned disposable PostgreSQL cluster:
 
 ```sh
-bash scripts/trial-task-eval.sh -- python3 -B scripts/check_preview_compat.py   /absolute/current-cairn /absolute/d6-cairn /absolute/new-check-directory   --opencode /absolute/opencode
+bash scripts/with-disposable-postgres.sh -- python3 -B scripts/check_preview_compat.py   /absolute/current-cairn /absolute/d6-cairn /absolute/new-check-directory   --opencode /absolute/opencode
 ```
 
 `--opencode` adds direct native tool-debug calls with inference disabled. The

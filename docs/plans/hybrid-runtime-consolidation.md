@@ -21,8 +21,7 @@ Cairn currently splits live host runtime behavior across a single statically
 compiled Go binary (`cairn`, linking dynamically only to `libc`), two Python
 subsystems (`integrations/lifecycle/` and `scripts/*semantic*` /
 `scripts/embedding_worker.py`), and small host-mandated adapter shims for
-OpenCode (`integrations/opencode/*.ts`), Hermes (`integrations/hermes/*.py`),
-and an experimental Node V8 custody addon (`integrations/sdk-ipc/`).
+OpenCode (`integrations/opencode/*.ts`) and Hermes (`integrations/hermes/*.py`).
 
 Instead of rewriting the Go store and API contract in Rust or pulling C++/Rust
 ONNX bindings into the Go binary via `cgo`, Cairn will consolidate onto a
@@ -45,9 +44,9 @@ two-binary hybrid architecture plus irreducible in-process host shims:
 3. **Host-mandated plugin shims stay minimal; historical trial code stays
    frozen.** OpenCode (`@opencode-ai/plugin` TypeScript) and Hermes (in-process
    Python `MemoryProvider` and hook entrypoints) retain only thin adapters that
-   delegate policy, locking, slicing, and API calls to `cairn`. Frozen Python
-   evaluation harnesses (`scripts/trial_*`, ~90,000 lines) remain untouched so
-   historical pins and two-file or `/2` bundle receipts stay reproducible.
+   delegate policy, locking, slicing, and API calls to `cairn`. The Python
+   evaluation harnesses (`scripts/trial_*`) were removed on 2026-11-25
+   ([decision 0024](../decisions/0024-evaluation-harness-removed.md)).
 
 ```mermaid
 flowchart LR
@@ -90,9 +89,7 @@ repository splits across four implementation languages plus SQL and web assets:
 | Python semantic workers (`scripts/*semantic*`, `scripts/embedding_worker.py`) | ~700 lines (4 files) | Covered by Go/Python semantic checks | FastEmbed / `tokenizers` / ONNX Runtime CPU ranking and passage embedding |
 | Python Hermes plugin (`integrations/hermes/`) | 1,244 lines (5 files) | 1,039 lines (1 file) | In-process Hermes `MemoryProvider`, hook handlers, dialogue slicing, coordination bridge |
 | Python black-box checks (`scripts/check_*.py`, `verify_docs.py`) | ~27,600 lines | Self-testing | Disposable-cluster integration checks and repository verification |
-| Python frozen trials (`scripts/trial_*.py`, `test_trial_*.py`) | ~90,000 lines | Included | Historical capability, replay, and weekly evaluation harnesses |
 | TypeScript (`integrations/opencode/*.ts`) | 1,176 lines (4 files) | 1,288 lines (3 files) | In-process OpenCode plugin (`@opencode-ai/plugin` + `zod`) |
-| C + Node CommonJS (`integrations/sdk-ipc/`, `scripts/*sdk*.cjs`) | 637 C/H + 2,341 JS lines | 1,132 JS lines | Experimental V8 isolate / `pidfd` / `SOCK_SEQPACKET` custody trial |
 
 ### Operational friction in the current split
 
@@ -511,26 +508,8 @@ than invoking external shell hooks for every event:
 - **Browser work view (`web/workview/`).** Already embedded into `cairn` via Go
   `embed.FS`; unchanged.
 
-### Node SDK custody addon (`integrations/sdk-ipc/`)
+### Live integration checks
 
-`integrations/sdk-ipc/binding.c` (637 lines of C/H) implements a Linux V8/Node
-N-API native addon (`prctl(PR_SET_DUMPABLE, 0)`, `pidfd`, `SOCK_SEQPACKET` peer
-verification, isolate-pinned handles) paired with `scripts/*sdk*.cjs` (2,341
-lines) for SDK custody trials.
-
-- **Default rule:** Leave `integrations/sdk-ipc/` untouched while the Node SDK
-  custody path remains an experimental/trial surface.
-- **Promotion trigger:** If the Node SDK custody route is promoted to a
-  supported production client interface, replace `binding.c` with a small Rust
-  `napi-rs` cdylib crate sharing Linux peer-identity constants rather than
-  expanding handwritten C/N-API code.
-
-### Frozen evaluation trials versus live integration checks
-
-- **Keep `scripts/trial_*` and `scripts/test_trial_*` (~90,000 lines) frozen in
-  Python.** Historical trial runners verify dated claims, replay pins, and
-  two-file versus `/2` bundle refusal rules. Rewriting them in Go would risk
-  invalidating historical reproducibility with zero runtime benefit.
 - **Selectively migrate slow `scripts/check_*.py` harnesses into Go tests.**
   Keep `scripts/verify_docs.py` (fast static check, ~1–2 s) and lightweight CLI
   smoke scripts as-is, while migrating process-heavy lifecycle, coordination,

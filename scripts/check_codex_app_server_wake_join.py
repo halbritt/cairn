@@ -273,7 +273,7 @@ def _sandbox_prefix(root: Path, trace_name: str, *, preflight: bool) -> list[str
     scripts = REPO / "scripts"
     if str(scripts) not in sys.path:
         sys.path.insert(0, str(scripts))
-    from trial_task_eval import runtime_sandbox
+    from fixture_sandbox import runtime_sandbox
 
     command = runtime_sandbox(include_home_go=False) + [
         "--unshare-net",

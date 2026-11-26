@@ -95,7 +95,7 @@ runtime work.
 6. **The installed interface is the compatibility surface.** Preserve the full
    inbox grammar, issued commands and multi-binding watcher `--config-dir`.
    Semantic flags select one absolute executable without argv; fixed launchers
-   select mode and pinned assets. Keep host-required adapters and frozen trials.
+   select mode and pinned assets. Keep host-required adapters.
 
 ## X-01 closure checklist
 

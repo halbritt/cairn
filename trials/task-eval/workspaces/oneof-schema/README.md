@@ -1,3 +1,0 @@
-# surveyor
-
-Repository audit engine.

@@ -29,5 +29,5 @@ the removed files is `fe5743f8`; read them with `git show fe5743f8:<path>`.
 
 A dated record stays while tracked code reads it or an open campaign cites it.
 The remaining files under `docs/verification/` are the CAIRN-301 release
-evidence and the sources cited by the weekly evaluation (CAIRN-107). Remove
-them when that work closes.
+evidence and a few reports that guides or open plans cite. Remove them when
+that work closes.

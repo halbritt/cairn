@@ -43,13 +43,6 @@ runtime (R-08, CAIRN-785). The
 and the [release contract](plans/hybrid-runtime-contracts/release.md#work-items-and-release-gates)
 holds the criteria.
 
-### Weekly task evaluation (CAIRN-107)
-
-A paired evaluation runs weekly with a usage pre-check and a second grader, to
-show whether memory helps agents finish useful work. Retrieval, citation or a
-successful capture does not establish that benefit. The
-[task-evaluation plan](plans/task-evaluation.md) describes the method.
-
 ## Next: the swarm view (CAIRN-826)
 
 One live page per swarm over state that Cairn already holds. It answers four

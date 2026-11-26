@@ -26,6 +26,12 @@ processes.
   `experiments/live-latency` probe, the `trials/siwc` scaffold, three patch
   manifests and five dated reports. Read a removed file with
   `git show 75517cc5:<path>` (CAIRN-842).
+- Removed the paired task-evaluation harness: the `trial_*` scripts and tests,
+  the SDK process-owner trials, `trials/task-eval`, the weekly runner unit,
+  `integrations/sdk-ipc` and the `test-sdk-*` Makefile targets. `make test`
+  no longer runs Node checks. `scripts/trial-task-eval.sh` is now
+  `scripts/with-disposable-postgres.sh` and requires `-- COMMAND`. See
+  [decision 0024](docs/decisions/0024-evaluation-harness-removed.md).
 
 ## 2026-11-24
 

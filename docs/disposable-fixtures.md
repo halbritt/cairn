@@ -61,8 +61,7 @@ never supply an operational database. Keep CLI and child processes on
 The Go CLI suite's independent guard and manual-probe requirements are described
 in [testing](developer/testing.md#keep-cli-and-fixture-defaults-isolated).
 
-`TrialStore` in `scripts/trial_task_eval.py` keeps its own cluster routing and delegates
-identity staging, API startup and teardown here. Fixtures that drive several
+Fixtures that drive several
 services (`check_multi_machine.py`, `check_panel_relay_uncertain_response.py`,
 `check_protocol_skew.py`, `check_api_version_skew.py`) keep their own service
 helpers for now.

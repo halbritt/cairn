@@ -261,7 +261,7 @@ def run_probe() -> dict[str, object]:
 
     if str(SCRIPTS) not in sys.path:
         sys.path.insert(0, str(SCRIPTS))
-    from trial_task_eval import runtime_sandbox
+    from fixture_sandbox import runtime_sandbox
     from codex_loopback_fixture import stage_lifecycle_runtime
 
     cache = Path.home() / ".cache"

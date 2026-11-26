@@ -175,9 +175,6 @@ if case=='coordination.handle':
 try:
  if case=='coordination.handle': coord.handle(config,event)
  elif case=='memory.handle_event': load('unresolved_memory',root/'integrations/lifecycle/memory.py').handle_event(config,event,[])
- elif case=='preflight_source_fit':
-  import preflight_source_fit as preflight
-  preflight.load_hook(root/'integrations/lifecycle/memory.py').handle(config,event)
  else:
   import check_recall_observation as observation
   observation.engine.handle(config,event)
@@ -187,7 +184,7 @@ except expected as error:
  print(type(cause).__name__+': '+str(cause),file=sys.stderr);sys.exit(1)
 raise SystemExit('unresolved /3 was accepted')
 '''
-        for case in ('coordination.handle','memory.handle_event','preflight_source_fit','check_recall_observation'):
+        for case in ('coordination.handle','memory.handle_event','check_recall_observation'):
             f=self.fixture('unresolved-'+case)
             config=f.coord_path if case.startswith('coordination') else f.memory_path
             result=subprocess.run([sys.executable,'-I','-S','-c',driver,str(ROOT),case,str(config)],input=f.raw,

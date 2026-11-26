@@ -675,7 +675,7 @@ second Release implementation of Foundation validation.
 
 Other activation callers remain on their original `/2` path:
 `coordination.handle` and `memory.handle_event` when unresolved, plus
-`scripts/preflight_source_fit.py` and `scripts/check_recall_observation.py`.
+`scripts/check_recall_observation.py`.
 Without the loader's authenticated compatibility invocation context, they
 refuse `/3` before any Python activation mutation. A config/event field cannot
 manufacture that context. Fixtures prove unchanged `/2` behavior and a valid
@@ -1042,7 +1042,7 @@ The following existing script modules form a minimum oracle inventory:
 `test_inbox_ledger_compaction`, `test_recall_task_grant`, `test_startup_recall`,
 `test_hook_invocation_trace`, `test_recall_failure_observation`,
 `test_selector_process_observation`, `test_recall_observation` and
-`test_inbox_recall_observation`. Frozen `test_trial_*` modules are not edited.
+`test_inbox_recall_observation`.
 The inclusion rule additionally covers every non-trial script test that loads
 or wraps `memory.py`, `inbox_recall.py`, `grant_ledger.py`, `native_session.py`,
 `hook_admission.py` or `unix_peer_transport.py`, including transitively loaded

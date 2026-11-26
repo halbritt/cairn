@@ -20,6 +20,7 @@ receipt. Number 0001 was never used.
 | [0021 — Activation is part of done](0021-activation-is-part-of-done.md) | 2026-11-24 |
 | [0022 — Cairn is a kernel; a swarm view, not a swarm workspace](0022-kernel-boundary-and-swarm-view.md) | 2026-11-25 |
 | [0023 — The repository holds current contracts and decisions, not run records](0023-repository-holds-current-contracts.md) | 2026-11-25 |
+| [0024 — The paired task-evaluation harness is removed](0024-evaluation-harness-removed.md) | 2026-11-25 |
 
 ## Feature design
 

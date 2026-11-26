@@ -5,7 +5,7 @@ see [decision 0023](../decisions/0023-repository-holds-current-contracts.md).
 The files here stay for one of three reasons:
 
 - Tracked code names the file: the CAIRN-301 release checks under `scripts/`
-  list their record, and the weekly evaluation (CAIRN-107) cites its sources.
+  list their record.
 - The file is release evidence for the open hybrid runtime campaign (the
   `r0N-`, `f0N-` and November 2026 records).
 - An open plan under [plans](../plans/README.md) cites it.

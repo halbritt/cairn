@@ -1,6 +1,6 @@
 """Real typed-facade/API rolling-upgrade check, using only a wrapper-owned PG.
 
-Run with scripts/trial-task-eval.sh -- python3 scripts/check_preview_compat.py
+Run with scripts/with-disposable-postgres.sh -- python3 scripts/check_preview_compat.py
 CURRENT OLD_D6 OUTPUT [--opencode BINARY]. No models or production profiles.
 """
 from contextlib import contextmanager
