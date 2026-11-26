@@ -31,9 +31,7 @@ For example, `usage: "cited"`, `usage_witness: "testimony"` and
 observed an expansion. They do not prove successful response delivery,
 comprehension or task benefit. False means no such instrumented event is retained;
 it does not prove the agent never accessed the content. Coverage remains separate.
-An older server omits this field, which must not be interpreted as false. Update
-the API for authenticated reports, or the CLI for direct-store reports; no
-database migration is needed.
+An older server omits this field, which must not be interpreted as false.
 
 `core.UseReport` accepts `repo`, optional `record_id`, `limit` (1–200) and `offset`.
 Optional `task_id` and `run_id` narrow the retained receipt scope, and optional
@@ -46,7 +44,7 @@ benefit score or a completed recurrence evaluation. Exposures never increase ran
 Each lifecycle recall hook measures its own invocation and reports it as
 `recall-observation`. `use-report` shows the latest report of each receipt as
 that row's `recall`, and `recall_rollups` summarizes every report in the
-repository by UTC day and harness (`claude`, `codex`, `opencode`, `hermes`) for the
+repository by UTC day and harness (`claude`, `codex`, `opencode`, `hermes`, `agy`) for the
 last `rollup_days` days, independent of the page and filters. An invocation that
 produced two receipts (lexical and semantic search) appears on both rows with
 `receipts: 2` and counts once in a rollup; an invocation that failed before any
@@ -140,7 +138,8 @@ Use `assessments` on the appropriate receipt to inspect the reasons and evidence
 behind an outcome; aggregate rows do not contain that narrative.
 
 The existing authenticated `agent use-report` accepts JSON containing `repo`,
-optional `record_id`, `task_id` and `run_id`, plus `limit` and `offset`. This protected report requires a
+optional `record_id`, `task_id`, `run_id`, and `rollup_days` (1–90, default 7),
+plus `limit` and `offset`. This protected report requires a
 provisioned local profile; hosted profiles remain denied. CLI pagination adds
 no permission or new exposure of private data.
 
@@ -204,7 +203,7 @@ The default page holds 100 rows; limits are 1–200. Follow `more` and
 `next_offset` for additional pages. Each page has its own database snapshot;
 concurrent new receipts can change later offset pages. `core.RunReport` and the
 local-profile-only `run-report` agent endpoint accept `repo`, `limit`, `offset`,
-and optional `task_id` and `run_id`.
+and optional `policy_revision` (CLI `--policy-rev`), `task_id`, and `run_id`.
 No raw command, task, query, output or evidence body is added to this report.
 
 ## Follow one task across runs
@@ -235,10 +234,6 @@ Authenticated JSON requests use `task_id` and `run_id` on the existing protected
 report endpoints. Update the API before sending these fields to an older server;
 no database migration is required. Hosted profiles remain denied. The local
 operator CLI requires the updated executable.
-
-It returns exactly one row for each run: zero exposures and rejected
-task outcome for M, zero exposures and unknown task outcome for N, and one
-exposure and unknown task outcome for O. All retain assessment version 2.
 
 ## Wrapper metadata
 
@@ -279,22 +274,13 @@ alone does not prove that a process started. Use the process/delivery observatio
 and the task context needed for the comparison; do not treat a digest or exit zero
 as task acceptance. A qualitative value judgment need not reduce to these fields.
 
-Changing the prompt or carrier left
-the command digest unchanged; splitting an argument changed it. Delivery digests
-matched the actual combined input, and all four task outcomes remained unknown.
-Argument/prompt canaries were absent from the database dump and saved context
-files. This verifies those inputs and paths, not every capture route or physical
-erasure. Existing historical run rows
-already included command digests before this audit.
-
 The generic runner supports [explicit file selections](run-artifact-evidence.md)
 with `--artifact LABEL=PATH`. It captures an observer-generated manifest of file
 sizes and digests after the process outcome, using existing evidence storage.
 Default workspace capture remains off. A selected saved diff can be fingerprinted
 like any file; Cairn does not generate a diff or infer which files the task produced.
 Assessments can reference the evidence ID without treating the fingerprint as
-correctness or memory-benefit proof. The earlier command-digest audit itself
-required no new runtime fields or storage.
+correctness or memory-benefit proof.
 
 ## Task assessments and corrections
 
@@ -383,12 +369,11 @@ case describing the sequence and relevant versions, receipts or artifacts.
 Ordinary project documentation can carry such a review without inventing a
 single run for the whole sequence or changing its individual task assessments.
 Preserve the reviewer's identity, evidence limits, alternatives and negative
-observations. These reviews do not automatically
-produce demand proposals, rank changes or a numeric memory-value score.
-
-It also distinguishes supplied retrieval scopes from independent
-model sessions and counts maintenance/review work among the costs. Related reads
-and notes should not be presented as independent replications of value.
+observations. Cumulative reviews should also distinguish supplied retrieval scopes
+from independent model sessions, count maintenance/review work among the costs,
+and avoid presenting related reads and notes as independent replications of
+value. These reviews do not automatically produce demand proposals, rank changes
+or a numeric memory-value score.
 
 ### Record a qualitative review
 
@@ -525,9 +510,7 @@ existing CLI response limit also applies. These are per-call limits, not
 whole-task accounting.
 
 Upgrade the MCP executable or reinstall the matching OpenCode adapter, then
-start a fresh harness session. The API must include the
-assessment binding repair;
-no database migration is needed. Existing Codex `enabled_tools` lists need both
+start a fresh harness session. Existing Codex `enabled_tools` lists need both
 review tool names; regenerate or update the Cairn entry and start a fresh session.
 Explicit OpenCode allowlists need
 `cairn_assessments` and `cairn_assess` permissions. With OpenCode's MCP connection,

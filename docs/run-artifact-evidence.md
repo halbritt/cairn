@@ -92,5 +92,4 @@ backup handling, outside database-only retention. For a retained-package executi
 the current `--artifact` selection is read after that execution; old file contents
 or manifests are not automatically replayed.
 
-The feature uses the existing evidence endpoint and storage format. No migration
-or new server endpoint is required.
+The feature uses the existing evidence endpoint and storage format.

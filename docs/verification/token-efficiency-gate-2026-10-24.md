@@ -83,8 +83,8 @@ failed, refused and unknown run in the report rather than dropping it.
 ## Mechanical fixture gate
 
 `scripts/token_efficiency_gate.py` freezes and checks this panel without calling
-a provider. It complements `trial_task_eval.py`'s existing corpus freeze and
-`workflow_model_report.py`'s native usage join. The private fixture is JSON with
+a provider, complementing `scripts/workflow_model_report.py`'s native usage join.
+The private fixture is JSON with
 schema `cairn.token-efficiency-fixture/1` and the 22 ordered case IDs, each with
 a nonempty `acceptance_check`. The plan pins its file hash and each check's
 canonical JSON hash. It also fixes the model, effort, subscription route,
@@ -176,7 +176,7 @@ real paired plan or provider result is frozen by that test.
 | CAIRN-215 capture hook probe | The real PreCompact hook, authenticated CLI/API and disposable PostgreSQL retain synthetic selector usage and outcomes. A refused observation after a confirmed note write leaves the write and marker committed, with no observation row. | Live subscription usage and cost, task usefulness, and an installed opt-in canary; the synthetic usage is not provider billing. |
 | CAIRN-216 [native inbox probe](../../scripts/check_agent_coordination.py) and bound compact notice probe | Disposable CLI/API probes check small notice/response source identity, oversized scoped read, explicit settlements, identical committed retry and stale-handle refusals. The actual bound hook retained mandatory C text and record ID within 3,000 bytes, omitted a 3,675-byte notice body, and supplied an exact scoped read/settle handle; the helper read the whole source and settled once. Host admission and the native turn were synthetic. A [mocked history failure test](../../scripts/test_inbox_recovery.py) makes a handled-settlement retry refuse when source history becomes unavailable. | Paired Codex/Claude notice and response decisions, complete sender/recipient/capture usage, latency, live opt-in and rollback; the bounded probe did not run a queue or model turn, and the unavailable-source test does not exercise store forgetting. |
 | CAIRN-219 compact recall and CAIRN-222 capture shadow evaluation | Compact/full preservation fixtures and a nine-case shadow admission panel passed locally, including superseding decisions and handoff capture at SessionEnd. The capture gate remains off. | Paired relevant-source and correction/handoff outcomes, net provider work, and selected canaries. Byte differences and shadow decisions are not savings. |
-| CAIRN-220 watcher eligibility probe, native wake join probe, and `notice-flush` | An opt-in routine deadline and publisher-authenticated flush preserve the original event. A disposable watcher probe retains a deferred delivery and deadline across an API restart, observes no wake while the synthetic owner reports busy, and names the exact ready delivery after it reports idle. The provider-free native Codex 0.164.0 wake fixture (`check_codex_app_server_wake_join.py`) verified both the leased queue-to-Store join (`exact_queue_hook_store_join=true`) and opt-in `--scripted-handled` whole-source read plus single `handled` settlement (`settlement_exactly_once=true`). | Live provider wake reduction, focused-host behavior, actionability and p50/p95 latency, one-account canary and exercised live rollback. |
+| CAIRN-220 watcher eligibility probe and `notice-flush` | An opt-in routine deadline and publisher-authenticated flush preserve the original event. A disposable watcher probe retains a deferred delivery and deadline across an API restart, observes no wake while the synthetic owner reports busy, and names the exact ready delivery after it reports idle. | Live provider wake reduction, focused-host behavior, actionability and p50/p95 latency, one-account canary and exercised live rollback. |
 | CAIRN-221 native notice batch and actor boundary probe | Opt-in store handoff caps a turn at three already-waiting routine notices, keeps per-item settlement and stops for an eligible request or urgent notice; disposable PostgreSQL integration, lifecycle fixtures, and the provider-free native Codex 0.164.0 actor fixture (`check_codex_full_inbox_native.py`, `verified_store_boundary="first_three_notices_handled_fourth_pending"`, 11 scripted exchanges) passed. | Paired batch versus compact-only accepted tasks, live provider tokens, p95 latency and an opt-in canary. |
 | CAIRN-223 pilot and loopback tool preflight | Six synthetic source cases; seven completed native Claude task runs. A local scripted Claude CLI session exposed Cairn search/pull, recovered a whole shareable source and excluded a local-only source. Separately, one subscribed Codex/Luna turn searched and pulled a whole synthetic source from a disposable Store; its reported whole-turn usage was 92,111 input, including 77,056 cached input, and 383 output tokens. | The Claude pilot's eighth run exceeded its frozen ceiling and is unscored; seven arms were unrun. The single Luna probe was a route check, not a scored source-fit task or panel. Independent task acceptance, paired cost, isolated workspace controls and the new 15-arm panel remain open. |
 | CAIRN-224 compact/resume [failure matrix](../../scripts/test_inbox_recall_bridge.py), disposable hook probe, and native Codex probe | Opt-in local fixtures cover current unfinished checkpoints, mandatory correction, source refusal, partial settlement and same-ID uncertain reply recovery. A provider-free fixture using installed stock Codex 0.164.0 observed matching compact `turn/completed`, successful PreCompact and compact SessionStart hooks, a notice pending with the same delivery ID and zero attempts across compaction, then whole-source read and one settlement on continuation (`NATIVE_TURN_MISMATCH` fail-closed on in-turn automatic compaction when stock compact SessionStart omits `turn_id`). The rebuilt patched app-server (`b8ad1db40f7f547df6fc89190e3a1feb1355d438eca45678fddcafd746127235`) passed the full Cairn Store fixture (`check_codex_compact_native.py`) with `compact_sessionstart_turn_id_matches_active=true` for both unsettled fail-closed `Stop` reconciliation (`failed` / `processing_failed`) and same-turn post-compaction `handled` settlement. | Paired accepted resume tasks and provider usage, effective canary and rollback across a live resume. The local model was scripted; no task outcome or provider cost was measured. |
@@ -330,51 +330,6 @@ model, establish a native join, produce an independent task grade, or complete
 the paired panel. Its status remains `full_panel_status=incomplete` and release
 remains `defer`; it refuses capture, concurrency, and every unsupported case or
 arm.
-
-## Independent task-grade preparation
-
-`scripts/token_efficiency_grades.py` adds a separate provider-free grading
-contract. After freezing the mechanical plan and exporting the controller
-manifest, `freeze` verifies the same fixture hash, all 88 planned workflow IDs,
-case/arm assignments, and each exact acceptance-check hash. It writes an
-owner-only grade plan outside the repository. This freezes the evaluation
-denominator and prevents replacing a case rubric after outcomes are observed.
-
-After runs, an evaluator can submit a private
-`cairn.token-efficiency-grade-ledger/1` with one row for every workflow. Each
-row carries `workflow_id`, `case`, `arm`, `acceptance_check_sha256`, a verdict
-(`accepted`, `failed`, `unknown`, or `unrun`), a reviewer reference, an explicit
-`independence_assertion: true`, a rationale, and zero or more artifact
-references (`path`, `sha256`). Accepted and failed grades require at least one
-hashed evidence artifact. Missing workflows, changed rubrics, evidence hash
-mismatches, or unstated independence refuse the report. Unknown and unrun
-remain visible in the denominator.
-
-The utility checks structure, evidence-file identity, and owner-only file
-permissions. Reviewer identity, independence, rubric application, and task
-correctness remain external claims; distinct reviewer labels do not prove
-independence. The report therefore says
-`independent_task_acceptance=externally_asserted_unverified` and
-`release_decision=defer` for every ledger, even a complete one. It does not
-change the mechanical gate's `unassessed` result or substitute for joined usage,
-capacity admission, deployment pins, the canary, or rollback. It is
-account-agnostic; the existing mechanical plan remains responsible for exact
-per-stage model/account/pin joins and does not infer one account for the panel.
-
-```sh
-python3 -B scripts/token_efficiency_grades.py freeze \
-  --frozen private-frozen.json --fixture private-fixture.json \
-  --controller private-controller.json --output "$HOME/.cache/cairn-token-efficiency-panels/grade-plan.json"
-python3 -B scripts/token_efficiency_grades.py report \
-  --plan "$HOME/.cache/cairn-token-efficiency-panels/grade-plan.json" \
-  --ledger "$HOME/.cache/cairn-token-efficiency-panels/grade-ledger.json" \
-  --evidence-root "$HOME/.cache/cairn-token-efficiency-panels/evidence" \
-  --output "$HOME/.cache/cairn-token-efficiency-panels/grade-report.json"
-```
-
-`python3 -B -m unittest discover -s scripts -p 'test_token_efficiency_grades.py'`
-checks synthetic coverage and refusal paths. It does not create provider results
-or task grades.
 
 ## Release decision
 

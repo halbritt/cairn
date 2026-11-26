@@ -50,7 +50,7 @@ New conversions retain the linked lesson version; see the review-history contrac
 below.
 
 The docket prioritizes attribution contradictions and incomplete delegated work
-above ordinary blocked demand. New failure/recovery proposals appear as
+above ordinary blocked demand. Failure/recovery proposals appear as
 `FAILURE_RECOVERY`; standalone failures appear as `TASK_FAILURE`. Deferred
 proposals become due at their review time; dismissed, converted and stale-source
 proposals do not appear as due. Existing `ESCALATION_BLOCKED` groups remain.
@@ -106,12 +106,8 @@ future members merely because their group key matches. No group-level mutation,
 automatic admission, rank adjustment or new persisted authority is introduced.
 
 The command is local operator CLI inspection and is not exposed through the
-agent API. Core callers retain repository scope checks. No migration is required;
-groups are a read-time projection over retained proposals and assessments.
-
-Migration 019 permits an absent recovery source while preserving existing pairs.
-Deploy the updated binary with this migration before generating standalone
-proposals; older binaries assume every proposal has a recovery.
+agent API. Core callers retain repository scope checks. Groups are a
+read-time projection over retained proposals and assessments.
 
 ## Preserve the linked lesson version
 
@@ -173,17 +169,10 @@ retaining review IDs and version metadata. Review reasons retain their existing
 policy; general metadata redaction and retention pruning are outside this review
 workflow.
 
-Apply migration 032 with the new binary before using the new read/write paths.
-It adds nullable metadata to individual review rows and does not backfill old
-reviews from today's lesson. Legacy conversions keep unknown version pins;
-missing `result_version` means unknown, not the current version. Their per-review
-result IDs and deferral times may also be unavailable. A genuinely older writer
-can still create an unpinned review after migration; the new reader does not carry
-an earlier pin into that review. Upgrade active review writers to obtain new pins.
-Previously committed mutation retries retain their original responses.
-
-Error-signature retrieval using these links remains a
-separate E1 implementation step.
+Legacy conversions without a recorded `result_version` keep unknown version
+pins; missing `result_version` means unknown, not the current version, and their
+per-review result IDs and deferral times may be unavailable. Previously committed
+mutation retries retain their original responses.
 
 ## Retrieve a converted lesson on a later task
 

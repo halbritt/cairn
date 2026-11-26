@@ -22,14 +22,3 @@ ID and arguments. Do not create a new mutation request to recover a lost reply.
 The local Unix client also disables body replay. These transport rules preserve
 Cairn's application-level retry contract; connection pooling does not establish
 that a request completed.
-
-## Evaluate transport changes
-
-The production path
-uses JSON/HTTP; the gRPC experiment was a separate module under
-`experiments/transportbench` (removed; inspect via git history).
-
-The measurements compare encoding and transport costs over loopback. They do
-not measure WAN behavior, database work, native notification latency, or task
-outcomes. Run the experiment's own checks when changing it: the repository's
-main test targets do not traverse that nested Go module.

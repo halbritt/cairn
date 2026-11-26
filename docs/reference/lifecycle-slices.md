@@ -59,35 +59,6 @@ a new activation mode or a bound Hermes caller. Receipt-checked process fixtures
 synthetic API and selector processes. They do not establish installed rollout,
 native callback qualification, a real provider invocation or production acceptance.
 
-## Store inspection and evaluation helpers
-
-The following historical methods lived in
-`core/roadmap_lifecycle_slices.go` (removed with `CAIRN-842`):
-
-| Method | Inputs after context | Result and boundary |
-| --- | --- | --- |
-| `AuditEvidenceFreshness` | repository, maximum age | Reports retained evidence freshness and affected claims; does not watch external files |
-| `EvaluateTaskContextBudget` | repository, task ID, byte ceiling | Totals recorded receipt and expansion bytes and reports `InterlockRefused`; does not itself block a launch or measure an entire model conversation |
-| `InspectGovernanceConflictAndWaiverStatus` | repository | Reports conflicts, authority waivers, and refusal trace coverage |
-| `ValidateImportQuarantine` | repository, record ID | Assesses the record and related sensitivity restrictions |
-| `EvaluateUseRetentionFloor` | repository, current time | Reports retention eligibility and protected references; does not delete records |
-| `DetectOutOfProcedureRestore` | expected generation, expected latest checkpoint ID | Compares retained state with supplied expectations; does not discover an independent trusted recovery catalog |
-
-These are Go store APIs. Their existence does not imply that every method has an
-ordinary-agent CLI or MCP operation. Read the method's authorization checks and
-its callers before integrating it.
-
-## Extension helpers
-
-`core/roadmap_extensions.go` (removed with `CAIRN-842`) previously contained:
-
-| Helper | Use |
-| --- | --- |
-| `InspectH1HandleProfile(ctx, receiptID)` | Inspect a receipt's handle and expansion profile |
-| `PreviewOfflineSessionConsolidation(ctx, repo)` | Propose consolidation candidates for review without applying changes |
-| `EvaluateDecayExperiment(candidates, now, halfLifeDays, incidentActive)` | Compare ranking with an explicit decay experiment; it does not enable decay in ordinary retrieval |
-| `CheckH3RuntimeMediation(ctx, repo, destination, purpose, recordIDs)` | Return an eligibility decision for selected records; callers must enforce that decision at the consequential action boundary |
-
 ## User-facing workflows
 
 For actual operation and integration contracts, use:

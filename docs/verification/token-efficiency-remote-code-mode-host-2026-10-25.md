@@ -2,9 +2,9 @@
 
 Date: 2026-10-25. Result: **refused** as an auth-isolated actor route.
 
-The provider-free probe in `scripts/trial_codex_remote_code_mode_host.py`
-starts installed Codex CLI 0.164 app-server with a loopback-only Responses
-fixture. It places a synthetic auth marker in the temporary app-server
+The provider-free probe starts installed Codex CLI 0.164 app-server with a
+loopback-only Responses fixture. It places a synthetic auth marker in the
+temporary app-server
 `CODEX_HOME` and starts the packaged `codex-code-mode-host` in external bwrap.
 The bwrap mounts the actor workspace and system runtime; it does not mount the
 temporary app-server home. The app-server configuration requires no provider
@@ -29,18 +29,6 @@ model-facing `functions.exec` shell in that namespace. The probe does not
 establish an alternate supported shell executor or a safe live route. The
 40,000-input and 512-output ceilings remain post-turn checks; this probe tested
 only the active interruption mechanism with a two-second fixture deadline.
-
-Run the focused proof with:
-
-```sh
-python3 -B -m unittest scripts.test_trial_codex_remote_code_mode_host -v
-```
-
-The test intentionally passes only when it reproduces the refusal conditions:
-successful benign command, direct bwrap marker denial, marker exposure through
-`functions.exec`, native interruption, and owned process-group cleanup. A
-future supported isolated executor should replace the expected leak assertion
-with a denial assertion before any live canary admission.
 
 ## Hardlink alias follow-up
 

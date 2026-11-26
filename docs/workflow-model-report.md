@@ -2,7 +2,7 @@
 
 Use this report to compare observed model usage with inbox handling in a selected
 workflow. Missing or ambiguous evidence stays visible so the report does not
-attrib-ute an entire conversation to one coordination event.
+attribute an entire conversation to one coordination event.
 
 `scripts/workflow_model_report.py` joins retained Codex or Claude provider usage
 to Cairn native inbox contexts and committed command journals. It is read-only.
@@ -11,7 +11,7 @@ opaque event, delivery, and turn references. It does not emit source bodies,
 prompts, credentials, native file paths, or model output.
 
 Run it with a private frozen native log manifest. This is the same list of
-`{home, harness, path}` entries accepted by `audit_model_overhead.py`. An
+`{home, harness, path}` entries accepted by `scripts/audit_model_overhead.py`. An
 optional `binding` and `pin` on each entry make attribution more precise. The
 report matches an inbox context to a provider turn only when its turn ID is
 unique in the selected logs. A binding match is recorded separately from a

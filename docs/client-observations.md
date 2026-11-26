@@ -1,6 +1,6 @@
 # Observed client implementations
 
-CAIRN-114. Use this when a saved instruction names an option, tool or behavior
+Use this when a saved instruction names an option, tool or behavior
 that the running installation does not seem to have and you need to know which
 declared client implementations are actually contacting the API. It answers one
 question: *which declared client implementations has this API process heard from,
@@ -29,7 +29,7 @@ member names (including case variants at every level), strings at most 256 bytes
 | `surface` | `cli`, `mcp`, `python-hook`, `other` or `unknown`; anything else is `unknown`. |
 | `harness` | `codex`, `claude`, `opencode`, `hermes`, `agy`, `other` or `unknown`. Reported by explicit configuration only (`cairn mcp --client-harness`); never inferred from task IDs, arguments, `--codex-thread` or a process list. The CLI always reports `unknown`. |
 | `transport_build` | The existing `cairn.build/1` of the *executing Go process*, read once when the client is built. A caller cannot supply it. A running MCP process keeps reporting the build it started with, whatever is installed at its path later. |
-| `origin` | Optional. A fixed component name (currently `lifecycle-memory`), an optional bounded `implementation_id`, and `basis: "reported"`. It is present only when the calling code supplies it through the dedicated `CAIRN_CALLER_DIAGNOSTICS` value, which the CLI validates against that fixed list and otherwise drops. The CLI's own build is never presented as the caller's identity. Only the Python lifecycle memory module sets it, for its own CLI calls ([below](#python-lifecycle-memory-origin)); every other caller leaves the origin `unknown`. |
+| `origin` | Optional. A fixed component name (currently `lifecycle-memory`), an optional bounded `implementation_id`, and `basis: "reported"`. Both the Python lifecycle memory module (`integrations/lifecycle/memory.py`, via `CAIRN_CALLER_DIAGNOSTICS` on `cairn` CLI calls; [below](#python-lifecycle-memory-origin)) and the Go `cmd/cairn-lifecycle` binary (`internal/lifecycle/memoryhook`, hashing `/proc/self/exe` on its direct API calls) set it. The `cairn` CLI sets `origin` only when `CAIRN_CALLER_DIAGNOSTICS` is provided, validating it against that fixed list and otherwise dropping it; the CLI's own build is never presented as the caller's identity. Every other caller leaves the origin `unknown`. |
 | `retrieval_capabilities` | The existing `cairn.retrieval-capabilities/1` search declaration (`search_memory_budget_bytes`, `search_min_pull_bytes`), reused unchanged. It declares implemented request semantics, not authorization, health or a guarantee that the next request succeeds. |
 | `reader_capabilities` | Optional. `cairn.reader-capabilities/1` with the boolean `source_opening`: this client preserves a paired `source_opening` when it decodes an expansion (the Go CLI and MCP facade of a build that has the feature). Absent, malformed or unrecognized means unknown, never ready; an unusable member is dropped without invalidating the rest of the declaration. Older servers ignore it. It is a claim, not a readiness check. |
 
@@ -56,8 +56,12 @@ separately from the executing Go CLI's `transport_build` (`surface` stays `cli` 
 - **Coverage.** Every ordinary `Memory.call` operation (search, pull, history,
   create, revise and so on) and the best-effort `recall-observation` report, which
   includes both when the bound [inbox recall](inbox-recall.md) engine makes them.
-  The coordination and watch code, selector and provider subprocesses, the MCP
-  facade and other Go clients are not relabeled.
+  Separately, the Go `cmd/cairn-lifecycle` binary (`internal/lifecycle/memoryhook`)
+  also sets `origin` (`component: "lifecycle-memory"`, `implementation_id` from
+  `/proc/self/exe`) on its direct API calls (ordinary recall, capture selection/reporting,
+  and inbox delivery). The coordination and watch code, selector and provider
+  subprocesses, the MCP facade and other Go clients (such as `cairn watch` and
+  the wake supervisor) are not relabeled.
 - **What the ID is.** The full lowercase SHA-256 of the module's own `.py` source
   bytes. Two different readable artifacts report different IDs; identical bytes at
   another path report the same ID. It is never the CLI revision, a Git checkout,
@@ -125,7 +129,7 @@ host or reinstalling a hook remains a separately chosen action.
 After normal authentication (and the existing remote-profile and method checks),
 and before protocol admission so that a refused request still diagnoses its
 client, the API records one in-memory observation for authenticated POST calls
-other than `/v1/clients`. It reads no request body, writes no SQL and no log, and
+other than `/v1/clients` and `/v1/refusal-stats`. It reads no request body, writes no SQL and no log, and
 does not change business admission, retry behavior or identity, and cannot fail or
 roll back an operation. Bounded synchronous parsing and bookkeeping add overhead.
 
@@ -172,8 +176,9 @@ request content is ever included.
   a remote observer profile stays denied as before.
 - **One bounded page.** At most 128 rows (request `--limit 128` to read every retained cohort); `truncated` and `eligible_rows` say what
   was left out. There is no cursor and no inventory promise.
-- **Listing observes nothing.** `/v1/clients` is not itself recorded, and listing
-  never refreshes a cohort. `/v1/version` calls do count as contact.
+- **Listing observes nothing.** `/v1/clients` and `/v1/refusal-stats` are not
+  themselves recorded, and listing never refreshes a cohort. `/v1/version` calls
+  do count as contact.
 - **An empty list** means no retained observation in your scope, not that every
   client is current. An old API without the route is reported by the CLI as
   `UNSUPPORTED_DIAGNOSTICS`. Remote profiles can instead receive
@@ -222,9 +227,10 @@ Client observations identify declared cohorts and their reported features. It do
 
 - enumerate every installed client, identify silent sessions, or survive an API
   restart (no first/last seen across restarts);
-- identify the exact bytes of a running executable or of code a Python
-  interpreter has loaded: the Go CLI's own bytes are not hashed, and the Python
-  lifecycle memory origin is a reported source snapshot taken at initialization;
+- identify the exact bytes of code a Python interpreter has loaded or of an
+  ordinary `cairn` CLI binary: `cairn` CLI does not hash its own bytes (only
+  `cmd/cairn-lifecycle` hashes `/proc/self/exe`), and the Python lifecycle
+  memory origin is a reported source snapshot taken at initialization;
 - compare against a release target, order revisions, or say a client is behind;
 - cover other Go clients such as `cairn watch` or the wake supervisor, which send
   no declaration and appear as `missing`; or

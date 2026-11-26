@@ -13,7 +13,7 @@ matching repository, task and run. An agent token, another observer's attempt,
 a wildcard scope, and a missing attempt cannot establish this linkage.
 
 This supports a host-observed wrapper invocation that subsequently launches one
-memory-wrapped child. It does not change Striatum's sealed-input contract. A host
+memory-wrapped child. It does not change a host's sealed-input contract. A host
 that must compile context before dispatch sealing still needs a permitted,
 sealed context input and a matching execution route; this flag alone does not
 supply that integration.

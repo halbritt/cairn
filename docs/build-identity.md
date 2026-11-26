@@ -32,7 +32,7 @@ dependency inventories, environment variables and credentials are excluded.
 
 MCP initialization reports the facade executable in `serverInfo.version`: its
 VCS revision, with `-modified` or `-unknown` when appropriate; otherwise its
-module version or `unknown`. This replaces the previous constant `1`. It is
+module version or `unknown`. It is
 not the MCP protocol version or the remote API identity. Existing MCP processes
 keep their original executable until restarted.
 
@@ -56,19 +56,28 @@ Call native `cairn_client_info` with `{}` through the conversation's existing
 Cairn connection. Its `cairn.client-info/1` result separates:
 
 - `facade.build`: the executing facade's build, captured at server construction.
-  `facade.search_memory_budget_bytes: "supported"` and
-  `facade.search_min_pull_bytes: "supported"` are local declarations with
-  `support_basis: "registered_search_contract"`. Tests cover the registered
-  search argument, validation and forwarding to the authenticated API.
+  Optional `facade.search_view` and `facade.tool_profile` reflect non-empty
+  configured facade values. `facade.search_memory_budget_bytes: "supported"`,
+  `facade.search_min_pull_bytes: "supported"`, and
+  `facade.inspection_first_fitting_whole_v1: "supported"` are local declarations
+  with `support_basis: "registered_search_contract"` and
+  `inspection_support_basis: "registered_search_contract"`. Tests cover the
+  registered search arguments, validation and forwarding to the authenticated API.
 - `api.build`: the build returned by one authenticated `/v1/version` request,
   when available. Recognized API declarations set `api.search_memory_budget_bytes`
   and `api.search_min_pull_bytes` to `"supported"` or `"unsupported"`, with
   `support_basis: "api_retrieval_capabilities_v1"`. Missing, malformed or unknown
   declarations leave both `"unknown"`, with `support_basis: "no_api_capability_contract"`.
-  A valid build remains available even when its optional declaration is unusable.
+  Similarly, a recognized `inspection_capabilities` declaration (`cairn.inspection-capabilities/1`)
+  sets `api.inspection_first_fitting_whole_v1` to `"supported"` or `"unsupported"`
+  with `inspection_support_basis: "api_inspection_capabilities_v1"` (otherwise
+  `"unknown"` with `"no_api_inspection_capability_contract"`).
+  A valid build remains available even when its optional declarations are unusable.
   Equal revisions, protocol versions and unrelated extra fields never imply support.
 
-The authenticated version response now includes this fixed declaration:
+The authenticated `/v1/version` response includes `protocol`,
+`inspection_capabilities`, `source_opening_capabilities`, `query_input_capabilities`,
+`preview_capabilities`, and this fixed retrieval declaration:
 
 ```json
 {"retrieval_capabilities":{"schema":"cairn.retrieval-capabilities/1","search_memory_budget_bytes":true,"search_min_pull_bytes":true}}
@@ -100,8 +109,9 @@ is a local declaration (`registered_pull_contract`) that this facade preserves
 
 The probe has a two-second timeout and never retries. An unavailable API leaves
 facade information intact with `api.state: "unavailable"` and a fixed diagnostic
-such as `API_CONNECTION_FAILED`, `API_TIMEOUT`, `API_ACCESS_DENIED`,
-`VERSION_UNAVAILABLE`, or `API_PROBE_FAILED`. Malformed build metadata produces
+such as `API_NOT_CONNECTED`, `API_CONNECTION_FAILED`, `API_TIMEOUT`,
+`API_CANCELED`, `API_ACCESS_DENIED`, `VERSION_UNAVAILABLE`,
+`PROTOCOL_UNSUPPORTED`, or `API_PROBE_FAILED`. Malformed build metadata produces
 `invalid_response` / `INVALID_BUILD_IDENTITY`; arbitrary API error text and
 unknown fields are not forwarded. Build strings must fit the diagnostic's
 bounded recognized formats; unrecognized identities are not guessed at.

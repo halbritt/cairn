@@ -72,7 +72,7 @@ These rows establish only committed Store-mediated mutations. A reissue's
 null attempt stays unjoined at the attempt level; the report never borrows an
 attempt from prior history. Recovery-action rows are reported separately from
 recipient model usage and accepted task outcomes. Besides the two endpoint
-actions, the ledger records the other Store-mediated stops since schema 073:
+actions, the ledger records the other Store-mediated stops:
 `work_cancel` (`cancelled`, with the attempt when a confirmed native
 cancellation closed it), `stopped_inbox_expiry` (`consumer_retired`) and
 `request_control_sweep` (`admission_expired` or `task_deadline`, with no
@@ -155,24 +155,6 @@ phase has unknown provider work; zero requires explicit no-model evidence or
 an exactly joined turn with zero responses. Compare matched attempts, operation identities,
 model route and task outcomes before making a cost or recovery-time claim.
 
-The historical v1 classification panel is `trials/recovery-model/FROZEN.json`;
-its bytes and hash are preserved for earlier receipts. The current v2 panel is
-`trials/recovery-model/FROZEN-v2.json`; run
-`uv run --with tiktoken==0.12.0 python scripts/eval_recovery_model_panel.py`.
-The evaluator accepts either version and checks that each exact failure code,
-recovery state, operator action and reminder observation survive into the
-report. V2 adds synthetic cases for a transient provider failure and a joined
-owner prompt. The provider-failure case exercises the exact synthetic
-event/delivery/attempt join and keeps its two synthetic responses associated
-with that attempt; its turn reference is a fixture value, not an observed native
-turn. The owner-prompt fixture counts a separate synthetic native-turn
-reference and leaves provider responses unknown, so it is not charged to the
-refused delivery. The panel's expected values are controls in the same fixture,
-not independent observations. Both versions make no provider call and do not
-measure production reminder deduplication or accepted recovery. CAIRN-226 still
-requires selected live failure evidence and the CAIRN-214 usage join before
-making model-work or token-savings claims.
-
 `scripts/check_codex_compact_native.py` also emits a bounded
 `cairn.recovery-model-report/3` fixture report from a live disposable Store
 event. After the observed Codex turn claims the delivery, the fixture submits
@@ -186,27 +168,3 @@ the Codex endpoint is a scripted loopback and does not establish provider
 usage. The wrong-lease call is a fencing control, not an incident sample or a
 measurement of recovery work. `scripts/test_codex_recovery_fixture_report.py`
 checks mismatch refusal and null provider accounting without retaining payloads.
-Reproduce it with a private, offline Codex candidate root (staged via the
-current Go lifecycle stager `cairn-stage-lifecycle`; `scripts/stage_token_efficiency_canary.py`
-is retired) and a disposable PostgreSQL cluster:
-
-```sh
-python3 -B scripts/check_codex_recovery_fixture_disposable.py \
-  --candidate-root "$HOME/.cache/cairn-token-efficiency-stages/recovery-probe"
-```
-
-The runner binds PostgreSQL to a private Unix socket with TCP disabled and
-Codex to the loopback scripted Responses endpoint. It prints only the
-redacted report. This probe exercises refusal and same-attempt recovery in the
-Store and observes a real Codex turn boundary, but it does not make a provider
-call, measure model response count, sample an incident, or assess task outcome.
-Verified on 2026-10-24 with the installed Codex 0.164 app-server: the exact
-`STALE_LEASE` refusal left one leased Store attempt; the same attempt then
-settled handled once. The report contained the opaque join references and
-unknown provider response/usage fields described above.
-
-The broad `make test-integration` run did not pass: it stopped at or near the
-notice-watcher leg. The retained test root was gone before the exact assertion
-could be recovered, so the failure attribution remains unknown. That leg's
-unconditional 60-second routine-notice pilot is under correction in CAIRN-220;
-this CAIRN-226 result does not claim a broad integration pass.
