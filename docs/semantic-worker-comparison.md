@@ -114,7 +114,7 @@ their signatures. Rust paths and mode are operator configuration, never request
 fields or an arbitrary argument/environment list.
 
 The standalone
-[`go-supervisor-driver`](../semantic/testdata/go-supervisor-driver/main.go) builds
+`go-supervisor-driver` (`semantic/testdata/go-supervisor-driver/main.go`, removed) built
 with `go build -buildvcs=false -o /tmp/go-supervisor-driver
 ./semantic/testdata/go-supervisor-driver`. It reads bounded NDJSON from stdin
 and uses these production supervisors without opening a database. Rank/stream

@@ -185,7 +185,6 @@ class OptionalExcerptFitTests(unittest.TestCase):
         from pathlib import Path
         from test_claude_inbox_recall import ClaudeInboxRecallTests
         from test_inbox_recall_bridge import InboxRecallBridgeTests
-        from trial_source_delivery import hook_delivery
         for factory in (ClaudeInboxRecallTests, InboxRecallBridgeTests):
             with self.subTest(harness=factory.__name__):
                 case = factory()
@@ -231,7 +230,7 @@ class OptionalExcerptFitTests(unittest.TestCase):
                 self.assertLessEqual(grant['output_bytes'] + grant['native_allowance_bytes'], 9500)
                 # Isolate the recall JSON from the task/control prefix for the
                 # existing delivery extractor; it must report a partial source.
-                observed = hook_delivery(json.dumps(dict(hookSpecificOutput=dict(
+                observed = eager._observed_hook_delivery(json.dumps(dict(hookSpecificOutput=dict(
                     additionalContext=hook.encoded(view)))))
                 self.assertEqual(observed['status'], 'observed')
                 optional = [item for item in observed['items'] if item['record_id'] == entry['record_id']]

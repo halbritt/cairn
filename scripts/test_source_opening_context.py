@@ -86,8 +86,7 @@ class SourceOpeningTests(unittest.TestCase):
         self.assertLessEqual(len(out['stdout'].encode()) + view['remaining_memory_bytes'], budget)
         self.assertIn(opening, text.replace('\\n', '\n'))
         self.assertEqual(len([c for c in case.calls() if c['op'] == 'pull']), 1)
-        from trial_source_delivery import hook_delivery
-        delivery = hook_delivery(out['stdout'])
+        delivery = eager._observed_hook_delivery(out['stdout'])
         self.assertEqual(delivery['status'], 'observed')
         emitted_opening = [item for item in delivery['items']
                            if item.get('source_component') == 'source_opening_excerpt']

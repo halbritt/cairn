@@ -28,6 +28,19 @@ func realRustConfig(t *testing.T, variable string) RustWorkerConfig {
 	return config
 }
 
+func requireAcceptanceScores(t *testing.T, result core.SemanticRankResult, request core.SemanticRankRequest) {
+	t.Helper()
+	if len(result.ModelSHA256) != 64 || result.Algorithm != "bge-max-chunk/1" || len(result.Scores) != len(request.Notes) {
+		t.Fatal("invalid model identity or incomplete score result")
+	}
+	for n, score := range result.Scores {
+		note := request.Notes[n]
+		if score.RecordID != note.RecordID || score.Version != note.Version || score.BodySHA256 != note.BodySHA256 || score.Score < -1000000 || score.Score > 1000000 {
+			t.Fatal("score metadata/order/bounds differ from input")
+		}
+	}
+}
+
 func TestRustRealRankAndStreamIdleRestore(t *testing.T) {
 	config := realRustConfig(t, "CAIRN_RUST_RANK_TEST_CONFIG")
 	config.Mode = RustRank

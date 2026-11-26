@@ -26,8 +26,8 @@ that a request completed.
 ## Evaluate transport changes
 
 The production path
-uses JSON/HTTP; the gRPC experiment is a separate module under
-[`experiments/transportbench`](../experiments/transportbench/README.md).
+uses JSON/HTTP; the gRPC experiment was a separate module under
+`experiments/transportbench` (removed; inspect via git history).
 
 The measurements compare encoding and transport costs over loopback. They do
 not measure WAN behavior, database work, native notification latency, or task

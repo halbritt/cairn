@@ -9,6 +9,19 @@ installation with `cairn version`; use
 See [build identity](docs/build-identity.md) for unstamped builds and MCP
 processes.
 
+## 2026-11-26
+
+- Audited the test suite and removed 114 extraneous files whose subjects were
+  retired, uncalled, or test-tooling-only: `internal/experimentaldebit`,
+  `experiments/transportbench`, retired Python-vs-Rust semantic comparison and
+  S-05 transition harnesses, uncalled `core/` roadmap/symbol-diff slices,
+  opt-in trial/scale/panel-fixture probes, 9 test-of-test-tooling Python
+  modules, one-off probe/trial scripts, and historical schema-078/079 advice
+  and version-skew checks (leaving `507` root `*_test.go` files and `173`
+  `scripts/test_*.py` modules with `2,615` `unittest` cases; CAIRN-301 files
+  left untouched). Read a removed file with `git show 6479a8dd:<path>`
+  (CAIRN-842).
+
 ## 2026-11-25
 
 - `git-land` no longer moves `main` from underneath a checkout. A landing made

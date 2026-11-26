@@ -13,8 +13,8 @@ every repository worktree.
 
 ## Input seam
 
-[`semantic_fixture_cases.py`](../scripts/semantic_fixture_cases.py) imports only
-the Python standard library. Each call returns fresh dictionaries.
+`scripts/semantic_fixture_cases.py` (removed with `CAIRN-842`) imported only
+the Python standard library. Each call returned fresh dictionaries.
 
 | Export | Input inventory |
 | --- | --- |

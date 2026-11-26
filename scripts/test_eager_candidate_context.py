@@ -1,7 +1,10 @@
 """Whole unverified candidates at the real hook boundary; no provider."""
+import base64
+import binascii
 import hashlib
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -9,6 +12,176 @@ from unittest.mock import patch
 from test_claude_lifecycle import module, ROOT
 
 hook = module('eager_candidate_hook', ROOT / 'integrations/lifecycle/memory.py')
+
+_UUID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+_DIGEST_RE = re.compile(r'[0-9a-f]{64}')
+
+
+def _observed_hook_delivery(raw):
+    def loads_unique(text):
+        if not isinstance(text, str) or len(text.encode('utf-8')) > 1024 * 1024:
+            raise ValueError('envelope size')
+        def unique(pairs):
+            out = {}
+            for k, v in pairs:
+                if k in out:
+                    raise ValueError('duplicate key')
+                out[k] = v
+            return out
+        return json.loads(text, object_pairs_hook=unique)
+
+    def digest(v):
+        if not isinstance(v, str) or not _DIGEST_RE.fullmatch(v):
+            raise ValueError('digest')
+        return v
+
+    def integer(v, minimum=0):
+        if type(v) is not int or not minimum <= v <= 2147483647:
+            raise ValueError('integer')
+        return v
+
+    def identity(rec):
+        rid = rec.get('record_id')
+        if not isinstance(rid, str) or not _UUID_RE.fullmatch(rid):
+            raise ValueError('record identity')
+        return dict(record_id=rid, version=integer(rec.get('version'), 1))
+
+    def text_info(v):
+        if not isinstance(v, str):
+            raise ValueError('text')
+        b = v.encode('utf-8')
+        if len(b) > 65536:
+            raise ValueError('body size')
+        return len(b), hashlib.sha256(b).hexdigest()
+
+    items = []
+
+    def add_item(item):
+        if len(items) >= 128:
+            raise ValueError('item bound')
+        items.append(item)
+
+    def add_body(rec, *, span=None, mandatory=None):
+        item = dict(identity(rec), historical=False)
+        if type(mandatory) is bool:
+            item['mandatory'] = mandatory
+        if span is not None:
+            if rec.get('body') not in (None, '') or not isinstance(span, dict):
+                raise ValueError('span')
+            off, end, tot = (integer(span.get(k)) for k in ('offset', 'end', 'total_bytes'))
+            if not 0 <= off <= end <= tot <= 65536:
+                raise ValueError('span extent')
+            if 'body_base64' in span:
+                if span.get('body'):
+                    raise ValueError('ambiguous span')
+                b64 = span['body_base64']
+                if not isinstance(b64, str) or len(b64) > 90000:
+                    raise ValueError('span base64')
+                raw_b = base64.b64decode(b64, validate=True)
+                data = (len(raw_b), hashlib.sha256(raw_b).hexdigest())
+            else:
+                data = text_info(span.get('body', ''))
+            if data[0] != end - off or data[1] != digest(span.get('sha256')):
+                raise ValueError('span identity')
+            item.update(extent='partial_span', source_sha256=digest(span.get('source_sha256')),
+                        span=dict(offset=off, end=end, total_bytes=tot),
+                        delivered_sha256=data[1], delivered_bytes=data[0])
+        else:
+            sz, dig = text_info(rec.get('body'))
+            item.update(extent='full_body', source_sha256=dig, delivered_sha256=dig, delivered_bytes=sz)
+        add_item(item)
+
+    def add_selection(sel, span=None):
+        if not isinstance(sel, dict) or not isinstance(sel.get('record'), dict):
+            raise ValueError('selection')
+        add_body(sel['record'], span=span, mandatory=sel.get('mandatory'))
+
+    def add_expansion(val):
+        if not isinstance(val, dict) or 'selection' not in val:
+            raise ValueError('expansion')
+        add_selection(val['selection'], val.get('span'))
+        if 'source_opening' in val:
+            opening, matched = val['source_opening'], val.get('span')
+            if (not isinstance(opening, dict) or not isinstance(matched, dict)
+                    or set(opening) - {'offset', 'end', 'total_bytes', 'sha256', 'body', 'body_base64'}
+                    or opening.get('offset') != 0 or opening.get('total_bytes') != matched.get('total_bytes')
+                    or not 0 < integer(opening.get('end')) <= min(768, integer(matched.get('offset')))
+                    or val.get('competing')):
+                raise ValueError('source opening')
+            add_selection(val['selection'], dict(opening, source_sha256=matched.get('source_sha256')))
+            items[-1]['source_component'] = 'source_opening'
+        comp = val.get('competing', [])
+        if not isinstance(comp, list) or len(comp) > 128:
+            raise ValueError('list')
+        for sel in comp:
+            add_selection(sel)
+
+    try:
+        if raw.strip():
+            top = loads_unique(raw)
+            if not isinstance(top, dict):
+                raise ValueError('hook')
+            out = top.get('hookSpecificOutput')
+            if out is not None:
+                if not isinstance(out, dict):
+                    raise ValueError('hook output')
+                txt = out.get('additionalContext')
+                if txt is not None and txt != '':
+                    if not isinstance(txt, str):
+                        raise ValueError('context')
+                    view = loads_unique(txt[txt.index('{'):])
+                    if not isinstance(view, dict) or not any(k in view for k in ('selected', 'index', 'expanded', 'candidate_bodies')):
+                        raise ValueError('view')
+                    for k in ('selected', 'index', 'candidate_bodies'):
+                        if not isinstance(view.get(k, []), list) or len(view.get(k, [])) > 128:
+                            raise ValueError('list')
+                    for sel in view.get('selected', []):
+                        add_selection(sel)
+                    for entry in view.get('index', []):
+                        if not isinstance(entry, dict):
+                            raise ValueError('preview')
+                        sz, dig = text_info(entry.get('summary'))
+                        item = dict(identity(entry), extent='preview', historical=False, delivered_sha256=dig, delivered_bytes=sz)
+                        if entry.get('body_sha256') is not None:
+                            item['source_sha256'] = digest(entry['body_sha256'])
+                        hint = entry.get('summary_span')
+                        if hint is not None:
+                            if not isinstance(hint, dict):
+                                raise ValueError('preview location')
+                            item['summary_span'] = dict(offset=integer(hint.get('offset')), length=integer(hint.get('length')))
+                        add_item(item)
+                    if view.get('expanded') is not None:
+                        add_expansion(view['expanded'])
+                    for cand in view.get('candidate_bodies', []):
+                        if not isinstance(cand, dict):
+                            raise ValueError('candidate')
+                        add_expansion(cand.get('response'))
+                        if 'source_opening_excerpt' in cand:
+                            op = cand['source_opening_excerpt']
+                            if not isinstance(op, dict):
+                                raise ValueError('source opening')
+                            st = op.get('status')
+                            if st in ('unavailable', 'passage_starts_at_opening'):
+                                if set(op) - {'status', 'reason'}:
+                                    raise ValueError('unaccounted opening content')
+                            else:
+                                if st != 'provided' or op.get('origin') not in ('whole_pull', 'span_pull'):
+                                    raise ValueError('unknown source opening')
+                                resp = cand['response']
+                                rec, matched, sp = resp['selection']['record'], resp.get('span'), op.get('span')
+                                if (not isinstance(matched, dict) or not isinstance(sp, dict)
+                                        or identity(op) != identity(rec)
+                                        or sp.get('source_sha256') != matched.get('source_sha256')
+                                        or sp.get('total_bytes') != matched.get('total_bytes')
+                                        or sp.get('offset') != 0
+                                        or not 0 < integer(sp.get('end')) <= min(768, integer(matched.get('offset')))
+                                        or 'body_base64' in sp or not isinstance(sp.get('body'), str)):
+                                    raise ValueError('source opening mismatch')
+                                add_body(dict(identity(rec), body=''), span=sp, mandatory=False)
+                                items[-1]['source_component'] = 'source_opening_excerpt'
+    except (ValueError, TypeError, AttributeError, KeyError, UnicodeError, binascii.Error, RecursionError):
+        return dict(schema='cairn.source-delivery/1', status='unknown', items=[], reason='unsupported_or_invalid_payload')
+    return dict(schema='cairn.source-delivery/1', status='observed', items=items)
 
 class EagerCandidateTests(unittest.TestCase):
     def setUp(self):
@@ -106,7 +279,6 @@ class EagerCandidateTests(unittest.TestCase):
             self.assertNotEqual(call.call_args.kwargs['payload']['request_id'], private_id)
 
     def test_optional_delivery_view_preserves_sources_and_usable_handles(self):
-        from trial_source_delivery import hook_delivery
         self.result['index'] = self.entries[:1]
         entry = self.entries[0]
         response = self.responses[entry['record_id']]
@@ -136,7 +308,7 @@ class EagerCandidateTests(unittest.TestCase):
             return json.dumps(dict(hookSpecificOutput=dict(additionalContext=hook.encoded(dict(
                 candidate_bodies=[candidate])))))
         original = dict(pull_arguments=entry['pull_arguments'], response=before)
-        self.assertEqual(hook_delivery(emitted(original)), hook_delivery(emitted(supplied)))
+        self.assertEqual(_observed_hook_delivery(emitted(original)), _observed_hook_delivery(emitted(supplied)))
         self.assertLess(len(emitted(supplied).encode()), len(emitted(original).encode()))
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
         self.assertEqual(len(self.calls), 1)

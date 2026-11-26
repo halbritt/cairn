@@ -1,5 +1,4 @@
 """Verify opt-in OpenCode session messaging tools (`opencode-install --messaging`)."""
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -164,16 +163,6 @@ class OpenCodeMessagingToolsTests(unittest.TestCase):
     def tearDownClass(cls):
         if hasattr(cls, "_tmp"):
             cls._tmp.cleanup()
-
-    def test_default_request_shape_hashes_unchanged(self):
-        from check_opencode_cairn_request_shape import (
-            EXPECTED_DECLARATION_SET_SHA256,
-            EXPECTED_VALIDATION_SET_SHA256,
-            check as check_shape,
-        )
-        report = check_shape(self.opencode, "full")
-        self.assertEqual(report["first_request"]["validation_set_sha256"], EXPECTED_VALIDATION_SET_SHA256)
-        self.assertEqual(report["first_request"]["declaration_set_sha256"], EXPECTED_DECLARATION_SET_SHA256)
 
     def test_messaging_tools_end_to_end_and_compact_profile(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

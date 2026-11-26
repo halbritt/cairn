@@ -1,4 +1,5 @@
 """Marker scans find escaped tool processes and never report unknown coverage as clear."""
+import json
 import os
 from pathlib import Path
 import signal
@@ -10,12 +11,99 @@ import unittest
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'scripts'))
-import opencode_cancel_trial as trial  # noqa: E402
 from integrations.lifecycle import process_scan  # noqa: E402
 
 MARKER = 'CAIRN_REQUEST_ID'
 EXPECTED = dict(tree=4, escaped=5)
+
+_WORKLOAD_SCRIPT = r'''
+import json, os, signal, sys, time
+from pathlib import Path
+
+mode, ledger = sys.argv[1], sys.argv[2]
+
+def identity(pid):
+    raw = Path(f'/proc/{pid}/stat').read_text()
+    return int(raw[raw.rindex(')') + 2:].split()[19])
+
+def record(role):
+    line = json.dumps(dict(pid=os.getpid(), start=identity(os.getpid()), role=role,
+                           pgid=os.getpgid(0), sid=os.getsid(0)))
+    with open(ledger, 'a') as out:
+        out.write(line + '\n')
+        out.flush()
+        os.fsync(out.fileno())
+
+def linger(role, ignore_term=False):
+    if ignore_term:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    record(role)
+    while True:
+        time.sleep(3600)
+
+def spawn(role, ignore_term=False, escape=False, grandchild=None):
+    pid = os.fork()
+    if pid:
+        if escape:
+            os.waitpid(pid, 0)
+        return
+    try:
+        if escape:
+            os.setsid()
+            if os.fork():
+                os._exit(0)
+        if grandchild:
+            spawn(grandchild)
+        linger(role, ignore_term)
+    finally:
+        os._exit(0)
+
+record('tool')
+spawn('child-a', grandchild='grandchild')
+spawn('child-b')
+if mode == 'escaped':
+    spawn('escapee', ignore_term=True, escape=True)
+while True:
+    time.sleep(3600)
+'''
+
+
+def _entries(ledger):
+    return [json.loads(line) for line in Path(ledger).read_text().splitlines() if line.strip()]
+
+
+def _proc_identity(pid):
+    try:
+        raw = Path(f'/proc/{pid}/stat').read_text()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    fields = raw[raw.rindex(')') + 2:].split()
+    return dict(state=fields[0], start=int(fields[19]))
+
+
+def _cleanup(ledger):
+    def alive(entry):
+        cur = _proc_identity(entry['pid'])
+        return bool(cur and cur['start'] == entry['start'] and cur['state'] != 'Z')
+
+    for entry in _entries(ledger):
+        if not alive(entry):
+            continue
+        try:
+            pidfd = os.pidfd_open(entry['pid'])
+        except ProcessLookupError:
+            continue
+        try:
+            cur = _proc_identity(entry['pid'])
+            if cur and cur['start'] == entry['start']:
+                signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        finally:
+            os.close(pidfd)
+    deadline = time.monotonic() + 5
+    while any(alive(e) for e in _entries(ledger)) and time.monotonic() < deadline:
+        time.sleep(0.05)
 
 
 class MarkerScan(unittest.TestCase):
@@ -26,13 +114,13 @@ class MarkerScan(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         ledger = Path(directory.name) / 'ledger.jsonl'
-        tool = subprocess.Popen([sys.executable, '-B', str(ROOT / 'scripts/opencode_cancel_trial.py'),
-                                 'workload', mode, str(ledger)], stdout=subprocess.DEVNULL,
+        tool = subprocess.Popen([sys.executable, '-B', '-c', _WORKLOAD_SCRIPT,
+                                 mode, str(ledger)], stdout=subprocess.DEVNULL,
                                 start_new_session=True, env=dict(os.environ, **{MARKER: value}))
         self.addCleanup(self.reap, tool)
-        self.addCleanup(lambda: trial.cleanup(ledger) if ledger.exists() else None)
+        self.addCleanup(lambda: _cleanup(ledger) if ledger.exists() else None)
         deadline = time.monotonic() + 10
-        while not (ledger.exists() and len(trial.entries(ledger)) == EXPECTED[mode]):
+        while not (ledger.exists() and len(_entries(ledger)) == EXPECTED[mode]):
             self.assertLess(time.monotonic(), deadline, 'workload did not start')
             time.sleep(0.05)
         return tool, ledger
@@ -68,7 +156,7 @@ class MarkerScan(unittest.TestCase):
         tool, ledger = self.start('tree', value)
         result = self.found(value, 4)
         self.assertEqual(sorted(p['pid'] for p in result['processes']),
-                         sorted(e['pid'] for e in trial.entries(ledger)))
+                         sorted(e['pid'] for e in _entries(ledger)))
         self.assertFalse(result['clear'])
         os.killpg(tool.pid, signal.SIGKILL)
         self.assertEqual(self.found(value, 0)['processes'], [])
@@ -80,11 +168,11 @@ class MarkerScan(unittest.TestCase):
         tool, ledger = self.start('escaped', value)
         os.killpg(tool.pid, signal.SIGKILL)
         result = self.found(value, 1)
-        escapee = next(e for e in trial.entries(ledger) if e['role'] == 'escapee')
+        escapee = next(e for e in _entries(ledger) if e['role'] == 'escapee')
         self.assertEqual([p['pid'] for p in result['processes']], [escapee['pid']])
         self.assertNotEqual(result['processes'][0]['sid'], tool.pid)
         self.assertFalse(result['clear'])
-        trial.cleanup(ledger)
+        _cleanup(ledger)
         self.assertTrue(self.cleared(value)['clear'])
 
     def test_other_marker_values_do_not_match(self):

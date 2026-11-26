@@ -30,8 +30,8 @@ limits; the immutable audit can still report incomplete catalogue coverage.
 
 The same reset selects the existing retrieval-quality fixture at
 [`core/testdata/retrieval-quality.json`](../core/testdata/retrieval-quality.json)
-for HC-01. Its current executable entry is
-[`TestDocumentationRetrievalQuality`](../core/retrieval_quality_trial_test.go),
+for HC-01. Its historical executable entry was
+`TestDocumentationRetrievalQuality` (in removed `core/retrieval_quality_trial_test.go`),
 run with an owned disposable database and `CAIRN_RETRIEVAL_REPORT`. It reports
 lexical retrieval and relevance observations; it does not introduce an absolute
 relevance threshold or establish model quality by itself. Accepted real-worker

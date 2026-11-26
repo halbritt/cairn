@@ -61,8 +61,8 @@ native callback qualification, a real provider invocation or production acceptan
 
 ## Store inspection and evaluation helpers
 
-The following methods live in
-[roadmap_lifecycle_slices.go](../../core/roadmap_lifecycle_slices.go).
+The following historical methods lived in
+`core/roadmap_lifecycle_slices.go` (removed with `CAIRN-842`):
 
 | Method | Inputs after context | Result and boundary |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ its callers before integrating it.
 
 ## Extension helpers
 
-[roadmap_extensions.go](../../core/roadmap_extensions.go) contains:
+`core/roadmap_extensions.go` (removed with `CAIRN-842`) previously contained:
 
 | Helper | Use |
 | --- | --- |

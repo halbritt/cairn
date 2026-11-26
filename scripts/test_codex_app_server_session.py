@@ -55,14 +55,6 @@ def _session(fake=None, **kwargs):
 
 
 class RefusalVocabularyTests(unittest.TestCase):
-    def test_enum_matches_the_queue_trace_vocabulary(self):
-        sys.path.insert(0, str(SCRIPTS / "fixtures" / "cairn220_queue_trace"))
-        try:
-            import trace_io
-        finally:
-            sys.path.pop(0)
-        self.assertEqual(m.NATIVE_REFUSAL_CLASSES, trace_io.NATIVE_REFUSAL_CLASSES)
-
     def test_queue_context_classifies_by_code(self):
         cases = [
             (-32600, m.BUSY_MESSAGE, "busy"),
