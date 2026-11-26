@@ -108,3 +108,67 @@ func TestInspectionPolicyEnforcesNativeEnvelopeAndNoFallback(t *testing.T) {
 		}
 	}
 }
+
+// Preparation shares the search validator, so its schema must describe every
+// policy that validator accepts and the call must forward the chosen one.
+func TestPrepareNoteAcceptsAndDescribesDeclaredRoomPolicy(t *testing.T) {
+	for _, policy := range []string{"first-fitting-whole/1", "first-fitting-whole/2"} {
+		schema := "cairn.memory-budget/3"
+		if policy == "first-fitting-whole/2" {
+			schema = "cairn.memory-budget/4"
+		}
+		var calls atomic.Int32
+		client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1/version" {
+				w.Write([]byte(`{"schema":"cairn.response/1","ok":true,"data":{}}`))
+				return
+			}
+			calls.Add(1)
+			var req core.CompileRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+			}
+			if req.InspectionPolicy != policy || req.MemoryBudgetBytes == nil || *req.MemoryBudgetBytes != 30000-currentPreparationOverhead(t) || req.MinPullBytes != nil {
+				t.Errorf("preparation changed inspection intent: %+v", req)
+				return
+			}
+			result := core.IndexResult{}
+			result.Package.Semantic.MemoryBudget = &core.MemoryBudget{Schema: schema, Bytes: *req.MemoryBudgetBytes, InspectionPolicy: policy, InspectionStatus: "no_candidates"}
+			json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": result})
+		})
+		session := diagnosticSession(t, client, 32000)
+		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cairn_prepare_note", Arguments: map[string]any{"query": "fixture", "memory_budget_bytes": 30000, "inspection_policy": policy}})
+		if err != nil || result.IsError || calls.Load() != 1 {
+			t.Fatalf("%s preparation: %v %+v calls=%d", policy, err, result, calls.Load())
+		}
+		text := result.Content[0].(*mcp.TextContent).Text
+		if !strings.Contains(text, `"inspection_policy":"`+policy+`"`) || !strings.Contains(text, `"note_saved":false`) {
+			t.Fatalf("%s preparation result lost policy or guidance: %s", policy, text)
+		}
+		tools, err := session.ListTools(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tool := range tools.Tools {
+			if tool.Name != "cairn_search" && tool.Name != "cairn_prepare_note" {
+				continue
+			}
+			encoded, err := json.Marshal(tool.InputSchema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var input struct {
+				Properties map[string]struct {
+					Description string `json:"description"`
+				} `json:"properties"`
+			}
+			if err = json.Unmarshal(encoded, &input); err != nil {
+				t.Fatal(err)
+			}
+			description := input.Properties["inspection_policy"].Description
+			if !strings.Contains(description, "first-fitting-whole/1") && !strings.Contains(description, "/1 ") || !strings.Contains(description, "/2") {
+				t.Fatalf("%s inspection_policy description omits an accepted policy: %q", tool.Name, description)
+			}
+		}
+	}
+}

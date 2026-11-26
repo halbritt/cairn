@@ -555,17 +555,25 @@ export const remember = validatedTool({
 })
 
 export const edit = validatedTool({
-  description: profiledDescription("Revise a pulled active A note. Supply exactly one of body (text only), append (verbatim suffix including separating whitespace; combined body maximum 65536 bytes), replace ({old_text, new_text}: old_text must match one unique exact passage; all other text is preserved; empty new_text removes the passage if the note remains nonblank), draft (complete replacement), or evidence_citations (replace source references; [] clears them). Text edits preserve citations; earlier versions retain their sources. Citations require captured source IDs and full-source digests and remain testimony, not qualification. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, entities, relations and attribution except deliberately changed associations. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.", "Revise a pulled active A note with exactly one change operation. Preserve unrelated content and reuse exact request arguments for retries; reconcile version conflicts."),
-  args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), body: z.string().min(1).optional(), append: z.string().min(1).optional(), replace: z.object({ old_text: z.string().min(1), new_text: z.string() }).strict().optional(), draft: z.record(z.string(), z.unknown()).optional(),
+  description: profiledDescription("Revise a pulled active A note. Supply exactly one of body (text only), append (verbatim suffix including separating whitespace; combined body maximum 65536 bytes), replace ({old_text, new_text}: old_text must match one unique exact passage; all other text is preserved; empty new_text removes the passage if the note remains nonblank), set_sections (update or append 1-16 named Markdown '## Heading' sections; all other text and metadata are preserved), draft (complete replacement), or evidence_citations (replace source references; [] clears them). Text edits preserve citations; earlier versions retain their sources. Citations require captured source IDs and full-source digests and remain testimony, not qualification. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, entities, relations and attribution except deliberately changed associations. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.", "Revise a pulled active A note with exactly one of body, append, replace, set_sections, draft or evidence_citations. Preserve unrelated content and reuse exact request arguments for retries; reconcile version conflicts."),
+  args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), body: z.string().min(1).optional(), append: z.string().min(1).optional(), replace: z.object({ old_text: z.string().min(1), new_text: z.string() }).strict().optional(),
+    set_sections: z.record(z.string().min(1).max(128), z.string().min(1).max(65536)).optional().describe("Update or append 1-16 named Markdown '## Heading' sections, as {heading: content}, while preserving all other text and metadata. Exclusive with other edit modes."),
+    draft: z.record(z.string(), z.unknown()).optional(),
     evidence_citations: z.array(z.object({ evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/),
       spans: z.array(z.object({ offset: z.number().int().min(0), length: z.number().int().positive() }).strict()).max(32).optional(),
     }).strict()).max(32).optional(),
   },
   async execute(args, context) {
-    if ([args.body, args.append, args.replace, args.draft, args.evidence_citations].filter(value => value !== undefined).length !== 1) throw new Error("INVALID_REQUEST: supply exactly one of body, append, replace, draft or evidence_citations")
+    if ([args.body, args.append, args.replace, args.set_sections, args.draft, args.evidence_citations].filter(value => value !== undefined).length !== 1) throw new Error("INVALID_REQUEST: supply exactly one of body, append, replace, set_sections, draft or evidence_citations")
+    const sectionCount = args.set_sections === undefined ? 1 : Object.keys(args.set_sections).length
+    if (sectionCount < 1 || sectionCount > 16) throw new Error("INVALID_REQUEST: set_sections requires 1-16 section updates")
     const config = await settings("edit", context)
     if (args.evidence_citations !== undefined) {
       const result = await call(config, context, ["cite"], { request_id: args.request_id, record_id: args.record_id, expected_version: args.expected_version, repo: config.repo, evidence_citations: args.evidence_citations })
+      return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
+    }
+    if (args.set_sections !== undefined) {
+      const result = await call(config, context, ["set-sections"], { request_id: args.request_id, record_id: args.record_id, expected_version: args.expected_version, repo: config.repo, sections: args.set_sections })
       return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
     }
     if (args.replace !== undefined) {
