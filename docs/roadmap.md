@@ -16,12 +16,12 @@ source does today.
 ### Larger agent teams within the context limit (CAIRN-807)
 
 The limit on swarm size is agent context, so this work comes first. Compact
-inbox delivery, digests and auto-settle are on by default (CAIRN-808), and
-recall no longer re-injects records already in context (CAIRN-809). Tool
-output entering agent context is bounded on the host (PROXIMAL-15). Open:
+inbox delivery, digests and auto-settle are on by default across Codex, Claude,
+Agy, OpenCode and Hermes (CAIRN-808, CAIRN-811), and recall no longer
+re-injects records already in context (CAIRN-809). Tool output entering agent
+context is bounded on the host (PROXIMAL-15). Open:
 
-- Compact delivery on the Agy, OpenCode and Hermes adapters (CAIRN-811) and
-  the remaining batch and overflow gaps (CAIRN-812).
+- The remaining batch and overflow gaps (CAIRN-812).
 - Less coordination fan-out, and an action on every notice (CAIRN-813,
   CAIRN-814).
 - No wakes for retired recipients and no interruption of a peer in the middle

@@ -208,7 +208,7 @@ paths; process-control fixtures act only on children they created. These checks
 cover source behavior. Installed lifecycle selection and runtime qualification
 remain separate.
 
-F-01 process and image fixtures require Go and Python and act only on their own staged files and child processes. They establish source behavior when executed; they do not qualify an installed lifecycle selection. Campaign tests await the coordinator-approved isolation wrapper that hides production homes, sockets, network and host processes. Build and vet results alone are not parity acceptance.
+F-01 process and image fixtures require Go and Python and act only on their own staged files and child processes. They establish source behavior when executed; they do not qualify an installed lifecycle selection. Campaign tests run under `scripts/test_hybrid_runtime_operations.py` (`make test-hybrid-runtime-operations` or `make test-isolated`) to hide production homes, sockets, network and host processes. Build and vet results alone are not parity acceptance.
 
 The retained real-registry assertion uses a fresh private build supplied
 through its test's `build_cairn` helper. The retained
@@ -232,8 +232,7 @@ The binary primitive does not check `/` as an ancestor or reject noncanonical
 path spellings. Release requires canonical persistent production placement;
 production pins never use the temporary-ancestor exception. Python credential
 mismatch cases exercise the verifier directly; the killed-owned-bridge case
-exercises the retained verify-before-send path. None of these historical
-fixture descriptions claims that the rebased candidate has passed them.
+exercises the retained verify-before-send path.
 
 ## Exercise backup and recovery
 

@@ -59,8 +59,11 @@ and source verification.
 Lead with the problem a feature solves, then give prerequisites, commands, expected
 results, and recovery from common failures. Use portable example paths and state
 which values a reader must supply. Keep current instructions in guides and
-reference pages; keep dated experiments in `docs/verification/`. Avoid claiming
-that a successful fixture proves live deployment or general memory usefulness.
+reference pages; record test run, review, and deployment results in the Plane
+work item and commit message rather than in the repository (see
+[decision 0023](../decisions/0023-repository-holds-current-contracts.md)).
+Avoid claiming that a successful fixture proves live deployment or general
+memory usefulness.
 
 Before publishing a change, inspect the diff for credentials, generated binaries,
 private sessions, operational memory, and scratch output. Follow the integration

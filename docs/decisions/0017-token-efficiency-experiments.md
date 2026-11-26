@@ -1,7 +1,7 @@
 # 0017 — Token-efficiency experiments
 
 Status: recommended, 2026-10-23. Source: decision receipt `cairn-token-efficiency-2026-10-23`.
-For the current contract, see [token-efficiency plan](../plans/token-efficiency-2026-10-23.md).
+For the current open work, see [larger agent teams within the context limit](../roadmap.md#larger-agent-teams-within-the-context-limit-cairn-807).
 
 ## Question
 

@@ -35,8 +35,11 @@ and continuity around session boundaries. An installed bundle must be upgraded
 explicitly. A client that can call memory tools does not thereby have automatic
 recall, inbox delivery, or every lifecycle hook enabled.
 
-The current source uses Python lifecycle modules and prepares Python semantic
-workers, with semantic process supervision in Go. The
+The current installed host lifecycle uses Python modules under
+`integrations/lifecycle/`, while Go lifecycle packages under `internal/lifecycle/`
+exist in source and `scripts/install-semantic.sh --stage-rust` stages the
+offline Rust semantic worker (`cairn serve --semantic-rust-config`) with
+semantic process supervision in Go. The
 [architecture guide](developer/architecture.md#host-runtime-and-semantic-workers)
 identifies these boundaries. The planned Go lifecycle and Rust inference
 transition has separate implementation, parity, installation and whole-unit
@@ -138,9 +141,7 @@ workflows, including qualitative, delayed, and cumulative benefits. Preserve the
 observations, alternative explanations, and unknown costs behind each conclusion.
 The [roadmap](roadmap.md) lists remaining acceptance work.
 
-## Implementation history
+## Change summary
 
-It records historical builds, tests,
-failures, corrections, and installation observations. The
-[changelog](../CHANGELOG.md) summarizes development changes; neither is a live
-inventory of your installation.
+The [changelog](../CHANGELOG.md) summarizes development changes; it is not a
+live inventory of your installation.

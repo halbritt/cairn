@@ -33,6 +33,8 @@ and [use observations](../use-outcome-loop.md).
 | `runner/` | Process launch and observation around retained context |
 | `artifacts/` | Managed evidence storage and verification |
 | `semantic/` | Local semantic scoring and embedding interfaces |
+| `rust/` | Offline Rust semantic worker crates for tokenization, scoring, ranking, and ONNX inference |
+| `web/` | Embedded presentation assets for the work view (`work serve`) |
 | `integrations/` | Harness adapters and service templates |
 | `scripts/` | Installers, lifecycle hooks, disposable fixtures, and validation |
 | `internal/` | Shared implementation details, including API contracts and refusal classification |
@@ -53,10 +55,11 @@ alone does not upgrade those installed files. See
 [lifecycle bundles](../lifecycle-bundles.md) for the installation contract.
 
 The Go `semantic/` package supervises external scoring and embedding processes.
-`scripts/install-semantic.sh` prepares Python workers and their model assets;
-`cairn serve` selects a worker through an explicit command flag. The Go
-supervisor's presence does not mean inference runs in Go or that a Rust worker
-has been selected.
+`scripts/install-semantic.sh --stage-rust` stages the offline Rust semantic
+worker package and its model assets via `scripts/semantic_package.py`;
+`cairn serve` selects a worker explicitly (for example via
+`--semantic-rust-config`). The Go supervisor's presence does not mean inference
+runs in Go or that a worker has been configured on a given server.
 
 The [hybrid runtime plan](../plans/hybrid-runtime-consolidation.md) specifies
 moving lifecycle policy to Go and inference to a separate Rust worker. Read its
