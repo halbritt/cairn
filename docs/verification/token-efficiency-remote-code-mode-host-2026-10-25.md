@@ -2,13 +2,14 @@
 
 Date: 2026-10-25. Result: **refused** as an auth-isolated actor route.
 
-The provider-free probe starts installed Codex CLI 0.164 app-server with a
-loopback-only Responses fixture. It places a synthetic auth marker in the
-temporary app-server
-`CODEX_HOME` and starts the packaged `codex-code-mode-host` in external bwrap.
-The bwrap mounts the actor workspace and system runtime; it does not mount the
-temporary app-server home. The app-server configuration requires no provider
-authentication and disables in-process code-mode-host fallback.
+The provider-free probe (probe and test scripts removed under
+[decision 0024](../decisions/0024-evaluation-harness-removed.md), commit
+`e286631b`) started installed Codex CLI 0.164 app-server with a loopback-only
+Responses fixture. It placed a synthetic auth marker in the temporary app-server
+`CODEX_HOME` and started the packaged `codex-code-mode-host` in external bwrap.
+The bwrap mounted the actor workspace and system runtime; it did not mount the
+temporary app-server home. The app-server configuration required no provider
+authentication and disabled in-process code-mode-host fallback.
 
 Observed sequence:
 
@@ -133,13 +134,3 @@ host-supplied, startup-fixed allowlist that covers generated and dynamic tools,
 and a provider-free fixture proves Cairn search/pull available while all
 process/filesystem execution paths are absent or denied without exposing auth
 to model-facing code.
-
-## Standalone Codex re-run (2026-11-24)
-
-The host now installs the standalone native Codex release instead of the npm
-package. The test finds the native binary and its sibling `codex-code-mode-host`
-and starts the app-server directly; the npm Node entry is still supported. The
-report now records the CLI's own `--version` instead of a fixed string. Against
-`codex-cli 0.171.0` the probe gives the same refusal: benign exec passed, direct
-bwrap read denied, marker leaked through `functions.exec`, interrupt at 2.002 s,
-process groups cleaned.

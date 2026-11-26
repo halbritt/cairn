@@ -504,10 +504,17 @@ UUID gives `IDEMPOTENCY_CONFLICT`; a new UUID with a stale version gives
 connection or response-budget failure can occur after commitment.
 
 History returns evidence IDs without evidence bodies, refuses more than 1000
-versions, and has no pagination. Each tool's configured output budget applies
-without silent truncation; large histories can require more room. OpenCode's
-existing CLI response limit also applies. These are per-call limits, not
-whole-task accounting.
+versions, and has no pagination (use `cairn assessments-page` or `cairn agent
+assessments-page` to page beyond 1,000 versions). `cairn_assessments` (MCP,
+capped at `min(-output-max-bytes, --tokens)`, default `12000` bytes) and
+OpenCode's `assessments` (`output_max_bytes`, default `12000` bytes) apply
+bounded output unless disabled (`-output-max-bytes 0`, `output_max_bytes: 0`,
+or `CAIRN_UNBOUNDED_TOOL_OUTPUT=1`): rather than refusing with `BUDGET_REFUSED`,
+oversized output is spooled to `full_output_path` and returned as JSON with
+`truncated: true`, `total_bytes`, `omitted_bytes`, `full_output_path`, and
+`excerpt`. `cairn_assess` uses the strict un-truncated tool budget and refuses
+oversized output with `BUDGET_REFUSED`. OpenCode's existing CLI response limit
+also applies. These are per-call limits, not whole-task accounting.
 
 Upgrade the MCP executable or reinstall the matching OpenCode adapter, then
 start a fresh harness session. Existing Codex `enabled_tools` lists need both

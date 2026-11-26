@@ -13,7 +13,7 @@ client. Integrators must connect a decision to the action it is intended to gate
 | [`procpeer.ReadLine` and `WriteLine`](../../internal/procpeer/frame.go) | The bridge retains an 8192-byte request payload excluding newline and two-second socket deadlines. MCP emission keeps its separate deadline. |
 | [`procpeer.ConnectClient` and client I/O](../../internal/procpeer/client.go) | Go wake clients validate credentials and expected identity before payload. Callers select process-owned or same-user policy, timing, framing and cumulative read budgets. The connector returns the actual peer identity. |
 | [`binding.ValidateBinary`](../../internal/lifecycle/binding/binary_linux.go) | Checked lifecycle entries validate real-UID ownership, safe staging, stable descriptor metadata and matching pinned/running digest and inode before handler execution. Validation does not activate an installed binding. |
-| [`memoryhost`](../../internal/lifecycle/memoryhost/checked.go) | The private `memory` entry verifies the receipt, source closure, selected profiles, executable and retained launcher before dispatch. Unbound Codex/Claude/OpenCode/Hermes ambient recall admits either boolean `semantic_fallback`; Claude and Hermes admit their actual post-tool success/failure events through the existing tool handler. |
+| [`memoryhost`](../../internal/lifecycle/memoryhost/checked.go) | The private `memory` entry verifies the receipt, source closure, selected profiles, executable and retained launcher before dispatch. Unbound Codex/Claude/OpenCode/Hermes ambient recall admits either boolean `semantic_fallback`; unbound Claude, Hermes, and `opencode` ambient (`recall_mode` omitted or `"ambient"`) admit their actual post-tool success/failure events (`PostToolUse` / `PostToolUseFailure`) through the existing tool handler. |
 | [`memoryhook` ordinary provider recall](../../internal/lifecycle/memoryhook/ordinary_provider.go) | Ambient fallback performs lexical/semantic discovery, optional preview admission, checked current whole/span reads and one body applicability selection. Required context remains whole, aliases share actual receipt allowances, and only delivered whole optional bodies become seen. |
 
 See [primitive test boundaries](../developer/testing.md#shared-go-lifecycle-primitives).
@@ -53,9 +53,11 @@ Missing capture provider configuration retains Source's `KeyError`, and an
 explicit null provider retains its `TypeError`, without committing a capture.
 
 Activated bound memory profiles still require `agent_tools`. An enabled bound
-Claude ambient profile is therefore a Source activation refusal; disabled
-bindings retain Source's fallback behavior. This implementation does not introduce
-a new activation mode or a bound Hermes caller. Receipt-checked process fixtures use
+Claude ambient profile is therefore a Source activation refusal, and bound
+`hermes` or `opencode` ambient (`recall_mode` omitted or `"ambient"`) profiles
+are refused (`CompatibilityPreflightError`); disabled bindings retain Source's
+fallback behavior. This implementation does not introduce a new activation mode
+or a bound Hermes/OpenCode caller. Receipt-checked process fixtures use
 synthetic API and selector processes. They do not establish installed rollout,
 native callback qualification, a real provider invocation or production acceptance.
 

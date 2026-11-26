@@ -238,8 +238,7 @@ baseline, envelope, batch, and combined disposable databases. It skips a
 pre-admission worker history read, verifies the first scoped read fails after
 forgetting, and retries the failed settlement with the same request UUID. The
 controller receipt is body-free and explicitly marks actor acceptance
-unassessed. It did not run an actor task or requester explanation; see the
-four-arm source-loss record.
+unassessed. It did not run an actor task or requester explanation.
 
 The [required conflict probe](../../scripts/check_panel_required_conflict_group.py)
 issues both frozen mandatory C sources in a disposable database. Operator
@@ -273,7 +272,6 @@ transition is explicitly marked unrun in these arm receipts, as are semantic
 fallback, whole-source pull, and actor acceptance. This extends source setup
 coverage only; the standalone local-worker probe above remains the evidence for
 labelled lexical fallback and whole pull, and does not become a per-arm result.
-See four-arm setup verification.
 
 The memory lifecycle probe uses the
 frozen wrong-project, corrected-note and owner-correction A sources. It
@@ -287,10 +285,7 @@ A focused authenticated controller run on a fresh disposable PostgreSQL
 cluster passed all 12 memory-case/arm setups across wrong-project,
 corrected-note, and meaningful-owner-correction. Receipts bind source hashes
 and history; correction lineage is labeled source setup only, with runtime
-transitions unrun and task outcomes unassessed. The separate broad
-`make test-integration` run for this change was intentionally interrupted
-after the `artifacts` and `cmd/cairn` package results to avoid competing with
-other indexing work; it is not a full-suite pass.
+transitions unrun and task outcomes unassessed.
 
 The stale-journal probe carries an old
 pending completion intent through reviewed hold release, explicit reissue and
@@ -313,14 +308,6 @@ and the order of review and notice handling. Preflight verifies the source and
 pause contract and keeps check clauses out of actor material. The Store probe
 still changes reported busy/idle metadata without running the review; no
 native source-read pause, parser conclusion, or notice ordering was observed.
-
-The owner authorized the first [CAIRN-107](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/3aed7adf-29fc-4d1b-a4a5-80bc1d0ea3f6/)
-weekly slot despite unknown absolute subscription allowances. It finished all
-126 planned Codex/Luna attempts across three subscriptions with no
-provider-limit loss. Its changed-pair second grading and a second consecutive
-weekly run remain open. That paired recall campaign does not substitute for
-this 22-case, four-arm token-efficiency panel. The CAIRN-223 bounded pilot
-remains incomplete and cannot be silently replayed under the same freeze.
 
 The single-workflow dry run
 provides a provider-free preflight for `baseline.single_notice`. It verifies the
