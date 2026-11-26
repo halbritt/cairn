@@ -56,6 +56,11 @@ func (o *mcpOptions) command(executable string) ([]string, error) {
 			command = append(command, pin[0], pin[1])
 		}
 	}
+	// Only an explicitly configured label is forwarded. A generator never adds
+	// its own harness name: the label is reported, never inferred.
+	if o.harness != "" {
+		command = append(command, "--client-harness", o.harness)
+	}
 	if err := validateHarnessText(command...); err != nil {
 		return nil, err
 	}

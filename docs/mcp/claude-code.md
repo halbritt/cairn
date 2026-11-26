@@ -46,7 +46,10 @@ The generator resolves executable, socket, and token paths to absolute paths
 without reading credentials or connecting to Cairn. It forwards `--tokens`
 (default `16000`) and the existing MCP flags (`--revision`, `--workspace-sha256`,
 `--task-class`, `--task-phase`, `--binding`, `--capability`, `--search-view`,
-`--tool-profile`, `--messaging`). Paths, quotes, and whitespace are JSON
+`--tool-profile`, `--messaging`). It forwards `--client-harness LABEL` (for
+example `claude`) only when you pass it; without it,
+[observed clients](../client-observations.md) lists this connection with harness
+`unknown`. Paths, quotes, and whitespace are JSON
 encoded. Arguments must be valid UTF-8 without NUL bytes and cannot contain
 `${`, because Claude interprets that syntax as environment-variable expansion
 and could alter a path or declared scope; resolve such values before generation.

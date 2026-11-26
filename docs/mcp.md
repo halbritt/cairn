@@ -36,7 +36,9 @@ Each API request also carries an optional transport-only declaration of this
 process (surface `mcp`, its own build, the retrieval support it implements and an
 optional `--client-harness` label you configure; never inferred). The API keeps it
 only in memory and lists it with [observed clients](client-observations.md).
-It never changes a request.
+It never changes a request. `claude-config`, `codex-config` and `opencode-config`
+write `--client-harness` into the generated launch only when you pass it; without
+it the configured client reports harness `unknown`.
 
 ## Scope and applicability
 
@@ -211,7 +213,14 @@ configuration generation. The socket and token-file arguments are explicitly
 marked required. Invalid arguments still fail on stderr without configuration or
 protocol output. Standard flag parsing applies: a `--help` used as a flag value or
 after `--` is not a help request. This is CLI behavior; no API upgrade is needed.
-Other commands retain their existing help handling.
+Commands with a written help topic (`cairn agent OPERATION --help`, `cairn
+clients --help` and others) keep that topic. Every other command that parses
+flags, such as `cairn serve` or `cairn opencode-install`, answers `--help` or
+`-h` with `Usage: cairn COMMAND [flags]` and its flag list on stdout and exits
+zero; an invalid flag is still refused. A local-store operator command such as
+`cairn conflicts` opens the store before it parses flags, so its help needs a
+reachable database. Commands that take only positional arguments have no flag
+help.
 
 ## Setup text and scope
 

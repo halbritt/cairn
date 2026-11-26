@@ -40,6 +40,10 @@ note, and pull its complete body. Then use the
 [search](../guides/memory-search.md) and [capture](../guides/memory-capture.md)
 workflows during real tasks. Capture only selected reusable information.
 
+Pass `--client-harness codex` to have the generated launch report that label in
+[observed clients](../client-observations.md). The generator adds no label of
+its own; without the flag the harness is `unknown`.
+
 `--required` makes the generated entry require a connection at startup. Leave it
 off when Cairn should be optional. Tool availability does not force an agent to
 search on every task. Automatic recall, capture, and inbox handling require their

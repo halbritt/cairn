@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -19,7 +21,36 @@ import (
 func flags(name string) *flag.FlagSet {
 	f := flag.NewFlagSet(name, flag.ContinueOnError)
 	f.SetOutput(io.Discard)
+	// The flag package calls Usage before Parse returns, for help and for
+	// parse failures alike. Record which set it was so run can render that
+	// set's options when the returned error is the help request.
+	f.Usage = func() { usageRequested.Store(f) }
 	return f
+}
+
+// usageRequested is the flag set whose Parse most recently asked for usage.
+var usageRequested atomic.Pointer[flag.FlagSet]
+
+// flagHelpRequested reports whether err is flag.ErrHelp, either returned
+// directly or already converted to INVALID_REQUEST by a command's parser.
+func flagHelpRequested(err error) bool {
+	if errors.Is(err, flag.ErrHelp) {
+		return true
+	}
+	var refusal *core.Error
+	return errors.As(err, &refusal) && refusal.Code == "INVALID_REQUEST" && refusal.Message == flag.ErrHelp.Error()
+}
+
+// flagSetHelp renders the options of a command that has no written help
+// topic. It reads no stdin and no credentials.
+func flagSetHelp(f *flag.FlagSet) commandHelp {
+	var text strings.Builder
+	text.WriteString("Usage: cairn " + f.Name() + " [flags]\n")
+	previous := f.Output()
+	f.SetOutput(&text)
+	f.PrintDefaults()
+	f.SetOutput(previous)
+	return commandHelp(text.String())
 }
 
 // agentCollection is set only on authenticated agent routes of an enrolled

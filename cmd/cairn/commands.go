@@ -41,10 +41,10 @@ Everyday commands:
   version | agent [--token-file FILE] [--socket PATH] version
   clients [--profile NAME | --token-file FILE] [--socket PATH] [--limit N] (observed client declarations for your own principal; use --help)
   opencode-install (--project DIRECTORY | --config-dir DIRECTORY) --socket PATH --token-file FILE --repo REPO [--tokens N] [--max-tokens N] [--output-max-bytes N] [--task TASK] [--run RUN] [--messaging] [--recent-files] [--replace] [--revision REV] [--workspace-sha256 SHA] [--task-class CLASS] [--task-phase PHASE] [--binding BIND] [--capability CAP]
-  opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only] [--llamacpp-url URL] [--llamacpp-model MODEL] [--llamacpp-structured] [--allow-thinking] [--search-view compact/1|full] [--tool-profile compact/1|compact/2|full]
-  codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required] [--search-view compact/1|full] [--tool-profile compact/1|compact/2|full]
-  claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N] [--search-view compact/1|full] [--tool-profile compact/1|compact/2|full]
-  mcp --socket PATH --token-file FILE --repo REPO (--task TASK --run RUN | --codex-thread) [--tokens N] [--output-max-bytes N] [--search-view compact/1|full] [--tool-profile compact/1|compact/2|full]
+  opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only] [--llamacpp-url URL] [--llamacpp-model MODEL] [--llamacpp-structured] [--allow-thinking] [--search-view compact/1|full] [--tool-profile compact/1|compact/2|full] [--client-harness LABEL]
+  codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required] [--search-view compact/1|full] [--tool-profile compact/1|compact/2|full] [--client-harness LABEL]
+  claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N] [--search-view compact/1|full] [--tool-profile compact/1|compact/2|full] [--client-harness LABEL]
+  mcp --socket PATH --token-file FILE --repo REPO (--task TASK --run RUN | --codex-thread) [--tokens N] [--output-max-bytes N] [--search-view compact/1|full] [--tool-profile compact/1|compact/2|full] [--client-harness LABEL]
   exec-bounded [--output-max-bytes N] [--full-output] -- COMMAND [ARGS...]
   claude-channel --directory ABS_PRIVATE_DIR (local MCP stdio channel bridge for one Claude process)
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
@@ -93,7 +93,7 @@ Administration: recovery-export FILE | recovery-inspect FILE...
   recovery-export --directory DIR | recovery-inspect --directory DIR
   recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE
   begin-restore | restore-status | rebuild-restore | verify-restore | resume-restore
-  migrate | fence-restore < request.json | invalidate-handles < request.json | semantic-requeue < request.json | checkpoint [--header] < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)] [--semantic-command PATH | --semantic-stream-command PATH | --embedding-command PATH] [--semantic-idle-timeout DURATION]
+  migrate | fence-restore < request.json | invalidate-handles < request.json | semantic-requeue < request.json | checkpoint [--header] < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)] [--semantic-command PATH | --semantic-stream-command PATH | --embedding-command PATH | --semantic-rust-config FILE] [--semantic-idle-timeout DURATION]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.
@@ -126,7 +126,23 @@ func databaseURL() (string, error) {
 	uri := url.URL{Scheme: "postgresql", User: url.User(owner.Username), Path: "/cairn", RawQuery: url.Values{"host": {filepath.Join(directory, "socket")}, "sslmode": {"disable"}}.Encode()}
 	return uri.String(), nil
 }
+
+// run dispatches one command. A command that parses its flags with flags()
+// and has no help topic of its own reports -h/--help as a parse error; run
+// turns exactly that error into the flag set's usage. Every other parse error
+// is returned unchanged.
 func run(ctx context.Context, args []string, input io.Reader) (any, error) {
+	usageRequested.Store(nil)
+	data, err := dispatch(ctx, args, input)
+	if err != nil && flagHelpRequested(err) {
+		if f := usageRequested.Load(); f != nil {
+			return flagSetHelp(f), nil
+		}
+	}
+	return data, err
+}
+
+func dispatch(ctx context.Context, args []string, input io.Reader) (any, error) {
 	if len(args) > 0 && args[0] == "version" {
 		if len(args) != 1 {
 			return nil, invalid("version takes no arguments")

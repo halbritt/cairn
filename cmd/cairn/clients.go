@@ -35,11 +35,17 @@ func cliDiagnostics() localapi.ClientDiagnostics {
 	return d
 }
 
+// clientsLimitFlag is the one definition of --limit for every clients parser
+// and help path; its text follows the API's page bounds.
+func clientsLimitFlag(f *flag.FlagSet) *int {
+	return f.Int("limit", 0, "maximum cohorts to return, 1 to "+strconv.Itoa(localapi.ClientsMaxLimit)+" (default "+strconv.Itoa(localapi.ClientsDefaultLimit)+")")
+}
+
 // agentClients serves `cairn agent ... clients`: one authenticated, read-only
 // call. The request has no principal, machine or "all" selector.
 func agentClients(ctx context.Context, client *localapi.Client, args []string) (any, error) {
 	f := flags("clients")
-	limit := f.Int("limit", 0, "maximum cohorts to return, 1 to 128 (default 50)")
+	limit := clientsLimitFlag(f)
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return agentFlagHelp("cairn agent [--token-file FILE] [--socket PATH] clients [--limit N]", clientsHelpDetail, f), nil
@@ -87,7 +93,7 @@ func clientsCommand(ctx context.Context, args []string, input io.Reader) (any, e
 	token := f.String("token-file", "", "owner-only API token file")
 	profile := f.String("profile", "", "provisioned profile name")
 	socket := f.String("socket", "", "Cairn Unix socket")
-	limit := f.Int("limit", 0, "maximum cohorts to return, 1 to 128 (default 50)")
+	limit := clientsLimitFlag(f)
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return agentFlagHelp("cairn clients [--profile NAME | --token-file FILE] [--socket PATH] [--limit N]", clientsHelpDetail, f), nil

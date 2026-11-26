@@ -244,6 +244,10 @@ func (req RecallObservationRequest) validate() error {
 	return nil
 }
 
+// Validate reports whether the request is well formed, exactly as
+// RecordRecallObservation checks it before reading or writing any state.
+func (req RecallObservationRequest) Validate() error { return req.validate() }
+
 // ObserveRecall aliases RecordRecallObservation for recall-miss and hook callers.
 func (s *Store) ObserveRecall(ctx context.Context, req RecallObservationRequest) (Observation, error) {
 	return s.RecordRecallObservation(ctx, req)

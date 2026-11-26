@@ -238,7 +238,7 @@ var agentJSONHelp = map[string]agentJSONHelpSpec{
 	},
 	"recall-observation": {
 		Detail:  "Report one lifecycle recall hook invocation's metrics: status, elapsed and\nsearch/selector/pull milliseconds, selector calls, model, token usage and\nprovider-reported cost, and injected bytes, for the harness named. Omit any value\nthe hook did not observe: omission is unknown, never zero, and a cost is only what\nthe provider reported. Prompt, query, note and model text are not accepted. Named\nreceipts must be this profile's own, in the same repository. The report is\ntestimony; it does not prove delivery or usefulness. It appears in use-report.\n",
-		Example: `{"request_id":"NEW_UUID","repo":"REPOSITORY","receipt_ids":["RECEIPT_UUID"],"harness":"claude","hook_event":"UserPromptSubmit","method":"cairn-lifecycle/recall-meter/1","status":"completed","elapsed_ms":1840,"search_ms":210,"selector_ms":1390,"pulls_ms":120,"selector_calls":[{"stage":"select","outcome":"completed","elapsed_ms":1390,"model":"MODEL","model_source":"reported","input_tokens":2100,"output_tokens":40,"cost_usd":0.0121}],"injected_bytes":3300}`,
+		Example: `{"request_id":"NEW_UUID","repo":"REPOSITORY","receipt_ids":["RECEIPT_UUID"],"harness":"claude","hook_event":"UserPromptSubmit","method":"cairn-lifecycle/recall-meter/1","status":"completed","elapsed_ms":1840,"search_ms":210,"selector_ms":1390,"pulls_ms":120,"selector_calls":[{"stage":"recall","outcome":"completed","elapsed_ms":1390,"model":"MODEL","model_source":"reported","input_tokens":2100,"output_tokens":40,"cost_usd":0.0121}],"injected_bytes":3300}`,
 	},
 	"capture-observation": {
 		Detail:  "Report one selected-capture invocation under a session SHA-256 reference.\nThe snapshot SHA-256 and provider usage are optional; unknown metrics stay null.\nMethod /2 may report admission_candidate=transport_only as a shadow observation;\nit does not skip selection or authenticate the wake text. This is hook testimony,\nindependent of the capture marker or task acceptance. No dialogue, note body,\nmodel output or credentials are accepted.\n",
@@ -288,7 +288,7 @@ func rememberOperationHelp() (commandHelp, error) {
 
 func clientsOperationHelp() (commandHelp, error) {
 	f := flags("clients")
-	f.Int("limit", 0, "maximum cohorts to return, 1 to 100 (default 50)")
+	clientsLimitFlag(f)
 	return agentFlagHelp("cairn agent [--token-file FILE] [--socket PATH] clients [--limit N]", clientsHelpDetail, f), nil
 }
 

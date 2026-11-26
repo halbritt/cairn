@@ -15,7 +15,10 @@ cairn agents --help
 ```
 
 Operation help describes flags or the JSON request expected on stdin. Put flags
-before positional arguments. The [command guide](../commands.md) covers operator
+before positional arguments. A command without a written help topic that parses
+flags (`cairn serve --help`, `cairn opencode-install --help`) prints its flag
+list and exits zero. Local-store operator commands such as `cairn conflicts
+--help` do the same, but open the store first. The [command guide](../commands.md) covers operator
 commands and [local API](../local-api.md) covers authenticated operations.
 
 ## Connect with an existing profile
