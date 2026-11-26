@@ -93,7 +93,8 @@ def inspect_hygiene(cwd: Path | str) -> dict[str, object]:
         issues.append(f"currently in secondary worktree {root} (primary is {primary})")
     if branch != trunk:
         label = branch or "detached HEAD"
-        if ahead_local_trunk > 0 or ahead_origin > 0:
+        # git-land can leave local trunk behind origin, so origin's trunk decides what is landed when it is known.
+        if (ahead_origin if origin_trunk_exists else ahead_local_trunk) > 0:
             issues.append(f"on {label} with unmerged commits ahead of {trunk}")
     elif ahead_origin > 0:
         issues.append(f"local {trunk} is {ahead_origin} commit(s) ahead of origin/{trunk} (unpushed)")
@@ -152,6 +153,157 @@ def _compare_evidence(root: Path, record: Path, base: str) -> dict[str, object]:
     if result.returncode != expected_exit:
         return {**unknown, "reasons": [f"comparator exit {result.returncode} conflicts with {assessment['freshness']} assessment"]}
     return {**assessment, "record": str(record)}
+
+
+def _is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    """A missing ref is not an ancestor of anything and has no ancestors."""
+    return _run_git(repo, "merge-base", "--is-ancestor", ancestor, descendant, check=False, timeout=30).returncode == 0
+
+
+# State files that mean another git operation owns a checkout. A fast-forward
+# there is either refused by git or discards the operation's prepared message.
+_OPERATION_MARKERS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "MERGE_MSG", "rebase-merge", "rebase-apply")
+
+
+def _worktrees_holding_branch(repo: Path, branch: str) -> list[Path]:
+    listing = _run_git(repo, "worktree", "list", "--porcelain", check=True, timeout=10).stdout
+    holders: list[Path] = []
+    for block in listing.strip().split("\n\n"):
+        lines = block.splitlines()
+        if f"branch refs/heads/{branch}" in lines:
+            holders.extend(Path(line.split(" ", 1)[1].strip()).resolve() for line in lines if line.startswith("worktree "))
+    return holders
+
+
+def _fast_forward_blocker(holder: Path, trunk: str, local: str, landed_head: str) -> str | None:
+    """Return why this checkout must not be asked to fast-forward, or None.
+
+    Git's fast-forward refuses to overwrite uncommitted, untracked and ignored
+    files. These are the states where it writes anyway or discards something,
+    and the case where the directory is no longer the checkout it was listed as.
+    """
+    try:
+        toplevel, git_dir, head = _run_git(
+            holder, "rev-parse", "--show-toplevel", "--absolute-git-dir", "--symbolic-full-name", "HEAD", timeout=10,
+        ).stdout.splitlines()[:3]
+        if Path(toplevel).resolve() != holder or head != f"refs/heads/{trunk}":
+            # Git run in a directory that lost its own .git acts on the enclosing checkout.
+            return f"that directory is not a checkout of {trunk} any more"
+        if _run_git(holder, "config", "--type=bool", "--get", "core.sparseCheckout", check=False, timeout=10).stdout.strip() == "true":
+            return "that checkout uses sparse-checkout, where git overwrites untracked files instead of refusing"
+        unfinished = [name for name in _OPERATION_MARKERS if (Path(git_dir) / name).exists()]
+        if unfinished:
+            return "another git operation is unfinished there (" + ", ".join(unfinished) + ")"
+        # Git counts a tracked file that is missing from the working tree as unchanged and
+        # would write the newer version back, undoing an uncommitted deletion or rename.
+        deleted = _run_git(holder, "diff-files", "--name-only", "--no-renames", "--diff-filter=D", timeout=60).stdout.splitlines()
+        rewritten = _run_git(holder, "diff", "--name-only", "--no-renames", "--diff-filter=d", local, landed_head, timeout=60).stdout.splitlines()
+    except (subprocess.CalledProcessError, ValueError) as exc:
+        return "could not inspect that checkout: " + " ".join(str(getattr(exc, "stderr", "") or exc).split())
+    restored = sorted(set(deleted) & set(rewritten))
+    if restored:
+        return "the fast-forward would write back files that are deleted there without a commit: " + ", ".join(restored)
+    return None
+
+
+def _advance_local_trunk(root: Path, trunk: str, landed_head: str) -> dict[str, object]:
+    """Bring local trunk up to the landed commit without moving it under a checkout.
+
+    Local trunk only moves forward. The one worktree that has it checked out is
+    fast-forwarded by git, which moves ref, index and files together and
+    refuses as a whole when that would overwrite uncommitted, untracked or
+    ignored files there. A trunk that no worktree has checked out is moved as
+    a branch, which git refuses while a worktree is rebasing or bisecting it.
+    Every other case leaves trunk behind. The result is read back from the
+    repository, not from git's exit status, and says whether a failed
+    fast-forward changed the checkout.
+    """
+    ref = f"refs/heads/{trunk}"
+    holders = _worktrees_holding_branch(root, trunk)
+    holder = holders[0] if holders else None
+
+    def outcome(status: str, reason: str | None = None, touched: bool = False) -> dict[str, object]:
+        return {"status": status, "worktree": str(holder) if holder is not None else None, "reason": reason, "touched": touched}
+
+    local = _run_git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", check=False, timeout=10).stdout.strip()
+    if local and _is_ancestor(root, landed_head, local):
+        return outcome("current")
+    if local and not _is_ancestor(root, local, landed_head):
+        extra = _run_git(root, "rev-list", "--count", f"{landed_head}..{local}", check=False, timeout=30).stdout.strip()
+        return outcome("left-behind", f"local {trunk} has {extra or 'some'} commit(s) that the landed commit does not contain, and moving it would drop them")
+    if holder is None:
+        moved = _run_git(root, "branch", "--force", "--no-track", trunk, landed_head, check=False)
+        if moved.returncode == 0 and _is_ancestor(root, landed_head, ref):
+            return outcome("ref-updated")
+        return outcome("left-behind", f"git refused to move {trunk}: " + " ".join((moved.stderr or moved.stdout).split()))
+    if len(holders) > 1:
+        return outcome("left-behind", f"{trunk} is checked out in more than one worktree ({', '.join(map(str, holders))}), and fast-forwarding one would leave the others at the old commit")
+    blocker = _fast_forward_blocker(holder, trunk, local, landed_head)
+    if blocker:
+        return outcome("left-behind", blocker)
+
+    def state() -> tuple[str, str]:
+        head = _run_git(holder, "rev-parse", "--verify", "--quiet", "HEAD", check=False, timeout=10).stdout.strip()
+        return head, _run_git(holder, "--no-optional-locks", "status", "--porcelain", "--untracked-files=all", check=False, timeout=60).stdout
+
+    def orig_head() -> str:
+        return _run_git(holder, "rev-parse", "--verify", "--quiet", "ORIG_HEAD", check=False, timeout=10).stdout.strip()
+
+    before, orig_before = state(), orig_head()
+    # The settings keep git's refusal whole whatever the checkout's configuration: no
+    # squash or other per-branch merge options, no stash-and-reapply of local edits, and
+    # ignored files count as files. The advice setting drops git's suggestion to stash
+    # from the reason that is relayed.
+    moved = _run_git(
+        holder, "-c", f"branch.{trunk}.mergeoptions=", "-c", "advice.commitBeforeMerge=false",
+        "merge", "--ff-only", "--no-autostash", "--no-overwrite-ignore", landed_head,
+        check=False,
+    )
+    # Git sets ORIG_HEAD for every merge it attempts, refused or not. Nobody in that
+    # checkout asked for one, so put back what ORIG_HEAD named there.
+    orig_now = orig_head()
+    if orig_now and orig_now != orig_before:
+        restore = ("ORIG_HEAD", orig_before, orig_now) if orig_before else ("-d", "ORIG_HEAD", orig_now)
+        _run_git(holder, "update-ref", *restore, check=False, timeout=10)
+    if moved.returncode == 0 and _is_ancestor(root, landed_head, ref):
+        return outcome("fast-forwarded")
+    if moved.returncode == 0:
+        reason = f"git exited without an error, but {trunk} did not reach the landed commit"
+    else:
+        reason = "git refused the fast-forward: " + " ".join((moved.stderr.strip() or moved.stdout.strip()).split())
+    return outcome("left-behind", reason, touched=state() != before)
+
+
+def _describe_trunk_update(update: dict[str, object], trunk: str, landed_head: str) -> str:
+    short = landed_head[:12]
+    where = update["worktree"]
+    if update["status"] == "fast-forwarded":
+        return f"fast-forwarded {trunk} in {where} to {short}"
+    if update["status"] == "ref-updated":
+        return f"{trunk} is not checked out in any worktree; moved the branch to {short}"
+    if update["status"] == "current":
+        return f"local {trunk} already contains {short}"
+    if update["touched"]:
+        left = f"{where} WAS CHANGED by the failed fast-forward; inspect it with `git status` before working there"
+    elif where:
+        left = f"{where} was left exactly as it was"
+    else:
+        left = "the branch was left where it was"
+    place = f"in {where}" if where else f"in a checkout of {trunk}"
+    return (
+        f"local {trunk} was NOT advanced to {short}; {left}. Reason: {update['reason']}. "
+        f"The landed commit is on origin/{trunk}; local {trunk} does not have it yet. "
+        f"To catch up, whoever owns the local work {place} commits it, moves aside any untracked or ignored "
+        f"file named above, and runs `git pull --rebase origin {trunk}` there. "
+        f"Do not move {trunk} from outside its checkout (update-ref, branch -f, reset, checkout -B), "
+        "and do not stash or discard another agent's files."
+    )
+
+
+def _delete_landed_branch(repo: Path, branch: str) -> None:
+    deleted = _run_git(repo, "branch", "-D", branch, check=False)
+    if deleted.returncode != 0:
+        print(f"git-land: could not delete branch {branch}: {deleted.stderr.strip()}", file=sys.stderr)
 
 
 def git_land(
@@ -224,36 +376,63 @@ def git_land(
             for assessment in assessments:
                 print(f"git-land evidence (advisory): {assessment['freshness']} - {assessment['record']}", file=sys.stderr)
 
-        if has_origin and not no_push:
+        pushed = bool(has_origin and not no_push)
+        if pushed:
             _run_git(root, "push", "origin", f"HEAD:refs/heads/{trunk}", timeout=120)
 
+        trunk_update = _advance_local_trunk(root, trunk, landed_head)
+        # The landed branch and worktree may only go once another ref holds the commit.
+        landed_is_kept = (
+            pushed
+            or _is_ancestor(root, landed_head, f"refs/heads/{trunk}")
+            or _is_ancestor(root, landed_head, f"refs/remotes/origin/{trunk}")
+        )
+        if not landed_is_kept:
+            unpushed = "--no-push" if has_origin else "no origin remote"
+            why = trunk_update["reason"] or f"local {trunk} does not contain it"
+            if trunk_update["touched"]:
+                why += f"; {trunk_update['worktree']} WAS CHANGED by the failed fast-forward and needs inspection"
+            kept_by = f"branch {orig_branch} in {root}" if orig_branch else f"the detached HEAD of {root}"
+            hint = ""
+            if has_origin and not _is_ancestor(root, f"refs/heads/{trunk}", f"refs/remotes/origin/{trunk}"):
+                hint = f" git-land rebases onto origin/{trunk}, so commits that exist only on local {trunk} must be pushed first."
+            raise RuntimeError(
+                f"git-land did not land {landed_head[:12]}: it was not pushed ({unpushed}) and {why}. "
+                f"Nothing was deleted; {kept_by} still holds the commit. "
+                f"Rerun git-land once local {trunk} can fast-forward to it.{hint}"
+            )
+        trunk_detail = _describe_trunk_update(trunk_update, trunk, landed_head)
+        print(f"git-land: {trunk_detail}", file=sys.stderr)
+
+        worktree_removed = False
         if is_secondary:
-            primary_branch = _run_git(primary, "symbolic-ref", "--quiet", "--short", "HEAD", check=False).stdout.strip()
-            primary_dirty = _run_git(primary, "status", "--porcelain", "--untracked-files=all", check=False).stdout.strip()
-            if primary_branch == trunk and not primary_dirty:
-                _run_git(primary, "merge", "--ff-only", landed_head, check=False)
-            else:
-                _run_git(primary, "update-ref", f"refs/heads/{trunk}", landed_head, check=False)
             if not keep_worktree:
-                _run_git(primary, "worktree", "remove", "--force", str(root), check=False)
+                removal = _run_git(primary, "worktree", "remove", "--force", str(root), check=False)
                 if root.exists():
                     shutil.rmtree(root, ignore_errors=True)
                 _run_git(primary, "worktree", "prune", check=False)
+                worktree_removed = not root.exists()
+                if not worktree_removed:
+                    print(f"git-land: could not remove worktree {root}: {removal.stderr.strip()}", file=sys.stderr)
                 if orig_branch and orig_branch != trunk:
-                    _run_git(primary, "branch", "-D", orig_branch, check=False)
-        elif orig_branch != trunk:
-            _run_git(root, "checkout", "-B", trunk, landed_head)
+                    _delete_landed_branch(primary, orig_branch)
+        elif orig_branch != trunk and trunk_update["status"] != "left-behind" and trunk_update["worktree"] is None:
+            # Trunk is checked out nowhere and now holds the landed commit, so this checkout can return to it.
+            _run_git(root, "checkout", trunk)
             if orig_branch:
-                _run_git(root, "branch", "-D", orig_branch, check=False)
+                _delete_landed_branch(root, orig_branch)
 
     return {
         "ok": True,
         "primary": str(primary),
         "trunk": trunk,
         "head": landed_head,
-        "pushed": bool(has_origin and not no_push),
-        "worktree_removed": bool(is_secondary and not keep_worktree),
+        "pushed": pushed,
+        "worktree_removed": worktree_removed,
         "evidence": assessments,
+        "trunk_status": trunk_update["status"],
+        "trunk_worktree": trunk_update["worktree"],
+        "trunk_detail": trunk_detail,
     }
 
 
@@ -400,7 +579,9 @@ def git_wt_gc(
             if any(wt_path == Path(a) or Path(a) in wt_path.parents or wt_path in Path(a).parents for a in active):
                 protected_worktrees.append(str(wt_path))
                 continue
-            is_merged = _run_git(primary, "merge-base", "--is-ancestor", lines.get("HEAD", "HEAD"), trunk, check=False).returncode == 0
+            # git-land can leave local trunk behind origin, so a commit that origin's trunk holds is merged too.
+            wt_head = lines.get("HEAD", "HEAD")
+            is_merged = _is_ancestor(primary, wt_head, trunk) or _is_ancestor(primary, wt_head, f"refs/remotes/origin/{trunk}")
             status_lines = _run_git(wt_path, "status", "--porcelain", "--untracked-files=all", check=False).stdout.splitlines() if wt_path.is_dir() else []
             non_deleted_dirty = [ln for ln in status_lines if not ln.startswith(" D ")]
             if not is_merged or non_deleted_dirty:

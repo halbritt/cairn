@@ -54,6 +54,16 @@ completing the full integration lifecycle before ending its turn or session:
   or merge cleanly, and `git push origin main` before reporting completion.
   If a push fails due to concurrent agent updates, `git pull --rebase origin main`,
   re-verify, and push again.
+- **Never move `main` from outside its checkout.** After the push, `git-land`
+  fast-forwards the checkout that has `main` checked out only when git can do
+  that without overwriting uncommitted work there. Otherwise it leaves that
+  checkout untouched and behind `origin/main`, and reports
+  `trunk_status: left-behind`; the landing is still complete. Do not run
+  `git update-ref`, `git branch -f`, `git reset` or `git checkout -B` on a
+  `main` that another checkout holds, and do not stash or discard another
+  agent's files. Whoever owns that work commits it and runs
+  `git pull --rebase origin main`. See
+  [git integration](docs/git-integration.md#local-trunk-after-a-landing).
 
 ## Activation is part of done
 

@@ -11,6 +11,20 @@ processes.
 
 ## 2026-11-25
 
+- `git-land` no longer moves `main` from underneath a checkout. A landing made
+  while the checkout holding `main` had uncommitted edits used to move only the
+  ref; that checkout then showed the landed changes as its own reversals, and
+  its next commit reverted them without an error. git-land now fast-forwards
+  that checkout with git, keeping uncommitted work that does not overlap, and
+  otherwise leaves it untouched and behind `origin`. Local `main` is never
+  moved backwards or off unpushed commits. The JSON result gained
+  `trunk_status`, `trunk_worktree` and `trunk_detail`, and `worktree_removed`
+  now reports whether the worktree is gone. With `--no-push` or no `origin`, a
+  landing that reaches neither `origin` nor local `main` fails and keeps its
+  branch and worktree; it used to delete them. The Stop hook and `git-wt gc`
+  now count a commit as landed when `origin/main` has it, so a local `main`
+  that was left behind does not make landed work look unmerged. See
+  [git integration](docs/git-integration.md#local-trunk-after-a-landing).
 - The roadmap now states the kernel boundary (Cairn stores and delivers; it
   does not act), the open work by Plane item and the swarm view sequence
   (CAIRN-826).
