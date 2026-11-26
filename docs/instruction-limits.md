@@ -2,9 +2,8 @@
 
 A governed repository policy can bound C instruction load by category. Issue an
 instruction with `category` set to `security`, `workflow` or `preference`.
-Omitting it assigns `workflow`, including for records created before migration
-024. The assignment alone does not activate a limit. A repository must explicitly
-adopt a policy containing `instruction_limits`.
+Omitting it assigns `workflow`. The assignment alone does not activate a limit.
+A repository must explicitly adopt a policy containing `instruction_limits`.
 
 The category is authority metadata for the issued version. Scope authorization
 and retraction preserve it. Ordinary edits cannot recategorize a C instruction;
@@ -47,10 +46,8 @@ categories are refused.
 Policy rules with category limits select `local-loop/3`. Rules without limits
 retain `local-loop/2`; repositories without an explicit revision retain the
 original `local-loop/1`. Rollback uses the same governed revision mechanism and
-can restore either rule format. Migration does not adopt a policy or create a
-grant. The fixed categories and numeric validation bounds are implementation
-decisions under the operator's delegated O3 authority; per-repository limits
-remain an explicit policy choice.
+can restore either rule format. Per-repository limits remain an explicit policy
+choice.
 
 ## Packing and delivery
 
@@ -81,6 +78,6 @@ recompilation uses frozen facts even after a later policy change. Fresh delivery
 still checks the exact current revision and live authority, as described in
 [governed policy](governed-policy.md).
 
-Category caps implement one part of roadmap L3. Recorded C waivers and the full
-unenforceability decision table remain open. Quotas do not prove that a model
-obeys an instruction or that a selected limit improves task outcomes.
+Recorded C waivers and the full unenforceability decision table are not
+implemented. Quotas do not prove that a model obeys an instruction or that a
+selected limit improves task outcomes.

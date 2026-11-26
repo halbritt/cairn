@@ -1,8 +1,9 @@
 # Declare context for a native memory search
 
-MCP and native OpenCode `cairn_search` accept an optional `context` object for
-the current search. Use it when work moves between phases or revisions during a
-session and relevant notes have applicability restrictions.
+MCP and native OpenCode `cairn_search` and `cairn_prepare_note` accept an
+optional `context` object for the current search. Use it when work moves between
+phases or revisions during a session and relevant notes have applicability
+restrictions.
 
 ```json
 {
@@ -44,8 +45,6 @@ permissions and source eligibility keep their existing owners and checks.
 Declaring context does not change a note's applicability or grant authority.
 Capture still requires explicit `pins`; it never inherits search context.
 
-Update the MCP facade binary or reinstall the native OpenCode adapter before
-using this argument. Older tools reject it as an unknown field. Existing calls
-without `context` retain their configured behavior. This interface supplies
-changing context explicitly; automatic workspace observation and demonstrated
-task benefit remain separate work.
+Calls without `context` retain their configured host behavior. This interface
+supplies changing context explicitly; automatic workspace observation and
+demonstrated task benefit remain separate work.

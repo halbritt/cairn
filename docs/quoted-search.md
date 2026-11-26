@@ -55,25 +55,24 @@ a long literal can be truncated. Read relevant notes before relying on them.
 
 ## Receipts and compatibility
 
-Queries with usable quoted text use `lexical-scope-recency/5`, or
-`semantic-scope-recency/2` when semantic scoring succeeds. Unquoted queries keep
-the previous ranking profiles. The literal preference is a frozen boolean in the
-protected candidate explanation; raw queries are still represented by their
-existing digest. Historical recompilation checks the preference against the
-supplied original query and retained note version, and reproduces the receipt's
-original ranking and preview behavior.
+Nonempty lexical context index searches with usable quoted text use
+`cairn.semantic/17` with `binary-idf-scope-recency/6` (or `/7` with a failure
+signature, `/8` with entity hints); ready persistent semantic index searches use
+`cairn.semantic/19` (or `cairn.semantic/20` with `semantic_query`) and
+`interleaved-scope-recency/6` (or `/7`, `/8`). Whole-body `compile` and
+request-scoring semantic discovery use `lexical-scope-recency/5` or
+`semantic-scope-recency/2`. Unquoted queries keep their corresponding plain-tier
+ranking profiles. The literal preference is a frozen boolean in the protected
+candidate explanation; raw queries are still represented by their existing
+digest. Historical recompilation checks the preference against the supplied
+original query and retained note version, and reproduces the receipt's original
+ranking and preview behavior.
 
-Upgrade the API or direct database compiler to obtain the new ranking. Existing
-CLI/MCP/OpenCode query fields can carry it; refreshed tool descriptions explain
-the syntax. There is no database migration or new applicability constraint.
-Older binaries cannot recompile the new ranking profiles. Older receipts still
-recompile under their original profiles. Retrying an old quoted compile request
-whose current package would change returns `STALE_PACKAGE`; use a new request ID
-for current retrieval.
-
-This adds a
-retrieval capability. Structured entity/file/error metadata, automatic host intent
-collection and broader task-value evidence remain open in E1 and the roadmap.
+Older binaries cannot recompile newer ranking profiles; older receipts still
+recompile under their original profiles. Retrying a compile request whose
+current package would change returns `STALE_PACKAGE`; use a new request ID for
+current retrieval. Task-value evidence across real agent runs remains on the
+[roadmap](roadmap.md).
 
 Known failure signatures can also find reviewed lessons without shared query
 vocabulary. See [failure signature search](failure-signature-search.md) for the

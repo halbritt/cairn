@@ -10,8 +10,9 @@ The MCP and native OpenCode `cairn_search` tools accept an optional
 Cairn's current tokenizer uses UTF-8 bytes as a conservative token upper bound.
 The value must be an integer from 256 through the host's configured maximum:
 MCP `--max-tokens`, or OpenCode's `max_tokens` setting. Their default maximum is
-1,000,000. Omission uses the ordinary search default, configured with MCP
-`--tokens` or OpenCode `tokens`, normally 32,000.
+160,000 (configurable up to 1,000,000). Omission uses the ordinary native search
+default, configured with MCP `--tokens` or OpenCode `tokens`, normally 16,000
+(CLI `agent search --tokens` defaults to 32,000).
 
 An explicit request may use less than the default, or more for a deliberate
 larger read, up to the maximum. It does not change later calls or host settings.
@@ -38,11 +39,6 @@ This gives callers control of one retrieval's allowance. It does not observe the
 harness's remaining model window or account for all calls, retained conversation,
 tool schemas, generation and compaction. Whole-task accounting remains open.
 Do not treat a supplied allowance as an observed host fact.
-
-Update the Cairn CLI/MCP executable and reinstall the native OpenCode adapter
-to expose the new argument. Start a fresh MCP connection or OpenCode session to
-load its tool schema. For `available_tokens` alone, the existing API and database
-need no upgrade.
 
 ## Allocate memory separately from available context
 
@@ -80,10 +76,9 @@ the `cairn.memory-budget/1` extension, so historical recompilation uses the same
 cap and policy input. Readers predating the extension fail its seal check rather
 than silently replaying it without the cap. Existing receipts remain readable.
 
-Update both the API and the CLI/MCP facade before using this field; no database
-migration is needed. Do not silently drop an unsupported field while keeping a
+Do not silently drop an unsupported `memory_budget_bytes` field while keeping a
 larger context declaration. If field support is unknown, use the remaining
-memory allowance as `available_tokens` with the existing interface.
+memory allowance as `available_tokens`.
 
 When both the facade and API support the memory cap but actual free context room
 is unknown, omit `available_tokens` and set `memory_budget_bytes` to the remaining
@@ -94,8 +89,8 @@ memory allowance:
 ```
 
 This uses the configured host default for optional policy, not an observation of
-free context. With the usual 32,000-byte host default, the default preview ceiling
-is 3,200 bytes instead of the 450 bytes that declaring `available_tokens: 4500`
+free context. With the usual 16,000-byte native host default, the default preview
+ceiling is 1,600 bytes instead of the 450 bytes that declaring `available_tokens: 4500`
 would allow. The explicit 4,500-byte cap still covers search delivery and its
 successful new expansions; it does not guarantee room for a pull. If the host
 default is smaller than the requested memory cap, the call refuses; lower the

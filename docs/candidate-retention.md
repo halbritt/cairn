@@ -50,7 +50,7 @@ version 0 keeps its existing meaning: a legacy receipt that never had detail.
 ## Ordinary deletion
 
 A candidate row's foreign key is what stops `cairn delete` removing a note that a
-retained compilation considered. That protection now lasts as long as the read set
+retained compilation considered. That protection lasts as long as the read set
 does: once every referencing receipt has expired, a note with no other references
 can be deleted. Any in-window receipt, `record_use` row or retained gate row still
 blocks it. Saved packages do not depend on a note they merely considered.
@@ -90,7 +90,7 @@ run can be active; another refuses with `MAINTENANCE_ACTIVE`.
 checks read `pg_ls_waldir()`, so the role needs `pg_monitor`, and the command must run
 on the database host. It refuses rather than continuing unobserved. It stops while
 a restore is paused and during a storage rewrite. Deleted space is reused by later
-inserts after vacuum; migration 074 lowers this table's autovacuum threshold to 2%.
+inserts after vacuum; the table's autovacuum scale factor is set to 2%.
 It does not return that space to the filesystem.
 
 ## Reclaim existing space
@@ -149,13 +149,6 @@ rules, views, policies, extended statistics, extra indexes or constraints, or an
 owner. `swap` also refuses if columns or storage options changed after `build`. Expiry refuses until the rewrite has finished or been aborted. If `verify`
 reports a mismatch, the state stays `swapped`, `finish` stays refused and the old
 relation remains; investigate before doing anything else.
-
-**Install the new binary and restart the API before expiring anything, and do not roll
-back to a binary older than migration 074 afterwards.** Older binaries do not know the
-marker and would report an expired receipt as having no candidates. The migration
-itself is safe under live traffic and with older binaries still running: it adds a
-nullable column and takes one short exclusive lock, on `retrieval_receipt`, last.
-Bound it with a `lock_timeout` in the connection options and retry if it times out.
 
 ## Recovery
 

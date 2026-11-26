@@ -33,19 +33,12 @@ is separate unfinished work. Previously returned bytes cannot be recalled.
 Details refuse more than the supported 16 members instead of returning a partial
 set of positions.
 
-Local agent profiles can call `conflicts` with `repo`, optional `record_id`,
-`include_resolved`, `limit`, `offset`, or `conflict` with `conflict_id`. Both
-operations enforce repository scope and refuse hosted profiles because conflict
-context can contain private material. These are read-only operations and require
-no operator grant.
+Local agent profiles can call `conflicts` with required `repo` and `limit`
+(1–200), and optional `record_id`, `include_resolved`, and `offset`, or
+`conflict` with `conflict_id`. Both operations enforce repository scope and
+refuse hosted profiles because conflict context can contain private material.
+These are read-only operations and require no operator grant.
 
-Disposable PostgreSQL tests cover original positions after edits, open/resolved
-filtering, member filtering and pagination, resolver participation, cross-repo
-refusal, and forgotten-body exclusion while preserving the surviving position.
-Authenticated API tests cover local inspection and hosted-profile refusal.
-[Qualified advisory positions](advisory-conflicts.md) are now available through
+[Qualified advisory positions](advisory-conflicts.md) are available through
 explicit ordinary retrieval. Acted-under-conflict outcomes and richer resolution
-semantics remain roadmap work.
-
-Run current
-validation against the checkout and deployment you are evaluating.
+semantics remain on the [roadmap](roadmap.md).

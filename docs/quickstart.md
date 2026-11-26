@@ -7,10 +7,11 @@ an agent through MCP.
 
 ## Prerequisites
 
-Use Linux with Go 1.25 or newer, PostgreSQL 17 server and client tools, Python 3,
-Bash, Make, and `flock`. PostgreSQL 17 is the version used by the local lifecycle
-tests. Run the local store as your ordinary Unix user, not root. `pg_config`
-must identify the installation containing `initdb`, `pg_ctl`, and `psql`.
+Use Linux with Go 1.25 or newer, PostgreSQL 17 server and client tools with the
+`pgvector` extension, Python 3, Bash, Make, and `flock`. Run the local store as
+your ordinary Unix user, not root. For a new cluster, `scripts/pg-bin.sh`
+selects the newest PostgreSQL installation providing `pgvector`, `initdb`,
+`pg_ctl`, and `psql`, falling back to `pg_config` unless `CAIRN_PG_BIN` is set.
 
 For an existing installation, obtain its socket path, token-file path, and
 collection name from its administrator, then skip to **Save and find a note**.

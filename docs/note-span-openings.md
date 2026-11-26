@@ -49,10 +49,10 @@ complete current note before editing it or relying on broader claims. Hooks
 validate an API-supplied pair and do not fetch a duplicate opening; their older
 whole-read excerpt path remains separate.
 
-Exact byte and budget tests establish the pairing mechanics; they do not by
-themselves establish better source application or task outcomes. Both API and
-adapter versions matter: older APIs can reject an explicit `opening_bytes` field
-and running MCP sessions retain old tool catalogs until a new session initializes.
+Pairing adds exact prefix context; it does not establish source applicability
+or task outcomes. Older APIs can reject an explicit `opening_bytes` field and
+running MCP sessions retain their startup tool catalog until a new session
+initializes.
 
 <a id="enabling-binding-default-off"></a>
 ## Enabling binding (systemd drop-in / env)
@@ -152,11 +152,8 @@ for it, because a receipt created by one reader can be expanded by another:
   offset-above-zero passage through `PROTOCOL_UNSUPPORTED`.
 - **Relays.** An older relay does not forward the declaration, so capable clients
   behind it are refused until it is upgraded.
-- **Lifecycle hook copies.** In the tested bound Claude and ambient routes an
-  older hook copy with a capable CLI preserves the pair and makes no extra
-  opening read under the current two-call eager limit, but does not validate the
-  pair and may keep a misleading unavailable label; the current copy validates the
-  pair and omits the label. This is not a wider compatibility claim.
+- **Lifecycle hook copies.** Current lifecycle hooks validate `source_opening`
+  pairs when present.
 
 ## Readers and relays
 

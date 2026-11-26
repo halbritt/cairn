@@ -77,7 +77,8 @@ prove tampering. Do not downgrade retained receipts.
 For collections beyond the request-scoring limits below, the
 [persistent passage backend](persistent-semantic-retrieval.md) adds versioned
 PostgreSQL embeddings, bounded hybrid discovery and matched passage spans. It is
-selected with `--embedding-command`; the search/pull interface stays the same.
+selected with `--embedding-command` or `--semantic-rust-config` (with
+`mode: "embed"`); the search/pull interface stays the same.
 The following command modes retain their existing request-scoring behavior.
 
 The supported worker is the offline Rust package for the local quantized
@@ -117,8 +118,7 @@ remove the first cold score or guarantee that the next eligible set will hit the
 The library's `semantic.StreamCommand` retains the 30-second default;
 `semantic.StreamCommandWithIdleTimeout` lets its host choose a positive interval.
 
-The worker occupied
-about 208 MiB in the original local experiment while loaded. The prepared worker
+The prepared worker
 reuses vectors for exact decoded passages from its last successfully scored
 request. An edit only requires new inference for passages whose text changes;
 appending to a long note can preserve its earlier windows. An insertion or
@@ -194,7 +194,7 @@ Streaming mode has the same per-request deadline, busy refusal and output cap.
 The API closes pipes and reaps the group on cancellation, malformed responses or
 shutdown; a later request can start a fresh worker. It does not retry a failed
 request automatically. Idle release bounds process retention, without promising
-erasure of Python/native allocator memory or previously delivered context.
+erasure of allocator memory or previously delivered context.
 
 The optional streaming protocol is one UTF-8 JSON line per request and response:
 `{"id":"1","request":{"query":"...","notes":[...]}}` and
@@ -228,48 +228,45 @@ with labelled lexical fallback. Empty eligible optional sets need no model and
 record `not_needed`. Successful semantic discovery records `ready`. No partial
 model ordering is used after a failed validation.
 
-Unfiltered index requests, including semantic discovery, use `cairn.semantic/8`;
-requests with kind filters use `cairn.semantic/9`. Both carry
-[preview source positions](index-and-pull.md#index-and-expansion-contract).
-Semantic requests predating preview positions retain `cairn.semantic/7`. Successful scoring uses
-`semantic-scope-recency/1` for unquoted queries; fallback retains lexical v4.
-[Quoted queries](quoted-search.md) use semantic v2 or lexical v5, preferring exact
-text matches before the corresponding score. The sealed package pins
-the model fingerprint, scoring algorithm and digest of all optional candidate
-scores. Protected candidate facts retain those scores. Historical recompilation
-uses the frozen values and source versions, never the current model. A changed
-score is an integrity failure. Legacy receipts preserve their original schemas
-and ranking behavior. A transport retry whose freshly compiled package differs
-returns the existing `STALE_PACKAGE` refusal; use a new request ID to request
-current results after source or backend changes.
+With the request-scoring backend, unfiltered index requests (including semantic
+discovery) use `cairn.semantic/8`, requests with kind filters use
+`cairn.semantic/9`, and later facets (task phase, failure signature, entity
+hints, or advisory conflicts) use `cairn.semantic/10` through `/14`. All carry
+[preview source positions](index-and-pull.md#index-and-expansion-contract);
+semantic requests predating preview positions retain `cairn.semantic/7`.
+Successful scoring uses `semantic-scope-recency/1` (or `/2` for quoted queries,
+`/3` for failure signatures, `/4` for entity hints); fallback retains
+`lexical-scope-recency/4` through `/7`. Persistent indexed retrieval instead
+uses `cairn.semantic/19` (or `cairn.semantic/20` with `semantic_query`) and
+`interleaved-scope-recency/5` through `/8` (see
+[persistent semantic retrieval](persistent-semantic-retrieval.md#ranking-and-delivery)),
+while lexical fallback retains `lexical-scope-recency/4` through `/7`. The
+sealed package pins the model fingerprint, scoring algorithm and digest of all
+optional candidate scores. Protected candidate facts retain those scores.
+Historical recompilation uses the frozen values and source versions, never the
+current model. A changed score is an integrity failure. Legacy receipts preserve
+their original schemas and ranking behavior. A transport retry whose freshly
+compiled package differs returns the existing `STALE_PACKAGE` refusal; use a new
+request ID to request current results after source or backend changes.
 
 ## Evidence and limits
 
-These checks establish usable retrieval;
-independent downstream task benefit and performance at larger scale remain open.
-It does not establish performance on every workload.
-It does not establish downstream task value.
-
-After preparation, run the optional real-worker check against a disposable store:
+Optional real-worker integration checks run against a disposable store:
 
 ```sh
 CAIRN_SEMANTIC_WORKER="$HOME/.local/share/cairn/semantic/worker" \
-CAIRN_SEMANTIC_REPORT=/tmp/cairn-semantic-check-new \
+CAIRN_SEMANTIC_REPORT="$HOME/.cache/cairn/semantic-check" \
 make test-integration
 ```
 
-Choose a new report directory. The check creates only its own test API, runs the
-public development corpus and a synthetic long note, and then restarts that test
-API without scoring to check fallback. It does not modify the supplied worker or
-running operational services. Without this option, normal integration checks use
-controlled scorers and require no embedding model.
+Choose a fresh report directory; the check creates its own disposable API and
+does not modify operational services. Without these variables, `make test-integration`
+uses controlled scorers and requires no embedding model. For the reusable worker,
+set `CAIRN_SEMANTIC_STREAM_WORKER` and `CAIRN_SEMANTIC_STREAM_REPORT` (and
+optionally `CAIRN_SEMANTIC_BASELINE_WORKER`).
 
-For the reusable worker, set `CAIRN_SEMANTIC_STREAM_WORKER` and
-`CAIRN_SEMANTIC_STREAM_REPORT` instead. Add `CAIRN_SEMANTIC_BASELINE_WORKER` pointing
-to a retained one-shot launcher to run six interleaved API comparisons against
-the same disposable store. The stream check also verifies note edits, retirement,
-local-only exclusions and shutdown. This optional check uses the installed local
-CPU environment; regular Go process and Python framing tests need no model.
+These checks verify retrieval mechanics; independent downstream task benefit and
+performance across larger or arbitrary workloads remain open.
 
 ### Long query projection
 
@@ -309,21 +306,12 @@ unchanged (two seconds at the persistent retrieval boundary).
 
 #### Deployment compatibility
 
-Publish matching API and worker source before activation. The old strict worker
-response decoder cannot consume the new declaration; new API code accepts an old
-worker's absent declaration. A live `CommandEmbedder` pins identity, so replacing
-its worker underneath it is unsupported. Updating this worker changes its source-
-bound model identity even though document passage construction is unchanged.
-Restart the API coherently with the matching worker and allow its owned indexer
-to rebuild online. Partial coverage and lexical fallback during that rebuild must
-remain visible. Do not run old and new indexers concurrently on the same store:
-the document and job ownership is per record. Rolling back API and worker also
-requires rederiving that identity's index; it must preserve intervening writes.
-
-Older typed CLI/MCP facades may omit projection diagnostics. That omission grants
-no authority or change to source handles, but such a facade cannot establish
-which query extent was embedded. Updated facades preserve the declaration.
-Older APIs cannot recompile schema 18 receipts; old readers that discard the
-metadata fail the canonical seal check. Existing absent-metadata receipts remain
-replayable. No ranking-quality or real-task benefit is established by this input
-repair.
+Worker and API binaries must agree on `query_projection` support; a live
+`CommandEmbedder` pins its worker's model identity, so replacing the worker
+binary underneath a running API is unsupported. Do not run incompatible
+indexers concurrently on the same store because document and job ownership is
+per record; changing or rolling back worker/API requires rederiving that
+identity's index while preserving intervening writes. Older typed facades may
+omit projection diagnostics, and older APIs cannot recompile `cairn.semantic/18`
+through `/20` receipts. Query projection does not establish ranking-quality or
+task-outcome benefit.

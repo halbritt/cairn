@@ -63,10 +63,8 @@ bytes; the version's `body_sha256` and `body_bytes` still describe the complete
 original body. Version, class, attribution and associations remain historical.
 No whole-body text is returned alongside an excerpt.
 
-These arguments work through the existing CLI/API and native history tool. Update
-the CLI/API and MCP facade or native adapter together before using `span`; older
-interfaces reject the new argument. Requests without `span` retain their existing
-whole-body and metadata behavior. No database migration is required.
+These arguments work through the CLI/API and native history tool; omitting `span`
+retains whole-body and metadata behavior.
 
 The library method is `Store.History(ctx, RecordHistoryRequest, Destination)`.
 The Unix API exposes `POST /v1/history` through `Client.Call`; the direct local
@@ -105,11 +103,9 @@ room. Omitted fields preserve the host default. A larger read changes neither
 future defaults nor receipt credits, repository scope, destination or access
 checks. Count prior reads and host-added metadata against remaining context.
 
-Update the CLI/API, facade binary/native adapter and any explicit tool allowlist first.
-The Codex configuration generator includes the new tool; existing configuration
-is not rewritten automatically. Old facades report an unknown tool; old APIs
-reject the native request's additional repository constraint. Existing CLI/API
-history requests without that optional field keep their behavior.
+Add `cairn_history` to any explicit client tool allowlist or permission policy
+(such as Codex `enabled_tools` or OpenCode permissions); `cairn codex-config`
+includes it in generated configurations.
 
 Each result must fit its declared or default memory allowance, including the serialized
 MCP envelope where applicable. An oversized result returns `BUDGET_REFUSED`

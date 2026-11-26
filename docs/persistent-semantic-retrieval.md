@@ -188,7 +188,8 @@ and separate query/document processes. No worker is selected by default, and no
 mode falls back to another worker. A missing or invalid worker configuration or
 executable stops `cairn serve` at startup. If the selected worker fails at run
 time, semantic discovery reports itself unavailable, search returns labelled
-lexical results and the API logs `semantic indexing unavailable`.
+lexical results and the API logs
+`semantic indexing unavailable; lexical retrieval remains available`.
 `--semantic-idle-timeout` applies only to the request-scoring stream worker.
 
 The existing search interface remains:
@@ -205,19 +206,11 @@ To disable this backend, remove its serve flag and restart the same API build;
 retained receipts and lexical operation remain supported. Do not drop derivation
 tables or roll back migrations as an ordinary configuration change.
 
-Local regression coverage includes more than 64 eligible notes, source passage
-location, partial coverage, invalid-result fallback, frozen replay, competing
-positions, persistence across restart, concurrent editing, deletion and worker
-shutdown. An optional real-model check uses `CAIRN_RUST_EMBED_TEST_CONFIG` together
-with the disposable PostgreSQL test harness. These checks establish implemented
-contracts. They do not establish fewer agent mistakes, less user intervention,
-or acceptable latency across real active agents; those are outcome-trial criteria.
-
-The new schema seals the IDF cohort, frequencies and integer scores alongside the
-existing dense digest and passage observations. Recompile verifies both without
-a model call. A same-request retry retains the sealed ranking and preview policy,
-while recomputing current eligibility and content and checking the original
-intent and exact seal. Changed sources, dense output or availability can still
-return `STALE_PACKAGE`; use a new request ID for current results. Unknown ranking
-versions refuse replay. Older readers cannot replay schema19, so reader support
-must precede writing it. No database migration or worker replacement is required.
+`cairn.semantic/19` seals the IDF cohort, frequencies and integer scores
+alongside the existing dense digest and passage observations. Recompile verifies
+both without a model call. A same-request retry retains the sealed ranking and
+preview policy, while recomputing current eligibility and content and checking
+the original intent and exact seal. Changed sources, dense output or
+availability can still return `STALE_PACKAGE`; use a new request ID for current
+results. Unknown ranking versions refuse replay, and older readers cannot
+replay `cairn.semantic/19` receipts.

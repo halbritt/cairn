@@ -1,9 +1,10 @@
 # Recent file hints in OpenCode
 
 The optional recent-files plugin makes guidance associated with a file easier to
-find after an agent reads that file. It observes successful native text-file
-`read` results and adds repository-relative file hints to the next fresh
-`cairn_search`. The agent still chooses when to search and what guidance to pull.
+find after an agent interacts with that file. It observes successful native
+file-tool results (`read`, `edit`, `write`, `grep`, and `glob`) and adds
+repository-relative file hints to the next fresh `cairn_search`. The agent
+still chooses when to search and what guidance to pull.
 
 For example, a note associated with `core/currentness.go` can explain how to
 check applicability without mentioning that filename in its body. After reading
@@ -70,21 +71,24 @@ OpenCode and ordinary Cairn retrieval retain their existing histories and
 receipts independently of this map. Submitted names appear in the ordinary
 tool arguments/result and are therefore visible to the model using the tool.
 
-Only native read metadata labelled `file` is considered. Missing or denied
-reads, directory listings and reads without that metadata add no hint. Paths
-outside the worktree, filesystem-root worktrees, and names incompatible with
-Cairn's file-reference contract are skipped. Paths are logical paths relative
-to OpenCode's worktree, without physical symlink resolution. Reading a symlink
-inside the worktree can consequently supply its logical name. Reading is not
-proof of editing, relevance, file identity across renames, or execution success.
-Shell reads, language-server activity and inferred symbols are not collected.
+The plugin observes `read`, `edit`, `write`, `grep`, and `glob`. Results with
+`output.metadata.display.type` set to a value other than `"file"` (such as
+directory listings) are skipped. For `read`, `display.type === "file"` (with
+`display.path`) is required; for `edit`, `write`, `grep`, and `glob`, the plugin
+uses `display.path` when `display.type === "file"` or falls back to
+`args.filePath` or `args.path`. Missing or denied calls, paths outside the
+worktree, filesystem-root worktrees, and names incompatible with Cairn's
+file-reference contract are skipped. Paths are logical paths relative to
+OpenCode's worktree, without physical symlink resolution. Reading or touching a
+symlink inside the worktree can consequently supply its logical name. Tool
+observation is not proof of relevance, file identity across renames, or
+execution success. Shell reads, language-server activity and inferred symbols
+are not collected.
 
 The hook never fetches memory. Retrieval passes through the existing native
-`cairn_search` tool and its permission callback. This avoids the permission gap
-found in the earlier system-prompt hook investigation.
-For a file-specific read permission in OpenCode 1.18.21, use the worktree-relative
-name, such as `core/currentness.go`; the read argument itself may be absolute.
-An absolute-only allow pattern did not permit that read in the installed check.
+`cairn_search` tool and its permission callback. For a file-specific read
+permission in OpenCode, use the worktree-relative path, such as
+`core/currentness.go`; the read argument itself may be absolute.
 
-Automatic intent in other harnesses and
-evidence of sustained task value remain open.
+Automatic intent in other harnesses and evidence of sustained task value remain
+on the [roadmap](roadmap.md).

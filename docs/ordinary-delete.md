@@ -38,18 +38,10 @@ An open conflict returns a retained `OPEN_CONFLICT` refusal. Use
 `cairn conflicts --record RECORD_UUID REPO` and `cairn conflict CONFLICT_UUID`
 to [inspect its retained positions](conflict-inspection.md).
 
-Migration 020 adds the response-exclusion marker used by ordinary deletion.
-Deploy the updated binary before using the command. No Class D event, tombstone,
-purge job or automatic retention schedule is created for this unreferenced A
-path. PostgreSQL dead tuples, WAL, backups and previously returned copies are
-outside its SQL deletion claim. Restoring an older backup can restore the note;
-use explicit security/forgetting procedures for sensitive content.
-
-Database checks cover revision removal, scope/version refusal, write and delete
-retries, preserved referenced history, former B state, open conflicts and
-concurrent citation versus deletion. An authenticated API check exercises the
-same store operation. These checks establish ordinary lifecycle behavior, not
-physical erasure.
+No Class D event, tombstone, purge job or automatic retention schedule is created
+for this unreferenced A path. PostgreSQL dead tuples, WAL, backups and previously
+returned copies are outside its SQL deletion claim. Restoring an older backup can
+restore the note; use explicit security/forgetting procedures for sensitive content.
 
 ## Retire obsolete advice while retaining history
 

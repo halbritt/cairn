@@ -100,20 +100,11 @@ enabled for forgotten content; [candidate detail retention](candidate-retention.
 is a separate diagnostic lifetime, not erasure. Historical run-file adoption is limited to one explicitly named, verified
 local `context.txt` ([adopt-context](managed-context.md#adopting-a-historical-context-file));
 bulk discovery, evidence and metadata redaction,
-access-policy changes and retention of other records remain roadmap work.
+access-policy changes and retention of other records are outside this operation.
 
-The restore drill proves that a backup containing a pending deletion preserves
-logical exclusion and can resume its effects. A backup from before forgetting
-can resurrect content. Reconciling newer deletion/revocation requests before
-serving such a restore remains unfinished; a self-consistent old dump is not
-proof that it contains all subsequent security transitions.
-
-## Verification
-
-`make test-integration` covers copy exclusion before purge, SQL payload removal,
-retained use history, effect retry/failure, stale previews, authorization,
-open-conflict refusal, index retry, mandatory dependency refusal, citation/delete
-races and D checkpoint membership. `make test-lifecycle` kills an observed CLI
-purge worker at a controlled SQL boundary, verifies rollback of only its active
-effect, resumes it, and restores a pending-deletion backup into another
-disposable database. These checks do not establish physical or provider erasure.
+A backup containing a pending deletion preserves logical exclusion and can resume
+its effects. A backup from before forgetting can resurrect content; a
+self-consistent old dump does not prove it contains subsequent security
+transitions. Reconcile newer withdrawals with
+[restore admission](restore-admission.md) and
+[recovery reapplication](recovery-reapplication.md) before serving such a restore.

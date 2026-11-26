@@ -87,17 +87,16 @@ Body availability and pull eligibility still use their existing checks. Existing
 handles do not become new searches when a review changes; search again for current
 ranking. Retained execution requires the same supplied signature as its package.
 
-Migration 033 adds the review sharing flag with a false default, including writes
-from older binaries. Signature searches seal `cairn.semantic/12` with
-`lexical-scope-recency/6` or ready `semantic-scope-recency/3`. Searches without a
-signature keep their existing schema and ranking profiles. Upgrade the API,
-ordinary facades and direct readers before using the new field; old clients can
-discard fields they do not understand. General metadata redaction and retention
-remain separate roadmap work.
+Nonempty lexical context index searches with a failure signature use
+`cairn.semantic/17` with `binary-idf-scope-recency/7` (or `/8` when entity hints
+are also supplied); ready persistent semantic index searches use
+`cairn.semantic/19` (or `cairn.semantic/20` with `semantic_query`) and
+`interleaved-scope-recency/7` (or `/8` with entities). Empty-query signature
+index searches, whole-body `compile`, and request-scoring semantic discovery
+seal `cairn.semantic/12` with `lexical-scope-recency/6` or ready
+`semantic-scope-recency/3`. Searches without a signature keep their normal
+schema and ranking profiles.
 
-The feature provides a reuse path for reviewed failures. Its tests establish
-retrieval behavior, not reduced recurrence or durable task benefit.
-A retained real-failure check
-also retrieves the original local lesson after a new exact-version review, with
-its historical revision supplied. Ordinary text search already ranks that lesson
-first for the three diagnostic queries; the check adds no task-benefit claim.
+Signature matching establishes a retrieval path for reviewed failures, not
+reduced recurrence or durable task benefit. General metadata redaction and
+retention remain on the [roadmap](roadmap.md).

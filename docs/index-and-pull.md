@@ -18,9 +18,14 @@ cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
 Use the same host task/run identities across queries. They are required; the
 repository defaults to the current directory. The token determines caller,
 repository boundary and destination. Search does not accept a destination or
-observer override and does not use database credentials. Optional flags are
-`--tokens` (default 32000), `--request-id`, `--revision`, `--workspace-sha256`,
-`--task-class`, `--binding` and `--capability`.
+observer override and does not use database credentials. Context and scope flags
+include `--tokens` (default 32000), `--request-id`, `--revision`,
+`--workspace-sha256`, `--task-class`, `--task-phase`, `--binding` and
+`--capability`; budget, paging and filter flags (`--memory-budget-bytes`,
+`--min-pull-bytes`, `--inspection-policy`, `--advisory-conflicts`,
+`--entity-file`, `--entity-symbol`, `--error-signature-sha256`, `--kind`,
+`--semantic`, `--semantic-query-file`, `--semantic-query-stdin`, `--browse`,
+`--offset`) are described below.
 
 To continue beyond the first ranked results, opt in with `--offset 0`:
 
@@ -52,10 +57,10 @@ for their combined context. Reducing the allowance can make more entries fail
 to fit; reaching the final page does not prove every candidate was delivered.
 Paging cannot recover a lexical vocabulary miss or make an oversized preview fit.
 
-Omitting `offset` keeps the existing unpaged search behavior. Ranked pages use
-semantic format v11 and `omitted.PAGE_OFFSET` for eligible candidates before the
-page. They require updated API and clients. Older binaries cannot reconstruct
-these receipts; current binaries retain historical unpaged and browse behavior.
+Omitting `offset` keeps unpaged search behavior. Ranked pages use semantic
+format v11 and `omitted.PAGE_OFFSET` for eligible candidates before the page;
+older binaries cannot reconstruct v11 receipts, while current binaries retain
+historical unpaged and browse behavior.
 
 If a query misses because the saved vocabulary is unknown, inspect eligible
 topics explicitly:
@@ -107,15 +112,15 @@ Required instructions and all eligibility, privacy and budget checks still apply
 Filtering happens before ranking and paging; excluded kinds do not consume browse
 positions or reach the semantic worker. Keep the same kinds across page requests.
 Only destination-eligible omissions contribute to `KIND_FILTERED`; hosted
-results expose no local-only record identifiers or counts. Filtered requests use semantic format v9
-and retain their labels for retries and historical reconstruction. Unfiltered
-requests keep their previous formats and request identities. Upgrade both the API
-and clients before using kinds; older binaries cannot reconstruct v9 receipts.
+results expose no local-only record identifiers or counts. Filtered requests use
+semantic format v9 and retain their labels for retries and historical
+reconstruction; unfiltered requests keep their normal formats and request
+identities.
 
 Raw `index` requests can opt in with `"browse_offset": 0` and an empty query;
-later requests use the returned `browse.next_offset`. New paged and unpaged
-unfiltered indexes use semantic format v8; retained v5/v6 receipts remain replayable.
-Update the Cairn API service as well as clients before using paged browsing.
+later requests use the returned `browse.next_offset`. Paged and unpaged
+unfiltered indexes use semantic format v8; older binaries cannot reconstruct v8
+or v9 receipts, while retained v5/v6 receipts remain replayable.
 
 The `cairn.agent-search/1` view retains the index order and metadata, full
 mandatory `selected` entries, scope/currentness/policy fields, omission counts
@@ -177,7 +182,15 @@ in this form. JSON requests keep the existing 128 KiB encoded-input limit and
 server validation; missing IDs, unknown fields and stale handles refuse normally.
 A successful retry across shell/JSON forms retains the same response and credit
 count when its request ID and intent are identical. It still rechecks current
-eligibility. This is a CLI addition; the API does not need an upgrade.
+eligibility.
+
+Within a session, `agent pull` and `cairn_pull` deduplicate repeated pulls of
+the same record version or covered span (CLI caches per session under
+`$XDG_CACHE_HOME/cairn/pull-dedup/` with a 3600-second TTL; MCP tracks delivered
+records in process memory). When already covered, the pull returns
+`{"already_delivered": true, ...}` without spending a credit or calling the API.
+Pass `--force` (CLI) or `force: true` (JSON/MCP) to re-read, or set
+`CAIRN_RECALL_DEDUP=0` to disable session pull deduplication.
 
 The raw JSON `agent index`, `expand` and `expand-evidence` operations remain
 available. A host may [link the retrieval to its run](use-outcome-loop.md#retrieval-during-an-observed-run);
@@ -235,10 +248,8 @@ affect later pages. Follow the pagination rules above.
 
 The server seals cohort identity, term frequencies and integer weights for
 [historical reconstruction](currentness-and-replay.md#recompile-a-retained-read-set).
-Readers must support the sealed ranking version before it is written; support
-for v17 alone is insufficient. Older binaries cannot reconstruct new `/5..8`
-receipts. Earlier `/1..4` receipts retain their original word-only matching and
-can still be reconstructed by the new reader. No database migration is needed.
+Older binaries cannot reconstruct `/5..8` receipts; earlier `/1..4` receipts
+retain their original word-only matching and remain reconstructable.
 A same-request-ID retry retains its existing IDF ranking version while checking
 current source state and disclosure; use a new ID to request current ranking.
 
@@ -267,9 +278,9 @@ Class C and [competing advisory positions](advisory-conflicts.md) omit
 
 The location is sealed with the record version and full-body digest and counts
 toward index packing cost; fewer entries can fit a page. It grants no extra access
-or credits. Historical v4–v7 indexes retain their original shape and seals; a new
-index request after the format upgrade needs a new request UUID if retrying the
-old one returns `STALE_PACKAGE`.
+or credits. Historical v4–v7 indexes retain their original shape and seals; a
+search retry whose current package differs returns `STALE_PACKAGE`, so use a new
+request UUID.
 
 The result supplies `package`, `handles`, `expires_at`, `credits_remaining` and
 `bytes_remaining`. Each handle is bound to one authenticated caller, receipt,
@@ -317,8 +328,7 @@ repeat the same UUID only for identical retries. `end` is the next offset when
 below `total_bytes`. A rejected whole pull spends no credit.
 
 Treat the result as a partial source, not a replacement record body. Read the
-complete note and reconcile unseen text before editing it. The API, CLI and native
-adapter must support note spans together.
+complete note and reconcile unseen text before editing it.
 
 To inspect one attached evidence object, use `cairn agent expand-evidence` with
 its `evidence_id` and `sha256` from the selection's evidence metadata:
@@ -348,7 +358,6 @@ cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
 Offsets and lengths count **bytes**. Offset must be 0–1048575 and inside the
 captured object; length must be 1–1048576. Length is a maximum, clipped only at
 EOF. `--length` alone starts at zero; `--offset` requires a positive `--length`.
-The API service and client must both support spans.
 
 In span mode, `evidence` keeps the full object's metadata and digests but its
 body is empty. The separate `span` contains `offset`, exclusive `end`,
@@ -384,9 +393,11 @@ right to disclose old content.
 
 The use report retains `exposure_kind: index` for the original pointer. A later
 pull appends an instrumented `expanded` observation with method
-`authorized-body-pull/1`, `authorized-evidence-pull/1`, or
+`authorized-body-pull/1`, `authorized-advisory-group-pull/1` (for competing
+advisory groups), `authorized-evidence-pull/1`, or
 `authorized-evidence-span-pull/1`. Note excerpts use
-`authorized-body-span-pull/1`; none rewrites the earlier exposure as though a
+`authorized-body-span-pull/1`, or `authorized-body-span-opening-pull/1` when
+paired with a source opening; none rewrites the earlier exposure as though a
 full body had been present originally. Pull observations invalidate earlier
 retraction previews. They establish that a body or supporting object was requested and made available,
 not that a model read it or that the task improved. HTTP response loss can still
@@ -422,8 +433,8 @@ The response seals `cairn.memory-budget/2` with `min_pull_bytes` and reports
 actual `bytes_remaining`. Omission preserves the v1/default request and replay
 behavior. This is a charged expansion allowance, not a count of plain body
 bytes or proof that a source pull will succeed or be relevant. Repeat it on
-pages and retries; changed intent needs a new request UUID. Older APIs reject
-unsupported fields; do not silently retry without the reserve. Account for
+pages and retries; changed intent needs a new request UUID. Do not silently drop
+`min_pull_bytes` on retry if a peer rejects it. Account for
 other receipts, hook context, retries and errors separately at the task level.
 
 The minimum applies when a receipt is issued. Pulls spend its allowance; an

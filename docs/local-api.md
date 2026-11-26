@@ -51,11 +51,14 @@ deliveries, close an open response group, or cancel a wait. A waiting
 `request_response` wait also blocks explicit close until it is cancelled. See
 [closure reservations](closure-reservations.md) for the exact close rules.
 
-These five operations are available to remote profiles under the catalog's
-normal role checks. Policy configuration, collection-wide pressure/fanout,
-refusal counters and reconciliation remain operator-only, without agent API
-routes. See [event admission](event-admission.md) and
-[operator commands](commands.md#event-admission-and-closure-administration).
+Remote availability depends on each operation's catalog contract (for example,
+`event-metrics`, `event-retry`, and `handoff-request-status` are local-profile-only;
+`event-next` requires an explicit agent session on a remote profile). Policy configuration,
+collection-wide pressure/fanout, refusal counters and reconciliation remain
+operator-only, without agent API routes. See [event admission](event-admission.md),
+[operator commands](commands.md#event-admission-and-closure-administration), the
+[HTTP reference](reference/api-rest.md), and the [OpenAPI contract](api/openapi.json)
+for the complete event, session, wait, status, team, and ledger operation catalog.
 Capacity failures preserve typed `admission` details in the error envelope;
 [HTTP failure handling](reference/api-rest.md#responses-and-failures) explains
 retry guidance and the relay header limitation.
@@ -94,8 +97,11 @@ Help prints readable text and exits successfully without reading stdin, resolvin
 a home directory, opening credentials or contacting the API. Flag help for
 `search`, `remember`, `pull`, and `pull-evidence` is generated from the same flag
 definitions used by normal execution, and includes positional usage.
-JSON-operation help covers `edit`, `revise`, `append`, `replace`, `set-sections`, `cite`,
-`history`, `assessments`, `assess-run`, `recompile`, and `explain-page`; `-h` also works. Replace example
+Hand-written JSON-operation help with examples covers `edit`, `revise`, `append`,
+`replace`, `set-sections`, `cite`, `history`, `assessments`, `assessments-page`,
+`assess-run`, `recompile`, `explain-page`, and session/coordination JSON
+operations; every other operation in the API catalog has derived offline help
+from its declared specification, and `-h` also works. Replace example
 placeholders with actual values, then pass one JSON request on stdin. Connection
 flags go before the operation. Normal responses retain their JSON envelope and
 existing access checks.
@@ -175,7 +181,7 @@ are supported. Restart the server after changes (profile configuration and the
 `CAIRN_SOURCE_OPENING_BINDING` principal list, see
 [source openings](note-span-openings.md#enabling-binding-default-off), are read only
 when the server starts; `cairn serve` keeps binding disabled when unset or `""`, and
-host deployments enable it via drop-in once all readers are upgraded, noting the
+deployments can enable it via systemd drop-in after readers and relays are upgraded, noting the
 [irreversible downgrade floor](note-span-openings.md#disabling-versus-downgrading)). Use `destination: hosted` for a
 profile whose retrieved context goes to a remote model. Hosted profiles cannot
 read local record bodies or protected usage reports. As with the operator CLI,
@@ -205,12 +211,11 @@ service. Both use CLI exit 7 without printing the private path or credentials.
 Existing token validation still refuses unsafe sources; empty, oversized and
 non-owner-only files return `INVALID_REQUEST`. MCP startup reports token setup
 failure on stderr with exit 1; connected MCP sessions report dial failures as
-tool errors. Upgrade the CLI/MCP executable for these diagnostics; the existing
-API and database suffice.
+tool errors.
 
 These codes describe the failing client operation, not an entire run's effects.
-An API dial failure after earlier run steps now retains `API_CONNECTION_FAILED`
-and exit 7 rather than the generic `RUN_FAILED` fallback. Inspect any returned
+An API dial failure after earlier run steps retains `API_CONNECTION_FAILED`
+and exit 7 rather than falling back to `RUN_FAILED`. Inspect any returned
 receipt, `process_state` and pending run artifacts before further action. Requests
 are not automatically retried, and a lost response after connecting is not
 classified as a dial failure. Trusted Go callers can still inspect the original
@@ -225,9 +230,8 @@ the store still validates size, repository and sensitivity. `agent remember`
 uses `create`; native capture/edit tools use these same operations. Trusted local
 JSON `create`, `edit`, `revise` and `append` also accept 512 KiB envelopes;
 `replace` and `set-sections` accept 1 MiB envelopes.
-Update both API and CLI before sending larger requests. Existing accepted requests
-and their retry identities retain their behavior. Oversized envelopes, including
-excess trailing whitespace, are refused before a write or retry reservation.
+Oversized envelopes, including excess trailing whitespace, are refused before a
+write or retry reservation.
 
 ## Save an ordinary note
 
@@ -292,10 +296,23 @@ and needs no stdin request. [Build identity and limitations](build-identity.md).
 Authenticated `clients` takes `{}` or `{"limit":1..100}` and lists only the caller's
 own volatile client observations; see [observed clients](client-observations.md).
 
-Operations: `create`, `edit`, `revise`, `append`, `replace`, `set-sections`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `explain-page`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
-local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
-`assess-run`, `assessments`, `assessments-page`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
-`run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. Ordinary agent profiles, local or remote, may also report their own lifecycle hook's `recall-observation` (metrics only; see [recall latency and selector cost](use-outcome-loop.md#recall-latency-and-selector-cost)); the protected `use-report` that shows it stays local-profile-only. All use `POST /v1/OPERATION` with JSON
+Core memory and observation operations include `create`, `edit`, `revise`, `append`,
+`replace`, `set-sections`, `cite`, `delete`, ordinary `supersede`, `compile`,
+`recompile`, `explain-page`, `index`, `expand`, `expand-evidence`, `get`, `history`,
+`evidence`, `usage`, `usage-coverage`, `capture-observation`,
+`delivery-observation`, `refusal-stats`; local-profile-only `conflicts`, `conflict`,
+`preview-retract`, `supersession`, `capture-observations`, `evidence-impact`,
+`check-evidence`, `refusal`, `use-report`, `telemetry-report`, and `run-report`;
+local-host-only `run-status`, `assess-run`, `assessments`, `assessments-page`; and
+observer-only `spawn`, `terminal`, `task-state`, `bind-run`, `run-package`,
+`run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, and
+`outcome`. Ordinary agent profiles, local or remote, may also report their own
+lifecycle hook's `recall-observation` (metrics only; see
+[recall latency and selector cost](use-outcome-loop.md#recall-latency-and-selector-cost));
+the protected `use-report` that shows it stays local-profile-only. See the
+[HTTP reference](reference/api-rest.md) and [OpenAPI contract](api/openapi.json)
+for the complete operation list (including event, session, wait, status, team, and
+ledger endpoints). All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`.
 `history` lists bounded retained version metadata or reads one exact body (optionally
 as a byte excerpt with `span`), under
@@ -378,52 +395,12 @@ it returns `cairn.refusal-stats/1` with `principal`, `started_at`, `observed_at`
 `(operation, code, status)`. Unauthenticated requests and unknown endpoints are excluded,
 and counts are isolated per `(principal, machine_id)`.
 
-Routine exposure no longer updates `memory_record.use_generation`; concurrent searches
-and pulls share `record_exposure_barrier` and append to `record_exposure` without
-contending on the note row, while lifecycle transitions drain exposures and advance
-`exposure_epoch`. Compiles retain bounded retries across concurrent lifecycle changes,
-so a `VERSION_CONFLICT` from `index` or `compile` means a search failed after eight
+Routine exposure appends to `record_exposure` and shares
+`record_exposure_barrier` without contending on `memory_record.use_generation`,
+while lifecycle transitions drain exposures and advance `exposure_epoch`.
+Compiles retain bounded retries across concurrent lifecycle changes, so a
+`VERSION_CONFLICT` from `index` or `compile` means a search failed after eight
 attempts against concurrent lifecycle mutations.
-
-## Striatum boundary
-
-Striatum-next's accepted model requires context to enter lanes as sealed, declared
-inputs. Its current supervisor renders pinned dispatch inputs before starting the
-backend. Ambient memory injection into that prompt would violate those semantics.
-This API supplies authenticated host ingestion and agent access, but it does not
-change Striatum's pass contracts or declare Cairn integrated into real builds.
-
-The next host integration must compile Cairn context before dispatch sealing,
-include it as a permitted dispatch input, retain the Cairn receipt ID beside the
-host attempt identity, and forward host terminal/task-state observations. Task
-acceptance must come from the host's actual gate evidence; a backend process exit
-cannot set it. No live Striatum lane was altered by this implementation.
-
-The inspected Striatum commit `a6b1ae71d95cdf99200c10d8c6ce855d9da70a69`
-declares only work graphs and optional diagnostic review ledgers as inputs to
-build contract v3 (`catalog/passes/build.yaml`). Its driver sources ordinary
-dispatch inputs from accepted artifact heads, with admitted evidence handled
-separately (`internal/driver/session_dispatch.go`). An arbitrary Cairn export
-file therefore cannot enter a real build as an extra input under that contract.
-Native integration must establish the permitted input and provenance path in
-the owning compiler contract before enabling delivery; an adapter probe cannot
-establish that contract change.
-
-The same inspected tree has an accepted
-`catalog/target-states/recall-compiles-to-knowledge.yaml` target. It names hippo
-recall entering knowledge promotion through existing foreign-head attestations
-and exogenous-change records. That is a relevant existing admission path to
-investigate before adding Cairn-specific artifact machinery. It does not declare
-Cairn a producer, make raw recall authoritative, or authorize ambient build inputs.
-The decision index still lists RFC 0015 as in flight, and the RFC index records
-its ladder as parked. Current driver dispatch also seals empty prompt assets.
-The owning RFC/decision and admission code therefore still need reconciliation;
-that target entry does not establish an available native Cairn route. The subsequent
-native admission assessment
-found the accepted promotion contract and implementation, traced the historical
-Verified request to a fixture-labelled audit, and reproduced limitations in the
-current knowledge checker. It preserves the distinction between recorded
-artifact acceptance, current source, live knowledge, and native Cairn delivery.
 
 ## User services
 
@@ -452,17 +429,17 @@ Stopping the API leaves the dedicated store running. Stop the store service to
 shut down both. Unit files, source code and generated credentials have separate
 lifecycles; never commit the token/config files.
 
-On host `cairn-api.service`, deployment-specific options are applied via systemd
-drop-ins rather than modifying the shared template:
+Deployment-specific options for `cairn-api.service` are applied via systemd
+drop-ins rather than modifying the shared unit template:
 
-- `--semantic-rust-config` is configured via drop-in (such as `zz-c301-api-rust.conf`)
-  for the active Rust semantic worker; omit the flag to disable it.
+- `--semantic-rust-config` configures the Rust semantic worker in `cairn serve`;
+  omit the flag to disable it.
 - `CAIRN_SOURCE_OPENING_BINDING` is disabled when unset or `""` in `cairn serve`
-  and promoted via drop-in ([`deploy/cairn-api-source-opening.conf`](../deploy/cairn-api-source-opening.conf))
-  after all readers and relays are upgraded; see
+  and can be enabled via drop-in ([`deploy/cairn-api-source-opening.conf`](../deploy/cairn-api-source-opening.conf))
+  after readers and relays are upgraded; see
   [source openings](note-span-openings.md#enabling-binding-default-off).
 - `deploy/cairn-delivery-alerts.timer` runs `cairn delivery-alerts` every ten
-  minutes (`systemctl --user enable --now cairn-delivery-alerts.timer`, active on host).
+  minutes (`systemctl --user enable --now cairn-delivery-alerts.timer`).
 
 ### Body-only revisions
 
@@ -478,8 +455,7 @@ transaction. Exact request retries return the original revision, including after
 a later edit. Changed intent under the same UUID returns `IDEMPOTENCY_CONFLICT`;
 a new request based on an old version returns `VERSION_CONFLICT`. Read and
 reconcile before submitting another revision. Full `edit` remains available when
-changing other ordinary draft content is intentional. Upgrade the API and clients
-together before using `revise` or the native edit tools' body-only form.
+changing other ordinary draft content is intentional.
 
 ### Append selected guidance
 
@@ -515,7 +491,7 @@ an appended sentence does not acquire verified support from that preservation.
 Read the current note and check the addition against its guidance and sources.
 Use append for a selected additive update; use replacement for corrections or
 consolidation. Appending does not remove contradictions, obsolete guidance or
-redundancy. Upgrade the CLI, API and adapter together before using this mode.
+redundancy.
 
 ### Replace one exact passage
 
@@ -557,7 +533,7 @@ full-body, append and draft edits retain their own retry identities.
 
 This is selected text correction, not merging or automatic contradiction review.
 Retained citations do not certify the corrected wording. Earlier versions remain
-available for comparison. Upgrade the CLI, API and native adapter before use.
+available for comparison.
 
 ### Ordinary source citations
 
@@ -567,6 +543,6 @@ same body and metadata and replaces its references, returning only record ID and
 version. Each nonempty citation uses a captured evidence ID, full SHA-256 and
 optional byte spans. Empty `[]` clears current references; absent/null refuses.
 The 128 KiB request limit applies. Text/full-draft edits preserve the existing
-references. Upgrade all store writers before use; older edits drop A references.
+references.
 See [ordinary citations](evidence-citations.md#ordinary-notes) for source checks,
 retry behavior, native edit arguments and the qualification boundary.

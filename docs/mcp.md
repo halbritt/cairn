@@ -66,8 +66,7 @@ searches without a context object.
 
 Supply [`available_tokens`](search-room.md) to set the available context for one
 search in conservative UTF-8 bytes (`utf8-byte-upper-bound/1`, not provider BPE
-tokens; Claude/Gemini BPE calibration `+-2-4%` remains unmeasured, see
-[token audit errata](verification/token-audit-errata-2026-11-25.md)). It may be smaller than the startup `--tokens` default, or larger for an
+tokens). It may be smaller than the startup `--tokens` default, or larger for an
 explicit read up to `--max-tokens`. It does not change subsequent calls. Repeat
 the allowance on retries and pages.
 
@@ -106,11 +105,15 @@ This new policy uses `cairn.memory-budget/4` and permits a
 larger whole pull. Historical receipts keep their original budgets; start a new
 search to enlarge an allocation.
 
-`cairn mcp --tokens` still defaults to 32,000 for ordinary searches.
-`--max-tokens` bounds explicit `available_tokens` requests and pull output,
-defaulting to 1,000,000 bytes. Set it lower to enforce a host ceiling; it must be
-at least `--tokens`. OpenCode's native adapter uses the corresponding
-`tokens` and `max_tokens` settings. These are limits, not measurements of free
+`cairn mcp --tokens` defaults to 16,000 for ordinary searches. `--max-tokens`
+bounds explicit `available_tokens` requests and pull output, defaulting to
+160,000 bytes (configurable up to 1,000,000). Set it lower to enforce a host
+ceiling; it must be at least `--tokens`. `--output-max-bytes` bounds non-strict
+tool output (`cairn_assessments` and `cairn_pull_evidence`), defaulting to
+12,000 bytes (`0` for unbounded; overridden by `CAIRN_MCP_OUTPUT_MAX_BYTES`,
+`CAIRN_TOOL_OUTPUT_MAX_BYTES`, or `CAIRN_UNBOUNDED_TOOL_OUTPUT`). OpenCode's
+native adapter uses the corresponding `tokens`, `max_tokens`, and
+`output_max_bytes` settings. These are limits, not measurements of free
 conversation room. A running MCP process keeps its startup settings and code
 until it is restarted.
 
@@ -150,11 +153,10 @@ Unlisted future tools keep their full description until explicitly reviewed for
 `compact/2`. `cairn_client_info` reports the active `facade.tool_profile`.
 Configuration generators pass the selected profile to their MCP command; this
 flag does not change OpenCode's native tool profile (see
-`CAIRN_OPENCODE_TOOL_PROFILE`). In the local SDK declaration fixture, the search
-tool JSON shrank from 6,464 to 2,777 bytes and pull from 1,681 to 729 bytes.
+`CAIRN_OPENCODE_TOOL_PROFILE`).
 
-Smaller declarations do
-not by themselves establish lower provider costs or better task outcomes.
+Smaller declarations do not by themselves establish lower provider costs or
+better task outcomes.
 
 ## Reserve room for source inspection
 
@@ -172,11 +174,11 @@ reserves accounting room, not plain source-body bytes or a guarantee that a
 particular pull succeeds, exists or is relevant. The search result reports the
 actual `bytes_remaining`; `memory_budget` seals this request as
 `cairn.memory-budget/2`. Omitting the reserve retains the existing v1 allocation.
-Repeat the reserve on pages and identical retries; changing it requires a new
-request UUID. Older facades/APIs can reject the field: do not silently drop it
-and claim a reservation. `cairn_client_info` declares this facade's
-`search_min_pull_bytes` support separately from API support, which remains
-`unknown` without a recognized API capability declaration.
+Repeat the reserve on pages and identical retries; changing it needs a new
+request UUID. Do not silently drop `min_pull_bytes` if a peer rejects it.
+`cairn_client_info` declares this facade's `search_min_pull_bytes` support
+separately from API support, which remains `unknown` without a recognized API
+capability declaration.
 
 The minimum applies when a receipt is issued. Pulls spend its allowance; an
 identical search retry reports the remaining amount without replenishing it.
@@ -223,7 +225,7 @@ semantic meaning at retrieval time.
 Invalid text or scope refuses before configuration output or credential access.
 A generated configuration still needs a usable profile and running API to connect.
 Intentional U+FFFD is allowed; malformed byte strings are refused rather than
-replaced. Update the setup/MCP executable for these checks.
+replaced.
 
 ## Tools
 
@@ -236,7 +238,7 @@ Before saving knowledge that may replace an existing note, use
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged for the full body. Add `span: {offset: 0, length: 4096}` for a partial A/B source, or copy the entry's `summary_span` to read its exact preview source bytes. Use a new request UUID for each range. Reuse identical arguments for retries. Instructions require whole delivery. |
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its full-object `expected_sha256`, and a retry `request_id`. Optional `span: {offset: 0, length: 4096}` selects at most that many bytes. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `scope`, `kind`, `shareable`, `entities` and explicit `pins`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
-| `cairn_prepare_note` | Required short subject `query`; optional `entities`, current `context`, `request_id`, `available_tokens`, `memory_budget_bytes` and `min_pull_bytes`. Returns ordinary eligible search previews/handles plus pre-save guidance. Saves no note and performs no edit or retirement. |
+| `cairn_prepare_note` | Required short subject `query`; optional `entities`, current `context`, `inspection_policy`, `request_id`, `available_tokens`, `memory_budget_bytes` and `min_pull_bytes`. Returns ordinary eligible search previews/handles plus pre-save guidance. Saves no note and performs no edit or retirement. |
 | `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and exactly one of `body`, `append` (a verbatim suffix), `replace` (`old_text`/`new_text` for one exact passage), a complete replacement `draft`, `set_sections` for named workstream sections, or `evidence_citations` to replace source references (`[]` clears them). Revises an active A note; text edits preserve citations. See [ordinary citations](evidence-citations.md#ordinary-notes). Returns identifiers without echoing the body. |
 | `cairn_history` | `record_id` with optional `limit`/`before_version` for retained metadata, or positive `version` for one exact body. Add `span: {offset, length}` for a bounded byte excerpt of that version. Historical comparison only; no current eligibility or authority. Uses configured repository, authenticated destination and the tool output budget. See [retained history](record-history.md#native-tools). |
 | `cairn_assessments` | Known `receipt_id` owned by the configured profile. Reads ordered assessment history with reasons and evidence IDs, without evidence bodies. |
@@ -269,9 +271,8 @@ include limits and the raw API form.
 
 Ranked search can also continue: pass `{"query":"relevant words","offset":0}`
 to start, then use `page.next_offset` with the same query, semantic mode, kinds,
-scope and context. Omit `offset` for the existing unpaged behavior. Upgrade the
-API and MCP binary before using ranked pages. Every page has its own budget and
-reads current state; restart if notes or semantic availability change.
+scope and context. Omit `offset` for unpaged behavior. Every page has its own
+budget and reads current state; restart if notes or semantic availability change.
 
 With an ordinary agent profile, capture is A testimony. Select reusable knowledge
 with source/verification context; exclude raw sessions, private Council material
@@ -303,8 +304,6 @@ Scope selection does not inherit search context or applicability pins. Ordinary
 edits cannot change the stored scope. Repeat the choice and effective scope on
 retries; a changed task or run under the same request UUID refuses when it changes
 the stored draft. A task capture remains identical across runs of that task.
-Update the MCP binary and restart its host process to expose this argument;
-the existing API and database support it.
 
 ### Revise a saved note
 
@@ -350,7 +349,7 @@ that a note answers the question.
 The `selected` field retains full mandatory bootstrap; index summaries are not
 substitutes for inspecting relevant bodies. Memory content remains fallible data.
 
-`--tokens` defaults to 32,000, supplies the search's available memory room and
+`--tokens` defaults to 16,000, supplies the search's available memory room and
 limits the encoded MCP tool result. The host must reserve room for prompts, tool
 definitions, conversation and output separately. This is not a global task budget.
 No tool result is silently truncated. A presentation `BUDGET_REFUSED` may occur
@@ -366,7 +365,7 @@ The facade does not expose operator actions, run observation or automatic captur
 
 ### Complete MCP Tool Catalog & Parameter Reference
 
-Cairn implements ten standard MCP tools across discovery, expansion, capture, mutation, inspection, and review:
+Cairn implements ten standard memory MCP tools across discovery, expansion, capture, mutation, inspection, and review (plus seven optional session-inbox tools when `--messaging` is enabled):
 
 1. **`cairn_search`**: Scoped memory search returning mandatory instructions and candidate previews with expansion handles and `pull_arguments`.
    - *Parameters*: `query` (string), `browse` (boolean), `semantic` (boolean), `semantic_query` (string), `offset` (integer), `available_tokens` (integer), `memory_budget_bytes` (integer), `min_pull_bytes` (integer), `inspection_policy` (string), `advisory_conflicts` (boolean), `entities` (array of `{kind, name}`), `kinds` (array of string), `context` (object), `error_signature_sha256` (string), `request_id` (UUID).
@@ -374,11 +373,12 @@ Cairn implements ten standard MCP tools across discovery, expansion, capture, mu
    - `semantic_query` is explicit natural-language input for indexed semantic discovery only. It requires `semantic: true`, a nonblank lexical `query` and no `browse`; `query` plus `semantic_query` must fit 4,096 UTF-8 bytes, with valid UTF-8, no NUL and no truncation. Repeat the exact input on retries and pages. The client refuses a peer that does not declare `query_input_capabilities.indexed_semantic_query_v1` before submission, the server refuses the field without an indexed backend (`UNSUPPORTED_QUERY_INPUT`), and a response that does not acknowledge `cairn.semantic/20` is refused after submission: the request may already have committed; do not retry or downgrade that request, even with `semantic_query` retained. This is distinct from ordinary `semantic: true` discovery, which returns labelled lexical fallback when the backend is unavailable. See [separate lexical and semantic input](semantic-discovery.md#separate-lexical-and-semantic-input).
    - `request_id` is an optional UUID for retrying the identical search; it is not a mutation identity.
 2. **`cairn_pull`**: Reads full text or bounded byte excerpt of a memory record using receipt and handle.
-   - *Parameters*: `receipt_id` (UUID), `handle` (UUID), `span` (`{offset: int, length: int}`), `opening_bytes` (integer, 1–768), `request_id` (UUID).
+   - *Parameters*: `receipt_id` (UUID), `handle` (UUID), `span` (`{offset: int, length: int}`), `opening_bytes` (integer, 1–768), `force` (boolean), `request_id` (UUID).
+   - Repeated pulls of an already delivered record version or covered span in the same MCP session return `already_delivered: true` without spending a credit unless `force: true` is supplied or `CAIRN_RECALL_DEDUP=0` is set.
 3. **`cairn_pull_evidence`**: Discloses captured evidence object with cryptographic hash verification and optional byte span selection.
    - *Parameters*: `receipt_id` (UUID), `handle` (UUID), `evidence_id` (UUID), `expected_sha256` (64-hex digest), `span` (`{offset: int, length: int}`), `request_id` (UUID).
 4. **`cairn_remember`**: Captures explicitly selected knowledge note under authenticated profile.
-   - *Parameters*: `body` (1–65536 bytes UTF-8), `kind` (default `note`), `scope` (`repository`, `task`, `run`), `entities` (array), `pins` (object), `shareable` (boolean), `request_id` (UUID).
+   - *Parameters*: `body` (1–65536 bytes UTF-8), `kind` (`note` default, `observation`, `claim`, `lesson`, `procedure`, `decision`, or `preference`), `scope` (`repository`, `task`, `run`), `entities` (array), `pins` (object), `shareable` (boolean), `request_id` (UUID).
 5. **`cairn_edit`**: Atomically updates active Class A note, enforcing version locks and optimistic concurrency.
    - *Parameters*: `record_id` (UUID), `expected_version` (integer), `request_id` (UUID), and exactly one exclusive edit mode: `body` (string), `append` (string), `replace` (`{old_text, new_text}`), `set_sections` (map of heading title to content), `draft` (object), or `evidence_citations` (array of `{evidence_id, expected_sha256, spans}` citation objects; `[]` clears references).
 6. **`cairn_prepare_note`**: Searches candidate predecessors to inform knowledge capture without writing a note.
@@ -386,7 +386,7 @@ Cairn implements ten standard MCP tools across discovery, expansion, capture, mu
 7. **`cairn_client_info`**: Read-only inspection of running MCP facade build identity, active `search_view`, active `tool_profile`, source opening bindings, and budget allowances.
    - *Parameters*: None (`{}`).
 8. **`cairn_assess`**: Appends qualitative task assessment to an owned retrieval receipt.
-   - *Parameters*: `receipt_id` (UUID), `expected_version` (integer), `task_outcome` (string), `failure_domain` (string), `failure_kind` (string), `error_signature_sha256` (string), `method` (string), `evidence_ids` (array of UUIDs), `reason` (8–4000 chars), `request_id` (UUID).
+   - *Parameters*: `receipt_id` (UUID), `expected_version` (integer), `task_outcome` (string), `failure_domain` (string), `failure_kind` (string), `error_signature_sha256` (string), `method` (string), `evidence_ids` (array of UUIDs), `reason` (8–4000 trimmed Unicode characters), `request_id` (UUID).
 9. **`cairn_assessments`**: Reads ordered qualitative assessment history for an owned receipt in ascending version order.
    - *Parameters*: `receipt_id` (UUID).
 10. **`cairn_history`**: Inspects retained historical versions or byte excerpts of a note without operator database access.
@@ -395,15 +395,16 @@ Cairn implements ten standard MCP tools across discovery, expansion, capture, mu
 ### Tool Profiles, Search Views, and Token Budgeting
 
 - **Tool Profiles (`--tool-profile`)**:
-  - `compact/2` (default): Shortens descriptions across all ten MCP tools. In the recorded declaration-size comparison the serialized declaration array was 29.6% smaller than the full profile (7,432 bytes, 1,358 `o200k_base` proxy tokens); this is a serialized-declaration measurement, not provider tokens or task savings.
+  - `compact/2` (default): Shortens descriptions across all MCP tools.
   - `compact/1`: Shortened descriptions for `cairn_search` and `cairn_pull`, leaving other tools full.
   - `full`: Opt-out restoring full verbose tool descriptions and JSON schemas.
 - **Search View (`--search-view`)**:
   - `compact/1` (default): Emits `cairn.mcp-search-compact/1`. Retains required instructions, preview passages, handles, `pull_arguments`, paging, and budget fields while stripping repeated query text, ranking scores, and tokenizer debug metadata.
   - `full`: Opt-out emitting `cairn.mcp-search/1`.
-- **Token Budgeting (`--tokens` and `--max-tokens`)**:
-  - `--tokens` (default: 32,000): Configures default memory allowance per tool result.
-  - `--max-tokens` (default: 1,000,000): Upper limit for explicit `available_tokens` declarations and maximum pull expansion output.
+- **Token Budgeting (`--tokens`, `--max-tokens`, `--output-max-bytes`)**:
+  - `--tokens` (default: 16,000): Configures default memory allowance per tool result.
+  - `--max-tokens` (default: 160,000; configurable up to 1,000,000): Upper limit for explicit `available_tokens` declarations and maximum pull expansion output.
+  - `--output-max-bytes` (default: 12,000; `0` = unbounded; overridden by `CAIRN_MCP_OUTPUT_MAX_BYTES`, `CAIRN_TOOL_OUTPUT_MAX_BYTES`, or `CAIRN_UNBOUNDED_TOOL_OUTPUT`): Bounds non-strict tool output (`cairn_assessments` and `cairn_pull_evidence`), spooling oversized raw responses to disk.
 - **Byte Span Parameters (`span: {offset, length}`)**:
   - Accepted by `cairn_pull`, `cairn_pull_evidence`, and `cairn_history`. Allows models to read bounded excerpts (e.g., specific lines or sections) of large notes or evidence files without exhausting conversation context. `offset` is a non-negative byte offset inside the source and `length` is a positive maximum byte count; only EOF clips the range. Note pulls accept offset 0–65,535 and length 1–65,536; evidence pulls accept offset 0–1,048,575 and length 1–1,048,576; history spans use the note bounds and require an exact positive `version`. A zero or negative length is refused with `INVALID_REQUEST`. See [index and pull](index-and-pull.md#previews-and-expansion-limits) and [record history](record-history.md#read-a-passage-from-an-earlier-version).
 
@@ -422,7 +423,7 @@ tool-call metadata. Generate its TOML entry with an installed Cairn binary:
 cairn codex-config \
   --socket "$HOME/.local/share/cairn/api.sock" \
   --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$PWD" --codex-thread > /tmp/cairn-codex.toml
+  --repo "$PWD" --codex-thread > ./cairn-codex.toml
 ```
 
 Use the repository identity authorized by the profile; a worktree may need the
@@ -442,9 +443,8 @@ Optional startup is the default; `--required` makes Cairn a startup requirement.
 access, remove `cairn_remember`, `cairn_edit` and `cairn_assess` from the generated
 `enabled_tools`.
 
-Existing allowlists need `cairn_assessments` and `cairn_assess` added explicitly
-to use the [native review tools](use-outcome-loop.md#native-review-tools).
-Upgrading the executable does not rewrite configuration or bypass an allowlist.
+Existing allowlists must include `cairn_assessments` and `cairn_assess`
+explicitly to use the [native review tools](use-outcome-loop.md#native-review-tools).
 
 The output has this shape (with the selected budget and context flags in `args`):
 
@@ -498,10 +498,8 @@ For a trusted project, put the entry in `.codex/config.toml` to keep its reposit
 and token profile local to that project. Keep installation-specific paths out of
 Git. Set `required = false` if unavailable memory should not block startup.
 New conversations can use it; an already running conversation may
-need a client restart to load the new tools.
-An [actual Codex client check](verification/codex-mcp-2026-09-08.md) connected,
-listed the permitted tools, searched and pulled the exact saved lesson without
-starting a model turn. Model-selected use and task benefit remain unverified.
+need a client restart to load the new tools. Model-selected use and task benefit
+remain unverified.
 
 ## OpenCode example
 
@@ -515,7 +513,7 @@ cairn opencode-config \
   --socket "$HOME/.local/share/cairn/api.sock" \
   --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
   --repo "/projects/shared-memory" --task actual-task-id --run actual-run-id \
-  > /tmp/cairn-opencode.json
+  > ./cairn-opencode.json
 ```
 
 The output is an OpenCode JSON configuration fragment, without a Cairn response
@@ -534,7 +532,7 @@ policy removes explicit tool allowances from another configuration. Generation
 does not modify the host's files or launch a task. Regenerate with actual task/run
 IDs for each new task and keep the generated executable available.
 
-The following local-server form was verified with OpenCode 1.18.21. Substitute
+Use this local-server form in OpenCode. Substitute
 your absolute executable, socket and token paths, repository, and actual task/run
 IDs. Add the entry to the configuration owned by the launching host:
 
@@ -572,15 +570,12 @@ denying capture. See the [OpenCode MCP documentation](https://opencode.ai/docs/m
 for the configuration supported by your harness version.
 
 The facade uses the official [MCP Go SDK v1.7.0](https://github.com/modelcontextprotocol/go-sdk/tree/v1.7.0),
-including its protocol negotiation and typed input validation. The
-[verification report](verification/mcp-2026-09-08.md) distinguishes protocol tests,
-actual OpenCode tool use and remaining usefulness claims.
+including its protocol negotiation and typed input validation.
 
-A [configuration task and follow-up](verification/mcp-host-use-2026-09-08.md)
-demonstrate a curated procedure revision, native MCP use and host-run association.
-The host observes tool results and calls `link-run-retrieval` with its observer
-profile; the model keeps its ordinary agent profile. The association does not
-turn a process exit into task acceptance.
+To associate an observed retrieval with a host run, the host calls
+`link-run-retrieval` with its observer profile while the model keeps its
+ordinary agent profile. The association does not turn a process exit into task
+acceptance.
 
 Known failure signatures can also find reviewed lessons without shared query
 vocabulary. See [failure signature search](failure-signature-search.md) for the
@@ -590,8 +585,7 @@ optional `error_signature_sha256` tool field and operator sharing requirement.
 
 `cairn_prepare_note` is an explicit pre-save inspection, available through the
 MCP facade. Newly generated Codex configurations enable it; existing tool
-allowlists must add it explicitly, and long-running facades need the updated
-binary on their next normal start. This change does not deploy or restart them.
+allowlists must add it explicitly.
 The separate [OpenCode custom-tool adapter](opencode-tools.md) also exports
 `cairn_prepare_note`; its host permission must allow the tool. See that guide
 for the adapter's supported parameters and installation requirements.
@@ -666,10 +660,10 @@ native JSON (including escaped Unicode and quotes) must fit the caller's effecti
 refuses. Required context and handles are never truncated. The receipt exposes
 the smaller search/expansion cap; account for preparation output and later pulls
 against the original total, and combine this with other memory calls yourself.
-An older API that refuses the cap remains an error, with no uncapped retry.
-A facade upgrade that changes the encoded overhead also changes the underlying
-receipt cap. Reusing an earlier request UUID then returns `IDEMPOTENCY_CONFLICT`;
-start a newly budgeted request with a fresh UUID instead of reinterpreting or
+An unsupported cap remains an error, with no uncapped retry. If a facade's
+encoded preparation overhead changes, the underlying receipt cap changes too,
+so reusing an earlier request UUID returns `IDEMPOTENCY_CONFLICT`; start a
+newly budgeted request with a fresh UUID instead of reinterpreting or
 replenishing the old receipt.
 
 To keep room to pull a predecessor after preparation, add `min_pull_bytes` with
@@ -691,12 +685,8 @@ the earlier behavior and `cairn.memory-budget/1`. This is a charged allowance,
 not plain body bytes, a guaranteed successful pull, proof of relevance or
 clearance to save. Repeat the reserve on identical retries; changing it needs a
 new request UUID. Pulls spend the reserve and a retry reports the remaining
-balance. An older facade or API that rejects the field remains an error: do not
-retry without it and claim a reservation. `cairn_client_info` declares only
-`search_min_pull_bytes`; the registered `cairn_prepare_note` input schema shows
-whether this facade accepts the field.
-
-Local contract tests cover candidate inspection and correction, destination
-filtering, mandatory context, concurrent-edit refusal, history, budgets and API
-failures. They do not measure suggestion precision on real saves or establish
-CAIRN-110's closed evaluation gate. No global retrieval ranking changed.
+balance. Do not retry an unsupported reserve without `min_pull_bytes` and claim
+a reservation. `cairn_client_info` declares only `search_min_pull_bytes`; the
+registered `cairn_prepare_note` input schema shows whether this facade accepts
+the field. Preparation does not change global retrieval ranking or measure
+suggestion precision on real saves.

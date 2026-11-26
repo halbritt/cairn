@@ -72,9 +72,9 @@ and the old text must occur exactly once. `set_sections` maps Markdown `##`
 heading titles to replacement section bodies.
 
 The CLI JSON interface differs: `cairn agent revise` replaces a body,
-`append` and `replace` make targeted changes, and `edit` requires a complete
-`draft`. Use their `--help` output for request shapes. Do not send the MCP
-example unchanged to `agent edit`.
+`append`, `replace`, `set-sections`, and `cite` make targeted changes, and
+`edit` requires a complete `draft`. Use their `--help` output for request
+shapes. Do not send the MCP example unchanged to `agent edit`.
 
 `VERSION_CONFLICT` means someone changed the record after your read. Pull the
 current version and reconcile it before making a new request. Earlier versions
@@ -85,7 +85,8 @@ access checks.
 
 Attach [evidence citations](../evidence-citations.md) when a note needs a retained
 source. Citations require the source identity and digest; they do not promote an
-ordinary note into a qualified claim. Operator workflows for
-[supersession](../supersession.md), [ordinary deletion](../ordinary-delete.md),
-and [audited forgetting](../deletion.md) have separate contracts. Choose the
-operation for the intended effect; editing a body does not erase history.
+ordinary note into a qualified claim. Separate contracts govern
+[supersession](../supersession.md) (agent API for A records; operator CLI for B),
+[ordinary deletion](../ordinary-delete.md) (agent API or operator CLI for
+unreferenced A records), and [audited forgetting](../deletion.md) (operator CLI).
+Choose the operation for the intended effect; editing a body does not erase history.

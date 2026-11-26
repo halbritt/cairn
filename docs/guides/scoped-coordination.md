@@ -41,15 +41,19 @@ grants a session any capability.
 - `next-turn-notices/1` matters only if a recipient supports quiet delivery (see below).
   This recipe does not enable `work-advice/1`.
 
-- A Claude or Codex coordinator enables the compact inbox, notice batches and FYI digests
-  for its own session before dispatching work. They are off by default and are per-session
+- A Claude or Codex coordinator enables the compact inbox and either notice batches or
+  FYI digests for its own session before dispatching work (`--notice-batch` and
+  `--notice-digest` are mutually exclusive). They are off by default and are per-session
   options, so a campaign whose coordinator skips this step pays a full wake turn for every
-  notice. Use the binding configuration of the coordinator's own account:
+  notice. Use the separate `cairn-lifecycle` binary with the binding configuration of the
+  coordinator's own account:
 
   ```sh
   cairn-lifecycle coordination configure-session-inbox --config BINDING_CONFIG \
-    --agent-id "$COORD_AGENT" --compact-inbox --notice-batch --notice-digest
+    --agent-id "$COORD_AGENT" --compact-inbox --notice-batch
   ```
+
+  Pass `--notice-digest` instead of `--notice-batch` to enable FYI notice digests.
 
   It prints `"status": "configured"`, needs no restart and leaves other sessions on the
   binding unchanged. A replacement coordinator session must run it again. The session
@@ -197,8 +201,11 @@ sensitivity and forgetting.
 
 ## 6. Optional updates: quiet or deferred notices
 
-Use a notice for a routine update that needs no reply. Two existing delivery options keep
-it from interrupting a recipient:
+Use a notice for a routine update that needs no reply. Publishing a notice with
+`cairn publish --kind notice` requires `--action none|review|decide` (unless
+`CAIRN_ALLOW_OPTIONAL_NOTICE_ACTION=1` is set), and `--action none` cannot combine with
+`--notice-urgency urgent`. Two existing delivery options keep it from interrupting a
+recipient:
 
 - **Quiet delivery at the next owner input** (`--notice-delivery next_organic_turn
   --notice-expires-at EXPIRY_RFC3339`). Only a supported Codex native owner binding can
@@ -237,7 +244,7 @@ withdraw the request.
 ## Team hierarchy routing and filtered topic subscriptions
 
 For multi-lead campaigns where workers report to sub-leads instead of waking the root
-coordinator on every routine update (schema 091), configure a campaign hierarchy and
+coordinator on every routine update, configure a campaign hierarchy and
 filtered topic subscriptions:
 
 ```sh
@@ -293,7 +300,7 @@ it or when the root's subscription matches (`--blockers`).
 ## Hosted campaign ledger and operation idempotency
 
 Coordinators, sub-leads, and workers keep campaign state in Cairn's hosted ledger
-(schema 093) rather than in workspace journals. **Do not keep private intent, result, or
+rather than in workspace journals. **Do not keep private intent, result, or
 receipt files on disk**: private per-message files accumulate thousands of files and force
 repeated context compactions. A coordinator or replacement session in a fresh empty
 directory reconstructs assignments, owners, open decisions, blockers, holds, derived
@@ -339,7 +346,7 @@ cairn ledger get --token-file "$COORD_TOKEN_FILE" \
 
 ## Coordinator role inbox and ledger-driven session handoff
 
-Every campaign binds a stable role inbox address `role/CAMPAIGN_NAME/root` (schema 094).
+Every campaign binds a stable role inbox address `role/CAMPAIGN_NAME/root`.
 Leads and workers report to `--to role/CAMPAIGN_NAME/root` (or `--reply-to
 role/CAMPAIGN_NAME/root`), so replacing a long-running coordinator session never requires
 notifying subordinates of a new inbox UUID.
@@ -411,18 +418,12 @@ CAIRN_TEST_ONLY='check_scoped_coordination_recipe' make test-integration
 
 The fixture does not exercise quiet delivery to a supported native recipient. The native
 fixtures listed in [work coordination](../operator/work-coordination.md) cover that. It
-makes no claim about task quality, model cost or efficiency, and it changes no
-token-efficiency rollout decision.
+makes no claim about task quality, model cost, or efficiency.
 
-## Related work
+## Admission and reservations
 
-This recipe builds on the compact notice and response envelopes (CAIRN-216), routine-notice
-urgency and deferral (CAIRN-220) and bounded notice batches (CAIRN-221). It also builds on
-the work view, artifacts, waits, quiet notices and advice review from CAIRN-279 through
-CAIRN-284. The token-efficiency rollout gate (CAIRN-227) remains in force; this recipe
-does not enable its optional opt-ins. Event admission limits are a separate
-contract described in [event pressure and admission](../event-admission.md);
-the grouped request reserves [closure capacity](../closure-reservations.md) for
-each member's reply, and creating the wait reserves its terminal notice.
-Enforced policy bounds those reservations while allowing their eligible replies
-and notices to drain at saturation.
+Event admission limits are a separate contract described in
+[event pressure and admission](../event-admission.md); the grouped request reserves
+[closure capacity](../closure-reservations.md) for each member's reply, and creating the
+wait reserves its terminal notice. Enforced policy bounds those reservations while allowing
+their eligible replies and notices to drain at saturation.

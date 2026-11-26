@@ -46,9 +46,7 @@ read, not a filesystem transaction or continuous freshness check.
 
 No flags preserves the existing JSON-on-stdin mode. Both file commands support
 the full decoded 1 MiB cap; operator JSON input retains its separate 128 KiB
-encoded limit. The API must support `body_base64` (introduced in `386eae1`).
-This CLI feature needs no API restart or schema migration when that version is
-already running.
+encoded limit.
 
 ## Construct a JSON capture request
 
@@ -76,16 +74,11 @@ text and base64 is different request intent, even if decoded bytes match.
 Base64 input rejects invalid characters, noncanonical padding bits, missing
 required padding, line breaks and simultaneous nonempty `body`. Empty sources
 and decoded data above 1 MiB refuse before reserving the request identity.
-The limit applies to decoded bytes; base64 does not raise it. Existing text-only
-requests retain their earlier retry identity. Older servers reject the new field;
-upgrade the API before using it. No schema migration is needed.
-
-Direct Go callers must also use `BodyBase64` for non-UTF-8 bytes. Such bytes in
-`Body` now refuse, including retries of that legacy input form: JSON request
-hashing cannot distinguish all invalid UTF-8 strings. Already captured evidence
-is not rewritten or removed. Operator JSON `capture-evidence` retains its 128 KiB encoded request limit;
-use its `--file` mode or `agent evidence` for sources needing the full 1 MiB
-decoded allowance.
+The limit applies to decoded bytes; base64 does not raise it. Direct Go callers
+must also use `BodyBase64` for non-UTF-8 bytes; non-UTF-8 bytes in `Body` are
+refused. Operator JSON `capture-evidence` retains its 128 KiB encoded request
+limit; use its `--file` mode or `agent evidence` for sources needing the full
+1 MiB decoded allowance.
 
 Capture returns an evidence identity and checksum, not an automatic note or a
 qualified claim. Existing explicit citation, destination and pull checks still
@@ -142,7 +135,7 @@ UTF-8 payloads use `body`. Explicit binary payloads use `body_base64` and leave
 `body` empty, so JSON encoding cannot silently alter the captured bytes. Expected
 and actual digests remain available for comparison.
 
-Converting a failure/recovery proposal now verifies its selected source evidence
+Converting a failure/recovery proposal verifies its selected source evidence
 again, in addition to checking assessment versions. Unavailable evidence refuses
 conversion. Deferral, dismissal and inspection remain available; a checksum does
 not approve a lesson or confer promotion authority.
@@ -153,4 +146,5 @@ also compares the current object with that citation-time digest; an object-level
 check alone cannot revalidate a changed citation.
 
 Managed large artifacts, broader source relations, scheduled refresh jobs, class D
-payload deletion and complete dependent qualification remain unfinished.
+evidence payload deletion and complete dependent qualification are outside this
+contract.

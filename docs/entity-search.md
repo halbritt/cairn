@@ -23,8 +23,9 @@ cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" search \
 
 The authenticated API accepts `draft.entities` on `create` and `edit`, and
 `entities` on `compile` and `index`. MCP and native OpenCode expose `entities`
-on `cairn_remember` and `cairn_search`. Search hints are never copied into captures.
-The local profile's configured repository must match the requested repository.
+on `cairn_remember`, `cairn_prepare_note`, and `cairn_search`. Search hints are
+never copied into captures. The local profile's configured repository must match
+the requested repository.
 
 ## Names and matching
 
@@ -77,17 +78,18 @@ frozen version's association digest as well as its body. Retained execution also
 checks the entity intent before binding or launching a child. A changed note
 version requires a fresh search and pull.
 
-Migration 034 adds the versioned association table. Ordinary deletion removes it
+Versioned associations are stored in PostgreSQL. Ordinary deletion removes them
 with the note; audited forgetting excludes access and purges association names
 with record bodies. Existing backup and external-copy residuals still apply.
 
-Upgrade database writers and ordinary clients together before using associations:
-older writers can drop metadata they do not understand. Packages carrying entity
-intent or delivered associations use `cairn.semantic/13`, or
-`cairn.semantic/14` when advisory conflicts are enabled; entity queries use
-`lexical-scope-recency/7` or `semantic-scope-recency/4`. Consumers that reject
-unknown schemas need an update before receiving those packages. Existing receipts
-remain replayable, including receipts from older readers that ignored association
-metadata. Searches without entity intent or delivered associations retain
-their previous schema and ranking. Automatic file-touch collection and durable
-cross-task benefit remain open requirements.
+Nonempty lexical context index searches with entity hints use
+`cairn.semantic/17` with `binary-idf-scope-recency/8`; ready persistent semantic
+index searches use `cairn.semantic/19` (or `cairn.semantic/20` with
+`semantic_query`) and `interleaved-scope-recency/8`. Empty-query entity index
+searches, whole-body `compile`, and request-scoring semantic discovery use
+`cairn.semantic/13` (or `cairn.semantic/14` when advisory conflicts are enabled)
+with `lexical-scope-recency/7` or `semantic-scope-recency/4`. Searches without
+entity intent or delivered associations retain their normal schema and ranking.
+OpenCode provides opt-in [recent file hints](recent-file-hints.md); automatic
+collection across other harnesses and measured cross-task benefit remain open on
+the [roadmap](roadmap.md).

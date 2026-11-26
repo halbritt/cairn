@@ -169,7 +169,7 @@ the retained registry, never from a purge command's arbitrary path argument.
 This follows Cairn's trusted local-user model; it does not protect against a
 malicious process with the operator's OS account and database credentials.
 
-Runs created before migration 017 remain unregistered residuals until an
+Unregistered historical runs remain residuals until an
 operator [adopts](#adopting-a-historical-context-file) one explicitly. Their
 paths are not guessed or silently adopted. Missing/replaced ownership directories
 remain failed effects until their location/ownership is resolved. Restoring a
@@ -185,13 +185,3 @@ narrow case described above, backup inventory, and automatic retention remain
 outside this file-custody contract. Use [restore admission](restore-admission.md)
 and [recovery reapplication](recovery-reapplication.md) to reconcile withdrawals
 that occurred after a restored backup.
-
-## Verification
-
-The PostgreSQL race suite runs the real wrapper and confirms its context is a
-purge target while its outcome survives. Filesystem tests exercise identity and
-marker replacement, symlink isolation, a live writer lock, partial writes, stale
-previews and late registration. The lifecycle test kills an observed CLI worker
-after unlink and before DB completion, retries it, and restores a pending-effect
-backup. These are process-crash and exact-slot deletion checks, not physical
-media erasure or a complete power-loss campaign.

@@ -14,8 +14,8 @@ The conservative UTF-8 byte token bound remains unchanged. Policies that also
 contain [instruction category limits](instruction-limits.md) use `local-loop/3`.
 
 Inspect the current policy with `cairn policy REPO`. A repository without an
-explicit revision retains `local-loop/1` and the original budget; migration does
-not issue authority or rewrite existing receipts. To establish its first revision:
+explicit revision retains `local-loop/1` and the original budget; no authority
+is issued implicitly and existing receipts are unchanged. To establish its first revision:
 
 ```json
 {
@@ -100,7 +100,6 @@ Their C events enter unsigned audit checkpoints; as with existing checkpoints,
 membership verifies audit metadata, not policy-rule payload commitments. Backup
 and restore retain policy revisions, rollback references and receipt joins.
 
-Versioning, rollback, affected-run queries and instruction-category caps implement
-part of roadmap L3. C waivers and the full unenforceability decision table remain
-open. This rule format cannot weaken authority, evidence, sensitivity, destination
-or mandatory runtime gates, authorize broader sharing, or introduce learned ranking.
+C waivers and the full unenforceability decision table are not implemented. This
+rule format cannot weaken authority, evidence, sensitivity, destination or
+mandatory runtime gates, authorize broader sharing, or introduce learned ranking.

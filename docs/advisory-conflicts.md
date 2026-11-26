@@ -16,7 +16,7 @@ cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" search \
   --advisory-conflicts 'connection strategy'
 ```
 
-The flag also works on `context`, `agent start`, and local or authenticated
+The flag also works on `search`, `agent start`, and local or authenticated
 `run`. Raw compile/index requests use the same Boolean field. This option is
 restricted to `purpose: context`. Retained execution must repeat the original
 advisory-conflict intent. Repeat it on search retries and later pages too.
@@ -84,10 +84,10 @@ Audited forgetting and purge cover bodies returned in `competing`, including
 cached responses. Full [conflict inspection](conflict-inspection.md) remains a
 separate local operation because its opening and resolution context can be private.
 
-This opt-in uses semantic schema `cairn.semantic/14`. The API, CLI and native
-adapter must support it together; an older retained-package consumer is not
-qualified by its support for schema 13. No database migration is required beyond
-034. Omitting the option preserves previous formats and default dispute omission.
+This opt-in uses semantic schema `cairn.semantic/14`, or `cairn.semantic/17`,
+`cairn.semantic/19`, or `cairn.semantic/20` (with `advisory_conflicts: true`) when
+combined with IDF lexical or indexed semantic retrieval. Omitting the option
+preserves default dispute omission.
 
-Richer interested-party resolution and observed outcomes
-for work performed under an open conflict remain on the roadmap.
+Richer interested-party resolution and observed outcomes for work performed under
+an open conflict remain on the [roadmap](roadmap.md).

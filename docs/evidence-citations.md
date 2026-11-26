@@ -65,12 +65,6 @@ pulls expose current references; retained receipts and local evidence-impact
 inspection can show earlier cited versions. The ordinary `history` command
 continues to return note body/history metadata, not source bodies or citations.
 
-Upgrade the CLI, running API and native adapter together before using this path.
-Older APIs do not implement `cite`; older edit implementations can drop current
-A references and older compilers omit them. Do not mix old store writers with
-cited ordinary notes. There is no database migration or new semantic payload
-shape; existing qualified references and frozen receipts keep their behavior.
-
 ## Qualified claims
 
 A qualified claim can retain the exact passages that supported its version.
@@ -128,15 +122,12 @@ reference is divergent even when the object's own byte check passes. Object-leve
 checks the citation-time identity. Historical recompilation uses frozen earlier
 facts and does not reinterpret a prior receipt using today's source state.
 
-Migration 030 adds nullable metadata without backfilling older links. On an older
-reference, absent `citation` means its citation-time metadata was not retained;
-its existing digest and availability behavior remain. Standalone capture and
+Legacy links without retained citation metadata omit the `citation` field while
+keeping their existing digest and availability behavior. Standalone capture and
 evidence inspection also omit `citation` because they do not select a citing
-claim. Old request hashes, cached responses and historical receipts remain
-compatible after upgrade. Back up before migrating. Older binaries reject the
-newer schema, so replacing the executable alone is not a schema rollback.
+claim.
 
 This makes retained support easier to locate and compare. It does not establish
 that the passage justifies the claim, that an external source is current, or that
 memory improved a task. Managed artifacts above the inline limit, broader source
-relations and dependent qualification remain open.
+relations and dependent qualification are outside this contract.

@@ -82,20 +82,13 @@ OpenCode can truncate a large tool response and report `metadata.outputPath`.
 Its saved artifact contains the complete response; read it within the explicit
 handoff allowance. This harness behavior is separate from the Cairn receipt limit.
 
-Inbox-bound lifecycle recall loads the engine pinned in its
-`cairn.inbox-recall-binding/2` manifest. Updating a harness hook command alone
-does not update that engine's recall instructions. When installing revised
-guidance, check both paths and validate the manifest's engine hash, complete lifecycle bundle, and profile
-bindings. Changing the cue does not settle a held inbox delivery.
+Existing receipts cannot be enlarged. Do not retry an unsupported
+`first-fitting-whole/2` request by changing it to `/1` while keeping the larger
+allocation: `/1` retains its 24,000-byte ceiling regardless of declared budget.
 
-Existing receipts cannot be enlarged. Older APIs reject the new policy value.
-Do not retry by changing it to `/1` and claim the larger allocation: `/1` keeps
-its 24,000-byte ceiling even with a larger declared budget.
-
-The field is explicit: omitting it preserves the legacy preview allocation and
-numeric-reserve behavior. Changing it requires a new request UUID; old retries
-and receipts keep their original semantics. An older API or facade may reject
-the option. Never silently drop the policy or cap on retry.
+The field is explicit: omitting it preserves preview allocation and
+numeric-reserve behavior. Changing it requires a new request UUID; retries keep
+their original semantics. Never silently drop the policy or cap on retry.
 
 The API version response advertises the separate optional
 `inspection_capabilities` declaration. Existing `retrieval_capabilities/1`

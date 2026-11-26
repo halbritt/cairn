@@ -21,8 +21,6 @@ cannot regain compilation eligibility merely by adding another relation layer.
 The restriction follows exact versions; a later independent revision without
 those links is not automatically assigned its predecessor's exclusions.
 Forgetting and relation writers order through the affected record generations.
-Migration 026 repairs missing exclusions created by older binaries; keep old
-writers stopped during upgrade.
 
 `cairn demote` accepts JSON `request_id`, `record_id`, `expected_version`, and
 `grant_id`. The existing `correct` capability authorizes lowering an active B
@@ -40,8 +38,7 @@ Retraction previews list those affected versions, their supporting evidence and
 their retained uses. The cap is 1,000 versions, 1,000 evidence references and
 1,000 uses. A fingerprint of the dependency set,
 current lifecycle/version and exposure generations rejects a preview after new
-links, dependent edits or dependent exposures. Old preview tokens issued before
-migration 013 must be refreshed. This does not certify that a person reviewed
+links, dependent edits or dependent exposures. This does not certify that a person reviewed
 the preview or accepted the impact.
 
 `supporting_evidence` groups references by exact `record_id` and `version`.
@@ -51,8 +48,7 @@ metadata: source UUID, citation-time digest and passages when present, witness,
 integrity state, and last persisted check generation/time. Retained inline bytes
 are checked through the same reader used for compilation; neither source truth
 nor upstream freshness is inferred. Captured bodies and source labels are excluded.
-An empty array means no supporting references in the affected set; absence of the
-field identifies an older preview response.
+An empty array means no supporting references in the affected set.
 
 Each version-to-source link counts toward the evidence limit, including references
 to a source shared by several versions. The complete link count is checked before
@@ -67,8 +63,7 @@ profiles remain refused. A preview grants no mutation authority. Evidence refres
 through `check-evidence` advances affected record generations and invalidates an
 older token. Ordinary version edits and new relations still invalidate it too.
 Existing tokens keep their original lifetime; obtain a fresh preview to inspect
-the new evidence inventory. No schema migration is required, but the API must be
-updated for authenticated responses.
+the new evidence inventory.
 
 The standalone `impact` command remains a paginated direct-use inspection.
 `preview-retract` supplies the broader known-relation analysis required before a
@@ -76,8 +71,8 @@ retraction. [Ordinary deletion](ordinary-delete.md) removes unreferenced A
 notes; [D forgetting and purge effects](deletion.md) cover retained record bodies
 and known managed copies. [Evidence impact](evidence-impact.md) traces exact
 captured-evidence references through the same versioned relations and lists their
-recorded uses. Source-span predicates and automatic dependent qualification remain
-unfinished. Retracting a source
+recorded uses. Source-span predicates and automatic dependent qualification are
+not implemented. Retracting a source
 does not automatically revoke every dependent
 instruction; authority and affected consumers still require their own review.
 

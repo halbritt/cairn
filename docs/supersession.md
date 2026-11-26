@@ -55,7 +55,7 @@ truncation remains explicit. Unknown derivations are not inferred.
 The transition metadata remains readable after body forgetting. Retained
 replacement and affected-version references prevent ordinary deletion from
 erasing this history; the D forgetting path still applies. Reasons are retained
-metadata and remain within the unfinished metadata-redaction scope.
+metadata and are not removed by payload forgetting.
 
 The implementation uses a dedicated transition because a plain relation leaves
 the old claim eligible, and separate retire/link calls can leave an unlinked
@@ -65,8 +65,7 @@ later forgetting of the obsolete source from invalidating independent support.
 These choices preserve the existing authority and historical-read contracts;
 they do not introduce a general event ledger.
 
-This implements the class-proportional replacement path in the accepted design
-§8.5. [Scope authorization](scope-authorization.md) is a separate governed path.
-Supersession does not implement automatic dependent qualification,
-notice acknowledgement, or fresh-restore reapplication. The external recovery
-record continues to cover governance/C/D withdrawals, not A/B retirement history.
+[Scope authorization](scope-authorization.md) is a separate governed path.
+Supersession does not automatically qualify dependents, acknowledge notices, or
+perform fresh-restore reapplication. The external recovery record covers
+governance/C/D withdrawals, not A/B retirement history.

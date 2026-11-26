@@ -4,8 +4,7 @@ Scope broadening is a C authority transition. It changes where an existing
 record may apply; it does not promote the record or replace its supporting
 qualification. `authorize-scope` requires a live `issue` grant, an exact source
 version, a current impact preview, an explicit target scope and applicability,
-and a reason. The existing `issue` capability owns this C decision; installed
-grants gain no new capability through migration.
+and a reason. The existing `issue` capability owns this C decision.
 
 After `cairn preview-retract RECORD_UUID`, submit JSON to `cairn authorize-scope`:
 
@@ -66,8 +65,7 @@ not a chain of every earlier edit. Retained events and versions explain prior
 decisions. Keeping scope authority separate prevents an issuer from silently
 replacing B qualification; replacing the current scope grant avoids requiring
 complete ancestry. A new version avoids changing an already consumed version's
-scope. These decisions implement the accepted C broadening gate while preserving
-the withdrawn universal-ledger boundary.
+scope.
 
 The C event and its version links are retained history. An otherwise ordinary A
 record with scope-authorization history therefore uses D forgetting instead of
