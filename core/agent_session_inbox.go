@@ -183,6 +183,15 @@ func autoSettleActionNoneDeliveryTx(ctx context.Context, tx pgx.Tx, deliveryID, 
 		strings.Contains(body, "[... truncated ") {
 		return autoSettleUnsafe, nil
 	}
+	if _, isCompact := DetectCompactProtocol(body); isCompact {
+		res := ValidateCD1Message(body, CD1ValidateOptions{
+			EnvelopeKind:   kind,
+			EnvelopeAction: action,
+		})
+		if !res.Valid {
+			return autoSettleUnsafe, nil
+		}
+	}
 	return autoSettleHandled, settleDelivery(ctx, tx, deliveryID, "handled", "auto_settled_none", nil, nil, false)
 }
 

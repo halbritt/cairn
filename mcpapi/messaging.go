@@ -229,6 +229,7 @@ type sendArgs struct {
 	Supersedes    string                 `json:"supersedes,omitempty" jsonschema:"Sender-scoped topic key superseded by this notice. Notices only."`
 	ExpectNextBy  string                 `json:"expect_next_by,omitempty" jsonschema:"Optional RFC3339 time when the next update is expected. Notices only."`
 	ExpectBy      string                 `json:"expect_by,omitempty" jsonschema:"Optional RFC3339 advisory deadline when completion or response is expected. Requests only."`
+	Plain         bool                   `json:"plain,omitempty" jsonschema:"Force prose mode: render any cd1 body to prose before sending."`
 	AgentID       string                 `json:"agent_id,omitempty" jsonschema:"Your registered agent UUID. Only when automatic session lookup fails."`
 	ExecutionID   string                 `json:"execution_id,omitempty" jsonschema:"Your current execution UUID. Required with agent_id."`
 }
@@ -300,6 +301,28 @@ func (t messagingTools) send(ctx context.Context, request *mcp.CallToolRequest, 
 	}
 	if args.Body != "" && (len(args.Body) > 65536 || strings.TrimSpace(args.Body) == "" || !utf8.ValidString(args.Body)) {
 		return toolResult(nil, messagingError("INVALID_REQUEST", "body requires 1-65536 bytes of nonblank UTF-8 text"), 0)
+	}
+	if args.Body != "" {
+		if args.Plain || os.Getenv("CAIRN_CD1_PLAIN") == "1" {
+			rendered, rErr := core.PlainProseFromBody(args.Body, core.CD1ValidateOptions{
+				EnvelopeKind: args.Kind, EnvelopeAction: args.Action,
+			})
+			if rErr != nil {
+				return toolResult(nil, messagingError("INVALID_REQUEST", rErr.Error()), 0)
+			}
+			if len(rendered) > 65536 {
+				return toolResult(nil, messagingError("INVALID_REQUEST", "rendered prose exceeds 65536-byte body limit"), 0)
+			}
+			args.Body = rendered
+		} else if proto, isCompact := core.DetectCompactProtocol(args.Body); isCompact && os.Getenv("CAIRN_ALLOW_UNVALIDATED_CD1") != "1" {
+			if (args.CausationID == "" && args.CorrelationID == "") || (proto != core.CD1Proto && proto != core.CairnC1Proto) {
+				if res := core.ValidateCD1Message(args.Body, core.CD1ValidateOptions{
+					EnvelopeKind: args.Kind, EnvelopeAction: args.Action,
+				}); !res.Valid {
+					return toolResult(nil, messagingError("INVALID_REQUEST", "invalid cd1 body: "+strings.Join(res.Errors, "; ")), 0)
+				}
+			}
+		}
 	}
 	if err := core.ValidateEventSummary(args.Summary); err != nil {
 		return toolResult(nil, err, 0)

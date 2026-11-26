@@ -235,7 +235,7 @@ func (c *CLI) writeBoundedCompactRead(out io.Writer, readOut *value.Value, maxBy
 
 func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.Writer) (int, error) {
 	const prog = "cairn-inbox"
-	a, err := parseCLI(argv, prog, map[string]int{"--code": 1, "--item": 1, "--output-max-bytes": 1, "--full-output": 0})
+	a, err := parseCLI(argv, prog, map[string]int{"--code": 1, "--item": 1, "--output-max-bytes": 1, "--full-output": 0, "--plain": 0})
 	if err != nil {
 		return 0, err
 	}
@@ -279,8 +279,8 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	if a.has("--item") && op != "read" && op != "settle" {
 		return 0, nativeRefusal("INVALID_REQUEST", "--item applies only to read or settle")
 	}
-	if op != "read" && (a.has("--output-max-bytes") || a.has("--full-output")) {
-		return 0, nativeRefusal("INVALID_REQUEST", "--output-max-bytes and --full-output apply only to read")
+	if op != "read" && (a.has("--output-max-bytes") || a.has("--full-output") || a.has("--plain")) {
+		return 0, nativeRefusal("INVALID_REQUEST", "--output-max-bytes, --full-output and --plain apply only to read")
 	}
 	outputMaxBytes, err := c.compactCommandOutputMax(a)
 	if err != nil {
@@ -517,7 +517,7 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 		return 0, nativeRefusal("UNSUPPORTED_CONTROL", "request deliveries complete via finish_reply, not compact settle or advance")
 	}
 	if value.SameText(attempt.Get("admission_kind"), "digest") {
-		return c.compactDigestOperation(ctx, config, dir, handle, op, disposition, a.get("--code"), a.get("--item"), outputMaxBytes, native, attempt, delivery, out)
+		return c.compactDigestOperation(ctx, config, dir, handle, op, disposition, a.get("--code"), a.get("--item"), outputMaxBytes, a.has("--plain"), native, attempt, delivery, out)
 	}
 	if a.has("--item") {
 		return 0, nativeRefusal("INVALID_REQUEST", "--item applies only to notice digests")
@@ -585,7 +585,7 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 		if hdr := nativeMessageHeaderValue(event); hdr != nil {
 			readOut.Set("header", hdr)
 		}
-		readOut.Set("body", body)
+		readOut.Set("body", value.Text(c.maybeRenderCD1Prose(config, event, nativeText(body), a.has("--plain"))))
 		for _, k := range []string{"summary", "action", "supersedes", "expect_next_by", "expect_by", "task_deadline"} {
 			if v := event.Get(k); value.Truth(v) {
 				readOut.Set(k, v)

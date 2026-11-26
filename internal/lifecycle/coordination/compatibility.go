@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 
+	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/lifecycle/admission"
 	"github.com/halbritt/cairn/internal/lifecycle/binding"
 	"github.com/halbritt/cairn/internal/lifecycle/journal"
@@ -2506,7 +2507,29 @@ func (c *CLI) renderCompactAttemptContext(ctx context.Context, config *value.Val
 		}
 		return c.renderUnavailableCompactSource(header, handle, ce.Code, target, native)
 	}
-	return c.renderAvailableCompactSource(header, hdrLine, handle, nativeText(bodyVal), target, native)
+	return c.renderAvailableCompactSource(header, hdrLine, handle, c.maybeRenderCD1Prose(config, event, nativeText(bodyVal), false), target, native)
+}
+
+func (c *CLI) maybeRenderCD1Prose(config, event *value.Value, body string, forcePlain bool) string {
+	if _, isCompact := core.DetectCompactProtocol(body); !isCompact {
+		return body
+	}
+	harness := nativeText(config.Get("harness"))
+	proseFallback := forcePlain || c.env("CAIRN_CD1_PLAIN") == "1" || value.Truth(config.Get("cd1_prose_fallback")) || (harness != "codex" && harness != "claude")
+	if !proseFallback {
+		return body
+	}
+	envKind := nativeText(event.Get("kind"))
+	envAction := nativeText(event.Get("action"))
+	evID := nativeText(event.Get("event_id"))
+	rendered, expanded := core.RenderCD1OrExpandFallback(body, core.CD1ValidateOptions{
+		EnvelopeKind:   envKind,
+		EnvelopeAction: envAction,
+	}, evID, "", "")
+	if !expanded {
+		return rendered
+	}
+	return "[cd1 prose fallback; expansion recommended]\n" + rendered + "\n---\n" + body
 }
 
 func (c *CLI) renderUnavailableCompactSource(header, handle, code, target string, native *value.Value) (*value.Value, error) {

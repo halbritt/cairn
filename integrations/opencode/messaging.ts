@@ -294,6 +294,7 @@ export const send = validatedTool({
     supersedes: z.string().optional().describe("Sender-scoped topic key (1-128 ASCII letters, digits or _.:/-) that supersedes older pending notices from you. Notices only."),
     expect_next_by: z.string().optional().describe("Optional RFC3339 timestamp when the next update is expected. Notices only."),
     expect_by: z.string().optional().describe("Optional RFC3339 advisory deadline when completion or response is expected. Requests only."),
+    plain: z.boolean().optional().describe("Force plain prose mode (off-switch for cd1 compact bodies)."),
     ...sessionOverrideFields,
   },
   async execute(args, context) {
@@ -307,6 +308,41 @@ export const send = validatedTool({
       const length = Buffer.byteLength(args.body, "utf8")
       if (length < 1 || length > 65536 || args.body.trim() === "" || /[\uD800-\uDFFF]/u.test(args.body)) {
         throw new Error("INVALID_REQUEST: body requires 1-65536 bytes of nonblank UTF-8 text")
+      }
+      if (!args.plain && process.env.CAIRN_CD1_PLAIN !== "1" && process.env.CAIRN_ALLOW_UNVALIDATED_CD1 !== "1") {
+        const firstLine = args.body.split("\n").map(l => l.trim()).find(Boolean) ?? ""
+        const headTok = firstLine.split(/\s+/, 1)[0] ?? ""
+        if (/^cd[0-9]+$/.test(headTok) && headTok !== "cd1") {
+          throw new Error(`INVALID_REQUEST: unsupported cd1 protocol version ${headTok}; emit expand or use plain prose`)
+        }
+        if (headTok === "cd1") {
+          const actMap: Record<string, string> = {
+            none: "none", info: "none", note: "none",
+            review: "review",
+            decide: "decide", work: "decide", construct: "decide", expand: "decide",
+          }
+          const tokens = firstLine.split(/\s+/)
+          for (const tok of tokens.slice(4)) {
+            if (tok.startsWith("act=")) {
+              const cd1Act = tok.slice(4)
+              const mapped = actMap[cd1Act]
+              if (!mapped) {
+                throw new Error(`INVALID_REQUEST: invalid cd1 act=${cd1Act}`)
+              }
+              if (kind === "notice" && args.action && mapped !== args.action) {
+                throw new Error(`INVALID_REQUEST: cd1 act=${cd1Act} maps to ${mapped}, disagreeing with envelope action=${args.action}`)
+              }
+            }
+          }
+          if (kind === "notice" && args.action === "none") {
+            for (const rawLine of args.body.split("\n").slice(1)) {
+              const op = rawLine.trim().split(/\s+/, 1)[0] ?? ""
+              if (["req", "if", "stop", "dec", "blk", "q", "ho", "expand"].includes(op)) {
+                throw new Error(`INVALID_REQUEST: notice action none forbids cd1 opcode ${op}`)
+              }
+            }
+          }
+        }
       }
       if (length > 280 && (!args.summary || args.summary === "")) {
         throw new Error("INVALID_REQUEST: summary (1-280 single-line UTF-8 bytes) is required when body exceeds 280 bytes; state what changed in summary and keep uncompressed details in body")

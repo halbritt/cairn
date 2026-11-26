@@ -102,6 +102,9 @@ func ValidateConfig(config *value.Value) (*value.Value, error) {
 	if v := config.Get("remind_unacknowledged_turn_end"); v != nil && v.Kind != value.Bool {
 		return fail("remind_unacknowledged_turn_end requires a boolean")
 	}
+	if v := config.Get("cd1_prose_fallback"); v != nil && v.Kind != value.Bool {
+		return fail("cd1_prose_fallback requires a boolean")
+	}
 	compactCapable := nativeContains([]string{"codex", "claude", "agy", "opencode", "hermes"}, h) && value.Truth(config.Get("native_delivery"))
 	if v := config.Get("compact_inbox_version"); v != nil && (v.Kind != value.Int || v.Integer != "1" || !compactCapable) {
 		return fail("compact_inbox_version 1 requires supported native delivery")

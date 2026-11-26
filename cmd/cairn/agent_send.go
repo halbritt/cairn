@@ -20,7 +20,7 @@ import (
 )
 
 const sendHelp = `cairn agent [connection flags] send (--campaign NAME --op-key KEY | --journal ABSOLUTE_PATH) --repo COLLECTION
-  --stdin --kind EVENT_KIND [--shareable] [--source-kind NOTE_KIND]
+  --stdin --kind EVENT_KIND [--shareable] [--source-kind NOTE_KIND] [--plain]
   (--to PRINCIPAL | --resolution FILE | --topic TOPIC | --pool POOL)
   [--workspace PATH --harness NAME --model NAME --capability NAME]
   [--summary TEXT] [--blocker] [--action none|review|decide] [--supersedes TOPIC_KEY] [--expect-next-by RFC3339]
@@ -153,6 +153,7 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	noticeSupersedes := f.String("supersedes", "", "sender-scoped notice topic key superseded by this notice")
 	noticeExpectNextBy := f.String("expect-next-by", "", "expected next update instant for notice (RFC3339)")
 	requestExpectBy := f.String("expect-by", "", "advisory completion or response deadline for request (RFC3339)")
+	plain := f.Bool("plain", false, "prose mode: render any cd1 body to human-readable prose before sending")
 	var capabilities []string
 	f.Func("capability", "pool capability; repeat", func(value string) error { capabilities = append(capabilities, value); return nil })
 	if err := f.Parse(args); err != nil {
@@ -255,6 +256,24 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	}
 	if len(body) == 0 || len(body) > 65536 || strings.TrimSpace(string(body)) == "" || !utf8.Valid(body) {
 		return nil, invalid("send source requires 1-65536 bytes of nonblank UTF-8 text")
+	}
+	if *plain || os.Getenv("CAIRN_CD1_PLAIN") == "1" {
+		rendered, rErr := core.PlainProseFromBody(string(body), core.CD1ValidateOptions{
+			EnvelopeKind: *kind, EnvelopeAction: *noticeAction,
+		})
+		if rErr != nil {
+			return nil, invalid(rErr.Error())
+		}
+		if len(rendered) > 65536 {
+			return nil, invalid("rendered prose exceeds 65536-byte body limit")
+		}
+		body = []byte(rendered)
+	} else if _, isCompact := core.DetectCompactProtocol(string(body)); isCompact && os.Getenv("CAIRN_ALLOW_UNVALIDATED_CD1") != "1" {
+		if res := core.ValidateCD1Message(string(body), core.CD1ValidateOptions{
+			EnvelopeKind: *kind, EnvelopeAction: *noticeAction,
+		}); !res.Valid {
+			return nil, invalid("invalid cd1 body: " + strings.Join(res.Errors, "; "))
+		}
 	}
 	if len(body) > core.MaxEventSummaryBytes && *eventSummary == "" {
 		return nil, invalid("send requires --summary (1-280 single-line UTF-8 bytes) when body exceeds 280 bytes; state what changed in --summary and keep uncompressed details in body")

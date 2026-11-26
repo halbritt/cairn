@@ -124,7 +124,7 @@ func (c *CLI) renderDigestAttemptContext(ctx context.Context, config *value.Valu
 			itemHeaders = append(itemHeaders, hdr+fmt.Sprintf(" Source unavailable (%s).", ce.Code))
 			continue
 		}
-		bodyText := nativeText(bodyVal)
+		bodyText := c.maybeRenderCD1Prose(config, ev, nativeText(bodyVal), false)
 		if idx == 0 {
 			firstRawBody = bodyText
 		}
@@ -437,7 +437,7 @@ func (c *CLI) markDigestJournalCommitted(dir string, native, attempt, delivery *
 	return c.writeState(intentPath, rec)
 }
 
-func (c *CLI) compactDigestOperation(ctx context.Context, config *value.Value, dir, handle, op, disposition, code, itemSelector string, outputMaxBytes int, native, attempt, delivery *value.Value, out io.Writer) (int, error) {
+func (c *CLI) compactDigestOperation(ctx context.Context, config *value.Value, dir, handle, op, disposition, code, itemSelector string, outputMaxBytes int, forcePlain bool, native, attempt, delivery *value.Value, out io.Writer) (int, error) {
 	if !value.SameText(native.Get("admission_kind"), "digest") {
 		return 0, nativeRefusal("INVALID_HOST", "compact inbox delivery changed")
 	}
@@ -486,12 +486,12 @@ func (c *CLI) compactDigestOperation(ctx context.Context, config *value.Value, d
 		return 0, c.output(out, nativeMap("schema", "cairn.compact-inbox/1", "ok", true, "digest", true, "context", native), false)
 	}
 	if op == "read" {
-		return c.compactDigestRead(ctx, config, dir, attempt, itemsVal.Items, itemSelector, outputMaxBytes, out)
+		return c.compactDigestRead(ctx, config, dir, attempt, itemsVal.Items, itemSelector, outputMaxBytes, forcePlain, out)
 	}
 	return c.compactDigestSettle(ctx, config, dir, handle, disposition, code, itemSelector, native, attempt, delivery, session, attID, itemsVal.Items, statusFinished, out)
 }
 
-func (c *CLI) compactDigestRead(ctx context.Context, config *value.Value, dir string, attempt *value.Value, items []*value.Value, itemSelector string, outputMaxBytes int, out io.Writer) (int, error) {
+func (c *CLI) compactDigestRead(ctx context.Context, config *value.Value, dir string, attempt *value.Value, items []*value.Value, itemSelector string, outputMaxBytes int, forcePlain bool, out io.Writer) (int, error) {
 	if itemSelector != "" {
 		it, err := selectDigestItemBySelector(items, itemSelector)
 		if err != nil {
@@ -513,7 +513,7 @@ func (c *CLI) compactDigestRead(ctx context.Context, config *value.Value, dir st
 		if hdr := nativeMessageHeaderValue(ev); hdr != nil {
 			readOut.Set("header", hdr)
 		}
-		readOut.Set("body", body)
+		readOut.Set("body", value.Text(c.maybeRenderCD1Prose(config, ev, nativeText(body), forcePlain)))
 		if tk := it.Get("topic_key"); value.Truth(tk) {
 			readOut.Set("topic_key", tk)
 		}
@@ -567,7 +567,7 @@ func (c *CLI) compactDigestRead(ctx context.Context, config *value.Value, dir st
 			entry.Set("body", nil)
 			entry.Set("source_error", value.Text(ce.Code))
 		} else {
-			entry.Set("body", body)
+			entry.Set("body", value.Text(c.maybeRenderCD1Prose(config, ev, nativeText(body), forcePlain)))
 		}
 		outItems.Items = append(outItems.Items, entry)
 	}

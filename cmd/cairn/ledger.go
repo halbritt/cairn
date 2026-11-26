@@ -24,7 +24,7 @@ Subcommands:
   cairn ledger set --campaign NAME --kind assignment|decision|blocker|hold --key KEY [--status STATUS] [--summary TEXT] [--owner PRINCIPAL] [--detail TEXT] [--source-id UUID --source-version N] [--result-id UUID --result-version N] [--event-id UUID] [--delivery-id UUID] [--due RFC3339] [--expected-revision N] [--request-id UUID]
   cairn ledger sync-context --campaign NAME [--request-id UUID]
   cairn ledger publish --campaign NAME --op-key KEY (--to PRINCIPAL | --topic TOPIC | --pool POOL [--workspace PATH --harness NAME --model NAME --capability CAP]) --kind EVENT_KIND --version N RECORD_UUID [--summary TEXT] [--blocker] [--action none|review|decide] [--supersedes KEY] [--causation-id UUID] [--correlation-id UUID] [--expect-by RFC3339] [--expect-next-by RFC3339] [--item-key KEY] [--item-kind KIND] [--item-status STATUS]
-  cairn ledger send --campaign NAME --op-key KEY (--to PRINCIPAL | --topic TOPIC | --pool POOL [--workspace PATH --harness NAME --model NAME --capability CAP]) --kind EVENT_KIND --stdin [--shareable] [--source-kind NOTE_KIND] [--summary TEXT] [--blocker] [--action none|review|decide] [--supersedes KEY] [--causation-id UUID] [--correlation-id UUID] [--expect-by RFC3339] [--expect-next-by RFC3339] [--item-key KEY] [--item-kind KIND] [--item-status STATUS]
+  cairn ledger send --campaign NAME --op-key KEY (--to PRINCIPAL | --topic TOPIC | --pool POOL [--workspace PATH --harness NAME --model NAME --capability CAP]) --kind EVENT_KIND --stdin [--plain] [--shareable] [--source-kind NOTE_KIND] [--summary TEXT] [--blocker] [--action none|review|decide] [--supersedes KEY] [--causation-id UUID] [--correlation-id UUID] [--expect-by RFC3339] [--expect-next-by RFC3339] [--item-key KEY] [--item-kind KIND] [--item-status STATUS]
   cairn ledger complete --campaign NAME --op-key KEY [--lease LEASE_UUID] --stdin [--shareable] [--source-kind NOTE_KIND] [--reply-to PRINCIPAL] [--causation-id UUID] [--correlation-id UUID] [--summary TEXT] [--item-key KEY] [--item-status STATUS] DELIVERY_UUID
   cairn ledger ack --campaign NAME --op-key KEY [--lease LEASE_UUID] [--disposition handled|ignored|failed] [--code CODE] [--item-key KEY] [--item-kind KIND] [--item-status STATUS] DELIVERY_UUID
   cairn ledger handoff-check --campaign NAME
@@ -59,7 +59,7 @@ var ledgerSubcommandAllowedFlags = map[string]map[string]bool{
 	"send": {
 		"campaign": true, "op-key": true, "to": true, "topic": true, "pool": true,
 		"workspace": true, "harness": true, "model": true, "capability": true,
-		"kind": true, "stdin": true, "shareable": true, "source-kind": true,
+		"kind": true, "stdin": true, "plain": true, "shareable": true, "source-kind": true,
 		"summary": true, "blocker": true, "action": true, "supersedes": true,
 		"causation-id": true, "correlation-id": true,
 		"expect-by": true, "expect-next-by": true,
@@ -144,6 +144,7 @@ func ledgerCommand(ctx context.Context, args []string, input io.Reader, client *
 	expectByStr := f.String("expect-by", "", "request expect-by timestamp (RFC3339)")
 	expectNextByStr := f.String("expect-next-by", "", "notice expect-next-by timestamp (RFC3339)")
 	stdin := f.Bool("stdin", false, "read body from stdin")
+	plain := f.Bool("plain", false, "prose mode: render any cd1 body to human-readable prose before sending")
 	shareable := f.Bool("shareable", false, "mark created note shareable")
 	sourceKind := f.String("source-kind", "note", "created note kind")
 	lease := f.String("lease", "", "delivery lease UUID")
@@ -280,7 +281,7 @@ func ledgerCommand(ctx context.Context, args []string, input io.Reader, client *
 		*eventID, *deliveryIDFlag, *dueStr, *expectedRevision, *opLimit,
 		*opKey, *to, *topic, *pool, *workspace, *harness, *model, capabilities,
 		*version, *blocker, *action, *supersedes, *causationID, *correlationID, *expectByStr, *expectNextByStr,
-		*stdin, *shareable, *sourceKind, *lease, *replyTo, *disposition, *code, *linkKey, *linkKind, *linkStatus,
+		*stdin, *plain, *shareable, *sourceKind, *lease, *replyTo, *disposition, *code, *linkKey, *linkKind, *linkStatus,
 		*ifNeeded, *toSessionFlag, *toAgentID, *toExecutionID, *newBinding, *newNativeSession, *project, *deliveryMode, *reason, *note)
 }
 
@@ -292,7 +293,7 @@ func dispatchLedgerSubcommand(
 	eventID, deliveryIDFlag, dueStr string, expectedRevision int64, opLimit int,
 	opKey, to, topic, pool, workspace, harness, model string, capabilities []string,
 	version int, blocker bool, action, supersedes, causationID, correlationID, expectByStr, expectNextByStr string,
-	stdin, shareable bool, sourceKind, lease, replyTo, disposition, code, linkKey, linkKind, linkStatus string,
+	stdin, plain, shareable bool, sourceKind, lease, replyTo, disposition, code, linkKey, linkKind, linkStatus string,
 	ifNeeded bool, toSessionFlag, toAgentID, toExecutionID, newBinding, newNativeSession, project, deliveryMode, reason, note string,
 ) (any, error) {
 	if provided["summary"] && strings.TrimSpace(summary) == "" {
@@ -417,6 +418,26 @@ func dispatchLedgerSubcommand(
 		}
 		if len(body) == 0 || len(body) > 65536 || strings.TrimSpace(string(body)) == "" || !utf8.Valid(body) {
 			return nil, invalid("ledger send requires 1-65536 bytes of nonblank UTF-8 text on stdin")
+		}
+		if plain || os.Getenv("CAIRN_CD1_PLAIN") == "1" {
+			rendered, rErr := core.PlainProseFromBody(string(body), core.CD1ValidateOptions{
+				EnvelopeKind: kind, EnvelopeAction: action,
+			})
+			if rErr != nil {
+				return nil, invalid(rErr.Error())
+			}
+			if len(rendered) > 65536 {
+				return nil, invalid("rendered prose exceeds 65536-byte body limit")
+			}
+			body = []byte(rendered)
+		} else if proto, isCompact := core.DetectCompactProtocol(string(body)); isCompact && os.Getenv("CAIRN_ALLOW_UNVALIDATED_CD1") != "1" {
+			if (causationID == "" && correlationID == "") || (proto != core.CD1Proto && proto != core.CairnC1Proto) {
+				if res := core.ValidateCD1Message(string(body), core.CD1ValidateOptions{
+					EnvelopeKind: kind, EnvelopeAction: action,
+				}); !res.Valid {
+					return nil, invalid("invalid cd1 body: " + strings.Join(res.Errors, "; "))
+				}
+			}
 		}
 		if len(body) > core.MaxEventSummaryBytes && summary == "" {
 			return nil, invalid("ledger send requires --summary (1-280 single-line UTF-8 bytes) when body exceeds 280 bytes; state what changed in --summary and keep uncompressed details in body")

@@ -395,16 +395,35 @@ func (s *Store) eventSource(ctx context.Context, tx pgx.Tx, req PublishEventRequ
 		}
 	}
 	var sensitivity string
-	var bodyBytes int
-	err := tx.QueryRow(ctx, `SELECT m.sensitivity, octet_length(v.body) FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND m.lifecycle='active' AND v.payload_deleted_by IS NULL AND (m.sensitivity='shareable' OR $4) FOR SHARE OF m`, req.Ref.RecordID, req.Ref.Version, req.Repo, dest.AllowLocal).Scan(&sensitivity, &bodyBytes)
+	var body string
+	err := tx.QueryRow(ctx, `SELECT m.sensitivity, v.body FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND m.lifecycle='active' AND v.payload_deleted_by IS NULL AND (m.sensitivity='shareable' OR $4) FOR SHARE OF m`, req.Ref.RecordID, req.Ref.Version, req.Repo, dest.AllowLocal).Scan(&sensitivity, &body)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", failure("NOT_FOUND", "source version unavailable")
 	}
 	if err != nil {
 		return "", err
 	}
-	if bodyBytes > MaxEventSummaryBytes && req.Summary == "" {
+	if len(body) > MaxEventSummaryBytes && req.Summary == "" {
 		return "", failure("INVALID_REQUEST", fmt.Sprintf("summary (1-%d single-line UTF-8 bytes) is required when referenced record body exceeds %d bytes; state what changed in summary and keep uncompressed details in body", MaxEventSummaryBytes, MaxEventSummaryBytes))
+	}
+	if _, isCompact := DetectCompactProtocol(body); isCompact && os.Getenv("CAIRN_ALLOW_UNVALIDATED_CD1") != "1" {
+		opts := CD1ValidateOptions{
+			EnvelopeKind:   req.Kind,
+			EnvelopeAction: req.Action,
+		}
+		if req.CausationID != "" || req.CorrelationID != "" {
+			parentCtx, pErr := s.loadCD1ParentContextTx(ctx, tx, req, dest)
+			if pErr != nil {
+				return "", pErr
+			}
+			opts.ParentContext = parentCtx
+			if parentCtx != nil {
+				opts.ThreadID = parentCtx.ThreadID
+			}
+		}
+		if res := ValidateCD1Message(body, opts); !res.Valid {
+			return "", failure("INVALID_REQUEST", "invalid cd1 body: "+strings.Join(res.Errors, "; "))
+		}
 	}
 	if req.Resolution != nil {
 		metadataDest := dest
@@ -433,6 +452,60 @@ func (s *Store) eventSource(ctx context.Context, tx pgx.Tx, req PublishEventRequ
 		}
 	}
 	return sensitivity, nil
+}
+
+func (s *Store) loadCD1ParentContextTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination) (*CD1ParentContext, error) {
+	threadID := req.CorrelationID
+	if threadID == "" {
+		threadID = req.CausationID
+	}
+	if threadID == "" {
+		return nil, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT v.body FROM cairn.agent_event e
+		JOIN cairn.memory_record m ON m.record_id = e.record_id
+		JOIN cairn.record_version v ON v.record_id = e.record_id AND v.version = e.version
+		WHERE e.repo = $1
+		  AND m.lifecycle = 'active' AND v.payload_deleted_by IS NULL
+		  AND (e.sensitivity = 'shareable' OR $4) AND (m.sensitivity = 'shareable' OR $4)
+		  AND ((NULLIF($2, '') IS NOT NULL AND (e.correlation_id = NULLIF($2, '')::uuid OR e.event_id = NULLIF($2, '')::uuid))
+		       OR (NULLIF($3, '') IS NOT NULL AND e.event_id = NULLIF($3, '')::uuid))
+		ORDER BY e.position ASC LIMIT 32`, req.Repo, req.CorrelationID, req.CausationID, dest.AllowLocal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var bodies []string
+	for rows.Next() {
+		var b string
+		if scanErr := rows.Scan(&b); scanErr != nil {
+			return nil, scanErr
+		}
+		if proto, ok := DetectCompactProtocol(b); ok && (proto == CD1Proto || proto == CairnC1Proto) {
+			bodies = append(bodies, b)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	parentCtx := &CD1ParentContext{
+		ThreadID:      threadID,
+		Refs:          map[string]string{},
+		SourceVersion: max(1, len(bodies)),
+	}
+	for _, b := range bodies {
+		res := ValidateCD1Message(b, CD1ValidateOptions{ParentContext: parentCtx, ThreadID: threadID})
+		if !res.Valid || res.Parsed == nil {
+			continue
+		}
+		for h, target := range res.Parsed.Refs {
+			if prev, exists := parentCtx.Refs[h]; exists && prev != target {
+				return nil, failure("INVALID_REQUEST", fmt.Sprintf("CONFLICTING_PARENT_CONTEXT: handle %q conflicts across thread %s", h, threadID))
+			}
+			parentCtx.Refs[h] = target
+		}
+	}
+	return parentCtx, nil
 }
 
 func (s *Store) recipientSupportsNextOrganicTurnTx(ctx context.Context, tx pgx.Tx, repo, inbox string) (bool, error) {
