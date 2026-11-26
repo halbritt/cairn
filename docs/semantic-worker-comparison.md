@@ -110,6 +110,32 @@ with explicit read-only inputs and no production home. Ordinary `go test ./seman
 runs skip these opt-in tests when the config selectors are unset; protocol
 fixtures do not count as real Rust/model evidence.
 
+## Index transition fixtures
+
+`scripts/check_semantic_transition.py` runs the deterministic S-05 transition
+matrix (`TestSemanticTransitionDeterministicMatrix` and the other
+`semantic/transition_*_test.go` entries). The matrix uses deterministic Go
+protocol workers, the actual Go indexer and API, and a disposable PostgreSQL
+cluster with pgvector. Its ten cases are forward and reverse rebuild,
+mid-rebuild restart, worker death and caller deadline, edit during embedding,
+delete and forget during embedding, expired lease and retry backlog, partial
+versus unavailable, competing writers, unembeddable population, and
+whole-API restart handoff. The artificial worker identities supply no
+native-model qualification.
+
+```sh
+mise run host:exec --timeout 15m --weight 1 -- \
+  python3 -I -B scripts/check_semantic_transition.py \
+  --artifact-dir "$HOME/.cache/semantic-transition-$(date +%Y%m%dT%H%M%S)"
+```
+
+The entry point calls the `scripts/test_hybrid_runtime_operations.py` wrapper,
+which supplies a private network and PID namespace, a protected home and an
+owned PostgreSQL cluster. Ordinary `go test ./semantic` runs skip these tests
+because `CAIRN_TRANSITION_DISPOSABLE_ROOT` is unset; a skip is not evidence.
+Require selected test membership with zero failures or skips in
+`artifacts/report.json` and `artifacts/tests.jsonl`.
+
 ## Comparison harness
 
 This tooling follows the `semantic/4` evidence boundaries. Its own code review,

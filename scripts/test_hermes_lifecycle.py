@@ -1,4 +1,9 @@
-"""Hermes boundary regressions; native execution is check_hermes_lifecycle.py."""
+"""Hermes boundary regressions that run without Hermes installed.
+
+Installed-object checks are check_r03_hermes_installed.py and
+check_r03_hermes_store.py. They start no agent conversation; no remaining
+check runs real Hermes agent, CLI or gateway turns through this adapter.
+"""
 import importlib.util
 import json
 import os
@@ -15,7 +20,7 @@ from test_claude_lifecycle import ROOT, hook, module
 
 def adapter():
     # Minimal host contracts keep these tests runnable without installing Hermes.
-    # The native fixture verifies the real provider, summary classifier and callbacks.
+    # check_r03_hermes_objects.py exercises the real provider and registration objects.
     modules = {
         'agent.memory_provider': types.SimpleNamespace(MemoryProvider=object),
         'agent.context_compressor': types.SimpleNamespace(is_compaction_summary_message=lambda m: m.get('_summary', False)),
