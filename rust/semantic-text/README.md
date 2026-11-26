@@ -17,8 +17,8 @@ This package has no caller wiring, executable, tokenizer or model backend.
 - The accepted requirement is in
   [`semantic.md:510-516`](../../docs/plans/hybrid-runtime-contracts/semantic.md),
   Git blob `a44b916cf7e48ed579c95f7b4d60fd1914788874`.
-- The unit fixture copies the existing `PYTHON_WHITESPACE_CODEPOINTS` list from
-  `scripts/semantic_fixture_cases.py:10-12` (removed),
+- The unit fixture copies the existing `PYTHON_WHITESPACE_CODEPOINTS` list in
+  [`semantic_fixture_cases.py:10-12`](../../scripts/semantic_fixture_cases.py),
   Git blob `b6ff4e33b4f9b9097dbf49a6abfcf1490a9271f2`.
 - Source uses `strip()` as a Boolean blank check at `semantic_rank.py:33`
   (blob `3af5ba61ee38450bdb074b6ac97c37338059fd05`) and
