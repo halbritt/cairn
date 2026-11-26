@@ -11,6 +11,26 @@ processes.
 
 ## 2026-11-26
 
+- Fixed nine defects the documentation audit found in code (CAIRN-846):
+  - `scripts/recovery_model_report.py` now reads `request_control_sweep`
+    actions, which the store records without a request id. One sweep
+    previously failed the whole report.
+  - `claude-config`, `codex-config` and `opencode-config` forward an explicit
+    `--client-harness` into the generated `mcp` command. They add no label of
+    their own.
+  - OpenCode's native `cairn_edit` accepts `set_sections`, as the MCP tool
+    does. Run `cairn opencode-install --replace` to install the new adapter.
+  - `--help` on commands without a written help topic (`serve`,
+    `opencode-install`, `conflicts` and others) prints the flag list and exits
+    0. Store-backed commands still need a reachable store first.
+  - Help text corrections: the `serve` synopsis names
+    `--semantic-rust-config`, `agent clients --limit` states 1 to 128, the
+    `recall-observation` example uses an accepted stage, and
+    `cairn_prepare_note` describes both inspection policies.
+- Restored tests that the 2026-11-25 cleanup removed in error: the three
+  semantic worker acceptance tests with their strict comparison runner, and
+  the semantic index transition fixtures with `check_semantic_transition.py`.
+  See [semantic worker comparison](docs/semantic-worker-comparison.md).
 - Aligned tracked Markdown documentation against current source and
   [decision 0023](docs/decisions/0023-repository-holds-current-contracts.md):
   removed 23 obsolete Markdown pages and 4 verification JSON snapshots
