@@ -264,8 +264,9 @@ declaring it retired:
 
 ## Limits of this runbook
 
-This rollout does not change the token-efficiency rollout decision in
-[CAIRN-227](../plans/token-efficiency-2026-10-23.md), which stays in force. Durable
+This rollout does not change the token-efficiency experiment direction in
+[decision 0017](../decisions/0017-token-efficiency-experiments.md) or
+[CAIRN-807](../roadmap.md#larger-agent-teams-within-the-context-limit-cairn-807), which stay in force. Durable
 acceptance is not a wake promise. For sessions that wait a long time on a retained
 wake, see Plane issue CAIRN-275 instead of renudging sessions. Bounded fanout limits delivery work per event; it does
 not bound total workflow cost or prevent loops. No latency, cost or efficiency

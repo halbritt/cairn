@@ -422,9 +422,13 @@ durable hold on claimed deliveries; ordinary claims respect those holds and retr
 delays. Structured wake context, [watch](inbox-watch.md),
 [one-shot scheduling](event-scheduling.md) and [request controls](request-controls.md)
 now extend that path. [Response groups](response-groups.md) collect explicit
-replies against fixed delivery snapshots; priority, wildcard
-subscriptions and broker/distributed features retain their explicit triggers in
-the [coordination v1 plan](plans/agent-coordination-v1.md).
+replies against fixed delivery snapshots. Priority remains deferred until there
+is evidence of queue contention; wildcard subscriptions wait until an actual
+topic hierarchy requires them and defines fanout, duplicates, unsubscribe, and
+authorization; NATS or another broker transport waits until measured polling
+latency or load exceeds a selected target while keeping PostgreSQL authoritative
+and broker delivery recoverable. See the [roadmap](roadmap.md) for open
+coordination direction.
 
 ## Delivery and usefulness boundary
 

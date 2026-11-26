@@ -11,6 +11,17 @@ processes.
 
 ## 2026-11-26
 
+- Aligned tracked Markdown documentation against current source and
+  [decision 0023](docs/decisions/0023-repository-holds-current-contracts.md):
+  removed 23 obsolete Markdown pages and 4 verification JSON snapshots
+  (retired Python semantic worker docs, deprecated Striatum and experimental
+  debit docs, dated non-CAIRN-301 verification records, 4 shipped plans, and
+  `tests/fixtures/work_advice/README.md`), merged `docs/claude-code.md` into
+  [Claude Code MCP](docs/mcp/claude-code.md) and relay connection policy into
+  [multiple machines](docs/multi-machine.md), updated stale flags/paths/routes
+  and reconciled the `docs/` indexes (leaving `253` tracked `.md` files: `5`
+  root, `233` under `docs/`, and `15` module/fixture READMEs). Read a removed
+  file with `git show 20876e1d:<path>` (CAIRN-842).
 - Audited the test suite and removed 114 extraneous files whose subjects were
   retired, uncalled, or test-tooling-only: `internal/experimentaldebit`,
   `experiments/transportbench`, retired Python-vs-Rust semantic comparison and
@@ -799,8 +810,7 @@ processes.
   workstream checkpoints. Native OpenCode continued the same handoff written by
   Claude. Install/update the Python hooks and optional OpenCode plugin; no store
   migration or API upgrade is required. [OpenCode setup](docs/opencode-lifecycle.md),
-  verification, and
-  [Codex/Agy assessment](docs/lifecycle-hook-assessment.md).
+  verification, and Codex/Agy assessment.
 
 - **Recall and checkpoint memory at Claude lifecycle boundaries.** Optional user
   hooks inject bounded memory on startup, submitted tasks, resume and compaction.
@@ -993,7 +1003,7 @@ processes.
 - **Make harness setup repeatable.** Added the bundled OpenCode adapter installer,
   Codex and Claude configuration generators, and native OpenCode argument
   validation. [OpenCode](docs/opencode-tools.md), [Codex](docs/mcp.md#codex-example),
-  [Claude Code](docs/claude-code.md).
+  [Claude Code](docs/mcp/claude-code.md).
 - **Carry task intent into retrieval and execution.** Added phase/applicability
   capture, compact startup, saved task-file input, observed index execution and
   selected run-file fingerprints. Fixed missing-context precedence and refused

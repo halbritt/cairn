@@ -64,5 +64,6 @@ commit, so an inbox cursor cannot advance past an older uncommitted insertion.
 Every delivery creator must preserve that ordering.
 
 No broker, notification queue, new credentials or automatic request replay is
-introduced. Full-v1 operator recovery, scheduling and coordination work is tracked
-in [the implementation plan](plans/agent-coordination-v1.md).
+introduced. Related operator recovery and scheduling contracts are documented in
+[event recovery](event-recovery.md) and [event scheduling](event-scheduling.md);
+open coordination direction is tracked on the [roadmap](roadmap.md).

@@ -12,7 +12,7 @@ UIPass environment (including Chromium):
 uv run --project "$HOME/git/uipass" --frozen python \
   scripts/work_coordination_ui_fixture.py \
   --candidate /absolute/path/to/cairn-candidate \
-  --output /tmp/cairn-work-ui-fresh-run
+  --output "$HOME/.cache/cairn-work-ui-fresh-run"
 ```
 
 The output directory must be new or empty. The candidate is copied to private
@@ -210,8 +210,3 @@ and [rollout validation](../../../docs/operator/event-admission-rollout.md#verif
 for those contracts. The latter uses `scripts/check_event_scaling_restore.py`
 with an explicit candidate binary and native manifest; no browser screenshot
 substitutes for that physical restore check.
-
-The separate [advice compatibility builder](../work_advice/README.md#build-the-exact-schema-079-candidates)
-uses the same source-capture format but its lower-support and upgrade checks are
-pinned to schema 079. Do not feed current main to that historical proof merely
-because a work-UI capture of it is valid.

@@ -411,7 +411,7 @@ Cairn implements ten standard memory MCP tools across discovery, expansion, capt
 ## Claude Code
 
 Use `cairn claude-config` with explicit task/run scope to generate Claude Code's
-MCP JSON. The [Claude setup guide](claude-code.md) covers invocation, native
+MCP JSON. The [Claude setup guide](mcp/claude-code.md) covers invocation, native
 connection verification and remaining session/task-use limits.
 
 ## Codex example

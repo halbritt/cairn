@@ -104,7 +104,7 @@ these cases. Stopping all old direct-store processes is mandatory.
 The earlier full integration, lifecycle and native restore verification remains
 the implementation evidence. This rollout adds installed-state and exact deployed
 upgrade evidence; it does not establish measured production usefulness or suitable
-admission limits. The [documentation audit](event-admission-docs-audit-2026-11-06.md)
+admission limits. The documentation audit
 records the preceding source documentation checks.
 
 Selected operational receipts, backups, checksums and installation journals are

@@ -58,11 +58,10 @@ manifest publication.
 It leaves the applied source available for inspection. Remove that scratch
 checkout after validation and review.
 
-## Executed component checks
+## Component checks
 
-The focused checks below passed on the pinned source on 2026-11-05. Run them
-from the patched source's `codex-rs` directory. The stack setting follows
-upstream's test recipe.
+Run the focused upstream checks from the patched source's `codex-rs` directory.
+The stack setting follows upstream's test recipe:
 
 ```sh
 export RUST_MIN_STACK=8388608
@@ -90,19 +89,19 @@ cargo +1.99.1 test --locked -p codex-app-server-protocol --lib schema_fixtures_t
 | Protocol schema fixtures | 4 passed | Stable JSON/TypeScript and precomputed stable/experimental exports match their generators |
 
 The stable and experimental native protocol exports and Python SDK models were
-regenerated with their upstream generators. From Cairn, these checks also passed:
+regenerated with their upstream generators. From Cairn, run:
 
 ```sh
 python3 scripts/test_codex_launcher.py -q
 make check
 ```
 
-The launcher suite passed 20 tests, including paired proof delivery, explicit
-manifest refusal, capability probe bounds and child cleanup, executable path
-replacement during probing, operator registration refusal, operator environment
-removal in coordinated and selected direct modes, unsupported mode, and the
-existing launcher lifecycle.
-These component results establish their listed seams. The complete native
+The launcher suite (`16` tests) covers paired proof delivery, explicit manifest
+refusal, capability probe bounds and child cleanup, executable path replacement
+during probing, operator registration refusal, operator environment removal in
+coordinated and selected direct modes, unsupported mode, and the existing
+launcher lifecycle.
+These component checks establish their listed seams. The complete native
 workflow is checked separately with the staged Cairn lifecycle adapter and a
 fresh disposable Store:
 
@@ -124,15 +123,9 @@ delivery without inventing an acknowledgement.
 
 Successful reports bind the candidate, fixture, native manifest, both native
 executables and staged lifecycle bundle. They measure protocol behavior, not
-model usefulness. No installed binary or running owner session is changed.
-
-The seven-stage workflow passed on 2026-11-05 against the complete package
-recorded in `runtime.json`, including exact older-attempt retirement after
-source withdrawal. The run used 19 local scripted HTTP requests and removed
-its disposable Store. The associated lifecycle suite passed 53 tests, launcher
-suite 20 tests, and build-input verification suite 2 tests; `make check` passed.
-Store integration coverage is recorded separately by the Cairn change that
-supplies the admission and cached-disclosure guards.
+model usefulness. No installed binary or running owner session is changed. Store
+integration coverage is maintained separately for the admission and
+cached-disclosure guards.
 
 Other disposable acceptance fixtures can call
 `scenario(host, manifest, report, queued_case=callback)`. After real native

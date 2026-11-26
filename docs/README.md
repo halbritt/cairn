@@ -35,9 +35,11 @@ where a client supports them.
 
 Read [deployment](operator/deployment.md), [configuration](operator/configuration.md),
 and [daemon setup](operator/daemon-deployment.md) to provision a store and client
-access. Use [maintenance](operator/maintenance.md) for upgrades and recovery, and the
-[event admission rollout](operator/event-admission-rollout.md) to upgrade, observe and
-enable bounded event admission.
+access. Use [maintenance](operator/maintenance.md) for upgrades and recovery,
+[lifecycle staging](operator/lifecycle-staging.md) to stage immutable lifecycle
+generations and hooks, and the
+[event admission rollout](operator/event-admission-rollout.md) to upgrade, observe
+and enable bounded event admission.
 
 ## Develop Cairn
 
@@ -46,17 +48,24 @@ enable bounded event admission.
 [documentation](developer/documentation.md) describe how to make and validate a
 change. The [glossary](../GLOSSARY.md) explains the design vocabulary.
 
-Designs for open work: the [swarm view](plans/swarm-view-design.md), the
+Lifecycle staging and native fixture references:
+[retained installed lifecycle packages](developer/retained-lifecycle-package.md),
+[checked Agy layer crash recovery](developer/agy-layer-recovery.md),
+[native Agy hook fixture](developer/native-agy-hook-fixture.md),
+[native Claude hook fixture](developer/native-claude-hook-fixture.md), and
+[native Codex hook fixture](developer/native-codex-hook-fixture.md).
+
+Designs for open work: the [swarm view](plans/swarm-view-design.md), and the
 [hybrid runtime consolidation](plans/hybrid-runtime-consolidation.md) with its
-[organization and implementation plan](plans/hybrid-runtime-implementation.md), and
-[work coordination](plans/work-coordination-design.md). See [plans](plans/README.md).
+[organization and implementation plan](plans/hybrid-runtime-implementation.md).
+See [plans](plans/README.md).
 
 ## Reference
 
 Use the [CLI reference](reference/cli.md), [HTTP API reference](reference/api-rest.md),
 and [MCP tool reference](reference/mcp-tools.md) for interface details. The
-[lifecycle helper reference](reference/lifecycle-slices.md) describes the narrower
-contracts of the library inspection and evaluation functions.
+[lifecycle capability map](reference/lifecycle-slices.md) describes the shared Go
+lifecycle mechanisms and checked memory caller boundaries.
 
 The feature references below cover behavior, configuration, and failure paths.
 
@@ -78,6 +87,8 @@ The feature references below cover behavior, configuration, and failure paths.
 - [Inspect a conflict](conflict-inspection.md)
 - [Recent file hints in OpenCode](recent-file-hints.md)
 - [Find a reviewed lesson by failure signature](failure-signature-search.md)
+- [Offline Rust semantic package](semantic-package.md)
+- [Rust semantic workers](semantic-worker-comparison.md)
 
 ### Memory lifecycle and authority
 
@@ -98,7 +109,6 @@ The feature references below cover behavior, configuration, and failure paths.
 ### Agent integrations and execution
 
 - [Share memory across projects and agents](shared-memory.md)
-- [Claude Code memory access](claude-code.md)
 - [Agy MCP configuration](agy.md)
 - [Ambient memory in Claude Code](claude-lifecycle.md)
 - [Ambient memory in Codex](codex-lifecycle.md)
@@ -106,7 +116,10 @@ The feature references below cover behavior, configuration, and failure paths.
 - [Hermes shared memory](hermes-lifecycle.md)
 - [Native OpenCode tools](opencode-tools.md)
 - [Installed lifecycle bundles](lifecycle-bundles.md)
-- [Codex and Agy lifecycle hook assessment — 2026-09-13](lifecycle-hook-assessment.md)
+- [F-02 inbox recall caller and post-lock report scheduling](f02-inbox-caller.md)
+- [Fresh Claude settings owner](native-claude-owner.md)
+- [Native owner input for quiet notices](native-owner-origin.md)
+- [Native work advice adapter](native-work-advice.md)
 - [Start a harness with compact memory](compact-start.md)
 - [Run a harness with an observed compact index](observed-index.md)
 - [Run a harness through an authenticated observer](authenticated-runner.md)
@@ -114,9 +127,7 @@ The feature references below cover behavior, configuration, and failure paths.
 - [Currentness and historical recompilation](currentness-and-replay.md)
 - [Fresh memory at launch](launch-freshness.md)
 - [Inspect an owned run receipt](run-status.md)
-- [Integrate Cairn with Striatum](native-striatum-context.md)
 - [Session-targeted recall dispatch](recall-dispatch.md)
-- [Experimental provider debit owner](experimental-debit-owner.md)
 
 ### Coordination and delivery
 
@@ -151,7 +162,7 @@ The feature references below cover behavior, configuration, and failure paths.
 - [Restore sessions and explicit admission](restore-admission.md)
 - [Fence restored delivery capabilities](restore-fencing.md)
 
-### Observation and evaluation
+### Observations and reporting
 
 - [Observed client implementations](client-observations.md)
 - [Identify the installed binaries](build-identity.md)
@@ -159,9 +170,9 @@ The feature references below cover behavior, configuration, and failure paths.
 - [Evidence-attached review proposals](demand-review.md)
 - [Fingerprint selected task files](run-artifact-evidence.md)
 - [Link a wrapped execution to its host attempt](host-attempt-link.md)
+- [Report coordinator load and bookkeeping share](coordinator-load-report.md)
 - [Report model work in a coordination workflow](workflow-model-report.md)
 - [Report model work during recovery](recovery-model-report.md)
-- [Relay transport and connection reuse](transport-comparison.md)
 
 ### API and test contracts
 

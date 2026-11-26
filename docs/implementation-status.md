@@ -105,8 +105,7 @@ Versioned feature controls distinguish admission, retained maintenance and
 retirement. Use the [operator runbook](operator/work-coordination.md) for the
 combined migration boundary and settlement requirements before changing binary
 support. A physical restore also requires the normal recovery witness and
-admission procedure. The [five-feature acceptance record](verification/work-coordination-acceptance-2026-11-05.md)
-identifies the tested revisions, local checks and remaining deployment limits.
+admission procedure.
 
 ## Operations and developer interfaces
 
@@ -123,11 +122,12 @@ The [API contract](api-contract.md) describes the checked machine-readable
 interface. [CLI](reference/cli.md), [API](reference/api-rest.md), and
 [MCP](reference/mcp-tools.md) references identify their respective access paths.
 
-Several [lifecycle and extension helpers](reference/lifecycle-slices.md) compute
-reports or evaluate supplied inputs. A helper that reports a budget refusal,
-restore mismatch, or runtime-mediation decision is not proof that every launch,
-restore, or tool call is intercepted. Read its caller obligations before using it
-as an enforcement boundary.
+The [lifecycle capability map](reference/lifecycle-slices.md) lists shared Go
+lifecycle mechanisms (`statefile`, `procpeer`, `binding`, `memoryhost`, and
+`memoryhook`) and checked memory caller boundaries. A shared helper is not
+proof that an integration activates or invokes it on every launch or tool call;
+check the caller obligations and installed runtime selection before relying on
+it as an enforcement boundary.
 
 ## Evaluation boundaries
 

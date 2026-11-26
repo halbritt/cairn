@@ -10,7 +10,6 @@ Run the provider-free validator from the repository root:
 
 ```sh
 python3 -B scripts/preflight_token_efficiency_panel.py
-python3 -B scripts/test_preflight_token_efficiency_panel.py
 ```
 
 For an export, first create the private output parent with mode `0700`:
@@ -78,41 +77,12 @@ review is active, verify pending state and absent readiness, then release the
 source and observe the review conclusion before notice handling. This runner
 and pause are not implemented by the preflight or Store probe.
 
-Two Go integration tests exercise source and event setup for six cases under
-`make test-integration`'s disposable PostgreSQL cluster.
-`core/token_efficiency_panel_materialization_test.go` checks A record
-creation/edit with retained history for `corrected_note`, governed C issuance
-and required-conflict refusal for `required_conflict_group`, and one request
-source/event with an identical publish retry and one delivery for
-`duplicate_send`. `core/token_efficiency_panel_events_test.go` checks a pending
-`single_notice`, exact request/response causation and responding writer for
-`actionable_response`, and four isolated publication setups for
-`routine_burst_urgent_request`. The burst test applies only the fixture's
-routine-notice policy per arm and checks availability. It checks urgent
-readiness in the batch and combined setups, where routine notices are deferred;
-it does not run batch transfer or handling. These tests use store-owned writer
-identity, a disposable test operator grant where needed, and fixture source
-and event fields.
-
-Other Go tests check selected Store behavior for fifteen more fixture IDs.
-`core/token_efficiency_panel_reply_test.go` follows native session claims,
-request settlement, and a result response for `small_request_result_reply`;
-its `completion_reply_lost` and `relay_uncertain_response` checks exercise
-idempotent Store operations without inducing transport loss or running journal
-recovery. `core/token_efficiency_panel_ownership_test.go` checks distinct
-recipient ownership for `concurrent_receivers` and a failed source read after
-operator deletion for `source_forgotten_before_read`.
-`core/token_efficiency_panel_memory_cases_test.go` creates and whole-pulls
-exact sources for `semantic_unavailable`, `wrong_project_memory`, and
-`meaningful_owner_correction`. These memory checks use a separate disposable
-database for each case so another case's required C conflict cannot alter
-retrieval under the fixture's shared repository scope.
-The authenticated memory lifecycle probe
-checks the real CLI/API search and pull surface for wrong-project source
-ranking, then checks stale-handle refusal and exact retained history after
-the `corrected_note` and `meaningful_owner_correction` edits. Project labels
-are fixture metadata, not Store-enforced project scope; actor decisions remain
-unrun.
+The [memory lifecycle probe](../../scripts/check_panel_memory_lifecycle.py)
+checks the real CLI/API search and pull surface on a disposable database for
+wrong-project source ranking, then checks stale-handle refusal and exact
+retained history after the `corrected_note` and `meaningful_owner_correction`
+edits. Project labels are fixture metadata, not Store-enforced project scope;
+actor decisions remain unrun.
 The disposable controller materializes `wrong_project_memory`,
 `corrected_note`, `meaningful_owner_correction`, and `unfinished_handoff` in all four arms. It creates
 the exact shareable sources through the authenticated API, applies each
@@ -134,61 +104,43 @@ The receipt stores only record/version identifiers, hashes, extent, and writer
 identity. It explicitly marks the frozen `before_resume/pause_after_source_check`
 transition unrun and keeps actor acceptance unassessed. This prepares source
 authority and recall only; it does not pause or resume a native model turn or
-prove the remaining report was written.
-The four-arm `unfinished_handoff` source setup passed on fresh disposable
-databases (verification record).
-It launched no actor and no provider; the release gate remains deferred.
+prove the remaining report was written. The controller launches no actor and no
+provider; the release gate remains deferred.
 
-`core/token_efficiency_panel_recovery_test.go` checks an expired lease under
-its current native hold, an offline presence with operator release and explicit
-reissue, and execution fencing for `lease_expiry`, `process_crash`, and
-`stale_execution`. Expired test presence is an observable offline boundary,
-not proof that a recipient process crashed.
-The stale journal probe
-adds a disposable CLI/API and native helper path for `stale_execution`: a
+The [stale journal probe](../../scripts/check_panel_stale_journal.py)
+exercises a disposable CLI/API and native helper path for `stale_execution`: a
 pending old-execution completion is refused after reviewed reissue and execution
 rotation while the current execution can settle the successor. Its host turn
 and result text are synthetic, so it does not grade an actor task.
-`core/token_efficiency_panel_session_boundary_test.go` checks that a reported
-busy session has no ready routine notice until it reports idle, and that two
-notices keep their durable state across fresh client views for
-`busy_owner_task` and `compaction_before_after_settlement`. The busy check does
-not run the synthetic parser review, and fresh views do not invoke a harness
-compaction hook. `core/token_efficiency_panel_memory_followup_test.go` stores
-and whole-pulls the historical and current relay sources with a pending
-request for `long_source`, and the exact saved source for
-`unfinished_handoff`. The 120-copy exposure and actor pause/resume transitions
-remain unrun; the controller source-read setup above does not exercise them.
 
-The two-notice disposable probe
+The [process-crash child probe](../../scripts/check_panel_process_crash_child.py)
+kills a disposable native-claim child with `SIGKILL` after lease acquisition
+and verifies explicit operator reconciliation of its attempt.
+
+The [two-notice compact probe](../../scripts/check_panel_compaction_settlement.py)
 uses the actual bound hooks and compact helper around two synthetic compact
 callbacks. It checks a leased first notice through compaction, commits its
 settlement once, then restores and settles a different notice without replaying
 the first. Host queue admission, model compaction and task outcome remain unrun.
 
-`unchanged_capture` has a separate controller-only synthetic dialogue and
-first selection in `setup.capture`. The Python preflight test runs the real
-local capture decision twice with a stubbed first selector and local create
-response: the first call confirms a saved snapshot and the identical second
-call skips selection and another write. This selection is test setup, not a
-provider response to impose on a future actor. The hook's persisted state,
-actual provider selection, and task outcome remain untested.
-
-The Go tests check setup or selected Store transitions for 21 fixture IDs;
-the Python hook probe covers the remaining capture setup. None grades an
-actor task, completes a paired model arm, or measures provider usage. The
-original six have source/event setup checks; the other fifteen Go checks are
-partial source, scheduling, or recovery checks.
+`unchanged_capture` declares a separate controller-only synthetic dialogue and
+first selection in `setup.capture`; the controller does not yet execute it, and
+the hook's persisted state, actual provider selection, and task outcome remain
+unrun.
 
 **Current preflight boundary:** the Python validator checks the fixture and
 export as data. It never inserts records, issues authority, applies arm
 interventions, executes transitions, launches a provider, measures tokens,
 joins native turns, or grades task outcomes. A separate disposable-only
-controller in `scripts/token_efficiency_panel_controller.py` materializes five
-baseline setups (`single_notice`, `actionable_response`, `duplicate_send`,
-`small_request_result_reply`, `concurrent_receivers`) and all four `routine_burst_urgent_request` arm
-setups through the authenticated
-local API, each in a separate disposable database. It registers synthetic Codex
+controller in `scripts/token_efficiency_panel_controller.py` materializes 37
+workflows across 13 cases through the authenticated local API (`--list-workflows`
+prints the full set; `scripts/check_token_efficiency_panel_controller.py`
+exercises selected setups on disposable databases): five baseline-only setups
+(`single_notice`, `actionable_response`, `duplicate_send`,
+`small_request_result_reply`, `concurrent_receivers`) plus all four arms of
+`routine_burst_urgent_request`, `wrong_project_memory`, `corrected_note`,
+`meaningful_owner_correction`, `unfinished_handoff`, `required_conflict_group`,
+`semantic_unavailable`, and `source_forgotten_before_read`. It registers synthetic Codex
 sessions for setup; these are
 not selected live harness or deployment evidence. It persists an immutable
 intent before source creation and publication, then verifies exact Store-owned
@@ -222,8 +174,11 @@ all notices immediate. A selected native `session-inbox-ready` hint is saved
 once with its observed time before the first routine deadline. An exact retry
 after that deadline rechecks durable IDs and availability times without claiming
 that the earlier priority still holds. The receipt labels native batch transfer
-`unrun`; no actor handled the request or acknowledged a notice. All other
-case/arm setups still lack an executable controller path.
+`unrun`; no actor handled the request or acknowledged a notice. The remaining
+case setups (`long_source`, `busy_owner_task`, `lease_expiry`, `process_crash`,
+`stale_execution`, `compaction_before_after_settlement`, `completion_reply_lost`,
+`relay_uncertain_response`, `unchanged_capture`) remain unimplemented in this
+controller.
 
 The [relay uncertain response probe](../../scripts/check_panel_relay_uncertain_response.py)
 uses a separate disposable Store to drop one successful child receipt after
@@ -246,8 +201,8 @@ sequence in four separate arm databases: it does not read source history
 before admission, forgets after claiming, verifies `PAYLOAD_UNAVAILABLE` on
 the first scoped read, and repeats the failed settlement under the same request
 UUID. Receipts retain no source body and mark actor acceptance unassessed. A
-requester explanation and actor task remain unrun. See the
-four-arm source-loss verification.
+requester explanation and actor task remain unrun. The controller also
+materializes all four arms of `source_forgotten_before_read`.
 
 The [required conflict probe](../../scripts/check_panel_required_conflict_group.py)
 issues the exact `conflict_24` and `conflict_48` mandatory instructions through
@@ -266,7 +221,7 @@ lexical search finds the same source without calling the worker. The frozen
 case has no mandatory instruction, so this probe does not measure required
 context preservation or an actor answer.
 
-The Go probes above write only to disposable integration databases and make
+The disposable probes above write only to fresh integration databases and make
 no claim about full panel execution or accepted outcomes. The existing gate
 requires native workflow evidence for observed sender/recipient turns. An
 ordinary-memory case has no proven native join yet; a fabricated inbox event
@@ -280,8 +235,8 @@ accounts, routes, pins and limits, then run and review all four arms. The
 subscription route rule remains in force. CAIRN-227 release status remains
 **Defer**.
 
-For a provider-free preflight of one fixture, see the single-workflow dry
-run.
+For a provider-free preflight of one fixture, see
+[the single-workflow dry run](../../scripts/token_efficiency_single_workflow.py).
 It supports only `baseline.single_notice`, checks the selected Codex account and
 current installation pins, and records fresh caller-status samples. It never
 starts an actor turn; its task grade stays unassessed and the 22-case paired

@@ -128,6 +128,5 @@ Related contracts live in their own documents:
 [one-shot scheduling](event-scheduling.md) publishes to a pool at a future time;
 [request controls](request-controls.md) add admission expiry, task deadlines and
 cancellation; [response groups](response-groups.md) collect replies; and
-[automated wakeups](agent-wakeups.md) cover existing-session delivery. Remaining
-coordination work is tracked in the
-[coordination v1 plan](plans/agent-coordination-v1.md).
+[automated wakeups](agent-wakeups.md) cover existing-session delivery. Open
+coordination direction is tracked on the [roadmap](roadmap.md).

@@ -240,3 +240,22 @@ Transport reconnection never replays work. A disconnected machine's presence
 expires, and explicit offline mail waits centrally. A lost completion is
 reconciled through the recovery contract, never by registering a replacement
 execution.
+
+## Relay connection policy
+
+The [relay implementation](../localapi/relay.go) allows up to 16 idle connections
+and 32 total connections per origin. Idle connections expire after 45 seconds;
+closing the relay closes its idle connections. TLS certificate validation,
+authentication, operation checks, and request/response limits apply on reused
+connections too. Redirects are refused.
+
+Connection reuse does not permit automatic replay. The relay constructs
+non-rewindable POST bodies, including empty requests. If it cannot establish a
+connection, it returns `UPSTREAM_UNAVAILABLE`. Once a connection has been assigned,
+a failed exchange returns `UPSTREAM_UNCERTAIN`, because the upstream may have
+received the request. Reconcile the result or retry with the exact same request
+ID and arguments. Do not create a new mutation request to recover a lost reply.
+
+The local Unix client also disables body replay. These transport rules preserve
+Cairn's application-level retry contract; connection pooling does not establish
+that a request completed.
