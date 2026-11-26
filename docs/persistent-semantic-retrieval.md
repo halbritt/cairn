@@ -42,10 +42,11 @@ write rolls back the retrieval receipt.
 
 ## Derivation and currentness
 
-Migration 056 adds `semantic_document`, `semantic_passage` and `semantic_job`.
-It requires the PostgreSQL `vector` extension to be available to the installer.
-The migration creates the extension when absent. Runtime agents do not receive
-database credentials or an embedding-write operation.
+The persistent semantic schema stores derived state in `semantic_document`,
+`semantic_passage` and `semantic_job`. It requires the PostgreSQL `vector`
+extension to be available to the installer, and schema initialization creates
+the extension when absent. Runtime agents do not receive database credentials or
+an embedding-write operation.
 
 A source insert, version change or lifecycle change updates the job queue in
 the source transaction and removes old indexed passages. Forgetting excludes

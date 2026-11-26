@@ -52,8 +52,9 @@ deliveries, close an open response group, or cancel a wait. A waiting
 [closure reservations](closure-reservations.md) for the exact close rules.
 
 Remote availability depends on each operation's catalog contract (for example,
-`event-metrics`, `event-retry`, and `handoff-request-status` are local-profile-only;
-`event-next` requires an explicit agent session on a remote profile). Policy configuration,
+`event-metrics`, `event-retry`, and `handoff-request-status` are local-host-only
+and unavailable to remote machine profiles; `event-next` requires an explicit
+agent session on a remote profile). Policy configuration,
 collection-wide pressure/fanout, refusal counters and reconciliation remain
 operator-only, without agent API routes. See [event admission](event-admission.md),
 [operator commands](commands.md#event-admission-and-closure-administration), the
@@ -479,7 +480,11 @@ to select this mode:
 ```
 
 Supply exactly one of `body`, `append`, `replace`, `set_sections`, `draft` or
-`evidence_citations` to the native tool. The API returns only `record_id` and `version`; native tools also
+`evidence_citations` to MCP `cairn_edit` (OpenCode's native `cairn_edit` uses a
+strict schema without `set_sections`, accepting `body`, `append`, `replace`,
+`draft` or `evidence_citations`; use `cairn agent set-sections` or
+`POST /v1/set-sections` for section edits there). The API returns only
+`record_id` and `version`; native tools also
 return the request ID. The old body is not echoed. Exact retries return the
 original revision even after later edits, without adding the suffix twice.
 A changed suffix under the same request UUID conflicts. A stale expected version

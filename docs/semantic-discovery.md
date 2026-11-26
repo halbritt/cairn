@@ -210,11 +210,12 @@ attempts within the same child refuse.
 
 The cache has a separate 600 KiB limit; the entire reply including newline is
 bounded to 664 KiB. Cache space cannot enlarge the ordinary scoring result limit.
-The transport treats cache content as opaque, trusted worker state. An older
-worker emits no cache and receives none; an older API does not advertise support,
-so the new prepared worker preserves its original reply shape. No new agent flag
-or tool argument is required. Upgrade the API and prepared worker, then restart
-the API to adopt both; installing either alone preserves ordinary scoring.
+The transport treats cache content as opaque, trusted worker state. A worker
+without cache support emits no cache and receives none; an API without cache
+support does not advertise support, so the prepared worker preserves its plain
+reply shape. No agent flag or tool argument is required. Cached reuse requires a
+supporting API and prepared worker with the API restarted onto both; running
+either alone preserves ordinary scoring.
 
 Other unknown response fields, wrong IDs, missing results, partial lines and changed
 model/algorithm identity within a child refuse the request and discard the child
@@ -272,8 +273,8 @@ performance across larger or arbitrary workloads remain open.
 
 The persistent embedding worker accepts an original query of at most 4096 UTF-8
 bytes. Its model accepts at most 512 tokens, including the fixed query instruction
-and special tokens. These are separate bounds. An oversized token sequence now
-uses one **lossy original-text prefix** for semantic discovery. The worker selects
+and special tokens. These are separate bounds. An oversized token sequence uses
+one **lossy original-text prefix** for semantic discovery. The worker selects
 an offset with its actual tokenizer, slices the original characters, and checks
 the complete prefixed input again. It permits at most eight bounded retreat
 checks, then refuses if no nonblank prefix fits. It never reconstructs text from
