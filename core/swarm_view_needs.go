@@ -59,8 +59,9 @@ type SwarmNeed struct {
 	Detail string `json:"detail,omitempty"`
 	// Subject is the principal the row is about: the sender of a question,
 	// the recipient of a failed delivery, the stalled session.
-	Subject string    `json:"subject,omitempty"`
-	Since   time.Time `json:"since,omitzero"`
+	Subject string `json:"subject,omitempty"`
+	// Since is omitted when the store cannot determine when the need began.
+	Since time.Time `json:"since,omitzero"`
 	// ExpiresAt is set for a board question with a lifetime. After it, the
 	// row leaves the list.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
@@ -89,6 +90,8 @@ type SwarmNeedAction struct {
 
 // SwarmNeedRefs points at the stored rows behind a need.
 type SwarmNeedRefs struct {
+	// Principal is the person the owner can contact for this action.
+	Principal string `json:"principal,omitempty"`
 	// EventIDs identifies all events used to count direct waiters for a grouped row.
 	EventIDs    []string          `json:"event_ids,omitempty"`
 	EventID     string            `json:"event_id,omitempty"`
@@ -123,6 +126,7 @@ func emptySwarmNeedsYou() SwarmNeedsYou {
 type swarmNeedsReader struct {
 	repo, operator string
 	now            time.Time
+	boardSince     time.Time
 	generation     int64
 	principals     []string
 	landing        bool
@@ -175,7 +179,7 @@ func (r *swarmNeedsReader) readShared(ctx context.Context, tx pgx.Tx) {
 
 func (s *Store) swarmNeedsYouTx(ctx context.Context, tx pgx.Tx, sc swarmScope, snap SwarmSnapshot) (SwarmNeedsYou, error) {
 	r := swarmNeedsReader{repo: sc.Repo, operator: sc.Operator, now: sc.Now, generation: sc.Generation,
-		principals: sc.Principals, out: emptySwarmNeedsYou()}
+		boardSince: sc.Campaign.CreatedAt, principals: sc.Principals, out: emptySwarmNeedsYou()}
 	leads := map[string]bool{}
 	for _, member := range sc.Campaign.Members {
 		if member.Role == "lead" {
@@ -186,20 +190,8 @@ func (s *Store) swarmNeedsYouTx(ctx context.Context, tx pgx.Tx, sc swarmScope, s
 		return r.ledger(ctx, sp, sc.Campaign.Campaign, sc.Campaign.RootAgent, sc.isMember, leads)
 	})
 	if handoff := snap.Handoff; handoff != nil {
-		var since time.Time
-		if handoff.Since != nil {
-			since = *handoff.Since
-		}
-		label := handoff.HolderPrincipal
-		if session, ok := sc.Sessions[swarmAgentID(label)]; ok {
-			label = session.DisplayName
-		}
-		r.out.Items = append(r.out.Items, SwarmNeed{
-			ID: SwarmNeedHandoffDue + ":" + handoff.HolderPrincipal, Type: SwarmNeedHandoffDue,
-			Title: "Coordinator handoff due for " + label, Detail: strings.Join(handoff.Reasons, ". "),
-			Subject: handoff.HolderPrincipal, Since: since,
-			Action: SwarmNeedAction{"hand_off", "Review the ledger and arrange a coordinator handoff",
-				"cairn ledger handoff-check --operator --repo " + swarmNeedShellArg(sc.Repo) + " --campaign " + swarmNeedShellArg(sc.Campaign.Campaign)},
+		r.read(ctx, tx, []string{SwarmNeedHandoffDue}, func(sp pgx.Tx) ([]SwarmNeed, error) {
+			return swarmNeedHandoff(ctx, sp, sc, *handoff)
 		})
 	}
 	r.readShared(ctx, tx)
@@ -210,13 +202,44 @@ func (s *Store) swarmNeedsYouTx(ctx context.Context, tx pgx.Tx, sc swarmScope, s
 	return r.out, nil
 }
 
+func swarmNeedHandoff(ctx context.Context, tx pgx.Tx, sc swarmScope, handoff SwarmHandoffDue) ([]SwarmNeed, error) {
+	var since time.Time
+	if handoff.Since != nil {
+		since = *handoff.Since
+	}
+	principal := handoff.HolderPrincipal
+	label := principal
+	if session, ok := sc.Sessions[swarmAgentID(principal)]; ok {
+		label = session.DisplayName
+		// Only the first compaction has its own timestamp in the store.
+		if limit := sc.Campaign.MaxCoordinatorCompactions; limit != nil && *limit == 1 && session.CompactionCount >= 1 {
+			var first *time.Time
+			err := tx.QueryRow(ctx, `SELECT first_compacted_at FROM cairn.agent_session WHERE repo=$1 AND agent_id=$2`,
+				sc.Repo, session.AgentID).Scan(&first)
+			if err != nil {
+				return nil, err
+			}
+			if first != nil && !first.IsZero() && !first.After(sc.Now) && (since.IsZero() || first.Before(since)) {
+				since = *first
+			}
+		}
+	}
+	return []SwarmNeed{{
+		ID: SwarmNeedHandoffDue + ":" + principal, Type: SwarmNeedHandoffDue,
+		Title: "Coordinator handoff due for " + label, Detail: strings.Join(handoff.Reasons, ". "),
+		Subject: principal, Since: since, Refs: SwarmNeedRefs{Principal: principal},
+		Action: SwarmNeedAction{"hand_off", "Review the ledger and arrange a handoff with the coordinator",
+			"cairn ledger handoff-check --operator --repo " + swarmNeedShellArg(sc.Repo) + " --campaign " + swarmNeedShellArg(sc.Campaign.Campaign)},
+	}}, nil
+}
+
 func (s *Store) swarmLandingNeedsYouTx(ctx context.Context, tx pgx.Tx, repo string, now time.Time, generation int64, campaignPrincipals map[string]bool) (SwarmNeedsYou, error) {
 	principals := make([]string, 0, len(campaignPrincipals))
 	for principal := range campaignPrincipals {
 		principals = append(principals, principal)
 	}
 	r := swarmNeedsReader{repo: repo, operator: s.channel.Principal, now: now, generation: generation,
-		principals: principals, landing: true, out: emptySwarmNeedsYou()}
+		boardSince: now.Add(-swarmLandingBoardAge), principals: principals, landing: true, out: emptySwarmNeedsYou()}
 	r.read(ctx, tx, []string{SwarmNeedDecision, SwarmNeedEscalation}, func(sp pgx.Tx) ([]SwarmNeed, error) {
 		rows, err := sp.Query(ctx, `SELECT c.campaign,c.root_agent FROM cairn.agent_team_campaign c
 			WHERE c.repo=$1 AND NOT c.active AND EXISTS (
@@ -353,7 +376,7 @@ func (r *swarmNeedsReader) ledger(ctx context.Context, tx pgx.Tx, campaign, root
 		default:
 			continue
 		}
-		refs := SwarmNeedRefs{LedgerKind: item.Kind, LedgerKey: item.ItemKey, EventID: item.EventID, Record: item.Source}
+		refs := SwarmNeedRefs{Principal: item.Owner, LedgerKind: item.Kind, LedgerKey: item.ItemKey, EventID: item.EventID, Record: item.Source}
 		if item.DeliveryID != "" {
 			refs.DeliveryIDs = []string{item.DeliveryID}
 		}
@@ -368,6 +391,7 @@ func (r *swarmNeedsReader) ledger(ctx context.Context, tx pgx.Tx, campaign, root
 const (
 	swarmBoardDefaultTTL = 24 * time.Hour
 	swarmBoardMaxTTL     = 72 * time.Hour
+	swarmLandingBoardAge = 72 * time.Hour
 	swarmTimedOutWaitAge = 24 * time.Hour
 )
 
@@ -379,14 +403,14 @@ func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, e
 	rows, err := tx.Query(ctx, `WITH questions AS MATERIALIZED (
 		SELECT e.event_id::text AS event_id,e.publisher,e.created_at,e.record_id::text AS record_id,e.version,
 			COALESCE(e.summary,'') AS summary,COALESCE('agent-'||a.ordinal::text,e.publisher) AS publisher_label,
-			COALESCE(src.available,false) AS available,CASE WHEN src.available THEN substring(v.body FROM $4::text) END AS block
+			COALESCE(src.available,false) AS available,CASE WHEN src.available THEN substring(v.body FROM $5::text) END AS block
 		FROM cairn.agent_event e
 		LEFT JOIN cairn.agent_session a ON e.publisher='agent/'||a.agent_id::text AND a.repo=e.repo
 		LEFT JOIN cairn.memory_record m ON m.record_id=e.record_id
 		LEFT JOIN cairn.record_version v ON v.record_id=e.record_id AND v.version=e.version AND v.repo=e.repo
 		CROSS JOIN LATERAL (SELECT m.lifecycle='active' AND v.record_id IS NOT NULL AND v.payload_deleted_by IS NULL AS available) src
 		WHERE e.repo=$1 AND e.destination_type='topic' AND e.destination_name='agent-board' AND e.kind='request'
-		AND (e.publisher=ANY($2::text[])) <> $3
+		AND e.created_at>=$4 AND (e.publisher=ANY($2::text[])) <> $3
 		AND NOT EXISTS (SELECT 1 FROM cairn.agent_event reply WHERE reply.repo=e.repo AND reply.kind='response' AND reply.causation_id=e.event_id)
 	), cards AS MATERIALIZED (
 		SELECT event_id,publisher,created_at,record_id,version,summary,publisher_label,available,block IS NOT NULL AS has_card,
@@ -395,7 +419,7 @@ func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, e
 	)
 	SELECT event_id,publisher,created_at,record_id,version,summary,publisher_label,available,has_card,card->'ttl',card->'expires_at',
 		COALESCE(jsonb_typeof(card->'default')='string' AND card->>'default'<>'',false)
-	FROM cards`, r.repo, r.principals, r.landing, swarmBoardCardBlock)
+	FROM cards`, r.repo, r.principals, r.landing, r.boardSince, swarmBoardCardBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -529,6 +553,7 @@ func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx) ([
 			item.Action.Label = "Read this delivery and acknowledge it when it reaches the head of the inbox"
 		}
 		if kind == "request" {
+			item.Refs.Principal = item.Subject
 			item.Action = SwarmNeedAction{Kind: "reply", Label: "Open the request and reply to its sender"}
 		}
 		return item, nil
@@ -548,6 +573,7 @@ func (r *swarmNeedsReader) workstreams(ctx context.Context, tx pgx.Tx) ([]SwarmN
 			return item, err
 		}
 		item.ID, item.Title = item.Type+":"+item.Refs.Stream, "Workstream decision: "+item.Refs.Stream
+		item.Refs.Principal = item.Subject
 		item.Action = SwarmNeedAction{"decide", "Give the workstream owner a decision and clear the request",
 			"cairn status get --operator --repo " + swarmNeedShellArg(r.repo) + " --stream " + swarmNeedShellArg(item.Refs.Stream)}
 		return item, nil
@@ -811,6 +837,7 @@ func (r *swarmNeedsReader) timedOutWaits(ctx context.Context, tx pgx.Tx) ([]Swar
 		}
 		item.ID, item.Detail = item.Type+":"+item.Refs.WaitID, item.Refs.Code
 		item.Title = ownerLabel + " timed out waiting for " + swarmNeedEventTitle(summary, kind, item.Refs.EventID)
+		item.Refs.Principal = item.Subject
 		item.Action = SwarmNeedAction{Kind: "inspect", Label: "Open the dependency event and follow up with the wait owner"}
 		return item, nil
 	})
@@ -859,8 +886,8 @@ func (r *swarmNeedsReader) missedCheckpoints(ctx context.Context, tx pgx.Tx) ([]
 		}
 		item := SwarmNeed{ID: SwarmNeedMissedCheckpoint + ":" + c.id, Type: SwarmNeedMissedCheckpoint,
 			Title: "Missed checkpoint for " + swarmNeedEventTitle(c.summary, c.kind, c.key), Subject: c.sender, Since: c.deadline,
-			Action: SwarmNeedAction{Kind: "inspect", Label: "Open the overdue notice and follow up on the checkpoint"},
-			Refs:   SwarmNeedRefs{EventID: c.noticeID, Record: c.record}}
+			Action: SwarmNeedAction{Kind: "inspect", Label: "Open the overdue notice and follow up with the checkpoint sender"},
+			Refs:   SwarmNeedRefs{Principal: c.sender, EventID: c.noticeID, Record: c.record}}
 		if c.eventID != "" {
 			item.Refs.EventIDs = []string{c.noticeID, c.eventID}
 		}

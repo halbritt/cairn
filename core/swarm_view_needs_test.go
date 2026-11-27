@@ -74,6 +74,19 @@ func swarmNeedsTestItem(t *testing.T, needs SwarmNeedsYou, kind, subject, action
 	t.Helper()
 	for _, item := range needs.Items {
 		if item.Type == kind && item.Subject == subject {
+			var wantPrincipal string
+			switch kind {
+			case SwarmNeedHandoffDue, SwarmNeedMissedCheckpoint, SwarmNeedWaitTimedOut,
+				SwarmNeedDecision, SwarmNeedEscalation, SwarmNeedWorkstreamDecision:
+				wantPrincipal = subject
+			case SwarmNeedOperatorDelivery:
+				if action == "reply" {
+					wantPrincipal = subject
+				}
+			}
+			if item.Refs.Principal != wantPrincipal {
+				t.Fatalf("%s follow-up principal is %q, want %q", kind, item.Refs.Principal, wantPrincipal)
+			}
 			if item.ID == "" || item.Title == "" || !item.Since.Equal(since) || item.Action.Kind != action ||
 				item.Action.Label == "" {
 				t.Fatalf("wrong needs row: %+v, want subject %s action %s since %s", item, subject, action, since)
@@ -142,6 +155,7 @@ func TestSwarmNeedsBoardExpiryAndDefault(t *testing.T) {
 	if needs := swarmNeedsTestSnapshot(f); needs.Items == nil || len(needs.Items) != 0 {
 		t.Fatalf("initially empty: %+v", needs)
 	}
+	f.exec(`UPDATE cairn.agent_team_campaign SET created_at=clock_timestamp()-interval '1 hour' WHERE repo=$1 AND campaign=$2`, f.repo, f.campaign)
 	expired := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
 	swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", expired.CreatedAt)
 	f.exec(`UPDATE cairn.agent_event SET created_at=clock_timestamp()-interval '11 minutes' WHERE event_id=$1`, expired.EventID)
@@ -173,12 +187,14 @@ func TestSwarmNeedsLedgerAndHandoff(t *testing.T) {
 	}
 	swarmNeedsTestLedger(f, "decision", decision.ItemKey, f.root.Inbox, "settled", decision.Revision)
 	swarmNeedsTestLedger(f, "blocker", escalation.ItemKey, worker.Inbox, "resolved", escalation.Revision)
-	f.exec(`UPDATE cairn.agent_session SET started_at=clock_timestamp()-interval '5 hours' WHERE agent_id=$1`, f.root.AgentID)
+	start := time.Now().UTC().Add(-5 * time.Hour).Truncate(time.Microsecond)
+	f.exec(`UPDATE cairn.agent_session SET started_at=$2 WHERE agent_id=$1`, f.root.AgentID, start)
 	snap, err := f.op.GetSwarmSnapshot(context.Background(), SwarmSnapshotRequest{Repo: f.repo, Campaign: f.campaign})
 	if err != nil || snap.Handoff == nil || snap.Handoff.Since == nil {
 		t.Fatalf("handoff: %+v %v", snap.Handoff, err)
 	}
-	handoff := swarmNeedsTestItem(t, snap.NeedsYou, SwarmNeedHandoffDue, f.root.Inbox, "hand_off", *snap.Handoff.Since)
+	crossed := start.Add(time.Duration(DefaultMaxCoordinatorAgeSeconds) * time.Second)
+	handoff := swarmNeedsTestItem(t, snap.NeedsYou, SwarmNeedHandoffDue, f.root.Inbox, "hand_off", crossed)
 	if handoff.Detail != strings.Join(snap.Handoff.Reasons, ". ") {
 		t.Fatalf("handoff reasons: %+v", handoff)
 	}
@@ -186,6 +202,67 @@ func TestSwarmNeedsLedgerAndHandoff(t *testing.T) {
 	swarmNeedsTestAbsent(t, snap.NeedsYou, SwarmNeedEscalation)
 	f.exec(`UPDATE cairn.agent_session SET started_at=clock_timestamp() WHERE agent_id=$1`, f.root.AgentID)
 	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedHandoffDue)
+}
+
+func TestSwarmNeedsHandoffCompactionTimestampWhenRecorded(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "handoff-compaction")
+	setThreshold := func(limit int) {
+		t.Helper()
+		if _, err := f.rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+			RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign,
+			MaxCoordinatorAgeSeconds: intPtr(0), MaxCoordinatorCompactions: &limit,
+		}, f.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	compact := func() {
+		t.Helper()
+		if _, err := f.rootView.RecordCoordinatorCompaction(ctx, RecordCoordinatorCompactionRequest{
+			RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign,
+		}, f.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertWireSince := func(at time.Time, present bool) {
+		t.Helper()
+		row := swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedHandoffDue, f.root.Inbox, "hand_off", at)
+		wire, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(wire, &fields); err != nil {
+			t.Fatal(err)
+		}
+		value, ok := fields["since"]
+		if ok != present {
+			t.Fatalf("handoff since presence wanted %t, got %s", present, wire)
+		}
+		if ok {
+			var got time.Time
+			if err := json.Unmarshal(value, &got); err != nil || !got.Equal(at) {
+				t.Errorf("since was %s, want %s (%v)", got, at, err)
+			}
+		}
+	}
+
+	setThreshold(1)
+	compact()
+	var first time.Time
+	if err := f.op.pool.QueryRow(ctx, `SELECT first_compacted_at FROM cairn.agent_session WHERE agent_id=$1`, f.root.AgentID).Scan(&first); err != nil {
+		t.Fatal(err)
+	}
+	assertWireSince(first, true)
+
+	setThreshold(2)
+	compact()
+	assertWireSince(time.Time{}, false)
+
+	// Older sessions can have a compaction count without a stored timestamp.
+	setThreshold(1)
+	f.exec(`UPDATE cairn.agent_session SET first_compacted_at=NULL WHERE agent_id=$1`, f.root.AgentID)
+	assertWireSince(time.Time{}, false)
 }
 
 func TestSwarmNeedsOperatorDeliveryAndWorkstream(t *testing.T) {
@@ -577,6 +654,7 @@ func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
 	const labelMarker = "PRIVATE-BOARD-DEFAULT-LABEL"
 	const summary = "Choose a setting"
 	f := newSwarmFixture(t, "board-metadata")
+	f.exec(`UPDATE cairn.agent_team_campaign SET created_at=clock_timestamp()-interval '1 week' WHERE repo=$1 AND campaign=$2`, f.repo, f.campaign)
 	body := noteMarker + "\r\n\r\n```board-card\r\n{\r\n" +
 		`"ttl":600,"default":"no","detail":"` + cardMarker +
 		`","verbs":[{"id":"no","label":"` + labelMarker + `"}]` + "\r\n}\r\n```\r\n" +
@@ -615,6 +693,37 @@ func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
 	if item := items[malformed.EventID]; item.Title != "Board question from "+f.root.DisplayName || item.Detail != "" || item.ExpiresAt == nil ||
 		!item.ExpiresAt.Equal(malformed.CreatedAt.Add(24*time.Hour)) {
 		t.Errorf("expected fixed title and fallback lifetime for a malformed card, got %+v", item)
+	}
+}
+
+func TestSwarmNeedsBoardRequestAgeBound(t *testing.T) {
+	f := newSwarmFixture(t, "board-age-bound")
+	_, outside := f.session("outside-board")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	campaignStart := now.Add(-2 * time.Hour)
+	f.exec(`UPDATE cairn.agent_team_campaign SET created_at=$3 WHERE repo=$1 AND campaign=$2`, f.repo, f.campaign, campaignStart)
+	publish := func(from *Store, at time.Time) AgentEvent {
+		t.Helper()
+		e := swarmNeedsTestPublish(f, from, "request", "topic", "agent-board", "Board request without a card", "")
+		f.exec(`UPDATE cairn.agent_event SET created_at=$2 WHERE event_id=$1`, e.EventID, at)
+		return e
+	}
+	publish(f.rootView, campaignStart.Add(-time.Second))
+	campaignEvent := publish(f.rootView, campaignStart)
+	publish(outside, now.Add(-73*time.Hour))
+	landingEvent := publish(outside, now.Add(-71*time.Hour))
+
+	for _, page := range []struct {
+		name string
+		got  SwarmNeedsYou
+		want string
+	}{
+		{"campaign", swarmNeedsTestSnapshot(f), campaignEvent.EventID},
+		{"landing", swarmNeedsTestLanding(f), landingEvent.EventID},
+	} {
+		if len(page.got.Items) != 1 || page.got.Items[0].Refs.EventID != page.want || page.got.Items[0].ExpiresAt != nil {
+			t.Errorf("%s board requests: got %+v, want only %s without expiry", page.name, page.got.Items, page.want)
+		}
 	}
 }
 

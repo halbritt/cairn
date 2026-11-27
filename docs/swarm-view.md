@@ -213,10 +213,21 @@ existing waits remain visible.
 The list at the top of the page shows work the owner can advance. Campaign
 pages use the event log's campaign principal set, which includes former
 members. The landing page shows items whose subjects belong to no active
-campaign. Rows with more distinct sessions waiting directly
-on their events come first, then older rows. A source read failure is shown
-with its reason. The other sources can still show their items. A copy command appears only
-where the local operator CLI can perform the stated inspection.
+campaign. Rows with more distinct sessions waiting directly on their events
+come first, then older rows. If a source read fails, the page shows the reason
+and keeps items from the sources it can read. Copy commands use the local
+operator CLI.
+
+When an action involves contacting someone, `refs.principal` identifies
+the recipient. The page checks current campaign membership before offering to
+send. A handoff row includes `since` when Cairn can date a threshold crossing
+from the session start or the recorded first compaction. The field can be
+absent when a later compaction triggered the handoff or its timestamp is
+unavailable.
+
+Campaign board reads start at campaign creation. Landing board reads cover
+the last 72 hours. These bounds apply even to a question without a card.
+Cairn excludes answered requests before reading card metadata.
 
 | Row | When it appears | Owner action |
 | --- | --- | --- |
@@ -225,13 +236,13 @@ where the local operator CLI can perform the stated inspection.
 | Decision | An open ledger decision owned by the coordinator or operator. A lead's decision appears on the lead's row. | Make the decision and record the outcome in the campaign ledger. |
 | Escalation | A ledger blocker marked escalated. | Review the campaign ledger and resolve the escalation with its owner. |
 | Workstream decision | The workstream has a nonempty `decision_needed` field. | Give the workstream owner a decision and clear the request. |
-| Handoff due | The coordinator reached the campaign's age or compaction limit. | Review the ledger and arrange a coordinator handoff. |
+| Handoff due | The coordinator reached the campaign's age or compaction limit. | Review the ledger and arrange a handoff with the coordinator. |
 | Owner turn | The session has eligible inbox work and the host reported `owner_turn_required` for its current execution within the existing 120-second freshness window. | Find the session in Herdr and take a turn. |
 | Failed delivery | Unresolved failed deliveries, grouped by their recorded code. The title names the oldest failed event and its recipient. Operator cancellations, releases, and consumer retirements are excluded. A reissue clears its original failure from the list. | Inspect the individual deliveries and review prior effects before choosing recovery. |
 | Stalled agent | A current session meets `pending_starved` or `hold_stalled`. | Inspect the session and its oldest affected delivery before intervening. |
 | Stopped session backlog | A stopped session still has eligible pending or leased work. | Review the stranded deliveries before deciding whether to notify the publishers or recover the work. |
 | Timed-out wait | A registered wait timed out within the last 24 hours in the current restore generation. | Inspect the wait and follow up with its owner. |
-| Missed checkpoint | Cairn emitted an overdue notice and the source still meets the existing unsatisfied checkpoint check. | Open the overdue notice and follow up on its source. |
+| Missed checkpoint | Cairn emitted an overdue notice and the source still meets the existing unsatisfied checkpoint check. | Open the overdue notice and follow up with the checkpoint sender. |
 
 “Stopped making progress” uses Cairn's existing starvation checks. `pending_starved`
 uses 1,800 seconds for a busy session and 600 seconds for an idle session, with
