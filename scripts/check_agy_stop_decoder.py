@@ -81,7 +81,7 @@ def main() -> int:
             bad_log = root / "bad.log"
             subprocess.run([agy_bin, "--new-project", "--settings", str(settings), "--model", MODEL,
                             "--log-file", str(bad_log), "--print-timeout", "20s", "--print", "hi"],
-                           cwd=work, env=env, check=True, capture_output=True, timeout=30)
+                           cwd=work, env=env, stdin=subprocess.DEVNULL, check=True, capture_output=True, timeout=30)
             if not any("injectSteps" in line for line in _stop_errors(bad_log)):
                 raise AssertionError("expected native Agy Stop decoder to reject injectSteps")
             return _verify_go_handler(agy_bin, lifecycle_bin, root, work, settings, hooks_path, env, calls)
@@ -184,7 +184,7 @@ print(json.dumps({{"ok": True, "data": data}}))
         log_path = root / f"good-{mode_name}.log"
         subprocess.run([agy_bin, "--new-project", "--settings", str(settings), "--model", MODEL,
                         "--log-file", str(log_path), "--print-timeout", "20s", "--print", "hi"],
-                       cwd=work, env=env, check=True, capture_output=True, timeout=30)
+                       cwd=work, env=env, stdin=subprocess.DEVNULL, check=True, capture_output=True, timeout=30)
         if errs := _stop_errors(log_path):
             raise AssertionError(f"Agy Stop decoder errors in {mode_name}: {errs}")
         calls = [json.loads(line) for line in api_calls.read_text().splitlines()]

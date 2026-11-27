@@ -47,7 +47,7 @@ def check(binary, model, root, config, api_call):
         with (root / 'stdout.json').open('w') as out, (root / 'stderr.log').open('w') as err:
             process = subprocess.Popen([binary, '--new-project', '--model', model, '--print-timeout', '60s',
                 '--output-format', 'json', '--print', 'Reply INITIAL_DONE.'], cwd=root, env=env,
-                stdout=out, stderr=err, start_new_session=True)
+                stdin=subprocess.DEVNULL, stdout=out, stderr=err, start_new_session=True)
             deadline = time.monotonic() + 15
             while not marker.exists():
                 assert process.poll() is None and time.monotonic() < deadline, 'Agy did not reach native invocation boundary'

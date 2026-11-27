@@ -108,7 +108,7 @@ def check(binary, root, environment, opencode, fixture, observed=False):
         try:
             with (work / 'stdout.jsonl').open('w') as stdout, (work / 'stderr.log').open('w') as stderr:
                 command = [*launch, '--', opencode, 'run', '--format', 'json', '--model', 'fixture/probe']
-                result = subprocess.run(command, cwd=work, env=env,
+                result = subprocess.run(command, cwd=work, env=env, stdin=subprocess.DEVNULL,
                                         stdout=stdout, stderr=stderr, timeout=60)
         finally:
             server.shutdown()

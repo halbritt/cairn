@@ -103,7 +103,8 @@ def session(claude, binary, root, output, run_id, cases, allowed, repo='fixture:
     thread.start()
     try:
         with (output / 'stdout.jsonl').open('w') as stdout, (output / 'stderr.log').open('w') as stderr:
-            process = subprocess.run(command, cwd=work, env=env, stdout=stdout, stderr=stderr, timeout=90)
+            process = subprocess.run(command, cwd=work, env=env, stdin=subprocess.DEVNULL,
+                                     stdout=stdout, stderr=stderr, timeout=90)
     finally:
         server.shutdown()
         server.server_close()

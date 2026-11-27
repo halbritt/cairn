@@ -121,7 +121,7 @@ def check(opencode, output, *, connection=None, extra_cases=()):
         with (output / 'stdout.jsonl').open('w') as stdout, (output / 'stderr.log').open('w') as stderr:
             result = subprocess.run([opencode, 'run', '--format', 'json', '--model', 'fixture/probe',
                                      'Execute the scripted custom-tool checks.'], cwd=work, env=env,
-                                    stdout=stdout, stderr=stderr, timeout=60)
+                                    stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, timeout=60)
     finally:
         server.shutdown()
         server.server_close()

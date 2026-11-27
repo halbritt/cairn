@@ -580,7 +580,8 @@ def check(binary, root, repo, api_call):
             assert entry(agent['agent_id'], True)[0]['stopped']
         if os.environ.get("CAIRN_HERMES_PYTHON"):
             subprocess.run([os.environ["CAIRN_HERMES_PYTHON"], str(Path(__file__).with_name("check_hermes_coordination.py")),
-                str(root / "native-hermes"), os.environ["CAIRN_HERMES_ROOT"], str(config)], check=True, timeout=90)
+                str(root / "native-hermes"), os.environ["CAIRN_HERMES_ROOT"], str(config)],
+                stdin=subprocess.DEVNULL, check=True, timeout=90)
         if os.environ.get("CAIRN_OPENCODE_BINARY"):
             from check_opencode_coordination import check as check_opencode
             check_opencode(os.environ['CAIRN_OPENCODE_BINARY'], root / 'native-opencode', json.loads(config.read_text()), api_call)
@@ -614,7 +615,7 @@ def check(binary, root, repo, api_call):
             result = subprocess.run([os.environ['CAIRN_AGY_BINARY'], '--new-project', '--model', model,
                 '--print-timeout', '30s', '--output-format', 'json', '--print',
                 'Native session identity smoke test. Reply only with your Cairn agent UUID from the injected session context. Do not use tools or access files.'],
-                cwd=work, env=env, capture_output=True, text=True, timeout=40)
+                cwd=work, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=40)
             (work / 'stdout.json').write_text(result.stdout)
             (work / 'stderr.log').write_text(result.stderr)
             assert result.returncode == 0, result.stderr[-1000:]

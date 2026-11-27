@@ -221,7 +221,7 @@ def main():
                            "--prompt", ("Read edit-fixture.txt and change before to after." if args.check_edit
                                         else "Acknowledge the advisory fixture. Do not use tools."), "--",
                            binary, "run", "--pure", "--format", "json", "-m", "cairn-fixture/fixture"]
-            process = subprocess.Popen(command,
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
                                        cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
             timed_out = False
             try:

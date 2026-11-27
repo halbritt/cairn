@@ -119,9 +119,10 @@ def check(binary, root, environment, opencode):
         thread.start()
         try:
             with (case_root / 'stdout.jsonl').open('w') as stdout, (case_root / 'stderr.log').open('w') as stderr:
+                # With an open pipe on stdin, `opencode run` waits on it until the timeout.
                 run = subprocess.run([opencode, 'run', '--format', 'json', '--model', 'fixture/probe',
                                       'Exercise the scripted read and search transport.'], cwd=work, env=env,
-                                     stdout=stdout, stderr=stderr, timeout=60)
+                                     stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, timeout=60)
         finally:
             server.shutdown()
             server.server_close()

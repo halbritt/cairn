@@ -321,7 +321,8 @@ class OpenCodeMessagingToolsTests(unittest.TestCase):
         try:
             proc = subprocess.run(
                 [self.opencode, "run", "--format", "json", "--model", "fixture/probe", "Run scripted check."],
-                cwd=work, env=env, capture_output=True, text=True, timeout=45,
+                # With an open pipe on stdin, `opencode run` waits on it until the timeout.
+                cwd=work, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=45,
             )
         finally:
             server.shutdown()

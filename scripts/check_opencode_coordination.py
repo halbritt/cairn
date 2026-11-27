@@ -74,7 +74,7 @@ def check(binary, root, config, api_call):
     thread.start()
     try:
         result = subprocess.run([binary, 'run', '--format', 'json', '--model', 'fixture/probe', 'Reply COORDINATION_OK'],
-            cwd=work, env=env, capture_output=True, text=True, timeout=90)
+            cwd=work, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=90)
         (root / 'stdout.jsonl').write_text(result.stdout)
         (root / 'stderr.log').write_text(result.stderr)
         assert result.returncode == 0 and not failures, (result.returncode, failures, result.stderr[-2000:])
@@ -90,7 +90,7 @@ def check(binary, root, config, api_call):
         active_event = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()), '--to', entry['inbox'],
             '--kind', 'request', '--version', '1', selected['record_id'])
         resumed = subprocess.run([binary, 'run', '--session', entry['native_session_id'], '--format', 'json', '--model',
-            'fixture/probe', 'Handle the queued Cairn inbox request.'], cwd=work, env=env, capture_output=True, text=True, timeout=90)
+            'fixture/probe', 'Handle the queued Cairn inbox request.'], cwd=work, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=90)
         (root / 'resumed.stdout.jsonl').write_text(resumed.stdout)
         (root / 'resumed.stderr.log').write_text(resumed.stderr)
         assert resumed.returncode == 0 and not failures, (resumed.returncode, failures)
