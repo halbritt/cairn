@@ -185,6 +185,13 @@ to 2,000 deliveries, giving priority to each member's oldest eligible delivery
 and other open deliveries when the list is truncated. Agent details show open
 deliveries in and out of that inbox.
 
+Event envelopes can identify how Cairn published a message with the optional
+`system` field. `wait_notice` marks a registered wait notification,
+`stopped_delivery_notice` a notice to the original publisher about work in a
+stopped session's inbox, `overdue_checkpoint` an overdue deadline or checkpoint
+notice, and `scheduled_event` a message the scheduler sent from an operator's
+one-shot schedule. Direct sends by the operator or an agent omit this field.
+
 A delivery can be pending, leased, held, settled, superseded, ignored, failed,
 cancelled or expired. Held means an unfinished wake or native attempt owns the
 delivery. Settled means the recipient handled it. An ignored delivery with code

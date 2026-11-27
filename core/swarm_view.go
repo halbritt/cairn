@@ -551,6 +551,7 @@ type SwarmEvent struct {
 	Position      int64            `json:"position"`
 	EventID       string           `json:"event_id"`
 	Kind          string           `json:"kind"`
+	System        string           `json:"system,omitempty"`
 	From          string           `json:"from"`
 	To            EventDestination `json:"to"`
 	Summary       string           `json:"summary,omitempty"`
@@ -699,7 +700,10 @@ func (s *Store) swarmEventsTx(ctx context.Context, tx pgx.Tx, sc swarmScope, que
 			Routing: e.Routing, Ref: e.Ref, CreatedAt: e.CreatedAt, Cursor: encodeSwarmCursor(sc, e.Position),
 		})
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return out, err
+	}
+	return out, swarmAnnotateSystemEvents(ctx, tx, sc.Repo, out)
 }
 
 // SwarmStreamRequest is one read of the stream. Cursor is the last stream ID
@@ -961,6 +965,9 @@ func (s *Store) GetSwarmLanding(ctx context.Context, repo string) (SwarmLanding,
 	}
 	rows.Close()
 	if err = rows.Err(); err != nil {
+		return out, err
+	}
+	if err = swarmAnnotateSystemEvents(ctx, tx, repo, out.Events); err != nil {
 		return out, err
 	}
 	errs := map[string]string{}
