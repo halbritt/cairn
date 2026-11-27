@@ -163,9 +163,16 @@ func (o *paneObservation) matchCodexPane(ctx context.Context, session PaneSessio
 		var err error
 		info, err = o.client.herdrForeground(ctx, o.env, pane)
 		if err != nil {
-			return false, err
+			var hostErr *HerdrError
+			if !errors.As(err, &hostErr) || hostErr.Code != "HOST_TARGET_GONE" {
+				return false, err
+			}
 		}
+		// A nil entry records a pane that closed after the agent list.
 		o.foreground[pane] = info
+	}
+	if info == nil {
+		return false, nil
 	}
 	match, err := o.client.foregroundIdentifiesSession(info, process)
 	if errors.Is(err, os.ErrNotExist) && !o.client.ProcessAlive(process) {

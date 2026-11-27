@@ -25,11 +25,12 @@ type swarmPane struct {
 }
 
 type swarmPaneObservation struct {
-	ObservedAt time.Time            `json:"observed_at"`
-	Status     string               `json:"status"`
-	Error      string               `json:"error,omitempty"`
-	Sessions   int                  `json:"sessions"`
-	Panes      map[string]swarmPane `json:"panes"`
+	ObservedAt        time.Time            `json:"observed_at"`
+	Status            string               `json:"status"`
+	Error             string               `json:"error,omitempty"`
+	Sessions          int                  `json:"sessions"`
+	SkippedStateFiles int                  `json:"skipped_state_files,omitempty"`
+	Panes             map[string]swarmPane `json:"panes"`
 }
 
 type swarmPaneReader func(ctx context.Context) swarmPaneObservation
@@ -37,13 +38,14 @@ type swarmPaneReader func(ctx context.Context) swarmPaneObservation
 func newHerdrPaneReader(bindingsDir, procRoot string) swarmPaneReader {
 	return func(ctx context.Context) swarmPaneObservation {
 		observation := swarmPaneObservation{Status: "unavailable", Panes: make(map[string]swarmPane)}
-		client, sessions, err := swarmHerdrSessions(ctx, bindingsDir, procRoot)
-		observation.Sessions = len(sessions)
+		scan, err := swarmHerdrSessions(ctx, bindingsDir, procRoot)
+		observation.Sessions = len(scan.sessions)
+		observation.SkippedStateFiles = scan.skippedStateFiles
 		if err != nil {
 			observation.Error = err.Error()
 			return observation
 		}
-		matches, err := client.ObservePanes(ctx, sessions, os.Environ())
+		matches, err := scan.client.ObservePanes(ctx, scan.sessions, os.Environ())
 		if err != nil {
 			var hostErr *wake.HerdrError
 			switch {
@@ -108,98 +110,108 @@ func (flag *swarmStateFlag) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func swarmHerdrSessions(ctx context.Context, bindingsDir, procRoot string) (wake.HerdrClient, []wake.PaneSession, error) {
+type swarmHerdrScan struct {
+	client            wake.HerdrClient
+	sessions          []wake.PaneSession
+	skippedStateFiles int
+}
+
+func swarmHerdrSessions(ctx context.Context, bindingsDir, procRoot string) (swarmHerdrScan, error) {
 	if err := ctx.Err(); err != nil {
-		return wake.HerdrClient{}, nil, err
+		return swarmHerdrScan{}, err
 	}
-	type inputs struct {
-		client   wake.HerdrClient
-		sessions []wake.PaneSession
-		err      error
+	type result struct {
+		scan swarmHerdrScan
+		err  error
 	}
-	done := make(chan inputs, 1)
+	done := make(chan result, 1)
 	go func() {
-		client, sessions, err := scanSwarmHerdrSessions(ctx, bindingsDir, procRoot)
-		done <- inputs{client, sessions, err}
+		scan, err := scanSwarmHerdrSessions(ctx, bindingsDir, procRoot)
+		done <- result{scan, err}
 	}()
 	select {
 	case <-ctx.Done():
-		return wake.HerdrClient{}, nil, ctx.Err()
+		return swarmHerdrScan{}, ctx.Err()
 	case scanned := <-done:
-		return scanned.client, scanned.sessions, scanned.err
+		return scanned.scan, scanned.err
 	}
 }
 
-func scanSwarmHerdrSessions(ctx context.Context, bindingsDir, procRoot string) (wake.HerdrClient, []wake.PaneSession, error) {
-	client := wake.HerdrClient{ProcRoot: procRoot}
-	var sessions []wake.PaneSession
+func scanSwarmHerdrSessions(ctx context.Context, bindingsDir, procRoot string) (swarmHerdrScan, error) {
+	scan := swarmHerdrScan{client: wake.HerdrClient{ProcRoot: procRoot}}
 	if bindingsDir == "" {
 		home, err := dataDirectory()
 		if err != nil {
-			return client, sessions, errors.New("could not find Cairn's bindings directory")
+			return scan, errors.New("could not find Cairn's bindings directory")
 		}
 		bindingsDir = filepath.Join(home, "coordination", "bindings")
 	}
 	bindings, err := os.ReadDir(bindingsDir)
 	if err != nil {
-		return client, sessions, errors.New("could not list Cairn bindings")
+		return scan, errors.New("could not list Cairn bindings")
 	}
 	stateDirs := make(map[string]bool)
 	for _, entry := range bindings {
 		if err := ctx.Err(); err != nil {
-			return client, sessions, err
+			return scan, err
 		}
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		var binding swarmHerdrBinding
-		if err := readSwarmHerdrJSON(filepath.Join(bindingsDir, entry.Name()), &binding); err != nil {
-			return client, sessions, errors.New("could not read a Cairn binding")
+		data, err := readSwarmHerdrFile(filepath.Join(bindingsDir, entry.Name()))
+		if err != nil || json.Unmarshal(data, &binding) != nil {
+			return scan, errors.New("could not read a Cairn binding")
 		}
-		if client.Executable == "" && filepath.IsAbs(binding.IdleWakeup) {
-			client.Executable = binding.IdleWakeup
+		if scan.client.Executable == "" && filepath.IsAbs(binding.IdleWakeup) {
+			scan.client.Executable = binding.IdleWakeup
 		}
 		if binding.StateDir == "" {
-			return client, sessions, errors.New("a Cairn binding has no session state directory")
+			return scan, errors.New("a Cairn binding has no session state directory")
 		}
 		directory := filepath.Clean(binding.StateDir)
 		if stateDirs[directory] {
 			continue
 		}
 		stateDirs[directory] = true
-		sessions, err = appendSwarmHerdrSessions(ctx, client, sessions, directory, binding.Harness)
-		if err != nil {
-			return client, sessions, err
+		if err := appendSwarmHerdrSessions(ctx, &scan, directory, binding.Harness); err != nil {
+			return scan, err
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return client, sessions, err
+		return scan, err
 	}
-	if client.Executable == "" {
-		return client, sessions, errors.New("no Cairn binding has an absolute Herdr executable")
+	if scan.client.Executable == "" {
+		return scan, errors.New("no Cairn binding has an absolute Herdr executable")
 	}
-	return client, sessions, nil
+	return scan, nil
 }
 
-func appendSwarmHerdrSessions(ctx context.Context, client wake.HerdrClient, sessions []wake.PaneSession, directory, bindingHarness string) ([]wake.PaneSession, error) {
+func appendSwarmHerdrSessions(ctx context.Context, scan *swarmHerdrScan, directory, bindingHarness string) error {
 	entries, err := os.ReadDir(directory)
 	if err != nil {
-		return sessions, errors.New("could not list Cairn session state")
+		return errors.New("could not list Cairn session state")
 	}
 	live := make(map[wake.ProcessRef]bool)
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return sessions, err
+			return err
 		}
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		path := filepath.Join(directory, entry.Name())
-		var state swarmHerdrState
-		if err := readSwarmHerdrJSON(path, &state); errors.Is(err, os.ErrNotExist) {
+		data, err := readSwarmHerdrFile(path)
+		if errors.Is(err, os.ErrNotExist) {
 			continue
-		} else if err != nil {
-			return sessions, errors.New("could not read Cairn session state")
+		}
+		if err != nil {
+			return errors.New("could not read Cairn session state")
+		}
+		var state swarmHerdrState
+		if err := json.Unmarshal(data, &state); err != nil {
+			scan.skippedStateFiles++
+			continue
 		}
 		if state.Retired || state.Ending {
 			continue
@@ -209,7 +221,7 @@ func appendSwarmHerdrSessions(ctx context.Context, client wake.HerdrClient, sess
 		}
 		alive, seen := live[state.Process]
 		if !seen {
-			alive = client.ProcessAlive(state.Process)
+			alive = scan.client.ProcessAlive(state.Process)
 			live[state.Process] = alive
 		}
 		if !alive {
@@ -219,24 +231,24 @@ func appendSwarmHerdrSessions(ctx context.Context, client wake.HerdrClient, sess
 		if harness == "" {
 			harness = bindingHarness
 		}
-		sessions = append(sessions, wake.PaneSession{
+		scan.sessions = append(scan.sessions, wake.PaneSession{
 			AgentID: state.Agent.ID, NativeSessionID: state.Agent.NativeID, Harness: harness,
 			Process: state.Process, StateDir: directory, StatePath: path,
 		})
 	}
-	return sessions, nil
+	return nil
 }
 
-func readSwarmHerdrJSON(path string, destination any) error {
+func readSwarmHerdrFile(path string) ([]byte, error) {
 	const maxBytes = 4 << 20
 	data, err := readRegularFilePrefix(path, maxBytes+1)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(data) > maxBytes {
-		return errors.New("Cairn lifecycle file exceeds size limit")
+		return nil, errors.New("Cairn lifecycle file exceeds size limit")
 	}
-	return json.Unmarshal(data, destination)
+	return data, nil
 }
 
 var plainSwarmPaneID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]*$`)

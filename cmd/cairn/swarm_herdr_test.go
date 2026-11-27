@@ -75,6 +75,34 @@ func TestSwarmHerdrUnavailable(t *testing.T) {
 	}
 }
 
+func TestSwarmHerdrSkipsMalformedState(t *testing.T) {
+	root := t.TempDir()
+	bindings, stateDir, procRoot := makeSwarmHerdrDirectories(t, root)
+	executable := writeSwarmHerdrExecutable(t, root, `
+[ "$#" -eq 2 ] && [ "$1" = agent ] && [ "$2" = list ] || exit 99
+cat <<'JSON'
+{"result":{"agents":[
+  {"pane_id":"w1:p2","agent":"claude","agent_session":{"kind":"id","agent":"claude","value":"native-one"},"agent_status":"working"},
+  {"pane_id":"w1:p3","agent":"claude","agent_session":{"kind":"id","agent":"claude","value":"native-two"},"agent_status":"idle"}
+]}}
+JSON
+`)
+	writeSwarmHerdrJSON(t, bindings, "test", map[string]any{"harness": "claude", "state_dir": stateDir, "idle_wakeup": executable})
+	first := writeSwarmPaneProcess(t, procRoot, 100, "/fixture/herdr.sock")
+	second := writeSwarmPaneProcess(t, procRoot, 101, "/fixture/herdr.sock")
+	writeSwarmPaneState(t, stateDir, "a-valid", "agent-one", "native-one", first, nil)
+	if err := os.WriteFile(filepath.Join(stateDir, "b-truncated.json"), []byte(`{"agent":`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	writeSwarmPaneState(t, stateDir, "c-valid", "agent-two", "native-two", second, nil)
+
+	got := newHerdrPaneReader(bindings, procRoot)(t.Context())
+	if got.Status != "ok" || got.Error != "" || got.Sessions != 2 || got.SkippedStateFiles != 1 ||
+		len(got.Panes) != 2 || got.Panes["agent-one"].PaneID != "w1:p2" || got.Panes["agent-two"].PaneID != "w1:p3" {
+		t.Fatalf("observation = %+v, want both live panes and one skipped state file", got)
+	}
+}
+
 func TestSwarmHerdrDeadline(t *testing.T) {
 	root := t.TempDir()
 	bindings, stateDir, procRoot := makeSwarmHerdrDirectories(t, root)

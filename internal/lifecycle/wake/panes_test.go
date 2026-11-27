@@ -48,13 +48,7 @@ func TestObservePanes(t *testing.T) {
 		f.host["agent_session"] = nil
 		f.host["terminal_title"] = "Fallback title"
 		f.host["agent_status"] = "working"
-		fds := filepath.Join(client.ProcRoot, strconv.Itoa(request.Process.PID), "fd")
-		if err := os.Mkdir(fds, 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink("/tmp/rollout-fixture-"+request.NativeSessionID+".jsonl", filepath.Join(fds, "5")); err != nil {
-			t.Fatal(err)
-		}
+		writeFixturePaneRollout(t, client.ProcRoot, session)
 		other := maps.Clone(f.host)
 		other["pane_id"] = "other-pane"
 		f.candidates = append(f.candidates, other)
@@ -83,6 +77,44 @@ func TestObservePanes(t *testing.T) {
 			{"agent", "list"},
 			{"pane", "process-info", "--pane", "own-pane"},
 			{"pane", "process-info", "--pane", "other-pane"},
+		})
+	})
+
+	t.Run("codex_pane_closed_mid_read", func(t *testing.T) {
+		f, client, request := newHerdrFixture(t, HarnessCodex)
+		closed := fixturePaneSession(request)
+		writeFixturePaneRollout(t, client.ProcRoot, closed)
+		active := closed
+		active.AgentID = "active-agent"
+		active.NativeSessionID = "33652c68-2f28-41b4-9335-3eb1bb311a91"
+		active.Process.PID++
+		writeFakeProcEntry(t, client.ProcRoot, active.Process.PID, "S", active.Process.Start, active.Process.Boot, "")
+		writeFixturePaneRollout(t, client.ProcRoot, active)
+
+		f.host["agent_session"] = nil
+		other := maps.Clone(f.host)
+		other["pane_id"] = "active-pane"
+		f.candidates = append(f.candidates, other)
+		f.pgid = 0
+		f.foreground = []any{map[string]any{"pid": active.Process.PID}}
+		client.Runner = func(ctx context.Context, argv, env []string) ([]byte, []byte, int, error) {
+			f.processExit, f.processStderr = 0, nil
+			if slices.Equal(argv[1:], []string{"pane", "process-info", "--pane", "own-pane"}) {
+				f.processExit = 1
+				f.processStderr = []byte(`{"error":{"code":"pane_not_found"}}`)
+			}
+			return f.run(ctx, argv, env)
+		}
+
+		matches, err := client.ObservePanes(t.Context(), []PaneSession{closed, active}, nil)
+		want := []PaneMatch{{AgentID: active.AgentID, PaneID: "active-pane", AgentStatus: "idle"}}
+		if err != nil || !slices.Equal(matches, want) {
+			t.Fatalf("matches = %+v, error = %v, want %+v", matches, err, want)
+		}
+		assertPaneFixtureCalls(t, f, [][]string{
+			{"agent", "list"},
+			{"pane", "process-info", "--pane", "own-pane"},
+			{"pane", "process-info", "--pane", "active-pane"},
 		})
 	})
 
@@ -166,6 +198,17 @@ func fixturePaneSession(request TerminalWakeRequest) PaneSession {
 	return PaneSession{
 		AgentID: request.Session.AgentID, Harness: request.Harness, NativeSessionID: request.NativeSessionID,
 		Process: request.Process, StateDir: request.StateDir, StatePath: request.StatePath,
+	}
+}
+
+func writeFixturePaneRollout(t *testing.T, procRoot string, session PaneSession) {
+	t.Helper()
+	fds := filepath.Join(procRoot, strconv.Itoa(session.Process.PID), "fd")
+	if err := os.Mkdir(fds, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/tmp/rollout-fixture-"+session.NativeSessionID+".jsonl", filepath.Join(fds, "5")); err != nil {
+		t.Fatal(err)
 	}
 }
 
