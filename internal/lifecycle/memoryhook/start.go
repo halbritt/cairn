@@ -920,7 +920,9 @@ func failure(event *value.Value, err error) Result {
 	return Result{Stderr: diagnostic + "Cairn lifecycle: " + message + "; use native tools or an explicit handoff.\n", ExitCode: 1}
 }
 func skipEmptyRecall(config, event *value.Value, env map[string][]rune, bound bool) (string, bool) {
-	if bound || value.Truth(config.Get("inbox_recall_binding")) {
+	// Source decides on its effective configuration, where a disabled or
+	// excluded binding has already been removed; bound is that decision here.
+	if bound {
 		return "", false
 	}
 	if !value.SameText(event.Get("hook_event_name"), "SessionStart") && !value.SameText(event.Get("hook_event_name"), "UserPromptSubmit") {
