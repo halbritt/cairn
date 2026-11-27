@@ -617,6 +617,8 @@ class Fixture:
                    lambda: self.acknowledge_head(page), page, category="slice:CAIRN-831")
         self.check("an owner notice is shown as sent, not yet seen", lambda: self.send_unseen(page), page,
                    category="slice:CAIRN-833")
+        self.check("the landing page acknowledges a delivery outside any campaign; a campaign page says it is not the next",
+                   lambda: self.landing_acknowledge(page), page, category="waiting:landing-ack")
         self.check("Supersede is offered only on the owner's notice that is still open", lambda: self.supersede_open_only(page), page,
                    category="slice:CAIRN-833")
         self.check("a cancel confirmed after a handoff is refused with a fresh preview, then confirmed again",
@@ -854,7 +856,7 @@ class Fixture:
             has_button = row.locator("button", has_text="Acknowledge").count() == 1
             require(has_button == (item.get("inbox_head") is True), f"acknowledge offered on the wrong row: {item['title']}")
             if not has_button:
-                self.expect(row).to_contain_text("An older delivery to you comes first")
+                self.expect(row).to_contain_text("Not the next delivery in your inbox")
         if not heads:
             raise AssertionError("waiting: the snapshot marks no inbox_head row, so no row offers Acknowledge (needs-you author's field)")
         head = page.locator(f"#needs li.need[data-need='{heads[0]['id']}']")
@@ -864,6 +866,50 @@ class Fixture:
         reply = info.value.json()
         require(info.value.ok and (reply.get("delivery") or {}).get("state") == "handled", "acknowledge: " + json.dumps(reply)[:300])
         self.expect(page.locator(f"#needs li.need[data-need='{heads[0]['id']}']")).to_have_count(0, timeout=15000)
+
+    def landing_acknowledge(self, page):
+        operator = self.report["operator_principal"]
+        # Clear the campaign's own operator deliveries through the campaign page, head first.
+        for _ in range(10):
+            head = page.locator("#needs li.need[data-type='operator_delivery'] button", has_text="Acknowledge")
+            if head.count() == 0:
+                break
+            head.first.click()
+            with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
+                page.locator("#confirm-go").click()
+            require(info.value.ok, "acknowledging the campaign head failed: " + json.dumps(info.value.json())[:200])
+            page.locator("#confirm-keep").click()
+            page.wait_for_timeout(2500)
+        # A delivery to the operator that belongs to no campaign is now the head; a newer campaign one is not.
+        outside = self.publish("bystander", "Outside any campaign.", {"type": "agent", "name": operator}, kind="notice",
+                               action="review", summary="For the owner: bystander note outside the campaign")
+        inside = self.publish("worker_b", "Inside the campaign.", {"type": "agent", "name": operator}, kind="notice",
+                              action="review", summary="For the owner: flow reader note 3")
+        row = page.locator(f"#needs li.need[data-event='{inside['event_id']}']")
+        self.expect(row).to_have_count(1, timeout=20000)
+        self.expect(row).to_contain_text("Not the next delivery in your inbox")
+        require(row.locator("button", has_text="Acknowledge").count() == 0, "a campaign page offers Acknowledge on a delivery that is not the head")
+        landing = page.context.new_page()
+        try:
+            landing.goto(f"http://127.0.0.1:{self.port}/")
+            outside_row = landing.locator(f"#landing-needs li.need[data-event='{outside['event_id']}']")
+            self.expect(outside_row).to_have_count(1, timeout=20000)
+            controls = outside_row.locator("button").all_inner_texts()
+            require(all(c in ("Acknowledge",) or c.startswith("Copy") for c in controls), "the landing page offers another action: " + json.dumps(controls))
+            require(outside_row.locator("button", has_text="Acknowledge").count() == 1, "the landing head offers no Acknowledge")
+            outside_row.locator("button", has_text="Acknowledge").click()
+            with landing.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
+                landing.locator("#confirm-go").click()
+            sent = info.value.request.post_data_json or {}
+            require(sent.get("campaign") == "", "the landing page did not send the empty campaign")
+            reply = info.value.json()
+            if not info.value.ok:
+                raise AssertionError("waiting: the store refuses an acknowledge with the empty (landing) campaign: "
+                                     + str(reply.get("code")) + " " + str(reply.get("error"))[:160])
+            require((reply.get("delivery") or {}).get("state") == "handled", "landing acknowledge: " + json.dumps(reply)[:300])
+            self.expect(landing.locator(f"#landing-needs li.need[data-event='{outside['event_id']}']")).to_have_count(0, timeout=15000)
+        finally:
+            landing.close()
 
     def copy_commands(self, page):
         env = dict(self.host.env, PATH=str(self.runtime) + os.pathsep + self.host.env.get("PATH", ""))

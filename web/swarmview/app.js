@@ -551,7 +551,11 @@
 
   // One read outside the stream, so the page shows the store's state now.
   async function refreshSnapshot() {
-    if (!state.campaign) return;
+    if (!state.campaign) {
+      // The landing page: an empty campaign is the landing scope.
+      if (!byID("landing").hidden) loadLanding();
+      return;
+    }
     try {
       const snapshot = await api("/api/swarm/campaign?campaign=" + encodeURIComponent(state.campaign));
       if (snapshot && snapshot.schema) {
@@ -840,11 +844,11 @@
       if (need.inbox_head === true) {
         controls.append(el("button", { type: "button", text: "Acknowledge", onclick: () => acknowledge(delivery, refs.event_id) }));
       } else {
-        controls.append(el("span", { class: "muted not-head", text: "An older delivery to you comes first" }));
+        controls.append(el("span", { class: "muted not-head", text: "Not the next delivery in your inbox" }));
       }
-    } else if (action.kind === "cancel_delivery" && delivery) {
+    } else if (action.kind === "cancel_delivery" && delivery && state.campaign) {
       controls.append(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery) }));
-    } else if (action.kind === "cancel_wait" && refs.wait_id) {
+    } else if (action.kind === "cancel_wait" && refs.wait_id && state.campaign) {
       controls.append(el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(refs.wait_id) }));
     } else if (action.kind === "answer_board") {
       // A message without causation is not an answer: the board is where it
@@ -1494,7 +1498,7 @@
       if (isInboxHead(delivery.delivery_id)) {
         controls.push(el("button", { type: "button", text: "Acknowledge", onclick: () => acknowledge(delivery.delivery_id, delivery.event_id) }));
       } else {
-        controls.push(el("span", { class: "muted not-head", text: "An older delivery to you comes first" }));
+        controls.push(el("span", { class: "muted not-head", text: "Not the next delivery in your inbox" }));
       }
     } else if (openDisplays.has(delivery.display || delivery.state)) {
       controls.push(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery.delivery_id) }));
