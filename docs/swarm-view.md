@@ -206,14 +206,15 @@ existing waits remain visible.
 ## What needs the owner
 
 The list at the top of the page shows work the owner can advance. Campaign
-pages scope it to campaign principals. The landing page shows items with no
-active campaign affiliation. Rows with more distinct sessions waiting directly
+pages use the event log's campaign principal set, which includes former
+members. The landing page shows items whose subjects belong to no active
+campaign. Rows with more distinct sessions waiting directly
 on their events come first, then older rows. A source read failure is shown
 with its reason. The other sources can still show their items.
 
 | Row | When it appears | Owner action |
 | --- | --- | --- |
-| Board question | An unanswered request on `agent-board` within its lifetime. The pinned note supplies the lifetime and any unattended default. Cairn uses 24 hours when the note gives no lifetime and caps the view at 72 hours after publication. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |
+| Board question | An unanswered request on `agent-board` within its lifetime. The event summary supplies the title when present. The card supplies its lifetime and whether a default was declared. A card without a lifetime uses 24 hours, capped at 72 hours after publication. A request without a card has no displayed expiry. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |
 | Operator delivery | A pending or leased delivery addressed to the operator. | Open the event and reply to a request, or read and acknowledge an inbox message. |
 | Decision | An open ledger decision owned by the coordinator or operator. A lead's decision appears on the lead's row. | Make the decision and record the outcome in the campaign ledger. |
 | Escalation | A ledger blocker marked escalated. | Review the campaign ledger and resolve the escalation with its owner. |

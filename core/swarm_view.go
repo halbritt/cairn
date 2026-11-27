@@ -965,7 +965,22 @@ func (s *Store) GetSwarmLanding(ctx context.Context, repo string) (SwarmLanding,
 	}
 	errs := map[string]string{}
 	swarmSection(ctx, tx, errs, "needs_you", func(sp pgx.Tx) error {
-		needs, err := s.swarmLandingNeedsYouTx(ctx, sp, repo, out.ObservedAt, out.RestoreGeneration, affiliated)
+		// Attention remains with active campaigns even for former members.
+		rows, err := sp.Query(ctx, `SELECT DISTINCT p.principal FROM cairn.agent_team_campaign c
+			CROSS JOIN LATERAL unnest(`+swarmCampaignPrincipals+`) p(principal)
+			WHERE c.repo=$1 AND c.active`, repo)
+		if err != nil {
+			return err
+		}
+		principals, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		campaignPrincipals := make(map[string]bool, len(principals))
+		for _, principal := range principals {
+			campaignPrincipals[principal] = true
+		}
+		needs, err := s.swarmLandingNeedsYouTx(ctx, sp, repo, out.ObservedAt, out.RestoreGeneration, campaignPrincipals)
 		if err == nil {
 			out.NeedsYou = needs
 		}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,13 @@ const swarmNeedsTestBoard = "Choose the cooler setting?\n\n```board-card\n" +
 
 func swarmNeedsTestPublish(f *swarmFixture, from *Store, kind, destType, dest, body, cause string) AgentEvent {
 	f.t.Helper()
+	return swarmNeedsTestPublishRequest(f, from, body, PublishEventRequest{
+		Kind: kind, Destination: EventDestination{destType, dest}, CausationID: cause,
+	})
+}
+
+func swarmNeedsTestPublishRequest(f *swarmFixture, from *Store, body string, req PublishEventRequest) AgentEvent {
+	f.t.Helper()
 	ctx := context.Background()
 	draft := projectNote(f.repo)
 	draft.Body, draft.Sensitivity = body, "shareable"
@@ -22,9 +30,9 @@ func swarmNeedsTestPublish(f *swarmFixture, from *Store, kind, destType, dest, b
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	req := PublishEventRequest{RequestID: uuid.NewString(), Repo: f.repo, Kind: kind,
-		Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{destType, dest}, CausationID: cause}
-	if kind == "notice" {
+	req.RequestID, req.Repo = uuid.NewString(), f.repo
+	req.Ref = RecordVersionRef{source.RecordID, source.Version}
+	if req.Kind == "notice" {
 		req.Action = "review"
 	}
 	event, err := from.PublishEvent(ctx, req, f.dest)
@@ -117,7 +125,7 @@ func TestSwarmNeedsBoardQuestionOnlyOwnerAction(t *testing.T) {
 	want := swarmNeedsTestItem(t, needs, SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", board.CreatedAt)
 	if len(needs.Items) != 1 || want.Refs.EventID != board.EventID || want.Refs.Record == nil ||
 		*want.Refs.Record != board.Ref || want.ExpiresAt == nil || !want.ExpiresAt.Equal(board.CreatedAt.Add(10*time.Minute)) ||
-		want.Title != "Choose the cooler setting?" || want.Detail != "Unattended default: Leave it alone" {
+		want.Title != "Board question" || want.Detail != "Unattended default declared" {
 		t.Fatalf("board-only needs rows: %+v and %+v", needs, want)
 	}
 	if got := needs.LeadDecisions[lead.Inbox]; len(got) != 1 || got[0].ItemKey != decision.ItemKey ||
@@ -534,25 +542,131 @@ func TestSwarmNeedsSourceFailureIsolated(t *testing.T) {
 func TestSwarmNeedsBoardExpiryForms(t *testing.T) {
 	published := time.Date(2026, 11, 27, 20, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
-		name, card string
-		lifetime   time.Duration
+		name, ttl, absolute string
+		lifetime            time.Duration
 	}{
-		{"fallback", "", 24 * time.Hour},
-		{"fractional_ttl", `{"ttl":1.5}`, 1500 * time.Millisecond},
-		{"absolute_offset", `{"expires_at":"2026-11-27T13:00:00-08:00","ttl":600}`, time.Hour},
-		{"absolute_epoch", `{"expires_at":1795813200}`, time.Hour},
-		{"maximum", `{"ttl":999999}`, 72 * time.Hour},
-		{"malformed", `{"ttl":null,`, 24 * time.Hour},
+		{"fallback", "", "", 24 * time.Hour},
+		{"fractional_ttl", "1.5", "", 1500 * time.Millisecond},
+		{"absolute_offset", "600", `"2026-11-27T13:00:00-08:00"`, time.Hour},
+		{"absolute_epoch", "", "1795813200", time.Hour},
+		{"maximum", "999999", "", 72 * time.Hour},
+		{"invalid_ttl", `"invalid"`, "", 24 * time.Hour},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body := "Question"
-			if tc.card != "" {
-				body += "\n```board-card\n" + tc.card + "\n```"
-			}
-			title, expires, defaultVerb := swarmBoardQuestion(body, published)
-			if want := published.Add(tc.lifetime); !expires.Equal(want) || defaultVerb != "" || title != "Question" {
-				t.Fatalf("got title %q expiry %s and default %q, want expiry %s", title, expires, defaultVerb, want)
+			expires := swarmBoardExpiry(published, json.RawMessage(tc.ttl), json.RawMessage(tc.absolute))
+			if want := published.Add(tc.lifetime); !expires.Equal(want) {
+				t.Fatalf("got expiry %s, want %s", expires, want)
 			}
 		})
+	}
+}
+
+func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
+	const noteMarker = "PRIVATE-BOARD-NOTE-PROSE"
+	const cardMarker = "PRIVATE-BOARD-CARD-FIELD"
+	const labelMarker = "PRIVATE-BOARD-DEFAULT-LABEL"
+	const summary = "Choose a setting"
+	f := newSwarmFixture(t, "board-metadata")
+	body := noteMarker + "\r\n\r\n```board-card\r\n{\r\n" +
+		`"ttl":600,"default":"no","detail":"` + cardMarker +
+		`","verbs":[{"id":"no","label":"` + labelMarker + `"}]` + "\r\n}\r\n```\r\n" +
+		"\r\n```board-card\r\n{\"ttl\":5}\r\n```"
+	card := swarmNeedsTestPublishRequest(f, f.rootView, body, PublishEventRequest{
+		Kind: "request", Destination: EventDestination{"topic", "agent-board"}, Summary: summary,
+	})
+	note := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", noteMarker, "")
+	f.exec(`UPDATE cairn.agent_event SET created_at=created_at-interval '4 days' WHERE event_id=$1`, note.EventID)
+	malformed := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board",
+		noteMarker+"\n```board-card\n{invalid json\n```", "")
+	snap, err := f.op.GetSwarmSnapshot(context.Background(), SwarmSnapshotRequest{Repo: f.repo, Campaign: f.campaign})
+	if err != nil || len(snap.SectionErrors) != 0 || len(snap.NeedsYou.Unavailable) != 0 {
+		t.Fatalf("snapshot err=%v sections=%v unavailable=%+v", err, snap.SectionErrors, snap.NeedsYou.Unavailable)
+	}
+	wire, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{noteMarker, cardMarker, labelMarker} {
+		if strings.Contains(string(wire), marker) {
+			t.Errorf("snapshot exposed %s", marker)
+		}
+	}
+	items := map[string]SwarmNeed{}
+	for _, item := range snap.NeedsYou.Items {
+		items[item.Refs.EventID] = item
+	}
+	if item := items[card.EventID]; item.Title != summary || item.Detail != "Unattended default declared" ||
+		item.ExpiresAt == nil || !item.ExpiresAt.Equal(card.CreatedAt.Add(10*time.Minute)) {
+		t.Errorf("expected envelope title and metadata from the first card, got %+v", item)
+	}
+	if item := items[note.EventID]; item.Title != "Board question" || item.Detail != "" || item.ExpiresAt != nil {
+		t.Errorf("expected fixed title and no expiry for a request without a card, got %+v", item)
+	}
+	if item := items[malformed.EventID]; item.Title != "Board question" || item.Detail != "" || item.ExpiresAt == nil ||
+		!item.ExpiresAt.Equal(malformed.CreatedAt.Add(24*time.Hour)) {
+		t.Errorf("expected fixed title and fallback lifetime for a malformed card, got %+v", item)
+	}
+}
+
+func TestSwarmNeedsFormerMemberRemainsWithCampaign(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "former-member-needs")
+	former, formerView := f.member("former-member")
+	outside, outsideView := f.session("never-enrolled")
+	formerQuestion := swarmNeedsTestPublish(f, formerView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	outsideQuestion := swarmNeedsTestPublish(f, outsideView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	for _, stream := range []struct {
+		name string
+		view *Store
+	}{{"former", formerView}, {"outside", outsideView}} {
+		if _, err := stream.view.SetWorkstreamStatus(ctx, SetWorkstreamStatusRequest{
+			RequestID: uuid.NewString(), Repo: f.repo, Stream: stream.name, State: "blocked", DecisionNeeded: "Select an option",
+		}, f.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inactive := false
+	member, err := f.rootView.SetTeamMember(ctx, SetTeamMemberRequest{RequestID: uuid.NewString(),
+		Repo: f.repo, Campaign: f.campaign, Member: former.Inbox, Active: &inactive}, f.dest)
+	if err != nil || member.Active {
+		t.Fatalf("deactivate member: %+v %v", member, err)
+	}
+	campaign := swarmNeedsTestSnapshot(f)
+	landing, err := f.op.GetSwarmLanding(ctx, f.repo)
+	if err != nil || len(landing.SectionErrors) != 0 || len(landing.NeedsYou.Unavailable) != 0 {
+		t.Fatalf("landing err=%v sections=%v unavailable=%+v", err, landing.SectionErrors, landing.NeedsYou.Unavailable)
+	}
+	for _, page := range []struct {
+		name, subject, event, stream string
+		items                        []SwarmNeed
+	}{
+		{"campaign", former.Inbox, formerQuestion.EventID, "former", campaign.Items},
+		{"landing", outside.Inbox, outsideQuestion.EventID, "outside", landing.NeedsYou.Items},
+	} {
+		if len(page.items) != 2 {
+			t.Fatalf("%s: expected two rows, got %+v", page.name, page.items)
+		}
+		board, workstream := 0, 0
+		for _, item := range page.items {
+			if item.Subject != page.subject {
+				t.Errorf("%s: unexpected subject for %+v", page.name, item)
+			}
+			if item.Type == SwarmNeedBoardQuestion && item.Refs.EventID == page.event {
+				board++
+			}
+			if item.Type == SwarmNeedWorkstreamDecision && item.Refs.Stream == page.stream {
+				workstream++
+			}
+		}
+		if board != 1 || workstream != 1 {
+			t.Errorf("%s: expected one question and one decision, got %+v", page.name, page.items)
+		}
+	}
+	found := false
+	for _, session := range landing.Unaffiliated {
+		found = found || session.AgentID == former.AgentID
+	}
+	if !found {
+		t.Error("the former member should still be listed as a currently unaffiliated session")
 	}
 }
