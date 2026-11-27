@@ -507,6 +507,263 @@ func TestSwarmRequestIsRefusedWhenItsSessionEndsWhileTheBodyArrives(t *testing.T
 	}
 }
 
+// A commit and the end of its session exclude each other: a commit that was
+// admitted finishes before the end is reported, and none is admitted after.
+func TestSwarmCommitAdmissionExcludesTheEndOfTheSession(t *testing.T) {
+	s := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
+	open := func(t *testing.T) (string, *swarmSessionCommits) {
+		t.Helper()
+		id, _, err := s.server.issueSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.server.mu.Lock()
+		commits := s.server.sessions[id].commits
+		s.server.mu.Unlock()
+		return id, commits
+	}
+	signOut := func(id string) {
+		s.server.mu.Lock()
+		commits := s.server.endSessionLocked(id)
+		s.server.mu.Unlock()
+		commits.drain()
+	}
+	t.Run("an admitted commit holds the sign-out until it is released", func(t *testing.T) {
+		// Through the real sign-out route: its answer is the report.
+		browser := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
+		browser.login()
+		s := browser
+		var id string
+		var commits *swarmSessionCommits
+		s.server.mu.Lock()
+		for key, session := range s.server.sessions {
+			id, commits = key, session.commits
+		}
+		s.server.mu.Unlock()
+		release, err := s.server.admitCommit(id, commits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err := s.server.admitCommit(id, commits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signedOut := make(chan struct{})
+		go func() {
+			defer close(signedOut)
+			if resp, raw := s.do(http.MethodPost, "/api/auth/logout", nil, map[string]string{"X-CSRF-Token": s.csrf}); resp.StatusCode != http.StatusOK {
+				t.Errorf("logout: %d %s", resp.StatusCode, raw)
+			}
+		}()
+		// The end is marked at once, so nothing new is admitted, but it is
+		// not reported while a commit is in flight.
+		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) {
+			early, err := s.server.admitCommit(id, commits)
+			if errors.Is(err, errSwarmSessionEnded) {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Admitted before the sign-out began; it ends at once.
+			early()
+			if time.Now().After(deadline) {
+				t.Fatal("a commit was still admitted after the sign-out began")
+			}
+		}
+		release()
+		select {
+		case <-signedOut:
+			t.Fatal("the sign-out was reported while a commit was in flight")
+		case <-time.After(100 * time.Millisecond):
+		}
+		second()
+		select {
+		case <-signedOut:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the sign-out never returned after the commits were released")
+		}
+		if _, err := s.server.admitCommit(id, commits); !errors.Is(err, errSwarmSessionEnded) {
+			t.Fatalf("a commit was admitted after the sign-out: %v", err)
+		}
+	})
+	t.Run("no commit is admitted after the sign-out", func(t *testing.T) {
+		id, commits := open(t)
+		signOut(id)
+		if _, err := s.server.admitCommit(id, commits); !errors.Is(err, errSwarmSessionEnded) {
+			t.Fatalf("admitted after the sign-out: %v", err)
+		}
+	})
+	t.Run("no commit is admitted past the lifetime", func(t *testing.T) {
+		id, commits := open(t)
+		s.server.mu.Lock()
+		session := s.server.sessions[id]
+		session.expires = time.Now().Add(-time.Second)
+		s.server.sessions[id] = session
+		s.server.mu.Unlock()
+		if _, err := s.server.admitCommit(id, commits); !errors.Is(err, errSwarmSessionEnded) {
+			t.Fatalf("admitted past the lifetime: %v", err)
+		}
+	})
+	t.Run("a session pushed out by the session limit has ended when the sign-in returns", func(t *testing.T) {
+		fresh := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
+		id, _, err := fresh.server.issueSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fresh.server.mu.Lock()
+		commits := fresh.server.sessions[id].commits
+		fresh.server.mu.Unlock()
+		release, err := fresh.server.admitCommit(id, commits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		filled := make(chan struct{})
+		go func() {
+			for i := 0; i < swarmSessionLimit; i++ {
+				if _, _, err := fresh.server.issueSession(); err != nil {
+					t.Error(err)
+				}
+			}
+			close(filled)
+		}()
+		select {
+		case <-filled:
+			t.Fatal("the sign-in that pushed the session out returned while its commit was in flight")
+		case <-time.After(100 * time.Millisecond):
+		}
+		release()
+		select {
+		case <-filled:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the sign-ins never returned")
+		}
+		if _, err := fresh.server.admitCommit(id, commits); !errors.Is(err, errSwarmSessionEnded) {
+			t.Fatalf("admitted after eviction: %v", err)
+		}
+	})
+}
+
+// swarmHeldReads answers the landing read only when the test lets it, and
+// ignores cancellation, as a read that has already left for the store does.
+type swarmHeldReads struct {
+	*swarmScriptedReads
+	entered, release chan struct{}
+}
+
+func (r *swarmHeldReads) GetSwarmLanding(ctx context.Context, repo string) (core.SwarmLanding, error) {
+	r.entered <- struct{}{}
+	<-r.release
+	return core.SwarmLanding{Schema: core.SwarmLandingSchema, Collection: "held-landing-marker"}, nil
+}
+
+// An answer is started only for a session that still stands: a read that was
+// under way when the session ended is not sent, and no host reader is started
+// for an ended session.
+func TestSwarmAnswersAreNotStartedForAnEndedSession(t *testing.T) {
+	type answer struct {
+		status int
+		raw    []byte
+	}
+	get := func(s *swarmTestServer, path string) chan answer {
+		out := make(chan answer, 1)
+		go func() {
+			resp, raw := s.do(http.MethodGet, path, nil, nil)
+			out <- answer{resp.StatusCode, raw}
+		}()
+		return out
+	}
+	refused := func(t *testing.T, got chan answer, markers ...string) {
+		t.Helper()
+		select {
+		case a := <-got:
+			if a.status != http.StatusUnauthorized || swarmErrorCode(a.raw) != "UNAUTHENTICATED" {
+				t.Fatalf("an ended session was answered %d %s", a.status, a.raw)
+			}
+			for _, marker := range markers {
+				if strings.Contains(string(a.raw), marker) {
+					t.Fatalf("an ended session was sent %q: %s", marker, a.raw)
+				}
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the request of an ended session never answered")
+		}
+	}
+	logout := func(t *testing.T, s *swarmTestServer) {
+		t.Helper()
+		if resp, raw := s.do(http.MethodPost, "/api/auth/logout", nil, map[string]string{"X-CSRF-Token": s.csrf}); resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"ok":true`) {
+			t.Fatalf("logout: %d %s", resp.StatusCode, raw)
+		}
+	}
+	t.Run("a store read that returns after sign-out", func(t *testing.T) {
+		s := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
+		held := &swarmHeldReads{swarmScriptedReads: &swarmScriptedReads{}, entered: make(chan struct{}, 1), release: make(chan struct{})}
+		s.server.reads = held
+		s.login()
+		got := get(s, "/api/swarm/landing")
+		<-held.entered
+		logout(t, s)
+		close(held.release)
+		refused(t, got, "held-landing-marker", core.SwarmLandingSchema)
+	})
+	t.Run("host observations, one cached and one still being read", func(t *testing.T) {
+		entered := make(chan struct{}, 4)
+		release := make(chan struct{})
+		s := newSwarmTestServer(t, nil, "fixture", func(ctx context.Context) swarmPaneObservation {
+			entered <- struct{}{}
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return swarmPaneObservation{ObservedAt: time.Now(), Status: "ok", Panes: map[string]swarmPane{"agent": {PaneID: "pane-marker", AgentStatus: "working", FocusCommand: "x"}}}
+		})
+		t.Cleanup(func() { close(release) })
+		// The transcript observation arrives at once; the pane one waits.
+		s.server.windows = newSwarmWindowLoop(func(ctx context.Context) swarmWindowObservation {
+			return swarmWindowObservation{ObservedAt: time.Now(), Status: "ok", Windows: map[string]swarmWindow{}, Unknown: map[string]string{"agent": "window-marker"}}
+		}, time.Hour, time.Hour)
+		s.login()
+		got := get(s, "/api/swarm/panes")
+		<-entered
+		logout(t, s)
+		refused(t, got, "window-marker", "pane-marker", `"herdr"`)
+	})
+	t.Run("no host reader is started for a session that ended before the route ran", func(t *testing.T) {
+		started := make(chan struct{}, 4)
+		s := newSwarmTestServer(t, nil, "fixture", func(ctx context.Context) swarmPaneObservation {
+			started <- struct{}{}
+			return swarmNoPanes(ctx)
+		})
+		id, _, err := s.server.issueSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := strconv.Itoa(s.server.port)
+		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:"+port+"/api/swarm/panes", nil)
+		request.AddCookie(&http.Cookie{Name: "cairn_swarm_" + port, Value: id})
+		// The session ends between the router's check and the route: the
+		// request's context value is read after the cookie was accepted.
+		ended := false
+		s.server.now = func() time.Time {
+			if ended {
+				return time.Now().Add(swarmSessionLifetime + time.Minute)
+			}
+			ended = true
+			return time.Now()
+		}
+		recorder := httptest.NewRecorder()
+		s.server.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusUnauthorized || swarmErrorCode(recorder.Body.Bytes()) != "UNAUTHENTICATED" {
+			t.Fatalf("panes for a session that ended before the route: %d %s", recorder.Code, recorder.Body)
+		}
+		select {
+		case <-started:
+			t.Fatal("a host reader was started for an ended session")
+		case <-time.After(150 * time.Millisecond):
+		}
+	})
+}
+
 func TestSwarmTokenFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "swarm-view.token")

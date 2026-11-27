@@ -414,3 +414,61 @@ func TestSwarmActionWaitingOnTheStoreEndsWithItsSession(t *testing.T) {
 		t.Fatalf("publisher: %+v", sent.Event)
 	}
 }
+
+// The store asks the session at the commit itself. The send has done its
+// work and is about to commit when the browser signs out; the sign-out is
+// answered; the commit is then refused, nothing is stored, and the action
+// answers as a sign-in refusal.
+func TestSwarmActionCommitIsNotAdmittedAfterSignOut(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	member, _ := f.member("action-commit-member")
+	reached, resume := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	f.server.beforeCommit = func() {
+		once.Do(func() {
+			close(reached)
+			<-resume
+		})
+	}
+	req := swarmActionSend(f, member.Inbox, "request", "Must never be stored")
+	type answer struct {
+		status int
+		raw    []byte
+	}
+	answered := make(chan answer, 1)
+	go func() {
+		resp, raw := f.do(http.MethodPost, "/api/swarm/action/send", req, map[string]string{"X-CSRF-Token": f.csrf})
+		answered <- answer{resp.StatusCode, raw}
+	}()
+	select {
+	case <-reached:
+	case got := <-answered:
+		t.Fatalf("the send answered without asking to commit: %d %s", got.status, got.raw)
+	case <-time.After(20 * time.Second):
+		t.Fatal("the store never asked the session before its commit")
+	}
+	if resp, raw := f.do(http.MethodPost, "/api/auth/logout", nil, map[string]string{"X-CSRF-Token": f.csrf}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("logout: %d %s", resp.StatusCode, raw)
+	}
+	close(resume)
+	select {
+	case got := <-answered:
+		if got.status != http.StatusUnauthorized || swarmErrorCode(got.raw) != "UNAUTHENTICATED" {
+			t.Fatalf("the send of an ended session answered %d %s", got.status, got.raw)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the send never answered")
+	}
+	f.server.beforeCommit = nil
+	stream, err := f.op.ReadSwarmStream(ctx, core.SwarmStreamRequest{Repo: f.repo, Campaign: f.campaign})
+	if err != nil || len(stream.Events) != 0 {
+		t.Fatalf("a commit was admitted after the sign-out: %+v %v", stream.Events, err)
+	}
+	f.login()
+	req.Body = "Sent after signing in again"
+	sent := swarmActionPost[core.SwarmEventDetails](t, f, "send", req)
+	if sent.Event.From != f.op.Channel().Principal {
+		t.Fatalf("publisher: %+v", sent.Event)
+	}
+}

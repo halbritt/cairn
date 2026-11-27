@@ -49,6 +49,67 @@ type swarmBrowserSession struct {
 	// revoked is closed when the session ends before its lifetime: at
 	// logout or when the session limit evicts it. An open stream ends then.
 	revoked chan struct{}
+	// commits makes "an action of this session may commit" and "this
+	// session has ended" exclude each other.
+	commits *swarmSessionCommits
+}
+
+// errSwarmSessionEnded refuses a commit for a session that has ended.
+var errSwarmSessionEnded = errors.New("the session ended; sign in again")
+
+// swarmSessionCommits counts the commits a session has in flight. A commit
+// is admitted only before the session's end is marked, and whoever ends the
+// session waits for the admitted ones before saying so. A cancelled context
+// alone does not give that order: the cancellation and the commit run on
+// different goroutines.
+type swarmSessionCommits struct {
+	mu       sync.Mutex
+	idle     *sync.Cond
+	ended    bool
+	inFlight int
+}
+
+func newSwarmSessionCommits() *swarmSessionCommits {
+	c := &swarmSessionCommits{}
+	c.idle = sync.NewCond(&c.mu)
+	return c
+}
+
+// admit lets one commit start. It returns the function that ends it.
+func (c *swarmSessionCommits) admit() (func(), error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ended {
+		return nil, errSwarmSessionEnded
+	}
+	c.inFlight++
+	return func() {
+		c.mu.Lock()
+		if c.inFlight--; c.inFlight == 0 {
+			c.idle.Broadcast()
+		}
+		c.mu.Unlock()
+	}, nil
+}
+
+// end refuses every later commit.
+func (c *swarmSessionCommits) end() {
+	c.mu.Lock()
+	c.ended = true
+	c.mu.Unlock()
+}
+
+// drain waits for the commits admitted before the end. Their contexts are
+// already cancelled, so each returns promptly.
+func (c *swarmSessionCommits) drain() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	for c.inFlight > 0 {
+		c.idle.Wait()
+	}
+	c.mu.Unlock()
 }
 
 // swarmReads is the read side of the view. The store implements it; a test
@@ -73,6 +134,8 @@ type swarmServer struct {
 	panes    *swarmLoop[swarmPaneObservation]
 	windows  *swarmLoop[swarmWindowObservation]
 	now      func() time.Time
+	// beforeCommit, when set by a test, runs as the store asks to commit.
+	beforeCommit func()
 
 	mu       sync.Mutex
 	sessions map[string]swarmBrowserSession
@@ -186,12 +249,12 @@ func (s *swarmServer) issueSession() (string, string, error) {
 		return "", "", err
 	}
 	now := s.now()
+	var ended []*swarmSessionCommits
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	oldest, oldestAt := "", time.Time{}
 	for key, session := range s.sessions {
 		if !session.expires.After(now) {
-			s.endSessionLocked(key)
+			ended = append(ended, s.endSessionLocked(key))
 			continue
 		}
 		if oldest == "" || session.expires.Before(oldestAt) {
@@ -199,18 +262,44 @@ func (s *swarmServer) issueSession() (string, string, error) {
 		}
 	}
 	if len(s.sessions) >= swarmSessionLimit {
-		s.endSessionLocked(oldest)
+		ended = append(ended, s.endSessionLocked(oldest))
 	}
-	s.sessions[id] = swarmBrowserSession{csrf: csrf, expires: now.Add(swarmSessionLifetime), revoked: make(chan struct{})}
+	s.sessions[id] = swarmBrowserSession{csrf: csrf, expires: now.Add(swarmSessionLifetime), revoked: make(chan struct{}), commits: newSwarmSessionCommits()}
+	s.mu.Unlock()
+	// A session this sign-in pushed out has ended once this returns.
+	for _, commits := range ended {
+		commits.drain()
+	}
 	return id, csrf, nil
 }
 
-// endSessionLocked forgets a session and ends every stream it holds open.
-func (s *swarmServer) endSessionLocked(id string) {
-	if session, ok := s.sessions[id]; ok {
-		close(session.revoked)
-		delete(s.sessions, id)
+// endSessionLocked forgets a session, ends every stream it holds open,
+// cancels its requests and refuses its later commits. A caller that reports
+// the end to someone drains the returned commits first, outside the lock.
+func (s *swarmServer) endSessionLocked(id string) *swarmSessionCommits {
+	session, ok := s.sessions[id]
+	if !ok {
+		return nil
 	}
+	close(session.revoked)
+	delete(s.sessions, id)
+	if session.commits != nil {
+		session.commits.end()
+	}
+	return session.commits
+}
+
+// admitCommit is the commit gate of one signed-in request: the store asks it
+// immediately before a transaction commits.
+func (s *swarmServer) admitCommit(id string, commits *swarmSessionCommits) (func(), error) {
+	if s.beforeCommit != nil {
+		s.beforeCommit()
+	}
+	// The lifetime is looked at here as well: an expired session ends now.
+	if !s.sessionAlive(id) || commits == nil {
+		return nil, errSwarmSessionEnded
+	}
+	return commits.admit()
 }
 
 // sessionAlive reports whether a session still stands. A stream asks before
@@ -311,6 +400,47 @@ func swarmSameOrigin(r *http.Request) bool {
 	return site == "" || site == "same-origin"
 }
 
+// swarmSessionWriter starts an answer only for a session that still stands.
+// A read that was under way when the session ended is not sent: its answer
+// becomes the request to sign in.
+type swarmSessionWriter struct {
+	http.ResponseWriter
+	alive            func() bool
+	started, refused bool
+}
+
+func (w *swarmSessionWriter) WriteHeader(status int) {
+	if w.started {
+		return
+	}
+	w.started = true
+	if w.alive() {
+		w.ResponseWriter.WriteHeader(status)
+		return
+	}
+	w.refused = true
+	header := w.ResponseWriter.Header()
+	for key := range header {
+		if key != "X-Content-Type-Options" && key != "X-Frame-Options" && key != "Referrer-Policy" && key != "Content-Security-Policy" {
+			header.Del(key)
+		}
+	}
+	header.Set("Content-Type", "application/json; charset=utf-8")
+	header.Set("Cache-Control", "no-store")
+	w.ResponseWriter.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w.ResponseWriter).Encode(map[string]any{"error": "the session ended; sign in again", "code": "UNAUTHENTICATED"})
+}
+
+func (w *swarmSessionWriter) Write(p []byte) (int, error) {
+	if !w.started {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.refused {
+		return len(p), nil
+	}
+	return w.ResponseWriter.Write(p)
+}
+
 func writeSwarmJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -319,7 +449,7 @@ func writeSwarmJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func writeSwarmError(w http.ResponseWriter, err error) {
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, errSwarmSessionEnded) {
 		// The request's context ends with its session. (When the browser went
 		// away instead, nobody reads this answer.)
 		swarmRefuse(w, http.StatusUnauthorized, "UNAUTHENTICATED", "the session ended before the request completed; sign in again")
@@ -448,7 +578,16 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			swarmRefuse(w, http.StatusUnauthorized, "UNAUTHENTICATED", "the session ended; sign in again")
 			return
 		}
+		// Whatever this request changes commits only while the session
+		// stands: the store asks at the commit itself, and the end of the
+		// session waits for a commit that was admitted before it.
+		commits := session.commits
+		r = r.WithContext(core.WithCommitGate(r.Context(), func() (func(), error) { return s.admitCommit(id, commits) }))
 	}
+	// An answer is started only for a session that still stands. Sign-out
+	// answers after its session has ended, and the stream guards each frame.
+	plain := w
+	w = &swarmSessionWriter{ResponseWriter: w, alive: func() bool { return s.sessionAlive(id) }}
 
 	switch {
 	case r.URL.Path == "/api/auth/logout":
@@ -457,10 +596,12 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.mu.Lock()
-		s.endSessionLocked(id)
+		commits := s.endSessionLocked(id)
 		s.mu.Unlock()
-		http.SetCookie(w, &http.Cookie{Name: s.cookieName(), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
-		writeSwarmJSON(w, http.StatusOK, map[string]any{"ok": true})
+		// When this answers, nothing of the session commits any more.
+		commits.drain()
+		http.SetCookie(plain, &http.Cookie{Name: s.cookieName(), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+		writeSwarmJSON(plain, http.StatusOK, map[string]any{"ok": true})
 	case r.URL.Path == "/api/swarm/landing":
 		if r.Method != http.MethodGet {
 			swarmMethod(w, http.MethodGet)
@@ -489,6 +630,12 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// One observation for a page with no stream open, such as the landing page.
+		// No host reader is started for a session that has ended, and the
+		// guarded writer looks again before the observation is sent.
+		if !s.sessionAlive(id) {
+			swarmRefuse(plain, http.StatusUnauthorized, "UNAUTHENTICATED", "the session ended; sign in again")
+			return
+		}
 		s.panes.acquire()
 		defer s.panes.release()
 		s.windows.acquire()
@@ -497,7 +644,7 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.windows.first(r.Context(), 5*time.Second)
 		writeSwarmJSON(w, http.StatusOK, map[string]any{"herdr": s.paneView(s.now()), "window": s.windowView(s.now())})
 	case r.URL.Path == "/api/swarm/stream":
-		s.handleStream(w, stream, id, session)
+		s.handleStream(plain, stream, id, session)
 	case strings.HasPrefix(r.URL.Path, "/api/swarm/action/"), r.URL.Path == "/api/swarm/event":
 		s.handleAction(w, r)
 	default:

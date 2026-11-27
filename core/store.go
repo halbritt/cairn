@@ -329,6 +329,9 @@ func (s *Store) beginLevel(ctx context.Context, level pgx.TxIsoLevel) (pgx.Tx, e
 			return nil, checkErr
 		}
 	}
+	if gate := commitGateFrom(ctx); gate != nil {
+		return gatedTx{Tx: tx, gate: gate}, nil
+	}
 	return tx, nil
 }
 
