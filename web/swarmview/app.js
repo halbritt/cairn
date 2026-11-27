@@ -548,6 +548,21 @@
     byID("campaign").hidden = true;
   }
 
+  // One read outside the stream, so the page shows the store's state now.
+  async function refreshSnapshot() {
+    if (!state.campaign) return;
+    try {
+      const snapshot = await api("/api/swarm/campaign?campaign=" + encodeURIComponent(state.campaign));
+      if (snapshot && snapshot.schema) {
+        state.snapshot = snapshot;
+        state.dbObservedAt = snapshot.observed_at;
+        renderCampaign();
+      }
+    } catch (_) {
+      // The stream brings the next snapshot.
+    }
+  }
+
   function addLog(event) {
     if (state.log.has(event.event_id)) return;
     state.log.set(event.event_id, event);
@@ -1408,6 +1423,7 @@
         result.textContent = "Sent. The agent sees it at its next turn boundary; until it claims the delivery the flow shows it as sent and not yet seen." + outcomeText(reply);
         form.elements.summary.value = "";
         form.elements.body.value = "";
+        refreshSnapshot();
       } catch (error) {
         result.className = "result refused";
         result.textContent = refusalText(error) + " Sending again reuses the same request.";
@@ -1509,7 +1525,10 @@
           // Nothing changed: the server claims in order, and the oldest is another item.
           pendingRequests.delete(key);
           const oldest = error.body.oldest;
-          throw new APIError(`${error.message}. Nothing was changed. Your oldest delivery is another one: "${oldest.summary || oldest.event_id}" from ${labelOf(oldest.from)}. Acknowledge that one first`, error.code, error.status, error.body);
+          const expected = flow().deliveries.find((d) => d.delivery_id === error.body.expected);
+          refreshSnapshot();
+          throw new APIError(`${error.message}. Nothing was changed. You chose "${expected ? expected.summary || expected.event_id : error.body.expected}", ` +
+            `but your oldest delivery is "${oldest.summary || oldest.event_id}" from ${labelOf(oldest.from)}. Acknowledge that one first`, error.code, error.status, error.body);
         }
         throw error;
       }
@@ -1520,8 +1539,10 @@
     openDialog("confirm");
   }
 
-  // A reply to a request addressed to the owner: a response whose causation
-  // is that request. The server refuses any other causation.
+  // A reply to a request addressed to the owner. The send route takes a
+  // request or a notice and no causation, so the reply is a review notice to
+  // the requester; it does not mark the request answered in the store, and
+  // the owner acknowledges the request separately.
   function replyTo(to, eventID, title) {
     byID("confirm-title").textContent = `Reply to ${labelOf(to)}`;
     const ids = { summary: uuid(), body: uuid() };
@@ -1532,9 +1553,9 @@
       el("div", { class: "compose" },
         el("div", { class: "row" }, el("label", { for: ids.summary, text: "Summary" }), summary),
         el("div", { class: "row" }, el("label", { for: ids.body, text: "Message" }), message)),
-      note("The agent sees the reply at its next turn boundary."));
+      note("Sent as a notice to the requester; the agent sees it at its next turn boundary. It does not mark the request answered: acknowledge the request when you are done with it."));
     prepareConfirm(true, "Send the reply", async () => {
-      const payload = { campaign: state.campaign, to, kind: "response", causation_id: eventID,
+      const payload = { campaign: state.campaign, to, kind: "notice", action: "review",
         summary: summary.value.trim(), body: message.value };
       if (!payload.summary || !payload.body.trim()) throw new APIError("write a summary and a message", "INVALID_REQUEST", 0);
       // The same reply retried keeps its request UUID.
@@ -1566,7 +1587,7 @@
   function lookupView(title, lookup) {
     const box = el("div", { class: "lookup" }, el("h4", { text: title }));
     if (!lookup || lookup.status === "unavailable") {
-      box.append(note("Could not be looked up" + (lookup && lookup.reason ? ": " + lookup.reason : "") + ". Some waits may be affected.", "unavailable"));
+      box.append(note("Unknown: the waits could not be looked up" + (lookup && lookup.reason ? " (" + lookup.reason + ")" : "") + ".", "unavailable"));
       return box;
     }
     if (lookup.status === "empty" || !(lookup.waits || []).length) {
@@ -1641,6 +1662,7 @@
       try {
         result.textContent = await run();
         go.hidden = true;
+        refreshSnapshot();
       } catch (error) {
         result.className = "refused";
         result.textContent = refusalText(error) + " Trying again reuses the same request.";

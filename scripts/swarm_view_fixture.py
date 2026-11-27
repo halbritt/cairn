@@ -546,7 +546,12 @@ class Fixture:
                    category="slice:CAIRN-831")
         self.check("cancel preview names the recipient and waits before confirm; siblings and counted reply unchanged",
                    lambda: self.cancel(page), page, category="slice:CAIRN-830+833")
-        self.check("a refused action shows the store's reason", lambda: self.refusal(page), page)
+        self.check("a refused cancel shows the store's reason and cannot be confirmed", lambda: self.refused_cancel(page), page,
+                   category="slice:CAIRN-833")
+        self.check("an out-of-order acknowledge shows expected against oldest; the oldest is acknowledged",
+                   lambda: self.acknowledge_conflict(page), page, category="slice:CAIRN-833")
+        self.check("an owner notice is shown as sent, not yet seen", lambda: self.send_unseen(page), page,
+                   category="slice:CAIRN-833")
         self.check("no forbidden control exists", lambda: self.forbidden(page), page)
         self.shot(page, "desktop-final")
 
@@ -778,78 +783,133 @@ class Fixture:
         for t in types:
             require(page.locator(f"#needs li.need[data-type='{t}']").count() >= 1, f"the page does not show the {t} row")
 
+    def open_member_delivery(self, page, role, delivery_id):
+        """Open the member's detail panel and the cancel control of one of its open deliveries."""
+        self.expect(page.locator(f"#agents .agent[data-member='{self.principal(role)}']")).to_be_visible()
+        page.locator(f"#agents .agent[data-member='{self.principal(role)}'] button", has_text="Details").click()
+        item = page.locator("#detail li", has=page.locator(f"[data-delivery='{delivery_id}']"))
+        self.expect(item).to_have_count(1, timeout=15000)
+        item.locator("button", has_text="Cancel this recipient's delivery").click()
+
     def cancel(self, page):
         snapshot = self.snapshot()
         group_id = self.events["group"]["event_id"]
         group = [d for d in snapshot["flow"]["deliveries"] if d["event_id"] == group_id]
-        if not group:
-            raise AssertionError("snapshot.flow has no deliveries of the grouped request: the CAIRN-830 slice is not present")
+        require(len(group) == 3, "the grouped request does not have its three deliveries in the snapshot")
         target = next((d for d in group if d["consumer"] == self.principal("worker_a") and d["display"] == "pending"), None)
         require(target, "worker_a's pending group delivery is not in the snapshot")
         before_status = {d["delivery_id"]: d["state"] for d in self.event_status(group_id)["deliveries"]}
         before_group = self.group_state()
-        page.locator(f"#agents .agent[data-member='{self.principal('worker_a')}'] button", has_text="Details").click()
-        item = page.locator("#detail li", has=page.locator(f"[data-delivery='{target['delivery_id']}']"))
-        item.locator("button", has_text="Cancel this recipient's delivery").click()
-        confirm = page.locator("#confirm")
-        self.expect(confirm).to_be_visible()
-        go = page.locator("#confirm-go")
-        body = page.locator("#confirm-body")
-        self.expect(body).to_contain_text("Recipient", timeout=10000)
+        # Hold the real preview reply for 3 s: the confirm control must stay
+        # disabled until it has loaded. The reply itself is the server's.
+        held = []
+
+        def delay(route):
+            response = route.fetch()
+            held.append(response.status)
+            page.wait_for_timeout(3000)
+            route.fulfill(response=response)
+        page.route("**/api/swarm/action/cancel-preview*", delay)
+        try:
+            self.open_member_delivery(page, "worker_a", target["delivery_id"])
+            go = page.locator("#confirm-go")
+            self.expect(page.locator("#confirm")).to_be_visible()
+            require(go.is_disabled(), "confirm is enabled before the preview has loaded")
+            body = page.locator("#confirm-body")
+            self.expect(body).to_contain_text("Recipient", timeout=15000)
+        finally:
+            page.unroute("**/api/swarm/action/cancel-preview*")
+        require(held == [200], f"the preview did not answer 200: {held}")
         text = body.inner_text()
-        require(self.label(snapshot, "worker_a") in text, "preview does not name the exact recipient")
-        require("Direct-reply waits" in text and "Waits on the group's closure" in text, "preview omits the affected waits")
-        require("replies counted" in text, "preview omits the group's counted replies")
+        require(self.label(snapshot, "worker_a") in text and self.principal("worker_a") in text,
+                "the preview does not name the exact recipient (label and principal)")
+        # Direct-reply waits on the grouped request: none were registered.
+        direct = body.locator(".lookup", has_text="Direct-reply waits").inner_text()
+        require("None" in direct, "the direct-reply lookup is not empty: " + direct)
+        # The group: one counted reply (worker_c) of three, worker_a's does not count, one closure wait by the lead.
+        require("1 of 3 replies counted" in text, "the preview does not give the group's reply count")
+        require("This recipient's reply does not count yet" in text, "the preview misstates whether this reply counts")
+        closure = body.locator(".lookup", has_text="Waits on the group's closure").inner_text()
+        require("group closure" in closure and self.label(snapshot, "lead") in closure, "the closure wait of the lead is not shown: " + closure)
+        siblings = body.locator(".lookup", has_text="Other recipients").inner_text()
+        for role in ("worker_b", "worker_c"):
+            require(self.label(snapshot, role) in siblings, f"sibling {role} is not listed")
         self.expect(go).to_be_enabled(timeout=5000)
-        go.click()
-        self.expect(page.locator("#confirm-result")).to_contain_text(re.compile("cancel", re.I), timeout=10000)
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/cancel-delivery")) as info:
+            go.click()
+        reply = info.value.json()
+        require(info.value.ok and reply.get("outcome") == "cancelled", "cancel outcome: " + json.dumps(reply)[:300])
+        self.expect(page.locator("#confirm-result")).to_contain_text("The store recorded the cancellation", timeout=10000)
         after_status = {d["delivery_id"]: d["state"] for d in self.event_status(group_id)["deliveries"]}
+        require(after_status[target["delivery_id"]] == "failed", "the cancelled delivery is not failed in the store")
         for delivery, state in before_status.items():
-            if delivery == target["delivery_id"]:
-                continue
-            require(after_status.get(delivery) == state, "a sibling delivery changed state")
-        after_group = self.group_state()
-        require(after_group["responded"] == before_group["responded"], "the counted reply changed")
+            if delivery != target["delivery_id"]:
+                require(after_status.get(delivery) == state, "a sibling delivery changed state")
+        require(self.group_state()["responded"] == before_group["responded"], "the counted reply changed")
+        self.report["cancel_outcome"] = reply.get("outcome")
+
+    def refused_cancel(self, page):
+        # worker_a takes a live manual lease on its oldest delivery through the CLI.
+        leased = self.next("worker_a")
+        require(leased, "worker_a had nothing to claim")
+        try:
+            page.wait_for_timeout(3000)
+            self.open_member_delivery(page, "worker_a", leased["delivery_id"])
+            body = page.locator("#confirm-body")
+            self.expect(body).to_contain_text("would refuse this cancel", timeout=15000)
+            self.expect(body).to_contain_text("UNSUPPORTED_CONTROL")
+            require(page.locator("#confirm-go").is_disabled(), "confirm is enabled for a cancel the store refuses")
+        finally:
+            self.complete("worker_a", leased)
+
+    def acknowledge_conflict(self, page):
+        first, second = self.events["operator_1"], self.events["operator_2"]
+        row = page.locator(f"#needs li.need[data-event='{second['event_id']}']")
+        row.locator("button", has_text="Acknowledge").click()
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
+            page.locator("#confirm-go").click()
+        body = info.value.json()
+        require(info.value.status == 409 and body.get("code") == "VERSION_CONFLICT", "an out-of-order acknowledge was not refused: " + json.dumps(body)[:300])
+        result = page.locator("#confirm-result")
+        self.expect(result).to_contain_text("VERSION_CONFLICT", timeout=5000)
+        self.expect(result).to_contain_text("flow reader note 2")
+        self.expect(result).to_contain_text("flow reader note 1")
         page.locator("#confirm button[data-close='confirm']").first.click()
+        # The oldest is acknowledged, and the store records it handled.
+        page.locator(f"#needs li.need[data-event='{first['event_id']}'] button", has_text="Acknowledge").click()
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
+            page.locator("#confirm-go").click()
+        reply = info.value.json()
+        require(info.value.ok and (reply.get("delivery") or {}).get("state") == "handled", "acknowledge: " + json.dumps(reply)[:300])
+        self.expect(page.locator(f"#needs li.need[data-event='{first['event_id']}']")).to_have_count(0, timeout=15000)
+        page.locator("#confirm button[data-close='confirm']").first.click()
+
+    def send_unseen(self, page):
+        marker = "owner-" + uid()[:8]
+        page.locator(f"#agents .agent[data-member='{self.principal('worker_a')}'] button", has_text="Details").click()
+        form = page.locator("#detail form.compose")
+        form.locator("select[name=kind]").select_option("notice")
+        form.locator("select[name=action]").select_option("review")
+        form.locator("input[name=summary]").fill("Owner note " + marker)
+        form.locator("textarea[name=body]").fill("A note from the owner.")
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/send")) as info:
+            form.locator("button[type=submit]").click()
+        reply = info.value.json()
+        require(info.value.ok and reply.get("event", {}).get("event_id"), "send: " + json.dumps(reply)[:300])
         page.locator("#detail button.close").click()
+        row = page.locator("#flow li.event.owner-sent", has_text=marker)
+        self.expect(row).to_have_count(1, timeout=15000)
+        self.expect(row).to_contain_text("sent, not yet seen", timeout=15000)
+        # The recipient reads the event through the CLI: it is the only consumer, still unclaimed.
+        status = self.agent("worker_a", "event-inspect", {"event_id": reply["event"]["event_id"]})
+        require([d["consumer"] for d in status["deliveries"]] == [self.principal("worker_a")], "the owner's notice reached another inbox")
+        require(all(d["state"] == "pending" for d in status["deliveries"]), "the owner's notice is not pending in the store")
 
     def label(self, snapshot, role):
         for member in snapshot["members"]:
             if member["member"] == self.principal(role):
                 return member.get("label") or role
         return role
-
-    def refusal(self, page):
-        page.locator(f"#agents .agent[data-member='{self.principal('worker_a')}'] button", has_text="Details").click()
-        form = page.locator("#detail form.compose")
-        form.locator("select[name=kind]").select_option("notice")
-        form.locator("input[name=summary]").fill("Refusal probe")
-        form.locator("textarea[name=body]").fill("Refusal probe body.")
-        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/send")) as info:
-            form.locator("button[type=submit]").click()
-        response = info.value
-        body = response.json()
-        if not response.ok:
-            self.expect(form.locator(".result")).to_contain_text(body["error"], timeout=5000)
-            self.expect(form.locator(".result")).to_contain_text(body["code"])
-            self.report["refusal_path"] = "send: " + body.get("code", "")
-            page.locator("#detail button.close").click()
-            return
-        # The candidate accepts the send. Acknowledging the newer of the two
-        # operator deliveries is refused: the server claims in order (409).
-        page.locator("#detail button.close").click()
-        row = page.locator("#flow li.event", has_text="flow reader note 2")
-        row.locator("button", has_text="Open").click()
-        page.locator("#event-detail button", has_text="Acknowledge").first.click(timeout=10000)
-        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
-            page.locator("#confirm-go").click()
-        response = info.value
-        body = response.json()
-        require(not response.ok, "acknowledging the newer operator delivery was accepted out of order")
-        self.expect(page.locator("#confirm-result")).to_contain_text(body.get("code", ""), timeout=5000)
-        self.report["refusal_path"] = "acknowledge: " + body.get("code", "")
-        page.locator("#confirm button[data-close='confirm']").first.click()
-        page.locator("#event-detail button.close").click()
 
     def forbidden(self, page):
         for dialog in ("#detail", "#event-detail", "#confirm"):
