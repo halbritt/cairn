@@ -151,26 +151,43 @@ func TestSwarmNeedsBoardQuestionOnlyOwnerAction(t *testing.T) {
 }
 
 func TestSwarmNeedsBoardExpiryAndDefault(t *testing.T) {
-	f := newSwarmFixture(t, "board-expiry")
-	if needs := swarmNeedsTestSnapshot(f); needs.Items == nil || len(needs.Items) != 0 {
-		t.Fatalf("initially empty: %+v", needs)
-	}
-	f.exec(`UPDATE cairn.agent_team_campaign SET created_at=clock_timestamp()-interval '1 hour' WHERE repo=$1 AND campaign=$2`, f.repo, f.campaign)
-	expired := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
-	swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", expired.CreatedAt)
-	f.exec(`UPDATE cairn.agent_event SET created_at=clock_timestamp()-interval '11 minutes' WHERE event_id=$1`, expired.EventID)
-	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion)
+	for _, page := range []string{"campaign", "landing"} {
+		t.Run(page, func(t *testing.T) {
+			f := newSwarmFixture(t, "board-expiry")
+			publisher, view := f.root, f.rootView
+			read := swarmNeedsTestSnapshot
+			if page == "landing" {
+				publisher, view = f.session("outside-board")
+				read = swarmNeedsTestLanding
+			}
+			if needs := read(f); needs.Items == nil || len(needs.Items) != 0 {
+				t.Fatalf("initially empty: %+v", needs)
+			}
+			assertAbsentFromBoth := func() {
+				t.Helper()
+				swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion)
+				swarmNeedsTestAbsent(t, swarmNeedsTestLanding(f), SwarmNeedBoardQuestion)
+			}
 
-	if _, err := f.sender.SetSubscription(context.Background(), SubscriptionRequest{
-		RequestID: uuid.NewString(), Repo: f.repo, Topic: "agent-board", Active: true,
-	}); err != nil {
-		t.Fatal(err)
+			expired := swarmNeedsTestPublish(f, view, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+			swarmNeedsTestItem(t, read(f), SwarmNeedBoardQuestion, publisher.Inbox, "answer_board", expired.CreatedAt)
+			f.exec(`UPDATE cairn.agent_event SET created_at=clock_timestamp()-interval '11 minutes' WHERE event_id=$1`, expired.EventID)
+			assertAbsentFromBoth()
+
+			if _, err := f.sender.SetSubscription(context.Background(), SubscriptionRequest{
+				RequestID: uuid.NewString(), Repo: f.repo, Topic: "agent-board", Active: true,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			for _, source := range []string{"touch", "default"} {
+				answered := swarmNeedsTestPublish(f, view, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+				swarmNeedsTestItem(t, read(f), SwarmNeedBoardQuestion, publisher.Inbox, "answer_board", answered.CreatedAt)
+				swarmNeedsTestPublish(f, f.sender, "response", "agent", publisher.Inbox, "Board answer: Leave it alone\n\n"+
+					"```board-answer\n"+`{"verb":"no","source":"`+source+`","request_event":"`+answered.EventID+`"}`+"\n```", answered.EventID)
+				assertAbsentFromBoth()
+			}
+		})
 	}
-	answered := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
-	swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", answered.CreatedAt)
-	swarmNeedsTestPublish(f, f.sender, "response", "agent", f.root.Inbox, "Board answer: Leave it alone\n\n"+
-		"```board-answer\n"+`{"verb":"no","source":"default","request_event":"`+answered.EventID+`"}`+"\n```", answered.EventID)
-	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion)
 }
 
 func TestSwarmNeedsLedgerAndHandoff(t *testing.T) {
@@ -654,7 +671,6 @@ func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
 	const labelMarker = "PRIVATE-BOARD-DEFAULT-LABEL"
 	const summary = "Choose a setting"
 	f := newSwarmFixture(t, "board-metadata")
-	f.exec(`UPDATE cairn.agent_team_campaign SET created_at=clock_timestamp()-interval '1 week' WHERE repo=$1 AND campaign=$2`, f.repo, f.campaign)
 	body := noteMarker + "\r\n\r\n```board-card\r\n{\r\n" +
 		`"ttl":600,"default":"no","detail":"` + cardMarker +
 		`","verbs":[{"id":"no","label":"` + labelMarker + `"}]` + "\r\n}\r\n```\r\n" +
@@ -663,7 +679,6 @@ func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
 		Kind: "request", Destination: EventDestination{"topic", "agent-board"}, Summary: summary,
 	})
 	note := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", noteMarker, "")
-	f.exec(`UPDATE cairn.agent_event SET created_at=created_at-interval '4 days' WHERE event_id=$1`, note.EventID)
 	malformed := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board",
 		noteMarker+"\n```board-card\n{invalid json\n```", "")
 	snap, err := f.op.GetSwarmSnapshot(context.Background(), SwarmSnapshotRequest{Repo: f.repo, Campaign: f.campaign})
@@ -687,8 +702,9 @@ func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
 		item.ExpiresAt == nil || !item.ExpiresAt.Equal(card.CreatedAt.Add(10*time.Minute)) {
 		t.Errorf("expected envelope title and metadata from the first card, got %+v", item)
 	}
-	if item := items[note.EventID]; item.Title != "Board question from "+f.root.DisplayName || item.Detail != "" || item.ExpiresAt != nil {
-		t.Errorf("expected fixed title and no expiry for a request without a card, got %+v", item)
+	if item := items[note.EventID]; item.Title != "Board question from "+f.root.DisplayName || item.Detail != "" ||
+		item.ExpiresAt == nil || !item.ExpiresAt.Equal(note.CreatedAt.Add(24*time.Hour)) {
+		t.Errorf("expected fixed title and default lifetime for a request without a card, got %+v", item)
 	}
 	if item := items[malformed.EventID]; item.Title != "Board question from "+f.root.DisplayName || item.Detail != "" || item.ExpiresAt == nil ||
 		!item.ExpiresAt.Equal(malformed.CreatedAt.Add(24*time.Hour)) {
@@ -696,35 +712,74 @@ func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
 	}
 }
 
-func TestSwarmNeedsBoardRequestAgeBound(t *testing.T) {
-	f := newSwarmFixture(t, "board-age-bound")
-	_, outside := f.session("outside-board")
-	now := time.Now().UTC().Truncate(time.Microsecond)
-	campaignStart := now.Add(-2 * time.Hour)
-	f.exec(`UPDATE cairn.agent_team_campaign SET created_at=$3 WHERE repo=$1 AND campaign=$2`, f.repo, f.campaign, campaignStart)
-	publish := func(from *Store, at time.Time) AgentEvent {
-		t.Helper()
-		e := swarmNeedsTestPublish(f, from, "request", "topic", "agent-board", "Board request without a card", "")
-		f.exec(`UPDATE cairn.agent_event SET created_at=$2 WHERE event_id=$1`, e.EventID, at)
-		return e
-	}
-	publish(f.rootView, campaignStart.Add(-time.Second))
-	campaignEvent := publish(f.rootView, campaignStart)
-	publish(outside, now.Add(-73*time.Hour))
-	landingEvent := publish(outside, now.Add(-71*time.Hour))
+func TestSwarmNeedsBoardRequestPredatingCampaignFollowsPublisher(t *testing.T) {
+	ctx := context.Background()
+	n := newNativeFixture(t)
+	root := n.register(nativeAgent{Binding: "future-board-campaign-root"})
+	view := n.view(sessionRef(root))
+	f := &swarmFixture{nativeFixture: n, campaign: "board-created-later", root: root, rootView: view, op: n.operator()}
 
-	for _, page := range []struct {
-		name string
-		got  SwarmNeedsYou
-		want string
-	}{
-		{"campaign", swarmNeedsTestSnapshot(f), campaignEvent.EventID},
-		{"landing", swarmNeedsTestLanding(f), landingEvent.EventID},
-	} {
-		if len(page.got.Items) != 1 || page.got.Items[0].Refs.EventID != page.want || page.got.Items[0].ExpiresAt != nil {
-			t.Errorf("%s board requests: got %+v, want only %s without expiry", page.name, page.got.Items, page.want)
+	body := "Which option should we use?\n```board-card\n" + `{"ttl":86400}` + "\n```"
+	event := swarmNeedsTestPublish(f, view, "request", "topic", "agent-board", body, "")
+	publishedAt := event.CreatedAt.Add(-time.Minute)
+	f.exec(`UPDATE cairn.agent_event SET created_at=$2 WHERE event_id=$1`, event.EventID, publishedAt)
+	wantExpiry := publishedAt.Add(24 * time.Hour)
+	checkQuestion := func(needs SwarmNeedsYou) {
+		t.Helper()
+		item := swarmNeedsTestItem(t, needs, SwarmNeedBoardQuestion, root.Inbox, "answer_board", publishedAt)
+		if item.Refs.EventID != event.EventID || item.ExpiresAt == nil || !item.ExpiresAt.Equal(wantExpiry) {
+			t.Fatalf("board question: got %+v, want event %s with expiry %s", item, event.EventID, wantExpiry)
 		}
 	}
+	checkQuestion(swarmNeedsTestLanding(f))
+
+	campaign, err := view.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign, RootAgent: root.Inbox,
+		OutOfChainPolicy: "allow", Sensitivity: "shareable",
+	}, f.dest)
+	if err != nil || campaign.CreatedAt.Before(publishedAt.Add(time.Minute)) {
+		t.Fatalf("campaign must be created after the request: %+v %v", campaign, err)
+	}
+	checkQuestion(swarmNeedsTestSnapshot(f))
+	swarmNeedsTestAbsent(t, swarmNeedsTestLanding(f), SwarmNeedBoardQuestion)
+}
+
+func TestSwarmNeedsBoardRequestDefaultAndMaximumLifetimes(t *testing.T) {
+	f := newSwarmFixture(t, "board-lifetimes")
+	outside, view := f.session("outside-board")
+	const cardless = "Board request without a card"
+	const longTTL = "Board request with a long lifetime\n```board-card\n" + `{"ttl":360000}` + "\n```"
+	publish := func(body string, age time.Duration) (AgentEvent, time.Time) {
+		t.Helper()
+		event := swarmNeedsTestPublish(f, view, "request", "topic", "agent-board", body, "")
+		publishedAt := event.CreatedAt.Add(-age)
+		f.exec(`UPDATE cairn.agent_event SET created_at=$2 WHERE event_id=$1`, event.EventID, publishedAt)
+		return event, publishedAt
+	}
+	oldCardless, _ := publish(cardless, 25*time.Hour)
+	oldLongTTL, _ := publish(longTTL, 73*time.Hour)
+	cardlessEvent, cardlessAt := publish(cardless, 23*time.Hour)
+	longEvent, longAt := publish(longTTL, 71*time.Hour)
+
+	landing := swarmNeedsTestLanding(f)
+	want := map[string]time.Time{
+		cardlessEvent.EventID: cardlessAt.Add(24 * time.Hour),
+		longEvent.EventID:     longAt.Add(72 * time.Hour),
+	}
+	if len(landing.Items) != len(want) {
+		t.Fatalf("expected two live questions, got %+v. Expired requests are %s and %s", landing.Items, oldCardless.EventID, oldLongTTL.EventID)
+	}
+	for _, item := range landing.Items {
+		expires, ok := want[item.Refs.EventID]
+		if !ok || item.Type != SwarmNeedBoardQuestion || item.Subject != outside.Inbox || item.ExpiresAt == nil || !item.ExpiresAt.Equal(expires) {
+			t.Errorf("board question: got %+v, want expiry %s for a live request", item, expires)
+		}
+		delete(want, item.Refs.EventID)
+	}
+	if len(want) != 0 {
+		t.Errorf("missing live requests: %v", want)
+	}
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion)
 }
 
 func TestSwarmNeedsFormerMemberRemainsWithCampaign(t *testing.T) {

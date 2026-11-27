@@ -235,13 +235,16 @@ when that timestamp is unavailable, because the undated crossing may have come
 first; `since` never moves forward while the handoff stays due. The snapshot's
 `handoff.age_reached_at` gives the time the age limit was reached on its own.
 
-Campaign board reads start at campaign creation. Landing board reads cover
-the last 72 hours. These bounds apply even to a question without a card.
+Board questions follow the publisher's campaign affiliation regardless of
+when the campaign was created. Both pages read the last 72 hours of requests
+because that is the Fernside board's maximum request lifetime. Requests use
+24 hours from publication when the card gives no lifetime or there is no card.
+These limits come from “Limits the board applies” in `agent-board/docs/agents.md`.
 Cairn excludes answered requests before reading card metadata.
 
 | Row | When it appears | Owner action |
 | --- | --- | --- |
-| Board question | An unanswered request on `agent-board` within its lifetime. The event summary supplies the title when present. The card supplies its lifetime and whether a default was declared. A card without a lifetime uses 24 hours, capped at 72 hours after publication. A request without a card has no displayed expiry. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |
+| Board question | An unanswered request on `agent-board` within its lifetime. The event summary supplies the title when present. The card supplies its lifetime and whether a default was declared. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |
 | Operator delivery | A pending or leased delivery addressed to the operator. Only the collection's oldest eligible delivery has `inbox_head: true`. If it belongs to another page, this page has no marked row. | Open the event and reply to a request. Acknowledge a delivery when it reaches the head of the operator inbox. |
 | Decision | An open ledger decision owned by the coordinator or operator. A lead's decision appears on the lead's row. | Make the decision and record the outcome in the campaign ledger. |
 | Escalation | A ledger blocker marked escalated. | Review the campaign ledger and resolve the escalation with its owner. |
