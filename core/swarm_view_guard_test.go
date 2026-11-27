@@ -26,6 +26,16 @@ import (
 // The guard reads source. It accepts one shape of code and fails for every
 // other, including some that are correct:
 //
+//   - The insert is an INSERT statement that names the table in one string
+//     literal, as cairn.agent_event or as agent_event, in any case, quoting
+//     and spacing. Other ways to write rows are recognised and refused: the
+//     table named on its own (as for CopyFrom, or for a statement joined
+//     from constants), MERGE and COPY ... FROM.
+//   - The statement is executed where it is written: the literal is the SQL
+//     argument of an Exec, Query or QueryRow call, alone or as the leftmost
+//     operand of a concatenation. A statement that is returned, kept in a
+//     variable, a field or a constant, or passed to another function can run
+//     anywhere, so no lock around its text covers it.
 //   - The lock is the call lock(ctx, tx, "agent-events:"+X), where X is a
 //     name or a dotted path such as req.Publication.Repo. A key with a
 //     suffix or a prefix, another literal, a key held in a variable and a
@@ -33,28 +43,103 @@ import (
 //   - The call is a statement that runs whenever control reaches it: the
 //     init of an if statement, a comparison in its condition, an assignment,
 //     or an expression statement.
-//   - That statement dominates the insert: it is a statement of a block that
-//     encloses the insert, and it stands before the statement of that block
-//     that holds the insert. A lock in a branch, a case, a loop body or
-//     another function literal, a deferred lock, a lock in a go statement
-//     and a lock after the insert cover some paths at most. The body of a
-//     function literal is a block like any other, and a function literal
-//     runs inside the statement that holds it. A goto in the function voids
-//     its locks.
+//   - That statement dominates the call that executes the insert: it is a
+//     statement of a block that encloses the call, and it stands before the
+//     statement of that block that holds the call. A lock in a branch, a
+//     case, a loop body or another function literal, a deferred lock, a lock
+//     in a go statement and a lock after the insert cover some paths at
+//     most. The body of a function literal is a block like any other. A
+//     function literal that is called or passed to a call runs inside the
+//     statement that holds it; one that is stored or returned can run
+//     anywhere, and only a lock inside it covers it. A goto in the function
+//     voids its locks.
 //   - A function that does not lock for itself is covered when every call of
 //     it is covered in the same way, up to eight calls above the insert.
 //     That needs every caller in view, so the function must be unexported
 //     and must never be used as a value.
-//   - The insert statement is a literal inside a function declaration.
+//   - The statement is one of agentEventAuditedSites. A new insert site
+//     fails the guard until a person has reviewed its lock and listed it.
 //
 // The guard has no type information. It does not check that the lock and the
 // insert use the same transaction, that X is the repository of the inserted
-// event, or that no local name hides the lock helper.
+// event, or that no local name hides the lock helper. It does not see a
+// table name that the program builds at run time. The audited list is there
+// for what the analysis gets wrong: it cannot help with a write that the
+// guard does not recognise at all.
 
-// The table name must end there: cairn.agent_event_review is another table.
-// The column list need not follow in the same literal, so a statement that is
-// joined from pieces is still seen.
-var agentEventInsert = regexp.MustCompile(`(?i)INSERT\s+INTO\s+cairn\.agent_event([^A-Za-z0-9_]|$)`)
+// agentEventAuditedSites lists the insert statements of package core whose
+// lock a person has reviewed, as file:function, one entry for each statement.
+// The analysis below can be wrong in ways it cannot see, so a statement that
+// is not listed here fails the guard whatever the analysis says about it.
+// Before you add an entry, check what the analysis cannot: that the lock is
+// taken in the transaction that inserts, with the repository of the inserted
+// event, and that the transaction holds it to commit.
+var agentEventAuditedSites = []string{
+	"agent_event_reissue.go:ReissueEvent",
+	"agent_events.go:publishEventInternalTx",
+	"agent_stopped_backlog.go:commitStoppedDeliveryNoticeTx",
+	"agent_wait_scheduler.go:DrainWaitOutbox",
+}
+
+// These patterns read text that agentEventNormalise has brought to one
+// spelling. The table name must end where the pattern ends:
+// cairn.agent_event_review is another table. The column list need not follow
+// in the same literal, so a statement that is joined from pieces is still
+// seen.
+var (
+	agentEventInsert = regexp.MustCompile(`insert into (cairn ?\. ?)?agent_event([^a-z0-9_]|$)`)
+
+	// Other ways to write rows. The guard recognises them and cannot check
+	// them: the table named on its own, which is how CopyFrom and a
+	// statement joined from constants name it, the same inside an
+	// Identifier as it reads in a file, MERGE, and COPY ... FROM.
+	agentEventOtherWrite = regexp.MustCompile(`^(cairn ?\. ?)?agent_event$` +
+		`|identifier ?[({]([^(){}]*[^a-z0-9_])?agent_event ?[)}]` +
+		`|merge into (cairn ?\. ?)?agent_event([^a-z0-9_]|$)` +
+		`|copy (cairn ?\. ?)?agent_event ?(\([^)]*\) ?)?from( |$)`)
+)
+
+// agentEventNormalise brings SQL text to one spelling: lower case, no quotes
+// around identifiers, single spaces. It drops every double quote and
+// backquote together with the backslashes that escape it in the language
+// around the SQL, so the patterns also read a whole source file.
+func agentEventNormalise(text string) string {
+	text = strings.ToLower(text)
+	out := make([]byte, 0, len(text))
+	for i := 0; i < len(text); i++ {
+		switch c := text[i]; c {
+		case '"', '`':
+			for len(out) > 0 && out[len(out)-1] == '\\' {
+				out = out[:len(out)-1]
+			}
+		case ' ', '\t', '\n', '\r', '\f', '\v':
+			if len(out) > 0 && out[len(out)-1] != ' ' {
+				out = append(out, ' ')
+			}
+		default:
+			out = append(out, c)
+		}
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// agentEventWriteKind reads a string literal or a whole file: "insert" for
+// an INSERT statement into the table, "other" for a write in a form that the
+// guard cannot check, and "" for text that does not write to the table.
+func agentEventWriteKind(text string) string {
+	text = agentEventNormalise(text)
+	switch {
+	case !strings.Contains(text, "agent_event"):
+		// Every pattern needs the name. Most files do not have it, and the
+		// second pattern is slow over a whole file.
+		return ""
+	case agentEventInsert.MatchString(text):
+		return "insert"
+	case agentEventOtherWrite.MatchString(text):
+		return "other"
+	}
+	return ""
+}
 
 // agentEventFunc is one function declaration of the package.
 type agentEventFunc struct {
@@ -76,6 +161,7 @@ type agentEventUse struct {
 type agentEventPackage struct {
 	fset    *token.FileSet
 	inserts []agentEventUse            // SQL literals that insert into cairn.agent_event
+	others  []token.Pos                // literals that write to it in a form the guard cannot check
 	calls   map[string][]agentEventUse // callee name -> direct calls of that name
 	values  map[string][]token.Pos     // name -> uses that neither declare nor directly call it
 }
@@ -186,10 +272,22 @@ func agentEventPath(root, target ast.Node) []ast.Node {
 
 // agentEventLockDominates reports whether, in a block on the path, a lock
 // statement stands before the statement through which the path goes on.
+//
+// A function literal on the path runs inside the statement that holds it
+// only when that statement calls it or passes it to a call. One that is
+// stored or returned can run anywhere, so only the blocks inside it count.
 func agentEventLockDominates(path []ast.Node) bool {
+	inside := 0
+	for i := 1; i < len(path); i++ {
+		if _, ok := path[i].(*ast.FuncLit); ok {
+			if _, called := path[i-1].(*ast.CallExpr); !called {
+				inside = i
+			}
+		}
+	}
 	for i, node := range path {
 		block, ok := node.(*ast.BlockStmt)
-		if !ok || i+1 == len(path) {
+		if !ok || i < inside || i+1 == len(path) {
 			continue
 		}
 		locked := false
@@ -204,6 +302,36 @@ func agentEventLockDominates(path []ast.Node) bool {
 		}
 	}
 	return false
+}
+
+// agentEventExecCall returns the call that executes the statement at the end
+// of path: an Exec, Query or QueryRow call that has the literal as its SQL
+// argument, the one after the context, alone or as the leftmost operand of a
+// concatenation. It returns nil when the statement is not executed where it
+// is written.
+func agentEventExecCall(path []ast.Node) *ast.CallExpr {
+	i := len(path) - 1
+	for i > 0 {
+		sum, ok := path[i-1].(*ast.BinaryExpr)
+		if !ok || sum.Op != token.ADD || ast.Node(sum.X) != path[i] {
+			break
+		}
+		i--
+	}
+	if i <= 0 {
+		return nil
+	}
+	call, ok := path[i-1].(*ast.CallExpr)
+	if !ok || len(call.Args) < 2 || ast.Node(call.Args[1]) != path[i] {
+		return nil
+	}
+	if fun, ok := call.Fun.(*ast.SelectorExpr); ok {
+		switch fun.Sel.Name {
+		case "Exec", "Query", "QueryRow":
+			return call
+		}
+	}
+	return nil
 }
 
 // scan records the inserts, the calls and the other uses of names in a file.
@@ -248,8 +376,13 @@ func (p *agentEventPackage) scan(file *ast.File) {
 				}
 			case *ast.BasicLit:
 				if node.Kind == token.STRING {
-					if value, err := strconv.Unquote(node.Value); err == nil && agentEventInsert.MatchString(value) {
-						p.inserts = append(p.inserts, agentEventUse{fn: current, node: node})
+					if value, err := strconv.Unquote(node.Value); err == nil {
+						switch agentEventWriteKind(value) {
+						case "insert":
+							p.inserts = append(p.inserts, agentEventUse{fn: current, node: node})
+						case "other":
+							p.others = append(p.others, node.Pos())
+						}
 					}
 				}
 			}
@@ -282,7 +415,7 @@ func (p *agentEventPackage) unlocked(use agentEventUse) string {
 		case use.fn.jumps:
 			text += fmt.Sprintf(" (a goto can pass around the lock at line %d)", at)
 		default:
-			text += fmt.Sprintf(" (the lock at line %d does not count: it must stand before line %d in a block around it, as an if, assignment or expression statement)", at, line)
+			text += fmt.Sprintf(" (the lock at line %d does not count: it must stand before line %d in a block around it, as an if, assignment or expression statement, with no stored or returned function literal between them)", at, line)
 		}
 		return true
 	})
@@ -327,8 +460,8 @@ func (p *agentEventPackage) locked(use agentEventUse, depth int, seen map[*agent
 
 // agentEventLockViolations is the whole analysis of one package. It returns
 // "file:function" for each insert statement inside a function declaration,
-// and one line for each insert statement that some path may reach without
-// the collection lock.
+// and one line for each write to the table that the guard cannot check or
+// that some path may reach without the collection lock.
 func agentEventLockViolations(fset *token.FileSet, files map[string]*ast.File) (sites, violations []string) {
 	pkg := &agentEventPackage{fset: fset, calls: map[string][]agentEventUse{}, values: map[string][]token.Pos{}}
 	names := make([]string, 0, len(files))
@@ -347,18 +480,54 @@ func agentEventLockViolations(fset *token.FileSet, files map[string]*ast.File) (
 			continue
 		}
 		sites = append(sites, insert.fn.file+":"+insert.fn.name)
-		if ok, why := pkg.locked(insert, 0, map[*agentEventFunc]bool{}); !ok {
+		// The lock must cover the call that executes the statement. Text
+		// that goes anywhere else can be executed anywhere else.
+		call := agentEventExecCall(agentEventPath(insert.fn.decl, insert.node))
+		if call == nil {
+			violations = append(violations, pkg.at(insert.node.Pos())+" holds an insert into cairn.agent_event that is not executed where it is written: the statement must be the SQL argument of the Exec, Query or QueryRow call that runs it, so that this guard can check the lock on the path to that call")
+			continue
+		}
+		if ok, why := pkg.locked(agentEventUse{fn: insert.fn, node: call}, 0, map[*agentEventFunc]bool{}); !ok {
 			violations = append(violations, pkg.at(insert.node.Pos())+" inserts into cairn.agent_event on a path that has not taken lock(ctx, tx, \"agent-events:\"+repo): "+why)
 		}
+	}
+	for _, pos := range pkg.others {
+		violations = append(violations, pkg.at(pos)+" can write to cairn.agent_event in a form this guard cannot check (the table named on its own, as for CopyFrom or a statement joined from constants, MERGE, or COPY ... FROM): write an INSERT statement that names the table, as the literal SQL argument of the call that runs it")
 	}
 	sort.Strings(sites)
 	return sites, violations
 }
 
-func TestAgentEventInsertSitesTakeTheCollectionLock(t *testing.T) {
-	root := agentEventRepoRoot(t)
+// agentEventAudit compares the insert sites that the analysis found with the
+// reviewed ones, one entry for each statement, and says what differs.
+func agentEventAudit(found, audited []string) []string {
+	extra := map[string]int{}
+	for _, site := range found {
+		extra[site]++
+	}
+	for _, site := range audited {
+		extra[site]--
+	}
+	names := make([]string, 0, len(extra))
+	for name := range extra {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var problems []string
+	for _, name := range names {
+		switch n := extra[name]; {
+		case n > 0:
+			problems = append(problems, fmt.Sprintf("%s has %d insert statement(s) into cairn.agent_event that agentEventAuditedSites does not list: a new site must be reviewed for its lock before it is added to the list", name, n))
+		case n < 0:
+			problems = append(problems, fmt.Sprintf("agentEventAuditedSites lists %s for %d insert statement(s) that the guard does not find: remove the entry when the statement is gone, and find out why when it is not", name, -n))
+		}
+	}
+	return problems
+}
 
-	// 1. No file outside package core inserts into the table, in any language.
+// agentEventStrayFiles lists the files under root, outside package core, that
+// write to the table, in any language. The guard cannot check a lock there.
+func agentEventStrayFiles(root string) ([]string, error) {
 	var stray []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -391,16 +560,24 @@ func TestAgentEventInsertSitesTakeTheCollectionLock(t *testing.T) {
 		if rErr != nil {
 			return rErr
 		}
-		if agentEventInsert.Match(raw) {
+		if agentEventWriteKind(string(raw)) != "" {
 			stray = append(stray, rel)
 		}
 		return nil
 	})
+	return stray, err
+}
+
+func TestAgentEventInsertSitesTakeTheCollectionLock(t *testing.T) {
+	root := agentEventRepoRoot(t)
+
+	// 1. No file outside package core writes to the table, in any language.
+	stray, err := agentEventStrayFiles(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(stray) > 0 {
-		t.Fatalf("cairn.agent_event is inserted outside package core, where this guard cannot check the collection lock: %v", stray)
+		t.Fatalf("cairn.agent_event is written outside package core, where this guard cannot check the collection lock: %v", stray)
 	}
 
 	// 2. In package core, every insert is reached only after the lock.
@@ -424,6 +601,11 @@ func TestAgentEventInsertSitesTakeTheCollectionLock(t *testing.T) {
 	sites, violations := agentEventLockViolations(fset, files)
 	for _, violation := range violations {
 		t.Error(violation)
+	}
+
+	// 3. The insert sites are the reviewed ones, no more and no fewer.
+	for _, problem := range agentEventAudit(sites, agentEventAuditedSites) {
+		t.Error(problem)
 	}
 	if len(sites) == 0 {
 		t.Fatal("found no insert into cairn.agent_event; the guard no longer sees the publication path")
@@ -466,20 +648,138 @@ func TestAgentEventInsertGuardRecognisesLockCalls(t *testing.T) {
 			t.Errorf("%s: lock call recognised = %v, want %v", source, got, want)
 		}
 	}
-	for statement, want := range map[string]bool{
-		"INSERT INTO cairn.agent_event(event_id) VALUES($1)":            true,
-		"insert into cairn.agent_event (\n event_id) values($1)":        true,
-		"INSERT INTO cairn.agent_event_review(event_id) VALUES($1)":     false,
-		"INSERT INTO cairn.agent_delivery(delivery_id) VALUES($1)":      false,
-		"UPDATE cairn.agent_event SET summary=$1":                       false,
-		"SELECT 1 FROM cairn.agent_event WHERE event_id=$1":             false,
-		"INSERT INTO cairn.agent_event_admission_refusal(a) VALUES($1)": false,
-		"INSERT INTO cairn.agent_event":                                 true,
-		"INSERT INTO cairn.agent_event SELECT * FROM staged":            true,
+	for text, want := range map[string]string{
+		"INSERT INTO cairn.agent_event(event_id) VALUES($1)":     "insert",
+		"insert into cairn.agent_event (\n event_id) values($1)": "insert",
+		"INSERT INTO cairn.agent_event":                          "insert",
+		"INSERT INTO cairn.agent_event SELECT * FROM staged":     "insert",
+		"WITH s AS (SELECT 1) INSERT INTO cairn.agent_event(a)":  "insert",
+		`INSERT INTO "cairn"."agent_event"(event_id) VALUES($1)`: "insert",
+		`insert into cairn."agent_event" (event_id) values($1)`:  "insert",
+		`INSERT INTO "cairn" . "agent_event" (event_id)`:         "insert",
+		"INSERT INTO `cairn`.`agent_event`(event_id) VALUES($1)": "insert",
+		"INSERT INTO agent_event(event_id) VALUES($1)":           "insert",
+		`INSERT INTO "agent_event"(event_id) VALUES($1)`:         "insert",
+		"InSeRt\n\t  INTO\r\n  Cairn.Agent_Event\n(event_id)":    "insert",
+		// As the statement reads in a script, with the quotes of the shell.
+		`psql -c "INSERT INTO \"cairn\".\"agent_event\"(event_id) VALUES('x')"`: "insert",
+
+		"INSERT INTO cairn.agent_event_review(event_id) VALUES($1)":     "",
+		`INSERT INTO "cairn"."agent_event_review"(event_id) VALUES($1)`: "",
+		"INSERT INTO cairn.agent_event_admission_refusal(a) VALUES($1)": "",
+		"INSERT INTO cairn.agent_delivery(delivery_id) VALUES($1)":      "",
+		"INSERT INTO archive.agent_event(event_id) VALUES($1)":          "",
+		"INSERT INTO cairn.my_agent_event(event_id) VALUES($1)":         "",
+		"UPDATE cairn.agent_event SET summary=$1":                       "",
+		"SELECT 1 FROM cairn.agent_event WHERE event_id=$1":             "",
+		"COPY cairn.agent_event TO STDOUT":                              "",
+		"COPY cairn.agent_event_review(event_id) FROM STDIN":            "",
+		"MERGE INTO cairn.agent_event_review r USING staged s ON false": "",
+		"agent_event_review":                            "",
+		"the agent_event table":                         "",
+		`pgx.Identifier{"cairn", "agent_event_review"}`: "",
+		`require_fresh("agent_event", "agent_session")`: "",
+
+		"agent_event":                                 "other",
+		"cairn.agent_event":                           "other",
+		`"cairn"."agent_event"`:                       "other",
+		`pgx.Identifier{"cairn", "agent_event"}`:      "other",
+		`pgx.Identifier{schema, "agent_event"}`:       "other",
+		`sql.Identifier("agent_event")`:               "other",
+		"COPY cairn.agent_event(event_id) FROM STDIN": "other",
+		`copy "agent_event" from stdin`:               "other",
+		"MERGE INTO cairn.agent_event e USING staged s ON false WHEN NOT MATCHED THEN INSERT (event_id) VALUES (s.event_id)": "other",
 	} {
-		if got := agentEventInsert.MatchString(statement); got != want {
-			t.Errorf("%q: insert recognised = %v, want %v", statement, got, want)
+		if got := agentEventWriteKind(text); got != want {
+			t.Errorf("%q: write recognised as %q, want %q", text, got, want)
 		}
+	}
+}
+
+// The audited list must notice a statement that comes, goes or moves.
+func TestAgentEventInsertGuardAuditsSites(t *testing.T) {
+	audited := []string{"a.go:one", "b.go:two"}
+	const added = " insert statement(s) into cairn.agent_event that agentEventAuditedSites does not list: a new site must be reviewed for its lock before it is added to the list"
+	cases := []struct {
+		name  string
+		found []string
+		want  []string // the start of each problem, in order
+	}{
+		{name: "the audited sites", found: []string{"a.go:one", "b.go:two"}},
+		{name: "the audited sites in another order", found: []string{"b.go:two", "a.go:one"}},
+		{name: "a new site", found: []string{"a.go:one", "b.go:two", "c.go:three"}, want: []string{"c.go:three has 1" + added}},
+		{name: "a second statement in an audited function", found: []string{"a.go:one", "a.go:one", "b.go:two"}, want: []string{"a.go:one has 1" + added}},
+		{name: "an audited site that is gone", found: []string{"a.go:one"}, want: []string{"agentEventAuditedSites lists b.go:two for 1 insert statement(s) that the guard does not find"}},
+		{name: "a statement that moved to another function", found: []string{"a.go:one", "b.go:moved"}, want: []string{"b.go:moved has 1" + added, "agentEventAuditedSites lists b.go:two for 1"}},
+		{name: "no site at all", want: []string{"agentEventAuditedSites lists a.go:one for 1", "agentEventAuditedSites lists b.go:two for 1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			problems := agentEventAudit(tc.found, audited)
+			if len(problems) != len(tc.want) {
+				t.Fatalf("problems = %q, want %d", problems, len(tc.want))
+			}
+			for i, problem := range problems {
+				if !strings.HasPrefix(problem, tc.want[i]) {
+					t.Errorf("problem %q does not start with %q", problem, tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// The scan outside package core reads every language through the same
+// patterns, and skips what the real tree needs skipped.
+func TestAgentEventInsertGuardScansFilesOutsideCore(t *testing.T) {
+	const insert = "INSERT INTO cairn.agent_event(event_id) VALUES ('x');\n"
+	files := map[string]string{
+		// Writes, each in the spelling of its language.
+		"scripts/seed.py":   "cur.execute('INSERT INTO \"cairn\".\"agent_event\" (event_id) VALUES (%s)', (event_id,))\n",
+		"scripts/seed.sh":   "psql -c \"insert into \\\"cairn\\\".\\\"agent_event\\\" (event_id) values ('x')\"\n",
+		"scripts/bare.sql":  "INSERT\n  INTO agent_event (event_id)\nVALUES ('x');\n",
+		"cmd/tool/copy.go":  "package main\n\nfunc seed() { tx.CopyFrom(ctx, pgx.Identifier{\"cairn\", \"agent_event\"}, cols, rows) }\n",
+		"web/app.js":        "const q = `MERGE INTO cairn.agent_event e USING staged s ON false`;\n",
+		"core/tool/tool.go": "package tool\n\nconst q = `" + insert + "`\n",
+		"rust/src/seed.rs":  "client.batch_execute(\"COPY cairn.agent_event (event_id) FROM STDIN\")?;\n",
+		// Not writes to this table.
+		"scripts/review.py": "cur.execute('INSERT INTO \"cairn\".\"agent_event_review\" (event_id) VALUES (%s)', (event_id,))\n",
+		"scripts/read.py":   "host.require_fresh(\"agent_event\", \"agent_session\")\ncur.execute('SELECT count(*) FROM cairn.agent_event')\n",
+		// Skipped: package core is read as Go by the analysis, and the rest
+		// is tests, schema, retained sources, tool directories and prose.
+		"core/store.go":          "package core\n\nconst q = `" + insert + "`\n",
+		"core/schema/001.sql":    insert,
+		"docs/sources/old.sql":   insert,
+		"docs/notes.md":          insert,
+		"scripts/test_seed.py":   insert,
+		"scripts/check_seed.py":  insert,
+		"cmd/tool/seed_test.go":  "package main\n\nconst q = `" + insert + "`\n",
+		"node_modules/x/seed.js": insert,
+		"vendor/x/seed.go":       insert,
+		"target/seed.rs":         insert,
+		"bin/seed.sh":            insert,
+		".cache/seed.sql":        insert,
+	}
+	root := t.TempDir()
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stray, err := agentEventStrayFiles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range stray {
+		stray[i] = filepath.ToSlash(stray[i])
+	}
+	sort.Strings(stray)
+	want := "cmd/tool/copy.go core/tool/tool.go rust/src/seed.rs scripts/bare.sql scripts/seed.py scripts/seed.sh web/app.js"
+	if got := strings.Join(stray, " "); got != want {
+		t.Errorf("files that write to the table:\n got %s\nwant %s", got, want)
 	}
 }
 
@@ -511,15 +811,22 @@ func top(ctx context.Context, tx pgx.Tx, repo, id string) error {
 // forms the package uses. Each case is a small package that goes through the
 // whole analysis.
 func TestAgentEventInsertGuardRejects(t *testing.T) {
-	// Most cases put their statements before the insert of this function,
-	// so a rejected case differs from an accepted one in those statements
-	// only.
+	// Most cases put their statements before the insert of this function, or
+	// change the SQL argument of its Exec call, so a rejected case differs
+	// from an accepted one in that part only.
 	const shell = `
 func publish(ctx context.Context, tx pgx.Tx, repo, id, kind string, serial bool) error {%s
-	_, err := tx.Exec(ctx, "INSERT INTO cairn.agent_event(event_id) VALUES($1)", id)
+	_, err := tx.Exec(ctx, %s, id)
 	return err
 }
 `
+	const statement = `"INSERT INTO cairn.agent_event(event_id) VALUES($1)"`
+	const house = `
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return err
+	}`
+	const notExecuted = " holds an insert into cairn.agent_event that is not executed where it is written"
+	const notChecked = " can write to cairn.agent_event in a form this guard cannot check"
 	// A helper that inserts and leaves the lock to its one caller.
 	const helper = `
 func (s *Store) Publish(ctx context.Context, repo, id string) error {
@@ -540,7 +847,8 @@ func (s *Store) insertEventTx(ctx context.Context, tx pgx.Tx, id string) error {
 `
 	cases := []struct {
 		name       string
-		before     string   // statements before the insert in shell, or
+		before     string   // statements before the insert in shell, and
+		sql        string   // the SQL argument of its Exec call, or
 		sources    []string // the files of a package, without the package clause
 		sites      int      // insert statements the analysis must see inside functions
 		violations int
@@ -660,6 +968,44 @@ func (s *Store) Publish(ctx context.Context, tx pgx.Tx, repo string, ids []strin
 			sites: 1,
 		},
 		{
+			name: "lock before a closure that is called at once",
+			before: house + `
+	func() {
+		_, _ = tx.Exec(ctx, "INSERT INTO cairn.agent_event(event_id) VALUES($1)", kind)
+	}()`,
+			sites: 2,
+		},
+		{
+			name: "lock before a closure that is returned with the insert",
+			sources: []string{`
+func (s *Store) Prepare(ctx context.Context, tx pgx.Tx, repo string) (func(string) error, error) {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return nil, err
+	}
+	return func(id string) error {
+		_, err := tx.Exec(ctx, "INSERT INTO cairn.agent_event(event_id) VALUES($1)", id)
+		return err
+	}, nil
+}
+`},
+			sites: 1, violations: 1, want: "the lock at line 4 does not count",
+		},
+		{
+			name: "closure that is stored and takes the lock itself",
+			sources: []string{`
+func (s *Store) Prepare(ctx context.Context, repo string) {
+	s.publish = func(tx pgx.Tx, id string) error {
+		if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, "INSERT INTO cairn.agent_event(event_id) VALUES($1)", id)
+		return err
+	}
+}
+`},
+			sites: 1,
+		},
+		{
 			name: "m statement built by concatenation without lock",
 			sources: []string{`
 func publish(ctx context.Context, tx pgx.Tx, cols, id string) error {
@@ -690,14 +1036,7 @@ func publish(ctx context.Context, tx pgx.Tx, repo, id string) error {
 	defer lock(ctx, tx, "agent-events:"+repo)`,
 			sites: 1, violations: 1, want: "the lock at line 4 does not count",
 		},
-		{
-			name: "p house form at function top level",
-			before: `
-	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
-		return err
-	}`,
-			sites: 1,
-		},
+		{name: "p house form at function top level", before: house, sites: 1},
 		{
 			name: "q insert into another table with no lock",
 			sources: []string{`
@@ -951,12 +1290,225 @@ func (s *Store) insertEventsTx(ctx context.Context, tx pgx.Tx, ids []string) err
 			sources: []string{agentEventChainSource(9)},
 			sites:   1, violations: 1, want: "case_0.go:hop8 does not take the lock on every path to line 37, and the call chain above it is too deep",
 		},
+
+		// The table, however the statement spells it.
+		{name: "quoted schema and table", sql: `"INSERT INTO \"cairn\".\"agent_event\"(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
+		{name: "quoted schema and table below the lock", before: house, sql: `"INSERT INTO \"cairn\".\"agent_event\"(event_id) VALUES($1)"`, sites: 1},
+		{name: "quoted table only", sql: `"insert into cairn.\"agent_event\" (event_id) values($1)"`, sites: 1, violations: 1, want: "it has no caller"},
+		{name: "backquoted schema and table", sql: "\"INSERT INTO `cairn`.`agent_event`(event_id) VALUES($1)\"", sites: 1, violations: 1, want: "it has no caller"},
+		{name: "bare table name without schema", sql: `"INSERT INTO agent_event(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
+		{name: "mixed case and odd whitespace between the words", sql: `"InSeRt\n\t  INTO\r\n  Cairn . Agent_Event\n\t(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
+		{name: "quoted name of another table", sql: `"INSERT INTO \"cairn\".\"agent_event_review\"(event_id) VALUES($1)"`, sites: 0},
+
+		// The statement must be executed where it is written.
+		{
+			name: "helper that returns the statement from inside a locked block, executed by another function",
+			sources: []string{`
+func (s *Store) statement(ctx context.Context, tx pgx.Tx, repo string) (string, error) {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return "", err
+	}
+	return "INSERT INTO cairn.agent_event(event_id) VALUES($1)", nil
+}
+
+func (s *Store) Publish(ctx context.Context, tx pgx.Tx, repo, id string) error {
+	statement, err := s.statement(ctx, tx, repo)
+	if err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, statement, id)
+	return err
+}
+`},
+			sites: 1, violations: 1, want: "case_0.go:7" + notExecuted,
+		},
+		{
+			name: "statement in a local variable and executed below the lock, refused by design",
+			before: house + `
+	statement := "INSERT INTO cairn.agent_event(event_id) VALUES($1)"`,
+			sql:   "statement",
+			sites: 1, violations: 1, want: "case_0.go:7" + notExecuted,
+		},
+		{
+			name: "statement passed to a wrapper function below the lock",
+			sources: []string{`
+func (s *Store) Publish(ctx context.Context, tx pgx.Tx, repo, id string) error {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return err
+	}
+	return s.exec(ctx, tx, "INSERT INTO cairn.agent_event(event_id) VALUES($1)", id)
+}
+`},
+			sites: 1, violations: 1, want: "case_0.go:7" + notExecuted,
+		},
+		{
+			name: "statement prepared below the lock and executed later",
+			sources: []string{`
+func (s *Store) Publish(ctx context.Context, conn *sql.Conn, tx pgx.Tx, repo, id string) error {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return err
+	}
+	prepared, err := conn.PrepareContext(ctx, "INSERT INTO cairn.agent_event(event_id) VALUES($1)")
+	if err != nil {
+		return err
+	}
+	s.insertEvent = prepared
+	return nil
+}
+`},
+			sites: 1, violations: 1, want: "case_0.go:7" + notExecuted,
+		},
+		{
+			name: "statement stored in a composite literal below the lock",
+			before: house + `
+	statements := []string{"INSERT INTO cairn.agent_event(event_id) VALUES($1)"}`,
+			sql:   "statements[0]",
+			sites: 1, violations: 1, want: "case_0.go:7" + notExecuted,
+		},
+		{
+			name: "statement queued in a batch below the lock",
+			sources: []string{`
+func publish(ctx context.Context, tx pgx.Tx, batch *pgx.Batch, repo, id string) error {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return err
+	}
+	batch.Queue("INSERT INTO cairn.agent_event(event_id) VALUES($1)", id)
+	return tx.SendBatch(ctx, batch).Close()
+}
+`},
+			sites: 1, violations: 1, want: "case_0.go:7" + notExecuted,
+		},
+		{
+			name: "statement executed by a function named Exec that is not a method, below the lock",
+			sources: []string{`
+func publish(ctx context.Context, tx pgx.Tx, repo, id string) error {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return err
+	}
+	return Exec(ctx, "INSERT INTO cairn.agent_event(event_id) VALUES($1)", tx, id)
+}
+`},
+			sites: 1, violations: 1, want: "case_0.go:7" + notExecuted,
+		},
+		{
+			name:   "statement as a parameter value of another statement below the lock",
+			before: house,
+			sql:    `"SELECT cairn.run($1)", "INSERT INTO cairn.agent_event(event_id) VALUES('x')"`,
+			sites:  1, violations: 1, want: "case_0.go:7" + notExecuted,
+		},
+		{
+			name:   "statement on the right of a concatenation below the lock",
+			before: house,
+			sql:    `prefix+"INSERT INTO cairn.agent_event(event_id) VALUES($1)"`,
+			sites:  1, violations: 1, want: "case_0.go:7" + notExecuted,
+		},
+		{
+			name:   "house form with a concatenated statement as the Exec argument",
+			before: house,
+			sql:    `"INSERT INTO cairn.agent_event("+cols+") VALUES("+values+")"`,
+			sites:  1,
+		},
+		{
+			name: "house form with QueryRow and with Query",
+			sources: []string{`
+func position(ctx context.Context, tx pgx.Tx, repo, id string) (int64, error) {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return 0, err
+	}
+	var position int64
+	err := tx.QueryRow(ctx, "INSERT INTO cairn.agent_event(event_id) VALUES($1) RETURNING position", id).Scan(&position)
+	return position, err
+}
+
+func positions(ctx context.Context, tx pgx.Tx, repo string, ids []string) (pgx.Rows, error) {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return nil, err
+	}
+	return tx.Query(ctx, "INSERT INTO cairn.agent_event(event_id) SELECT unnest($1::uuid[]) RETURNING position", ids)
+}
+`},
+			sites: 2,
+		},
+
+		// Other ways to write rows: recognised, and refused whatever the lock.
+		{
+			name: "table named for CopyFrom below the lock",
+			sources: []string{`
+func publish(ctx context.Context, tx pgx.Tx, repo string, rows [][]any) error {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return err
+	}
+	_, err := tx.CopyFrom(ctx, pgx.Identifier{"cairn", "agent_event"}, []string{"event_id"}, pgx.CopyFromRows(rows))
+	return err
+}
+`},
+			sites: 0, violations: 1, want: "case_0.go:7" + notChecked,
+		},
+		{
+			name: "table name in a constant and joined into the statement below the lock",
+			sources: []string{`
+const eventTable = "cairn.agent_event"
+
+func publish(ctx context.Context, tx pgx.Tx, repo, id string) error {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, "INSERT INTO "+eventTable+"(event_id) VALUES($1)", id)
+	return err
+}
+`},
+			sites: 0, violations: 1, want: "case_0.go:3" + notChecked,
+		},
+		{
+			name:   "MERGE below the lock",
+			before: house,
+			sql:    `"MERGE INTO cairn.agent_event e USING staged s ON e.event_id = s.event_id WHEN NOT MATCHED THEN INSERT (event_id) VALUES (s.event_id)"`,
+			sites:  0, violations: 1, want: "case_0.go:7" + notChecked,
+		},
+		{
+			name: "COPY FROM below the lock",
+			sources: []string{`
+func publish(ctx context.Context, tx pgx.Tx, repo string, rows io.Reader) error {
+	if err := lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return err
+	}
+	_, err := tx.Conn().PgConn().CopyFrom(ctx, rows, "COPY cairn.agent_event(event_id) FROM STDIN")
+	return err
+}
+`},
+			sites: 0, violations: 1, want: "case_0.go:7" + notChecked,
+		},
+		{
+			name: "reads of the table and writes to other tables",
+			sources: []string{`
+func export(ctx context.Context, tx pgx.Tx, out io.Writer, id string) error {
+	if _, err := tx.Conn().PgConn().CopyTo(ctx, out, "COPY cairn.agent_event TO STDOUT"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, "UPDATE cairn.agent_event SET summary=$2 WHERE event_id=$1", id, "seen"); err != nil {
+		return err
+	}
+	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"cairn", "agent_event_review"}, []string{"event_id"}, pgx.CopyFromRows(nil)); err != nil {
+		return err
+	}
+	return tx.QueryRow(ctx, "SELECT count(*) FROM cairn.agent_event WHERE event_id=$1", id).Scan(new(int))
+}
+`},
+			sites: 0,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			sources := tc.sources
 			if sources == nil {
-				sources = []string{fmt.Sprintf(shell, tc.before)}
+				sql := tc.sql
+				if sql == "" {
+					sql = statement
+				}
+				sources = []string{fmt.Sprintf(shell, tc.before, sql)}
 			}
 			fset := token.NewFileSet()
 			files := map[string]*ast.File{}
