@@ -234,7 +234,8 @@ class OpenCodeQueueTests(unittest.TestCase):
                                                         delivery_mode='existing-session')))
         path = Path(self.temp.name) / 'unsupported.json'
         coordination.write_state(path, state)
-        config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True)
+        config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True,
+                      state_dir=self.temp.name)
         with patch.object(coordination, 'call', return_value=dict(delivery_id=delivery_id)), \
                 patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path):
             with coordination.session_lock(path):
@@ -255,7 +256,8 @@ class OpenCodeQueueTests(unittest.TestCase):
     def test_busy_retries_the_same_delivery_at_next_idle(self):
         state_path = Path(self.temp.name) / 'session.json'
         delivery = '00000000-0000-4000-8000-000000000001'
-        config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True)
+        config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True,
+                      state_dir=self.temp.name)
         state = dict(workspace=self.temp.name, process=self.process, agent=dict(
             agent_id='fixture-agent', execution_id='fixture-execution', native_session_id='ses_native123',
             metadata=dict(workspace=self.temp.name, state='idle', delivery_mode='existing-session')))
@@ -430,7 +432,8 @@ class OpenCodeQueueTests(unittest.TestCase):
 
     def test_coordinator_retains_single_submission_after_success_or_uncertainty(self):
         state_path = Path(self.temp.name) / 'session.json'
-        config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True)
+        config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True,
+                      state_dir=self.temp.name)
         ready = dict(delivery_id='00000000-0000-4000-8000-000000000001', request_id='fixture-request')
         initial = dict(workspace=self.temp.name, process=self.process, agent=dict(
             agent_id='fixture-agent', execution_id='fixture-execution', native_session_id='ses_native123',

@@ -411,6 +411,8 @@ class HermesQueueTests(unittest.TestCase):
                 'idle_wakeup': True,
                 'native_delivery': True,
                 'harness': 'hermes',
+                'binding': 'fixture',
+                'state_dir': tmpdir,
             }
 
             with patch.object(coordination, 'call', return_value={'delivery_id': 'del-uuid-999'}), \
@@ -518,6 +520,8 @@ class HermesQueueTests(unittest.TestCase):
                 'native_delivery': True,
                 'idle_wakeup': True,
                 'harness': 'hermes',
+                'binding': 'fixture',
+                'state_dir': tmpdir,
             }
             obs_unbound = {
                 'event': 'TurnStart',
