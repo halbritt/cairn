@@ -193,3 +193,19 @@ cairn work serve --project SLUG
 `work serve` launches a protected local loopback server binding `127.0.0.1` with
 a single-use terminal launch token exchanged for an HttpOnly SameSite=Strict session
 cookie, Host/Origin verification, and CSRF protection.
+
+## Swarm view
+
+Use `cairn swarm` for the live page over one campaign: who is in the swarm and
+what each agent is doing, who is talking to whom, what needs the owner, and
+which agents are running low on context room.
+
+```sh
+cairn swarm serve --collection "$HOME/git/cairn"
+cairn swarm url
+```
+
+`swarm serve` listens on `127.0.0.1` (default port 8087) with the local
+operator channel. `swarm url` prints the page address with the login token.
+See [swarm view](../swarm-view.md) for access rules, the event stream and the
+operator actions.

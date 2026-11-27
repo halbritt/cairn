@@ -1,0 +1,3 @@
+body { font: 14px/1.4 system-ui, sans-serif; margin: 1rem; }
+header { display: flex; gap: 1rem; align-items: baseline; }
+pre { white-space: pre-wrap; word-break: break-word; }
