@@ -1,0 +1,894 @@
+{
+  "board_commit": "5ccacf9768ff872ad7f6c822d96967b09b153fb7",
+  "published_at": "2026-11-27T20:00:00+00:00",
+  "cards": [
+    {
+      "name": "empty_card",
+      "body": "Choose a setting\n\n```board-card\n{}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "non_object",
+      "body": "Choose a setting\n\n```board-card\n[]\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "valid_default",
+      "body": "Choose a setting\n\n```board-card\n{\"shape\": \" QUESTION \", \"verbs\": [{\"id\": \"yes\", \"label\": \"Proceed\"}, {\"id\": \"later\", \"label\": \"Later\", \"snooze\": 60}], \"default\": \"yes\"}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": true,
+      "slot": ""
+    },
+    {
+      "name": "null_severity",
+      "body": "Choose a setting\n\n```board-card\n{\"severity\": null}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "unknown_shape",
+      "body": "Choose a setting\n\n```board-card\n{\"shape\": \"future-shape\"}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "all_typed_fields",
+      "body": "Choose a setting\n\n```board-card\n{\"severity\": \"warn\", \"observed_at\": \"2026-11-27T20Z\", \"until\": \"2026-11-27T21Z\", \"start\": \"2026-11-27T22Z\", \"end\": \"2026-11-27T23Z\", \"progress\": 0.25, \"items\": [\"one\", {\"label\": \"two\", \"done\": true}], \"series\": [1, 2], \"value\": 1, \"unit\": \"kV\", \"label\": \"Test\", \"all_day\": true, \"location\": \"Lab\"}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "slot_cleanup",
+      "body": "Choose a setting\n\n```board-card\n{\"slot\": \"  Ångström\\t v1 / π² - _.  \"}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": "Ångström-v1---π²---_."
+    },
+    {
+      "name": "slot_truncation",
+      "body": "Choose a setting\n\n```board-card\n{\"slot\": \"界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界suffix\"}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界"
+    },
+    {
+      "name": "slot_empty_after_clean",
+      "body": "Choose a setting\n\n```board-card\n{\"slot\": \"   \"}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "slot_integer",
+      "body": "Choose a setting\n\n```board-card\n{\"slot\": 42}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": "42"
+    },
+    {
+      "name": "slot_boolean",
+      "body": "Choose a setting\n\n```board-card\n{\"slot\": true}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": "True"
+    },
+    {
+      "name": "slot_false",
+      "body": "Choose a setting\n\n```board-card\n{\"slot\": false}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "ttl_number",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": 1.5}\n```",
+      "valid": true,
+      "lifetime_seconds": 1.5,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "ttl_lower_bound",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": 1}\n```",
+      "valid": true,
+      "lifetime_seconds": 1.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "ttl_capped",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": 999999}\n```",
+      "valid": true,
+      "lifetime_seconds": 259200.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "ttl_string",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": \"3600\"}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "ttl_boolean",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": true}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "ttl_zero",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": 0}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "ttl_negative",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": -1}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "ttl_nan",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": NaN}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "ttl_infinity",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": Infinity}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "reviewer_invalid_default",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": 3600, \"shape\": \"question\", \"verbs\": [{\"id\": \"yes\", \"label\": \"Proceed\"}], \"default\": \"missing\"}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "default_without_verbs",
+      "body": "Choose a setting\n\n```board-card\n{\"default\": \"yes\"}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "default_null",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"yes\", \"label\": \"Proceed\"}], \"default\": null}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "default_snooze",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"yes\", \"label\": \"Proceed\"}, {\"id\": \"later\", \"label\": \"Later\", \"snooze\": 60}], \"default\": \"later\"}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "question_without_verbs",
+      "body": "Choose a setting\n\n```board-card\n{\"shape\": \"question\"}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "severity_invalid",
+      "body": "Choose a setting\n\n```board-card\n{\"severity\": \"critical\"}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "verbs_wrong_type",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": {}}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "verbs_empty",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": []}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "verbs_too_many",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"yes\", \"label\": \"Proceed\"}, {\"id\": \"later\", \"label\": \"Later\", \"snooze\": 60}, {\"id\": \"no\", \"label\": \"No\"}, {\"id\": \"change\", \"label\": \"Change\"}]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "verb_not_object",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [\"yes\"]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "verb_invalid_id",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"Yes\", \"label\": \"Proceed\"}]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "verb_long_id",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"aaaaaaaaaaaaaaaaaaaaaaaaa\", \"label\": \"Proceed\"}]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "verb_duplicate_id",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"yes\", \"label\": \"Proceed\"}, {\"id\": \"yes\", \"label\": \"Proceed\"}]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "verb_missing_label",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"yes\", \"label\": \" \\t\"}]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "verb_numeric_id",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": 7, \"label\": \"Proceed\"}], \"default\": \"7\"}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": true,
+      "slot": ""
+    },
+    {
+      "name": "snooze_wrong_type",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"later\", \"label\": \"Later\", \"snooze\": \"60\"}]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "snooze_too_short",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"later\", \"label\": \"Later\", \"snooze\": 59}]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "snooze_too_long",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"later\", \"label\": \"Later\", \"snooze\": 86401}]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "snooze_maximum",
+      "body": "Choose a setting\n\n```board-card\n{\"verbs\": [{\"id\": \"later\", \"label\": \"Later\", \"snooze\": 86400}]}\n```",
+      "valid": true,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "progress_wrong_type",
+      "body": "Choose a setting\n\n```board-card\n{\"progress\": \"0.5\"}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "progress_below_range",
+      "body": "Choose a setting\n\n```board-card\n{\"progress\": -0.25}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "progress_above_range",
+      "body": "Choose a setting\n\n```board-card\n{\"progress\": 1.25}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "items_wrong_type",
+      "body": "Choose a setting\n\n```board-card\n{\"items\": \"item\"}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "items_too_many",
+      "body": "Choose a setting\n\n```board-card\n{\"items\": [\"item\", \"item\", \"item\", \"item\", \"item\", \"item\", \"item\", \"item\", \"item\", \"item\", \"item\", \"item\", \"item\"]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "item_wrong_type",
+      "body": "Choose a setting\n\n```board-card\n{\"items\": [1]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "item_missing_label",
+      "body": "Choose a setting\n\n```board-card\n{\"items\": [{\"label\": \" \\t\"}]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "series_wrong_type",
+      "body": "Choose a setting\n\n```board-card\n{\"series\": \"1,2\"}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "series_too_short",
+      "body": "Choose a setting\n\n```board-card\n{\"series\": [1]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "series_too_long",
+      "body": "Choose a setting\n\n```board-card\n{\"series\": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "series_invalid_point",
+      "body": "Choose a setting\n\n```board-card\n{\"series\": [1, \"2\"]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "series_nonfinite_point",
+      "body": "Choose a setting\n\n```board-card\n{\"series\": [1, NaN]}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "observed_at_invalid",
+      "body": "Choose a setting\n\n```board-card\n{\"observed_at\": \"yesterday\", \"ttl\": 3600}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "until_invalid",
+      "body": "Choose a setting\n\n```board-card\n{\"until\": \"yesterday\", \"ttl\": 3600}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "start_invalid",
+      "body": "Choose a setting\n\n```board-card\n{\"start\": \"yesterday\", \"ttl\": 3600}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "end_invalid",
+      "body": "Choose a setting\n\n```board-card\n{\"end\": \"yesterday\", \"ttl\": 3600}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_reviewer_compact_offset",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-29T20:00:00+0000\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 172800.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_offset_colon",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T13:00:00-08:00\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_offset_minutes",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T13:30:00-07:30\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_offset_hours",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T22:00:00+01\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_offset_seconds",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T22:01:02+01:01:02\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_offset_compact_fraction",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T22:01:02.123456+010102.123456\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_offset_minute_carry",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T22:00+00:60\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_offset_zero_components",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21:00+00:00:00.5\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_utc_z",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21:00:00Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_space_separator",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27 21:00:00+00:00\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_unicode_separator",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27⌚21:00:00Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_seconds_omitted",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21:00+00:00\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_minutes_omitted",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21+00:00\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_fraction_dot",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21:00:00.123456789Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.1234560012817,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_fraction_comma",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21:00:00,12Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.119999885559,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_basic_date_and_clock",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"20261127T210000Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_basic_partial_clock",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"20261127T2100Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_week_date",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-W48-5T21:00:00Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_basic_week_date",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026W485T21:00:00Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_week_date_without_day",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-W48T21:00:00Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": -342000.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_epoch",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": 1795813200.0, \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_integer_epoch",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": 1795813200, \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_fractional_epoch",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": 1795813200.25, \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 3600.25,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_epoch_zero_uses_ttl",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": 0, \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 60.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_iso_epoch_zero_uses_ttl",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"1970-01-01T00:00:00Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 60.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_iso_before_epoch",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"1969-12-31T23:59:59Z\", \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": -1795809601.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_capped_absolute",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": 1796309600.0, \"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 259200.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_offset_missing",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21:00:00\", \"ttl\": 60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_invalid_offset",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21:00:00+24:00\", \"ttl\": 60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_invalid_calendar_day",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-31T21:00:00Z\", \"ttl\": 60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_invalid_leap_second",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21:00:60Z\", \"ttl\": 60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_invalid_fraction_after_minutes",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"2026-11-27T21:00.5Z\", \"ttl\": 60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_negative_epoch",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": -1, \"ttl\": 60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_epoch_string",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": \"1795809600.0\", \"ttl\": 60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "expires_null",
+      "body": "Choose a setting\n\n```board-card\n{\"expires_at\": null, \"ttl\": 60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "no_block",
+      "body": "Question without a card",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "not_json",
+      "body": "Question\n```board-card\n{broken\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "empty_block",
+      "body": "Question\n```board-card\n\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "trailing_json_value",
+      "body": "Question\n```board-card\n{} {}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "crlf_is_not_a_fence",
+      "body": "Choose a setting\r\n\r\n```board-card\r\n{\"ttl\": 60}\r\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "two_blocks",
+      "body": "Choose a setting\n\n```board-card\n{\"ttl\": 120}\n```\nChoose a setting\n\n```board-card\n{\"ttl\": 60}\n```",
+      "valid": true,
+      "lifetime_seconds": 120.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "invalid_first_block",
+      "body": "Question\n```board-card\n{broken\n```\nChoose a setting\n\n```board-card\n{\"ttl\": 60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "fence_whitespace_and_multiline",
+      "body": "Question\n```board-card \t\n{\n \"ttl\":120\n}\n``` \t\n",
+      "valid": true,
+      "lifetime_seconds": 120.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "fence_not_at_line_start",
+      "body": "Question ```board-card\n{\"ttl\":60}\n```",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    },
+    {
+      "name": "closing_fence_not_alone",
+      "body": "Question\n```board-card\n{\"ttl\":60}\n``` words",
+      "valid": false,
+      "lifetime_seconds": 86400.0,
+      "default_declared": false,
+      "slot": ""
+    }
+  ],
+  "slots": [
+    {
+      "name": "sender_scoped_replacement",
+      "events": [
+        {
+          "id": "prior",
+          "sender": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "kind": "request",
+          "body": "Choose a setting\n\n```board-card\n{\"slot\": \"settings\"}\n```",
+          "age_seconds": 0
+        },
+        {
+          "id": "independent",
+          "sender": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+          "kind": "request",
+          "body": "Choose a setting\n\n```board-card\n{\"slot\": \"settings\"}\n```",
+          "age_seconds": 0
+        },
+        {
+          "id": "replacement",
+          "sender": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "kind": "request",
+          "body": "Choose a setting\n\n```board-card\n{\"slot\": \"settings\"}\n```",
+          "age_seconds": 0
+        },
+        {
+          "id": "invalid_card",
+          "sender": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "kind": "request",
+          "body": "Choose a setting\n\n```board-card\n{\"slot\": \"settings\", \"default\": \"invalid\"}\n```",
+          "age_seconds": 0
+        }
+      ],
+      "live_requests": [
+        "independent",
+        "invalid_card",
+        "replacement"
+      ]
+    },
+    {
+      "name": "notice_replaces_request",
+      "events": [
+        {
+          "id": "prior",
+          "sender": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "kind": "request",
+          "body": "Choose a setting\n\n```board-card\n{\"slot\": \"settings\"}\n```",
+          "age_seconds": 0
+        },
+        {
+          "id": "replacement",
+          "sender": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "kind": "notice",
+          "body": "Choose a setting\n\n```board-card\n{\"slot\": \"settings\"}\n```",
+          "age_seconds": 0
+        }
+      ],
+      "live_requests": []
+    },
+    {
+      "name": "expired_replacement_does_not_restore_prior",
+      "events": [
+        {
+          "id": "prior",
+          "sender": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "kind": "request",
+          "body": "Choose a setting\n\n```board-card\n{\"slot\": \"settings\"}\n```",
+          "age_seconds": 120
+        },
+        {
+          "id": "expired",
+          "sender": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "kind": "request",
+          "body": "Choose a setting\n\n```board-card\n{\"slot\": \"settings\", \"ttl\": 1}\n```",
+          "age_seconds": 60
+        }
+      ],
+      "live_requests": []
+    }
+  ]
+}

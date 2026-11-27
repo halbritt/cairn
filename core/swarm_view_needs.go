@@ -389,75 +389,84 @@ func (r *swarmNeedsReader) ledger(ctx context.Context, tx pgx.Tx, campaign, root
 	return needs, nil
 }
 
-// Fernside board request lifetimes come from agent-board/docs/agents.md
-// (Limits the board applies) and agent-board/server/cards.py.
-const (
-	swarmBoardDefaultTTL = 24 * time.Hour
-	swarmBoardMaxTTL     = 72 * time.Hour
-)
-
 const swarmTimedOutWaitAge = 24 * time.Hour
 
-// PostgreSQL returns the first capture across lines. The card metadata is
-// projected in SQL so neither note prose nor unrelated card fields leave it.
-const swarmBoardCardBlock = "(?w)^```board-card[ \t]*?\r?\n(.*?)\r?\n```[ \t]*\r?$"
+// This is agent-board/server/cards.py's BLOCK at 5ccacf9. PostgreSQL returns
+// only the first capture. Neither the note's prose nor the block is exported.
+const swarmBoardCardFence = "^```board-card[ \t]*?\n(.*?)\n```[ \t]*$"
+const swarmBoardCardBlock = "(?w)" + swarmBoardCardFence
 
 func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, error) {
-	// No request can be live once it reaches the board's maximum lifetime.
-	// Filter by that horizon and causation before reading any card.
+	// Select unanswered requests before joining their records. A later board
+	// message can also replace a request if it uses the same valid slot.
 	rows, err := tx.Query(ctx, `WITH unanswered AS MATERIALIZED (
-		SELECT e.event_id,e.repo,e.publisher,e.created_at,e.record_id,e.version,e.summary
+		SELECT e.event_id,e.repo,e.publisher,e.created_at,e.record_id,e.version,e.summary,e.kind,e.position
 		FROM cairn.agent_event e
 		WHERE e.repo=$1 AND e.destination_type='topic' AND e.destination_name='agent-board' AND e.kind='request'
 		AND e.created_at>$4 AND (e.publisher=ANY($2::text[])) <> $3
 		AND NOT EXISTS (SELECT 1 FROM cairn.agent_event reply WHERE reply.repo=e.repo AND reply.kind='response' AND reply.causation_id=e.event_id)
-	), questions AS MATERIALIZED (
-		SELECT e.event_id::text AS event_id,e.publisher,e.created_at,e.record_id::text AS record_id,e.version,
-			COALESCE(e.summary,'') AS summary,COALESCE('agent-'||a.ordinal::text,e.publisher) AS publisher_label,
-			COALESCE(src.available,false) AS available,CASE WHEN src.available THEN substring(v.body FROM $5::text) END AS block
-		FROM unanswered e
-		LEFT JOIN cairn.agent_session a ON e.publisher='agent/'||a.agent_id::text AND a.repo=e.repo
-		LEFT JOIN cairn.memory_record m ON m.record_id=e.record_id
-		LEFT JOIN cairn.record_version v ON v.record_id=e.record_id AND v.version=e.version AND v.repo=e.repo
-		CROSS JOIN LATERAL (SELECT m.lifecycle='active' AND v.record_id IS NOT NULL AND v.payload_deleted_by IS NULL AS available) src
-	), cards AS MATERIALIZED (
-		SELECT event_id,publisher,created_at,record_id,version,summary,publisher_label,available,
-			CASE WHEN pg_input_is_valid(block,'jsonb') THEN block::jsonb END AS card
-		FROM questions
+	), candidates AS MATERIALIZED (
+		SELECT * FROM unanswered
+		UNION ALL
+		SELECT e.event_id,e.repo,e.publisher,e.created_at,e.record_id,e.version,e.summary,e.kind,e.position
+		FROM cairn.agent_event e
+		WHERE e.repo=$1 AND e.destination_type='topic' AND e.destination_name='agent-board' AND e.kind<>'request'
+		AND e.created_at>$4 AND EXISTS (SELECT 1 FROM unanswered q WHERE q.publisher=e.publisher AND q.position<e.position)
 	)
-	SELECT event_id,publisher,created_at,record_id,version,summary,publisher_label,available,card->'ttl',card->'expires_at',
-		COALESCE(jsonb_typeof(card->'default')='string' AND card->>'default'<>'',false)
-	FROM cards`, r.repo, r.principals, r.landing, r.now.Add(-swarmBoardMaxTTL), swarmBoardCardBlock)
+	SELECT e.event_id::text,e.publisher,e.created_at,e.record_id::text,e.version,COALESCE(e.summary,''),e.kind,
+		COALESCE('agent-'||a.ordinal::text,e.publisher),COALESCE(src.available,false),
+		CASE WHEN src.available THEN substring(v.body FROM $5::text) END
+	FROM candidates e
+	LEFT JOIN cairn.agent_session a ON e.publisher='agent/'||a.agent_id::text AND a.repo=e.repo
+	LEFT JOIN cairn.memory_record m ON m.record_id=e.record_id
+	LEFT JOIN cairn.record_version v ON v.record_id=e.record_id AND v.version=e.version AND v.repo=e.repo
+	CROSS JOIN LATERAL (SELECT m.lifecycle='active' AND v.record_id IS NOT NULL AND v.payload_deleted_by IS NULL AS available) src
+	ORDER BY e.position DESC`, r.repo, r.principals, r.landing, r.now.Add(-swarmBoardMaxTTL), swarmBoardCardBlock)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var items []SwarmNeed
+	type senderSlot struct{ publisher, slot string }
+	seenSlots := map[senderSlot]bool{}
 	missing := 0
 	for rows.Next() {
 		var ref RecordVersionRef
-		var available, defaultDeclared bool
-		var publisherLabel string
-		var ttl, absolute json.RawMessage
+		var available bool
+		var kind, publisherLabel string
+		var block *string
 		item := SwarmNeed{Type: SwarmNeedBoardQuestion}
-		if err := rows.Scan(&item.Refs.EventID, &item.Subject, &item.Since, &ref.RecordID, &ref.Version, &item.Title, &publisherLabel,
-			&available, &ttl, &absolute, &defaultDeclared); err != nil {
+		if err := rows.Scan(&item.Refs.EventID, &item.Subject, &item.Since, &ref.RecordID, &ref.Version, &item.Title, &kind,
+			&publisherLabel, &available, &block); err != nil {
 			return nil, err
 		}
 		if !available {
-			missing++
+			if kind == "request" {
+				missing++
+			}
 			continue
 		}
-		expires := swarmBoardExpiry(item.Since, ttl, absolute)
-		if !expires.After(r.now) {
+		var text string
+		if block != nil {
+			text = *block
+		}
+		facts := swarmBoardCard(text, item.Since)
+		if facts.slot != "" {
+			key := senderSlot{item.Subject, facts.slot}
+			if seenSlots[key] {
+				continue
+			}
+			seenSlots[key] = true
+		}
+		if kind != "request" || !facts.expires.After(r.now) {
 			continue
 		}
-		item.ExpiresAt = &expires
+		item.ExpiresAt = &facts.expires
 		if item.Title == "" {
 			item.Title = "Board question from " + publisherLabel
 		}
 		item.ID = item.Type + ":" + item.Refs.EventID
-		if defaultDeclared {
+		if facts.defaultDeclared {
 			item.Detail = "Unattended default declared"
 		}
 		item.Refs.Record = &ref
@@ -472,47 +481,6 @@ func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, e
 			fmt.Sprintf("The source notes of %d unanswered board requests are unavailable", missing)})
 	}
 	return items, nil
-}
-
-func swarmBoardExpiry(published time.Time, ttl, absolute json.RawMessage) time.Time {
-	latest := published.Add(swarmBoardMaxTTL)
-	if expires, ok := swarmBoardAbsoluteExpiry(absolute, latest); ok {
-		if expires.After(latest) {
-			return latest
-		}
-		return expires
-	}
-	var seconds float64
-	if len(absolute) == 0 && json.Unmarshal(ttl, &seconds) == nil && seconds >= 1 {
-		return published.Add(time.Duration(min(seconds, swarmBoardMaxTTL.Seconds()) * float64(time.Second)))
-	}
-	return published.Add(swarmBoardDefaultTTL)
-}
-
-func swarmBoardAbsoluteExpiry(raw json.RawMessage, latest time.Time) (time.Time, bool) {
-	if len(raw) == 0 || string(raw) == "null" {
-		return time.Time{}, false
-	}
-	var seconds float64
-	if json.Unmarshal(raw, &seconds) == nil {
-		if seconds < 0 {
-			return time.Time{}, false
-		}
-		if seconds >= float64(latest.Unix())+float64(latest.Nanosecond())/float64(time.Second) {
-			return latest, true
-		}
-		whole := int64(seconds)
-		return time.Unix(whole, int64((seconds-float64(whole))*float64(time.Second))).UTC(), true
-	}
-	var stamp string
-	if json.Unmarshal(raw, &stamp) != nil {
-		return time.Time{}, false
-	}
-	if len(stamp) > 10 && stamp[10] == ' ' {
-		stamp = stamp[:10] + "T" + stamp[11:]
-	}
-	at, err := time.Parse(time.RFC3339Nano, stamp)
-	return at, err == nil
 }
 
 func swarmNeedEventTitle(summary, kind, eventID string) string {

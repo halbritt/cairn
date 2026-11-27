@@ -643,38 +643,16 @@ func TestSwarmNeedsSourceFailureIsolated(t *testing.T) {
 	}
 }
 
-func TestSwarmNeedsBoardExpiryForms(t *testing.T) {
-	published := time.Date(2026, 11, 27, 20, 0, 0, 0, time.UTC)
-	for _, tc := range []struct {
-		name, ttl, absolute string
-		lifetime            time.Duration
-	}{
-		{"fallback", "", "", 24 * time.Hour},
-		{"fractional_ttl", "1.5", "", 1500 * time.Millisecond},
-		{"absolute_offset", "600", `"2026-11-27T13:00:00-08:00"`, time.Hour},
-		{"absolute_epoch", "", "1795813200", time.Hour},
-		{"maximum", "999999", "", 72 * time.Hour},
-		{"invalid_ttl", `"invalid"`, "", 24 * time.Hour},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			expires := swarmBoardExpiry(published, json.RawMessage(tc.ttl), json.RawMessage(tc.absolute))
-			if want := published.Add(tc.lifetime); !expires.Equal(want) {
-				t.Fatalf("got expiry %s, want %s", expires, want)
-			}
-		})
-	}
-}
-
 func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
 	const noteMarker = "PRIVATE-BOARD-NOTE-PROSE"
 	const cardMarker = "PRIVATE-BOARD-CARD-FIELD"
 	const labelMarker = "PRIVATE-BOARD-DEFAULT-LABEL"
 	const summary = "Choose a setting"
 	f := newSwarmFixture(t, "board-metadata")
-	body := noteMarker + "\r\n\r\n```board-card\r\n{\r\n" +
+	body := noteMarker + "\n\n```board-card\n{\n" +
 		`"ttl":600,"default":"no","detail":"` + cardMarker +
-		`","verbs":[{"id":"no","label":"` + labelMarker + `"}]` + "\r\n}\r\n```\r\n" +
-		"\r\n```board-card\r\n{\"ttl\":5}\r\n```"
+		`","verbs":[{"id":"no","label":"` + labelMarker + `"}]` + "\n}\n```\n" +
+		"\n```board-card\n{\"ttl\":5}\n```"
 	card := swarmNeedsTestPublishRequest(f, f.rootView, body, PublishEventRequest{
 		Kind: "request", Destination: EventDestination{"topic", "agent-board"}, Summary: summary,
 	})

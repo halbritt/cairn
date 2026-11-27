@@ -241,11 +241,24 @@ handoff again from the new limit. The snapshot's `handoff.age_reached_at`
 gives the time the current age limit was reached on its own.
 
 Board questions follow the publisher's campaign affiliation regardless of
-when the campaign was created. Both pages read the last 72 hours of requests
-because that is the Fernside board's maximum request lifetime. Requests use
-24 hours from publication when the card gives no lifetime or there is no card.
-These limits come from “Limits the board applies” in `agent-board/docs/agents.md`.
-Cairn excludes answered requests before reading card metadata.
+when the campaign was created. Both pages read the last 72 hours of requests.
+Cairn excludes answered requests before reading card metadata. It follows the
+Fernside board's card parser at agent-board commit
+`5ccacf9768ff872ad7f6c822d96967b09b153fb7`. It reads the first fenced
+`board-card` block and uses the card only if the whole block passes validation.
+A valid card can set an absolute expiry or a TTL measured from publication.
+Without a usable lifetime, including when a card is missing or invalid, the
+request lives for 24 hours from publication. Only a valid card that names a
+non-snooze verb can declare an unattended default.
+
+A later board event with the same publisher and valid slot replaces the
+earlier unanswered question. The 72-hour maximum is measured from publication
+in Cairn. The board measures its cap from the time it reads the event, which the
+Cairn store does not record. The snapshot carries the derived expiry and
+default indicator without exposing note or card text.
+
+To regenerate the card conformance fixture, run
+`python3 -B scripts/generate_swarm_board_corpus.py ~/git/agent-board`.
 
 Every pending or leased operator delivery has one owner page. If the event's
 routing names an active campaign, that campaign owns the delivery. Otherwise
