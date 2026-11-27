@@ -221,6 +221,7 @@
 
   function showSignIn(message) {
     closeStream();
+    for (const dialog of document.querySelectorAll("dialog[open]")) dialog.close();
     byID("landing").hidden = true;
     byID("campaign").hidden = true;
     byID("signout").hidden = true;
@@ -790,9 +791,10 @@
     const refs = need.refs || {};
     const event = refs.event_id ? state.log.get(refs.event_id) : null;
     if (!event || need.type === "board_question" || need.type === "operator_delivery") return null;
-    if (event.summary && (need.title || "").includes(event.summary)) return null;
-    return el("p", { class: "detail" }, `${event.kind} from ${labelOf(event.from)} to ${destinationLabel(event.to)}: `,
-      event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" }));
+    // The sender is always named; the summary only when the title lacks it.
+    const named = event.summary && (need.title || "").includes(event.summary);
+    return el("p", { class: "detail" }, `${event.kind} from ${senderLabel(event)} to ${destinationLabel(event.to)}`,
+      named ? "" : [": ", event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" })]);
   }
 
   // Send goes only to current principals of an active campaign: the root,
@@ -805,6 +807,14 @@
     return members().some((m) => (m.member === principal && m.active) || m.role_address === principal);
   }
 
+  const followUpTypes = new Set(["handoff_due", "missed_checkpoint", "wait_timed_out"]);
+
+  // Parts joined by " · ", with no separator for a part that is absent.
+  function joinParts(parts) {
+    const present = parts.filter((part) => part !== null && part !== undefined && part !== "");
+    return present.flatMap((part, i) => (i ? [" · ", part] : [part]));
+  }
+
   function needRow(need, operatorPrincipal) {
     const action = need.action || {};
     const refs = need.refs || {};
@@ -815,11 +825,11 @@
         need.count > 1 ? el("span", { class: "count", text: ` ×${need.count}` }) : null),
       need.detail ? el("p", { class: "detail" }, linked(need.detail)) : null,
       needEventLine(need),
-      el("p", { class: "meta" },
-        need.subject ? `${labelOf(need.subject)} · ` : "",
-        need.since ? ["since ", timeEl(need.since)] : "",
-        need.expires_at ? [" · expires ", timeEl(need.expires_at)] : null,
-        need.waiters ? ` · ${need.waiters} session${need.waiters === 1 ? "" : "s"} waiting on it` : ""));
+      el("p", { class: "meta" }, joinParts([
+        need.subject ? labelOf(need.subject) : null,
+        need.since ? ["since ", timeEl(need.since)] : null,
+        need.expires_at ? ["expires ", timeEl(need.expires_at)] : null,
+        need.waiters ? `${need.waiters} session${need.waiters === 1 ? "" : "s"} waiting on it` : null])));
     // A board question is answered on the board; the page says only that.
     const actionText = action.kind === "answer_board" ? "Answer on the board" : action.label || action.kind || "inspect";
     const controls = el("div", { class: "need-action" }, el("span", { class: "action-label", text: "Action: " + actionText }));
@@ -844,6 +854,10 @@
       if (to && canWrite(to)) controls.append(el("button", { type: "button", text: `Send a notice to ${labelOf(to)}`, onclick: () => replyTo(to, refs.event_id, need.title) }));
     } else if (action.kind === "decide" && need.subject && state.campaign && canWrite(need.subject)) {
       controls.append(el("button", { type: "button", text: `Write to ${labelOf(need.subject)}`, onclick: () => openDetail(need.subject, true) }));
+    } else if (followUpTypes.has(need.type) && state.campaign) {
+      // "Follow up with X": the row names X in refs.principal (or as its subject).
+      const target = refs.principal || need.subject;
+      if (target && canWrite(target)) controls.append(el("button", { type: "button", text: `Write to ${labelOf(target)}`, onclick: () => openDetail(target, true) }));
     }
     if (refs.event_id && state.campaign) controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id) }));
     if (action.command) controls.append(copyButton(action.command, "Copy command"));
@@ -1330,16 +1344,38 @@
     return chip;
   }
 
+  const systemWords = {
+    wait_notice: "wait notice", stopped_delivery_notice: "stopped-session notice", overdue_checkpoint: "overdue checkpoint",
+  };
+
+  // Cairn itself publishes some events under the operator principal (the
+  // scheduler's wait and checkpoint notices). Such an event carries `system`
+  // and is labelled as from Cairn, never as from the owner.
+  function senderLabel(event) {
+    if (event && event.system) return `Cairn (${systemWords[event.system] || String(event.system).replace(/_/g, " ")})`;
+    return labelOf(event && event.from);
+  }
+
+  function sentByOwner(event) {
+    return !!event && event.from === operator() && !event.system;
+  }
+
+  function ownerSentDelivery(delivery) {
+    const event = state.log.get(delivery.event_id);
+    return delivery.from === operator() && !delivery.system && !(event && event.system);
+  }
+
   function flowRow(event, ledgerItems) {
     const deliveries = deliveriesOf(event.event_id);
-    const ownerSent = event.from === operator();
+    const ownerSent = sentByOwner(event);
     const row = el("li", { class: `event event-${event.kind}${ownerSent ? " owner-sent" : ""}`, dataset: { event: event.event_id, position: String(event.position) } });
     row.append(el("div", { class: "event-head" },
       el("span", { class: "tag kind", text: event.kind }),
       event.action ? el("span", { class: "tag", text: "action " + event.action }) : null,
       event.blocker ? el("span", { class: "tag flag", text: "blocker" }) : null,
       event.grouped ? el("span", { class: "tag", text: "grouped" }) : null,
-      el("span", { class: "route", text: `${labelOf(event.from)} → ${destinationLabel(event.to)}` }),
+      el("span", { class: "route", text: `${senderLabel(event)} → ${destinationLabel(event.to)}` }),
+      event.system ? el("span", { class: "tag system", text: "from Cairn" }) : null,
       el("span", { class: "muted" }, " · ", timeEl(event.created_at))));
     const cause = event.causation_id ? state.log.get(event.causation_id) : null;
     row.append(el("p", { class: "summary" }, event.summary ? linked(event.summary)
@@ -1355,7 +1391,8 @@
       row.append(el("p", { class: "ledger-link" }, "Ledger: ", ledgerItems.map((item, i) => [i ? ", " : "", `${item.kind} ${item.item_key} (${item.status})`])));
     }
     const actions = el("div", { class: "event-actions" }, el("button", { type: "button", class: "secondary", text: "Open", onclick: () => openEvent(event.event_id) }));
-    if (ownerSent && event.kind === "notice" && event.supersedes && event.to && event.to.type === "agent") {
+    const stillOpen = deliveries.some((delivery) => openDisplays.has(delivery.display || delivery.state));
+    if (ownerSent && stillOpen && event.kind === "notice" && event.supersedes && event.to && event.to.type === "agent" && canWrite(destinationPrincipal(event.to))) {
       const target = destinationPrincipal(event.to);
       actions.append(el("button", { type: "button", text: "Supersede this notice", onclick: () => openDetail(target, true, event.supersedes) }));
     }
@@ -1444,7 +1481,7 @@
     if (sectionError("flow")) return note("unavailable: " + sectionError("flow"), "unavailable");
     if (!list.length) return note("none");
     return el("ul", { class: "plain" }, list.map((delivery) => el("li", {},
-      deliveryChip(delivery, delivery.from === operator()), " ",
+      deliveryChip(delivery, ownerSentDelivery(delivery)), " ",
       el("span", { class: "tag", text: delivery.kind }), " ",
       linked(delivery.summary || ""), ` · ${incoming ? "from " + labelOf(delivery.from) : "to " + labelOf(delivery.consumer)} · `, timeEl(delivery.created_at), " ",
       deliveryControls(delivery))));
@@ -1541,8 +1578,16 @@
     return form;
   }
 
+  // The store's messages often start with their code; say the code once.
+  function withoutCode(message, code) {
+    let text = String(message || "");
+    while (code && text.startsWith(code + ": ")) text = text.slice(code.length + 2);
+    return text;
+  }
+
   function refusalText(error) {
-    return `Refused${error.code ? " (" + error.code + ")" : ""}: ${error.message}.`;
+    const text = withoutCode(error.message, error.code).replace(/\.$/, "");
+    return `Refused${error.code ? " (" + error.code + ")" : ""}: ${text}.`;
   }
 
   const outcomeWords = {
@@ -1565,7 +1610,11 @@
     if (reply.delivery && typeof reply.delivery === "object") parts.push(`The store recorded ${deliveryText(reply.delivery)}.`);
     if (reply.wait && typeof reply.wait === "object") parts.push(`The wait is ${reply.wait.state}${reply.wait.terminal_reason ? " (" + reply.wait.terminal_reason + ")" : ""}.`);
     if (Array.isArray(reply.deliveries) && reply.deliveries.length) parts.push("Deliveries: " + reply.deliveries.map(deliveryText).join("; ") + ".");
-    if (reply.detail) parts.push(String(reply.detail));
+    if (reply.detail) {
+      const detail = String(reply.detail);
+      const code = /^[A-Z][A-Z_]+(?=: )/.exec(detail);
+      parts.push(code ? withoutCode(detail, code[0]) : detail);
+    }
     return parts.length ? " " + parts.join(" ") : "";
   }
 
@@ -1585,7 +1634,7 @@
       body.replaceChildren(eventEnvelope(reply.event || event || {}));
       const deliveries = reply.deliveries || deliveriesOf(eventID);
       body.append(el("h3", { text: "Recipients" }), deliveries.length ? el("ul", { class: "plain" }, deliveries.map((delivery) => el("li", {},
-        deliveryChip(delivery, (reply.event || event || {}).from === operator()), " ", deliveryControls(delivery)))) : note("no delivery"));
+        deliveryChip(delivery, sentByOwner(reply.event || event)), " ", deliveryControls(delivery)))) : note("no delivery"));
       body.append(el("h3", { text: "Message" }));
       if (typeof reply.body === "string") {
         body.append(el("pre", { class: "body", text: reply.body }));
@@ -1598,7 +1647,7 @@
       if (event) body.append(eventEnvelope(event));
       const deliveries = deliveriesOf(eventID);
       body.append(el("h3", { text: "Recipients" }), deliveries.length ? el("ul", { class: "plain" }, deliveries.map((delivery) => el("li", {},
-        deliveryChip(delivery, event && event.from === operator()), " ", deliveryControls(delivery)))) : note("no delivery in the snapshot"));
+        deliveryChip(delivery, sentByOwner(event)), " ", deliveryControls(delivery)))) : note("no delivery in the snapshot"));
       body.append(note("The event body could not be read. " + refusalText(error), "unavailable"));
     }
   }
@@ -1611,7 +1660,7 @@
 
   function eventFields(event) {
     return el("dl", { class: "fields" },
-      field("From", labelOf(event.from)),
+      field("From", senderLabel(event)),
       field("To", destinationLabel(event.to)),
       field("Kind", [event.kind, event.action ? "action " + event.action : "", event.blocker ? "blocker" : ""].filter(Boolean).join(" · ")),
       field("Summary", linked(event.summary || "")),
@@ -1749,15 +1798,17 @@
   // The confirmation shows exactly what the store previewed, and sends its
   // preview_token. A 409 with a new preview means what was shown changed:
   // the page shows the new preview and asks for a new confirmation.
-  function showCancelPreview(deliveryID, preview, changed) {
+  function showCancelPreview(shownID, preview, changed) {
     const body = byID("confirm-body");
     const delivery = preview.delivery || {};
+    // A handoff can move the delivery: the confirmation targets what the preview shows.
+    const deliveryID = delivery.delivery_id || shownID;
     body.replaceChildren(
       changed ? note("What this cancel affects changed since it was shown: the recipient or the waits are different. Review it and confirm again.", "warning") : null,
       el("dl", { class: "fields preview" },
         field("Recipient", el("strong", { text: labelOf(delivery.consumer) }), " ", el("code", { text: delivery.consumer || "" })),
         field("Message", linked(delivery.summary || delivery.event_id || ""), ` from ${labelOf(delivery.from)}`),
-        field("Now", deliveryChip(delivery, delivery.from === operator()))),
+        field("Now", deliveryChip(delivery, ownerSentDelivery(delivery)))),
       note("Only this recipient's delivery is cancelled. Other recipients, and a reply that already counts in a group, are not changed."),
       lookupView("Direct-reply waits on the request", preview.direct_reply_waits));
     const lookups = [preview.direct_reply_waits];
@@ -1771,9 +1822,9 @@
     }
     const siblings = preview.siblings || [];
     body.append(el("div", { class: "lookup" }, el("h4", { text: "Other recipients (unchanged)" }),
-      siblings.length ? el("ul", { class: "plain" }, siblings.map((sibling) => el("li", {}, deliveryChip(sibling, sibling.from === operator())))) : note("none")));
+      siblings.length ? el("ul", { class: "plain" }, siblings.map((sibling) => el("li", {}, deliveryChip(sibling, ownerSentDelivery(sibling))))) : note("none")));
     if (!preview.cancellable) {
-      body.append(note("The store would refuse this cancel now. " + (preview.refusal ? `${preview.refusal.code}: ${preview.refusal.message}` : ""), "refused"));
+      body.append(note("The store would refuse this cancel now. " + (preview.refusal ? `${preview.refusal.code}: ${withoutCode(preview.refusal.message, preview.refusal.code)}` : ""), "refused"));
       prepareConfirm(false, "Cancel this delivery", null);
       return;
     }
@@ -1822,6 +1873,7 @@
     result.className = "";
     go.textContent = label;
     go.disabled = !enabled;
+    byID("confirm-keep").textContent = "Keep it";
     go.onclick = run ? async () => {
       go.disabled = true;
       result.className = "";
@@ -1835,6 +1887,7 @@
         }
         result.textContent = outcome;
         go.hidden = true;
+        byID("confirm-keep").textContent = "Close";
         refreshSnapshot();
       } catch (error) {
         result.className = "refused";

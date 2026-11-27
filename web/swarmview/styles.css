@@ -346,3 +346,4 @@ button.small { padding: 1px 8px; font-size: 0.82rem; }
 .panel-head .close { white-space: nowrap; flex-shrink: 0; }
 .panel-head h2 { min-width: 0; overflow-wrap: anywhere; }
 .not-head { font-style: italic; }
+.tag.system { border-style: dashed; }

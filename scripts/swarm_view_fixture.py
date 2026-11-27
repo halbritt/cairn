@@ -98,6 +98,7 @@ class Fixture:
         self.cluster = None
         self.sleeper = None
         self.preview_token = ""
+        self.root_role = "root_next"
         self.context_expected = {}
         self.host = None
         self.serve = None
@@ -447,7 +448,7 @@ class Fixture:
             for role, session in list(self.sessions.items()):
                 if role == "worker_c" or role == "root":
                     continue
-                token_role = "root" if role == "root_next" else role
+                token_role = "root" if role.startswith("root_") else role
                 try:
                     self.host.agent(token_role, "agent-heartbeat", {"agent_id": session["agent_id"], "execution_id": session["execution_id"]},
                                     expected=None)
@@ -610,14 +611,24 @@ class Fixture:
                    category="slice:CAIRN-831")
         self.check("cancel preview names the recipient and waits before confirm; siblings and counted reply unchanged",
                    lambda: self.cancel(page), page, category="slice:CAIRN-830+833")
-        self.check("confirmation contract: preview token conflict and cancel-wait expected_owner",
-                   lambda: self.waiting_store_side(page), page, category="waiting:store-side")
         self.check("a refused cancel shows the store's reason and cannot be confirmed", lambda: self.refused_cancel(page), page,
                    category="slice:CAIRN-833")
         self.check("acknowledge is offered only on the inbox head, and acknowledges it",
-                   lambda: self.acknowledge_head(page), page, category="waiting:inbox_head")
+                   lambda: self.acknowledge_head(page), page, category="slice:CAIRN-831")
         self.check("an owner notice is shown as sent, not yet seen", lambda: self.send_unseen(page), page,
                    category="slice:CAIRN-833")
+        self.check("Supersede is offered only on the owner's notice that is still open", lambda: self.supersede_open_only(page), page,
+                   category="slice:CAIRN-833")
+        self.check("a cancel confirmed after a handoff is refused with a fresh preview, then confirmed again",
+                   lambda: self.cancel_conflict(page), page, category="slice:CAIRN-833")
+        self.check("a wait cancelled after its owner changed is refused with the current wait, then confirmed again",
+                   lambda: self.wait_conflict(page), page, category="slice:CAIRN-833")
+        self.check("Cairn's own notices are labelled from Cairn, never as the owner's", lambda: self.system_events(page), page,
+                   category="waiting:system")
+        self.check("an ended session shows sign-in over dialogs and on the landing page; routes answer 401",
+                   lambda: self.signed_out_routes(page), page)
+        self.check("a member that left gets no send control and the store refuses a send to it",
+                   lambda: self.member_left(page), page, category="slice:CAIRN-833")
         self.check("no forbidden control exists", lambda: self.forbidden(page), page)
         self.shot(page, "desktop-final")
 
@@ -818,6 +829,14 @@ class Fixture:
         board.locator("button", has_text="Open the event").click()
         self.expect(page.locator("#event-body")).to_contain_text("Answer it on the board", timeout=10000)
         page.locator("#event-detail button.close").click()
+        for kind in ("handoff_due", "missed_checkpoint", "wait_timed_out"):
+            row = page.locator(f"#needs li.need[data-type='{kind}']").first
+            meta = row.locator("p.meta").inner_text().strip()
+            require(not meta.endswith("·") and "· ·" not in meta, f"the {kind} row has a dangling separator: {meta!r}")
+            item = next(i for i in self.snapshot()["needs_you"]["items"] if i["type"] == kind)
+            target = (item.get("refs") or {}).get("principal") or item.get("subject")
+            if target and page.evaluate("(p) => window.cairnSwarmView.canWrite(p)", target):
+                require(row.locator("button", has_text="Write to").count() == 1, f"the {kind} row offers no send control")
         failed = page.locator("#needs li.need[data-type='failed_delivery']").first.inner_text()
         require("Run the flaky check" in failed and self.label(self.snapshot(), "lead") in failed,
                 "the failed-delivery row does not name the request and its sender: " + failed[:300])
@@ -1058,6 +1077,7 @@ class Fixture:
         require(sent.get("preview_token", "") == self.preview_token, "the cancel did not send the preview's token")
         require(info.value.ok and reply.get("outcome") == "cancelled", "cancel outcome: " + json.dumps(reply)[:300])
         self.expect(page.locator("#confirm-result")).to_contain_text("The store recorded the cancellation", timeout=10000)
+        self.expect(page.locator("#confirm-keep")).to_have_text("Close")
         after_status = {d["delivery_id"]: d["state"] for d in self.event_status(group_id)["deliveries"]}
         require(after_status[target["delivery_id"]] == "failed", "the cancelled delivery is not failed in the store")
         for delivery, state in before_status.items():
@@ -1066,13 +1086,158 @@ class Fixture:
         require(self.group_state()["responded"] == before_group["responded"], "the counted reply changed")
         self.report["cancel_outcome"] = reply.get("outcome")
 
-    def waiting_store_side(self, page):
-        token = self.report.get("preview_token", {})
-        missing = []
-        if not token.get("served"):
-            missing.append("the preview carries no preview_token, so the 409 re-preview path cannot be driven")
-        missing.append("cancel-wait sends expected_owner; this store refuses the unknown field until the actions author lands it")
-        raise AssertionError("waiting: " + "; ".join(missing))
+    def current_root(self):
+        return self.root_role
+
+    def handoff_from(self, role, to_role):
+        harness, model = HARNESS["root"]
+        result = self.cli(["ledger", "handoff", *self.session_flags(role), "--campaign", CAMPAIGN,
+                           "--new-binding", "swarm-fixture-" + to_role, "--new-native-session", "swarm-fixture-" + uid(),
+                           "--workspace", str(self.runtime / to_role), "--harness", harness, "--project", "cairn",
+                           "--model", model, "--reason", "Fixture handoff during a confirmation", "--request-id", uid()])
+        successor = result.get("to_session") or {}
+        require(successor.get("agent_id"), "the handoff named no successor session")
+        self.sessions[to_role] = dict(successor, inbox="agent/" + successor["agent_id"])
+        self.host.identities[to_role] = self.host.identities["root"]
+        self.root_role = to_role
+        return result
+
+    def wait_for_snapshot(self, page, predicate, what, timeout=20):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            snapshot = self.snapshot()
+            if predicate(snapshot):
+                return snapshot
+            page.wait_for_timeout(1000)
+        raise AssertionError("the snapshot never showed " + what)
+
+    def cancel_conflict(self, page):
+        # A notice to the coordinator, previewed, then a handoff moves it to the
+        # successor before the owner confirms: the server answers 409 with a
+        # fresh preview naming the new recipient, and the page asks again.
+        old = self.current_root()
+        marker = "conflict-" + uid()[:8]
+        event = self.publish("lead", "To the coordinator.", self.to(old), kind="notice", action="review", summary="Coordinator " + marker)
+        snapshot = self.wait_for_snapshot(page, lambda s: any(d["event_id"] == event["event_id"] for d in s["flow"]["deliveries"]),
+                                          "the notice to the coordinator")
+        delivery = next(d for d in snapshot["flow"]["deliveries"] if d["event_id"] == event["event_id"])
+        page.locator(f"#agents .agent[data-member='{self.principal(old)}'] button", has_text="Details").click()
+        item = page.locator("#detail li", has=page.locator(f"[data-delivery='{delivery['delivery_id']}']"))
+        item.locator("button", has_text="Cancel this recipient's delivery").click()
+        body = page.locator("#confirm-body")
+        self.expect(body).to_contain_text(self.principal(old), timeout=15000)
+        self.expect(page.locator("#confirm-go")).to_be_enabled()
+        new = "root_" + str(int(old.split("_")[-1]) + 1) if old.split("_")[-1].isdigit() else "root_3"
+        self.handoff_from(old, new)
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/cancel-delivery")) as info:
+            page.locator("#confirm-go").click()
+        first = info.value.json()
+        require(info.value.status == 409 and first.get("code") == "VERSION_CONFLICT" and first.get("preview"),
+                "a confirmation with the old preview was not refused with a fresh preview: " + json.dumps(first)[:300])
+        self.expect(body).to_contain_text("changed since it was shown", timeout=5000)
+        self.expect(body).to_contain_text(self.principal(new))
+        self.expect(page.locator("#confirm-go")).to_be_enabled()
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/cancel-delivery")) as info:
+            page.locator("#confirm-go").click()
+        second = info.value.json()
+        require(info.value.ok and second.get("outcome") == "cancelled", "the second confirmation: " + json.dumps(second)[:300])
+        sent = info.value.request.post_data_json or {}
+        require(sent.get("preview_token") == first["preview"].get("preview_token"), "the second confirmation did not use the fresh token")
+        self.expect(page.locator("#confirm-keep")).to_have_text("Close")
+        page.locator("#confirm-keep").click()
+        page.locator("#detail button.close").click()
+        self.report["cancel_conflict"] = dict(first=first.get("code"), second=second.get("outcome"))
+
+    def wait_conflict(self, page):
+        # A wait owned by the coordinator; a handoff moves it to the successor
+        # between the dialog and the confirmation.
+        old = self.current_root()
+        request = self.publish(old, "Report back.", self.to("worker_a"), summary="Coordinator asks worker_a to report back")
+        wait = self.wait(old, "request_response", request["event_id"])
+        snapshot = self.wait_for_snapshot(page, lambda s: any(w["wait_id"] == wait["wait_uuid"] for w in s["flow"]["waits"]),
+                                          "the coordinator's wait")
+        page.locator(f"#agents .agent[data-member='{self.principal(old)}'] button", has_text="Details").click()
+        item = page.locator("#detail li", has_text="Coordinator asks worker_a to report back")
+        item.locator("button", has_text="Cancel the wait").first.click()
+        self.expect(page.locator("#confirm-body")).to_contain_text("stops waiting for")
+        new = "root_" + str(int(old.split("_")[-1]) + 1) if old.split("_")[-1].isdigit() else "root_3"
+        self.handoff_from(old, new)
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/cancel-wait")) as info:
+            page.locator("#confirm-go").click()
+        first = info.value.json()
+        require(info.value.status == 409 and first.get("code") == "VERSION_CONFLICT" and first.get("wait"),
+                "a wait whose owner changed was not refused with the current wait: " + json.dumps(first)[:300])
+        self.expect(page.locator("#confirm-body")).to_contain_text("The wait changed", timeout=5000)
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/cancel-wait")) as info:
+            page.locator("#confirm-go").click()
+        second = info.value.json()
+        require(info.value.ok and second.get("outcome") == "cancelled", "the second wait confirmation: " + json.dumps(second)[:300])
+        require((info.value.request.post_data_json or {}).get("expected_owner") == first["wait"]["owner"],
+                "the second confirmation did not name the current owner")
+        page.locator("#confirm-keep").click()
+        page.locator("#detail button.close").click()
+
+    def member_left(self, page):
+        self.team("set-member", "--campaign", CAMPAIGN, "--member", self.principal("worker_c"), "--inactive")
+        self.wait_for_snapshot(page, lambda s: any(m["member"] == self.principal("worker_c") and not m["active"] for m in s["members"]),
+                               "worker_c inactive")
+        # The page learns it from its next live snapshot.
+        page.wait_for_function("(p) => window.cairnSwarmView.canWrite(p) === false", arg=self.principal("worker_c"), timeout=15000)
+        page.locator("#agents details.inactive-members summary").click()
+        page.locator(f"#agents .agent[data-member='{self.principal('worker_c')}'] button", has_text="Details").click()
+        self.expect(page.locator("#detail")).to_contain_text("Not a current principal")
+        require(page.locator("#detail form.compose").count() == 0, "a send form is offered to a member that left")
+        page.locator("#detail button.close").click()
+        status = page.evaluate("""async (to) => {
+            const session = await (await fetch('/api/auth/session', {cache: 'no-store'})).json();
+            const r = await fetch('/api/swarm/action/send', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': session.csrf_token},
+              body: JSON.stringify({request_id: crypto.randomUUID(), campaign: 'swarm-fixture', to, kind: 'notice', action: 'none', summary: 'to a member that left', body: 'x'})});
+            return [r.status, await r.json()];
+        }""", self.principal("worker_c"))
+        require(status[0] >= 400, "the store accepted a send to a member that left: " + json.dumps(status)[:300])
+        self.report["send_to_left_member"] = status[1].get("code")
+
+    def system_events(self, page):
+        events = page.evaluate("() => window.cairnSwarmView.logIDs()")
+        snapshot_events = self.page_json(f"/api/swarm/campaign?campaign={CAMPAIGN}")
+        flagged = page.evaluate("() => [...document.querySelectorAll('#flow li.event')].filter((n) => n.querySelector('.tag.system')).map((n) => n.dataset.event)")
+        overdue = self.events.get("checkpoint")
+        if not flagged:
+            raise AssertionError("waiting: no log event carries `system` yet, so Cairn's own notices still show as the operator's (flow author's field)")
+        for event_id in flagged:
+            row = page.locator(f"#flow li.event[data-event='{event_id}']")
+            text = row.inner_text()
+            require("you (operator)" not in text and "sent, not yet seen" not in text, "a Cairn notice is shown as the owner's")
+            require("owner-sent" not in (row.get_attribute("class") or ""), "a Cairn notice has owner styling")
+            require(row.locator("button", has_text="Supersede").count() == 0, "a Cairn notice offers Supersede")
+
+    def signed_out_routes(self, page):
+        landing = page.context.new_page()
+        landing.goto(f"http://127.0.0.1:{self.port}/")
+        self.expect(landing.locator("#campaigns")).to_contain_text(CAMPAIGN, timeout=15000)
+        page.locator("#flow li.event button", has_text="Open").first.click()
+        self.expect(page.locator("#event-detail")).to_be_visible()
+        other = page.context.new_page()
+        try:
+            other.goto(self.campaign_url(token=False))
+            self.expect(other.locator("#signout")).to_be_visible(timeout=15000)
+            other.click("#signout")
+        finally:
+            other.close()
+        self.expect(page.locator("#signin")).to_be_visible(timeout=20000)
+        require(not page.evaluate("() => document.getElementById('event-detail').open"), "the event detail stayed open over the sign-in")
+        self.expect(landing.locator("#signin")).to_be_visible(timeout=15000)
+        landing.close()
+        codes = page.evaluate("""async (campaign) => {
+            const event = await fetch('/api/swarm/event?campaign=' + campaign + '&event_id=' + crypto.randomUUID(), {cache: 'no-store'});
+            const action = await fetch('/api/swarm/action/acknowledge', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': 'x'},
+              body: JSON.stringify({request_id: crypto.randomUUID(), campaign, delivery_id: crypto.randomUUID()})});
+            return [[event.status, (await event.json()).code], [action.status, (await action.json()).code]];
+        }""", CAMPAIGN)
+        require(all(c == [401, "UNAUTHENTICATED"] for c in codes), "a route of an ended session did not answer 401: " + json.dumps(codes))
+        page.fill("#token-input", self.token)
+        page.click("#signin button[type=submit]")
+        self.expect(page.locator("#live")).to_have_text("live", timeout=15000)
 
     def refused_cancel(self, page):
         # worker_a takes a live manual lease on its oldest delivery through the CLI.
@@ -1084,9 +1249,36 @@ class Fixture:
             body = page.locator("#confirm-body")
             self.expect(body).to_contain_text("would refuse this cancel", timeout=15000)
             self.expect(body).to_contain_text("UNSUPPORTED_CONTROL")
+            require(body.inner_text().count("UNSUPPORTED_CONTROL") == 1, "the refusal prints its code twice")
             require(page.locator("#confirm-go").is_disabled(), "confirm is enabled for a cancel the store refuses")
         finally:
             self.complete("worker_a", leased)
+
+    def send_page(self, page, role, summary, key=""):
+        page.locator(f"#agents .agent[data-member='{self.principal(role)}'] button", has_text="Details").click()
+        form = page.locator("#detail form.compose")
+        form.locator("select[name=kind]").select_option("notice")
+        form.locator("select[name=action]").select_option("review")
+        if key:
+            form.locator("input[name=supersedes]").fill(key)
+        form.locator("input[name=summary]").fill(summary)
+        form.locator("textarea[name=body]").fill("A note from the owner.")
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/send")) as info:
+            form.locator("button[type=submit]").click()
+        reply = info.value.json()
+        require(info.value.ok, "send: " + json.dumps(reply)[:300])
+        page.locator("#detail button.close").click()
+        return reply
+
+    def supersede_open_only(self, page):
+        key = "owner-" + uid()[:8]
+        first = self.send_page(page, "worker_a", "Owner v1 " + key, key)
+        second = self.send_page(page, "worker_a", "Owner v2 " + key, key)
+        v1 = page.locator(f"#flow li.event[data-event='{first['event']['event_id']}']")
+        v2 = page.locator(f"#flow li.event[data-event='{second['event']['event_id']}']")
+        self.expect(v1.locator(".chip-superseded")).to_have_count(1, timeout=15000)
+        self.expect(v1.locator("button", has_text="Supersede")).to_have_count(0)
+        self.expect(v2.locator("button", has_text="Supersede")).to_have_count(1)
 
     def send_unseen(self, page):
         marker = "owner-" + uid()[:8]

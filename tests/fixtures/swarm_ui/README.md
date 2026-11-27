@@ -54,6 +54,18 @@ One campaign, `swarm-fixture`, in a fresh collection:
 - a root coordinator handoff to a fresh session (`ledger handoff`);
 - a notice whose summary carries markup and is long.
 
+- a workstream decision, a missed checkpoint and a timed-out wait (through a
+  real `schedule-serve --once` sweep), and a handoff due (a compaction limit of
+  1 and one `ledger compact` record), so ten needs-you row types appear;
+  `owner_turn` and `stalled_agent` cannot be produced and are listed in the
+  report;
+- a session in no campaign with a message no campaign claims;
+- for the context room: a private bindings directory with a Claude and an
+  OpenCode binding, session state files whose process is a long-lived `sleep`
+  child of the fixture, and sample Claude transcripts, so the real transcript
+  reader measures one member at 92% of its window (near the limit), one at 42%,
+  and reports the OpenCode member as unknown.
+
 A step that the candidate refuses is listed under `seed_gaps` and does not stop
 the run; the checks that need it then fail on their own.
 
@@ -61,7 +73,14 @@ the run; the checks that need it then fail on their own.
 
 Each is a named entry in `report.json`. A check whose data comes from a slice
 that has not landed carries a `slice:` category and fails, so the report shows
-what is missing instead of passing on an empty section.
+what is missing instead of passing on an empty section. A check that needs a
+store-side field not yet on the branch carries a `waiting:` category and says
+which field. The current checks cover sign-in, regions, live updates, reloads
+and restarts, every `reset` code, a database outage, sign-out in another tab,
+the context room, who works on what, header counts, waiting facts, needs-you
+rows and their copyable commands (each is run and must exit 0), the cancel
+preview and cancel, a refused cancel, acknowledge on the inbox head, send,
+who can be written to, and the paper cuts found in browser acceptance.
 
 - Sign-in by fragment, and the token leaves the address bar.
 - The four regions render; agent rows carry harness, context room and pane
