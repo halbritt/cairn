@@ -185,8 +185,10 @@ to 2,000 deliveries, giving priority to each member's oldest eligible delivery
 and other open deliveries when the list is truncated. Agent details show open
 deliveries in and out of that inbox.
 
-Event envelopes can identify how Cairn published a message with the optional
-`system` field. `wait_notice` marks a registered wait notification,
+Event and delivery envelopes identify how Cairn published a message with the
+same optional `system` field. A delivery carries the field even after its
+event leaves the log window, including when a member's oldest pending item
+points to that delivery. `wait_notice` marks a registered wait notification,
 `stopped_delivery_notice` a notice to the original publisher about work in a
 stopped session's inbox, `overdue_checkpoint` an overdue deadline or checkpoint
 notice, and `scheduled_event` a message the scheduler sent from an operator's

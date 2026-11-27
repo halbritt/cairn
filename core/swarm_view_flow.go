@@ -52,6 +52,7 @@ type SwarmDelivery struct {
 	EventID       string    `json:"event_id"`
 	EventPosition int64     `json:"event_position"`
 	Kind          string    `json:"kind"`
+	System        string    `json:"system,omitempty"`
 	From          string    `json:"from"`
 	Consumer      string    `json:"consumer"`
 	Summary       string    `json:"summary,omitempty"`
@@ -210,7 +211,7 @@ WITH recent AS MATERIALIZED (
 	SELECT e.event_id FROM cairn.agent_event e WHERE `+swarmEventInCampaign+`
 	ORDER BY e.position DESC LIMIT $5
 )
-	SELECT d.delivery_id::text, e.event_id::text, e.position, e.kind, e.publisher, d.consumer,
+	SELECT d.delivery_id::text, e.event_id::text, e.position, e.kind, `+swarmSystemEvent+`, e.publisher, d.consumer,
 		COALESCE(e.summary,''), COALESCE(e.notice_action,''), e.blocker, COALESCE(e.causation_id::text,''), e.created_at,
 		d.state, d.code, h.held, d.attempts, d.available_at, d.lease_until, d.completed_at, COALESCE(d.superseded_by::text,'')
 	FROM cairn.agent_event e JOIN cairn.agent_delivery d USING(event_id)
@@ -229,7 +230,7 @@ WITH recent AS MATERIALIZED (
 	out := []SwarmDelivery{}
 	for rows.Next() {
 		var d SwarmDelivery
-		if err := rows.Scan(&d.DeliveryID, &d.EventID, &d.EventPosition, &d.Kind, &d.From, &d.Consumer,
+		if err := rows.Scan(&d.DeliveryID, &d.EventID, &d.EventPosition, &d.Kind, &d.System, &d.From, &d.Consumer,
 			&d.Summary, &d.Action, &d.Blocker, &d.CausationID, &d.CreatedAt, &d.State, &d.Code, &d.Held,
 			&d.Attempts, &d.AvailableAt, &d.LeaseUntil, &d.CompletedAt, &d.SupersededBy); err != nil {
 			return nil, false, err

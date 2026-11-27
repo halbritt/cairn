@@ -264,7 +264,7 @@ func swarmActionInboxDeliveryTx(ctx context.Context, tx pgx.Tx, sc swarmScope, i
 	return d, err
 }
 
-const swarmActionDeliveryColumns = `d.delivery_id::text,d.event_id::text,e.position,e.kind,e.publisher,
+const swarmActionDeliveryColumns = `d.delivery_id::text,d.event_id::text,e.position,e.kind,` + swarmSystemEvent + `,e.publisher,
 	d.consumer,COALESCE(e.summary,''),COALESCE(e.notice_action,''),e.blocker,COALESCE(e.causation_id::text,''),
 	e.created_at,d.state,COALESCE(d.code,''),` + swarmFlowHeld + `,
 	d.attempts,d.available_at,d.lease_until,d.completed_at,COALESCE(d.superseded_by::text,''),
@@ -279,7 +279,7 @@ func scanSwarmActionDelivery(row pgx.CollectableRow) (SwarmDelivery, error) {
 
 func scanSwarmActionDeliveryFields(row pgx.CollectableRow, extra ...any) (SwarmDelivery, error) {
 	var d SwarmDelivery
-	fields := []any{&d.DeliveryID, &d.EventID, &d.EventPosition, &d.Kind, &d.From, &d.Consumer,
+	fields := []any{&d.DeliveryID, &d.EventID, &d.EventPosition, &d.Kind, &d.System, &d.From, &d.Consumer,
 		&d.Summary, &d.Action, &d.Blocker, &d.CausationID, &d.CreatedAt, &d.State, &d.Code,
 		&d.Held, &d.Attempts, &d.AvailableAt, &d.LeaseUntil, &d.CompletedAt, &d.SupersededBy, &d.Replied}
 	err := row.Scan(append(fields, extra...)...)
@@ -714,6 +714,7 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 	if err := validID(req.DeliveryID); err != nil {
 		return SwarmAcknowledgeResult{}, err
 	}
+	var system string
 	readScope := func(tx pgx.Tx) (swarmScope, error) {
 		if req.Campaign == "" {
 			return swarmScope{Repo: req.Repo}, nil
@@ -729,6 +730,7 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 		if d.Consumer != s.channel.Principal {
 			return failure("AUTHORITY_DENIED", "can only acknowledge a delivery addressed to the operator")
 		}
+		system = d.System
 		return nil
 	}
 	replay := func(tx pgx.Tx) error {
@@ -742,7 +744,7 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 		SwarmDeliveryActionRequest
 		Collection string `json:"collection"`
 	}{req, req.Repo}
-	return mutateWithReplayGuard(ctx, s, "swarm-acknowledge", req.RequestID, intent, replay, func(tx pgx.Tx) (SwarmAcknowledgeResult, error) {
+	out, err := mutateWithReplayGuard(ctx, s, "swarm-acknowledge", req.RequestID, intent, replay, func(tx pgx.Tx) (SwarmAcknowledgeResult, error) {
 		out := SwarmAcknowledgeResult{}
 		sc, err := readScope(tx)
 		if err != nil {
@@ -794,6 +796,12 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 	}, func(tx pgx.Tx) error {
 		return lock(ctx, tx, "agent-events:"+req.Repo)
 	})
+	// Cached acknowledgement replies may predate the field or outlive the
+	// origin receipt. Use the origin from the current authorized read.
+	if err == nil && out.Delivery != nil {
+		out.Delivery.System = system
+	}
+	return out, err
 }
 
 func (s *Store) CancelSwarmDelivery(ctx context.Context, req SwarmCancelDeliveryRequest) (SwarmCancelDeliveryResult, error) {

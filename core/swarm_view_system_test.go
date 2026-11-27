@@ -27,35 +27,23 @@ func TestSwarmSystemEventPublication(t *testing.T) {
 		t.Fatalf("owner's page publication: %+v, %v", owner.Event, err)
 	}
 
-	request := swarmFlowRequest(f, f.rootView, worker.Inbox, "Request with a registered wait", "", nil)
-	wait := swarmFlowRegisterWait(f, f.rootView, request, WaitPredicateRequestResponse)
-	f.exec(`UPDATE cairn.agent_wait SET deadline=clock_timestamp()-interval '1 second' WHERE wait_uuid=$1`, wait.WaitUUID)
-	if n, err := f.op.SweepWaitTimeouts(ctx, f.repo); err != nil || n != 1 {
-		t.Fatalf("sweep wait: %d, %v", n, err)
-	}
-	if n, err := f.op.DrainWaitOutbox(ctx, f.repo, 10); err != nil || n != 1 {
-		t.Fatalf("publish wait notice: %d, %v", n, err)
-	}
+	swarmRequireSystemDeliveries(t, owner.Deliveries, owner.Event.EventID, "", 1)
+	request, waitNotice := swarmPublishTestWaitNotice(f, worker.Inbox)
+	overdueNotice := swarmPublishTestOverdueNotice(f, workerView)
 
-	if _, err := f.rootView.SetSubscription(ctx, SubscriptionRequest{
-		RequestID: uuid.NewString(), Topic: "workstream-overdue", Active: true,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	checkpoint := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
-	if _, err := workerView.SetWorkstreamStatus(ctx, SetWorkstreamStatusRequest{RequestID: uuid.NewString(), Repo: f.repo,
-		Stream: "system-event-fixture", State: "active", Current: "Overdue publication", NextCheckpoint: &checkpoint}, f.dest); err != nil {
-		t.Fatal(err)
-	}
-	overdue, err := f.op.SweepOverdueDeadlines(ctx, OverdueSweepRequest{Repo: f.repo, GraceSeconds: intPtr(60)})
-	if err != nil || overdue.EmittedNotices != 1 || len(overdue.Published) != 1 {
-		t.Fatalf("publish overdue checkpoint: %+v, %v", overdue, err)
+	const scheduleTopic = "swarm-system-schedule"
+	for _, subscriber := range []*Store{f.rootView, workerView, f.op} {
+		if _, err := subscriber.SetSubscription(ctx, SubscriptionRequest{
+			RequestID: uuid.NewString(), Repo: f.repo, Topic: scheduleTopic, Active: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	scheduled, err := f.op.ScheduleEvent(ctx, ScheduleEventRequest{RequestID: uuid.NewString(),
 		NotBefore: time.Now().Add(-time.Second), GraceSeconds: 300, Publication: PublishEventRequest{
 			Repo: f.repo, Kind: "request", Ref: RecordVersionRef{f.source.RecordID, f.source.Version},
-			Destination: EventDestination{Type: "agent", Name: worker.Inbox},
+			Destination: EventDestination{Type: "topic", Name: scheduleTopic},
 		}})
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +82,7 @@ func TestSwarmSystemEventPublication(t *testing.T) {
 
 	want := map[string]string{
 		owner.Event.EventID: "", request.EventID: "", agentNotice.EventID: "", operatorNotice.EventID: "",
-		wait.ReservedNoticeEventUUID: "wait_notice", overdue.Published[0].EventID: "overdue_checkpoint",
+		waitNotice: "wait_notice", overdueNotice: "overdue_checkpoint",
 		scheduled.OccurrenceID: "scheduled_event", stopped.NotificationEventID: "stopped_delivery_notice",
 	}
 	wantIDs := make([]string, 0, len(want))
@@ -122,10 +110,64 @@ func TestSwarmSystemEventPublication(t *testing.T) {
 			t.Fatalf("event detail disagrees with the stream for %s: %+v, %v", event.EventID, detail.Event, err)
 		}
 		swarmRequireEventSystem(t, detail.Event, want[event.EventID])
+		n := 1
+		if event.EventID == scheduled.OccurrenceID {
+			n = 3
+		}
+		swarmRequireSystemDeliveries(t, detail.Deliveries, event.EventID, want[event.EventID], n)
 	}
 	for _, event := range f.read("").Events {
 		swarmRequireEventSystem(t, event, want[event.EventID])
 	}
+
+	flow := swarmFlowRead(f)
+	if len(flow.Deliveries) != len(want)+2 {
+		t.Fatalf("expected one delivery for each event and two more from schedule fanout: %+v", flow.Deliveries)
+	}
+	for _, d := range flow.Deliveries {
+		kind, ok := want[d.EventID]
+		if !ok || d.System != kind {
+			t.Fatalf("unexpected flow delivery origin: %+v", d)
+		}
+	}
+	selected := swarmFlowDelivery(flow, AgentEvent{EventID: scheduled.OccurrenceID}, worker.Inbox)
+	preview, err := f.op.GetSwarmCancelPreview(ctx, SwarmCancelPreviewRequest{Repo: f.repo, Campaign: f.campaign, DeliveryID: selected.DeliveryID})
+	if err != nil || preview.Delivery.DeliveryID != selected.DeliveryID || !preview.Cancellable {
+		t.Fatalf("preview scheduled delivery: %+v, %v", preview, err)
+	}
+	swarmRequireSystemDeliveries(t, []SwarmDelivery{preview.Delivery}, scheduled.OccurrenceID, "scheduled_event", 1)
+	swarmRequireSystemDeliveries(t, preview.Siblings, scheduled.OccurrenceID, "scheduled_event", 2)
+	cancelled, err := f.op.CancelSwarmDelivery(ctx, SwarmCancelDeliveryRequest{
+		SwarmDeliveryActionRequest: SwarmDeliveryActionRequest{
+			SwarmActionRequest: SwarmActionRequest{RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign},
+			DeliveryID:         selected.DeliveryID,
+		},
+		Reason: "Cancel the scheduled delivery in the fixture", PreviewToken: preview.PreviewToken,
+	})
+	if err != nil || cancelled.Outcome != "cancelled" || cancelled.Delivery.System != "scheduled_event" {
+		t.Fatalf("cancel reply lost the delivery origin: %+v, %v", cancelled, err)
+	}
+
+	operatorDelivery := swarmFlowDelivery(flow, AgentEvent{EventID: scheduled.OccurrenceID}, f.op.channel.Principal)
+	if operatorDelivery.DeliveryID == "" {
+		t.Fatal("missing operator delivery of the scheduled event")
+	}
+	ack := SwarmDeliveryActionRequest{
+		SwarmActionRequest: SwarmActionRequest{RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign},
+		DeliveryID:         operatorDelivery.DeliveryID,
+	}
+	checkAck := func() {
+		t.Helper()
+		result, err := f.op.AcknowledgeSwarmDelivery(ctx, ack)
+		if err != nil || result.Delivery == nil || result.Delivery.System != "scheduled_event" || !result.Delivery.Seen {
+			t.Fatalf("acknowledgement reply lost the delivery origin: %+v, %v", result, err)
+		}
+	}
+	checkAck()
+	// Simulate an acknowledgement receipt written before delivery annotation.
+	f.exec(`UPDATE cairn.mutation_request SET response=response #- '{delivery,system}'
+		WHERE caller=$1 AND operation='swarm-acknowledge' AND request_id=$2`, f.op.channel.Principal, ack.RequestID)
+	checkAck()
 
 	active := false
 	if _, err := f.rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
@@ -161,12 +203,86 @@ func TestSwarmSystemEventPublication(t *testing.T) {
 	t.Fatal("the stopped-delivery event disappeared after erasing its publication link")
 }
 
+func TestSwarmSystemDeliveriesOutsideLogWindow(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "swarm-system-delivery-window")
+	worker, workerView := f.member("flow-system-window-worker")
+	swarmFlowSetWaits(f, true)
+	t.Cleanup(func() { swarmFlowSetWaits(f, false) })
+	request, waitNotice := swarmPublishTestWaitNotice(f, worker.Inbox)
+	overdueNotice := swarmPublishTestOverdueNotice(f, workerView)
+	want := map[string]string{waitNotice: "wait_notice", overdueNotice: "overdue_checkpoint"}
+	for id, kind := range want {
+		detail, err := f.op.GetSwarmEvent(ctx, f.repo, f.campaign, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		swarmRequireEventSystem(t, detail.Event, kind)
+		swarmRequireSystemDeliveries(t, detail.Deliveries, id, kind, 1)
+	}
+
+	// Fill the campaign window with later events that have no delivery rows.
+	f.exec(`INSERT INTO cairn.agent_event(event_id,repo,publisher,kind,record_id,version,sensitivity,destination_type,destination_name,notice_action)
+		SELECT gen_random_uuid(),repo,publisher,'notice',record_id,version,sensitivity,destination_type,destination_name,'review'
+		FROM cairn.agent_event CROSS JOIN generate_series(1,$2) WHERE event_id=$1`, request.EventID, SwarmFlowEventWindow)
+	read := f.read("")
+	if len(read.Events) != SwarmFlowEventWindow {
+		t.Fatalf("expected a full campaign log window, got %d events", len(read.Events))
+	}
+	for _, event := range read.Events {
+		if _, included := want[event.EventID]; included {
+			t.Fatalf("the system event %s is still in the log window", event.EventID)
+		}
+	}
+	waitDelivery := swarmFlowDelivery(read.Snapshot.Flow, AgentEvent{EventID: waitNotice}, f.root.Inbox)
+	overdueDelivery := swarmFlowDelivery(read.Snapshot.Flow, AgentEvent{EventID: overdueNotice}, f.root.Inbox)
+	for _, d := range []SwarmDelivery{waitDelivery, overdueDelivery} {
+		if d.State != "pending" || d.Seen || d.System != want[d.EventID] {
+			t.Fatalf("old pending delivery lost its system value: %+v", d)
+		}
+	}
+	if read.Snapshot.Flow.ByMember[f.root.Inbox].OldestPending != waitDelivery.DeliveryID {
+		t.Fatalf("member's oldest pending item is not the annotated wait delivery: %+v", read.Snapshot.Flow.ByMember[f.root.Inbox])
+	}
+	claimed, err := f.rootView.NextEvent(ctx, NextEventRequest{}, f.dest)
+	if err != nil || claimed.Delivery == nil || claimed.Delivery.DeliveryID != waitDelivery.DeliveryID {
+		t.Fatalf("claim the wait notice: %+v, %v", claimed, err)
+	}
+	if _, err := f.rootView.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(), Disposition: "handled",
+		DeliveryID: waitDelivery.DeliveryID, LeaseID: claimed.Delivery.LeaseID}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	flow := swarmFlowRead(f)
+	if flow.ByMember[f.root.Inbox].OldestPending != overdueDelivery.DeliveryID ||
+		swarmFlowDelivery(flow, AgentEvent{EventID: overdueNotice}, f.root.Inbox).System != "overdue_checkpoint" {
+		t.Fatalf("expected annotated overdue delivery at the head after settlement: %+v", flow.ByMember[f.root.Inbox])
+	}
+}
+
 func swarmRequireEventSystem(t *testing.T, event SwarmEvent, want string) {
 	t.Helper()
 	if event.System != want {
 		t.Fatalf("event %s system = %q, want %q", event.EventID, event.System, want)
 	}
-	raw, err := json.Marshal(event)
+	swarmRequireSystemJSON(t, event, want)
+}
+
+func swarmRequireSystemDeliveries(t *testing.T, deliveries []SwarmDelivery, eventID, want string, count int) {
+	t.Helper()
+	if len(deliveries) != count {
+		t.Fatalf("event %s has %d deliveries, want %d", eventID, len(deliveries), count)
+	}
+	for _, d := range deliveries {
+		if d.EventID != eventID || d.System != want {
+			t.Fatalf("delivery %s of event %s has origin %q, want %q for event %s", d.DeliveryID, d.EventID, d.System, want, eventID)
+		}
+		swarmRequireSystemJSON(t, d, want)
+	}
+}
+
+func swarmRequireSystemJSON(t *testing.T, envelope any, want string) {
+	t.Helper()
+	raw, err := json.Marshal(envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,6 +291,43 @@ func swarmRequireEventSystem(t *testing.T, event SwarmEvent, want string) {
 		t.Fatal(err)
 	}
 	if _, present := fields["system"]; present != (want != "") {
-		t.Fatalf("event %s serialized with incorrect system field: %s", event.EventID, fields["system"])
+		t.Fatalf("%T serialized with incorrect system field: %s", envelope, fields["system"])
 	}
+}
+
+func swarmPublishTestWaitNotice(f *swarmFixture, to string) (AgentEvent, string) {
+	t := f.t
+	t.Helper()
+	ctx := context.Background()
+	request := swarmFlowRequest(f, f.rootView, to, "Request with a registered wait", "", nil)
+	wait := swarmFlowRegisterWait(f, f.rootView, request, WaitPredicateRequestResponse)
+	f.exec(`UPDATE cairn.agent_wait SET deadline=clock_timestamp()-interval '1 second' WHERE wait_uuid=$1`, wait.WaitUUID)
+	if n, err := f.op.SweepWaitTimeouts(ctx, f.repo); err != nil || n != 1 {
+		t.Fatalf("sweep wait: %d, %v", n, err)
+	}
+	if n, err := f.op.DrainWaitOutbox(ctx, f.repo, 10); err != nil || n != 1 {
+		t.Fatalf("publish wait notice: %d, %v", n, err)
+	}
+	return request, wait.ReservedNoticeEventUUID
+}
+
+func swarmPublishTestOverdueNotice(f *swarmFixture, producer *Store) string {
+	t := f.t
+	t.Helper()
+	ctx := context.Background()
+	if _, err := f.rootView.SetSubscription(ctx, SubscriptionRequest{
+		RequestID: uuid.NewString(), Topic: "workstream-overdue", Active: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
+	if _, err := producer.SetWorkstreamStatus(ctx, SetWorkstreamStatusRequest{RequestID: uuid.NewString(), Repo: f.repo,
+		Stream: "system-event-fixture", State: "active", Current: "Overdue publication", NextCheckpoint: &checkpoint}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	overdue, err := f.op.SweepOverdueDeadlines(ctx, OverdueSweepRequest{Repo: f.repo, GraceSeconds: intPtr(60)})
+	if err != nil || overdue.EmittedNotices != 1 || len(overdue.Published) != 1 {
+		t.Fatalf("publish overdue checkpoint: %+v, %v", overdue, err)
+	}
+	return overdue.Published[0].EventID
 }
