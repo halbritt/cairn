@@ -892,8 +892,15 @@ time.sleep(30)
                         self.assertEqual(len(claims), 1)
                     completed.add(delivery_id)
                     # The watcher can observe explicit completion before native Stop.
+                    # The reconcile refused while the delivery was active holds
+                    # the next one until its backoff is eligible.
                     state = json.loads(path.read_text())
-                    coordination.watch_inbox(config, state, path)
+                    backoff = state['inbox_reconcile_backoff']
+                    self.assertEqual((backoff['reason'], backoff['last_error']),
+                                     ('delivery_completed', 'DELIVERY_ACTIVE'))
+                    with mock.patch.object(coordination.time, 'time',
+                                           return_value=backoff['next_eligible_epoch']):
+                        coordination.watch_inbox(config, state, path)
                     self.assertNotIn('inbox_intent', json.loads(path.read_text()))
                 else:
                     self.assertIn('inbox_intent', json.loads(path.read_text()))
