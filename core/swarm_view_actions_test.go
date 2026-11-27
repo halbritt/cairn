@@ -253,10 +253,34 @@ func TestSwarmActionCancelPreviewGroupAndWaits(t *testing.T) {
 		len(preview.DirectReplyWaits.Waits) != 1 || preview.DirectReplyWaits.Waits[0].WaitID != directWait.WaitUUID {
 		t.Fatalf("exact dependency wait: %+v %v", preview, err)
 	}
+	cancelWait := func(wait AgentWait) {
+		t.Helper()
+		_, err := op.CancelWait(ctx, CancelWaitRequest{
+			RequestID: uuid.NewString(), Collection: repo, WaitUUID: wait.WaitUUID,
+		}, dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	withDirectWait := preview.PreviewToken
+	cancelWait(directWait)
+	preview, err = op.GetSwarmCancelPreview(ctx, req)
+	if err != nil || preview.DirectReplyWaits.Status != "empty" || len(preview.DirectReplyWaits.Waits) != 0 ||
+		preview.PreviewToken == withDirectWait {
+		t.Fatalf("cancelled direct wait should leave an empty lookup and change the token: %+v %v", preview, err)
+	}
+
 	req.DeliveryID = selected
 	preview, err = op.GetSwarmCancelPreview(ctx, req)
 	if err != nil || preview.DirectReplyWaits.Status != "empty" {
 		t.Fatalf("correlation incorrectly matched a wait: %+v %v", preview, err)
+	}
+	withClosureWait := preview.PreviewToken
+	cancelWait(closure)
+	preview, err = op.GetSwarmCancelPreview(ctx, req)
+	if err != nil || preview.Group == nil || preview.Group.ClosureWaits.Status != "empty" ||
+		len(preview.Group.ClosureWaits.Waits) != 0 || preview.PreviewToken == withClosureWait {
+		t.Fatalf("cancelled closure wait should leave an empty lookup and change the token: %+v %v", preview, err)
 	}
 
 	// Simulate an unavailable relation only in this disposable database.
@@ -264,8 +288,10 @@ func TestSwarmActionCancelPreviewGroupAndWaits(t *testing.T) {
 		t.Fatal(err)
 	}
 	preview, err = op.GetSwarmCancelPreview(ctx, req)
+	const publicReason = "The waits could not be read."
 	if err != nil || preview.Group == nil || preview.Group.ClosureWaits.Status != "unavailable" ||
-		preview.DirectReplyWaits.Status != "unavailable" || preview.DirectReplyWaits.Reason == "" {
+		preview.Group.ClosureWaits.Reason != publicReason || preview.DirectReplyWaits.Status != "unavailable" ||
+		preview.DirectReplyWaits.Reason != publicReason {
 		t.Fatalf("unavailable waits: %+v %v", preview, err)
 	}
 }
@@ -770,5 +796,56 @@ func TestSwarmActionPreviewTokenTracksOnlyConfirmationFacts(t *testing.T) {
 				t.Fatal("changed confirmation facts did not change the token")
 			}
 		})
+	}
+}
+
+func TestSwarmActionNativeCancellationReplayReportsTerminalDelivery(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "action-native-cancellation")
+	member, _ := f.member("action-native-recipient")
+	event := swarmActionPublish(t, f.rootView, f.source, f.dest, PublishEventRequest{
+		Kind: "request", Destination: EventDestination{"agent", member.Inbox},
+	})
+	detail, err := f.op.GetSwarmEvent(ctx, f.repo, f.campaign, event.EventID)
+	if err != nil || len(detail.Deliveries) != 1 {
+		t.Fatalf("request details: %+v %v", detail, err)
+	}
+	id := detail.Deliveries[0].DeliveryID
+	ref := sessionRef(member)
+	claim := f.claim(ref, id, "swarm-action-native-turn", true)
+	if claim.Attempt.Delivery.DeliveryID != id {
+		t.Fatalf("native claim: %+v", claim.Attempt.Delivery)
+	}
+	preview, err := f.op.GetSwarmCancelPreview(ctx, SwarmCancelPreviewRequest{
+		Repo: f.repo, Campaign: f.campaign, DeliveryID: id,
+	})
+	if err != nil || !preview.Cancellable {
+		t.Fatalf("native cancellation preview: %+v %v", preview, err)
+	}
+	req := SwarmCancelDeliveryRequest{
+		SwarmDeliveryActionRequest: SwarmDeliveryActionRequest{
+			SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: f.campaign, RequestID: uuid.NewString()},
+			DeliveryID:         id,
+		}, Reason: "Stop the native turn for this request", PreviewToken: preview.PreviewToken,
+	}
+	pending, err := f.op.CancelSwarmDelivery(ctx, req)
+	if err != nil || pending.Outcome != "cancel_pending" || pending.Delivery.State != "leased" {
+		t.Fatalf("cancellation pending: %+v %v", pending, err)
+	}
+	if _, err := f.receiver.ReportSessionToolStop(ctx, SessionToolStopReport{
+		RequestID: uuid.NewString(), Session: ref, AttemptID: claim.Attempt.ID,
+		TurnStop: "interrupted", TerminalScan: "clear",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{
+		RequestID: uuid.NewString(), Session: ref, AttemptID: claim.Attempt.ID, Reason: "cancel_confirmed",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	done, err := f.op.CancelSwarmDelivery(ctx, req)
+	if err != nil || done.Outcome != "cancelled" || done.Delivery.State != "failed" ||
+		done.Delivery.Code != "operator_cancelled" || done.Delivery.Held {
+		t.Fatalf("native cancellation replay: %+v %v", done, err)
 	}
 }

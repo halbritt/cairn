@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/refusal"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type swarmActionRoute struct {
@@ -38,11 +42,28 @@ func (s *swarmServer) handleAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeSwarmActionResult(w http.ResponseWriter, result any, err error) {
-	if err != nil {
+	if err == nil {
+		writeSwarmJSON(w, http.StatusOK, result)
+		return
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, errSwarmSessionEnded) {
 		writeSwarmError(w, err)
 		return
 	}
-	writeSwarmJSON(w, http.StatusOK, result)
+
+	code := core.Code(err)
+	var pgErr *pgconn.PgError
+	if code == "STORE_ERROR" || code == "TIMEOUT" || errors.As(err, &pgErr) {
+		slog.Error("swarm action store error", "code", code, "error", err)
+		classification := refusal.Classify(code)
+		message := classification.HTTPMessage
+		if message == "" {
+			message = refusal.Classify("STORE_ERROR").HTTPMessage
+		}
+		swarmRefuse(w, classification.HTTPStatus, code, message)
+		return
+	}
+	writeSwarmError(w, err)
 }
 
 func (s *swarmServer) swarmEvent(w http.ResponseWriter, r *http.Request) {

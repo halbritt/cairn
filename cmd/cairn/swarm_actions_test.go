@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func swarmActionJSON[T any](t *testing.T, resp *http.Response, raw []byte, wantStatus int) T {
@@ -536,5 +539,35 @@ func TestSwarmActionHTTPForeignInboxHeadConflictIsNeutral(t *testing.T) {
 		conflict.Error != "VERSION_CONFLICT: the delivery is not the oldest in the operator's inbox" ||
 		!strings.Contains(string(raw), `"oldest":null`) || strings.Contains(string(raw), foreign.EventID) {
 		t.Fatalf("foreign head conflict: %s", raw)
+	}
+}
+
+func TestSwarmActionStoreErrorsUsePublicMessages(t *testing.T) {
+	dbErr := &pgconn.PgError{Code: "42P01", Message: `relation "private_store_relation" does not exist`}
+	for _, tc := range []struct {
+		name    string
+		err     error
+		status  int
+		code    string
+		message string
+	}{
+		{"database error", dbErr, http.StatusInternalServerError, "STORE_ERROR", "store operation failed"},
+		{"wrapped database error", fmt.Errorf("could not read preview: %w", dbErr), http.StatusInternalServerError, "STORE_ERROR", "store operation failed"},
+		{"typed database error", &core.Error{Code: "VERSION_CONFLICT", Message: dbErr.Error(), Cause: dbErr}, http.StatusConflict, "VERSION_CONFLICT", "store operation failed"},
+		{"timeout", context.DeadlineExceeded, http.StatusGatewayTimeout, "TIMEOUT", "store operation failed"},
+		{"session ended", context.Canceled, http.StatusUnauthorized, "UNAUTHENTICATED", "the session ended before the request completed; sign in again"},
+		{"public refusal", &core.Error{Code: "NOT_FOUND", Message: "delivery not found in this campaign"}, http.StatusNotFound, "NOT_FOUND", "NOT_FOUND: delivery not found in this campaign"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			writeSwarmActionResult(rec, nil, tc.err)
+			out := swarmActionJSON[struct {
+				Code    string `json:"code"`
+				Message string `json:"error"`
+			}](t, rec.Result(), rec.Body.Bytes(), tc.status)
+			if out.Code != tc.code || out.Message != tc.message {
+				t.Fatalf("public refusal: %+v", out)
+			}
+		})
 	}
 }

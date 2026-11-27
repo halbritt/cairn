@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -350,31 +351,43 @@ func scanSwarmActionWait(row pgx.CollectableRow) (SwarmWait, error) {
 	return w, err
 }
 
+const swarmWaitReadFailureReason = "The waits could not be read."
+
 func swarmActionWaitLookup(ctx context.Context, tx pgx.Tx, sc swarmScope, eventID, predicate string) SwarmWaitLookup {
-	out := SwarmWaitLookup{Status: "empty", Waits: []SwarmWait{}}
-	errs := make(map[string]string)
-	swarmSection(ctx, tx, errs, "waits", func(sp pgx.Tx) error {
-		rows, err := sp.Query(ctx, `SELECT `+swarmActionWaitColumns+`
-			FROM cairn.agent_wait w JOIN cairn.agent_event e ON e.event_id=w.dependency_event_uuid
-			WHERE `+swarmWaitInCampaign()+` AND w.dependency_event_uuid=$5 AND w.predicate_kind=$6
-			ORDER BY w.created_at,w.wait_uuid`, sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, eventID, predicate)
-		if err != nil {
-			return err
-		}
-		out.Waits, err = pgx.CollectRows(rows, scanSwarmActionWait)
-		return err
-	})
-	if reason, unavailable := errs["waits"]; unavailable {
-		return SwarmWaitLookup{Status: "unavailable", Reason: reason, Waits: []SwarmWait{}}
+	waits, err := readSwarmActionWaitingTx(ctx, tx, sc, eventID, predicate)
+	if err != nil {
+		slog.WarnContext(ctx, "swarm cancellation preview could not read waits", "event_id", eventID, "predicate", predicate, "error", err)
+		return SwarmWaitLookup{Status: "unavailable", Reason: swarmWaitReadFailureReason, Waits: []SwarmWait{}}
 	}
-	if len(out.Waits) > 0 {
-		out.Status = "found"
-		for i := range out.Waits {
-			w := &out.Waits[i]
-			w.Overdue = w.State == WaitStateWaiting && !w.Deadline.After(sc.Now)
+	status := "empty"
+	if len(waits) != 0 {
+		status = "found"
+		for i := range waits {
+			waits[i].Overdue = !waits[i].Deadline.After(sc.Now)
 		}
 	}
-	return out
+	return SwarmWaitLookup{Status: status, Waits: waits}
+}
+
+func readSwarmActionWaitingTx(ctx context.Context, tx pgx.Tx, sc swarmScope, eventID, predicate string) ([]SwarmWait, error) {
+	// An unavailable wait lookup must leave the rest of the preview readable.
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer sp.Rollback(ctx)
+	rows, err := sp.Query(ctx, `SELECT `+swarmActionWaitColumns+`
+		FROM cairn.agent_wait w JOIN cairn.agent_event e ON e.event_id=w.dependency_event_uuid
+		WHERE `+swarmWaitInCampaign()+` AND w.dependency_event_uuid=$5 AND w.predicate_kind=$6 AND w.state='waiting'
+		ORDER BY w.created_at,w.wait_uuid`, sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, eventID, predicate)
+	if err != nil {
+		return nil, err
+	}
+	waits, err := pgx.CollectRows(rows, scanSwarmActionWait)
+	if err != nil {
+		return nil, err
+	}
+	return waits, sp.Commit(ctx)
 }
 
 // SwarmActionRequest carries the browser's retry identity. Repo is set by the
@@ -805,9 +818,11 @@ func (s *Store) CancelSwarmDelivery(ctx context.Context, req SwarmCancelDelivery
 	switch {
 	case terminal:
 		out.Outcome = "already_terminal"
-		out.Detail = cancelErr.Error()
-	case cancel.Native != nil:
+		out.Detail = refusal.Error()
+	case cancel.Native != nil && (delivery.State == "pending" || delivery.State == "leased"):
 		out.Outcome = "cancel_pending"
+	case cancel.Native != nil && delivery.Code != "operator_cancelled":
+		out.Outcome = "already_terminal"
 	default:
 		out.Outcome = "cancelled"
 	}
