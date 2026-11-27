@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,16 @@ import (
 
 	"github.com/halbritt/cairn/internal/lifecycle/transcript"
 )
+
+type swarmWindowCountingReader struct {
+	io.ReaderAt
+	reads *int
+}
+
+func (reader swarmWindowCountingReader) ReadAt(p []byte, offset int64) (int, error) {
+	(*reader.reads)++
+	return reader.ReaderAt.ReadAt(p, offset)
+}
 
 func TestSwarmWindowClaudeTailAndCache(t *testing.T) {
 	root := t.TempDir()
@@ -32,13 +43,16 @@ func TestSwarmWindowClaudeTailAndCache(t *testing.T) {
 	usage := fmt.Sprintf(`{"type":"assistant","timestamp":"2026-11-27T19:00:02Z","message":{"content":"%s%s","model":"claude-fable-5-2","usage":{"input_tokens":20000,"cache_read_input_tokens":870000,"cache_creation_input_tokens":10000}}}`, marker, strings.Repeat("x", swarmWindowBlock))
 	truncated := `{"type":"assistant","message":{"content":"` + marker
 	writeSwarmWindowFixture(t, path, strings.Join([]string{compacted, usage, truncated}, "\n"))
-	opens := 0
+	opens, reads := 0, 0
 	read := transcriptWindowReader(bindings, proc, swarmTranscriptAccess{
 		open: func(root *os.Root, name string) (*os.File, error) {
 			opens++
 			return openSwarmTranscript(root, name)
 		},
 		stat: (*os.File).Stat,
+		reader: func(file *os.File) io.ReaderAt {
+			return swarmWindowCountingReader{file, &reads}
+		},
 	})
 
 	observed := read(t.Context())
@@ -53,9 +67,10 @@ func TestSwarmWindowClaudeTailAndCache(t *testing.T) {
 	if err != nil || strings.Contains(string(data), marker) {
 		t.Fatal("observation leaked transcript text or failed to marshal")
 	}
+	coldReads := reads
 	warm := read(t.Context())
-	if opens != 1 || warm.Windows["agent-claude"].UsedTokens != got.UsedTokens {
-		t.Fatalf("warm read opens = %d, want 1; observation = %+v", opens, warm)
+	if coldReads == 0 || opens != 2 || reads != coldReads || warm.Windows["agent-claude"].UsedTokens != got.UsedTokens {
+		t.Fatalf("warm observation = %+v, opens = %d, reads = %d, cold reads = %d", warm, opens, reads, coldReads)
 	}
 
 	tail := `{"type":"assistant","timestamp":"2026-11-27T19:00:03Z","message":{"model":"new-unknown-model","usage":{"input_tokens":31}}}`
@@ -71,7 +86,7 @@ func TestSwarmWindowClaudeTailAndCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	changed := read(t.Context()).Windows["agent-claude"]
-	if opens != 2 || changed.UsedTokens != 31 || changed.WindowTokens != 0 || changed.NearLimit || changed.Model != "new-unknown-model" {
+	if opens != 3 || reads <= coldReads || changed.UsedTokens != 31 || changed.WindowTokens != 0 || changed.NearLimit || changed.Model != "new-unknown-model" {
 		t.Fatalf("changed read opens = %d and window = %+v", opens, changed)
 	}
 }
@@ -97,7 +112,26 @@ func TestSwarmWindowCodexAndUnknownHarness(t *testing.T) {
 	if err := os.Symlink(path, filepath.Join(fd, "5")); err != nil {
 		t.Fatal(err)
 	}
-	observation := newTranscriptWindowReader(bindings, proc)(t.Context())
+	other := filepath.Join(root, "other-rollout")
+	writeSwarmWindowFixture(t, other, "{}")
+	replaceHeld := false
+	read := transcriptWindowReader(bindings, proc, swarmTranscriptAccess{
+		open: func(root *os.Root, name string) (*os.File, error) {
+			if replaceHeld {
+				// Simulate descriptor reuse after resolution and before the warm lookup.
+				fdPath := filepath.Join(fd, "5")
+				if err := os.Remove(fdPath); err != nil {
+					return nil, err
+				}
+				if err := os.Symlink(other, fdPath); err != nil {
+					return nil, err
+				}
+			}
+			return openSwarmTranscript(root, name)
+		},
+		stat: (*os.File).Stat,
+	})
+	observation := read(t.Context())
 	window := observation.Windows["agent-codex"]
 	if observation.Status != "ok" || observation.Sessions != 2 || len(observation.Windows) != 1 ||
 		observation.Unknown["agent-hermes"] == "" || window.UsedTokens != 910 || window.WindowTokens != 1000 ||
@@ -108,6 +142,11 @@ func TestSwarmWindowCodexAndUnknownHarness(t *testing.T) {
 	data, err := json.Marshal(observation)
 	if err != nil || strings.Contains(string(data), "PRIVATE_TRANSCRIPT_MARKER") {
 		t.Fatal("observation leaked transcript text or failed to marshal")
+	}
+	replaceHeld = true
+	warm := read(t.Context())
+	if warm.Status != "ok" || len(warm.Windows) != 0 || warm.Unknown["agent-codex"] != "Codex process no longer holds the session rollout" {
+		t.Fatalf("warm lookup accepted a different held descriptor: %+v", warm)
 	}
 }
 
@@ -163,7 +202,7 @@ func TestSwarmWindowRefusesReplacedCodexRollout(t *testing.T) {
 		},
 		stat: (*os.File).Stat,
 	}, nil, make(map[swarmTranscriptStamp]cachedSwarmWindow))
-	if got.reason != "Codex process no longer holds the session rollout" || !got.window.MeasuredAt.IsZero() || opens != 0 {
+	if got.reason != "Codex process no longer holds the session rollout" || !got.window.MeasuredAt.IsZero() || opens != 1 {
 		t.Fatalf("replacement rollout was usable: %+v, opens = %d", got, opens)
 	}
 }
@@ -216,7 +255,7 @@ func TestSwarmWindowRefusesClaudeTranscriptSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := newTranscriptWindowReader(bindings, proc)(t.Context())
-	if got.Status != "ok" || len(got.Windows) != 0 || got.Unknown["agent-claude"] != "Session transcript is missing or is not a regular file" {
+	if got.Status != "ok" || len(got.Windows) != 0 || got.Unknown["agent-claude"] != "Session transcript could not be opened read-only" {
 		t.Fatalf("symlink transcript was usable: %+v", got)
 	}
 }
@@ -278,6 +317,73 @@ func TestSwarmWindowCacheMissOnInodeReplacement(t *testing.T) {
 	second := read(t.Context())
 	if second.Status != "ok" || second.Windows["agent-claude"].UsedTokens != 222 {
 		t.Fatalf("cache served the original inode: %+v", second)
+	}
+}
+
+func TestSwarmWindowCacheRequiresSuccessfulOpen(t *testing.T) {
+	bindings, proc, path := fixtureClaudeWindowFile(t)
+	writeSwarmWindowFixture(t, path, fixtureClaudeWindowUsage(111))
+	denyOpen := false
+	read := transcriptWindowReader(bindings, proc, swarmTranscriptAccess{
+		open: func(root *os.Root, name string) (*os.File, error) {
+			if denyOpen {
+				return nil, os.ErrPermission
+			}
+			return openSwarmTranscript(root, name)
+		},
+		stat: (*os.File).Stat,
+	})
+	if first := read(t.Context()); first.Windows["agent-claude"].UsedTokens != 111 {
+		t.Fatalf("initial reading: %+v", first)
+	}
+	denyOpen = true
+	got := read(t.Context())
+	if got.Status != "ok" || len(got.Windows) != 0 || got.Unknown["agent-claude"] != "Session transcript could not be opened read-only" {
+		t.Fatalf("cache served a transcript whose open failed: %+v", got)
+	}
+}
+
+func TestSwarmWindowCacheDeniesUnreadableTranscript(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can open a mode 000 file")
+	}
+	bindings, proc, path := fixtureClaudeWindowFile(t)
+	writeSwarmWindowFixture(t, path, fixtureClaudeWindowUsage(111))
+	read := newTranscriptWindowReader(bindings, proc)
+	if first := read(t.Context()); first.Windows["agent-claude"].UsedTokens != 111 {
+		t.Fatalf("initial reading: %+v", first)
+	}
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t.Context())
+	if got.Status != "ok" || len(got.Windows) != 0 || got.Unknown["agent-claude"] != "Session transcript could not be opened read-only" {
+		t.Fatalf("mode 000 transcript was usable: %+v", got)
+	}
+}
+
+func TestSwarmWindowCacheMissOnChangeTime(t *testing.T) {
+	bindings, proc, path := fixtureClaudeWindowFile(t)
+	writeSwarmWindowFixture(t, path, fixtureClaudeWindowUsage(111))
+	read := newTranscriptWindowReader(bindings, proc)
+	if first := read(t.Context()); first.Windows["agent-claude"].UsedTokens != 111 {
+		t.Fatalf("initial reading: %+v", first)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSwarmWindowFixture(t, path, fixtureClaudeWindowUsage(222))
+	if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(path)
+	if err != nil || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || !os.SameFile(before, after) {
+		t.Fatalf("invalid rewrite fixture: before = %v, after = %v, error = %v", before, after, err)
+	}
+	got := read(t.Context())
+	if got.Status != "ok" || got.Windows["agent-claude"].UsedTokens != 222 {
+		t.Fatalf("cache served the measurement from before the rewrite: %+v", got)
 	}
 }
 

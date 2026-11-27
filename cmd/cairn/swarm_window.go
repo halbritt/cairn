@@ -42,8 +42,9 @@ type swarmWindowReader func(ctx context.Context) swarmWindowObservation
 type swarmTranscriptOpener func(*os.Root, string) (*os.File, error)
 
 type swarmTranscriptAccess struct {
-	open swarmTranscriptOpener
-	stat func(*os.File) (os.FileInfo, error)
+	open   swarmTranscriptOpener
+	stat   func(*os.File) (os.FileInfo, error)
+	reader func(*os.File) io.ReaderAt
 }
 
 const (
@@ -74,6 +75,7 @@ type swarmTranscriptStamp struct {
 	identity swarmTranscriptIdentity
 	size     int64
 	modified time.Time
+	changed  time.Time
 	harness  string
 }
 
@@ -94,6 +96,8 @@ func transcriptWindowReader(bindingsDir, procRoot string, access swarmTranscript
 	}
 	paths := transcript.NewReader(transcript.NewCoordinationProfile("/", os.Getenv, os.LookupEnv))
 	paths.ProcRoot = procRoot
+	// The cache only saves re-reading transcript bytes. Every observation
+	// opens and verifies the current descriptor before reusing a measurement.
 	cache := make(map[swarmTranscriptStamp]cachedSwarmWindow)
 	gate := make(chan struct{}, 1)
 	return func(ctx context.Context) swarmWindowObservation {
@@ -217,7 +221,10 @@ func (file swarmWindowFile) stamped(info os.FileInfo) (swarmTranscriptStamp, boo
 	}
 	return swarmTranscriptStamp{
 		identity: swarmTranscriptIdentity{device: uint64(stat.Dev), inode: stat.Ino},
-		size:     info.Size(), modified: info.ModTime().UTC(), harness: file.harness,
+		size:     info.Size(),
+		modified: info.ModTime().UTC(),
+		changed:  time.Unix(stat.Ctim.Sec, stat.Ctim.Nsec).UTC(),
+		harness:  file.harness,
 	}, true
 }
 
@@ -272,24 +279,6 @@ func (file swarmWindowFile) measure(ctx context.Context, access swarmTranscriptA
 		return fail(reason)
 	}
 	defer root.Close()
-	info, err := root.Lstat(file.relative)
-	if err != nil || !info.Mode().IsRegular() {
-		return fail("Session transcript is missing or is not a regular file")
-	}
-	stamp, owned := file.stamped(info)
-	if !owned {
-		return fail("Session transcript is not owned by this user")
-	}
-	if !file.matchesHeldDescriptor(stamp.identity) {
-		return fail("Codex process no longer holds the session rollout")
-	}
-	if cached, ok := next[stamp]; ok {
-		return cached
-	}
-	if cached, ok := cache[stamp]; ok {
-		next[stamp] = cached
-		return cached
-	}
 	if ctx.Err() != nil {
 		return fail("Context read canceled")
 	}
@@ -306,13 +295,21 @@ func (file swarmWindowFile) measure(ctx context.Context, access swarmTranscriptA
 	if !owned {
 		return fail("Session transcript is not owned by this user")
 	}
-	if current.identity != stamp.identity {
-		return fail("Session transcript changed while it was opened")
-	}
 	if !file.matchesHeldDescriptor(current.identity) {
 		return fail("Codex process no longer holds the session rollout")
 	}
-	window, err := readSwarmWindowTail(ctx, f, opened.Size(), file.harness)
+	if cached, ok := next[current]; ok {
+		return cached
+	}
+	if cached, ok := cache[current]; ok {
+		next[current] = cached
+		return cached
+	}
+	var input io.ReaderAt = f
+	if access.reader != nil {
+		input = access.reader(f)
+	}
+	window, err := readSwarmWindowTail(ctx, input, current.size, file.harness)
 	if err != nil {
 		if ctx.Err() != nil {
 			return fail("Context read canceled")
