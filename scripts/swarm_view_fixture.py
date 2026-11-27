@@ -887,8 +887,8 @@ class Fixture:
         # A delivery to the operator that belongs to no campaign is now the head; a newer campaign one is not.
         outside = self.publish("bystander", "Outside any campaign.", {"type": "agent", "name": operator}, kind="notice",
                                action="review", summary="For the owner: bystander note outside the campaign")
-        inside = self.publish("worker_b", "Inside the campaign.", {"type": "agent", "name": operator}, kind="notice",
-                              action="review", summary="For the owner: flow reader note 3")
+        inside = self.publish("worker_b", "Inside the campaign.", {"type": "agent", "name": operator}, kind="request",
+                              summary="For the owner: flow reader request")
         row = page.locator(f"#needs li.need[data-event='{inside['event_id']}']")
         self.expect(row).to_have_count(1, timeout=20000)
         self.expect(row).to_contain_text("Not the next delivery in your inbox")
@@ -914,6 +914,15 @@ class Fixture:
             self.expect(landing.locator(f"#landing-needs li.need[data-event='{outside['event_id']}']")).to_have_count(0, timeout=15000)
         finally:
             landing.close()
+        campaign_ack = row.locator("button", has_text="Acknowledge")
+        self.expect(campaign_ack).to_have_count(1, timeout=15000)
+        campaign_ack.click()
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
+            page.locator("#confirm-go").click()
+        reply = info.value.json()
+        require(info.value.ok and (reply.get("delivery") or {}).get("state") == "handled",
+                "campaign request acknowledge: " + json.dumps(reply)[:300])
+        page.locator("#confirm-keep").click()
 
     def copy_commands(self, page):
         env = dict(self.host.env, PATH=str(self.runtime) + os.pathsep + self.host.env.get("PATH", ""))

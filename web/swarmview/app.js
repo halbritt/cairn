@@ -838,15 +838,14 @@
     const actionText = action.kind === "answer_board" ? "Answer on the board" : action.label || action.kind || "inspect";
     const controls = el("div", { class: "need-action" }, el("span", { class: "action-label", text: "Action: " + actionText }));
     const delivery = (refs.delivery_ids || [])[0];
-    if (action.kind === "acknowledge" && delivery) {
-      // The store acknowledges the operator's oldest delivery only. Until the
-      // row says it is the inbox head, it is not.
+    if (need.type === "operator_delivery" && delivery) {
       if (need.inbox_head === true) {
         controls.append(el("button", { type: "button", text: "Acknowledge", onclick: () => acknowledge(delivery, refs.event_id) }));
       } else {
         controls.append(el("span", { class: "muted not-head", text: "Not the next delivery in your inbox" }));
       }
-    } else if (action.kind === "cancel_delivery" && delivery && state.campaign) {
+    }
+    if (action.kind === "cancel_delivery" && delivery && state.campaign) {
       controls.append(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery) }));
     } else if (action.kind === "cancel_wait" && refs.wait_id && state.campaign) {
       controls.append(el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(refs.wait_id) }));

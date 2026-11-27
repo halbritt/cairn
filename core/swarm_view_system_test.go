@@ -153,7 +153,9 @@ func TestSwarmSystemEventPublication(t *testing.T) {
 		t.Fatal("missing operator delivery of the scheduled event")
 	}
 	ack := SwarmDeliveryActionRequest{
-		SwarmActionRequest: SwarmActionRequest{RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign},
+		// The scheduler's topic event is in the campaign log through its
+		// subscribers, while the operator delivery is owned by landing.
+		SwarmActionRequest: SwarmActionRequest{RequestID: uuid.NewString(), Repo: f.repo},
 		DeliveryID:         operatorDelivery.DeliveryID,
 	}
 	checkAck := func() {

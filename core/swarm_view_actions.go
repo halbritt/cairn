@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
@@ -249,17 +248,14 @@ func swarmActionDeliveryTx(ctx context.Context, tx pgx.Tx, sc swarmScope, id str
 func swarmActionInboxDeliveryTx(ctx context.Context, tx pgx.Tx, sc swarmScope, id string) (SwarmDelivery, error) {
 	filter, args := sc.inboxEventFilter()
 	query := `SELECT ` + swarmActionDeliveryColumns + swarmActionDeliveryFrom +
-		` WHERE ` + filter + fmt.Sprintf(` AND d.delivery_id=$%d`, len(args)+1)
+		` WHERE ` + filter + ` AND d.delivery_id=$3`
 	rows, err := tx.Query(ctx, query, append(args, id)...)
 	if err != nil {
 		return SwarmDelivery{}, err
 	}
 	d, err := pgx.CollectOneRow(rows, scanSwarmActionDelivery)
 	if errors.Is(err, pgx.ErrNoRows) {
-		if sc.Campaign.Campaign == "" {
-			return d, failure("NOT_FOUND", "delivery not found on the landing page")
-		}
-		return d, swarmDeliveryNotFound()
+		return d, failure("NOT_FOUND", "delivery not found on this page")
 	}
 	return d, err
 }
@@ -722,8 +718,17 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 		sc, _, _, err := s.swarmScopeTx(ctx, tx, req.Repo, req.Campaign)
 		return sc, err
 	}
+	wrongHead := func() *SwarmAcknowledgeConflict {
+		return &SwarmAcknowledgeConflict{
+			Expected: req.DeliveryID,
+			refusal:  &Error{Code: "VERSION_CONFLICT", Message: "the delivery is not the oldest in the operator's inbox"},
+		}
+	}
 	checkTarget := func(tx pgx.Tx, sc swarmScope) error {
 		d, err := swarmActionInboxDeliveryTx(ctx, tx, sc, req.DeliveryID)
+		if Code(err) == "NOT_FOUND" {
+			return wrongHead()
+		}
 		if err != nil {
 			return err
 		}
@@ -750,22 +755,18 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 		if err != nil {
 			return out, err
 		}
-		targetErr := checkTarget(tx, sc)
-		if targetErr != nil && Code(targetErr) != "NOT_FOUND" {
-			return out, targetErr
+		if err := checkTarget(tx, sc); err != nil {
+			return out, err
 		}
 		seconds, _ := leaseSeconds(0)
 		// Check the oldest eligible row under its claim lock, before attempts
-		// and seen change. The target must also have passed the page's scope.
+		// and seen change. The target has already passed the owner-page check.
 		next, err := s.nextEventTx(ctx, tx, sc.Repo, swarmOperatorDestination, seconds, func(id string) error {
-			if id == req.DeliveryID && targetErr == nil {
+			if id == req.DeliveryID {
 				return nil
 			}
-			conflict := &SwarmAcknowledgeConflict{
-				Expected: req.DeliveryID,
-				refusal:  &Error{Code: "VERSION_CONFLICT", Message: "the delivery is not the oldest in the operator's inbox"},
-			}
-			if targetErr != nil || req.Campaign == "" {
+			conflict := wrongHead()
+			if req.Campaign == "" {
 				return conflict
 			}
 			oldest, err := swarmActionInboxDeliveryTx(ctx, tx, sc, id)
@@ -778,11 +779,8 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 			conflict.Oldest = &oldest
 			return conflict
 		})
-		if err != nil {
+		if err != nil || next.Delivery == nil {
 			return out, err
-		}
-		if next.Delivery == nil {
-			return out, targetErr
 		}
 		d := next.Delivery
 		if _, err := s.completeEventTx(ctx, tx, CompleteEventRequest{

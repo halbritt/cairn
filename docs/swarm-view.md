@@ -247,10 +247,17 @@ because that is the Fernside board's maximum request lifetime. Requests use
 These limits come from “Limits the board applies” in `agent-board/docs/agents.md`.
 Cairn excludes answered requests before reading card metadata.
 
+Every pending or leased operator delivery has one owner page. If the event's
+routing names an active campaign, that campaign owns the delivery. Otherwise
+ownership follows the active campaign where the publisher is currently the
+root or an active member. Landing owns the delivery when neither rule assigns
+a campaign. A closed campaign can retain the event in its historical log. The
+delivery's Needs You row appears only on its current owner page.
+
 | Row | When it appears | Owner action |
 | --- | --- | --- |
 | Board question | An unanswered request on `agent-board` within its lifetime. The event summary supplies the title when present. The card supplies its lifetime and whether a default was declared. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |
-| Operator delivery | A pending or leased delivery addressed to the operator. Only the collection's oldest eligible delivery has `inbox_head: true`. If it belongs to another page, this page has no marked row. | Acknowledge the inbox head from the page that shows it. On a campaign page, open the event to read the delivery and follow up on a request. |
+| Operator delivery | A pending or leased delivery addressed to the operator, shown on its owner page. Only the collection's oldest eligible delivery has `inbox_head: true`. | Acknowledge the head from its Needs You row. When the event is in the campaign log, open it to read the delivery. |
 | Decision | An open ledger decision owned by the coordinator or operator. A lead's decision appears on the lead's row. | Make the decision and record the outcome in the campaign ledger. |
 | Escalation | A ledger blocker marked escalated. | Review the campaign ledger and resolve the escalation with its owner. |
 | Workstream decision | The workstream has a nonempty `decision_needed` field. | Give the workstream owner a decision and clear the request. |
@@ -368,14 +375,15 @@ target and an unknown ID both return `NOT_FOUND` before confirmation fields
 are checked. A matching committed cancellation receipt can read back its
 terminal result if the recipient or wait owner still passes campaign scope.
 
-Acknowledge checks the collection-wide operator inbox before applying the
-page's scope, as does the `inbox_head` flag in Needs You. On the landing page,
-the delivery's event must belong to no active campaign under the event log's
-attribution rule. On a campaign page, the event must belong to that campaign.
-A wrong inbox head returns HTTP 409 with
+Acknowledge uses collection-wide claim order and the same owner-page rule as
+`inbox_head` in Needs You. An active campaign named by
+routing takes priority over the publisher's current active campaign. With
+neither, the owner is landing (`campaign: ""`). Closed campaigns cannot
+acknowledge operator deliveries. A wrong inbox head or a request from the
+wrong page returns HTTP 409 with
 `{error, code: "VERSION_CONFLICT", expected, oldest}`. The oldest delivery
-is unchanged. `oldest` is null on the landing page and when a campaign page
-cannot show the expected or oldest delivery. A live manual lease is refused
+is unchanged. `oldest` is null on landing or when the expected delivery or
+inbox head belongs to another page. A live manual lease is refused
 with `UNSUPPORTED_CONTROL`. The preview token binds
 the recipient, siblings, group reply counts, wait lookup statuses, and the
 ID, owner, predicate and dependency of each listed wait. When those facts

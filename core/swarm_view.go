@@ -717,12 +717,18 @@ const swarmCampaignPrincipals = `ARRAY(SELECT p FROM (
 	UNION SELECT unnest(ARRAY[h.from_principal, h.to_principal]) FROM cairn.campaign_coordinator_handoff h WHERE h.repo=c.repo AND h.campaign=c.campaign
 ) principals WHERE p<>'')`
 
-// Both the inbox preview and acknowledgement scope the same event rows.
+// Operator inbox ownership follows current campaign membership. The team
+// store keeps the root as an active member and permits one active campaign
+// per active principal. An active campaign named by routing takes priority.
+const swarmInboxEventOwner = `COALESCE(
+	(SELECT c.campaign FROM cairn.agent_team_campaign c
+	 WHERE c.repo=e.repo AND c.campaign=e.routing_info->>'campaign' AND c.active),
+	(SELECT m.campaign FROM cairn.agent_team_member m JOIN cairn.agent_team_campaign c USING(repo, campaign)
+	 WHERE m.repo=e.repo AND m.member=e.publisher AND m.active AND c.active),
+	'')`
+
 func (sc swarmScope) inboxEventFilter() (string, []any) {
-	if sc.Campaign.Campaign == "" {
-		return swarmLandingEvent, []any{sc.Repo}
-	}
-	return swarmEventInCampaign, []any{sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt}
+	return `e.repo=$1 AND ` + swarmInboxEventOwner + `=$2`, []any{sc.Repo, sc.Campaign.Campaign}
 }
 
 func (s *Store) swarmEventsTx(ctx context.Context, tx pgx.Tx, sc swarmScope, query string, args ...any) ([]SwarmEvent, error) {

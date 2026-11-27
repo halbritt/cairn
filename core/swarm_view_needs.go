@@ -521,7 +521,7 @@ func swarmNeedEventTitle(summary, kind, eventID string) string {
 }
 
 func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx, sc swarmScope) ([]SwarmNeed, error) {
-	// Check the collection inbox before filtering to the page's event scope.
+	// Check the collection inbox before filtering to the owner page.
 	// A delivery on another page can be first in the operator's inbox.
 	busy, err := principalWorkOpen(ctx, tx, r.operator)
 	if err != nil {
@@ -537,7 +537,7 @@ func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx, sc
 	filter, args := sc.inboxEventFilter()
 	query := `SELECT d.delivery_id::text,e.event_id::text,e.publisher,e.created_at,COALESCE(e.summary,''),e.kind,e.record_id::text,e.version
 		FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
-		WHERE ` + filter + fmt.Sprintf(` AND d.consumer=$%d AND d.state IN ('pending','leased')`, len(args)+1)
+		WHERE ` + filter + ` AND d.consumer=$3 AND d.state IN ('pending','leased')`
 	rows, err := tx.Query(ctx, query, append(args, r.operator)...)
 	if err != nil {
 		return nil, err
