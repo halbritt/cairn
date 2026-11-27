@@ -336,15 +336,15 @@ func TestSwarmActionSendRejectsCrossCampaignHandoff(t *testing.T) {
 	if err != nil || !handoff.Performed || handoff.ToSession == nil {
 		t.Fatalf("handoff fixture: %+v %v", handoff, err)
 	}
+	// The original principal is inactive in both campaigns after handoff.
+	// Re-enrol it here to exercise the guard on the actual destination.
+	f.join(former)
 	req := SwarmSendRequest{
 		SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: f.campaign, RequestID: uuid.NewString()},
 		To:                 former.Inbox, Kind: "request", Body: "Intended for the selected campaign",
 	}
 	_, err = f.op.SendSwarmEvent(ctx, req)
 	requireCode(t, err, "AUTHORITY_DENIED")
-	if !strings.Contains(err.Error(), "publication would be routed outside this campaign") {
-		t.Fatalf("expected refusal of the resolved successor: %v", err)
-	}
 	swarmActionAssertSourceCount(t, f.op, req, 0)
 	succ := f.view(sessionRef(*handoff.ToSession))
 	next, err := succ.NextEvent(ctx, NextEventRequest{Repo: f.repo}, f.dest)
@@ -352,8 +352,11 @@ func TestSwarmActionSendRejectsCrossCampaignHandoff(t *testing.T) {
 		t.Fatalf("refused send reached the other campaign: %+v %v", next, err)
 	}
 
-	// The same handoff is valid when the send targets its own campaign.
+	// The former coordinator is historical. The role resolves to the current root.
 	req.Campaign = away
+	_, err = f.op.SendSwarmEvent(ctx, req)
+	requireCode(t, err, "AUTHORITY_DENIED")
+	req.To = handoff.RoleAddress
 	got, err := f.op.SendSwarmEvent(ctx, req)
 	if err != nil || len(got.Deliveries) != 1 || got.Deliveries[0].Consumer != handoff.ToPrincipal ||
 		got.Event.Routing == nil || got.Event.Routing.Campaign != away {
@@ -410,4 +413,362 @@ func TestSwarmActionSendRefusalsRollBackShareableSource(t *testing.T) {
 	_, err = f.op.SendSwarmEvent(ctx, req)
 	requireCode(t, err, "DESTINATION_PROHIBITED")
 	swarmActionAssertSourceCount(t, f.op, req, 0)
+}
+
+func swarmActionSecondCampaign(t *testing.T, f *swarmFixture) (TeamCampaign, *Store) {
+	t.Helper()
+	root, view := f.session("action-second-root")
+	camp, err := view.SetTeamCampaign(context.Background(), SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: "action-second-campaign",
+		RootAgent: root.Inbox, OutOfChainPolicy: "allow", Sensitivity: "shareable",
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return camp, view
+}
+
+func swarmActionAddMember(t *testing.T, f *swarmFixture, root *Store, campaign, lead, member string, active bool) {
+	t.Helper()
+	_, err := root.SetTeamMember(context.Background(), SetTeamMemberRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: campaign, Member: member,
+		Lead: lead, Role: "worker", Active: &active,
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSwarmActionSendRequiresCurrentMembership(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "action-current-membership")
+	member, _ := f.member("action-moving-member")
+	original := f.notice(f.rootView, member.Inbox)
+	second, root := swarmActionSecondCampaign(t, f)
+	swarmActionAddMember(t, f, f.rootView, f.campaign, f.root.Inbox, member.Inbox, false)
+	swarmActionAddMember(t, f, root, second.Campaign, second.RootAgent, member.Inbox, true)
+	req := SwarmSendRequest{
+		SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: f.campaign, RequestID: uuid.NewString()},
+		To:                 member.Inbox, Kind: "request", Body: "Send only to a current member",
+	}
+	_, err := f.op.SendSwarmEvent(ctx, req)
+	requireCode(t, err, "AUTHORITY_DENIED")
+	swarmActionAssertSourceCount(t, f.op, req, 0)
+	req.Campaign = second.Campaign
+	if _, err := f.op.SendSwarmEvent(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+
+	active := false
+	if _, err := f.rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign, Active: &active,
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	req.RequestID, req.Campaign, req.To = uuid.NewString(), f.campaign, f.root.Inbox
+	_, err = f.op.SendSwarmEvent(ctx, req)
+	requireCode(t, err, "AUTHORITY_DENIED")
+	swarmActionAssertSourceCount(t, f.op, req, 0)
+	if _, err := f.op.GetSwarmEvent(ctx, f.repo, f.campaign, original.EventID); err != nil {
+		t.Fatalf("historical event in inactive campaign: %v", err)
+	}
+}
+
+func TestSwarmActionCancelScopeUsesTheSelectedTopicRecipient(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "action-topic-deliveries")
+	member, view := f.member("action-topic-member")
+	second, foreign := swarmActionSecondCampaign(t, f)
+	_, publisher := f.session("action-topic-publisher")
+	const topic = "shared-action-topic"
+	for _, subscriber := range []*Store{view, foreign} {
+		if _, err := subscriber.SetSubscription(ctx, SubscriptionRequest{
+			RequestID: uuid.NewString(), Topic: topic, Active: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	event := swarmActionPublish(t, publisher, f.source, f.dest, PublishEventRequest{
+		Kind: "request", Destination: EventDestination{"topic", topic},
+	})
+	detail, err := f.op.GetSwarmEvent(ctx, f.repo, f.campaign, event.EventID)
+	if err != nil || len(detail.Deliveries) != 2 {
+		t.Fatalf("topic event: %+v %v", detail, err)
+	}
+	ids := map[string]string{}
+	for _, delivery := range detail.Deliveries {
+		ids[delivery.Consumer] = delivery.DeliveryID
+	}
+	previewReq := SwarmCancelPreviewRequest{Repo: f.repo, Campaign: f.campaign, DeliveryID: ids[member.Inbox]}
+	preview, err := f.op.GetSwarmCancelPreview(ctx, previewReq)
+	if err != nil || len(preview.Siblings) != 1 || preview.Siblings[0].Consumer != second.RootAgent {
+		t.Fatalf("outside sibling context: %+v %v", preview, err)
+	}
+	previewReq.DeliveryID = ids[second.RootAgent]
+	_, foreignErr := f.op.GetSwarmCancelPreview(ctx, previewReq)
+	requireCode(t, foreignErr, "NOT_FOUND")
+	previewReq.DeliveryID = uuid.NewString()
+	_, unknown := f.op.GetSwarmCancelPreview(ctx, previewReq)
+	if unknown == nil || unknown.Error() != foreignErr.Error() {
+		t.Fatalf("foreign and unknown must match: %v versus %v", foreignErr, unknown)
+	}
+	cancelReq := SwarmCancelDeliveryRequest{
+		SwarmDeliveryActionRequest: SwarmDeliveryActionRequest{
+			SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: f.campaign, RequestID: uuid.NewString()},
+			DeliveryID:         ids[second.RootAgent],
+		}, Reason: "Cancel the selected topic delivery", PreviewToken: preview.PreviewToken,
+	}
+	_, err = f.op.CancelSwarmDelivery(ctx, cancelReq)
+	requireCode(t, err, "NOT_FOUND")
+	if err.Error() != unknown.Error() {
+		t.Fatalf("foreign cancellation must match unknown: %v", err)
+	}
+	cancelReq.DeliveryID = ids[member.Inbox]
+	cancelled, err := f.op.CancelSwarmDelivery(ctx, cancelReq)
+	if err != nil || cancelled.Delivery.Consumer != member.Inbox || cancelled.Outcome != "cancelled" {
+		t.Fatalf("selected recipient cancellation: %+v %v", cancelled, err)
+	}
+	previewReq.Campaign, previewReq.DeliveryID = second.Campaign, ids[second.RootAgent]
+	stillPending, err := f.op.GetSwarmCancelPreview(ctx, previewReq)
+	if err != nil || stillPending.Delivery.State != "pending" || stillPending.Delivery.Seen {
+		t.Fatalf("sibling changed: %+v %v", stillPending, err)
+	}
+}
+
+func TestSwarmActionCancelPreviewExcludesSettledPreCampaignDeliveries(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	root := f.register(nativeAgent{Binding: "action-later-root"})
+	view := f.view(sessionRef(root))
+	before, id := f.publish("request", root.Inbox)
+	_, pendingID := f.publish("request", root.Inbox)
+	lease := nextFixture(t, view, f.dest)
+	if lease.Event.EventID != before.EventID {
+		t.Fatalf("unexpected lease: %+v", lease)
+	}
+	const campaign = "action-campaign-created-later"
+	if _, err := view.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: campaign, RootAgent: root.Inbox, Sensitivity: "shareable",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	op := f.operator()
+	req := SwarmCancelPreviewRequest{Repo: f.repo, Campaign: campaign, DeliveryID: id}
+	p, err := op.GetSwarmCancelPreview(ctx, req)
+	if err != nil || p.Delivery.DeliveryID != id || p.Refusal == nil || p.Refusal.Code != "UNSUPPORTED_CONTROL" {
+		t.Fatalf("pre-campaign live delivery: %+v %v", p, err)
+	}
+	if _, err := view.CompleteEvent(ctx, CompleteEventRequest{
+		RequestID: uuid.NewString(), DeliveryID: id, LeaseID: lease.LeaseID, Disposition: "handled",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	_, err = op.GetSwarmCancelPreview(ctx, req)
+	requireCode(t, err, "NOT_FOUND")
+
+	req.DeliveryID = pendingID
+	p, err = op.GetSwarmCancelPreview(ctx, req)
+	if err != nil || !p.Cancellable {
+		t.Fatalf("open pre-campaign delivery: %+v %v", p, err)
+	}
+	cancel := SwarmCancelDeliveryRequest{
+		SwarmDeliveryActionRequest: SwarmDeliveryActionRequest{
+			SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: campaign, RequestID: uuid.NewString()},
+			DeliveryID:         pendingID,
+		}, Reason: "Cancel the old live request", PreviewToken: p.PreviewToken,
+	}
+	for range 2 {
+		done, err := op.CancelSwarmDelivery(ctx, cancel)
+		if err != nil || done.Outcome != "cancelled" || done.Delivery.DeliveryID != pendingID {
+			t.Fatalf("pre-campaign cancellation receipt: %+v %v", done, err)
+		}
+	}
+	_, err = op.GetSwarmCancelPreview(ctx, req)
+	requireCode(t, err, "NOT_FOUND")
+}
+
+func TestSwarmActionSupersessionRejectsMixedCampaignDeliveries(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	root := f.register(nativeAgent{Binding: "action-supersession-root"})
+	view := f.view(sessionRef(root))
+	const key = "action-supersession"
+	pub := PublishEventRequest{Kind: "notice", Action: "review", Supersedes: key, Destination: EventDestination{"agent", root.Inbox}}
+	op := f.operator()
+	older := swarmActionPublish(t, op, f.source, f.dest, pub)
+	lease := nextFixture(t, view, f.dest)
+	if lease.Event.EventID != older.EventID {
+		t.Fatalf("unexpected lease: %+v", lease)
+	}
+	const camp = "action-supersession-new-campaign"
+	if _, err := view.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: camp, RootAgent: root.Inbox, Sensitivity: "shareable",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	newer := swarmActionPublish(t, op, f.source, f.dest, pub)
+	if _, err := view.ChangeEventLease(ctx, EventLeaseRequest{DeliveryID: lease.DeliveryID, LeaseID: lease.LeaseID}, false, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	req := SwarmSendRequest{
+		SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: camp, RequestID: uuid.NewString()},
+		To:                 root.Inbox, Kind: "notice", Action: "review", Supersedes: key, Body: "Refuse mixed-scope replacement",
+	}
+	_, err := op.SendSwarmEvent(ctx, req)
+	requireCode(t, err, "AUTHORITY_DENIED")
+	if err.Error() != "AUTHORITY_DENIED: supersedes key is in use outside this campaign" {
+		t.Fatalf("unexpected supersession refusal: %v", err)
+	}
+	swarmActionAssertSourceCount(t, op, req, 0)
+	for _, event := range []AgentEvent{older, newer} {
+		status, err := view.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, f.dest)
+		if err != nil || len(status.Deliveries) != 1 || status.Deliveries[0].State != "pending" {
+			t.Fatalf("mixed-scope refusal changed %s: %+v %v", event.EventID, status, err)
+		}
+	}
+}
+
+func TestSwarmActionSupersessionRejectsForeignQueuedNotice(t *testing.T) {
+	ctx := context.Background()
+	_, open := waitTestDB(t)
+	f := setupOrganicFixtureWithStores(t, "action-old-organic-notice", open)
+	f.activateCapability(t)
+	inbox := "agent/" + f.sessionRef.AgentID
+	expires := time.Now().Add(time.Hour)
+	const key = "action-organic-supersession"
+	old := swarmActionPublish(t, f.publisher, f.source, f.dest, PublishEventRequest{
+		Kind: "notice", Action: "review", Supersedes: key, Destination: EventDestination{"agent", inbox},
+		NoticeDelivery: "next_organic_turn", NoticeExpiresAt: &expires,
+	})
+	const campaign = "action-queued-supersession"
+	if _, err := f.operator.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: campaign, RootAgent: inbox, Sensitivity: "shareable",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	req := SwarmSendRequest{
+		SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: campaign, RequestID: uuid.NewString()},
+		To:                 inbox, Kind: "notice", Action: "review", Supersedes: key, Body: "Refuse replacement of an older queued notice",
+	}
+	_, err := f.publisher.SendSwarmEvent(ctx, req)
+	requireCode(t, err, "AUTHORITY_DENIED")
+	swarmActionAssertSourceCount(t, f.operator, req, 0)
+	var state string
+	err = f.operator.pool.QueryRow(ctx, `SELECT state FROM cairn.agent_organic_notice WHERE event_id=$1`, old.EventID).Scan(&state)
+	if err != nil || state != "queued" {
+		t.Fatalf("queued notice changed: %q %v", state, err)
+	}
+}
+
+func TestSwarmActionCancellationReceiptBindsCampaign(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "action-receipt-campaign")
+	member, view := f.member("action-receipt-member")
+	second, root := swarmActionSecondCampaign(t, f)
+	swarmActionAddMember(t, f, f.rootView, f.campaign, f.root.Inbox, member.Inbox, false)
+	swarmActionAddMember(t, f, root, second.Campaign, second.RootAgent, member.Inbox, true)
+
+	snapshot, err := f.op.GetSwarmSnapshot(ctx, SwarmSnapshotRequest{Repo: f.repo, Campaign: f.campaign})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFeature := func(enabled bool) {
+		t.Helper()
+		if _, err := f.op.SetCoordinationWaitsEnabled(ctx, WaitFeatureSetRequest{RequestID: uuid.NewString(), Enabled: enabled}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFeature(true)
+	t.Cleanup(func() { waitFeature(snapshot.Flow.WaitsFeature == "active") })
+
+	event := swarmActionPublish(t, view, f.source, f.dest, PublishEventRequest{
+		Kind: "request", Destination: EventDestination{"agent", member.Inbox},
+	})
+	wait, err := view.CreateWait(ctx, CreateWaitRequest{
+		RequestID: uuid.NewString(), Collection: f.repo, PredicateKind: WaitPredicateRequestResponse,
+		DependencyEventUUID: event.EventID, Deadline: time.Now().Add(time.Hour),
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	details, err := f.op.GetSwarmEvent(ctx, f.repo, f.campaign, event.EventID)
+	if err != nil || len(details.Deliveries) != 1 {
+		t.Fatalf("shared event: %+v %v", details, err)
+	}
+	id := details.Deliveries[0].DeliveryID
+	previewReq := SwarmCancelPreviewRequest{Repo: f.repo, Campaign: f.campaign, DeliveryID: id}
+	preview, err := f.op.GetSwarmCancelPreview(ctx, previewReq)
+	if err != nil || !preview.Cancellable {
+		t.Fatalf("first campaign preview: %+v %v", preview, err)
+	}
+	previewReq.Campaign = second.Campaign
+	other, err := f.op.GetSwarmCancelPreview(ctx, previewReq)
+	if err != nil || !other.Cancellable || other.PreviewToken == preview.PreviewToken {
+		t.Fatalf("second campaign preview: %+v %v", other, err)
+	}
+
+	cancel := SwarmCancelDeliveryRequest{
+		SwarmDeliveryActionRequest: SwarmDeliveryActionRequest{
+			SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: f.campaign, RequestID: uuid.NewString()},
+			DeliveryID:         id,
+		}, Reason: "Cancel the shared delivery only once", PreviewToken: preview.PreviewToken,
+	}
+	if res, err := f.op.CancelSwarmDelivery(ctx, cancel); err != nil || res.Outcome != "cancelled" {
+		t.Fatalf("first campaign cancelled delivery: %+v %v", res, err)
+	}
+	cancel.Campaign = second.Campaign
+	_, err = f.op.CancelSwarmDelivery(ctx, cancel)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
+
+	cancelWait := SwarmCancelWaitRequest{
+		SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: f.campaign, RequestID: uuid.NewString()},
+		WaitID:             wait.WaitUUID, ExpectedOwner: member.Inbox,
+	}
+	done, err := f.op.CancelSwarmWait(ctx, cancelWait)
+	if err != nil || done.Wait.WaitID != wait.WaitUUID || done.Wait.State != WaitStateCancelled {
+		t.Fatalf("cancelled wait re-read: %+v %v", done, err)
+	}
+	cancelWait.Campaign = second.Campaign
+	_, err = f.op.CancelSwarmWait(ctx, cancelWait)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
+}
+
+func TestSwarmActionPreviewTokenTracksOnlyConfirmationFacts(t *testing.T) {
+	p := SwarmCancelPreview{
+		Delivery:         SwarmDelivery{DeliveryID: "one", Consumer: "original", EventID: "request"},
+		Siblings:         []SwarmDelivery{{DeliveryID: "two", Consumer: "a"}, {DeliveryID: "three", Consumer: "b"}},
+		DirectReplyWaits: SwarmWaitLookup{Status: "found", Waits: []SwarmWait{{WaitID: "w1"}, {WaitID: "w2"}}},
+		Group:            &SwarmCancelGroup{EventID: "group", Responded: 1, ClosureWaits: SwarmWaitLookup{Status: "empty"}},
+	}
+	first := swarmCancelPreviewToken("alpha", p)
+	p.ObservedAt = time.Now()
+	p.Delivery.State, p.Siblings[0].State = "leased", "failed"
+	p.Siblings[0], p.Siblings[1] = p.Siblings[1], p.Siblings[0]
+	p.DirectReplyWaits.Waits[0], p.DirectReplyWaits.Waits[1] = p.DirectReplyWaits.Waits[1], p.DirectReplyWaits.Waits[0]
+	if got := swarmCancelPreviewToken("alpha", p); got != first {
+		t.Fatalf("ordering, state or time changed the token: %q != %q", got, first)
+	}
+	for _, change := range []struct {
+		name string
+		edit func(*SwarmCancelPreview)
+	}{
+		{"recipient", func(p *SwarmCancelPreview) { p.Delivery.Consumer = "successor" }},
+		{"sibling", func(p *SwarmCancelPreview) { p.Siblings[0].Consumer = "changed" }},
+		{"direct wait ID", func(p *SwarmCancelPreview) { p.DirectReplyWaits.Waits[0].WaitID = "new" }},
+		{"closure lookup", func(p *SwarmCancelPreview) { p.Group.ClosureWaits.Status = "unavailable" }},
+		{"reply count", func(p *SwarmCancelPreview) { p.Group.Responded++ }},
+		{"selected reply", func(p *SwarmCancelPreview) { p.Group.RecipientReplyCounts = true }},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			copy := p
+			copy.Siblings = append([]SwarmDelivery(nil), p.Siblings...)
+			copy.DirectReplyWaits.Waits = append([]SwarmWait(nil), p.DirectReplyWaits.Waits...)
+			group := *p.Group
+			copy.Group = &group
+			change.edit(&copy)
+			if swarmCancelPreviewToken("alpha", copy) == first {
+				t.Fatal("changed confirmation facts did not change the token")
+			}
+		})
+	}
 }

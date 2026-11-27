@@ -808,10 +808,10 @@ WHERE w.collection=$1
 }
 
 func (s *Store) CancelWait(ctx context.Context, req CancelWaitRequest, dest Destination) (AgentWait, error) {
-	return s.cancelWait(ctx, req, dest)
+	return s.cancelWait(ctx, req, dest, nil)
 }
 
-func (s *Store) cancelWait(ctx context.Context, req CancelWaitRequest, dest Destination, guards ...func(pgx.Tx) error) (AgentWait, error) {
+func (s *Store) cancelWait(ctx context.Context, req CancelWaitRequest, dest Destination, scope *scopedCancellation) (AgentWait, error) {
 	if err := validID(req.RequestID); err != nil {
 		return AgentWait{}, err
 	}
@@ -825,7 +825,8 @@ func (s *Store) cancelWait(ctx context.Context, req CancelWaitRequest, dest Dest
 	}
 	req.Collection = repo
 
-	return mutate(ctx, s, "wait-cancel", req.RequestID, req, func(tx pgx.Tx) (AgentWait, error) {
+	intent, guards := scope.mutation(req)
+	return mutate(ctx, s, "wait-cancel", req.RequestID, intent, func(tx pgx.Tx) (AgentWait, error) {
 		callerAgentUUID, isOperator, err := s.authenticateWaitCaller(ctx, tx, req.Session, repo, dest)
 		if err != nil {
 			return AgentWait{}, err
@@ -874,6 +875,11 @@ ORDER BY w.created_at DESC LIMIT 1 FOR UPDATE OF w`, repo, req.WaitUUID, req.Dep
 			return AgentWait{}, failure("AUTHORITY_DENIED", "foreign agent cannot cancel wait")
 		}
 
+		if scope != nil {
+			if err := scope.confirm(tx); err != nil {
+				return AgentWait{}, err
+			}
+		}
 		if w.State != WaitStateWaiting {
 			return AgentWait{}, failure("VERSION_CONFLICT", "wait is already terminal ("+w.State+")")
 		}

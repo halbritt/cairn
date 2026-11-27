@@ -2,7 +2,12 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,8 +35,9 @@ type SwarmCancelPreviewRequest struct {
 // Cancel is one delivery of one recipient: other recipients of the same
 // request, and a reply that already counts in a group, are not affected.
 type SwarmCancelPreview struct {
-	Schema     string    `json:"schema"`
-	ObservedAt time.Time `json:"observed_at"`
+	Schema       string    `json:"schema"`
+	PreviewToken string    `json:"preview_token"`
+	ObservedAt   time.Time `json:"observed_at"`
 	// Delivery is the exact delivery and recipient, as stored now.
 	Delivery SwarmDelivery `json:"delivery"`
 	// Cancellable is false when the store would refuse the cancel now, for
@@ -92,7 +98,19 @@ func (s *Store) GetSwarmCancelPreview(ctx context.Context, req SwarmCancelPrevie
 	if err != nil {
 		return SwarmCancelPreview{}, err
 	}
+	if !delivery.canCancel(sc) {
+		return SwarmCancelPreview{}, swarmDeliveryNotFound()
+	}
+	out, err := swarmCancelPreviewTx(ctx, tx, sc, delivery.SwarmDelivery)
+	if err != nil {
+		return SwarmCancelPreview{}, err
+	}
+	return out, tx.Commit(ctx)
+}
+
+func swarmCancelPreviewTx(ctx context.Context, tx pgx.Tx, sc swarmScope, delivery SwarmDelivery) (SwarmCancelPreview, error) {
 	out := SwarmCancelPreview{Schema: SwarmCancelPreviewSchema, ObservedAt: sc.Now, Delivery: delivery}
+	var err error
 	out.Refusal, err = swarmActionCancelRefusal(ctx, tx, sc.Now, delivery)
 	if err != nil {
 		return SwarmCancelPreview{}, err
@@ -107,7 +125,53 @@ func (s *Store) GetSwarmCancelPreview(ctx context.Context, req SwarmCancelPrevie
 	if err != nil {
 		return SwarmCancelPreview{}, err
 	}
-	return out, tx.Commit(ctx)
+	out.PreviewToken = swarmCancelPreviewToken(sc.Campaign.Campaign, out)
+	return out, nil
+}
+
+type swarmPreviewWaits struct {
+	Status string
+	IDs    []string
+}
+
+func swarmPreviewWaitIdentity(lookup SwarmWaitLookup) swarmPreviewWaits {
+	out := swarmPreviewWaits{Status: lookup.Status, IDs: make([]string, 0, len(lookup.Waits))}
+	for _, wait := range lookup.Waits {
+		out.IDs = append(out.IDs, wait.WaitID)
+	}
+	sort.Strings(out.IDs)
+	return out
+}
+
+// Hash fixed fields in a stable order. Lease and delivery state can change
+// while the owner reads the confirmation, without changing who or what it affects.
+func swarmCancelPreviewToken(campaign string, preview SwarmCancelPreview) string {
+	type siblingIdentity struct{ DeliveryID, Consumer string }
+	type groupIdentity struct {
+		EventID              string
+		Responded            int
+		RecipientReplyCounts bool
+		ClosureWaits         swarmPreviewWaits
+	}
+	intent := struct {
+		Campaign, DeliveryID, Consumer, EventID string
+		Siblings                                []siblingIdentity
+		DirectWaits                             swarmPreviewWaits
+		Group                                   *groupIdentity
+	}{
+		Campaign: campaign, DeliveryID: preview.Delivery.DeliveryID, Consumer: preview.Delivery.Consumer, EventID: preview.Delivery.EventID,
+		Siblings: make([]siblingIdentity, 0, len(preview.Siblings)), DirectWaits: swarmPreviewWaitIdentity(preview.DirectReplyWaits),
+	}
+	for _, sibling := range preview.Siblings {
+		intent.Siblings = append(intent.Siblings, siblingIdentity{sibling.DeliveryID, sibling.Consumer})
+	}
+	sort.Slice(intent.Siblings, func(i, j int) bool { return intent.Siblings[i].DeliveryID < intent.Siblings[j].DeliveryID })
+	if group := preview.Group; group != nil {
+		intent.Group = &groupIdentity{group.EventID, group.Responded, group.RecipientReplyCounts, swarmPreviewWaitIdentity(group.ClosureWaits)}
+	}
+	canonical, _ := json.Marshal(intent) // This fixed schema contains only JSON scalar values and slices.
+	digest := sha256.Sum256(canonical)
+	return hex.EncodeToString(digest[:])
 }
 
 func (s *Store) beginSwarmActionRead(ctx context.Context, repo, campaign string) (pgx.Tx, swarmScope, error) {
@@ -127,18 +191,61 @@ func (s *Store) beginSwarmActionRead(ctx context.Context, repo, campaign string)
 	return tx, sc, nil
 }
 
-func swarmActionDeliveryTx(ctx context.Context, tx pgx.Tx, sc swarmScope, id string) (SwarmDelivery, error) {
-	rows, err := tx.Query(ctx, `SELECT `+swarmActionDeliveryColumns+swarmActionDeliveryFrom+
-		" WHERE e.repo=$1 AND d.delivery_id=$5 AND (d.consumer=ANY($6) OR ("+swarmEventInCampaign+"))",
-		sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, id, sc.MemberPrincipals)
-	if err != nil {
-		return SwarmDelivery{}, err
+type swarmActionDelivery struct {
+	SwarmDelivery
+	eventInCampaign bool
+}
+
+func swarmDeliveryNotFound() error {
+	return failure("NOT_FOUND", "delivery not found in this campaign")
+}
+
+func swarmActiveMember(sc swarmScope, principal string) bool {
+	if principal == sc.Campaign.RootAgent {
+		return true
 	}
-	out, err := pgx.CollectOneRow(rows, scanSwarmActionDelivery)
+	for _, member := range sc.Campaign.Members {
+		if member.Member == principal && member.Active {
+			return true
+		}
+	}
+	return false
+}
+
+func (d swarmActionDelivery) canCancel(sc swarmScope) bool {
+	live := d.State == "pending" || d.State == "leased" || d.Held
+	return sc.isMember(d.Consumer) && (d.eventInCampaign || (live && swarmActiveMember(sc, d.Consumer)))
+}
+
+func (d swarmActionDelivery) canReadCancellation(sc swarmScope) bool {
+	return sc.isMember(d.Consumer) && (d.eventInCampaign || swarmActiveMember(sc, d.Consumer))
+}
+
+func swarmActionDeliveryTx(ctx context.Context, tx pgx.Tx, sc swarmScope, id string) (swarmActionDelivery, error) {
+	rows, err := tx.Query(ctx, `SELECT `+swarmActionDeliveryColumns+", ("+swarmEventInCampaign+") IS TRUE"+swarmActionDeliveryFrom+
+		" WHERE e.repo=$1 AND d.delivery_id=$5",
+		sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, id)
+	if err != nil {
+		return swarmActionDelivery{}, err
+	}
+	out, err := pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (swarmActionDelivery, error) {
+		var out swarmActionDelivery
+		var scanErr error
+		out.SwarmDelivery, scanErr = scanSwarmActionDeliveryFields(row, &out.eventInCampaign)
+		return out, scanErr
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, failure("NOT_FOUND", "delivery not found in this campaign")
+		return out, swarmDeliveryNotFound()
 	}
 	return out, err
+}
+
+func swarmActionInboxDeliveryTx(ctx context.Context, tx pgx.Tx, sc swarmScope, id string) (SwarmDelivery, error) {
+	d, err := swarmActionDeliveryTx(ctx, tx, sc, id)
+	if err == nil && !d.eventInCampaign {
+		return SwarmDelivery{}, swarmDeliveryNotFound()
+	}
+	return d.SwarmDelivery, err
 }
 
 const swarmActionDeliveryColumns = `d.delivery_id::text,d.event_id::text,e.position,e.kind,e.publisher,
@@ -151,10 +258,15 @@ const swarmActionDeliveryColumns = `d.delivery_id::text,d.event_id::text,e.posit
 const swarmActionDeliveryFrom = ` FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)`
 
 func scanSwarmActionDelivery(row pgx.CollectableRow) (SwarmDelivery, error) {
+	return scanSwarmActionDeliveryFields(row)
+}
+
+func scanSwarmActionDeliveryFields(row pgx.CollectableRow, extra ...any) (SwarmDelivery, error) {
 	var d SwarmDelivery
-	err := row.Scan(&d.DeliveryID, &d.EventID, &d.EventPosition, &d.Kind, &d.From, &d.Consumer,
+	fields := []any{&d.DeliveryID, &d.EventID, &d.EventPosition, &d.Kind, &d.From, &d.Consumer,
 		&d.Summary, &d.Action, &d.Blocker, &d.CausationID, &d.CreatedAt, &d.State, &d.Code,
-		&d.Held, &d.Attempts, &d.AvailableAt, &d.LeaseUntil, &d.CompletedAt, &d.SupersededBy, &d.Replied)
+		&d.Held, &d.Attempts, &d.AvailableAt, &d.LeaseUntil, &d.CompletedAt, &d.SupersededBy, &d.Replied}
+	err := row.Scan(append(fields, extra...)...)
 	d.Seen = d.Attempts > 0
 	d.Display = swarmDeliveryDisplay(d)
 	return d, err
@@ -302,7 +414,7 @@ type SwarmAcknowledgeResult struct {
 
 type SwarmAcknowledgeConflict struct {
 	Expected string
-	Oldest   SwarmDelivery
+	Oldest   *SwarmDelivery
 	refusal  *Error
 }
 
@@ -311,7 +423,8 @@ func (e *SwarmAcknowledgeConflict) Unwrap() error { return e.refusal }
 
 type SwarmCancelDeliveryRequest struct {
 	SwarmDeliveryActionRequest
-	Reason string `json:"reason"`
+	Reason       string `json:"reason"`
+	PreviewToken string `json:"preview_token"`
 }
 
 type SwarmCancelDeliveryResult struct {
@@ -322,8 +435,25 @@ type SwarmCancelDeliveryResult struct {
 
 type SwarmCancelWaitRequest struct {
 	SwarmActionRequest
-	WaitID string `json:"wait_id"`
+	WaitID        string `json:"wait_id"`
+	ExpectedOwner string `json:"expected_owner"`
 }
+
+type SwarmPreviewConflict struct {
+	Preview SwarmCancelPreview
+	refusal *Error
+}
+
+func (e *SwarmPreviewConflict) Error() string { return e.refusal.Error() }
+func (e *SwarmPreviewConflict) Unwrap() error { return e.refusal }
+
+type SwarmWaitOwnerConflict struct {
+	Wait    SwarmWait
+	refusal *Error
+}
+
+func (e *SwarmWaitOwnerConflict) Error() string { return e.refusal.Error() }
+func (e *SwarmWaitOwnerConflict) Unwrap() error { return e.refusal }
 
 type SwarmCancelWaitResult struct {
 	Outcome string    `json:"outcome"`
@@ -425,39 +555,62 @@ func swarmActionEventBody(ctx context.Context, tx pgx.Tx, repo string, out *Swar
 	return nil
 }
 
+func swarmSendRecipientRefusal() error {
+	return failure("AUTHORITY_DENIED", "recipient is not a current principal of this campaign")
+}
+
+func swarmCheckSendRecipient(ctx context.Context, tx pgx.Tx, sc swarmScope, recipient string) error {
+	if !sc.Campaign.Active {
+		return failure("AUTHORITY_DENIED", "campaign is inactive")
+	}
+	if swarmActiveMember(sc, recipient) {
+		return nil
+	}
+	role, isRole, err := canonicalRoleAddress(recipient)
+	if err != nil {
+		return err
+	}
+	if isRole {
+		var bound bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.campaign_role_binding
+			WHERE repo=$1 AND campaign=$2 AND role_address=$3)`, sc.Repo, sc.Campaign.Campaign, role).Scan(&bound)
+		if err != nil {
+			return err
+		}
+		if bound {
+			return nil
+		}
+	}
+	return swarmSendRecipientRefusal()
+}
+
+func swarmCheckSupersededEvents(ctx context.Context, tx pgx.Tx, sc swarmScope, ids []string) error {
+	var outside bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_event e
+		WHERE e.event_id=ANY($5::uuid[]) AND (`+swarmEventInCampaign+`) IS NOT TRUE)`,
+		sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, ids).Scan(&outside)
+	if err != nil {
+		return err
+	}
+	if outside {
+		return failure("AUTHORITY_DENIED", "supersedes key is in use outside this campaign")
+	}
+	return nil
+}
+
 func (s *Store) SendSwarmEvent(ctx context.Context, req SwarmSendRequest) (SwarmEventDetails, error) {
 	if err := s.normalizeSwarmAction(&req.SwarmActionRequest); err != nil {
 		return SwarmEventDetails{}, err
 	}
-	if req.Kind != "notice" && req.Kind != "request" {
-		return SwarmEventDetails{}, failure("INVALID_REQUEST", "kind must be request or notice")
-	}
-	if req.Kind == "notice" && req.Action == "" {
-		return SwarmEventDetails{}, failure("INVALID_REQUEST", "notice events require explicit action: none, review, or decide")
-	}
-	noteRequest := uuid.NewSHA1(uuid.MustParse(req.RequestID), []byte("cairn.swarm.message")).String()
-	note, err := s.normalizeCreateRequest(CreateRequest{RequestID: noteRequest, Draft: Draft{
-		Kind: "note", ClaimType: "self", Sensitivity: "shareable", Body: req.Body,
-		Scope: Scope{Repo: req.Repo, TaskID: "coordination/swarm/" + req.Campaign + "/" + req.RequestID, RunID: "*"},
-	}})
-	if err != nil {
-		return SwarmEventDetails{}, err
-	}
-	noteDigest, err := mutationDigest(noteRequest, note)
-	if err != nil {
-		return SwarmEventDetails{}, err
-	}
 	var sc swarmScope
-	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(_ pgx.Tx, scope swarmScope) error {
+	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(tx pgx.Tx, scope swarmScope) error {
 		sc = scope
-		if !sc.isMember(req.To) {
-			return failure("AUTHORITY_DENIED", "recipient is outside this campaign")
-		}
-		return nil
+		return swarmCheckSendRecipient(ctx, tx, sc, req.To)
 	})
 	checkTarget := func(resolved EventDestination, routing *EventRouting) error {
-		if !sc.isMember(resolved.Name) || (routing != nil && routing.Campaign != sc.Campaign.Campaign) {
-			return failure("AUTHORITY_DENIED", "publication would be routed outside this campaign")
+		// Role resolution always yields an agent principal by this point.
+		if !swarmActiveMember(sc, resolved.Name) || (routing != nil && routing.Campaign != sc.Campaign.Campaign) {
+			return swarmSendRecipientRefusal()
 		}
 		return nil
 	}
@@ -468,6 +621,24 @@ func (s *Store) SendSwarmEvent(ctx context.Context, req SwarmSendRequest) (Swarm
 		Collection string `json:"collection"`
 	}{req, req.Repo}
 	event, err := mutate(ctx, s, "event-publish", req.RequestID, intent, func(tx pgx.Tx) (AgentEvent, error) {
+		if req.Kind != "notice" && req.Kind != "request" {
+			return AgentEvent{}, failure("INVALID_REQUEST", "kind must be request or notice")
+		}
+		if req.Kind == "notice" && req.Action == "" {
+			return AgentEvent{}, failure("INVALID_REQUEST", "notice events require explicit action: none, review, or decide")
+		}
+		noteRequest := uuid.NewSHA1(uuid.MustParse(req.RequestID), []byte("cairn.swarm.message")).String()
+		note, err := s.normalizeCreateRequest(CreateRequest{RequestID: noteRequest, Draft: Draft{
+			Kind: "note", ClaimType: "self", Sensitivity: "shareable", Body: req.Body,
+			Scope: Scope{Repo: req.Repo, TaskID: "coordination/swarm/" + req.Campaign + "/" + req.RequestID, RunID: "*"},
+		}})
+		if err != nil {
+			return AgentEvent{}, err
+		}
+		noteDigest, err := mutationDigest(noteRequest, note)
+		if err != nil {
+			return AgentEvent{}, err
+		}
 		record, err := applyMutationTx(ctx, s, tx, "create", noteRequest, noteDigest, func(tx pgx.Tx) (Record, error) {
 			return createRecordTx(ctx, tx, note.Draft)
 		})
@@ -482,7 +653,12 @@ func (s *Store) SendSwarmEvent(ctx context.Context, req SwarmSendRequest) (Swarm
 		if err != nil {
 			return AgentEvent{}, err
 		}
-		return s.publishEventTx(ctx, tx, eventReq, swarmOperatorDestination, "", checkTarget)
+		return s.publishEventInternalTx(ctx, tx, eventReq, swarmOperatorDestination, "", false, eventPublicationChecks{
+			target: checkTarget,
+			superseded: func(ids []string) error {
+				return swarmCheckSupersededEvents(ctx, tx, sc, ids)
+			},
+		})
 	}, guard)
 	if err != nil {
 		return SwarmEventDetails{}, s.retainEventAdmissionRefusal(ctx, req.Repo, err)
@@ -503,7 +679,7 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 	var sc swarmScope
 	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(tx pgx.Tx, scope swarmScope) error {
 		sc = scope
-		d, err := swarmActionDeliveryTx(ctx, tx, sc, req.DeliveryID)
+		d, err := swarmActionInboxDeliveryTx(ctx, tx, sc, req.DeliveryID)
 		if err != nil {
 			return err
 		}
@@ -525,17 +701,19 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 			if id == req.DeliveryID {
 				return nil
 			}
-			oldest, err := swarmActionDeliveryTx(ctx, tx, sc, id)
+			conflict := &SwarmAcknowledgeConflict{
+				Expected: req.DeliveryID,
+				refusal:  &Error{Code: "VERSION_CONFLICT", Message: "the delivery is not the oldest in the operator's inbox"},
+			}
+			oldest, err := swarmActionInboxDeliveryTx(ctx, tx, sc, id)
 			if Code(err) == "NOT_FOUND" {
-				return failure("VERSION_CONFLICT", "the operator's oldest eligible delivery belongs to another campaign")
+				return conflict
 			}
 			if err != nil {
 				return err
 			}
-			return &SwarmAcknowledgeConflict{
-				Expected: req.DeliveryID, Oldest: oldest,
-				refusal: &Error{Code: "VERSION_CONFLICT", Message: "the operator's oldest eligible delivery is another item"},
-			}
+			conflict.Oldest = &oldest
+			return conflict
 		})
 		if err != nil || next.Delivery == nil {
 			return out, err
@@ -546,7 +724,7 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 		}, swarmOperatorDestination); err != nil {
 			return out, err
 		}
-		seen, err := swarmActionDeliveryTx(ctx, tx, sc, d.DeliveryID)
+		seen, err := swarmActionInboxDeliveryTx(ctx, tx, sc, d.DeliveryID)
 		out.Delivery = &seen
 		return out, err
 	}, guard)
@@ -557,14 +735,58 @@ func (s *Store) CancelSwarmDelivery(ctx context.Context, req SwarmCancelDelivery
 	if err := s.normalizeSwarmAction(&req.SwarmActionRequest); err != nil {
 		return out, err
 	}
-	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(tx pgx.Tx, sc swarmScope) error {
-		_, err := swarmActionDeliveryTx(ctx, tx, sc, req.DeliveryID)
-		return err
+	if err := validID(req.DeliveryID); err != nil {
+		return out, err
+	}
+	var sc swarmScope
+	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(tx pgx.Tx, scope swarmScope) error {
+		sc = scope
+		delivery, err := swarmActionDeliveryTx(ctx, tx, sc, req.DeliveryID)
+		if err != nil {
+			return err
+		}
+		// A cancellation receipt can still be read after an old live delivery
+		// becomes terminal. Fresh confirmation checks the stricter live rule.
+		if !delivery.canReadCancellation(sc) {
+			return swarmDeliveryNotFound()
+		}
+		return nil
 	})
+	intent := struct {
+		SwarmCancelDeliveryRequest
+		Collection string `json:"collection"`
+	}{req, req.Repo}
+	scope := &scopedCancellation{intent: intent, authorize: guard, confirm: func(tx pgx.Tx) error {
+		if req.PreviewToken == "" {
+			return failure("INVALID_REQUEST", "preview_token is required")
+		}
+		delivery, err := swarmActionDeliveryTx(ctx, tx, sc, req.DeliveryID)
+		if err != nil {
+			return err
+		}
+		if !delivery.canCancel(sc) {
+			return swarmDeliveryNotFound()
+		}
+		if delivery.State != "pending" && delivery.State != "leased" {
+			return nil // The existing cancellation reports the recorded terminal winner.
+		}
+		fresh, err := swarmCancelPreviewTx(ctx, tx, sc, delivery.SwarmDelivery)
+		if err != nil {
+			return err
+		}
+		if req.PreviewToken != fresh.PreviewToken {
+			return &SwarmPreviewConflict{Preview: fresh, refusal: &Error{
+				Code: "VERSION_CONFLICT", Message: "the cancellation preview changed",
+			}}
+		}
+		return nil
+	}}
 	cancel, cancelErr := s.cancelWork(ctx, CancelWorkRequest{
 		RequestID: req.RequestID, Repo: req.Repo, DeliveryID: req.DeliveryID, Reason: req.Reason,
-	}, guard)
-	if cancelErr != nil && Code(cancelErr) != "VERSION_CONFLICT" {
+	}, scope)
+	var refusal *Error
+	terminal := errors.As(cancelErr, &refusal) && refusal.Code == "VERSION_CONFLICT" && refusal.Message == deliveryAlreadyTerminal
+	if cancelErr != nil && !terminal {
 		return out, cancelErr
 	}
 	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign)
@@ -572,15 +794,16 @@ func (s *Store) CancelSwarmDelivery(ctx context.Context, req SwarmCancelDelivery
 		return out, err
 	}
 	defer tx.Rollback(context.Background())
-	out.Delivery, err = swarmActionDeliveryTx(ctx, tx, sc, req.DeliveryID)
+	delivery, err := swarmActionDeliveryTx(ctx, tx, sc, req.DeliveryID)
 	if err != nil {
 		return out, err
 	}
+	if !delivery.canReadCancellation(sc) {
+		return out, swarmDeliveryNotFound()
+	}
+	out.Delivery = delivery.SwarmDelivery
 	switch {
-	case cancelErr != nil:
-		if out.Delivery.State == "pending" || out.Delivery.State == "leased" {
-			return out, cancelErr
-		}
+	case terminal:
 		out.Outcome = "already_terminal"
 		out.Detail = cancelErr.Error()
 	case cancel.Native != nil:
@@ -615,31 +838,56 @@ func (s *Store) CancelSwarmWait(ctx context.Context, req SwarmCancelWaitRequest)
 	if err := validID(req.WaitID); err != nil {
 		return out, err
 	}
-	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(tx pgx.Tx, sc swarmScope) error {
-		_, err := swarmActionWaitTx(ctx, tx, sc, req.WaitID)
+	var sc swarmScope
+	readOwned := func(tx pgx.Tx, scope swarmScope) (SwarmWait, error) {
+		w, err := swarmActionWaitTx(ctx, tx, scope, req.WaitID)
+		if err == nil && !scope.isMember(w.Owner) {
+			return SwarmWait{}, failure("NOT_FOUND", "wait not found in this campaign")
+		}
+		return w, err
+	}
+	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(tx pgx.Tx, scope swarmScope) error {
+		sc = scope
+		_, err := readOwned(tx, sc)
 		return err
 	})
-	_, cancelErr := s.cancelWait(ctx, CancelWaitRequest{
+	intent := struct {
+		SwarmCancelWaitRequest
+		Collection string `json:"collection"`
+	}{req, req.Repo}
+	scope := &scopedCancellation{intent: intent, authorize: guard, confirm: func(tx pgx.Tx) error {
+		if strings.TrimSpace(req.ExpectedOwner) == "" {
+			return failure("INVALID_REQUEST", "expected_owner is required")
+		}
+		w, err := readOwned(tx, sc)
+		if err != nil {
+			return err
+		}
+		if w.State != WaitStateWaiting {
+			return failure("NOT_FOUND", "wait not found in this campaign")
+		}
+		if w.Owner != req.ExpectedOwner {
+			return &SwarmWaitOwnerConflict{Wait: w, refusal: &Error{
+				Code: "VERSION_CONFLICT", Message: "the wait owner changed",
+			}}
+		}
+		return nil
+	}}
+	_, err := s.cancelWait(ctx, CancelWaitRequest{
 		RequestID: req.RequestID, Collection: req.Repo, WaitUUID: req.WaitID,
-	}, swarmOperatorDestination, guard)
-	if cancelErr != nil && Code(cancelErr) != "VERSION_CONFLICT" {
-		return out, cancelErr
+	}, swarmOperatorDestination, scope)
+	if err != nil {
+		return out, err
 	}
 	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign)
 	if err != nil {
 		return out, err
 	}
 	defer tx.Rollback(context.Background())
-	out.Wait, err = swarmActionWaitTx(ctx, tx, sc, req.WaitID)
+	out.Wait, err = readOwned(tx, sc)
 	if err != nil {
 		return out, err
 	}
 	out.Outcome = "cancelled"
-	if cancelErr != nil {
-		if out.Wait.State == WaitStateWaiting {
-			return out, cancelErr
-		}
-		out.Outcome = "already_terminal"
-	}
 	return out, tx.Commit(ctx)
 }

@@ -313,9 +313,12 @@ func TestSwarmFlowWaitAttributionAfterMemberJoins(t *testing.T) {
 					t.Fatalf("wait lookup disagrees with the flow: %+v, %v, want %+v", got, err, wait)
 				}
 			}
+			readPreview := func(deliveryID string) (SwarmCancelPreview, error) {
+				return f.op.GetSwarmCancelPreview(ctx, SwarmCancelPreviewRequest{Repo: f.repo, Campaign: f.campaign, DeliveryID: deliveryID})
+			}
 			previewWaits := func(deliveryID string) SwarmWaitLookup {
 				t.Helper()
-				preview, err := f.op.GetSwarmCancelPreview(ctx, SwarmCancelPreviewRequest{Repo: f.repo, Campaign: f.campaign, DeliveryID: deliveryID})
+				preview, err := readPreview(deliveryID)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -327,10 +330,10 @@ func TestSwarmFlowWaitAttributionAfterMemberJoins(t *testing.T) {
 				}
 				return preview.Group.ClosureWaits
 			}
-			for _, id := range []string{settledDelivery, swarmFlowDelivery(flow, repliedRequest, worker.Inbox).DeliveryID} {
-				if got := previewWaits(id); got.Status != "empty" || len(got.Waits) != 0 {
-					t.Fatalf("preview exposed an outsider's resolved wait: %+v", got)
-				}
+			_, err := readPreview(settledDelivery)
+			requireCode(t, err, "NOT_FOUND")
+			if got := previewWaits(swarmFlowDelivery(flow, repliedRequest, worker.Inbox).DeliveryID); got.Status != "empty" || len(got.Waits) != 0 {
+				t.Fatalf("preview exposed an outsider's resolved wait: %+v", got)
 			}
 			if got := previewWaits(swarmFlowDelivery(flow, openRequest, worker.Inbox).DeliveryID); got.Status != "found" || len(got.Waits) != 1 || got.Waits[0].WaitID != openWait.WaitUUID {
 				t.Fatalf("preview missed the open outsider wait: %+v", got)
@@ -342,11 +345,10 @@ func TestSwarmFlowWaitAttributionAfterMemberJoins(t *testing.T) {
 			if flow = swarmFlowRead(f); len(flow.Waits) != 1 || flow.Waits[0].WaitID != memberWait.WaitUUID || len(flow.ByMember[worker.Inbox].PeerWaits) != 0 {
 				t.Fatalf("handling the old dependency left the outsider wait in scope: %+v", flow)
 			}
-			_, err := lookup(openWait.WaitUUID)
+			_, err = lookup(openWait.WaitUUID)
 			requireCode(t, err, "NOT_FOUND")
-			if got := previewWaits(settledOpenDelivery); got.Status != "empty" || len(got.Waits) != 0 {
-				t.Fatalf("preview retained a wait after its dependency delivery was handled: %+v", got)
-			}
+			_, err = readPreview(settledOpenDelivery)
+			requireCode(t, err, "NOT_FOUND")
 		})
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -167,6 +168,12 @@ func TestSwarmActionHTTPSendEventCursorAndSupersession(t *testing.T) {
 	req := swarmActionSend(f, member.Inbox, "request", strings.Repeat("界", 6000))
 	sent := swarmActionPost[core.SwarmEventDetails](t, f, "send", req)
 	retry := swarmActionPost[core.SwarmEventDetails](t, f, "send", req)
+	changed := req
+	changed.Body = ""
+	resp, raw := f.do(http.MethodPost, "/api/swarm/action/send", changed, map[string]string{"X-CSRF-Token": f.csrf})
+	if resp.StatusCode != http.StatusConflict || swarmErrorCode(raw) != "IDEMPOTENCY_CONFLICT" {
+		t.Fatalf("successful send UUID reused with an empty body: %d %s", resp.StatusCode, raw)
+	}
 	if sent.Event.Kind != "request" || sent.Event.From != f.op.Channel().Principal || sent.Event.To.Name != member.Inbox ||
 		retry.Event.EventID != sent.Event.EventID || retry.Event.Ref != sent.Event.Ref ||
 		len(sent.Deliveries) != 1 || sent.Deliveries[0].Seen || sent.Deliveries[0].State != "pending" {
@@ -299,23 +306,24 @@ func TestSwarmActionHTTPAcknowledgeOrderAndReplay(t *testing.T) {
 	}
 }
 
+func swarmActionPreview(t *testing.T, f *swarmStoreFixture, id string) core.SwarmCancelPreview {
+	t.Helper()
+	resp, raw := f.do(http.MethodGet, "/api/swarm/action/cancel-preview?campaign="+f.campaign+"&delivery_id="+id, nil, nil)
+	return swarmActionJSON[core.SwarmCancelPreview](t, resp, raw, http.StatusOK)
+}
+
 func TestSwarmActionHTTPCancelDeliveryAndCompletionRace(t *testing.T) {
 	ctx := context.Background()
 	f := newSwarmStoreFixture(t, swarmNoPanes)
 	member, view := f.member("action-cancel-member")
 	sent := swarmActionPost[core.SwarmEventDetails](t, f, "send", swarmActionSend(f, member.Inbox, "request", "Cancel before claim"))
 	id := sent.Deliveries[0].DeliveryID
-	preview := func(id string) core.SwarmCancelPreview {
-		t.Helper()
-		resp, raw := f.do(http.MethodGet, "/api/swarm/action/cancel-preview?campaign="+f.campaign+"&delivery_id="+id, nil, nil)
-		return swarmActionJSON[core.SwarmCancelPreview](t, resp, raw, http.StatusOK)
-	}
-	p := preview(id)
+	p := swarmActionPreview(t, f, id)
 	if !p.Cancellable || p.Delivery.DeliveryID != id || p.Delivery.Consumer != member.Inbox || p.DirectReplyWaits.Status != "empty" {
 		t.Fatalf("cancel preview: %+v", p)
 	}
 	req := core.SwarmCancelDeliveryRequest{
-		SwarmDeliveryActionRequest: swarmActionDeliveryRequest(f, id), Reason: "The owner called off the work",
+		SwarmDeliveryActionRequest: swarmActionDeliveryRequest(f, id), Reason: "The owner called off the work", PreviewToken: p.PreviewToken,
 	}
 	cancel := swarmActionPost[core.SwarmCancelDeliveryResult](t, f, "cancel-delivery", req)
 	retry := swarmActionPost[core.SwarmCancelDeliveryResult](t, f, "cancel-delivery", req)
@@ -326,7 +334,8 @@ func TestSwarmActionHTTPCancelDeliveryAndCompletionRace(t *testing.T) {
 
 	racing := swarmActionPost[core.SwarmEventDetails](t, f, "send", swarmActionSend(f, member.Inbox, "request", "Recipient finishes before confirmation"))
 	id = racing.Deliveries[0].DeliveryID
-	if p := preview(id); !p.Cancellable {
+	p = swarmActionPreview(t, f, id)
+	if !p.Cancellable {
 		t.Fatalf("race test preview: %+v", p)
 	}
 	claimed, err := view.NextEvent(ctx, core.NextEventRequest{Repo: f.repo}, f.dest)
@@ -334,6 +343,7 @@ func TestSwarmActionHTTPCancelDeliveryAndCompletionRace(t *testing.T) {
 		t.Fatalf("claim: %+v %v", claimed, err)
 	}
 	req.SwarmDeliveryActionRequest = swarmActionDeliveryRequest(f, id)
+	req.PreviewToken = p.PreviewToken
 	header := map[string]string{"X-CSRF-Token": f.csrf}
 	resp, raw := f.do(http.MethodPost, "/api/swarm/action/cancel-delivery", req, header)
 	if resp.StatusCode >= 500 || swarmErrorCode(raw) != "UNSUPPORTED_CONTROL" {
@@ -377,25 +387,57 @@ func TestSwarmActionHTTPCancelWaitAndForeignResources(t *testing.T) {
 		return w
 	}
 	ownWait := wait(f.rootView, dependency.EventID)
-	foreignWait := wait(outsiderView, foreign.EventID)
-	req := core.SwarmCancelWaitRequest{SwarmActionRequest: swarmActionRequest(f), WaitID: ownWait.WaitUUID}
+	peerDependency := swarmActionPublishEvent(t, f, outsiderView, "request", member.Inbox, "", "")
+	foreignWait := wait(outsiderView, peerDependency.EventID)
+	snapshot, err := f.op.GetSwarmSnapshot(ctx, core.SwarmSnapshotRequest{Repo: f.repo, Campaign: f.campaign})
+	if err != nil {
+		t.Fatal(err)
+	}
+	visible := slices.ContainsFunc(snapshot.Flow.Waits, func(w core.SwarmWait) bool { return w.WaitID == foreignWait.WaitUUID })
+	if !visible {
+		t.Fatal("the outside wait must be visible through its dependency")
+	}
+
+	header := map[string]string{"X-CSRF-Token": f.csrf}
+	req := core.SwarmCancelWaitRequest{
+		SwarmActionRequest: swarmActionRequest(f), WaitID: ownWait.WaitUUID, ExpectedOwner: outsider.Inbox,
+	}
+	resp, raw := f.do(http.MethodPost, "/api/swarm/action/cancel-wait", req, header)
+	conflict := swarmActionJSON[struct {
+		Code string         `json:"code"`
+		Wait core.SwarmWait `json:"wait"`
+	}](t, resp, raw, http.StatusConflict)
+	if conflict.Code != "VERSION_CONFLICT" || conflict.Wait.WaitID != ownWait.WaitUUID ||
+		conflict.Wait.Owner != f.root.Inbox || conflict.Wait.State != core.WaitStateWaiting {
+		t.Fatalf("changed owner confirmation: %+v", conflict)
+	}
+	req.ExpectedOwner = ownWait.OwnerPrincipal
 	for range 2 {
 		out := swarmActionPost[core.SwarmCancelWaitResult](t, f, "cancel-wait", req)
 		if out.Outcome != "cancelled" || out.Wait.State != core.WaitStateCancelled || out.Wait.WaitID != ownWait.WaitUUID {
 			t.Fatalf("cancel wait and replay: %+v", out)
 		}
 	}
-	req.RequestID = uuid.NewString()
-	terminal := swarmActionPost[core.SwarmCancelWaitResult](t, f, "cancel-wait", req)
-	if terminal.Outcome != "already_terminal" || terminal.Wait.State != core.WaitStateCancelled {
-		t.Fatalf("terminal wait: %+v", terminal)
+	req.ExpectedOwner = outsider.Inbox
+	resp, raw = f.do(http.MethodPost, "/api/swarm/action/cancel-wait", req, header)
+	if resp.StatusCode != http.StatusConflict || swarmErrorCode(raw) != "IDEMPOTENCY_CONFLICT" {
+		t.Fatalf("reused wait cancellation with changed owner: %d %s", resp.StatusCode, raw)
 	}
-
-	header := map[string]string{"X-CSRF-Token": f.csrf}
-	req.WaitID, req.RequestID = foreignWait.WaitUUID, uuid.NewString()
-	resp, raw := f.do(http.MethodPost, "/api/swarm/action/cancel-wait", req, header)
+	req.RequestID, req.ExpectedOwner = uuid.NewString(), ownWait.OwnerPrincipal
+	resp, raw = f.do(http.MethodPost, "/api/swarm/action/cancel-wait", req, header)
 	if resp.StatusCode != http.StatusNotFound || swarmErrorCode(raw) != "NOT_FOUND" {
-		t.Fatalf("foreign wait: %d %s", resp.StatusCode, raw)
+		t.Fatalf("terminal wait: %d %s", resp.StatusCode, raw)
+	}
+	terminalError := string(raw)
+	req.WaitID, req.RequestID, req.ExpectedOwner = foreignWait.WaitUUID, uuid.NewString(), outsider.Inbox
+	resp, raw = f.do(http.MethodPost, "/api/swarm/action/cancel-wait", req, header)
+	if resp.StatusCode != http.StatusNotFound || string(raw) != terminalError {
+		t.Fatalf("wait visible through its dependency: %d %s", resp.StatusCode, raw)
+	}
+	req.WaitID, req.RequestID = uuid.NewString(), uuid.NewString()
+	resp, raw = f.do(http.MethodPost, "/api/swarm/action/cancel-wait", req, header)
+	if resp.StatusCode != http.StatusNotFound || string(raw) != terminalError {
+		t.Fatalf("unknown wait: %d %s", resp.StatusCode, raw)
 	}
 	status, err := outsiderView.AgentEventStatus(ctx, core.EventStatusRequest{EventID: foreign.EventID}, f.dest)
 	if err != nil || len(status.Deliveries) != 1 {
@@ -403,7 +445,7 @@ func TestSwarmActionHTTPCancelWaitAndForeignResources(t *testing.T) {
 	}
 	foreignID := status.Deliveries[0].DeliveryID
 	cancel := core.SwarmCancelDeliveryRequest{
-		SwarmDeliveryActionRequest: swarmActionDeliveryRequest(f, foreignID), Reason: "Foreign delivery must not be changed",
+		SwarmDeliveryActionRequest: swarmActionDeliveryRequest(f, foreignID), Reason: "Foreign delivery must not be changed", PreviewToken: strings.Repeat("0", 64),
 	}
 	resp, raw = f.do(http.MethodPost, "/api/swarm/action/cancel-delivery", cancel, header)
 	if resp.StatusCode != http.StatusNotFound || swarmErrorCode(raw) != "NOT_FOUND" {
@@ -417,5 +459,82 @@ func TestSwarmActionHTTPCancelWaitAndForeignResources(t *testing.T) {
 		if resp.StatusCode != http.StatusNotFound || swarmErrorCode(raw) != "NOT_FOUND" {
 			t.Fatalf("foreign read %s: %d %s", path, resp.StatusCode, raw)
 		}
+	}
+}
+
+func TestSwarmActionHTTPCancelRequiresFreshPreviewAfterHandoff(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	sent := swarmActionPost[core.SwarmEventDetails](t, f, "send",
+		swarmActionSend(f, "role/"+f.campaign+"/root", "request", "Pending coordinator work"))
+	id := sent.Deliveries[0].DeliveryID
+	preview := swarmActionPreview(t, f, id)
+	if preview.PreviewToken == "" || preview.Delivery.Consumer != f.root.Inbox {
+		t.Fatalf("initial preview: %+v", preview)
+	}
+	req := core.SwarmCancelDeliveryRequest{
+		SwarmDeliveryActionRequest: swarmActionDeliveryRequest(f, id),
+		Reason:                     "The owner called off the coordinator work", PreviewToken: preview.PreviewToken,
+	}
+	handoff, err := f.rootView.HandoffCampaignCoordinator(ctx, core.HandoffCampaignCoordinatorRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign,
+		NewSession: &core.NewCoordinatorSessionSpec{Binding: "swarm-root", NativeSessionID: "action-cancel-successor"},
+		Note:       "Transfer the pending request", Shareable: true,
+	}, f.dest)
+	if err != nil || !handoff.Performed || handoff.ToPrincipal == f.root.Inbox || handoff.TransferredDeliveries != 1 {
+		t.Fatalf("handoff fixture: %+v %v", handoff, err)
+	}
+	header := map[string]string{"X-CSRF-Token": f.csrf}
+	path := "/api/swarm/action/cancel-delivery"
+	resp, raw := f.do(http.MethodPost, path, req, header)
+	conflict := swarmActionJSON[struct {
+		Code    string                  `json:"code"`
+		Preview core.SwarmCancelPreview `json:"preview"`
+	}](t, resp, raw, http.StatusConflict)
+	fresh := conflict.Preview
+	if conflict.Code != "VERSION_CONFLICT" || fresh.PreviewToken == "" || fresh.PreviewToken == req.PreviewToken ||
+		fresh.Delivery.DeliveryID != id || fresh.Delivery.Consumer != handoff.ToPrincipal || fresh.Delivery.State != "pending" {
+		t.Fatalf("handoff confirmation: %+v", conflict)
+	}
+	current := swarmActionPreview(t, f, id)
+	if current.PreviewToken != fresh.PreviewToken || current.Delivery.State != "pending" || current.Delivery.Seen {
+		t.Fatalf("refusal changed the successor delivery: %+v", current)
+	}
+	old := req
+	req.PreviewToken = fresh.PreviewToken
+	cancelled := swarmActionPost[core.SwarmCancelDeliveryResult](t, f, "cancel-delivery", req)
+	if cancelled.Outcome != "cancelled" || cancelled.Delivery.Consumer != handoff.ToPrincipal {
+		t.Fatalf("confirmed cancellation: %+v", cancelled)
+	}
+	resp, raw = f.do(http.MethodPost, path, old, header)
+	if resp.StatusCode != http.StatusConflict || swarmErrorCode(raw) != "IDEMPOTENCY_CONFLICT" {
+		t.Fatalf("successful UUID reused with old token: %d %s", resp.StatusCode, raw)
+	}
+	req.PreviewToken = ""
+	resp, raw = f.do(http.MethodPost, path, req, header)
+	if resp.StatusCode != http.StatusConflict || swarmErrorCode(raw) != "IDEMPOTENCY_CONFLICT" {
+		t.Fatalf("successful UUID reused with missing token: %d %s", resp.StatusCode, raw)
+	}
+}
+
+func TestSwarmActionHTTPForeignInboxHeadConflictIsNeutral(t *testing.T) {
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	_, outside := f.session("action-head-outsider")
+	operator := f.op.Channel().Principal
+	foreign := swarmActionPublishEvent(t, f, outside, "notice", operator, "", "")
+	expected := swarmActionPublishEvent(t, f, f.rootView, "notice", operator, "", "")
+	id := swarmActionGetEvent(t, f, expected.EventID).Deliveries[0].DeliveryID
+	resp, raw := f.do(http.MethodPost, "/api/swarm/action/acknowledge", swarmActionDeliveryRequest(f, id),
+		map[string]string{"X-CSRF-Token": f.csrf})
+	conflict := swarmActionJSON[struct {
+		Error    string              `json:"error"`
+		Code     string              `json:"code"`
+		Expected string              `json:"expected"`
+		Oldest   *core.SwarmDelivery `json:"oldest"`
+	}](t, resp, raw, http.StatusConflict)
+	if conflict.Code != "VERSION_CONFLICT" || conflict.Expected != id || conflict.Oldest != nil ||
+		conflict.Error != "VERSION_CONFLICT: the delivery is not the oldest in the operator's inbox" ||
+		!strings.Contains(string(raw), `"oldest":null`) || strings.Contains(string(raw), foreign.EventID) {
+		t.Fatalf("foreign head conflict: %s", raw)
 	}
 }

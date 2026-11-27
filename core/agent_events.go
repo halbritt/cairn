@@ -544,18 +544,21 @@ func (s *Store) recipientSupportsNextOrganicTurnTx(ctx context.Context, tx pgx.T
 	return activeBindingExists, err
 }
 
-type eventTargetCheck func(EventDestination, *EventRouting) error
+type eventPublicationChecks struct {
+	target     func(EventDestination, *EventRouting) error
+	superseded func([]string) error
+}
 
 // publishEventTx keeps source checks, pool admission, publication and fanout in the caller transaction.
-func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string, checks ...eventTargetCheck) (AgentEvent, error) {
-	return s.publishEventInternalTx(ctx, tx, req, dest, id, false, checks...)
+func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string) (AgentEvent, error) {
+	return s.publishEventInternalTx(ctx, tx, req, dest, id, false, eventPublicationChecks{})
 }
 
 func (s *Store) publishDaemonEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string) (AgentEvent, error) {
-	return s.publishEventInternalTx(ctx, tx, req, dest, id, true)
+	return s.publishEventInternalTx(ctx, tx, req, dest, id, true, eventPublicationChecks{})
 }
 
-func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string, bypassHierarchy bool, checks ...eventTargetCheck) (AgentEvent, error) {
+func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string, bypassHierarchy bool, checks eventPublicationChecks) (AgentEvent, error) {
 	if _, err := retrievalGeneration(ctx, tx); err != nil {
 		return AgentEvent{}, err
 	}
@@ -607,8 +610,8 @@ func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req Publi
 			}
 		}
 	}
-	for _, check := range checks {
-		if err := check(req.Destination, routing); err != nil {
+	if checks.target != nil {
+		if err := checks.target(req.Destination, routing); err != nil {
 			return AgentEvent{}, err
 		}
 	}
@@ -697,9 +700,9 @@ func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req Publi
 			return AgentEvent{}, failure("INVALID_REQUEST", "notice expiry must be between 1 minute and 7 days from now")
 		}
 		if req.Kind == "notice" && req.Supersedes != "" {
-			_, err = tx.Exec(ctx, `UPDATE cairn.agent_organic_notice q SET state='unavailable',unavailable_reason='superseded' FROM cairn.agent_event e WHERE q.event_id=e.event_id AND q.repo=$2 AND q.publisher_principal=$3 AND q.recipient_inbox=$5 AND e.kind='notice' AND e.notice_supersedes=$4 AND ($6='shareable' OR e.sensitivity='local') AND q.event_id<>$1 AND q.state='queued'`, id, req.Repo, s.channel.Principal, req.Supersedes, req.Destination.Name, sensitivity)
+			err = applyNoticeSupersession(ctx, tx, checks.superseded, `UPDATE cairn.agent_organic_notice q SET state='unavailable',unavailable_reason='superseded' FROM cairn.agent_event e WHERE q.event_id=e.event_id AND q.repo=$2 AND q.publisher_principal=$3 AND q.recipient_inbox=$5 AND e.kind='notice' AND e.notice_supersedes=$4 AND ($6='shareable' OR e.sensitivity='local') AND q.event_id<>$1 AND q.state='queued'`, id, req.Repo, s.channel.Principal, req.Supersedes, req.Destination.Name, sensitivity)
 			if err == nil {
-				_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery d SET state='ignored',completed_at=clock_timestamp(),code='superseded',superseded_by=$1 FROM cairn.agent_event e WHERE d.event_id=e.event_id AND e.repo=$2 AND e.publisher=$3 AND e.kind='notice' AND e.notice_supersedes=$4 AND ($6='shareable' OR e.sensitivity='local') AND e.event_id<>$1 AND d.state='pending' AND d.consumer=$5 AND `+wakeHold+` AND `+sessionInboxHold, id, req.Repo, s.channel.Principal, req.Supersedes, req.Destination.Name, sensitivity)
+				err = applyNoticeSupersession(ctx, tx, checks.superseded, `UPDATE cairn.agent_delivery d SET state='ignored',completed_at=clock_timestamp(),code='superseded',superseded_by=$1 FROM cairn.agent_event e WHERE d.event_id=e.event_id AND e.repo=$2 AND e.publisher=$3 AND e.kind='notice' AND e.notice_supersedes=$4 AND ($6='shareable' OR e.sensitivity='local') AND e.event_id<>$1 AND d.state='pending' AND d.consumer=$5 AND `+wakeHold+` AND `+sessionInboxHold, id, req.Repo, s.channel.Principal, req.Supersedes, req.Destination.Name, sensitivity)
 			}
 			if err != nil {
 				return AgentEvent{}, err
@@ -752,9 +755,9 @@ func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req Publi
 		return AgentEvent{}, err
 	}
 	if req.Kind == "notice" && req.Supersedes != "" && req.NoticeDelivery != "next_organic_turn" {
-		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery d SET state='ignored',completed_at=clock_timestamp(),code='superseded',superseded_by=$1 FROM cairn.agent_event e WHERE d.event_id=e.event_id AND e.repo=$2 AND e.publisher=$3 AND e.kind='notice' AND e.notice_supersedes=$4 AND ($5='shareable' OR e.sensitivity='local') AND e.event_id<>$1 AND d.state='pending' AND EXISTS(SELECT 1 FROM cairn.agent_delivery dn WHERE dn.event_id=$1 AND dn.consumer=d.consumer) AND `+wakeHold+` AND `+sessionInboxHold, id, req.Repo, s.channel.Principal, req.Supersedes, sensitivity)
+		err = applyNoticeSupersession(ctx, tx, checks.superseded, `UPDATE cairn.agent_delivery d SET state='ignored',completed_at=clock_timestamp(),code='superseded',superseded_by=$1 FROM cairn.agent_event e WHERE d.event_id=e.event_id AND e.repo=$2 AND e.publisher=$3 AND e.kind='notice' AND e.notice_supersedes=$4 AND ($5='shareable' OR e.sensitivity='local') AND e.event_id<>$1 AND d.state='pending' AND EXISTS(SELECT 1 FROM cairn.agent_delivery dn WHERE dn.event_id=$1 AND dn.consumer=d.consumer) AND `+wakeHold+` AND `+sessionInboxHold, id, req.Repo, s.channel.Principal, req.Supersedes, sensitivity)
 		if err == nil {
-			_, err = tx.Exec(ctx, `UPDATE cairn.agent_organic_notice q SET state='unavailable',unavailable_reason='superseded' FROM cairn.agent_event e WHERE q.event_id=e.event_id AND q.repo=$2 AND q.publisher_principal=$3 AND EXISTS(SELECT 1 FROM cairn.agent_delivery dn WHERE dn.event_id=$1 AND dn.consumer=q.recipient_inbox) AND e.kind='notice' AND e.notice_supersedes=$4 AND ($5='shareable' OR e.sensitivity='local') AND q.event_id<>$1 AND q.state='queued'`, id, req.Repo, s.channel.Principal, req.Supersedes, sensitivity)
+			err = applyNoticeSupersession(ctx, tx, checks.superseded, `UPDATE cairn.agent_organic_notice q SET state='unavailable',unavailable_reason='superseded' FROM cairn.agent_event e WHERE q.event_id=e.event_id AND q.repo=$2 AND q.publisher_principal=$3 AND EXISTS(SELECT 1 FROM cairn.agent_delivery dn WHERE dn.event_id=$1 AND dn.consumer=q.recipient_inbox) AND e.kind='notice' AND e.notice_supersedes=$4 AND ($5='shareable' OR e.sensitivity='local') AND q.event_id<>$1 AND q.state='queued'`, id, req.Repo, s.channel.Principal, req.Supersedes, sensitivity)
 		}
 		if err != nil {
 			return AgentEvent{}, err
@@ -788,6 +791,27 @@ func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req Publi
 		return event, err
 	}
 	return event, resolveWaitsOnEvent(ctx, tx, event)
+}
+
+// Read the actual rows an UPDATE won under its row locks. The caller can
+// refuse the scope of those effects before the transaction commits.
+func applyNoticeSupersession(ctx context.Context, tx pgx.Tx, check func([]string) error, update string, args ...any) error {
+	if check == nil {
+		_, err := tx.Exec(ctx, update, args...)
+		return err
+	}
+	rows, err := tx.Query(ctx, update+" RETURNING e.event_id::text", args...)
+	if err != nil {
+		return err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return check(ids)
 }
 
 func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest Destination) (AgentEvent, error) {

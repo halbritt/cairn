@@ -122,10 +122,26 @@ const (
 // CancelWork records the winner against completion. A wake's hold is independent
 // of delivery terminal state and can only be released by confirmed host cleanup.
 func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCancellation, error) {
-	return s.cancelWork(ctx, req)
+	return s.cancelWork(ctx, req, nil)
 }
 
-func (s *Store) cancelWork(ctx context.Context, req CancelWorkRequest, guards ...func(pgx.Tx) error) (WorkCancellation, error) {
+// scopedCancellation binds browser intent to the existing store receipt.
+// Authorization runs on both first use and replay. Confirmation runs only
+// on first use, under the lock for the selected delivery or wait.
+type scopedCancellation struct {
+	intent    any
+	authorize func(pgx.Tx) error
+	confirm   func(pgx.Tx) error
+}
+
+func (scope *scopedCancellation) mutation(req any) (any, []func(pgx.Tx) error) {
+	if scope == nil {
+		return req, nil
+	}
+	return scope.intent, []func(pgx.Tx) error{scope.authorize}
+}
+
+func (s *Store) cancelWork(ctx context.Context, req CancelWorkRequest, scope *scopedCancellation) (WorkCancellation, error) {
 	var zero WorkCancellation
 	var err error
 	if req.Repo, err = s.requestControlScope(req.Repo); err != nil {
@@ -139,10 +155,18 @@ func (s *Store) cancelWork(ctx context.Context, req CancelWorkRequest, guards ..
 			return zero, failure("INVALID_REQUEST", "work identifiers must be UUIDs")
 		}
 	}
-	if err = reasonValid(req.Reason); err != nil {
-		return zero, err
+	if scope == nil {
+		if err = reasonValid(req.Reason); err != nil {
+			return zero, err
+		}
 	}
-	return mutate(ctx, s, "work-cancel", req.RequestID, req, func(tx pgx.Tx) (WorkCancellation, error) {
+	intent, guards := scope.mutation(req)
+	return mutate(ctx, s, "work-cancel", req.RequestID, intent, func(tx pgx.Tx) (WorkCancellation, error) {
+		if scope != nil {
+			if err := reasonValid(req.Reason); err != nil {
+				return zero, err
+			}
+		}
 		if _, err := retrievalGeneration(ctx, tx); err != nil {
 			return zero, err
 		}
@@ -181,6 +205,11 @@ func (s *Store) cancelWork(ctx context.Context, req CancelWorkRequest, guards ..
 		}
 		if err != nil {
 			return zero, err
+		}
+		if scope != nil {
+			if err := scope.confirm(tx); err != nil {
+				return zero, err
+			}
 		}
 		if state != "pending" && state != "leased" {
 			return zero, failure("VERSION_CONFLICT", deliveryAlreadyTerminal)

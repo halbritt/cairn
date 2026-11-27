@@ -94,6 +94,13 @@ func (s *swarmServer) swarmCancelDelivery(w http.ResponseWriter, r *http.Request
 	}
 	req.Repo = s.collection
 	result, err := s.store.CancelSwarmDelivery(r.Context(), req)
+	var conflict *core.SwarmPreviewConflict
+	if errors.As(err, &conflict) {
+		writeSwarmJSON(w, http.StatusConflict, map[string]any{
+			"error": conflict.Error(), "code": core.Code(conflict), "preview": conflict.Preview,
+		})
+		return
+	}
 	writeSwarmActionResult(w, result, err)
 }
 
@@ -104,5 +111,12 @@ func (s *swarmServer) swarmCancelWait(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Repo = s.collection
 	result, err := s.store.CancelSwarmWait(r.Context(), req)
+	var conflict *core.SwarmWaitOwnerConflict
+	if errors.As(err, &conflict) {
+		writeSwarmJSON(w, http.StatusConflict, map[string]any{
+			"error": conflict.Error(), "code": core.Code(conflict), "wait": conflict.Wait,
+		})
+		return
+	}
 	writeSwarmActionResult(w, result, err)
 }

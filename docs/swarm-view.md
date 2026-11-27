@@ -301,35 +301,52 @@ store's refusal code.
 
 ## Operator actions
 
-The signed-in browser uses the listener's local operator channel. The server
-sets the collection and the operator principal from that channel. Every
+The signed-in browser uses the listener's local operator channel. The listener
+sets the collection at startup, and its Store channel supplies the operator
+principal. Every
 `POST` carries the session's CSRF token and a JSON object with `campaign` and
-a canonical `request_id` UUID. The browser reuses the UUID when it retries
-the same request. The server rejects unknown fields.
+a canonical `request_id` UUID. A retry of a committed request uses the same
+UUID and the same fields. Reusing that UUID with a different intent returns
+`IDEMPOTENCY_CONFLICT`. The server rejects unknown fields.
 
 | Route | Other request fields | Successful reply |
 | --- | --- | --- |
-| `POST /api/swarm/action/send` | `to` (campaign principal), `kind` (`request` or `notice`), `summary`, `body`. Notices require `action` (`none`, `review` or `decide`) and may carry a `supersedes` key. | `{event, deliveries}`. The store commits one shareable source with the event after checking the resolved recipient. A superseding notice replaces eligible earlier notices from the same publisher and recipient. |
+| `POST /api/swarm/action/send` | `to` (current campaign principal), `kind` (`request` or `notice`), `summary`, `body`. Notices require `action` (`none`, `review` or `decide`) and may carry a `supersedes` key. | `{event, deliveries}`. The store commits one shareable source with the event. |
 | `POST /api/swarm/action/acknowledge` | `delivery_id` (the operator's expected delivery). | `{delivery}`, with `delivery: null` when the inbox is empty. The server claims and completes the oldest eligible delivery in the operator's inbox. |
-| `GET /api/swarm/action/cancel-preview` | Query `campaign`, `delivery_id`. | `SwarmCancelPreview` (`cairn.swarm-cancel-preview/1`). It gives the recipient, sibling deliveries, refusal if any, direct-reply waits and, for a grouped request, the group state, reply count, whether this delivery's reply counts and closure waits. Each wait lookup reports `found`, `empty` or `unavailable`. |
-| `POST /api/swarm/action/cancel-delivery` | `delivery_id`, `reason` (8–4000 characters). | `{outcome, delivery, detail?}`. The outcome is `cancelled`, `cancel_pending` for a supported native turn, or `already_terminal` with the stored delivery when the recipient finished first. |
-| `POST /api/swarm/action/cancel-wait` | `wait_id`. | `{outcome, wait}`. The outcome is `cancelled` or `already_terminal`. |
+| `GET /api/swarm/action/cancel-preview` | Query `campaign`, `delivery_id`. | `SwarmCancelPreview` (`cairn.swarm-cancel-preview/1`), with an opaque `preview_token` for confirmation. It gives the recipient, sibling deliveries, refusal if any, direct-reply waits and, for a grouped request, the group state, reply count, whether this delivery's reply counts and closure waits. Each wait lookup reports `found`, `empty` or `unavailable`. |
+| `POST /api/swarm/action/cancel-delivery` | `delivery_id`, `reason` (8–4000 characters), `preview_token` from the preview. | `{outcome, delivery, detail?}`. The outcome is `cancelled`, `cancel_pending` for a supported native turn, or `already_terminal` with the stored delivery when an in-scope delivery finishes first. |
+| `POST /api/swarm/action/cancel-wait` | `wait_id`, `expected_owner` (the wait owner shown in the view). | `{outcome: "cancelled", wait}` with the resolved wait. |
 | `GET /api/swarm/event` | Query `campaign`, `event_id`. | `{event, deliveries, body?, body_truncated?, body_unavailable?}`. Returns the exact referenced version up to 16 KiB of UTF-8, with `body_truncated: true` when cut. Every reply has either `body` or `body_unavailable`. |
 
-Event, delivery and wait values use the same types as the live view. The
-server checks campaign scope before acting. A wrong inbox head returns
-HTTP 409 with `{error, code: "VERSION_CONFLICT", expected, oldest}` and
-leaves the oldest delivery untouched. If it belongs to another campaign,
-the refusal gives no details of that delivery. A live manual lease is
-refused with the store's `UNSUPPORTED_CONTROL` code and reason.
+Sending requires an active campaign. Both the chosen address and the
+resolved destination must be its current root, an active member, or a role
+address of that campaign. Historic principals remain in the log. A
+supersession replaces eligible notices from the same publisher and recipient
+only when every affected notice belongs to a campaign event. If the key
+would replace a notice outside the campaign, the whole send is refused.
 
-A cancellation targets one delivery. Siblings and replies that already count
-in a response group keep their stored state. A wait on the request or group
-keeps its own deadline. The browser shows the result from the store even if
-the state changed after the preview.
+Delivery cancellation and preview require a campaign consumer. The delivery
+must belong to a campaign event or be live for an active member. Siblings in
+a preview give context about a shared event. Wait cancellation requires a
+waiting state and a campaign owner. A wait can be visible through its
+dependency even when that owner is outside the campaign. An out-of-scope
+target and an unknown ID both return `NOT_FOUND`.
 
-The next live snapshot reflects the action. A published delivery appears as
-sent and not yet seen until the recipient claims it.
+A wrong inbox head returns HTTP 409 with
+`{error, code: "VERSION_CONFLICT", expected, oldest}`. The oldest delivery
+is unchanged, and `oldest` is null when the view cannot show it. A live
+manual lease is refused with `UNSUPPORTED_CONTROL`. When a cancellation's
+recipient or related waits or group replies have changed, HTTP 409 returns
+`{error, code: "VERSION_CONFLICT", preview}` with a fresh token. If the
+eligible wait's owner changed, HTTP 409 returns
+`{error, code: "VERSION_CONFLICT", wait}`. A conflict leaves the target
+untouched, and the browser asks for confirmation again.
+
+A delivery cancellation changes one delivery. Siblings and replies that
+already count in a response group keep their stored state. A wait on the
+request or group keeps its own deadline. The next live snapshot reflects the
+action. A published delivery appears as sent and not yet seen until the
+recipient claims it.
 
 ## Run it as a user unit
 
