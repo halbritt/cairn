@@ -244,8 +244,8 @@ func swarmActionWaitLookup(ctx context.Context, tx pgx.Tx, sc swarmScope, eventI
 	swarmSection(ctx, tx, errs, "waits", func(sp pgx.Tx) error {
 		rows, err := sp.Query(ctx, `SELECT `+swarmActionWaitColumns+`
 			FROM cairn.agent_wait w JOIN cairn.agent_event e ON e.event_id=w.dependency_event_uuid
-			WHERE w.collection=$1 AND w.dependency_event_uuid=$2 AND w.predicate_kind=$3
-			ORDER BY w.created_at,w.wait_uuid`, sc.Repo, eventID, predicate)
+			WHERE `+swarmWaitInCampaign()+` AND w.dependency_event_uuid=$5 AND w.predicate_kind=$6
+			ORDER BY w.created_at,w.wait_uuid`, sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, eventID, predicate)
 		if err != nil {
 			return err
 		}
@@ -592,14 +592,10 @@ func (s *Store) CancelSwarmDelivery(ctx context.Context, req SwarmCancelDelivery
 }
 
 func swarmActionWaitTx(ctx context.Context, tx pgx.Tx, sc swarmScope, waitID string) (SwarmWait, error) {
-	// Match the flow snapshot: a wait belongs through its owner, its
-	// dependency event, or a delivery of that dependency to a member.
 	rows, err := tx.Query(ctx, `SELECT `+swarmActionWaitColumns+`
 		FROM cairn.agent_wait w JOIN cairn.agent_event e ON e.event_id=w.dependency_event_uuid
-		WHERE w.collection=$1 AND e.repo=$1 AND w.wait_uuid=$5 AND
-		      (w.owner_principal=ANY($2) OR (`+swarmEventInCampaign+`)
-		       OR EXISTS(SELECT 1 FROM cairn.agent_delivery d WHERE d.event_id=e.event_id AND d.consumer=ANY($6)))`,
-		sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, waitID, sc.MemberPrincipals)
+		WHERE `+swarmWaitInCampaign()+` AND w.wait_uuid=$5`,
+		sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, waitID)
 	if err != nil {
 		return SwarmWait{}, err
 	}

@@ -273,25 +273,36 @@ func swarmDeliveryDisplay(d SwarmDelivery) string {
 	return d.State
 }
 
+// swarmWaitInCampaign uses the wait as w and its dependency event as e.
+// Parameters $1–$4 match swarmEventInCampaign.
+// A delivery alone can bring a peer's wait into scope while both are open.
+func swarmWaitInCampaign() string {
+	return `w.collection=$1 AND e.repo=$1 AND (
+	w.owner_principal=ANY($2) OR (` + swarmEventInCampaign + `)
+	OR (w.state='waiting' AND EXISTS(
+		SELECT 1 FROM cairn.agent_delivery d
+		JOIN cairn.agent_team_member m ON m.repo=$1 AND m.campaign=$3 AND m.member=d.consumer AND m.active
+		WHERE d.event_id=e.event_id AND (d.state IN ('pending','leased') OR ` + swarmFlowHeld + `))))`
+}
+
 func swarmFlowWaits(ctx context.Context, tx pgx.Tx, sc swarmScope) ([]SwarmWait, bool, error) {
 	rows, err := tx.Query(ctx, `
 WITH relevant AS (
 	SELECT w.wait_uuid, w.owner_principal, w.predicate_kind, w.dependency_event_uuid,
 		COALESCE(e.summary,'') AS summary, w.state, w.terminal_reason, w.deadline, w.created_at, w.resolved_at
 	FROM cairn.agent_wait w JOIN cairn.agent_event e ON e.event_id=w.dependency_event_uuid
-	WHERE w.collection=$1 AND e.repo=$1 AND (w.owner_principal=ANY($2) OR (`+swarmEventInCampaign+`)
-		OR EXISTS(SELECT 1 FROM cairn.agent_delivery d WHERE d.event_id=e.event_id AND d.consumer=ANY($5)))
+	WHERE `+swarmWaitInCampaign()+`
 ), selected AS (
 	SELECT * FROM relevant WHERE state='waiting'
 	UNION ALL
-	(SELECT * FROM relevant WHERE state<>'waiting' ORDER BY resolved_at DESC, wait_uuid DESC LIMIT $6)
+	(SELECT * FROM relevant WHERE state<>'waiting' ORDER BY resolved_at DESC, wait_uuid DESC LIMIT $5)
 )
 SELECT wait_uuid::text, owner_principal, predicate_kind, dependency_event_uuid::text, summary, state, terminal_reason,
 	deadline, created_at, resolved_at,
 	CASE WHEN state='waiting' THEN ARRAY(SELECT d.consumer FROM cairn.agent_delivery d
 		WHERE d.event_id=dependency_event_uuid ORDER BY d.consumer) ELSE ARRAY[]::text[] END
 FROM selected ORDER BY resolved_at DESC NULLS FIRST, CASE WHEN resolved_at IS NULL THEN deadline END, wait_uuid DESC`,
-		sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, sc.MemberPrincipals, swarmFlowResolvedWaitLimit+1)
+		sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, swarmFlowResolvedWaitLimit+1)
 	if err != nil {
 		return nil, false, err
 	}

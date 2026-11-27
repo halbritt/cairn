@@ -199,7 +199,12 @@ that depend on its reply. An old notice can be first in the inbox while a peer
 waits on a newer request. The view shows the waits each agent owns and lists
 the recipients still awaited. It joins each wait to its exact dependency event
 and labels direct replies and response-group closure separately. The snapshot
-includes all scoped waiting waits and the 300 most recently resolved ones.
+includes all scoped waiting waits and the 300 most recently resolved ones. A
+wait belongs to the campaign through its owner or its dependency event. A peer
+outside the campaign can also appear while its wait is open and an active
+member has a pending, leased or held delivery of the dependency. After the
+wait resolves, its owner or dependency event must belong to the campaign for
+the wait to appear in history.
 The waits feature status appears even when registration is disabled, and
 existing waits remain visible.
 

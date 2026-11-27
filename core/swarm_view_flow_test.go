@@ -220,6 +220,137 @@ func TestSwarmFlowCampaignScopeAndDisabledWaits(t *testing.T) {
 	}
 }
 
+func TestSwarmFlowWaitAttributionAfterMemberJoins(t *testing.T) {
+	for _, predicate := range []string{WaitPredicateRequestResponse, WaitPredicateResponseGroupClosed} {
+		t.Run(predicate, func(t *testing.T) {
+			ctx := context.Background()
+			base := newNativeFixture(t)
+			root := base.register(nativeAgent{Binding: "flow-wait-scope-root"})
+			f := &swarmFixture{nativeFixture: base, campaign: "swarm-flow-wait-scope", root: root,
+				rootView: base.view(sessionRef(root)), op: base.operator()}
+			worker, workerView := f.session("flow-wait-scope-worker")
+			outsider, outsiderView := f.session("flow-wait-scope-outsider")
+			swarmFlowSetWaits(f, true)
+			t.Cleanup(func() { swarmFlowSetWaits(f, false) })
+
+			var group *ResponseGroupSpec
+			if predicate == WaitPredicateResponseGroupClosed {
+				group = &ResponseGroupSpec{Deadline: time.Now().Add(5 * time.Minute), PartialPolicy: "all"}
+			}
+			oldRequest := swarmFlowRequest(f, outsiderView, worker.Inbox, "Historic outsider request", uuid.NewString(), group)
+			oldWait := swarmFlowRegisterWait(f, outsiderView, oldRequest, predicate)
+			openRequest := swarmFlowRequest(f, outsiderView, worker.Inbox, "Open outsider request", uuid.NewString(), group)
+			openWait := swarmFlowRegisterWait(f, outsiderView, openRequest, predicate)
+			repliedRequest := swarmFlowRequest(f, outsiderView, worker.Inbox, "Answered outsider request with pending delivery", uuid.NewString(), group)
+			repliedWait := swarmFlowRegisterWait(f, outsiderView, repliedRequest, predicate)
+			memberRequest := swarmFlowRequest(f, f.rootView, outsider.Inbox, "Historical request owned by the future lead", uuid.NewString(), group)
+			memberWait := swarmFlowRegisterWait(f, f.rootView, memberRequest, predicate)
+
+			settle := func(event AgentEvent) string {
+				t.Helper()
+				next, err := workerView.NextEvent(ctx, NextEventRequest{}, f.dest)
+				if err != nil || next.Delivery == nil || next.Delivery.Event.EventID != event.EventID {
+					t.Fatalf("expected to claim %s: %+v, %v", event.EventID, next, err)
+				}
+				if _, err := workerView.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(),
+					DeliveryID: next.Delivery.DeliveryID, LeaseID: next.Delivery.LeaseID, Disposition: "handled"}, f.dest); err != nil {
+					t.Fatal(err)
+				}
+				return next.Delivery.DeliveryID
+			}
+			settledDelivery := settle(oldRequest)
+			publishTestResponse(t, ctx, workerView, f.repo, outsider.AgentID, oldRequest.EventID, oldRequest.CorrelationID, "response", f.dest)
+			publishTestResponse(t, ctx, workerView, f.repo, outsider.AgentID, repliedRequest.EventID, repliedRequest.CorrelationID, "response", f.dest)
+			publishTestResponse(t, ctx, outsiderView, f.repo, root.AgentID, memberRequest.EventID, memberRequest.CorrelationID, "response", f.dest)
+			for _, pair := range []struct {
+				store *Store
+				wait  AgentWait
+			}{{outsiderView, oldWait}, {outsiderView, repliedWait}, {f.rootView, memberWait}} {
+				got, err := pair.store.GetWait(ctx, GetWaitRequest{Collection: f.repo, WaitUUID: pair.wait.WaitUUID}, f.dest)
+				if err != nil || got.State != WaitStateSatisfied {
+					t.Fatalf("expected the wait to resolve before the campaign exists: %+v, %v", got, err)
+				}
+			}
+
+			if _, err := f.rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{RequestID: uuid.NewString(), Repo: f.repo,
+				Campaign: f.campaign, RootAgent: root.Inbox, OutOfChainPolicy: "allow", Sensitivity: "shareable"}, f.dest); err != nil {
+				t.Fatal(err)
+			}
+			f.join(worker)
+			flow := swarmFlowRead(f)
+			if len(flow.Waits) != 2 || flow.Waits[0].WaitID != openWait.WaitUUID || flow.Waits[0].Predicate != predicate ||
+				flow.Waits[1].WaitID != memberWait.WaitUUID || flow.Waits[1].State != WaitStateSatisfied {
+				t.Fatalf("expected only the open outsider wait and the member's resolved wait: %+v", flow.Waits)
+			}
+			if !slices.Equal(flow.ByMember[worker.Inbox].PeerWaits, []string{openWait.WaitUUID}) {
+				t.Fatalf("incorrect member peer waits: %+v", flow.ByMember)
+			}
+			if old := swarmFlowDelivery(flow, oldRequest, worker.Inbox); old.DeliveryID != "" {
+				t.Fatalf("member-consumer exception exposed a settled historical delivery: %+v", old)
+			}
+			for _, event := range []AgentEvent{openRequest, repliedRequest} {
+				if d := swarmFlowDelivery(flow, event, worker.Inbox); d.Display != "pending" {
+					t.Fatalf("member-consumer exception omitted a pending historical delivery: %+v", d)
+				}
+			}
+
+			lookup := func(id string) (SwarmWait, error) {
+				t.Helper()
+				tx, sc, err := f.op.beginSwarmActionRead(ctx, f.repo, f.campaign)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback(ctx)
+				return swarmActionWaitTx(ctx, tx, sc, id)
+			}
+			for _, wait := range []AgentWait{oldWait, repliedWait} {
+				_, err := lookup(wait.WaitUUID)
+				requireCode(t, err, "NOT_FOUND")
+			}
+			for _, wait := range flow.Waits {
+				got, err := lookup(wait.WaitID)
+				if err != nil || got.WaitID != wait.WaitID || got.Predicate != wait.Predicate || got.State != wait.State {
+					t.Fatalf("wait lookup disagrees with the flow: %+v, %v, want %+v", got, err, wait)
+				}
+			}
+			previewWaits := func(deliveryID string) SwarmWaitLookup {
+				t.Helper()
+				preview, err := f.op.GetSwarmCancelPreview(ctx, SwarmCancelPreviewRequest{Repo: f.repo, Campaign: f.campaign, DeliveryID: deliveryID})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if predicate == WaitPredicateRequestResponse {
+					return preview.DirectReplyWaits
+				}
+				if preview.Group == nil {
+					t.Fatal("expected a group closure preview")
+				}
+				return preview.Group.ClosureWaits
+			}
+			for _, id := range []string{settledDelivery, swarmFlowDelivery(flow, repliedRequest, worker.Inbox).DeliveryID} {
+				if got := previewWaits(id); got.Status != "empty" || len(got.Waits) != 0 {
+					t.Fatalf("preview exposed an outsider's resolved wait: %+v", got)
+				}
+			}
+			if got := previewWaits(swarmFlowDelivery(flow, openRequest, worker.Inbox).DeliveryID); got.Status != "found" || len(got.Waits) != 1 || got.Waits[0].WaitID != openWait.WaitUUID {
+				t.Fatalf("preview missed the open outsider wait: %+v", got)
+			}
+
+			// Handling the delivery does not itself resolve the wait, but
+			// it removes the only campaign association of this outsider's wait.
+			settledOpenDelivery := settle(openRequest)
+			if flow = swarmFlowRead(f); len(flow.Waits) != 1 || flow.Waits[0].WaitID != memberWait.WaitUUID || len(flow.ByMember[worker.Inbox].PeerWaits) != 0 {
+				t.Fatalf("handling the old dependency left the outsider wait in scope: %+v", flow)
+			}
+			_, err := lookup(openWait.WaitUUID)
+			requireCode(t, err, "NOT_FOUND")
+			if got := previewWaits(settledOpenDelivery); got.Status != "empty" || len(got.Waits) != 0 {
+				t.Fatalf("preview retained a wait after its dependency delivery was handled: %+v", got)
+			}
+		})
+	}
+}
+
 func TestSwarmFlowOldestEligible(t *testing.T) {
 	f := newSwarmFixture(t, "swarm-flow-eligibility")
 	worker, workerView := f.member("flow-eligibility-worker")
