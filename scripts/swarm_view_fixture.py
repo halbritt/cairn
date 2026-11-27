@@ -636,6 +636,7 @@ class Fixture:
         self.check("a member that left gets no send control and the store refuses a send to it",
                    lambda: self.member_left(page), page, category="slice:CAIRN-833")
         self.check("no forbidden control exists", lambda: self.forbidden(page), page)
+        self.check("screenshots of the owner's views at 1280 px", lambda: self.view_shots(page, "desktop"), page, category="evidence")
         self.shot(page, "desktop-final")
 
     def stale_cursor(self, page):
@@ -1260,6 +1261,52 @@ class Fixture:
         require(status[0] >= 400, "the store accepted a send to a member that left: " + json.dumps(status)[:300])
         self.report["send_to_left_member"] = status[1].get("code")
 
+    def system_delivery(self):
+        """An open delivery of a Cairn-published event to a member, from the snapshot."""
+        members = {m["member"] for m in self.snapshot()["members"] if m["active"]}
+        for delivery in self.snapshot()["flow"]["deliveries"]:
+            if delivery.get("system") and delivery["consumer"] in members and delivery["display"] in ("pending", "leased", "held"):
+                return delivery
+        return None
+
+    def system_cancel_preview(self, page):
+        delivery = self.system_delivery()
+        require(delivery, "no open Cairn-published delivery to a member to preview")
+        page.locator(f"#agents .agent[data-member='{delivery['consumer']}'] button", has_text="Details").click()
+        item = page.locator("#detail li", has=page.locator(f"[data-delivery='{delivery['delivery_id']}']"))
+        item.locator("button", has_text="Cancel this recipient's delivery").click()
+        body = page.locator("#confirm-body")
+        self.expect(body).to_contain_text("Recipient", timeout=15000)
+        text = body.inner_text()
+        require("from Cairn (" in text and "from you (operator)" not in text and "sent, not yet seen" not in text,
+                "the cancel preview labels a Cairn delivery as the owner's: " + text[:300])
+        page.locator("#confirm-keep").click()
+        page.locator("#detail button.close").click()
+
+    def view_shots(self, page, suffix):
+        """Screenshots of the views the owner reads: Needs you, a member's Details with a Cairn
+        notice, the cancel preview of that notice, and the landing page."""
+        page.locator("#needs-region").screenshot(path=str(self.output / f"needs-you-{suffix}.png"))
+        self.report["screenshots"].append(f"needs-you-{suffix}.png")
+        delivery = self.system_delivery()
+        if delivery:
+            page.locator(f"#agents .agent[data-member='{delivery['consumer']}'] button", has_text="Details").click()
+            self.expect(page.locator("#detail")).to_contain_text("Cairn (")
+            self.shot(page, f"details-system-{suffix}")
+            item = page.locator("#detail li", has=page.locator(f"[data-delivery='{delivery['delivery_id']}']"))
+            item.locator("button", has_text="Cancel this recipient's delivery").click()
+            self.expect(page.locator("#confirm-body")).to_contain_text("Recipient", timeout=15000)
+            self.shot(page, f"cancel-preview-{suffix}")
+            page.locator("#confirm-keep").click()
+            page.locator("#detail button.close").click()
+        landing = page.context.new_page()
+        try:
+            landing.goto(f"http://127.0.0.1:{self.port}/")
+            self.expect(landing.locator("#campaigns")).to_contain_text(CAMPAIGN, timeout=15000)
+            self.shot(landing, f"landing-{suffix}")
+        finally:
+            landing.close()
+
     def system_everywhere(self, page):
         """Every Cairn-published event, in every place the page shows a sender."""
         snapshot = self.snapshot()
@@ -1315,6 +1362,8 @@ class Fixture:
             seen.append("landing")
         finally:
             landing.close()
+        self.system_cancel_preview(page)
+        seen.append("cancel-preview")
         self.report["system_places"] = sorted(set(seen))
         # The owner's own send still reads as the owner's.
         owner = page.locator("#flow li.event.owner-sent").first
@@ -1475,6 +1524,7 @@ class Fixture:
             overflow = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             require(overflow <= 1, f"page scrolls horizontally by {overflow}px at phone width")
             self.shot(page, "phone-campaign")
+            self.view_shots(page, "phone")
             page.goto(f"http://127.0.0.1:{self.port}/")
             self.expect(page.locator("#campaigns")).to_contain_text(CAMPAIGN, timeout=15000)
             if self.events.get("bystander"):
