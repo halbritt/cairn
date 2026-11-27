@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -17,18 +18,22 @@ import (
 const teamHelp = `Cairn team hierarchy configuration (authenticated API or --operator)
 
 Subcommands:
-  cairn team set-campaign --campaign NAME [--root-agent PRINCIPAL] [--out-of-chain-policy allow|warn|reroute] [--max-coordinator-age-seconds N] [--max-coordinator-compactions N] [--no-coordinator-limits] [--active | --inactive] [--expected-revision N] [--local | --shareable] [--request-id UUID]
-  cairn team set-member --campaign NAME --member PRINCIPAL [--lead PRINCIPAL] [--role lead|worker] [--active | --inactive] [--request-id UUID]
+  cairn team set-campaign --campaign NAME [--root-agent PRINCIPAL] [--description TEXT | --description-file PATH] [--out-of-chain-policy allow|warn|reroute] [--max-coordinator-age-seconds N] [--max-coordinator-compactions N] [--no-coordinator-limits] [--active | --inactive] [--expected-revision N] [--local | --shareable] [--request-id UUID]
+  cairn team set-member --campaign NAME --member PRINCIPAL [--lead PRINCIPAL] [--role lead|worker] [--role-label TEXT] [--active | --inactive] [--request-id UUID]
   cairn team get --campaign NAME
   cairn team list [--active-only] [--after CAMPAIGN] [--limit N]
 
 Defaults on campaign creation: max_coordinator_age_seconds=14400, max_coordinator_compactions=3 (pass 0 or --no-coordinator-limits to opt out).
+For a swarm, record the owner's prose (up to 8192 bytes) with --description or --description-file (- for stdin).
+Give each member a free-text --role-label (up to 160 bytes on one line). Use only --role-label to edit the root's member metadata.
+Omit either field on update to keep its value. Pass an empty value to clear it.
 Common flags: --profile NAME | --token-file FILE | --operator, --socket PATH, --repo COLLECTION, --agent-id UUID, --execution-id UUID
 `
 
 var teamSubcommandAllowedFlags = map[string]map[string]bool{
 	"set-campaign": {
 		"campaign": true, "root-agent": true, "out-of-chain-policy": true,
+		"description": true, "description-file": true,
 		"max-coordinator-age-seconds": true, "max-coordinator-compactions": true,
 		"no-coordinator-limits": true,
 		"active":                true, "inactive": true, "expected-revision": true,
@@ -36,7 +41,8 @@ var teamSubcommandAllowedFlags = map[string]map[string]bool{
 	},
 	"set-member": {
 		"campaign": true, "member": true, "lead": true, "role": true,
-		"active": true, "inactive": true, "request-id": true,
+		"role-label": true,
+		"active":     true, "inactive": true, "request-id": true,
 	},
 	"get": {
 		"campaign": true,
@@ -46,7 +52,7 @@ var teamSubcommandAllowedFlags = map[string]map[string]bool{
 	},
 }
 
-func teamCommand(ctx context.Context, args []string, _ io.Reader, client *localapi.Client, callerSession *core.AgentSessionRef) (any, error) {
+func teamCommand(ctx context.Context, args []string, input io.Reader, client *localapi.Client, callerSession *core.AgentSessionRef) (any, error) {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
 		return commandHelp(teamHelp), nil
 	}
@@ -68,11 +74,14 @@ func teamCommand(ctx context.Context, args []string, _ io.Reader, client *locala
 
 	requestID := f.String("request-id", "", "stable retry UUID (generated when omitted)")
 	campaign := f.String("campaign", "", "campaign name (1..64 ASCII letters, digits or _.-)")
+	description := f.String("description", "", "owner's campaign description")
+	descriptionFile := f.String("description-file", "", "campaign description file (- for stdin)")
 	rootAgent := f.String("root-agent", "", "campaign root coordinator principal (e.g. agent/UUID)")
 	outPolicy := f.String("out-of-chain-policy", "", "out-of-chain direct publish policy (allow|warn|reroute)")
 	member := f.String("member", "", "team member principal (e.g. agent/UUID)")
 	lead := f.String("lead", "", "immediate lead principal in campaign (e.g. agent/UUID)")
 	role := f.String("role", "", "member role (lead|worker)")
+	roleLabel := f.String("role-label", "", "free-text role label")
 	activeFlag := f.Bool("active", false, "mark campaign or member active")
 	inactiveFlag := f.Bool("inactive", false, "mark campaign or member inactive")
 	expectedRev := f.Int64("expected-revision", 0, "expected current revision")
@@ -191,12 +200,50 @@ func teamCommand(ctx context.Context, args []string, _ io.Reader, client *locala
 			maxCompPtr = maxCoordComp
 		}
 	}
-	return dispatchTeamSubcommand(ctx, subcommand, scopeRepo, *requestID, *campaign, *rootAgent, *outPolicy, *member, *lead, *role, activePtr, maxAgePtr, maxCompPtr, *expectedRev, sens, *activeOnly, *after, *limit, *token, *socket, *operatorMode, client, sessionRef)
+	var descriptionPtr, roleLabelPtr *string
+	switch {
+	case provided["description"] && provided["description-file"]:
+		return nil, invalid("cannot combine --description and --description-file")
+	case provided["description"]:
+		descriptionPtr = description
+	case provided["description-file"]:
+		value, err := readTeamDescription(*descriptionFile, input)
+		if err != nil {
+			return nil, err
+		}
+		descriptionPtr = &value
+	}
+	if provided["role-label"] {
+		roleLabelPtr = roleLabel
+	}
+	return dispatchTeamSubcommand(ctx, subcommand, scopeRepo, *requestID, *campaign, *rootAgent, *outPolicy, *member, *lead, *role, descriptionPtr, roleLabelPtr, activePtr, maxAgePtr, maxCompPtr, *expectedRev, sens, *activeOnly, *after, *limit, *token, *socket, *operatorMode, client, sessionRef)
+}
+
+func readTeamDescription(path string, input io.Reader) (string, error) {
+	if path == "" {
+		return "", invalid("empty --description-file path")
+	}
+	if path != "-" {
+		file, err := os.Open(path)
+		if err != nil {
+			return "", invalid(fmt.Sprintf("open --description-file: %v", err))
+		}
+		defer file.Close()
+		input = file
+	}
+	body, err := io.ReadAll(io.LimitReader(input, core.MaxCampaignDescriptionBytes+1))
+	if err != nil {
+		return "", invalid(fmt.Sprintf("read --description-file: %v", err))
+	}
+	if len(body) > core.MaxCampaignDescriptionBytes {
+		return "", invalid("description must be at most 8192 bytes")
+	}
+	return string(body), nil
 }
 
 func dispatchTeamSubcommand(
 	ctx context.Context, subcommand, scopeRepo, requestID, campaign, rootAgent, outPolicy, member, lead, role string,
-	activePtr *bool, maxAgePtr, maxCompPtr *int, expectedRev int64, sens string, activeOnly bool, after string, limit int,
+	description, roleLabel *string, activePtr *bool, maxAgePtr, maxCompPtr *int, expectedRev int64, sens string, activeOnly bool, after string, limit int,
 	token, socket string, operatorMode bool, client *localapi.Client, sessionRef *core.AgentSessionRef,
 ) (any, error) {
 	var operation string
@@ -214,7 +261,7 @@ func dispatchTeamSubcommand(
 		}
 		operation = "team-campaign-set"
 		req = core.SetTeamCampaignRequest{
-			RequestID: requestID, Repo: scopeRepo, Campaign: campaign,
+			RequestID: requestID, Repo: scopeRepo, Campaign: campaign, Description: description,
 			RootAgent: rootAgent, OutOfChainPolicy: outPolicy,
 			Sensitivity: sens, MaxCoordinatorAgeSeconds: maxAgePtr, MaxCoordinatorCompactions: maxCompPtr,
 			Active: activePtr, ExpectedRevision: expectedRev,
@@ -234,7 +281,7 @@ func dispatchTeamSubcommand(
 		operation = "team-member-set"
 		req = core.SetTeamMemberRequest{
 			RequestID: requestID, Repo: scopeRepo, Campaign: campaign,
-			Member: member, Lead: lead, Role: role, Active: activePtr,
+			Member: member, Lead: lead, Role: role, RoleLabel: roleLabel, Active: activePtr,
 		}
 	case "get":
 		if strings.TrimSpace(campaign) == "" {

@@ -105,6 +105,20 @@ Substitute actual UUIDs and the retained source version. Completion requires the
 current delivery and lease IDs. Acknowledging a notice and completing a request
 are different operations; [event fabric](../agent-event-fabric.md) explains them.
 
+### Record a swarm
+
+When the owner asks you to start a swarm, record the owner's prose with
+`cairn team set-campaign --campaign NAME --description TEXT` or use
+`--description-file PATH` (`-` for stdin). The description can span lines and
+is limited to 8192 bytes. Set each member's free-text role with
+`cairn team set-member --campaign NAME --member PRINCIPAL --role-label TEXT`.
+Role labels are limited to 160 bytes on one line with no control characters.
+On update, omit a field to keep its value or pass an empty value to clear it.
+`cairn team get` and `cairn team list` return both fields. One
+`cairn ledger get --campaign NAME` also returns the ledger items.
+See the [campaign setup recipe](../guides/scoped-coordination.md#team-hierarchy-routing-and-filtered-topic-subscriptions)
+for connection flags and hierarchy settings.
+
 ### Inspect pressure and reply obligations
 
 With the same authenticated profile, inspect your own inbox and publications:

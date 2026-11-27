@@ -220,12 +220,12 @@ func TestRealRepliesConformToContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	hostedSession := map[string]string{"Cairn-Agent-ID": hostedAgent.AgentID, "Cairn-Execution-ID": hostedAgent.ExecutionID}
-	campReply := c.call(c.server, "local", "team-campaign-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","max_coordinator_compactions":1}`, localCoordSession)
+	campReply := c.call(c.server, "local", "team-campaign-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","description":"Verify the release.\nReport blockers.","max_coordinator_compactions":1}`, localCoordSession)
 	var contractCamp core.TeamCampaign
 	if campReply.status != 200 || json.Unmarshal(campReply.parsed.Data, &contractCamp) != nil {
 		t.Fatalf("team-campaign-set failed: %d %s", campReply.status, campReply.body)
 	}
-	c.call(c.server, "local", "team-member-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","member":"agent/`+hostedAgent.AgentID+`","lead":"`+contractCamp.RootAgent+`","role":"worker"}`, localCoordSession)
+	c.call(c.server, "local", "team-member-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","member":"agent/`+hostedAgent.AgentID+`","lead":"`+contractCamp.RootAgent+`","role":"worker","role_label":"Révision du déploiement"}`, localCoordSession)
 	c.call(c.server, "local", "ledger-item-set", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","kind":"assignment","item_key":"slice-1","owner":"agent/`+hostedAgent.AgentID+`","status":"planned","summary":"Contract ledger assignment"}`, localCoordSession)
 	c.call(c.server, "local", "ledger-get", `{"campaign":"contract-camp"}`, localCoordSession)
 	c.ok("hosted", "ledger-sync-context", `{"request_id":"`+uuid.NewString()+`","campaign":"contract-camp","session":{"agent_id":"`+hostedAgent.AgentID+`","execution_id":"`+hostedAgent.ExecutionID+`"}}`)

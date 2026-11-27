@@ -24,7 +24,7 @@ Everyday operations:
   event-pressure, event-fanout, event-admission-preview: observe event load (--help)
   closures, close-replies: inspect and close reply reservations (--help)
   status       Read or update the bounded workstream status board (--help)
-  team         Configure campaign hierarchy and reporting chains (--help)
+  team         Record campaign descriptions, member role labels, and reporting chains (--help)
   ledger       Read or update the hosted campaign ledger and journaled operations (--help)
   remember     Save a selected note using text, --stdin or a JSON draft
   send         Journal selected assignment source and explicit publication (--help)

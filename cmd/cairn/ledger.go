@@ -32,6 +32,7 @@ Subcommands:
   cairn ledger handoff --campaign NAME [--if-needed] (--to-session AGENT_UUID:EXECUTION_UUID | --to-agent-id UUID --to-execution-id UUID | --new-binding BINDING --new-native-session NATIVE_ID [--workspace PATH --harness NAME --project NAME --model NAME --delivery-mode existing-session|fresh-worker]) [--shareable] [--reason TEXT] [--note TEXT] [--request-id UUID]
 
 Common flags: --profile NAME | --token-file FILE | --operator, --socket PATH, --repo COLLECTION | --collection COLLECTION, --session AGENT_UUID:EXECUTION_UUID | (--agent-id UUID --execution-id UUID)
+The get command returns the campaign description, members with their role labels, and ledger items in one call.
 Do not keep private intent, result, or receipt files on disk; retry uncertain publish, send, complete, or ack calls with the same --campaign and --op-key.
 `
 

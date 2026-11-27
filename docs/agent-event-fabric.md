@@ -100,6 +100,13 @@ Reserve repository-wide task/run wildcards for selected reusable guidance. Recor
 kind is descriptive: a `note` can be either an assignment or a reusable lesson;
 there is no assignment kind blacklist.
 
+When starting a swarm from the owner's prose, the lead records that prose with
+`cairn team set-campaign --description` or `--description-file` and gives each
+member a free-text role with `cairn team set-member --role-label`. Use the
+[campaign setup recipe](guides/scoped-coordination.md#team-hierarchy-routing-and-filtered-topic-subscriptions)
+to record the root and other members. One `cairn ledger get` returns the campaign
+description, members with their roles, and ledger items.
+
 For a campaign managed under `cairn team set-campaign`, compose sends, publications,
 completions, and acknowledgments through the hosted campaign ledger (`cairn ledger
 send|publish|complete|ack --campaign NAME --op-key KEY`, or `cairn agent send

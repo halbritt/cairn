@@ -243,27 +243,39 @@ withdraw the request.
 
 ## Team hierarchy routing and filtered topic subscriptions
 
-For multi-lead campaigns where workers report to sub-leads instead of waking the root
-coordinator on every routine update, configure a campaign hierarchy and
-filtered topic subscriptions:
+When the owner describes a swarm and asks you to start it, the lead records the
+owner's prose as the campaign description and gives each member, including the
+root, a free-text role label drawn from the description. The existing reporting
+hierarchy and filtered subscriptions route routine updates through sub-leads
+when the campaign has them.
 
 ```sh
 cairn team set-campaign --token-file "$COORD_TOKEN_FILE" \
   --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
   --campaign CAMPAIGN_NAME --root-agent "agent/$COORD_AGENT" \
-  --out-of-chain-policy reroute
+  --description "$OWNER_DESCRIPTION" --out-of-chain-policy reroute
+
+cairn team set-member --token-file "$COORD_TOKEN_FILE" \
+  --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
+  --campaign CAMPAIGN_NAME --member "agent/$COORD_AGENT" \
+  --role-label "$COORD_ROLE_LABEL"
 
 cairn team set-member --token-file "$COORD_TOKEN_FILE" \
   --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
   --campaign CAMPAIGN_NAME --member "agent/$LEAD_AGENT" \
-  --lead "agent/$COORD_AGENT" --role lead
+  --lead "agent/$COORD_AGENT" --role lead --role-label "$LEAD_ROLE_LABEL"
 
 cairn team set-member --token-file "$WORKER_TOKEN_FILE" \
   --agent-id "$WORKER_AGENT" --execution-id "$WORKER_EXEC" --repo "$COLLECTION" \
   --campaign CAMPAIGN_NAME --member "agent/$WORKER_AGENT" \
-  --lead "agent/$LEAD_AGENT" --role worker
+  --lead "agent/$LEAD_AGENT" --role worker --role-label "$WORKER_ROLE_LABEL"
 ```
 
+- Descriptions accept up to 8192 bytes and can span multiple lines.
+  Use `--description-file PATH` to read a file or `--description-file -` for stdin.
+  Role labels accept up to 160 bytes on one line with no control characters.
+  The structural `--role` sets the reporting hierarchy independently.
+  Omit a description or role label on update to keep it, or pass an empty value to clear it.
 - Enrolling a new subordinate requires the campaign `root_agent`, an operator, or the
   worker self-enrolling under an active lead (`--member "agent/$WORKER_AGENT"`). Once a
   member is enrolled in a lead's subtree, that lead can reorganize or deactivate it
@@ -303,8 +315,9 @@ Coordinators, sub-leads, and workers keep campaign state in Cairn's hosted ledge
 rather than in workspace journals. **Do not keep private intent, result, or
 receipt files on disk**: private per-message files accumulate thousands of files and force
 repeated context compactions. A coordinator or replacement session in a fresh empty
-directory reconstructs assignments, owners, open decisions, blockers, holds, derived
-context summaries, and operation receipts from `cairn ledger get`:
+directory reconstructs the campaign description, members with their roles,
+assignments, owners, open decisions, blockers, holds, derived context summaries,
+and operation receipts from one `cairn ledger get` call:
 
 ```sh
 cairn ledger set --token-file "$COORD_TOKEN_FILE" \

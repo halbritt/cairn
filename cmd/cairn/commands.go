@@ -28,7 +28,7 @@ Everyday commands:
   response-group | response-groups (owned reply collections; use --help)
   wait --help (durable coordination waits: create, get, list, cancel; use --help)
   status --help (bounded workstream status board that wakes no one: set, get, history, authorize)
-  team --help (campaign hierarchy configuration: set-campaign, set-member, get, list)
+  team --help (campaign descriptions, member role labels, and reporting hierarchy)
   ledger --help (hosted campaign ledger & operation idempotency without private journal files)
   cd1 --help (validate or render cd1 compact symbolic messages; structural validation only)
   work --help (work features and coordination; use --help)

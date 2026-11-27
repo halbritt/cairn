@@ -9,6 +9,13 @@ installation with `cairn version`; use
 See [build identity](docs/build-identity.md) for unstamped builds and MCP
 processes.
 
+## 2026-11-27
+
+- Swarm leads can store the owner's prose as a campaign description and give
+  each member a free-text role label (CAIRN-828). Team reads return both fields,
+  and one `ledger get` call returns them with the ledger items. Migration 096
+  adds the two optional fields to existing campaign and member rows.
+
 ## 2026-11-26
 
 - Fixed nine defects the documentation audit found in code (CAIRN-846):

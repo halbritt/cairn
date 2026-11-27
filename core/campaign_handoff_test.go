@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestCoordinatorHandoffThresholdsRoleInboxContinuityZeroLostOrDuplicateMessages(t *testing.T) {
+func TestCampaignCoordinatorHandoffThresholdsRoleInboxContinuityZeroLostOrDuplicateMessages(t *testing.T) {
 	ctx := context.Background()
 	f := newNativeFixture(t)
 
@@ -23,13 +24,29 @@ func TestCoordinatorHandoffThresholdsRoleInboxContinuityZeroLostOrDuplicateMessa
 
 	maxAge := 3600
 	maxComp := 2
+	description := "Coordinate the deployment across the platform team.\nHand off before the cutover."
+	rootLabel := "Deployment coordinator"
 	camp, err := root1View.SetTeamCampaign(ctx, SetTeamCampaignRequest{
 		RequestID: uuid.NewString(), Repo: f.repo, Campaign: "alpha",
 		RootAgent: root1.Inbox, OutOfChainPolicy: "reroute", Sensitivity: "shareable",
 		MaxCoordinatorAgeSeconds: &maxAge, MaxCoordinatorCompactions: &maxComp,
+		Description: &description,
 	}, f.dest)
 	if err != nil || camp.RoleAddress != "role/alpha/root" {
 		t.Fatalf("SetTeamCampaign: %+v %v", camp, err)
+	}
+	setRootLabel := SetTeamMemberRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: "alpha", Member: root1.Inbox, RoleLabel: &rootLabel,
+	}
+	_, err = workerAView.SetTeamMember(ctx, setRootLabel, f.dest)
+	requireCode(t, err, "AUTHORITY_DENIED")
+	rootStructuralChange := setRootLabel
+	rootStructuralChange.RequestID = uuid.NewString()
+	rootStructuralChange.Role = "worker"
+	_, err = root1View.SetTeamMember(ctx, rootStructuralChange, f.dest)
+	requireCode(t, err, "INVALID_REQUEST")
+	if _, err := root1View.SetTeamMember(ctx, setRootLabel, f.dest); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := root1View.SetTeamMember(ctx, SetTeamMemberRequest{
 		RequestID: uuid.NewString(), Repo: f.repo, Campaign: "alpha", Member: leadA.Inbox, Lead: root1.Inbox, Role: "lead",
@@ -117,6 +134,10 @@ func TestCoordinatorHandoffThresholdsRoleInboxContinuityZeroLostOrDuplicateMessa
 	ho1, err := root1View.HandoffCampaignCoordinator(ctx, ho1Req, f.dest)
 	if err != nil || !ho1.Performed || ho1.ToSession == nil || ho1.Handoff == nil || ho1.TransferredDeliveries != 1 || ho1.TransferredSubscriptions != 1 {
 		t.Fatalf("Handoff 1 failed: %+v %v", ho1, err)
+	}
+	oldRoot := slices.IndexFunc(ho1.Campaign.Members, func(m TeamMember) bool { return m.Member == root1.Inbox })
+	if ho1.Campaign.Description != description || oldRoot < 0 || ho1.Campaign.Members[oldRoot].RoleLabel != rootLabel || ho1.Campaign.Members[oldRoot].Active {
+		t.Fatalf("handoff lost the campaign description or the retired root's role label: %+v", ho1.Campaign)
 	}
 	root2 := *ho1.ToSession
 	root2View := f.view(sessionRef(root2))

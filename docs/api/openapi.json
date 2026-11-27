@@ -16274,6 +16274,12 @@
           "campaign": {
             "type": "string"
           },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "expected_revision": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -16328,6 +16334,12 @@
             ]
           },
           "campaign": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
             "type": [
               "string",
               "null"
@@ -16416,6 +16428,12 @@
           },
           "role": {
             "type": "string"
+          },
+          "role_label": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -16466,6 +16484,12 @@
             ]
           },
           "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role_label": {
             "type": [
               "string",
               "null"
@@ -17272,6 +17296,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "description": {
+            "type": "string"
+          },
           "max_coordinator_age_seconds": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -17387,6 +17414,9 @@
             "type": "string"
           },
           "role": {
+            "type": "string"
+          },
+          "role_label": {
             "type": "string"
           },
           "updated_at": {
@@ -38234,6 +38264,12 @@
                           "null"
                         ]
                       },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "expected_revision": {
                         "maximum": 9223372036854775807,
                         "minimum": -9223372036854775808,
@@ -38451,6 +38487,12 @@
                         ]
                       },
                       "role": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "role_label": {
                         "type": [
                           "string",
                           "null"
