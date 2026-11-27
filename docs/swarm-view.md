@@ -210,9 +210,36 @@ and each row names the action. (CAIRN-831 completes this section.)
 
 ## Context room
 
-The true fill of an agent's window is known only to its harness. The page
-shows what Cairn can state truthfully, labelled as a proxy. (CAIRN-832
-completes this section.)
+The session start time gives its age. The last observed compaction time
+comes from the newest `PreCompact` capture row, or the session's first
+compaction timestamp when its counter records exactly one compaction and
+there is no `PreCompact` row. The compaction count is the larger of the
+number of `PreCompact` reports and the session counter, since both can
+record the same compaction. An unreported count or time is unknown.
+`PreCompact` is best-effort telemetry. The native post-compaction hook
+updates the session counter for active campaign coordinators on bindings
+that report a compacted session start.
+
+**Cairn-injected since compaction** is a proxy for context growth. It adds
+measured UTF-8 bytes from successful startup and per-prompt recall, rendered
+inbox-recall output (including any control text it carried), and measured
+delivery rows. When both sources measure a matching delivery ID, the
+delivery measurement takes precedence. The delivery count includes reported
+full, compact and digest deliveries, or linked inbox-recall output that
+carried content. A digest claim alone, an auto-settlement and a superseded
+delivery do not establish injection. The recall count includes ordinary
+recall invocations that emitted bytes. Unmetered inbox output, standalone
+coordination cues and native memory reads are outside the proxy.
+
+With no recorded compaction, the proxy starts at session registration.
+With a recorded compaction, it counts rows after the last observed
+compaction. If the store records several compactions but has no timestamp
+after the first, the current interval is unknown. A value without a
+measurement in the interval is unknown. The source timestamp is the newest
+counter observation among the campaign's sessions. The proxy flags a session
+at 64 KiB of measured Cairn output in the current interval, a fixed
+threshold for accumulated output across multiple hooks. Harness-reported
+window fill is read independently.
 
 ## Plane
 
