@@ -273,7 +273,11 @@ class ClaudeInboxRecallTests(unittest.TestCase):
         with patch.object(memory, 'capture', side_effect=capture):
             self.assertEqual(memory.handle(self.mc, event), {})
         self.assertEqual(observed, [event])
-        self.assertEqual(self.calls(), [])
+        # The capture reports its own observation; it makes no bridge call.
+        calls = self.calls()
+        self.assertEqual([call['op'] for call in calls], ['capture-observation'])
+        report = json.loads(calls[0]['body'])
+        self.assertEqual((report['hook_event'], report['outcome']), ('PreCompact', 'nothing_selected'))
 
     def test_dependency_and_final_state_failure_persist_required_restoration_obligation(self):
         for failure in ('engine_drift', 'final_state_save'):

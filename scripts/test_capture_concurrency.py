@@ -5,6 +5,7 @@ import fcntl
 import json
 from pathlib import Path
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -113,10 +114,21 @@ class CaptureConcurrencyTests(unittest.TestCase):
     def test_second_stop_and_compaction_do_not_duplicate_capture(self):
         with self.selecting() as future:
             before = self.f.calls()
-            for event_name in ('Stop', 'PreCompact', 'SessionEnd'):
+            events = ('Stop', 'PreCompact', 'SessionEnd')
+            for event_name in events:
                 with self.subTest(event=event_name), self.assertRaisesRegex(memory.HookError, 'capture.*already running'):
                     memory.handle(self.f.mc, dict(self.stop, hook_event_name=event_name))
-            self.assertEqual(self.f.calls(), before, 'duplicate capture dispatched an API call')
+            calls = self.f.calls()
+            self.assertEqual(calls[:len(before)], before)
+            # Each refused invocation reports its own observation and nothing else.
+            reports = calls[len(before):]
+            self.assertEqual([call['op'] for call in reports], ['capture-observation'] * len(events),
+                             'duplicate capture dispatched an API call other than its observation')
+            bodies = [json.loads(call['body']) for call in reports]
+            self.assertEqual([body['hook_event'] for body in bodies], list(events))
+            for body in bodies:
+                self.assertNotIn('selector_outcome', body, 'duplicate capture reported a selector run')
+                self.assertNotIn('snapshot_sha256', body, 'duplicate capture reported a capture snapshot')
             self.assertEqual(self.selector_calls, 1)
         self.assertEqual(future.result(), {})
 
@@ -232,6 +244,21 @@ class CaptureConcurrencyTests(unittest.TestCase):
             for lock in held:
                 lock.close()
 
+    @staticmethod
+    def hook_clock(monotonic, sleep):
+        """Replace the clock for the hook module alone.
+
+        The hook shares the process-wide time module. A fake installed there also
+        counts the sleeps of other callers, such as the subprocess wait polling
+        behind the capture observation report.
+        """
+        class HookClock:
+            def __getattr__(self, name):
+                return getattr(time, name)
+        clock = HookClock()
+        clock.monotonic, clock.sleep = monotonic, sleep
+        return patch.object(memory, 'time', clock)
+
     def test_exhausted_commit_wait_preserves_recall_grant_and_partial_write(self):
         memory.handle(self.f.mc, self.prompt)
         before = self.path.read_bytes()
@@ -247,8 +274,7 @@ class CaptureConcurrencyTests(unittest.TestCase):
             clock[0] += seconds
 
         with self.contended_after_write(on_write=committing.set) as (writes, selector), \
-             patch.object(memory.time, 'monotonic', side_effect=lambda: clock[0]), \
-             patch.object(memory.time, 'sleep', side_effect=sleep):
+             self.hook_clock(lambda: clock[0], sleep):
             with self.assertRaisesRegex(memory.HookError, 'selected notes may already be saved'):
                 memory.handle(self.f.mc, self.stop)
         self.assertAlmostEqual(sum(sleeps), 5.0)
@@ -293,8 +319,7 @@ class CaptureConcurrencyTests(unittest.TestCase):
                     self.path = self.path.with_name(memory.hashlib.sha256(event['session_id'].encode()).hexdigest() + '.json')
                 try:
                     with self.contended_after_write(on_write=after_write) as (writes, selector), \
-                         patch.object(memory.time, 'monotonic', side_effect=lambda: clock[0]), \
-                         patch.object(memory.time, 'sleep', side_effect=sleep):
+                         self.hook_clock(lambda: clock[0], sleep):
                         with self.assertRaisesRegex(memory.HookError, 'could not commit state'):
                             memory.handle(config, event)
                     self.assertAlmostEqual(sum(sleeps), expected)
