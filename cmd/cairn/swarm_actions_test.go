@@ -229,9 +229,20 @@ func TestSwarmActionHTTPSendEventCursorAndSupersession(t *testing.T) {
 }
 
 func TestSwarmActionHTTPAcknowledgeOrderAndReplay(t *testing.T) {
+	ctx := context.Background()
 	f := newSwarmStoreFixture(t, swarmNoPanes)
 	member, view := f.member("action-ack-member")
 	operator := f.op.Channel().Principal
+	_, outside := f.session("action-ack-outsider")
+	expired := time.Now().Add(-time.Minute)
+	foreignExpired, err := outside.PublishEvent(ctx, core.PublishEventRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Kind: "request", AdmissionExpiresAt: &expired,
+		Ref:         core.RecordVersionRef{RecordID: f.source.RecordID, Version: f.source.Version},
+		Destination: core.EventDestination{Type: "agent", Name: operator},
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	first := swarmActionPublishEvent(t, f, view, "notice", operator, "", "")
 	second := swarmActionPublishEvent(t, f, view, "notice", operator, "", "")
 	firstID := swarmActionGetEvent(t, f, first.EventID).Deliveries[0].DeliveryID
@@ -276,6 +287,10 @@ func TestSwarmActionHTTPAcknowledgeOrderAndReplay(t *testing.T) {
 	empty := swarmActionPost[core.SwarmAcknowledgeResult](t, f, "acknowledge", swarmActionDeliveryRequest(f, secondID))
 	if empty.Delivery != nil {
 		t.Fatalf("empty inbox: %+v", empty.Delivery)
+	}
+	status, err := outside.AgentEventStatus(ctx, core.EventStatusRequest{EventID: foreignExpired.EventID}, f.dest)
+	if err != nil || len(status.Deliveries) != 1 || status.Deliveries[0].State != "pending" {
+		t.Fatalf("scoped acknowledgement changed the foreign delivery: %+v %v", status, err)
 	}
 	foreign := swarmActionPost[core.SwarmEventDetails](t, f, "send", swarmActionSend(f, member.Inbox, "request", "The member owns this delivery"))
 	resp, raw = f.do(http.MethodPost, "/api/swarm/action/acknowledge", swarmActionDeliveryRequest(f, foreign.Deliveries[0].DeliveryID), header)

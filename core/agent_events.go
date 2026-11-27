@@ -544,16 +544,18 @@ func (s *Store) recipientSupportsNextOrganicTurnTx(ctx context.Context, tx pgx.T
 	return activeBindingExists, err
 }
 
+type eventTargetCheck func(EventDestination, *EventRouting) error
+
 // publishEventTx keeps source checks, pool admission, publication and fanout in the caller transaction.
-func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string) (AgentEvent, error) {
-	return s.publishEventInternalTx(ctx, tx, req, dest, id, false)
+func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string, checks ...eventTargetCheck) (AgentEvent, error) {
+	return s.publishEventInternalTx(ctx, tx, req, dest, id, false, checks...)
 }
 
 func (s *Store) publishDaemonEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string) (AgentEvent, error) {
 	return s.publishEventInternalTx(ctx, tx, req, dest, id, true)
 }
 
-func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string, bypassHierarchy bool) (AgentEvent, error) {
+func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string, bypassHierarchy bool, checks ...eventTargetCheck) (AgentEvent, error) {
 	if _, err := retrievalGeneration(ctx, tx); err != nil {
 		return AgentEvent{}, err
 	}
@@ -603,6 +605,11 @@ func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req Publi
 				req.Destination = routing.EffectiveDestination
 				req.Resolution = nil
 			}
+		}
+	}
+	for _, check := range checks {
+		if err := check(req.Destination, routing); err != nil {
+			return AgentEvent{}, err
 		}
 	}
 	if routing != nil && req.NoticeDelivery == "next_organic_turn" {
@@ -784,15 +791,13 @@ func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req Publi
 }
 
 func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest Destination) (AgentEvent, error) {
-	return s.publishEvent(ctx, req, dest)
-}
-
-func (s *Store) publishEvent(ctx context.Context, req PublishEventRequest, dest Destination, guards ...func(pgx.Tx) error) (AgentEvent, error) {
 	var err error
 	if req, err = s.normalizePublication(req, dest); err != nil {
 		return AgentEvent{}, err
 	}
-	guards = append(guards, func(tx pgx.Tx) error {
+	out, err := mutate(ctx, s, "event-publish", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
+		return s.publishEventTx(ctx, tx, req, dest, "")
+	}, func(tx pgx.Tx) error {
 		// Cached publication responses must not bypass a profile's current destination.
 		var visible bool
 		err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.memory_record m JOIN cairn.record_version v USING(record_id) WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND (m.sensitivity='shareable' OR $4))`, req.Ref.RecordID, req.Ref.Version, req.Repo, dest.AllowLocal).Scan(&visible)
@@ -809,9 +814,6 @@ func (s *Store) publishEvent(ctx context.Context, req PublishEventRequest, dest 
 		}
 		return nil
 	})
-	out, err := mutate(ctx, s, "event-publish", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
-		return s.publishEventTx(ctx, tx, req, dest, "")
-	}, guards...)
 	if err != nil {
 		return out, s.retainEventAdmissionRefusal(ctx, req.Repo, err)
 	}
@@ -1007,7 +1009,9 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 	return out, tx.Commit(ctx)
 }
 
-// nextEventTx lets a caller validate and settle the lease before committing it.
+// nextEventTx lets a scoped caller check the inbox head before leasing it.
+// That caller skips the general expiry sweep and changes only the selected
+// delivery. The claim query still excludes work past its admission limit.
 func (s *Store) nextEventTx(ctx context.Context, tx pgx.Tx, repo string, dest Destination, seconds int, beforeClaim func(string) error) (NextEventResult, error) {
 	var out NextEventResult
 	var err error
@@ -1023,8 +1027,10 @@ func (s *Store) nextEventTx(ctx context.Context, tx pgx.Tx, repo string, dest De
 			return out, err
 		}
 	}
-	if _, err = expireRequestDeliveries(ctx, tx, s, repo, s.channel.Principal, dest.AllowLocal); err != nil {
-		return out, err
+	if beforeClaim == nil {
+		if _, err = expireRequestDeliveries(ctx, tx, s, repo, s.channel.Principal, dest.AllowLocal); err != nil {
+			return out, err
+		}
 	}
 	nativeBusy, err := principalWorkOpen(ctx, tx, s.channel.Principal)
 	if err != nil {

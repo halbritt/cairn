@@ -383,34 +383,54 @@ func serializationBackoff(attempt int) time.Duration {
 	return time.Millisecond + rand.N(ceiling)
 }
 
-func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID string, request any, level pgx.TxIsoLevel, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
-	var zero T
+func mutationDigest(requestID string, request any) ([sha256.Size]byte, error) {
 	if err := validID(requestID); err != nil {
-		return zero, err
+		return [sha256.Size]byte{}, err
 	}
 	canonical, err := json.Marshal(request)
 	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	return sha256.Sum256(canonical), nil
+}
+
+func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID string, request any, level pgx.TxIsoLevel, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
+	var zero T
+	digest, err := mutationDigest(requestID, request)
+	if err != nil {
 		return zero, err
 	}
-	digest := sha256.Sum256(canonical)
 	tx, err := s.beginLevel(ctx, level)
 	if err != nil {
 		return zero, err
 	}
 	defer tx.Rollback(context.Background())
-	if err = lock(ctx, tx, "request:"+s.channel.Principal+":"+operation+":"+requestID); err != nil {
+	out, err := applyMutationTx(ctx, s, tx, operation, requestID, digest, apply, guards...)
+	if err != nil {
+		return zero, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return zero, err
+	}
+	return out, nil
+}
+
+// applyMutationTx binds the mutation receipt to the caller's transaction.
+func applyMutationTx[T any](ctx context.Context, s *Store, tx pgx.Tx, operation, requestID string, digest [sha256.Size]byte, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
+	var zero T
+	if err := lock(ctx, tx, "request:"+s.channel.Principal+":"+operation+":"+requestID); err != nil {
 		return zero, err
 	}
 	// Disclosure mutations must recheck live authorization even when the
 	// request has already committed and its original response is cached.
 	for _, guard := range guards {
-		if err = guard(tx); err != nil {
+		if err := guard(tx); err != nil {
 			return zero, err
 		}
 	}
 	var previousDigest, response []byte
 	var responseDeleted bool
-	err = tx.QueryRow(ctx, `SELECT request_digest,response,payload_deleted_by IS NOT NULL OR ordinary_deleted FROM cairn.mutation_request WHERE caller=$1 AND operation=$2 AND request_id=$3`, s.channel.Principal, operation, requestID).Scan(&previousDigest, &response, &responseDeleted)
+	err := tx.QueryRow(ctx, `SELECT request_digest,response,payload_deleted_by IS NOT NULL OR ordinary_deleted FROM cairn.mutation_request WHERE caller=$1 AND operation=$2 AND request_id=$3`, s.channel.Principal, operation, requestID).Scan(&previousDigest, &response, &responseDeleted)
 	if err == nil {
 		if !bytes.Equal(previousDigest, digest[:]) {
 			return zero, failure("IDEMPOTENCY_CONFLICT", "request UUID already used with different content")
@@ -422,7 +442,7 @@ func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID strin
 		if err = json.Unmarshal(response, &original); err != nil {
 			return zero, err
 		}
-		return original, tx.Commit(ctx)
+		return original, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return zero, err
@@ -439,9 +459,6 @@ func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID strin
 	if err != nil {
 		return zero, err
 	}
-	if err = tx.Commit(ctx); err != nil {
-		return zero, err
-	}
 	return applied, nil
 }
 
@@ -451,30 +468,42 @@ func lock(ctx context.Context, tx pgx.Tx, key string) error {
 }
 
 func (s *Store) Create(ctx context.Context, req CreateRequest) (Record, error) {
+	req, err := s.normalizeCreateRequest(req)
+	if err != nil {
+		return Record{}, err
+	}
+	return mutate(ctx, s, "create", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
+		return createRecordTx(ctx, tx, req.Draft)
+	})
+}
+
+func (s *Store) normalizeCreateRequest(req CreateRequest) (CreateRequest, error) {
 	if req.Draft.Sensitivity == "" {
 		req.Draft.Sensitivity = "local"
 	}
 	if req.Draft.Sensitivity != "local" && req.Draft.Sensitivity != "shareable" {
-		return Record{}, failure("INVALID_REQUEST", "unknown sensitivity")
+		return req, failure("INVALID_REQUEST", "unknown sensitivity")
 	}
 	if err := s.checkRepo(req.Draft.Scope.Repo); err != nil {
-		return Record{}, err
+		return req, err
 	}
 	if err := req.Draft.validate(); err != nil {
-		return Record{}, err
+		return req, err
 	}
-	return mutate(ctx, s, "create", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
-		if req.Draft.AttemptID != "" {
-			if err := lock(ctx, tx, "attempt:"+req.Draft.AttemptID); err != nil {
-				return Record{}, err
-			}
-		}
-		id := uuid.NewString()
-		if _, err := tx.Exec(ctx, `INSERT INTO cairn.memory_record(record_id,current_version,sensitivity) VALUES($1,1,$2)`, id, req.Draft.Sensitivity); err != nil {
+	return req, nil
+}
+
+func createRecordTx(ctx context.Context, tx pgx.Tx, draft Draft) (Record, error) {
+	if draft.AttemptID != "" {
+		if err := lock(ctx, tx, "attempt:"+draft.AttemptID); err != nil {
 			return Record{}, err
 		}
-		return insertVersion(ctx, tx, id, 1, req.Draft)
-	})
+	}
+	id := uuid.NewString()
+	if _, err := tx.Exec(ctx, `INSERT INTO cairn.memory_record(record_id,current_version,sensitivity) VALUES($1,1,$2)`, id, draft.Sensitivity); err != nil {
+		return Record{}, err
+	}
+	return insertVersion(ctx, tx, id, 1, draft)
 }
 
 func (s *Store) Edit(ctx context.Context, req EditRequest) (Record, error) {

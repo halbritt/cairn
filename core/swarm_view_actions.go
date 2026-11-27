@@ -436,39 +436,58 @@ func (s *Store) SendSwarmEvent(ctx context.Context, req SwarmSendRequest) (Swarm
 		return SwarmEventDetails{}, failure("INVALID_REQUEST", "notice events require explicit action: none, review, or decide")
 	}
 	noteRequest := uuid.NewSHA1(uuid.MustParse(req.RequestID), []byte("cairn.swarm.message")).String()
-	eventReq, err := s.normalizePublication(PublishEventRequest{
-		RequestID: req.RequestID, Repo: req.Repo, Destination: EventDestination{Type: "agent", Name: req.To},
-		Kind: req.Kind, Action: req.Action, Summary: req.Summary, Supersedes: req.Supersedes,
-		Ref: RecordVersionRef{RecordID: noteRequest, Version: 1},
-	}, swarmOperatorDestination)
-	if err != nil {
-		return SwarmEventDetails{}, err
-	}
-	check := func(_ pgx.Tx, sc swarmScope) error {
-		if !sc.isMember(req.To) {
-			return failure("AUTHORITY_DENIED", "recipient is outside this campaign")
-		}
-		return nil
-	}
-	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign)
-	if err != nil {
-		return SwarmEventDetails{}, err
-	}
-	err = check(tx, sc)
-	tx.Rollback(context.Background())
-	if err != nil {
-		return SwarmEventDetails{}, err
-	}
-	record, err := s.Create(ctx, CreateRequest{RequestID: noteRequest, Draft: Draft{
+	note, err := s.normalizeCreateRequest(CreateRequest{RequestID: noteRequest, Draft: Draft{
 		Kind: "note", ClaimType: "self", Sensitivity: "shareable", Body: req.Body,
 		Scope: Scope{Repo: req.Repo, TaskID: "coordination/swarm/" + req.Campaign + "/" + req.RequestID, RunID: "*"},
 	}})
 	if err != nil {
 		return SwarmEventDetails{}, err
 	}
-	eventReq.Ref = RecordVersionRef{RecordID: record.RecordID, Version: record.Version}
-	event, err := s.publishEvent(ctx, eventReq, swarmOperatorDestination, s.swarmActionGuard(ctx, req.SwarmActionRequest, check))
+	noteDigest, err := mutationDigest(noteRequest, note)
 	if err != nil {
+		return SwarmEventDetails{}, err
+	}
+	var sc swarmScope
+	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(_ pgx.Tx, scope swarmScope) error {
+		sc = scope
+		if !sc.isMember(req.To) {
+			return failure("AUTHORITY_DENIED", "recipient is outside this campaign")
+		}
+		return nil
+	})
+	checkTarget := func(resolved EventDestination, routing *EventRouting) error {
+		if !sc.isMember(resolved.Name) || (routing != nil && routing.Campaign != sc.Campaign.Campaign) {
+			return failure("AUTHORITY_DENIED", "publication would be routed outside this campaign")
+		}
+		return nil
+	}
+	// Use the existing create and publication mutations in one transaction.
+	// A refusal rolls back the note and its receipt along with the publication.
+	intent := struct {
+		SwarmSendRequest
+		Collection string `json:"collection"`
+	}{req, req.Repo}
+	event, err := mutate(ctx, s, "event-publish", req.RequestID, intent, func(tx pgx.Tx) (AgentEvent, error) {
+		record, err := applyMutationTx(ctx, s, tx, "create", noteRequest, noteDigest, func(tx pgx.Tx) (Record, error) {
+			return createRecordTx(ctx, tx, note.Draft)
+		})
+		if err != nil {
+			return AgentEvent{}, err
+		}
+		eventReq, err := s.normalizePublication(PublishEventRequest{
+			RequestID: req.RequestID, Repo: req.Repo, Destination: EventDestination{Type: "agent", Name: req.To},
+			Kind: req.Kind, Action: req.Action, Summary: req.Summary, Supersedes: req.Supersedes,
+			Ref: RecordVersionRef{RecordID: record.RecordID, Version: record.Version},
+		}, swarmOperatorDestination)
+		if err != nil {
+			return AgentEvent{}, err
+		}
+		return s.publishEventTx(ctx, tx, eventReq, swarmOperatorDestination, "", checkTarget)
+	}, guard)
+	if err != nil {
+		return SwarmEventDetails{}, s.retainEventAdmissionRefusal(ctx, req.Repo, err)
+	}
+	if err := checkTarget(event.Destination, event.Routing); err != nil {
 		return SwarmEventDetails{}, err
 	}
 	return s.swarmEventDetails(ctx, req.Repo, req.Campaign, event.EventID, false)
@@ -493,7 +512,11 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 		}
 		return nil
 	})
-	return mutate(ctx, s, "swarm-acknowledge", req.RequestID, req, func(tx pgx.Tx) (SwarmAcknowledgeResult, error) {
+	intent := struct {
+		SwarmDeliveryActionRequest
+		Collection string `json:"collection"`
+	}{req, req.Repo}
+	return mutate(ctx, s, "swarm-acknowledge", req.RequestID, intent, func(tx pgx.Tx) (SwarmAcknowledgeResult, error) {
 		out := SwarmAcknowledgeResult{}
 		seconds, _ := leaseSeconds(0)
 		// Check the oldest eligible row under its claim lock, before attempts

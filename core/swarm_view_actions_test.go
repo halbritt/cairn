@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -307,4 +308,106 @@ func TestSwarmActionCancelPreviewRefusesLiveLeases(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSwarmActionSendRejectsCrossCampaignHandoff(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "swarm-action-origin")
+	former, formerView := f.member("action-former-coordinator")
+	inactive := false
+	if _, err := f.rootView.SetTeamMember(ctx, SetTeamMemberRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign,
+		Member: former.Inbox, Lead: f.root.Inbox, Role: "worker", Active: &inactive,
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	const away = "swarm-action-away"
+	if _, err := formerView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: away,
+		RootAgent: former.Inbox, OutOfChainPolicy: "allow", Sensitivity: "shareable",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	handoff, err := formerView.HandoffCampaignCoordinator(ctx, HandoffCampaignCoordinatorRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: away,
+		NewSession: &NewCoordinatorSessionSpec{Binding: "action-former-coordinator", NativeSessionID: "action-away-successor"},
+		Note:       "Use the new coordinator session", Shareable: true,
+	}, f.dest)
+	if err != nil || !handoff.Performed || handoff.ToSession == nil {
+		t.Fatalf("handoff fixture: %+v %v", handoff, err)
+	}
+	req := SwarmSendRequest{
+		SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: f.campaign, RequestID: uuid.NewString()},
+		To:                 former.Inbox, Kind: "request", Body: "Intended for the selected campaign",
+	}
+	_, err = f.op.SendSwarmEvent(ctx, req)
+	requireCode(t, err, "AUTHORITY_DENIED")
+	if !strings.Contains(err.Error(), "publication would be routed outside this campaign") {
+		t.Fatalf("expected refusal of the resolved successor: %v", err)
+	}
+	swarmActionAssertSourceCount(t, f.op, req, 0)
+	succ := f.view(sessionRef(*handoff.ToSession))
+	next, err := succ.NextEvent(ctx, NextEventRequest{Repo: f.repo}, f.dest)
+	if err != nil || next.Delivery != nil {
+		t.Fatalf("refused send reached the other campaign: %+v %v", next, err)
+	}
+
+	// The same handoff is valid when the send targets its own campaign.
+	req.Campaign = away
+	got, err := f.op.SendSwarmEvent(ctx, req)
+	if err != nil || len(got.Deliveries) != 1 || got.Deliveries[0].Consumer != handoff.ToPrincipal ||
+		got.Event.Routing == nil || got.Event.Routing.Campaign != away {
+		t.Fatalf("same-campaign handoff: %+v %v", got, err)
+	}
+	swarmActionAssertSourceCount(t, f.op, req, 1)
+}
+
+func swarmActionAssertSourceCount(t *testing.T, op *Store, req SwarmSendRequest, want int) {
+	t.Helper()
+	var count int
+	scope := "coordination/swarm/" + req.Campaign + "/" + req.RequestID
+	err := op.pool.QueryRow(context.Background(), `SELECT count(*) FROM cairn.record_version
+		WHERE repo=$1 AND task_id=$2`, req.Repo, scope).Scan(&count)
+	if err != nil || count != want {
+		t.Fatalf("retained %d send source records, want %d: %v", count, want, err)
+	}
+}
+
+func TestSwarmActionSendRefusalsRollBackShareableSource(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "swarm-action-refused-send")
+	req := SwarmSendRequest{
+		SwarmActionRequest: SwarmActionRequest{Repo: f.repo, Campaign: f.campaign, RequestID: uuid.NewString()},
+		To:                 f.root.Inbox, Kind: "request", Body: strings.Repeat("x", MaxEventSummaryBytes+1),
+	}
+	_, err := f.op.SendSwarmEvent(ctx, req)
+	requireCode(t, err, "INVALID_REQUEST")
+	swarmActionAssertSourceCount(t, f.op, req, 0)
+
+	req.Body = "Corrected message"
+	got, err := f.op.SendSwarmEvent(ctx, req)
+	if err != nil || len(got.Deliveries) != 1 || got.Deliveries[0].Consumer != f.root.Inbox {
+		t.Fatalf("corrected send with the same request UUID: %+v %v", got, err)
+	}
+	swarmActionAssertSourceCount(t, f.op, req, 1)
+
+	local := Destination{Name: "local", AllowLocal: true}
+	localRoot := f.register(nativeAgent{Binding: "swarm-action-local-root", Dest: &local})
+	localView, err := f.receiver.ForAgentSession(sessionRef(localRoot), local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const localCampaign = "swarm-action-local"
+	if _, err := localView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: localCampaign,
+		RootAgent: localRoot.Inbox, OutOfChainPolicy: "allow", Sensitivity: "local",
+	}, local); err != nil {
+		t.Fatal(err)
+	}
+	req.RequestID = uuid.NewString()
+	req.Campaign = localCampaign
+	req.To = campaignRootRoleAddress(localCampaign)
+	_, err = f.op.SendSwarmEvent(ctx, req)
+	requireCode(t, err, "DESTINATION_PROHIBITED")
+	swarmActionAssertSourceCount(t, f.op, req, 0)
 }
