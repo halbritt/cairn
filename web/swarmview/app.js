@@ -30,6 +30,8 @@
     window: null, // context-window observation read from harness transcripts
     windowTick: null,
     resets: [], // reset codes received, newest last (read by the fixture)
+    faults: 0,
+    cursorResets: 0, // cursor restarts since the last snapshot
     dbObservedAt: null,
     fault: null,
     log: new Map(), // event_id -> SwarmEvent; one entry per event, never two
@@ -432,6 +434,7 @@
       renderFlow();
     });
     on("snapshot", (data) => {
+      state.cursorResets = 0;
       state.snapshot = data;
       state.dbObservedAt = data.observed_at;
       state.fault = null;
@@ -460,6 +463,7 @@
       renderObservations();
     });
     on("fault", (data) => {
+      state.faults += 1;
       state.fault = data;
       showFault(`The store could not be read (${data.code || "error"}): ${data.error || ""}. Showing the last snapshot; the server keeps trying.`);
       renderObservations();
@@ -469,8 +473,10 @@
       const code = data.code || "";
       state.resets.push(code);
       closeStream();
-      if (code === "STALE_CURSOR" || code === "INVALID_REQUEST") {
-        // The cursor cannot continue: a new window replaces the list.
+      if ((code === "STALE_CURSOR" || code === "INVALID_REQUEST") && state.cursorResets < 1) {
+        // The cursor cannot continue: a new window replaces the list. Once:
+        // a refusal of a stream with no cursor is not about the cursor.
+        state.cursorResets += 1;
         state.cursor = "";
         openStream("");
       } else if (code === "NOT_FOUND") {
@@ -758,7 +764,7 @@
   function needRow(need, operatorPrincipal) {
     const action = need.action || {};
     const refs = need.refs || {};
-    const row = el("li", { class: "need", dataset: { need: need.id || "", type: need.type || "" } },
+    const row = el("li", { class: "need", dataset: { need: need.id || "", type: need.type || "", event: refs.event_id || "" } },
       el("div", { class: "need-head" },
         el("span", { class: "tag", text: needLabel(need.type) }),
         el("strong", {}, linked(need.title || "")),
@@ -766,10 +772,12 @@
       need.detail ? el("p", { class: "detail" }, linked(need.detail)) : null,
       el("p", { class: "meta" },
         need.subject ? `${labelOf(need.subject)} · ` : "",
-        "since ", timeEl(need.since),
+        need.since ? ["since ", timeEl(need.since)] : "",
         need.expires_at ? [" · expires ", timeEl(need.expires_at)] : null,
         need.waiters ? ` · ${need.waiters} session${need.waiters === 1 ? "" : "s"} waiting on it` : ""));
-    const controls = el("div", { class: "need-action" }, el("span", { class: "action-label", text: "Action: " + (action.label || action.kind || "inspect") }));
+    // A board question is answered on the board; the page says only that.
+    const actionText = action.kind === "answer_board" ? "Answer on the board" : action.label || action.kind || "inspect";
+    const controls = el("div", { class: "need-action" }, el("span", { class: "action-label", text: "Action: " + actionText }));
     const delivery = (refs.delivery_ids || [])[0];
     if (action.kind === "acknowledge" && delivery) {
       controls.append(el("button", { type: "button", text: "Acknowledge", onclick: () => acknowledge(delivery, refs.event_id) }));
@@ -779,7 +787,6 @@
       controls.append(el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(refs.wait_id) }));
     } else if (action.kind === "answer_board") {
       // A message without causation is not an answer: the board is where it is answered.
-      controls.append(el("strong", { class: "board-answer", text: "Answer on the board" }));
       if (action.command) controls.append(copyButton(action.command, "Copy command"));
       row.append(controls);
       return row;
@@ -937,7 +944,8 @@
     const session = member.session;
     if (!session) return el("span", { class: "muted", text: "no registered session" });
     return el("div", {}, presenceText(session),
-      el("div", { class: "small-text muted", text: [session.harness, session.observed_model || session.model].filter(Boolean).join(" · ") || "harness not reported" }));
+      el("div", { class: "small-text muted", text: [session.harness, session.observed_model || session.model].filter(Boolean).join(" · ") || "harness not reported" }),
+      el("div", { class: "small-text muted session-age" }, "session started ", timeEl(session.started_at)));
   }
 
   // What the member itself holds first: its open assignments. The reported
@@ -1092,8 +1100,11 @@
       : "";
   }
 
+  // Both rules: the transcript fill's and the Cairn proxy's.
   function nearLimitRule() {
-    return (state.window && state.window.near_limit_rule) || (state.snapshot && state.snapshot.context_room && state.snapshot.context_room.near_limit_rule) || "";
+    const fill = (state.window && state.window.near_limit_rule) || "";
+    const proxy = (state.snapshot && state.snapshot.context_room && state.snapshot.context_room.near_limit_rule) || "";
+    return [fill && "Transcript fill: " + fill, proxy && "Cairn-injected proxy: " + proxy].filter(Boolean).join(" ");
   }
 
   function contextView(member) {
@@ -1124,6 +1135,11 @@
       return parts;
     }
     const proxy = proxyOf(member);
+    if (proxy && (proxy.compactions !== undefined && proxy.compactions !== null || proxy.last_compaction_at) && !window) {
+      parts.push(el("p", { class: "small-text muted" },
+        proxy.compactions !== undefined && proxy.compactions !== null ? `${proxy.compactions} compaction${proxy.compactions === 1 ? "" : "s"} recorded` : "compactions unknown",
+        proxy.last_compaction_at ? [", last ", timeEl(proxy.last_compaction_at)] : ""));
+    }
     if (proxy && proxy.known) {
       const counts = [];
       if (proxy.injected_deliveries !== undefined && proxy.injected_deliveries !== null) counts.push(`${proxy.injected_deliveries} deliveries`);
@@ -1206,10 +1222,13 @@
     for (const event of events) list.append(flowRow(event, ledgerByEvent.get(event.event_id) || []));
   }
 
+  // The page never says "settle": a settled delivery is one its recipient handled.
+  const displayWords = { settled: "handled" };
+
   function deliveryChip(delivery, ownerSent) {
     const display = delivery.display || delivery.state || "unknown";
     const chip = el("span", { class: `chip chip-${display}`, dataset: { delivery: delivery.delivery_id, display } },
-      `${labelOf(delivery.consumer)}: `, el("span", { "aria-hidden": "true", text: (displayMarks[display] || "?") + " " }), display);
+      `${labelOf(delivery.consumer)}: `, el("span", { "aria-hidden": "true", text: (displayMarks[display] || "?") + " " }), displayWords[display] || display);
     if (delivery.code) chip.append(` (${delivery.code})`);
     if (ownerSent && !delivery.seen && openDisplays.has(display)) chip.append(el("span", { class: "unseen", text: " · sent, not yet seen" }));
     if (delivery.replied) chip.append(" · replied");
@@ -1410,7 +1429,8 @@
   };
 
   function deliveryText(delivery) {
-    const shown = delivery.display || delivery.state || "unknown";
+    const display = delivery.display || delivery.state || "unknown";
+    const shown = displayWords[display] || display;
     return `${labelOf(delivery.consumer)}: ${shown}${delivery.code ? " (" + delivery.code + ")" : ""}`;
   }
 
@@ -1644,6 +1664,7 @@
     logIDs: () => [...state.log.keys()],
     cursor: () => state.cursor,
     resets: () => state.resets.slice(),
+    faults: () => state.faults,
     formatWindow,
   });
 

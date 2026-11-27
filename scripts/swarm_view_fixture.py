@@ -111,6 +111,12 @@ class Fixture:
     # -------------------------------------------------------------- checks
 
     def check(self, name, operation, page=None, category="acceptance"):
+        if page is not None:
+            # A check that failed with a dialog open must not block the next one.
+            try:
+                page.evaluate("() => document.querySelectorAll('dialog[open]').forEach((d) => d.close())")
+            except Exception:
+                pass
         try:
             operation()
             self.report["checks"].append(dict(name=name, category=category, status="passed"))
@@ -208,9 +214,9 @@ class Fixture:
             "destination": self.to("lead"), "causation_id": event["event_id"],
             "correlation_id": event.get("correlation_id") or event["event_id"]})
 
-    def wait(self, role, predicate, event_id):
+    def wait(self, role, predicate, event_id, deadline=timedelta(hours=2)):
         return self.cli(["wait", "create", *self.session_flags(role), "--request-id", uid(), "--predicate", predicate,
-                         "--dependency", event_id, "--deadline", rfc3339(timedelta(hours=2))])
+                         "--dependency", event_id, "--deadline", rfc3339(deadline)])
 
     def team(self, *args):
         return self.cli(["team", *args, "--operator", "--repo", self.collection, "--request-id", uid()])
@@ -325,6 +331,24 @@ class Fixture:
         self.step("ledger lead decision", lambda: self.ledger("set", "--kind", "decision", "--key", "flow-order", "--status", "open",
                                                               "--owner", self.principal("lead"), "--summary", "Lead decides the flow sort order"))
 
+        # A workstream decision written by a member.
+        self.step("workstream decision", lambda: self.cli([
+            "status", "set", *self.session_flags("lead"), "--stream", "swarm-fixture.flow", "--state", "waiting",
+            "--current", "Flow ordering", "--decision-needed", "Pick the default flow order for the owner view",
+            "--request-id", uid()]))
+
+        # A request with a short expect_by and a short wait on it: after the
+        # deadline the real sweep records a missed checkpoint and a timed-out wait.
+        def short_deadlines():
+            self.events["checkpoint"] = self.publish("lead", "Report the flow status.", self.to("worker_b"),
+                                                     summary="Report the flow status by the checkpoint",
+                                                     expect_by=rfc3339(timedelta(seconds=4)))
+            self.waits["short"] = self.wait("lead", "request_response", self.events["checkpoint"]["event_id"],
+                                            deadline=timedelta(seconds=4))
+            time.sleep(6)
+            return self.host.operator("schedule-serve", args=("--repo", self.collection, "--once", "--overdue-grace-seconds", "0"))
+        self.step("missed checkpoint and timed-out wait (real sweep)", short_deadlines)
+
         # worker_c stops with a pending notice: work sent to a stopped session.
         self.step("stopped member with backlog", lambda: self.host.agent("worker_c", "agent-leave", {
             "agent_id": self.sessions["worker_c"]["agent_id"], "execution_id": self.sessions["worker_c"]["execution_id"]}))
@@ -344,6 +368,14 @@ class Fixture:
             if successor.get("agent_id"):
                 self.sessions["root_next"] = dict(successor, inbox="agent/" + successor["agent_id"])
                 self.host.identities["root_next"] = self.host.identities["root"]
+        # The campaign's existing handoff check: a compaction limit of 1 and one
+        # compaction recorded for the new coordinator through `ledger compact`.
+        def handoff_due():
+            require("root_next" in self.sessions, "no successor session to compact")
+            self.team("set-campaign", "--campaign", CAMPAIGN, "--max-coordinator-compactions", "1")
+            return self.cli(["ledger", "compact", *self.session_flags("root_next"), "--campaign", CAMPAIGN,
+                             "--request-id", uid()])
+        self.step("handoff due (compaction limit)", handoff_due)
 
     def ledger_send(self, role, target, key, summary):
         reply = self.cli(["ledger", "send", *self.session_flags(role), "--campaign", CAMPAIGN, "--op-key", "send-" + key,
@@ -501,10 +533,17 @@ class Fixture:
         self.check("a server restart neither loses nor repeats an event", server_restart, page)
 
         self.check("a reset with STALE_CURSOR starts a new stream without a cursor", lambda: self.stale_cursor(page), page)
+        self.check("NOT_FOUND stops, offers the landing page and does not retry", lambda: self.not_found(page), page)
+        self.check("a refusal that persists stays visible and is retried slowly", lambda: self.persistent_refusal(page), page)
+        self.check("a transient store fault keeps the cursor", lambda: self.store_fault(page), page)
         self.check("sign-out in a second tab ends the first tab's stream", lambda: self.second_tab_signout(page), page)
         self.check("the context cell renders the transcript observation", lambda: self.context_cell(page), page)
+        self.check("flow rows show each recipient's state; agent rows label waits apart", lambda: self.flow_rows(page), page,
+                   category="slice:CAIRN-830")
         self.check("needs you lists the board question and the operator event, not the lead decision",
                    lambda: self.needs_you(page), page, category="slice:CAIRN-831")
+        self.check("every needs-you type the fixture can produce appears", lambda: self.need_types(page), page,
+                   category="slice:CAIRN-831")
         self.check("cancel preview names the recipient and waits before confirm; siblings and counted reply unchanged",
                    lambda: self.cancel(page), page, category="slice:CAIRN-830+833")
         self.check("a refused action shows the store's reason", lambda: self.refusal(page), page)
@@ -537,8 +576,63 @@ class Fixture:
             ids = page.evaluate("window.cairnSwarmView.logIDs()")
             require(ids and len(ids) == len(set(ids)), "the new window is empty or repeats an event")
             require(page.locator("#signin").is_hidden(), "a stale cursor asked for sign-in")
+            page.wait_for_timeout(4000)
+            require(page.evaluate("window.cairnSwarmView.resets()").count("STALE_CURSOR") == 1, "the stale cursor was reset more than once")
         finally:
             page.unroute("**/api/swarm/stream*")
+
+    def stream_requests(self, other, campaign, seconds):
+        requests = []
+        other.on("request", lambda r: requests.append(r.url) if "/api/swarm/stream" in r.url else None)
+        other.goto(f"http://127.0.0.1:{self.port}/?campaign={campaign}")
+        other.wait_for_timeout(seconds * 1000)
+        return requests
+
+    def not_found(self, page):
+        other = page.context.new_page()
+        try:
+            requests = self.stream_requests(other, "no-such-campaign", 8)
+            require("NOT_FOUND" in other.evaluate("window.cairnSwarmView.resets()"), "no NOT_FOUND reset arrived")
+            self.expect(other.locator("#fault")).to_contain_text("does not exist")
+            self.expect(other.locator("#fault a")).to_have_attribute("href", "./")
+            require(len(requests) == 1, f"NOT_FOUND was retried: {len(requests)} stream requests in 8 s")
+        finally:
+            other.close()
+
+    def persistent_refusal(self, page):
+        other = page.context.new_page()
+        try:
+            # A campaign name the store refuses: no cursor is involved, so the
+            # refusal persists. It must stay visible and not loop.
+            requests = self.stream_requests(other, "bad%20name%21", 10)
+            codes = other.evaluate("window.cairnSwarmView.resets()")
+            self.report["persistent_refusal_codes"] = codes
+            require(codes, "no reset arrived for a refused campaign name")
+            self.expect(other.locator("#fault")).to_be_visible()
+            require(len(requests) <= 2, f"a persistent refusal was retried {len(requests)} times in 10 s")
+        finally:
+            other.close()
+
+    def store_fault(self, page):
+        before = set(page.evaluate("window.cairnSwarmView.logIDs()"))
+        resets = len(page.evaluate("window.cairnSwarmView.resets()"))
+        cluster = self.cluster
+        require(disposable_host.stop_postgres(cluster.pg_bin, cluster.root / "data"), "could not stop the disposable cluster")
+        try:
+            page.wait_for_function("() => window.cairnSwarmView.faults() > 0", timeout=20000)
+            self.expect(page.locator("#fault")).to_be_visible()
+            self.expect(page.locator("#observations")).to_contain_text("store unreadable")
+        finally:
+            checked(disposable_host.pg_start_command(cluster.pg_bin, cluster.root / "data", cluster.socket,
+                                                     cluster.root / "postgres.log"), "restart disposable cluster", timeout=60)
+        self.expect(page.locator("#fault")).to_be_hidden(timeout=30000)
+        self.expect(page.locator("#live")).to_have_text("live", timeout=15000)
+        require(len(page.evaluate("window.cairnSwarmView.resets()")) == resets, "a fault reset the stream")
+        marker = "fault-" + uid()[:8]
+        self.publish("lead", "After the outage.", self.to("worker_a"), kind="notice", action="none", summary="Outage " + marker)
+        self.expect(page.locator("#flow li.event", has_text=marker)).to_have_count(1, timeout=20000)
+        ids = page.evaluate("window.cairnSwarmView.logIDs()")
+        require(len(ids) == len(set(ids)) and not (before - set(ids)), "the outage lost or repeated an event")
 
     def second_tab_signout(self, page):
         other = page.context.new_page()
@@ -593,6 +687,7 @@ class Fixture:
         lead = page.locator(f"#agents .agent[data-member='{self.principal('lead')}']")
         text = lead.inner_text()
         require(HARNESS["lead"][0] in text, "lead row lacks its harness")
+        require("session started" in text, "lead row lacks the session age")
         require("unknown" in text or "Cairn-injected since compaction" in text, "context room cell is empty")
         worker = page.locator(f"#agents .agent[data-member='{self.principal('worker_a')}']").inner_text()
         require("Build the swarm page" in worker, "working on does not lead with the member's open assignment")
@@ -626,14 +721,62 @@ class Fixture:
         if not items:
             require("Nothing waits on you" in text or "unavailable" in text, "empty needs-you is not shown honestly")
             raise AssertionError("snapshot.needs_you is empty in this candidate: the CAIRN-831 slice is not present")
-        require("where should the swarm token file live" in text, "board question is not listed")
-        require("flow reader note" in text, "operator-addressed event is not listed")
+        # The page lists the snapshot's rows in the order given.
+        shown = page.locator("#needs li.need").evaluate_all("nodes => nodes.map(n => n.dataset.need)")
+        require(shown == [item["id"] for item in items], "needs-you rows differ from the snapshot or its order")
+        require(page.locator(f"#needs li.need[data-type='board_question'][data-event='{self.events['board']['event_id']}']").count() == 1,
+                "the board question is not listed")
+        for n in (1, 2):
+            event = self.events.get(f"operator_{n}")
+            require(event and page.locator(f"#needs li.need[data-event='{event['event_id']}']").count() == 1,
+                    f"operator-addressed event {n} is not listed")
         require("Lead decides the flow sort order" not in text, "lead-owned decision listed in needs you")
+        lead = page.locator(f"#agents .agent[data-member='{self.principal('lead')}']").inner_text()
+        require("Lead decides the flow sort order" in lead, "lead-owned decision is not on the lead's row")
         # A board question is answered on the board: no compose or reply control.
         board = page.locator("#needs li.need[data-type='board_question']").first
         self.expect(board).to_contain_text("Answer on the board")
         buttons = board.locator("button").all_inner_texts()
         require(all(b.startswith("Copy") for b in buttons), "a board question offers a control: " + json.dumps(buttons))
+
+    PRODUCED_NEEDS = ("board_question", "operator_delivery", "decision", "escalation", "workstream_decision",
+                      "handoff_due", "failed_delivery", "stopped_backlog", "wait_timed_out", "missed_checkpoint")
+    # owner_turn needs a native host observation; stalled_agent needs a session
+    # starved for 600 s (idle) or 1800 s (busy), longer than the fixture runs.
+    UNPRODUCED_NEEDS = {"owner_turn": "needs a native host owner_turn_required observation",
+                        "stalled_agent": "needs pending_starved (600/1800 s) or hold_stalled (3600 s)"}
+
+    def flow_rows(self, page):
+        snapshot = self.snapshot()
+        group_id = self.events["group"]["event_id"]
+        deliveries = [d for d in snapshot["flow"]["deliveries"] if d["event_id"] == group_id]
+        require(len(deliveries) == 3, f"the grouped request has {len(deliveries)} deliveries in the snapshot")
+        row = page.locator(f"#flow li.event[data-event='{group_id}']")
+        self.expect(row).to_have_count(1)
+        chips = row.locator(".chip").evaluate_all("nodes => nodes.map(n => [n.dataset.delivery, n.dataset.display, n.innerText])")
+        require(sorted(c[0] for c in chips) == sorted(d["delivery_id"] for d in deliveries), "flow row chips differ from the deliveries")
+        by_id = {d["delivery_id"]: d for d in deliveries}
+        for delivery_id, display, text in chips:
+            require(display == by_id[delivery_id]["display"], "a chip shows another state than the snapshot")
+            require(("handled" if display == "settled" else display) in text, "a chip does not name its state in words")
+        require("settle" not in " ".join(c[2] for c in chips).lower(), "a chip says settle")
+        lead = page.locator(f"#agents .agent[data-member='{self.principal('lead')}']").inner_text()
+        require("group closure" in lead and "direct reply" in lead, "the lead's waits are not labelled apart")
+        member = snapshot["flow"]["by_member"].get(self.principal("lead"), {})
+        if member.get("oldest_pending"):
+            require("Oldest pending" in lead, "the lead row omits its oldest pending item")
+        worker_b = page.locator(f"#agents .agent[data-member='{self.principal('worker_b')}']").inner_text()
+        if snapshot["flow"]["by_member"].get(self.principal("worker_b"), {}).get("peer_waits"):
+            require("A peer waits on it" in worker_b, "worker_b's peer waits are not shown")
+
+    def need_types(self, page):
+        items = self.snapshot()["needs_you"]["items"]
+        types = sorted({item["type"] for item in items})
+        self.report["needs_you_types"] = dict(produced=types, not_producible=self.UNPRODUCED_NEEDS)
+        missing = [t for t in self.PRODUCED_NEEDS if t not in types]
+        require(not missing, "needs-you types missing from the seeded campaign: " + ", ".join(missing))
+        for t in types:
+            require(page.locator(f"#needs li.need[data-type='{t}']").count() >= 1, f"the page does not show the {t} row")
 
     def cancel(self, page):
         snapshot = self.snapshot()
