@@ -120,7 +120,8 @@ inactive or changing its role does not change the epoch.
 | `log` | cursor | One event envelope (`SwarmEvent`). No record body. |
 | `snapshot` | cursor | The whole snapshot (`cairn.swarm-snapshot/1`). |
 | `herdr` | | The pane observation: `observed_at`, `status` (`ok`, `unavailable`, `pending`), `error`, `stale`, `sessions`, `panes` by agent UUID. Sent when it changes. |
-| `tick` | cursor | `db_observed_at` and `panes` (`observed_at`, `status`, `error`, `stale`). Sent after every read. |
+| `window` | | The context-window observation read from the harness transcripts of this host: `observed_at`, `status`, `error`, `stale`, `sessions`, `near_limit_rule`, `windows` by agent UUID (`used_tokens`, `window_tokens`, `model`, `measured_at`, `compactions`, `last_compaction_at`, `source`, `near_limit`) and `unknown` by agent UUID with the reason. Sent when it changes. |
+| `tick` | cursor | `db_observed_at`, and `panes` and `window` (`observed_at`, `status`, `error`, `stale` each). Sent after every read. |
 | `fault` | | `code`, `error`, `at`. The store could not be read; the server keeps trying. |
 | `reset` | | `code`, `error`. The stream cannot continue and the server closes it. |
 
@@ -153,11 +154,13 @@ delivery of the campaign and every delivery of the newest 300 campaign events.
 
 ### Each observation has its own age
 
-The database snapshot, the Herdr read and the session counters are separate
-observations. `tick.db_observed_at`, `herdr.observed_at` and
+The database snapshot, the Herdr read, the transcript read and the session
+counters are separate observations. `tick.db_observed_at`,
+`herdr.observed_at`, `window.observed_at` and
 `snapshot.context_room.observed_at` carry their times. The page shows the age
-of each and marks one stale without hiding the others. The Herdr read runs on
-its own loop, so a slow or failed Herdr leaves delivery data current.
+of each and marks one stale without hiding the others. The Herdr read and the
+transcript read each run on their own loop, so a slow or failed one leaves
+delivery data current.
 
 ## Herdr pane state
 
@@ -205,7 +208,7 @@ store's refusal code.
 | `POST /api/auth/logout` | Ends the session. |
 | `GET /api/swarm/landing` | Active campaigns, online sessions in no campaign, the newest messages that no active campaign claims, and the owner attention rows that belong to no campaign (`cairn.swarm-landing/1`). |
 | `GET /api/swarm/campaign?campaign=NAME` | One snapshot, without a stream. |
-| `GET /api/swarm/panes` | One pane observation, for a page with no stream open. |
+| `GET /api/swarm/panes` | One pane observation and one context-window observation (`{"herdr": ..., "window": ...}`), for a page with no stream open. |
 | `GET /api/swarm/event?campaign=NAME&event_id=UUID` | One event with its deliveries and note body, read when the owner opens it. |
 
 ## Operator actions

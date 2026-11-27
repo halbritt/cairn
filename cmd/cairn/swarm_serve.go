@@ -70,7 +70,8 @@ type swarmServer struct {
 	// identifier, or empty. Plane is linked, never read.
 	planeURL string
 	tick     time.Duration
-	panes    *swarmPaneLoop
+	panes    *swarmLoop[swarmPaneObservation]
+	windows  *swarmLoop[swarmWindowObservation]
 	now      func() time.Time
 
 	mu       sync.Mutex
@@ -81,8 +82,14 @@ func newSwarmServer(store *core.Store, collection string, port int, token string
 	return &swarmServer{
 		store: store, reads: store, collection: collection, port: port, tokenHash: sha256.Sum256([]byte(token)),
 		tick: 2 * time.Second, panes: newSwarmPaneLoop(panes, 5*time.Second, 15*time.Second),
-		now: time.Now, sessions: map[string]swarmBrowserSession{},
+		windows: newSwarmWindowLoop(swarmNoWindowReader, 15*time.Second, 60*time.Second),
+		now:     time.Now, sessions: map[string]swarmBrowserSession{},
 	}
+}
+
+// swarmNoWindowReader stands in until a transcript reader is configured.
+func swarmNoWindowReader(ctx context.Context) swarmWindowObservation {
+	return swarmWindowObservation{ObservedAt: time.Now(), Status: "unavailable", Error: "no transcript reader is configured", Windows: map[string]swarmWindow{}, Unknown: map[string]string{}}
 }
 
 // readOrCreateSwarmToken returns the login token. A missing file is created
@@ -425,7 +432,11 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// One observation for a page with no stream open, such as the landing page.
 		s.panes.acquire()
 		defer s.panes.release()
-		writeSwarmJSON(w, http.StatusOK, s.panes.wait(r.Context(), s.now, 5*time.Second))
+		s.windows.acquire()
+		defer s.windows.release()
+		s.panes.first(r.Context(), 5*time.Second)
+		s.windows.first(r.Context(), 5*time.Second)
+		writeSwarmJSON(w, http.StatusOK, map[string]any{"herdr": s.paneView(s.now()), "window": s.windowView(s.now())})
 	case r.URL.Path == "/api/swarm/stream":
 		s.handleStream(w, r, id, session)
 	case strings.HasPrefix(r.URL.Path, "/api/swarm/action/"), r.URL.Path == "/api/swarm/event":
@@ -513,6 +524,8 @@ func runSwarmServe(ctx context.Context, store *core.Store, args []string) (any, 
 	bound := listener.Addr().(*net.TCPAddr).Port
 	server := newSwarmServer(store, *collection, bound, token, newHerdrPaneReader(directory, "/proc"))
 	server.planeURL = *planeURL
+	// The true window fill comes from the harness transcripts of this host.
+	server.windows = newSwarmWindowLoop(newTranscriptWindowReader(directory, "/proc"), 15*time.Second, 60*time.Second)
 	fmt.Fprintf(os.Stderr, "cairn swarm view: http://127.0.0.1:%d/ (collection %s; token file %s)\n", bound, *collection, path)
 	// No write timeout: the stream stays open. Each stream write sets its own deadline.
 	httpServer := &http.Server{Handler: server, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}

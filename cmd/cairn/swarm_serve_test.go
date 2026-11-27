@@ -497,9 +497,9 @@ func TestSwarmStreamProtocol(t *testing.T) {
 	paneEvents := 0
 	for {
 		event := conn.next(t)
-		if event.Event == "herdr" {
-			// The pane observation comes from its own loop, so when it
-			// arrives is not part of the order checked here.
+		if event.Event == "herdr" || event.Event == "window" {
+			// The host observations come from their own loops, so when
+			// they arrive is not part of the order checked here.
 			paneEvents++
 			continue
 		}
@@ -587,7 +587,7 @@ func TestSwarmStreamProtocol(t *testing.T) {
 	var recovered []string
 	for {
 		event := conn.next(t)
-		if event.Event == "herdr" {
+		if event.Event == "herdr" || event.Event == "window" {
 			continue
 		}
 		recovered = append(recovered, event.Event)
@@ -804,4 +804,42 @@ func TestSwarmStreamEndsWithItsSession(t *testing.T) {
 			}
 		}
 	})
+}
+
+// The context-window observation is a third observation with its own loop
+// and its own time: it reaches the page as its own event and in every tick.
+func TestSwarmStreamCarriesTheWindowObservation(t *testing.T) {
+	s := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
+	s.server.windows = newSwarmWindowLoop(func(ctx context.Context) swarmWindowObservation {
+		return swarmWindowObservation{Status: "ok", Sessions: 2, NearLimitRule: "rule", Unknown: map[string]string{"agent-b": "no usage records"},
+			Windows: map[string]swarmWindow{"agent-a": {UsedTokens: 181948, WindowTokens: 258400, Model: "gpt", MeasuredAt: time.Now(), Source: "codex rollout", NearLimit: false}}}
+	}, 10*time.Millisecond, time.Minute)
+	s.server.reads = &swarmScriptedReads{next: func(int, core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+		return core.SwarmStreamRead{Cursor: "cursor", Snapshot: swarmScriptedSnapshot(1)}, nil
+	}}
+	s.login()
+	conn := s.stream("alpha", "", nil)
+	defer conn.close()
+	for {
+		event := conn.next(t)
+		if event.Event != "window" || !strings.Contains(event.Data, `"status":"ok"`) {
+			continue
+		}
+		var view swarmWindowView
+		if err := json.Unmarshal([]byte(event.Data), &view); err != nil {
+			t.Fatal(err)
+		}
+		if view.Windows["agent-a"].UsedTokens != 181948 || view.Windows["agent-a"].WindowTokens != 258400 || view.Unknown["agent-b"] == "" || view.Stale || view.ObservedAt.IsZero() {
+			t.Fatalf("window event: %s", event.Data)
+		}
+		break
+	}
+	tick, _ := conn.until(t, "tick")
+	if !strings.Contains(tick.Data, `"window":{`) || !strings.Contains(tick.Data, `"panes":{`) || !strings.Contains(tick.Data, `"db_observed_at"`) {
+		t.Fatalf("tick does not carry each observation's time: %s", tick.Data)
+	}
+	resp, raw := s.do(http.MethodGet, "/api/swarm/panes", nil, nil)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"herdr":{`) || !strings.Contains(string(raw), `"window":{`) {
+		t.Fatalf("host observations route: %d %s", resp.StatusCode, raw)
+	}
 }

@@ -34,25 +34,39 @@ type swarmPaneView struct {
 	Stale bool `json:"stale"`
 }
 
-// swarmPaneLoop reads Herdr on its own schedule while at least one browser
-// needs it. Nothing it reads is written to the store.
-type swarmPaneLoop struct {
-	read       swarmPaneReader
+// swarmWindowView is the latest context-window observation with its
+// staleness.
+type swarmWindowView struct {
+	swarmWindowObservation
+	Stale bool `json:"stale"`
+}
+
+// swarmLoop makes one kind of host-local observation on its own schedule
+// while at least one browser needs it. Each loop has its own cache and its
+// own time, so that a slow reader delays nothing else. Nothing it reads is
+// written to the store.
+type swarmLoop[T any] struct {
+	read       func(context.Context) T
+	observed   func(*T) *time.Time // the observation's own time field
 	interval   time.Duration
 	staleAfter time.Duration
 
 	mu      sync.Mutex
 	users   int
 	cancel  context.CancelFunc
-	latest  *swarmPaneObservation
+	latest  *T
 	arrived chan struct{}
 }
 
-func newSwarmPaneLoop(read swarmPaneReader, interval, staleAfter time.Duration) *swarmPaneLoop {
-	return &swarmPaneLoop{read: read, interval: interval, staleAfter: staleAfter, arrived: make(chan struct{})}
+func newSwarmPaneLoop(read swarmPaneReader, interval, staleAfter time.Duration) *swarmLoop[swarmPaneObservation] {
+	return &swarmLoop[swarmPaneObservation]{read: read, observed: func(o *swarmPaneObservation) *time.Time { return &o.ObservedAt }, interval: interval, staleAfter: staleAfter, arrived: make(chan struct{})}
 }
 
-func (l *swarmPaneLoop) acquire() {
+func newSwarmWindowLoop(read swarmWindowReader, interval, staleAfter time.Duration) *swarmLoop[swarmWindowObservation] {
+	return &swarmLoop[swarmWindowObservation]{read: read, observed: func(o *swarmWindowObservation) *time.Time { return &o.ObservedAt }, interval: interval, staleAfter: staleAfter, arrived: make(chan struct{})}
+}
+
+func (l *swarmLoop[T]) acquire() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.users++
@@ -63,7 +77,7 @@ func (l *swarmPaneLoop) acquire() {
 	}
 }
 
-func (l *swarmPaneLoop) release() {
+func (l *swarmLoop[T]) release() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.users--
@@ -73,20 +87,17 @@ func (l *swarmPaneLoop) release() {
 	}
 }
 
-func (l *swarmPaneLoop) run(ctx context.Context) {
+func (l *swarmLoop[T]) run(ctx context.Context) {
 	for {
-		// One observation makes several bounded Herdr calls; bound the whole.
+		// One observation makes several bounded calls; bound the whole.
 		readCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		observation := l.read(readCtx)
 		cancel()
 		if ctx.Err() != nil {
 			return
 		}
-		if observation.ObservedAt.IsZero() {
-			observation.ObservedAt = time.Now()
-		}
-		if observation.Panes == nil {
-			observation.Panes = map[string]swarmPane{}
+		if at := l.observed(&observation); at.IsZero() {
+			*at = time.Now()
 		}
 		l.mu.Lock()
 		l.latest = &observation
@@ -101,20 +112,20 @@ func (l *swarmPaneLoop) run(ctx context.Context) {
 	}
 }
 
-// view returns the latest observation. Before the first read completes the
-// status is "pending".
-func (l *swarmPaneLoop) view(now time.Time) swarmPaneView {
+// get returns the latest observation and whether it is stale. ok is false
+// before the first read completes.
+func (l *swarmLoop[T]) get(now time.Time) (observation T, stale, ok bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.latest == nil {
-		return swarmPaneView{swarmPaneObservation: swarmPaneObservation{Status: "pending", Panes: map[string]swarmPane{}}}
+		return observation, false, false
 	}
-	return swarmPaneView{swarmPaneObservation: *l.latest, Stale: now.Sub(l.latest.ObservedAt) > l.staleAfter}
+	observation = *l.latest
+	return observation, now.Sub(*l.observed(&observation)) > l.staleAfter, true
 }
 
-// wait returns the first observation that arrives within the limit, or the
-// current view.
-func (l *swarmPaneLoop) wait(ctx context.Context, now func() time.Time, limit time.Duration) swarmPaneView {
+// first waits for the first observation, up to the limit.
+func (l *swarmLoop[T]) first(ctx context.Context, limit time.Duration) {
 	l.mu.Lock()
 	arrived, have := l.arrived, l.latest != nil
 	l.mu.Unlock()
@@ -125,7 +136,35 @@ func (l *swarmPaneLoop) wait(ctx context.Context, now func() time.Time, limit ti
 		case <-time.After(limit):
 		}
 	}
-	return l.view(now())
+}
+
+// paneView returns the latest pane observation. Before the first read
+// completes the status is "pending".
+func (s *swarmServer) paneView(now time.Time) swarmPaneView {
+	observation, stale, ok := s.panes.get(now)
+	if !ok {
+		return swarmPaneView{swarmPaneObservation: swarmPaneObservation{Status: "pending", Panes: map[string]swarmPane{}}}
+	}
+	if observation.Panes == nil {
+		observation.Panes = map[string]swarmPane{}
+	}
+	return swarmPaneView{swarmPaneObservation: observation, Stale: stale}
+}
+
+// windowView returns the latest context-window observation, read from the
+// harness transcripts of this host.
+func (s *swarmServer) windowView(now time.Time) swarmWindowView {
+	observation, stale, ok := s.windows.get(now)
+	if !ok {
+		return swarmWindowView{swarmWindowObservation: swarmWindowObservation{Status: "pending", Windows: map[string]swarmWindow{}, Unknown: map[string]string{}}}
+	}
+	if observation.Windows == nil {
+		observation.Windows = map[string]swarmWindow{}
+	}
+	if observation.Unknown == nil {
+		observation.Unknown = map[string]string{}
+	}
+	return swarmWindowView{swarmWindowObservation: observation, Stale: stale}
 }
 
 type swarmStreamWriter struct {
@@ -161,6 +200,12 @@ func swarmSnapshotDigest(snapshot core.SwarmSnapshot) [sha256.Size]byte {
 }
 
 func swarmPaneDigest(view swarmPaneView) [sha256.Size]byte {
+	view.ObservedAt = time.Time{}
+	raw, _ := json.Marshal(view)
+	return sha256.Sum256(raw)
+}
+
+func swarmWindowDigest(view swarmWindowView) [sha256.Size]byte {
 	view.ObservedAt = time.Time{}
 	raw, _ := json.Marshal(view)
 	return sha256.Sum256(raw)
@@ -209,6 +254,8 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 
 	s.panes.acquire()
 	defer s.panes.release()
+	s.windows.acquire()
+	defer s.windows.release()
 	operator := ""
 	if s.store != nil {
 		operator = s.store.Channel().Principal
@@ -237,8 +284,8 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 			return true
 		}
 	}
-	var lastSnapshot, lastPanes [sha256.Size]byte
-	sentSnapshot, sentPanes := false, false
+	var lastSnapshot, lastPanes, lastWindows [sha256.Size]byte
+	sentSnapshot, sentPanes, sentWindows := false, false, false
 	for {
 		// Nothing is read for a session that has ended.
 		if !s.sessionAlive(sessionID) {
@@ -285,18 +332,26 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 			}
 			lastSnapshot, sentSnapshot = digest, true
 		}
-		panes := s.panes.view(s.now())
+		panes := s.paneView(s.now())
 		if digest := swarmPaneDigest(panes); !sentPanes || digest != lastPanes {
 			if err = stream.send("herdr", "", panes); err != nil {
 				return
 			}
 			lastPanes, sentPanes = digest, true
 		}
+		windows := s.windowView(s.now())
+		if digest := swarmWindowDigest(windows); !sentWindows || digest != lastWindows {
+			if err = stream.send("window", "", windows); err != nil {
+				return
+			}
+			lastWindows, sentWindows = digest, true
+		}
 		// Each observation carries its own time, so the page can show the
 		// age of each and mark one stale without hiding the other.
 		if err = stream.send("tick", read.Cursor, map[string]any{
 			"db_observed_at": read.Snapshot.ObservedAt,
 			"panes":          map[string]any{"observed_at": panes.ObservedAt, "status": panes.Status, "error": panes.Error, "stale": panes.Stale},
+			"window":         map[string]any{"observed_at": windows.ObservedAt, "status": windows.Status, "error": windows.Error, "stale": windows.Stale},
 		}); err != nil {
 			return
 		}
