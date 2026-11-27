@@ -1283,6 +1283,13 @@ class Fixture:
         page.locator("#confirm-keep").click()
         page.locator("#detail button.close").click()
 
+    def element_shot(self, locator, name):
+        # A dialog scrolls on its own; capture the dialog, not the page behind it.
+        locator.evaluate("(d) => { d.style.maxHeight = 'none'; }")
+        locator.screenshot(path=str(self.output / (name + ".png")))
+        locator.evaluate("(d) => { d.style.maxHeight = ''; }")
+        self.report["screenshots"].append(name + ".png")
+
     def view_shots(self, page, suffix):
         """Screenshots of the views the owner reads: Needs you, a member's Details with a Cairn
         notice, the cancel preview of that notice, and the landing page."""
@@ -1292,11 +1299,11 @@ class Fixture:
         if delivery:
             page.locator(f"#agents .agent[data-member='{delivery['consumer']}'] button", has_text="Details").click()
             self.expect(page.locator("#detail")).to_contain_text("Cairn (")
-            self.shot(page, f"details-system-{suffix}")
+            self.element_shot(page.locator("#detail"), f"details-system-{suffix}")
             item = page.locator("#detail li", has=page.locator(f"[data-delivery='{delivery['delivery_id']}']"))
             item.locator("button", has_text="Cancel this recipient's delivery").click()
             self.expect(page.locator("#confirm-body")).to_contain_text("Recipient", timeout=15000)
-            self.shot(page, f"cancel-preview-{suffix}")
+            self.element_shot(page.locator("#confirm"), f"cancel-preview-{suffix}")
             page.locator("#confirm-keep").click()
             page.locator("#detail button.close").click()
         landing = page.context.new_page()
