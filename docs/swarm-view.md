@@ -355,6 +355,22 @@ systemctl --user restart cairn-swarm.service
 A unit that reads the store needs the same `CAIRN_DATABASE_URL` as the API
 unit when the store is not at the default socket.
 
+The unit starts after `cairn-store.service`, the managed local store. A host
+whose store is a system PostgreSQL has no such unit, and systemd refuses to
+start a unit that requires a missing one. A drop-in cannot remove a
+dependency, so on such a host install the unit without those two lines and
+give it the database in a drop-in:
+
+```sh
+sed -e '/^Requires=cairn-store\.service$/d' -e '/^After=cairn-store\.service$/d' \
+  integrations/systemd/cairn-swarm.service > "$HOME/.config/systemd/user/cairn-swarm.service"
+mkdir -p "$HOME/.config/systemd/user/cairn-swarm.service.d"
+printf '%s\n' '[Service]' \
+  'Environment="CAIRN_DATABASE_URL=host=/var/run/postgresql port=5432 dbname=cairn sslmode=disable"' \
+  > "$HOME/.config/systemd/user/cairn-swarm.service.d/50-managed-database.conf"
+systemctl --user daemon-reload
+```
+
 ## Turn it off
 
 ```sh
