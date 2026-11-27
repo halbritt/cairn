@@ -251,6 +251,12 @@ class Fixture:
             self.register(role)
         self.seeded("six sessions registered with harnesses " + ", ".join(sorted({h for h, _ in HARNESS.values()})))
 
+        # A board question published before the campaign exists: it is listed on
+        # the campaign page, but its event is not in the campaign's log.
+        self.events["early_board"] = self.step("board question before the campaign", lambda: self.publish(
+            "worker_b", "Is the flow order settled?", {"type": "topic", "name": BOARD_TOPIC},
+            summary="Board question: is the flow order settled?"))
+        time.sleep(1)
         describe = self.supports(["team", "set-campaign"], "--description")
         labels = self.supports(["team", "set-member"], "--role-label")
         self.report["campaign_metadata_flags"] = dict(description=describe, role_label=labels)
@@ -615,6 +621,8 @@ class Fixture:
                    lambda: self.cancel(page), page, category="slice:CAIRN-830+833")
         self.check("a refused cancel shows the store's reason and cannot be confirmed", lambda: self.refused_cancel(page), page,
                    category="slice:CAIRN-833")
+        self.check("a board question from before the campaign says plainly where it is", lambda: self.early_board_question(page), page,
+                   category="slice:CAIRN-831")
         self.check("acknowledge is offered only on the inbox head, and acknowledges it",
                    lambda: self.acknowledge_head(page), page, category="slice:CAIRN-831")
         self.check("an owner notice is shown as sent, not yet seen", lambda: self.send_unseen(page), page,
@@ -828,7 +836,7 @@ class Fixture:
             require("waits for" in worker_b, "worker_b's peer waits are not under Waited on")
 
     def needs_rows(self, page):
-        board = page.locator("#needs li.need[data-type='board_question']").first
+        board = page.locator(f"#needs li.need[data-event='{self.events['board']['event_id']}']")
         self.expect(board.locator("button", has_text="Open the event")).to_have_count(1)
         require(board.inner_text().count("on the board") == 1, "the board row repeats its action text")
         buttons = board.locator("button").all_inner_texts()
@@ -851,6 +859,20 @@ class Fixture:
         failed = page.locator("#needs li.need[data-type='failed_delivery']").first.inner_text()
         require("Run the flaky check" in failed and self.label(self.snapshot(), "lead") in failed,
                 "the failed-delivery row does not name the request and its sender: " + failed[:300])
+
+    def early_board_question(self, page):
+        early = self.events.get("early_board")
+        require(early, "the fixture did not publish a board question before the campaign")
+        row = page.locator(f"#needs li.need[data-event='{early['event_id']}']")
+        self.expect(row).to_have_count(1, timeout=10000)
+        with page.expect_response(lambda r: "/api/swarm/event?" in r.url) as info:
+            row.locator("button", has_text="Open the event").click()
+        require(info.value.status == 404, f"the detail route answered {info.value.status} for a pre-campaign question")
+        body = page.locator("#event-body")
+        self.expect(body).to_contain_text("not in this campaign's log", timeout=10000)
+        self.expect(body).to_contain_text("on the board")
+        require("Refused" not in body.inner_text(), "the refusal is shown as a generic failure")
+        page.locator("#event-detail button.close").click()
 
     def acknowledge_head(self, page):
         items = [i for i in self.snapshot()["needs_you"]["items"] if i["type"] == "operator_delivery"]
@@ -1033,7 +1055,7 @@ class Fixture:
         lead = page.locator(f"#agents .agent[data-member='{self.principal('lead')}']").inner_text()
         require("Lead decides the flow sort order" in lead, "lead-owned decision is not on the lead's row")
         # A board question is answered on the board: no compose or reply control.
-        board = page.locator("#needs li.need[data-type='board_question']").first
+        board = page.locator(f"#needs li.need[data-event='{self.events['board']['event_id']}']")
         self.expect(board).to_contain_text("Answer on the board")
         buttons = board.locator("button").all_inner_texts()
         require(all(b == "Open the event" or b.startswith("Copy") for b in buttons), "a board question offers a control: " + json.dumps(buttons))

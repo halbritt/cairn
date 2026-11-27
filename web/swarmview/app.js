@@ -869,7 +869,7 @@
       const target = refs.principal || need.subject;
       if (target && canWrite(target)) controls.append(el("button", { type: "button", text: `Write to ${labelOf(target)}`, onclick: () => openDetail(target, true) }));
     }
-    if (refs.event_id && state.campaign) controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id) }));
+    if (refs.event_id && state.campaign) controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id, { board: need.type === "board_question" }) }));
     if (action.command) controls.append(copyButton(action.command, "Copy command"));
     row.append(controls);
     return row;
@@ -1643,7 +1643,7 @@
 
   // ------------------------------------------------------------- event detail
 
-  async function openEvent(eventID) {
+  async function openEvent(eventID, hint = {}) {
     state.eventDetail = eventID;
     const event = state.log.get(eventID);
     byID("event-title").textContent = event ? `${event.kind}: ${event.summary || event.event_id}` : "Event " + eventID;
@@ -1671,7 +1671,13 @@
       const deliveries = deliveriesOf(eventID);
       body.append(el("h3", { text: "Recipients" }), deliveries.length ? el("ul", { class: "plain" }, deliveries.map((delivery) => el("li", {},
         deliveryChip(delivery, fromOwner(event)), " ", deliveryControls(delivery)))) : note("no delivery in the snapshot"));
-      body.append(note("The event body could not be read. " + refusalText(error), "unavailable"));
+      if (hint.board && error.code === "NOT_FOUND") {
+        // A board question can predate the campaign: it is listed here, but its
+        // event is not in this campaign's log, so the detail route does not open it.
+        body.append(note("This message is not in this campaign's log (it was posted before the campaign existed), so it cannot be opened here. The question is on the board: answer it there.", "warning"));
+      } else {
+        body.append(note("The event body could not be read. " + refusalText(error), "unavailable"));
+      }
     }
   }
 
