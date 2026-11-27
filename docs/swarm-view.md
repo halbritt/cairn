@@ -205,8 +205,31 @@ existing waits remain visible.
 
 ## What needs the owner
 
-The list at the top of the page holds only work that the owner can advance,
-and each row names the action. (CAIRN-831 completes this section.)
+The list at the top of the page shows work the owner can advance. Campaign
+pages scope it to campaign principals. The landing page shows items with no
+active campaign affiliation. Rows with more distinct sessions waiting directly
+on their events come first, then older rows. A source read failure is shown
+with its reason. The other sources can still show their items.
+
+| Row | When it appears | Owner action |
+| --- | --- | --- |
+| Board question | An unanswered request on `agent-board` within its lifetime. The pinned note supplies the lifetime and any unattended default. Cairn uses 24 hours when the note gives no lifetime and caps the view at 72 hours after publication. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |
+| Operator delivery | A pending or leased delivery addressed to the operator. | Open the event and reply to a request, or read and acknowledge an inbox message. |
+| Decision | An open ledger decision owned by the coordinator or operator. A lead's decision appears on the lead's row. | Make the decision and record the outcome in the campaign ledger. |
+| Escalation | A ledger blocker marked escalated. | Review the campaign ledger and resolve the escalation with its owner. |
+| Workstream decision | The workstream has a nonempty `decision_needed` field. | Give the workstream owner a decision and clear the request. |
+| Handoff due | The coordinator reached the campaign's age or compaction limit. | Review the ledger and arrange a coordinator handoff. |
+| Owner turn | The session has eligible inbox work and the host reported `owner_turn_required` for its current execution within the existing 120-second freshness window. | Find the session in Herdr and take a turn. |
+| Failed delivery | Unresolved failed deliveries, grouped by their recorded code. Operator cancellations, releases, and consumer retirements are excluded. A reissue clears its original failure from the list. | Inspect the individual deliveries and review prior effects before choosing recovery. |
+| Stalled agent | A current session meets `pending_starved` or `hold_stalled`. | Inspect the session and its oldest affected delivery before intervening. |
+| Stopped session backlog | A stopped session still has eligible pending or leased work. | Review the stranded deliveries before deciding whether to notify the publishers or recover the work. |
+| Timed-out wait | A registered wait timed out within the last 24 hours in the current restore generation. | Inspect the wait and follow up with its owner. |
+| Missed checkpoint | Cairn emitted an overdue notice and the source still meets the existing unsatisfied checkpoint check. | Open the overdue notice and follow up on its source. |
+
+“Stopped making progress” uses Cairn's existing starvation checks. `pending_starved`
+uses 1,800 seconds for a busy session and 600 seconds for an idle session, with
+the existing checks for idle host conditions and recent inbox handling.
+`hold_stalled` uses 3,600 seconds on a hold with no open tool call recorded.
 
 ## Context room
 

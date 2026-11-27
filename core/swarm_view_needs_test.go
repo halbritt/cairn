@@ -1,0 +1,558 @@
+package core
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+)
+
+const swarmNeedsTestBoard = "Choose the cooler setting?\n\n```board-card\n" +
+	`{"shape":"question","verbs":[{"id":"no","label":"Leave it alone"}],"default":"no","ttl":600}` + "\n```\n"
+
+func swarmNeedsTestPublish(f *swarmFixture, from *Store, kind, destType, dest, body, cause string) AgentEvent {
+	f.t.Helper()
+	ctx := context.Background()
+	draft := projectNote(f.repo)
+	draft.Body, draft.Sensitivity = body, "shareable"
+	source, err := from.Create(ctx, CreateRequest{uuid.NewString(), draft})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	req := PublishEventRequest{RequestID: uuid.NewString(), Repo: f.repo, Kind: kind,
+		Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{destType, dest}, CausationID: cause}
+	if kind == "notice" {
+		req.Action = "review"
+	}
+	event, err := from.PublishEvent(ctx, req, f.dest)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return event
+}
+
+func swarmNeedsTestDelivery(f *swarmFixture, event AgentEvent) string {
+	f.t.Helper()
+	var id string
+	err := f.op.pool.QueryRow(context.Background(), `SELECT delivery_id::text FROM cairn.agent_delivery WHERE event_id=$1`, event.EventID).Scan(&id)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return id
+}
+
+func swarmNeedsTestSnapshot(f *swarmFixture) SwarmNeedsYou {
+	f.t.Helper()
+	snap, err := f.op.GetSwarmSnapshot(context.Background(), SwarmSnapshotRequest{Repo: f.repo, Campaign: f.campaign})
+	if err != nil || len(snap.SectionErrors) != 0 || len(snap.NeedsYou.Unavailable) != 0 {
+		f.t.Fatalf("snapshot err=%v sections=%v unavailable=%+v", err, snap.SectionErrors, snap.NeedsYou.Unavailable)
+	}
+	return snap.NeedsYou
+}
+
+func swarmNeedsTestLanding(f *swarmFixture) SwarmNeedsYou {
+	f.t.Helper()
+	landing, err := f.op.GetSwarmLanding(context.Background(), f.repo)
+	if err != nil || len(landing.SectionErrors) != 0 || len(landing.NeedsYou.Unavailable) != 0 {
+		f.t.Fatalf("landing err=%v sections=%v unavailable=%+v", err, landing.SectionErrors, landing.NeedsYou.Unavailable)
+	}
+	return landing.NeedsYou
+}
+
+func swarmNeedsTestItem(t *testing.T, needs SwarmNeedsYou, kind, subject, action string, since time.Time) SwarmNeed {
+	t.Helper()
+	for _, item := range needs.Items {
+		if item.Type == kind && item.Subject == subject {
+			if item.ID == "" || item.Title == "" || !item.Since.Equal(since) || item.Action.Kind != action ||
+				item.Action.Label == "" || item.Action.Command == "" {
+				t.Fatalf("wrong needs row: %+v, want subject %s action %s since %s", item, subject, action, since)
+			}
+			return item
+		}
+	}
+	t.Fatalf("missing %s for %s in %+v", kind, subject, needs)
+	return SwarmNeed{}
+}
+
+func swarmNeedsTestAbsent(t *testing.T, needs SwarmNeedsYou, kind string) {
+	t.Helper()
+	for _, item := range needs.Items {
+		if item.Type == kind {
+			t.Fatalf("unexpected %s: %+v", kind, item)
+		}
+	}
+}
+
+func swarmNeedsTestLedger(f *swarmFixture, kind, key, owner, status string, revision int64) CampaignLedgerItem {
+	f.t.Helper()
+	item, err := f.rootView.SetCampaignLedgerItem(context.Background(), SetCampaignLedgerItemRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign, Kind: kind, ItemKey: key,
+		Owner: owner, Status: status, Summary: "Need " + key, ExpectedRevision: revision,
+	}, f.dest)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return item
+}
+
+func TestSwarmNeedsBoardQuestionOnlyOwnerAction(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "attention")
+	lead, _ := f.session("attention-lead")
+	if _, err := f.rootView.SetTeamMember(ctx, SetTeamMemberRequest{RequestID: uuid.NewString(),
+		Repo: f.repo, Campaign: f.campaign, Member: lead.Inbox, Lead: f.root.Inbox, Role: "lead"}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	board := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	decision := swarmNeedsTestLedger(f, "decision", "lead-judgment", lead.Inbox, "open", 0)
+	request := swarmNeedsTestPublish(f, f.rootView, "request", "agent", lead.Inbox, "Do a thing", "")
+	delivery := swarmNeedsTestDelivery(f, request)
+	if _, err := f.op.CancelWork(ctx, CancelWorkRequest{Repo: f.repo, RequestID: uuid.NewString(), DeliveryID: delivery, Reason: "Owner no longer needs it"}); err != nil {
+		t.Fatal(err)
+	}
+	needs := swarmNeedsTestSnapshot(f)
+	want := swarmNeedsTestItem(t, needs, SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", board.CreatedAt)
+	if len(needs.Items) != 1 || want.Refs.EventID != board.EventID || want.Refs.Record == nil ||
+		*want.Refs.Record != board.Ref || want.ExpiresAt == nil || !want.ExpiresAt.Equal(board.CreatedAt.Add(10*time.Minute)) ||
+		want.Title != "Choose the cooler setting?" || want.Detail != "Unattended default: Leave it alone" {
+		t.Fatalf("board-only needs rows: %+v and %+v", needs, want)
+	}
+	if got := needs.LeadDecisions[lead.Inbox]; len(got) != 1 || got[0].ItemKey != decision.ItemKey ||
+		got[0].Summary != decision.Summary || !got[0].UpdatedAt.Equal(decision.UpdatedAt) {
+		t.Fatalf("lead decisions: %+v", needs.LeadDecisions)
+	}
+	if len(swarmNeedsTestLanding(f).Items) != 0 {
+		t.Fatal("campaign signals leaked to landing")
+	}
+}
+
+func TestSwarmNeedsBoardExpiryAndDefault(t *testing.T) {
+	f := newSwarmFixture(t, "board-expiry")
+	if needs := swarmNeedsTestSnapshot(f); needs.Items == nil || len(needs.Items) != 0 {
+		t.Fatalf("initially empty: %+v", needs)
+	}
+	expired := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", expired.CreatedAt)
+	f.exec(`UPDATE cairn.agent_event SET created_at=clock_timestamp()-interval '11 minutes' WHERE event_id=$1`, expired.EventID)
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion)
+
+	if _, err := f.sender.SetSubscription(context.Background(), SubscriptionRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Topic: "agent-board", Active: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	answered := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", answered.CreatedAt)
+	swarmNeedsTestPublish(f, f.sender, "response", "agent", f.root.Inbox, "Board answer: Leave it alone\n\n"+
+		"```board-answer\n"+`{"verb":"no","source":"default","request_event":"`+answered.EventID+`"}`+"\n```", answered.EventID)
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion)
+}
+
+func TestSwarmNeedsLedgerAndHandoff(t *testing.T) {
+	f := newSwarmFixture(t, "ledger-attention")
+	worker, _ := f.member("attention-worker")
+	decision := swarmNeedsTestLedger(f, "decision", "root-decision", f.root.Inbox, "open", 0)
+	escalation := swarmNeedsTestLedger(f, "blocker", "escalation", worker.Inbox, "escalated", 0)
+	needs := swarmNeedsTestSnapshot(f)
+	if got := swarmNeedsTestItem(t, needs, SwarmNeedDecision, f.root.Inbox, "decide", decision.UpdatedAt); got.Refs.LedgerKey != decision.ItemKey || got.Refs.LedgerKind != decision.Kind {
+		t.Fatalf("decision refs: %+v", got)
+	}
+	if got := swarmNeedsTestItem(t, needs, SwarmNeedEscalation, worker.Inbox, "decide", escalation.UpdatedAt); got.Refs.LedgerKey != escalation.ItemKey || got.Refs.LedgerKind != escalation.Kind {
+		t.Fatalf("escalation refs: %+v", got)
+	}
+	swarmNeedsTestLedger(f, "decision", decision.ItemKey, f.root.Inbox, "settled", decision.Revision)
+	swarmNeedsTestLedger(f, "blocker", escalation.ItemKey, worker.Inbox, "resolved", escalation.Revision)
+	f.exec(`UPDATE cairn.agent_session SET started_at=clock_timestamp()-interval '5 hours' WHERE agent_id=$1`, f.root.AgentID)
+	snap, err := f.op.GetSwarmSnapshot(context.Background(), SwarmSnapshotRequest{Repo: f.repo, Campaign: f.campaign})
+	if err != nil || snap.Handoff == nil || snap.Handoff.Since == nil {
+		t.Fatalf("handoff: %+v %v", snap.Handoff, err)
+	}
+	handoff := swarmNeedsTestItem(t, snap.NeedsYou, SwarmNeedHandoffDue, f.root.Inbox, "hand_off", *snap.Handoff.Since)
+	if handoff.Detail != strings.Join(snap.Handoff.Reasons, ". ") {
+		t.Fatalf("handoff reasons: %+v", handoff)
+	}
+	swarmNeedsTestAbsent(t, snap.NeedsYou, SwarmNeedDecision)
+	swarmNeedsTestAbsent(t, snap.NeedsYou, SwarmNeedEscalation)
+	f.exec(`UPDATE cairn.agent_session SET started_at=clock_timestamp() WHERE agent_id=$1`, f.root.AgentID)
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedHandoffDue)
+}
+
+func TestSwarmNeedsOperatorDeliveryAndWorkstream(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "operator-attention")
+	member, view := f.member("stream-owner")
+	request := swarmNeedsTestPublish(f, view, "request", "agent", f.op.channel.Principal, "Owner task", "")
+	delivery := swarmNeedsTestDelivery(f, request)
+	statusReq := SetWorkstreamStatusRequest{RequestID: uuid.NewString(), Repo: f.repo, Stream: "release",
+		State: "blocked", DecisionNeeded: "Choose which release to pursue"}
+	ws, err := view.SetWorkstreamStatus(ctx, statusReq, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	needs := swarmNeedsTestSnapshot(f)
+	if got := swarmNeedsTestItem(t, needs, SwarmNeedOperatorDelivery, member.Inbox, "reply", request.CreatedAt); got.Refs.EventID != request.EventID ||
+		len(got.Refs.DeliveryIDs) != 1 || got.Refs.DeliveryIDs[0] != delivery || got.Refs.Record == nil || *got.Refs.Record != request.Ref {
+		t.Fatalf("operator refs: %+v", got)
+	}
+	if got := swarmNeedsTestItem(t, needs, SwarmNeedWorkstreamDecision, member.Inbox, "decide", ws.UpdatedAt); got.Refs.Stream != ws.Stream || got.Detail != ws.DecisionNeeded {
+		t.Fatalf("workstream refs: %+v", got)
+	}
+	if len(swarmNeedsTestLanding(f).Items) != 0 {
+		t.Fatal("campaign needs appeared on landing")
+	}
+	f.exec(`UPDATE cairn.agent_delivery SET state='handled',completed_at=clock_timestamp() WHERE delivery_id=$1`, delivery)
+	statusReq.RequestID, statusReq.State, statusReq.DecisionNeeded, statusReq.ExpectedRevision = uuid.NewString(), "active", "", ws.Revision
+	if _, err := view.SetWorkstreamStatus(ctx, statusReq, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	needs = swarmNeedsTestSnapshot(f)
+	swarmNeedsTestAbsent(t, needs, SwarmNeedOperatorDelivery)
+	swarmNeedsTestAbsent(t, needs, SwarmNeedWorkstreamDecision)
+}
+
+func TestSwarmNeedsOwnerTurnFreshness(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "owner-turn")
+	a, _ := f.member("turn-needed")
+	at := time.Now().UTC().Truncate(time.Microsecond)
+	obs, err := f.receiver.ObserveSessionDelivery(ctx, SessionDeliveryObservation{
+		Session: sessionRef(a), Condition: "owner_turn_required", ObservedAt: at,
+	}, f.dest)
+	if err != nil || !obs.Applied {
+		t.Fatalf("observe owner turn: %+v %v", obs, err)
+	}
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedOwnerTurn)
+	event := swarmNeedsTestPublish(f, f.rootView, "request", "agent", a.Inbox, "Work awaiting an owner turn", "")
+	delivery := swarmNeedsTestDelivery(f, event)
+	if got := swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedOwnerTurn, a.Inbox, "take_turn", at); got.Refs.Code != "owner_turn_required" ||
+		got.Refs.EventID != event.EventID || got.Refs.DeliveryIDs[0] != delivery {
+		t.Fatalf("owner turn refs: %+v", got)
+	}
+	f.staleObservationReceipt(a.AgentID)
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedOwnerTurn)
+
+	obs, err = f.receiver.ObserveSessionDelivery(ctx, SessionDeliveryObservation{
+		Session: sessionRef(a), Condition: "owner_turn_required", ObservedAt: time.Now().UTC(),
+	}, f.dest)
+	if err != nil || !obs.Applied {
+		t.Fatalf("refresh owner turn: %+v %v", obs, err)
+	}
+	f.staleObservationHostTime(a.AgentID)
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedOwnerTurn)
+
+	obs, err = f.receiver.ObserveSessionDelivery(ctx, SessionDeliveryObservation{
+		Session: sessionRef(a), Condition: "owner_turn_required", ObservedAt: time.Now().UTC(),
+	}, f.dest)
+	if err != nil || !obs.Applied {
+		t.Fatalf("refresh owner turn: %+v %v", obs, err)
+	}
+	f.fenceObservationGeneration(a.AgentID)
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedOwnerTurn)
+
+	obs, err = f.receiver.ObserveSessionDelivery(ctx, SessionDeliveryObservation{
+		Session: sessionRef(a), Condition: "owner_turn_required", ObservedAt: time.Now().UTC(),
+	}, f.dest)
+	if err != nil || !obs.Applied {
+		t.Fatalf("refresh owner turn after fence: %+v %v", obs, err)
+	}
+	f.exec(`UPDATE cairn.agent_delivery SET state='handled',completed_at=clock_timestamp() WHERE delivery_id=$1`, delivery)
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedOwnerTurn)
+}
+
+func TestSwarmNeedsFailedDeliveryGroups(t *testing.T) {
+	f := newSwarmFixture(t, "failed-deliveries")
+	a, _ := f.member("failed-attempts")
+	at := time.Now().UTC().Add(-time.Minute).Truncate(time.Microsecond)
+	codes := []string{"processing_failed", "processing_failed", "task_deadline", "operator_cancelled", "operator_released", "consumer_retired"}
+	events, ids := make([]AgentEvent, len(codes)), make([]string, len(codes))
+	for i, code := range codes {
+		events[i] = swarmNeedsTestPublish(f, f.rootView, "request", "agent", a.Inbox, "Process material", "")
+		ids[i] = swarmNeedsTestDelivery(f, events[i])
+		f.exec(`UPDATE cairn.agent_delivery SET state='failed',code=$2,completed_at=$3 WHERE delivery_id=$1`,
+			ids[i], code, at.Add(time.Duration(i)*time.Second))
+	}
+	needs := swarmNeedsTestSnapshot(f)
+	if len(needs.Items) != 2 {
+		t.Fatalf("failure groups: %+v", needs.Items)
+	}
+	for i, expected := range []struct {
+		first, count int
+	}{{0, 2}, {2, 1}} {
+		item := swarmNeedsTestItem(t, SwarmNeedsYou{Items: []SwarmNeed{needs.Items[i]}}, SwarmNeedFailedDelivery,
+			a.Inbox, "inspect", at.Add(time.Duration(expected.first)*time.Second))
+		if item.Count != expected.count || item.Refs.Code != codes[expected.first] || item.Refs.EventID != events[expected.first].EventID ||
+			strings.Join(item.Refs.DeliveryIDs, ",") != strings.Join(ids[expected.first:expected.first+expected.count], ",") {
+			t.Fatalf("failure group: %+v", item)
+		}
+	}
+	next, err := f.op.ReissueEvent(context.Background(), ReissueEventRequest{Repo: f.repo, RequestID: uuid.NewString(),
+		DeliveryID: ids[0], Reason: "Prior effects reviewed", AcceptUncertainEffects: true})
+	if err != nil {
+		t.Fatalf("reissue: %+v %v", next, err)
+	}
+	reissued := swarmNeedsTestSnapshot(f)
+	if len(reissued.Items) != 2 || reissued.Items[0].ID != needs.Items[0].ID || reissued.Items[0].Count != 1 ||
+		reissued.Items[0].Refs.DeliveryIDs[0] != ids[1] {
+		t.Fatalf("group should retain identity after reissuing one delivery: %+v", reissued)
+	}
+	f.exec(`UPDATE cairn.agent_delivery SET state='handled',code='' WHERE delivery_id=ANY($1::uuid[])`, ids[1:3])
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedFailedDelivery)
+}
+
+func TestSwarmNeedsStarvationAndStoppedBacklog(t *testing.T) {
+	f := newSwarmFixture(t, "stalled-agents")
+	idle, _ := f.member("stalled-idle")
+	busy := f.register(nativeAgent{Binding: "stalled-busy", State: "busy"})
+	f.join(busy)
+	older := time.Now().UTC().Add(-12 * time.Minute).Truncate(time.Microsecond)
+	idleEvent := swarmNeedsTestPublish(f, f.rootView, "request", "agent", idle.Inbox, "Idle inbox work", "")
+	busyEvent := swarmNeedsTestPublish(f, f.rootView, "request", "agent", busy.Inbox, "Busy inbox work", "")
+	idleID, busyID := swarmNeedsTestDelivery(f, idleEvent), swarmNeedsTestDelivery(f, busyEvent)
+	f.exec(`UPDATE cairn.agent_delivery SET available_at=$2 WHERE delivery_id=ANY($1::uuid[])`, []string{idleID, busyID}, older)
+	needs := swarmNeedsTestSnapshot(f)
+	stalled := swarmNeedsTestItem(t, needs, SwarmNeedStalledAgent, idle.Inbox, "inspect", older)
+	if len(needs.Items) != 1 || stalled.Refs.EventID != idleEvent.EventID || stalled.Refs.DeliveryIDs[0] != idleID ||
+		stalled.Refs.Code != "pending_starved" {
+		t.Fatalf("idle queue at 12 minutes: %+v", needs)
+	}
+
+	busyOlder := older.Add(-20 * time.Minute)
+	f.exec(`UPDATE cairn.agent_delivery SET available_at=$2 WHERE delivery_id=$1`, busyID, busyOlder)
+	swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedStalledAgent, busy.Inbox, "inspect", busyOlder)
+
+	// A handled delivery that completed recently suppresses pending starvation
+	// for that inbox. Leaving the session makes its unresolved work stranded.
+	progress := swarmNeedsTestPublish(f, f.rootView, "notice", "agent", idle.Inbox, "Recent progress", "")
+	progressID := swarmNeedsTestDelivery(f, progress)
+	f.exec(`UPDATE cairn.agent_delivery SET state='handled',completed_at=clock_timestamp() WHERE delivery_id=$1`, progressID)
+	needs = swarmNeedsTestSnapshot(f)
+	if len(needs.Items) != 1 || needs.Items[0].Subject != busy.Inbox {
+		t.Fatalf("recent handling suppression: %+v", needs)
+	}
+	f.stopAgo(idle, "1 minute")
+	stopped := swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedStoppedBacklog, idle.Inbox, "inspect", older)
+	if stopped.Refs.EventID != idleEvent.EventID || stopped.Refs.DeliveryIDs[0] != idleID || stopped.Refs.Code != "recipient_stopped" {
+		t.Fatalf("stopped refs: %+v", stopped)
+	}
+	f.exec(`UPDATE cairn.agent_delivery SET state='handled',completed_at=clock_timestamp() WHERE delivery_id=ANY($1::uuid[])`, []string{idleID, busyID})
+	needs = swarmNeedsTestSnapshot(f)
+	swarmNeedsTestAbsent(t, needs, SwarmNeedStoppedBacklog)
+	swarmNeedsTestAbsent(t, needs, SwarmNeedStalledAgent)
+}
+
+func TestSwarmNeedsHoldStalled(t *testing.T) {
+	f := newSwarmFixture(t, "held-agent")
+	a, _ := f.member("held-session")
+	event := swarmNeedsTestPublish(f, f.rootView, "request", "agent", a.Inbox, "Held work", "")
+	delivery := swarmNeedsTestDelivery(f, event)
+	claim := f.claim(sessionRef(a), delivery, "held-turn", true)
+	at := time.Now().UTC().Add(-61 * time.Minute).Truncate(time.Microsecond)
+	f.exec(`UPDATE cairn.agent_session_attempt SET created_at=$2 WHERE attempt_id=$1`, claim.Attempt.ID, at)
+	got := swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedStalledAgent, a.Inbox, "inspect", at)
+	if got.Refs.Code != "hold_stalled" || got.Refs.EventID != event.EventID || got.Refs.DeliveryIDs[0] != delivery {
+		t.Fatalf("hold refs: %+v", got)
+	}
+	f.exec(`UPDATE cairn.agent_session_attempt SET created_at=clock_timestamp() WHERE attempt_id=$1`, claim.Attempt.ID)
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedStalledAgent)
+}
+
+func swarmNeedsTestWait(f *swarmFixture, a AgentInstance, eventID, state string, resolved *time.Time) string {
+	f.t.Helper()
+	id := uuid.NewString()
+	reason, predicate := "", "request_response"
+	if state == "timed_out" {
+		reason = "timeout"
+	}
+	f.exec(`INSERT INTO cairn.agent_wait (wait_uuid,collection,owner_principal,owner_agent_uuid,creation_execution_uuid,
+		registration_destination,sensitivity_ceiling,profile_binding_id,predicate_kind,dependency_event_uuid,deadline,
+		generation,state,resolved_at,terminal_reason,reserved_notice_event_uuid,reserved_source_record_uuid)
+		VALUES ($1,$2,$3,$4,$5,'{"name":"hosted","allow_local":false}','shareable','fixture',$6,$7,
+		COALESCE($9,clock_timestamp()+interval '1 day'),$8,$10,$9,$11,$12,$13)`,
+		id, f.repo, a.Inbox, a.AgentID, a.ExecutionID, predicate, eventID, a.DatabaseGeneration, resolved, state, reason, uuid.NewString(), uuid.NewString())
+	return id
+}
+
+func TestSwarmNeedsTimedOutWait(t *testing.T) {
+	f := newSwarmFixture(t, "timed-out-wait")
+	a, _ := f.member("wait-owner")
+	request := swarmNeedsTestPublish(f, f.rootView, "request", "agent", a.Inbox, "Waiting for evidence", "")
+	at := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
+	waitID := swarmNeedsTestWait(f, a, request.EventID, "timed_out", &at)
+	got := swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedWaitTimedOut, a.Inbox, "inspect", at)
+	if got.Refs.WaitID != waitID || got.Refs.EventID != request.EventID || got.Refs.Code != "timeout" {
+		t.Fatalf("wait refs: %+v", got)
+	}
+	f.exec(`UPDATE cairn.agent_wait SET resolved_at=clock_timestamp()-interval '25 hours' WHERE wait_uuid=$1`, waitID)
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedWaitTimedOut)
+}
+
+func TestSwarmNeedsMissedCheckpoint(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "missed-checkpoint")
+	a, view := f.member("checkpoint-writer")
+	if _, err := f.rootView.SetSubscription(ctx, SubscriptionRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Topic: "workstream-overdue", Active: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
+	req := SetWorkstreamStatusRequest{RequestID: uuid.NewString(), Repo: f.repo, Stream: "delivery", State: "active", NextCheckpoint: &at}
+	set, err := view.SetWorkstreamStatus(ctx, req, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.op.SweepOverdueDeadlines(ctx, OverdueSweepRequest{Repo: f.repo, GraceSeconds: intPtr(0)})
+	if err != nil || len(out.Published) != 1 {
+		t.Fatalf("emit overdue checkpoint: %+v %v", out, err)
+	}
+	got := swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedMissedCheckpoint, a.Inbox, "inspect", at)
+	if got.Refs.Stream != req.Stream || got.Refs.EventID != out.Published[0].EventID || got.Refs.Record == nil {
+		t.Fatalf("overdue refs: %+v", got)
+	}
+	req.RequestID, req.ExpectedRevision, req.NextCheckpoint = uuid.NewString(), set.Revision, nil
+	if _, err := view.SetWorkstreamStatus(ctx, req, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	swarmNeedsTestAbsent(t, swarmNeedsTestSnapshot(f), SwarmNeedMissedCheckpoint)
+	var emitted int
+	if err := f.op.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_overdue_checkpoint WHERE repo=$1 AND state='emitted'`, f.repo).Scan(&emitted); err != nil || emitted != 1 {
+		t.Fatalf("snapshot changed the emitted checkpoint: %d %v", emitted, err)
+	}
+}
+
+func TestSwarmNeedsScopeAndDirectWaiterOrder(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "scope-and-order")
+	a, outside := f.session("out-of-campaign")
+	b, _ := f.session("other-waiter")
+	c, _ := f.member("member-waiter")
+	d, _ := f.member("other-member-waiter")
+	outsideOld := swarmNeedsTestPublish(f, outside, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	outsideNew := swarmNeedsTestPublish(f, outside, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	insideOld := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	insideNew := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	swarmNeedsTestWait(f, a, outsideNew.EventID, "waiting", nil)
+	swarmNeedsTestWait(f, b, outsideNew.EventID, "waiting", nil)
+	swarmNeedsTestWait(f, c, insideNew.EventID, "waiting", nil)
+	swarmNeedsTestWait(f, d, insideNew.EventID, "waiting", nil)
+	operator := swarmNeedsTestPublish(f, outside, "request", "agent", f.op.channel.Principal, "Action outside the campaign", "")
+	outsideRequest := swarmNeedsTestPublish(f, outside, "request", "agent", b.Inbox, "Pending outside the campaign", "")
+	outsideDelivery := swarmNeedsTestDelivery(f, outsideRequest)
+	f.exec(`UPDATE cairn.agent_delivery SET state='failed',code='processing_failed',completed_at=clock_timestamp() WHERE delivery_id=$1`, outsideDelivery)
+	if _, err := outside.SetWorkstreamStatus(ctx, SetWorkstreamStatusRequest{RequestID: uuid.NewString(),
+		Repo: f.repo, Stream: "outside", State: "blocked", DecisionNeeded: "Pick outside option"}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	swarmNeedsTestPublish(f, outside, "request", "agent", b.Inbox, "Still pending outside the campaign", "")
+	if _, err := f.receiver.ObserveSessionDelivery(ctx, SessionDeliveryObservation{
+		Session: sessionRef(b), Condition: "owner_turn_required", ObservedAt: time.Now().UTC(),
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+
+	// GetSwarmLanding reads current waiters itself. The campaign uses the flow
+	// it is handed, so feed it the stored waits independently of the flow slice.
+	landing := swarmNeedsTestLanding(f)
+	if len(landing.Items) != 6 || landing.Items[0].Refs.EventID != outsideNew.EventID || landing.Items[0].Waiters != 2 {
+		t.Fatalf("landing scope/order: %+v", landing.Items)
+	}
+	found := map[string]bool{}
+	for _, item := range landing.Items {
+		found[item.Refs.EventID] = true
+	}
+	if !found[outsideOld.EventID] || !found[outsideRequest.EventID] || !found[operator.EventID] || found[insideOld.EventID] || found[insideNew.EventID] {
+		t.Fatalf("landing refs: %+v", landing.Items)
+	}
+	campaign := swarmNeedsTestSnapshot(f)
+	if len(campaign.Items) != 2 {
+		t.Fatalf("campaign scope: %+v", campaign.Items)
+	}
+	tx, err := f.op.beginSwarmRead(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	sc, _, _, err := f.op.swarmScopeTx(ctx, tx, f.repo, f.campaign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := tx.Query(ctx, `SELECT owner_principal,dependency_event_uuid::text,state FROM cairn.agent_wait
+		WHERE collection=$1 AND dependency_event_uuid=$2::uuid`, f.repo, insideNew.EventID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waits, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SwarmWait, error) {
+		var w SwarmWait
+		err := row.Scan(&w.Owner, &w.DependencyEventID, &w.State)
+		return w, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second predicate from the same session remains one waiter.
+	waits = append(waits, SwarmWait{Owner: c.Inbox, State: "waiting", DependencyEventID: insideNew.EventID, Predicate: "response_group_closed"})
+	needs, err := f.op.swarmNeedsYouTx(ctx, tx, sc, SwarmSnapshot{Flow: SwarmFlow{Waits: waits}})
+	if err != nil || len(needs.Items) != 2 || needs.Items[0].Refs.EventID != insideNew.EventID ||
+		needs.Items[0].Waiters != 2 || needs.Items[1].Refs.EventID != insideOld.EventID || needs.Items[1].Waiters != 0 {
+		t.Fatalf("inside waiter order: %+v %v", needs, err)
+	}
+}
+
+func TestSwarmNeedsSourceFailureIsolated(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "source-isolation")
+	event := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	tx, err := f.op.beginSwarmRead(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	r := swarmNeedsReader{repo: f.repo, now: time.Now(), principals: []string{f.root.Inbox}, out: emptySwarmNeedsYou()}
+	r.read(ctx, tx, []string{SwarmNeedWorkstreamDecision}, func(sp pgx.Tx) ([]SwarmNeed, error) {
+		var ignored int
+		err := sp.QueryRow(ctx, `SELECT 1/0`).Scan(&ignored)
+		return nil, err
+	})
+	r.read(ctx, tx, []string{SwarmNeedBoardQuestion}, func(sp pgx.Tx) ([]SwarmNeed, error) {
+		return r.board(ctx, sp)
+	})
+	if len(r.out.Unavailable) != 1 || r.out.Unavailable[0].Type != SwarmNeedWorkstreamDecision ||
+		!strings.Contains(r.out.Unavailable[0].Reason, "division by zero") {
+		t.Fatalf("source failure: %+v", r.out.Unavailable)
+	}
+	if got := swarmNeedsTestItem(t, r.out, SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", event.CreatedAt); got.Refs.EventID != event.EventID {
+		t.Fatalf("board read after source failure: %+v", got)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("snapshot transaction left aborted: %v", err)
+	}
+}
+
+func TestSwarmNeedsBoardExpiryForms(t *testing.T) {
+	published := time.Date(2026, 11, 27, 20, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, card string
+		lifetime   time.Duration
+	}{
+		{"fallback", "", 24 * time.Hour},
+		{"fractional_ttl", `{"ttl":1.5}`, 1500 * time.Millisecond},
+		{"absolute_offset", `{"expires_at":"2026-11-27T13:00:00-08:00","ttl":600}`, time.Hour},
+		{"absolute_epoch", `{"expires_at":1795813200}`, time.Hour},
+		{"maximum", `{"ttl":999999}`, 72 * time.Hour},
+		{"malformed", `{"ttl":null,`, 24 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "Question"
+			if tc.card != "" {
+				body += "\n```board-card\n" + tc.card + "\n```"
+			}
+			title, expires, defaultVerb := swarmBoardQuestion(body, published)
+			if want := published.Add(tc.lifetime); !expires.Equal(want) || defaultVerb != "" || title != "Question" {
+				t.Fatalf("got title %q expiry %s and default %q, want expiry %s", title, expires, defaultVerb, want)
+			}
+		})
+	}
+}
