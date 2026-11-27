@@ -383,6 +383,14 @@ request UUID for each range and read the full note before replacing its body.
 The [note excerpt contract](index-and-pull.md#index-and-expansion-contract)
 defines limits and currentness checks.
 
+A repeated `cairn_pull` of a record version or covered span that was already
+delivered returns `already_delivered: true` without spending a credit or
+calling the API. Pass `force: true` to read it again, as with the MCP tool and
+the CLI's `--force`; `CAIRN_RECALL_DEDUP=0` disables the deduplication. The
+adapter calls the CLI without a session, so its
+[deduplication state](index-and-pull.md#agent-commands-without-request-json) is shared
+by the OpenCode sessions that use the same socket and token file.
+
 `cairn_pull_evidence` accepts an optional `span: {offset: 0, length: 4096}`
 for byte ranges of larger captured sources. Keep `expected_sha256` bound to the
 full object and use a new request UUID for each range. Selected bytes and their
