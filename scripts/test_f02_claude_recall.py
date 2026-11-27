@@ -1,5 +1,6 @@
 """Actual Source and checked Go Claude recall with a disposable Unix API."""
 import copy
+import datetime
 import base64
 import fcntl
 import http.server
@@ -54,6 +55,10 @@ class ClaudeUnboundRecallTests(unittest.TestCase):
                 for key in ('elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms'):
                     if operation == 'recall-observation':
                         self.assertGreaterEqual(body.pop(key), 0)
+                if operation == 'recall-observation':
+                    ts = body.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
             rows.append(dict(exit=result.returncode, stdout=result.stdout.decode(),
                              stderr=result.stderr.decode(), state=self.state(),
                              requests=[(op, body) for op, body, _ in calls]))
@@ -109,6 +114,9 @@ class ClaudeBoundCase(bound.BoundMemoryCase):
                 if op in ('recall-observation', 'capture-observation'):
                     for key in ('duration_ms', 'elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms'):
                         if key in body:self.assertGreaterEqual(body.pop(key), 0)
+                    ts = body.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
                 self.assertEqual(headers['Authorization'], 'Bearer bound-memory-synthetic-token')
                 token = headers['Cairn-Client-Diagnostics']
                 origin = json.loads(base64.urlsafe_b64decode(token+'='*(-len(token)%4)))['origin']

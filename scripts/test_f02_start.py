@@ -5,6 +5,7 @@ loader; its entire memory body, real CLI, rendering and persistence run.
 The candidate runs the actual receipt-selected public launcher and checked Go.
 """
 import base64
+import datetime
 import fcntl
 import http.server
 import json
@@ -249,6 +250,9 @@ with (nullcontext() if bridge else patch.object(hook,'load_inbox_recall',return_
                 for request in (actual,expected):
                     for key in ('elapsed_ms','search_ms','pulls_ms','selector_ms'):
                         self.assertGreaterEqual(request.pop(key),0)
+                    ts = request.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
             # These are fresh process UUIDs, not persisted mutation identities.
             # Assert their shape and one initiation separately from deterministic fields.
             for request in (actual,expected):
@@ -450,6 +454,9 @@ with (nullcontext() if bridge else patch.object(hook,'load_inbox_recall',return_
             for field in ('elapsed_ms','search_ms','pulls_ms','selector_ms'):
                 self.assertIs(type(meter[field]),int)
                 self.assertGreaterEqual(meter.pop(field),0)
+            ts = meter.pop('client_generated_at', None)
+            self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+            datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
             ident = meter.pop('request_id')
             self.assertEqual(str(uuid.UUID(ident)),ident)
         self.assertEqual(candidate_meter,source_meter)
@@ -645,6 +652,9 @@ func main() { uuid.SetRand(&sequence{}); os.Exit(activationipc.Run(os.Args[1:],o
                 if operation=='recall-observation':
                     for field in ('elapsed_ms','search_ms','pulls_ms','selector_ms'):
                         self.assertGreaterEqual(body.pop(field),0)
+                    ts = body.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
                 output.append((operation,body))
         self.assertEqual(actual,expected)  # request_id is retained unchanged
         requests = [body['request_id'] for op,body in actual if 'request_id' in body]

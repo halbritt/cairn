@@ -1,6 +1,7 @@
 """Real installed Source frontend and direct checked Go bound-memory processes."""
 import base64
 import copy
+import datetime
 import fcntl
 import http.server
 import json
@@ -244,6 +245,9 @@ class BoundMemoryCase(unittest.TestCase):
                     for key in ('duration_ms', 'elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms', 'selector_duration_ms'):
                         if key in body:
                             self.assertGreaterEqual(body.pop(key), 0)
+                    ts = body.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
                 self.assertEqual(row[2]['Authorization'], 'Bearer bound-memory-synthetic-token')
                 return body
             self.assertEqual(normalized(actual), normalized(expected))

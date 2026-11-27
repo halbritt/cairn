@@ -6,6 +6,7 @@ No provider credentials or real provider route are used by this fixture.
 """
 import base64
 import copy
+import datetime
 import fcntl
 import http.server
 import json
@@ -246,6 +247,9 @@ sys.exit(spec.get('exit',0))
                 if operation == 'capture-observation':
                     self.assertGreaterEqual(request.pop('duration_ms'), 0)
                     if 'selector_duration_ms' in request: self.assertGreaterEqual(request.pop('selector_duration_ms'), 0)
+                    ts = request.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
             self.assertEqual(actual, expected, operation)
             for declared, image in ((headers, sha(self.binary.read_bytes())), (source_headers, sha((ROOT/'integrations/lifecycle/memory.py').read_bytes()))):
                 self.assertEqual(declared['Authorization'], 'Bearer f03-synthetic-token')

@@ -1,5 +1,6 @@
 """Actual Source/Go query-domain pairs; only API and selector are synthetic."""
 import copy
+import datetime
 import json
 from pathlib import Path
 import shutil
@@ -23,6 +24,10 @@ def observed(result, state, calls, records=None, providers=None):
             for name in ('duration_ms', 'elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms', 'selector_duration_ms'):
                 if name in body and body.pop(name) < 0:
                     raise AssertionError('negative observation duration')
+            ts = body.pop('client_generated_at', None)
+            if not isinstance(ts, str) or not ts.endswith('Z'):
+                raise AssertionError('malformed observation client timestamp')
+            datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
         requests.append((operation, body))
     return dict(exit=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode(),
                 state=state, operations=[op for op, _, _ in calls],
@@ -64,8 +69,9 @@ class CaptureQueryDomainTests(unittest.TestCase):
                 self.assertFalse(Path('/proc', str(provider['pid'])).exists())
             row = observed(result, case.state(), case.calls, case.records, len(providers))
             row['state_unchanged'] = path.read_bytes() == seed
+            # observed() above validated client_generated_at on these same bodies.
             row['reports'] = [dict((key, val) for key, val in body.items()
-                                   if key not in ('request_id', 'duration_ms', 'selector_duration_ms'))
+                                   if key not in ('request_id', 'duration_ms', 'selector_duration_ms', 'client_generated_at'))
                               for op, body, _ in case.calls if op == 'capture-observation']
             row['locks'] = list(case.report_locks)
             sides.append(row)

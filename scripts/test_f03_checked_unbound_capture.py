@@ -1,6 +1,7 @@
 """Checked unbound H150 consumers against the complete installed Source."""
 import base64
 import copy
+import datetime
 import fcntl
 import json
 import os
@@ -115,6 +116,9 @@ class CheckedCapturePair(BoundMemoryCase):
                     for key in ('duration_ms', 'elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms', 'selector_duration_ms'):
                         if key in body:
                             self.assertGreaterEqual(body.pop(key), 0)
+                    ts = body.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
                 self.assertEqual(row[2]['Authorization'], 'Bearer bound-memory-synthetic-token')
                 return body
             self.assertEqual(normalized(actual), normalized(expected))
@@ -406,6 +410,9 @@ class CheckedUnboundBoundaryCoverageTests(UnboundSelection, CheckedCapturePair):
                     for key in ('duration_ms', 'elapsed_ms', 'search_ms', 'pulls_ms', 'selector_ms', 'selector_duration_ms'):
                         if key in body:
                             self.assertGreaterEqual(body.pop(key), 0)
+                    ts = body.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
                 self.assertEqual(row[2]['Authorization'], 'Bearer bound-memory-synthetic-token')
                 return body
             self.assertEqual(normalized(actual), normalized(expected))
@@ -585,6 +592,9 @@ class CheckedUnboundSelectionTests(UnboundSelection, selection_fixture.CaptureSe
                 if operation == 'capture-observation':
                     self.assertGreaterEqual(request.pop('duration_ms'), 0)
                     if 'selector_duration_ms' in request: self.assertGreaterEqual(request.pop('selector_duration_ms'), 0)
+                    ts = request.pop('client_generated_at', None)
+                    self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                    datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
             self.assertEqual(actual, expected, operation)
             for declared, image in ((headers, sha(self.binary.read_bytes())), (source_headers, self.f.receipt['members']['memory.py']['sha256'])):
                 self.assertEqual(declared['Authorization'], 'Bearer f03-synthetic-token')

@@ -5,6 +5,7 @@ The handlers, Source closure, selection verifier and admission remain real.
 """
 import base64
 import copy
+import datetime
 import fcntl
 import json
 import math
@@ -233,6 +234,9 @@ class HermesIdentityTests(checked.UnboundSelection, bound.BoundMemoryCase):
                 measurement(body, 'duration_ms')
                 if 'selector_duration_ms' in body:
                     measurement(body, 'selector_duration_ms')
+                ts = body.pop('client_generated_at', None)
+                self.assertIsInstance(ts, str); self.assertTrue(ts.endswith('Z'))
+                datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
                 self.assertEqual(body['session_sha256'], sha(self.f.event['session_id'].encode()))
                 self.assertEqual((body['harness'], body['hook_event']), ('hermes', self.f.event['hook_event_name']))
             if operation == 'index':
