@@ -7,11 +7,96 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header><h1>Cairn swarm view</h1><span id="status">connecting</span></header>
-<main>
-<form id="login" hidden><label for="token">Token</label> <input id="token" type="password" autocomplete="off"> <button type="submit">Sign in</button></form>
-<pre id="out" aria-live="polite"></pre>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top" id="top">
+  <div class="title-line">
+    <h1 id="title">Cairn swarm view</h1>
+    <span id="live" class="live" role="status" aria-live="polite" data-state="connecting">connecting</span>
+  </div>
+  <p id="description" class="description" hidden></p>
+  <p id="campaign-meta" class="meta" hidden></p>
+  <ul id="observations" class="observations" aria-label="Age of each observation" hidden></ul>
+  <p id="fault" class="alert" role="alert" hidden></p>
+  <nav class="top-nav" aria-label="Pages">
+    <a id="landing-link" href="./" hidden>All campaigns</a>
+    <button id="signout" type="button" hidden>Sign out</button>
+  </nav>
+</header>
+
+<main id="main" tabindex="-1">
+  <form id="signin" class="signin" hidden>
+    <h2>Sign in</h2>
+    <p>Paste the token from the token file, or open the address that <code>cairn swarm url</code> prints.</p>
+    <label for="token-input">Token</label>
+    <input id="token-input" name="token" type="password" autocomplete="off" spellcheck="false" required>
+    <button type="submit">Sign in</button>
+    <p id="signin-error" class="alert" role="alert" hidden></p>
+  </form>
+
+  <div id="landing" hidden>
+    <section class="region" aria-labelledby="landing-needs-heading">
+      <h2 id="landing-needs-heading">Needs you</h2>
+      <div id="landing-needs"></div>
+    </section>
+    <section class="region" aria-labelledby="campaigns-heading">
+      <h2 id="campaigns-heading">Active campaigns</h2>
+      <div id="campaigns"></div>
+    </section>
+    <section class="region" aria-labelledby="unaffiliated-heading">
+      <h2 id="unaffiliated-heading">Online sessions in no campaign</h2>
+      <div id="unaffiliated"></div>
+    </section>
+  </div>
+
+  <div id="campaign" hidden>
+    <section class="region" id="needs-region" aria-labelledby="needs-heading">
+      <h2 id="needs-heading">Needs you</h2>
+      <div id="needs"></div>
+    </section>
+    <section class="region" id="agents-region" aria-labelledby="agents-heading">
+      <h2 id="agents-heading">Agents</h2>
+      <div id="handoff-due"></div>
+      <div id="agents" class="agents"></div>
+      <div id="lineage"></div>
+    </section>
+    <section class="region" id="flow-region" aria-labelledby="flow-heading">
+      <h2 id="flow-heading">Message flow</h2>
+      <p id="flow-filter" class="filter" hidden></p>
+      <p id="flow-meta" class="meta"></p>
+      <ol id="flow" class="flow"></ol>
+    </section>
+  </div>
 </main>
+
+<dialog id="detail" class="panel" aria-labelledby="detail-title">
+  <div class="panel-head">
+    <h2 id="detail-title">Agent</h2>
+    <button type="button" class="close" data-close="detail">Close</button>
+  </div>
+  <div id="detail-body"></div>
+</dialog>
+
+<dialog id="event-detail" class="panel" aria-labelledby="event-title">
+  <div class="panel-head">
+    <h2 id="event-title">Event</h2>
+    <button type="button" class="close" data-close="event-detail">Close</button>
+  </div>
+  <div id="event-body"></div>
+</dialog>
+
+<dialog id="confirm" class="panel" aria-labelledby="confirm-title">
+  <div class="panel-head">
+    <h2 id="confirm-title">Confirm</h2>
+    <button type="button" class="close" data-close="confirm">Close</button>
+  </div>
+  <div id="confirm-body"></div>
+  <p id="confirm-result" role="status" aria-live="polite"></p>
+  <div class="panel-actions">
+    <button type="button" id="confirm-go" disabled>Confirm</button>
+    <button type="button" data-close="confirm">Keep it</button>
+  </div>
+</dialog>
+
 <script src="app.js"></script>
 </body>
 </html>
