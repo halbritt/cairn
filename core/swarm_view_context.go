@@ -61,6 +61,7 @@ func (s *Store) swarmContextRoomTx(ctx context.Context, tx pgx.Tx, sc swarmScope
 		id := swarmAgentID(principal)
 		if _, ok := sc.Sessions[id]; ok {
 			ids = append(ids, id)
+			out.ByAgent[id] = SwarmAgentContext{}
 		}
 	}
 	if len(ids) == 0 {
@@ -101,25 +102,43 @@ func (s *Store) swarmContextRoomTx(ctx context.Context, tx pgx.Tx, sc swarmScope
 // also report bytes. Prefer a measured delivery row when both sources measure
 // the same delivery ID. Unmetered coordination cues and native memory reads
 // are outside this total.
+//
+// The live observation writers supply native session IDs without binding,
+// agent or execution IDs. Derive the observation interval from registration
+// first, so a PreCompact row cannot resolve an identity collision. A stopped
+// registration's expires_at records its stop; an expired heartbeat alone
+// leaves the interval open because the session can resume.
 const swarmContextRoomSQL = `
-WITH boundaries AS (
- SELECT a.agent_id, a.repo, a.native_session_id, a.metadata->>'harness' AS harness, a.started_at,
+WITH member_sessions AS (
+ SELECT agent_id, repo, native_session_id, metadata->>'harness' AS harness, started_at,
+  CASE WHEN stopped THEN expires_at END AS stopped_at,
+  compaction_count, first_compacted_at
+ FROM cairn.agent_session
+ WHERE repo=$1 AND agent_id=ANY($2::uuid[])
+), boundaries AS (
+ SELECT a.agent_id, a.repo, a.native_session_id, a.harness, a.started_at, a.stopped_at,
   a.first_compacted_at, capture.observed_at,
   NULLIF(GREATEST(a.compaction_count, capture.precompacts), 0) AS compactions,
   CASE
    WHEN a.compaction_count>1 AND capture.last_precompact_at<=a.first_compacted_at THEN NULL
    ELSE COALESCE(capture.last_precompact_at, CASE WHEN a.compaction_count=1 THEN a.first_compacted_at END)
   END AS last_compaction_at
- FROM cairn.agent_session a
+ FROM member_sessions a
  CROSS JOIN LATERAL (
   SELECT count(*) FILTER (WHERE c.hook_event='PreCompact') AS precompacts,
    max(c.observed_at) FILTER (WHERE c.hook_event='PreCompact') AS last_precompact_at,
    max(c.observed_at) AS observed_at
   FROM cairn.capture_observation c
-  WHERE c.repo=a.repo AND c.native_session_id=a.native_session_id AND c.harness=a.metadata->>'harness'
-   AND c.observed_at>=a.started_at
+  WHERE c.repo=a.repo AND c.native_session_id=a.native_session_id AND c.harness=a.harness
+   AND c.observed_at>=a.started_at AND (a.stopped_at IS NULL OR c.observed_at<=a.stopped_at)
  ) capture
- WHERE a.repo=$1 AND a.agent_id=ANY($2::uuid[])
+ WHERE NOT EXISTS (
+  SELECT 1 FROM cairn.agent_session other
+  WHERE other.repo=a.repo AND other.native_session_id=a.native_session_id
+   AND other.metadata->>'harness'=a.harness AND other.agent_id<>a.agent_id
+   AND (a.stopped_at IS NULL OR other.started_at<=a.stopped_at)
+   AND (NOT other.stopped OR other.expires_at>=a.started_at)
+ )
 ), sessions AS (
  SELECT *, COALESCE(last_compaction_at, CASE WHEN compactions IS NULL THEN started_at END) AS counting_since
  FROM boundaries
@@ -140,7 +159,7 @@ CROSS JOIN LATERAL (
    false AS delivery_row
   FROM cairn.recall_observation r
   WHERE r.repo=a.repo AND r.native_session_id=a.native_session_id AND r.harness=a.harness
-   AND r.observed_at>=a.started_at
+   AND r.observed_at>=a.started_at AND (a.stopped_at IS NULL OR r.observed_at<=a.stopped_at)
   UNION ALL
   SELECT d.observed_at, d.delivery_id, d.observation_id,
    CASE WHEN disposition.delivered AND COALESCE(d.injected_unit,'utf8_bytes')='utf8_bytes' THEN d.injected_bytes END,
@@ -150,7 +169,7 @@ CROSS JOIN LATERAL (
    SELECT d.disposition IN ('full','compact','digest') AND d.expansion_reason IS DISTINCT FROM 'digest_claim' AS delivered
   ) disposition
   WHERE d.repo=a.repo AND d.native_session_id=a.native_session_id AND d.harness=a.harness
-   AND d.observed_at>=a.started_at
+   AND d.observed_at>=a.started_at AND (a.stopped_at IS NULL OR d.observed_at<=a.stopped_at)
  ), current_interval AS (
   SELECT COALESCE(
     max(measured_bytes) FILTER (WHERE delivery_row),

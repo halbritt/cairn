@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func swarmContextExec(t *testing.T, f *swarmFixture, sql string, args ...any) {
@@ -50,6 +52,25 @@ func swarmContextSnapshot(t *testing.T, f *swarmFixture) SwarmContextRoom {
 	return snap.ContextRoom
 }
 
+func swarmContextNamesakeCampaign(t *testing.T, f *swarmFixture) *swarmFixture {
+	t.Helper()
+	peer := *f
+	peer.campaign = "namesake"
+	peer.root = f.register(nativeAgent{
+		Binding: "different-binding",
+		Native:  f.root.NativeSessionID,
+		Harness: f.root.Metadata.Harness,
+	})
+	peer.rootView = f.view(sessionRef(peer.root))
+	if _, err := peer.rootView.SetTeamCampaign(context.Background(), SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: peer.campaign, RootAgent: peer.root.Inbox,
+		OutOfChainPolicy: "allow", Sensitivity: "shareable",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	return &peer
+}
+
 func swarmContextRequire[T comparable](t *testing.T, name string, got *T, want T) {
 	t.Helper()
 	if got == nil {
@@ -80,9 +101,8 @@ func TestSwarmContextRoomSinceStartAndCampaignScope(t *testing.T) {
 	swarmContextDelivery(t, f, f.root, start.Add(3*time.Second), deliveryID, "full", "utf8_bytes", nil, "")
 	swarmContextRecall(t, f, outsider, start.Add(time.Hour), "UserPromptSubmit", "test", nil, 90000)
 
-	// Matching native IDs elsewhere in the collection must also match harness.
-	otherHarness := f.root
-	otherHarness.Metadata.Harness = "claude"
+	// A concurrent registration with the same native ID on another harness is distinct.
+	otherHarness := f.register(nativeAgent{Binding: "other-harness", Native: f.root.NativeSessionID, Harness: "claude"})
 	swarmContextRecall(t, f, otherHarness, start.Add(time.Hour), "UserPromptSubmit", "test", nil, 90000)
 	latest := start.Add(4 * time.Second)
 	swarmContextCapture(t, f, f.root, latest, "Stop")
@@ -103,6 +123,55 @@ func TestSwarmContextRoomSinceStartAndCampaignScope(t *testing.T) {
 	if _, ok := out.ByAgent[outsider.AgentID]; ok || len(out.ByAgent) != 2 {
 		t.Fatalf("campaign scope: %+v", out.ByAgent)
 	}
+}
+
+func TestSwarmContextRoomOverlappingNamesakesAreUnknown(t *testing.T) {
+	f := newSwarmFixture(t, "context-room")
+	peer := swarmContextNamesakeCampaign(t, f)
+	at := peer.root.StartedAt
+	swarmContextCapture(t, f, peer.root, at, "PreCompact")
+	swarmContextRecall(t, f, peer.root, at.Add(time.Second), "UserPromptSubmit", "test", nil, 70)
+	bytes := int64(80)
+	swarmContextDelivery(t, f, peer.root, at.Add(2*time.Second), uuid.NewString(), "full", "utf8_bytes", &bytes, "")
+
+	for _, campaign := range []*swarmFixture{f, peer} {
+		room := swarmContextSnapshot(t, campaign)
+		entry, ok := room.ByAgent[campaign.root.AgentID]
+		if !ok || !reflect.DeepEqual(entry, SwarmAgentContext{}) || room.ObservedAt != nil {
+			t.Errorf("%s credited overlapping telemetry: entry=%+v present=%t observed_at=%v", campaign.campaign, entry, ok, room.ObservedAt)
+		}
+	}
+}
+
+func TestSwarmContextRoomStoppedNamesakeDoesNotOverlap(t *testing.T) {
+	f := newSwarmFixture(t, "context-room")
+	first := f.root.StartedAt
+	swarmContextRecall(t, f, f.root, first, "SessionStart", "test", nil, 30)
+	stopped, err := f.receiver.LeaveAgent(context.Background(), sessionRef(f.root), f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := swarmContextNamesakeCampaign(t, f)
+	second := peer.root.StartedAt
+	if !stopped.ExpiresAt.Before(second) {
+		t.Fatalf("fixture lifetimes overlap: stopped at %s, second started at %s", stopped.ExpiresAt, second)
+	}
+	swarmContextCapture(t, f, peer.root, second, "PreCompact")
+	swarmContextRecall(t, f, peer.root, second.Add(time.Second), "UserPromptSubmit", "test", nil, 70)
+	bytes := int64(80)
+	swarmContextDelivery(t, f, peer.root, second.Add(2*time.Second), uuid.NewString(), "full", "utf8_bytes", &bytes, "")
+
+	room := swarmContextSnapshot(t, f)
+	earlier := room.ByAgent[f.root.AgentID]
+	swarmContextRequire(t, "stopped session bytes", earlier.InjectedBytes, int64(30))
+	swarmContextRequireTime(t, "stopped session latest observation", room.ObservedAt, first)
+	if !earlier.Known || earlier.LastCompactionAt != nil || earlier.InjectedDeliveries != nil {
+		t.Fatalf("stopped session credited its successor's observations: %+v", earlier)
+	}
+	room = swarmContextSnapshot(t, peer)
+	later := room.ByAgent[peer.root.AgentID]
+	swarmContextRequire(t, "new session bytes", later.InjectedBytes, int64(150))
+	swarmContextRequireTime(t, "new session latest compaction", later.LastCompactionAt, second)
 }
 
 func TestSwarmContextRoomSinceLastPreCompact(t *testing.T) {

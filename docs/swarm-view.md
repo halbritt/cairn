@@ -234,6 +234,12 @@ the existing checks for idle host conditions and recent inbox handling.
 
 ## Context room
 
+Live observation rows identify the collection, harness and native session ID.
+They carry no binding, agent or execution ID. When two registrations with the
+same identity have overlapping lifetimes, both sessions show unknown. An
+explicit stop closes a registration's interval. Losing the presence heartbeat
+leaves the interval open because the registration can resume.
+
 The session start time gives its age. The last observed compaction time
 comes from the newest `PreCompact` capture row, or the session's first
 compaction timestamp when its counter records exactly one compaction and
