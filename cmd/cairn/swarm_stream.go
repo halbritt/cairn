@@ -260,18 +260,8 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 	// frame is written after logout, eviction or the session's lifetime. This
 	// is set up before anything is started or sent, so a session that ended
 	// between the router's check and this point gets nothing.
-	streamCtx, cancel := context.WithCancel(ctx)
+	streamCtx, cancel := s.sessionContext(ctx, session)
 	defer cancel()
-	lifetime := time.NewTimer(time.Until(session.expires))
-	defer lifetime.Stop()
-	go func() {
-		select {
-		case <-session.revoked:
-		case <-lifetime.C:
-		case <-streamCtx.Done():
-		}
-		cancel()
-	}()
 	// emit writes one frame for a session that still stands. It reports
 	// false when the stream must end.
 	emit := func(event, id string, data any) bool {

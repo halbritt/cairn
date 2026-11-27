@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -225,6 +226,25 @@ func (s *swarmServer) sessionAlive(id string) bool {
 	return ok
 }
 
+// sessionContext returns a context that ends with the session: at logout,
+// when the session limit evicts it, and at its lifetime. Work done for a
+// signed-in browser runs under it, so that a store call that is still waiting
+// when the session ends is cancelled and commits nothing.
+func (s *swarmServer) sessionContext(parent context.Context, session swarmBrowserSession) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	lifetime := time.NewTimer(time.Until(session.expires))
+	go func() {
+		defer lifetime.Stop()
+		select {
+		case <-session.revoked:
+		case <-lifetime.C:
+		case <-ctx.Done():
+		}
+		cancel()
+	}()
+	return ctx, cancel
+}
+
 func (s *swarmServer) session(r *http.Request) (string, swarmBrowserSession, bool) {
 	cookie, err := r.Cookie(s.cookieName())
 	if err != nil || cookie.Value == "" {
@@ -245,20 +265,21 @@ func swarmLoopbackHost(host string) bool {
 }
 
 // checkHostOrigin admits only requests addressed to this loopback listener
-// and, when an Origin is sent, only this page's own origin.
+// and only from this page's own origin. A browser sends Origin with every
+// request that can change state, so such a request without one is refused; a
+// GET or HEAD may leave it out.
 func (s *swarmServer) checkHostOrigin(r *http.Request) bool {
 	if !s.ownAuthority(r.Host) {
 		return false
 	}
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		// The page's own origin: the same loopback name and port as the
-		// request's Host, not merely another spelling of this listener.
-		if err != nil || u.Scheme != "http" || u.User != nil || !s.ownAuthority(u.Host) || swarmAuthority(u.Host) != swarmAuthority(r.Host) {
-			return false
-		}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return r.Method == http.MethodGet || r.Method == http.MethodHead
 	}
-	return true
+	u, err := url.Parse(origin)
+	// The page's own origin: the same loopback name and port as the
+	// request's Host, not merely another spelling of this listener.
+	return err == nil && u.Scheme == "http" && u.User == nil && s.ownAuthority(u.Host) && swarmAuthority(u.Host) == swarmAuthority(r.Host)
 }
 
 // swarmAuthority writes host[:port] with the port always present.
@@ -298,6 +319,12 @@ func writeSwarmJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func writeSwarmError(w http.ResponseWriter, err error) {
+	if errors.Is(err, context.Canceled) {
+		// The request's context ends with its session. (When the browser went
+		// away instead, nobody reads this answer.)
+		swarmRefuse(w, http.StatusUnauthorized, "UNAUTHENTICATED", "the session ended before the request completed; sign in again")
+		return
+	}
 	code := core.Code(err)
 	status := refusal.Classify(code).HTTPStatus
 	if status == 0 {
@@ -401,6 +428,28 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The stream reports the end of its session to the page itself; every
+	// other signed-in request simply lives no longer than its session.
+	stream := r
+	bound, stop := s.sessionContext(r.Context(), session)
+	defer stop()
+	r = r.WithContext(bound)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		// The whole body arrives before anything acts on it, and the session
+		// is looked at again once it has. A request whose session ended while
+		// its body was on the way changes nothing.
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, swarmBodyLimit))
+		if err != nil {
+			swarmRefuse(w, http.StatusBadRequest, "INVALID_REQUEST", "the request body is too large or could not be read")
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		if !s.sessionAlive(id) {
+			swarmRefuse(w, http.StatusUnauthorized, "UNAUTHENTICATED", "the session ended; sign in again")
+			return
+		}
+	}
+
 	switch {
 	case r.URL.Path == "/api/auth/logout":
 		if r.Method != http.MethodPost {
@@ -448,7 +497,7 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.windows.first(r.Context(), 5*time.Second)
 		writeSwarmJSON(w, http.StatusOK, map[string]any{"herdr": s.paneView(s.now()), "window": s.windowView(s.now())})
 	case r.URL.Path == "/api/swarm/stream":
-		s.handleStream(w, r, id, session)
+		s.handleStream(w, stream, id, session)
 	case strings.HasPrefix(r.URL.Path, "/api/swarm/action/"), r.URL.Path == "/api/swarm/event":
 		s.handleAction(w, r)
 	default:

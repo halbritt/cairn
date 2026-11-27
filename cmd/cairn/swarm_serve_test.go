@@ -104,9 +104,18 @@ func (s *swarmTestServer) do(method, path string, body any, header map[string]st
 	for key, value := range header {
 		if key == "Host" {
 			req.Host = value
-		} else {
+		} else if value != "" {
 			req.Header.Set(key, value)
 		}
+	}
+	if _, set := header["Origin"]; !set && method != http.MethodGet && method != http.MethodHead {
+		// A browser states its origin on every request that can change
+		// state. A test leaves it out with an empty "Origin" entry.
+		host := req.URL.Host
+		if req.Host != "" {
+			host = req.Host
+		}
+		req.Header.Set("Origin", "http://"+host)
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -372,6 +381,19 @@ func TestSwarmServerAccessChecks(t *testing.T) {
 			t.Fatalf("action with %s: %d %s", name, resp.StatusCode, raw)
 		}
 	}
+	// A request that changes state states the page's origin. Without one it
+	// is refused whatever else it carries.
+	for _, path := range []string{"/api/auth/logout", "/api/swarm/action/send", "/api/swarm/action/acknowledge", "/api/swarm/action/cancel-delivery", "/api/swarm/action/cancel-wait"} {
+		if resp, raw := s.do(http.MethodPost, path, map[string]string{}, map[string]string{"X-CSRF-Token": login.CSRF, "Origin": ""}); resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("POST %s without an Origin: %d %s", path, resp.StatusCode, raw)
+		}
+	}
+	if resp, raw := s.do(http.MethodPost, "/api/auth/login", map[string]string{"token": swarmTestToken}, map[string]string{"Origin": ""}); resp.StatusCode != http.StatusForbidden || len(resp.Cookies()) != 0 {
+		t.Fatalf("sign-in without an Origin: %d %s", resp.StatusCode, raw)
+	}
+	if resp, raw := s.do(http.MethodPost, "/api/auth/logout", nil, map[string]string{"X-CSRF-Token": login.CSRF, "Origin": "http://localhost:" + port}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST from another spelling of this listener: %d %s", resp.StatusCode, raw)
+	}
 	if resp, raw := s.do(http.MethodGet, "/api/swarm/landing", nil, nil); resp.StatusCode != http.StatusOK {
 		t.Fatalf("a refused request ended the session: %d %s", resp.StatusCode, raw)
 	}
@@ -400,6 +422,88 @@ func TestSwarmServerAccessChecks(t *testing.T) {
 	s.server.mu.Unlock()
 	if sessions > swarmSessionLimit {
 		t.Fatalf("%d sessions kept; the limit is %d", sessions, swarmSessionLimit)
+	}
+}
+
+// swarmEndingBody is a request body that ends the session as it arrives.
+type swarmEndingBody struct {
+	end  func()
+	data *strings.Reader
+}
+
+func (b *swarmEndingBody) Read(p []byte) (int, error) {
+	if b.end != nil {
+		b.end()
+		b.end = nil
+	}
+	return b.data.Read(p)
+}
+
+func (b *swarmEndingBody) Close() error { return nil }
+
+// A request that changes state is acted on only for a session that still
+// stands once the whole request has arrived. The router admits the request,
+// the session ends while the body is on its way, and nothing is done: the
+// test server has no store, so reaching an action would fail the test.
+func TestSwarmRequestIsRefusedWhenItsSessionEndsWhileTheBodyArrives(t *testing.T) {
+	s := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
+	port := strconv.Itoa(s.server.port)
+	body := `{"campaign":"alpha","request_id":"7b1c1e0e-5a53-4b53-9d0e-3c2f1a6f0a11","to":"agent/x","kind":"request","summary":"s","body":"b","delivery_id":"d","wait_id":"w","reason":"long enough"}`
+	for _, path := range []string{"/api/swarm/action/send", "/api/swarm/action/acknowledge", "/api/swarm/action/cancel-delivery", "/api/swarm/action/cancel-wait"} {
+		for name, end := range map[string]func(id string){
+			"logout": func(id string) {
+				s.server.mu.Lock()
+				s.server.endSessionLocked(id)
+				s.server.mu.Unlock()
+			},
+			"lifetime": func(id string) {
+				s.server.mu.Lock()
+				session := s.server.sessions[id]
+				session.expires = time.Now().Add(-time.Second)
+				s.server.sessions[id] = session
+				s.server.mu.Unlock()
+			},
+		} {
+			id, csrf, err := s.server.issueSession()
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:"+port+path, nil)
+			request.Body = &swarmEndingBody{end: func() { end(id) }, data: strings.NewReader(body)}
+			request.Header.Set("Origin", "http://127.0.0.1:"+port)
+			request.Header.Set("X-CSRF-Token", csrf)
+			request.AddCookie(&http.Cookie{Name: "cairn_swarm_" + port, Value: id})
+			recorder := httptest.NewRecorder()
+			s.server.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusUnauthorized || swarmErrorCode(recorder.Body.Bytes()) != "UNAUTHENTICATED" {
+				t.Fatalf("%s, session ended by %s while the body arrived: %d %s", path, name, recorder.Code, recorder.Body)
+			}
+		}
+	}
+	// The same request with a session that stands reaches its route (and is
+	// refused there, since this request is not a valid action).
+	id, csrf, err := s.server.issueSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:"+port+"/api/swarm/action/nothing", strings.NewReader(body))
+	request.Header.Set("Origin", "http://127.0.0.1:"+port)
+	request.Header.Set("X-CSRF-Token", csrf)
+	request.AddCookie(&http.Cookie{Name: "cairn_swarm_" + port, Value: id})
+	recorder := httptest.NewRecorder()
+	s.server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("a standing session did not reach the router: %d %s", recorder.Code, recorder.Body)
+	}
+	// A body over the limit is refused before it is acted on.
+	request = httptest.NewRequest(http.MethodPost, "http://127.0.0.1:"+port+"/api/swarm/action/send", strings.NewReader(`{"body":"`+strings.Repeat("x", swarmBodyLimit)+`"}`))
+	request.Header.Set("Origin", "http://127.0.0.1:"+port)
+	request.Header.Set("X-CSRF-Token", csrf)
+	request.AddCookie(&http.Cookie{Name: "cairn_swarm_" + port, Value: id})
+	recorder = httptest.NewRecorder()
+	s.server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest || swarmErrorCode(recorder.Body.Bytes()) != "INVALID_REQUEST" {
+		t.Fatalf("oversized body: %d %s", recorder.Code, recorder.Body)
 	}
 }
 

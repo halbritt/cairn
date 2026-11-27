@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
+	"github.com/jackc/pgx/v5"
 )
 
 // swarmStoreFixture is one campaign on a fresh collection of the disposable
@@ -320,5 +321,96 @@ func TestSwarmStreamOverHTTPRefusals(t *testing.T) {
 	}
 	if !strings.HasPrefix(f.http.URL, "http://127.0.0.1:") {
 		t.Fatalf("test server is not on loopback: %s", f.http.URL)
+	}
+}
+
+// An action whose session ends while the store is still working commits
+// nothing. The send waits on the collection's event lock, which another
+// publisher holds; the browser signs out; the request ends as a sign-in
+// refusal, and after the lock is released there is no event and no source
+// record.
+func TestSwarmActionWaitingOnTheStoreEndsWithItsSession(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	member, _ := f.member("action-revoked-member")
+	conn, err := pgx.Connect(ctx, os.Getenv("CAIRN_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	key := "agent-events:" + f.repo
+	holder, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Rollback(ctx)
+	if _, err = holder.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
+		t.Fatal(err)
+	}
+	watch, err := pgx.Connect(ctx, os.Getenv("CAIRN_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watch.Close(ctx)
+	waiting := func() int {
+		var n int
+		if err := watch.QueryRow(ctx, `SELECT count(*) FROM pg_locks l, (SELECT hashtextextended($1,0) AS k) x
+			WHERE l.locktype='advisory' AND NOT l.granted
+			  AND l.classid::bigint=((x.k >> 32) & 4294967295) AND l.objid::bigint=(x.k & 4294967295)`, key).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	req := swarmActionSend(f, member.Inbox, "request", "Must never be stored")
+	type answer struct {
+		status int
+		raw    []byte
+	}
+	answered := make(chan answer, 1)
+	go func() {
+		resp, raw := f.do(http.MethodPost, "/api/swarm/action/send", req, map[string]string{"X-CSRF-Token": f.csrf})
+		answered <- answer{resp.StatusCode, raw}
+	}()
+	for deadline := time.Now().Add(20 * time.Second); waiting() == 0; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the send never waited on the collection's event lock")
+		}
+		select {
+		case got := <-answered:
+			t.Fatalf("the send answered while the lock was held: %d %s", got.status, got.raw)
+		default:
+		}
+	}
+	if resp, raw := f.do(http.MethodPost, "/api/auth/logout", nil, map[string]string{"X-CSRF-Token": f.csrf}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("logout: %d %s", resp.StatusCode, raw)
+	}
+	select {
+	case got := <-answered:
+		if got.status != http.StatusUnauthorized || swarmErrorCode(got.raw) != "UNAUTHENTICATED" {
+			t.Fatalf("the send of an ended session answered %d %s", got.status, got.raw)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the send outlived its session: it is still waiting on the store")
+	}
+	for deadline := time.Now().Add(10 * time.Second); waiting() != 0; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the cancelled send still waits on the lock")
+		}
+	}
+	if err = holder.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := f.op.ReadSwarmStream(ctx, core.SwarmStreamRequest{Repo: f.repo, Campaign: f.campaign})
+	if err != nil || len(stream.Events) != 0 {
+		t.Fatalf("the send of an ended session published: %+v %v", stream.Events, err)
+	}
+	// No source record was left either: the same request UUID with another
+	// body is a new request, not a conflict with a stored draft.
+	f.login()
+	req.Body = "Sent after signing in again"
+	sent := swarmActionPost[core.SwarmEventDetails](t, f, "send", req)
+	if sent.Event.From != f.op.Channel().Principal {
+		t.Fatalf("publisher: %+v", sent.Event)
 	}
 }
