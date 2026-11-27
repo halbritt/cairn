@@ -361,7 +361,7 @@ func (s *Store) swarmActionGuard(ctx context.Context, req SwarmActionRequest, ch
 }
 
 func (s *Store) swarmActionEventTx(ctx context.Context, tx pgx.Tx, sc swarmScope, eventID string) (SwarmEvent, error) {
-	const query = "SELECT " + eventColumns + " FROM cairn.agent_event e WHERE " + swarmEventInCampaign + " AND e.event_id=$5"
+	query := "SELECT " + eventColumns + " FROM cairn.agent_event e WHERE " + swarmEventInCampaign + " AND e.event_id=$5"
 	events, err := s.swarmEventsTx(ctx, tx, sc, query, eventID)
 	if err != nil {
 		return SwarmEvent{}, err
