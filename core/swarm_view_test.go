@@ -1189,3 +1189,119 @@ func TestSwarmLandingEventsAreTheComplementOfCampaignLogs(t *testing.T) {
 		}
 	}
 }
+
+// The handoff's since is the first moment it was due. A limit reached at a
+// time the store does not hold leaves it out, and reaching a second limit
+// later does not bring in a later time.
+func TestSwarmHandoffSinceNeverMovesForward(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "handoff-since")
+	limits := func(age, compactions int) {
+		t.Helper()
+		if _, err := f.rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{
+			RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign,
+			MaxCoordinatorAgeSeconds: &age, MaxCoordinatorCompactions: &compactions,
+		}, f.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	started := func(ago time.Duration) time.Time {
+		t.Helper()
+		at := time.Now().UTC().Add(-ago).Truncate(time.Microsecond)
+		f.exec(`UPDATE cairn.agent_session SET started_at=$2 WHERE agent_id=$1`, f.root.AgentID, at)
+		return at
+	}
+	compact := func() {
+		t.Helper()
+		if _, err := f.rootView.RecordCoordinatorCompaction(ctx, RecordCoordinatorCompactionRequest{
+			RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign,
+		}, f.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func() (SwarmSnapshot, map[string]json.RawMessage) {
+		t.Helper()
+		snap, err := f.op.GetSwarmSnapshot(ctx, SwarmSnapshotRequest{Repo: f.repo, Campaign: f.campaign})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var row map[string]json.RawMessage
+		for _, item := range snap.NeedsYou.Items {
+			if item.Type == SwarmNeedHandoffDue {
+				wire, err := json.Marshal(item)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = json.Unmarshal(wire, &row); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		return snap, row
+	}
+
+	const hour = 3600
+	limits(hour, 2)
+	started(30 * time.Minute)
+	if snap, row := read(); snap.Handoff != nil || row != nil {
+		t.Fatalf("a handoff is due below both limits: %+v %s", snap.Handoff, row)
+	}
+	// Two compactions before the age limit: due, at a time the store does
+	// not hold.
+	compact()
+	compact()
+	snap, row := read()
+	if snap.Handoff == nil || len(snap.Handoff.Reasons) != 1 || snap.Handoff.Since != nil || snap.Handoff.AgeReachedAt != nil {
+		t.Fatalf("due by compactions only: %+v", snap.Handoff)
+	}
+	if _, has := row["since"]; row == nil || has {
+		t.Fatalf("needs row for an undated handoff: %s", row)
+	}
+	// The session then reaches the age limit as well. The handoff was due
+	// before that moment, so that moment is not its since.
+	start := started(2 * time.Hour)
+	snap, row = read()
+	if snap.Handoff == nil || len(snap.Handoff.Reasons) != 2 || snap.Handoff.Since != nil {
+		t.Fatalf("since appeared when the second limit was reached: %+v", snap.Handoff)
+	}
+	if at := snap.Handoff.AgeReachedAt; at == nil || !at.Equal(start.Add(hour*time.Second)) {
+		t.Fatalf("age_reached_at: %v, want %v", at, start.Add(hour*time.Second))
+	}
+	if _, has := row["since"]; row == nil || has {
+		t.Fatalf("needs row acquired a since: %s", row)
+	}
+
+	// The age limit alone is dated.
+	limits(hour, 100)
+	snap, row = read()
+	if snap.Handoff == nil || snap.Handoff.Since == nil || !snap.Handoff.Since.Equal(start.Add(hour*time.Second)) {
+		t.Fatalf("due by age only: %+v", snap.Handoff)
+	}
+	if _, has := row["since"]; !has {
+		t.Fatalf("needs row for a dated handoff has no since: %s", row)
+	}
+
+	// A compaction limit of one is dated by the recorded first compaction,
+	// and since is the earlier of the two crossings.
+	limits(hour, 1)
+	var first time.Time
+	if err := f.op.pool.QueryRow(ctx, `SELECT first_compacted_at FROM cairn.agent_session WHERE agent_id=$1`, f.root.AgentID).Scan(&first); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ = read()
+	want := start.Add(hour * time.Second)
+	if first.Before(want) {
+		want = first
+	}
+	if snap.Handoff == nil || snap.Handoff.Since == nil || !snap.Handoff.Since.Equal(want) {
+		t.Fatalf("both limits dated: %+v, want since %v", snap.Handoff, want)
+	}
+	// The first compaction came after the age limit was reached here; move
+	// the session start so that the compaction comes first.
+	start = started(10 * time.Minute)
+	f.exec(`UPDATE cairn.agent_session SET first_compacted_at=$2 WHERE agent_id=$1`, f.root.AgentID, start.Add(time.Minute))
+	snap, _ = read()
+	if snap.Handoff == nil || len(snap.Handoff.Reasons) != 1 || snap.Handoff.Since == nil || !snap.Handoff.Since.Equal(start.Add(time.Minute)) || snap.Handoff.AgeReachedAt != nil {
+		t.Fatalf("due by the first compaction only: %+v", snap.Handoff)
+	}
+}

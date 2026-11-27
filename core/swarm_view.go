@@ -143,9 +143,14 @@ type SwarmHandoff struct {
 // compactions past the campaign's thresholds. Since is when the age threshold
 // was reached; the store does not record when a compaction count was reached.
 type SwarmHandoffDue struct {
-	HolderPrincipal string     `json:"holder_principal"`
-	Reasons         []string   `json:"reasons"`
-	Since           *time.Time `json:"since,omitempty"`
+	HolderPrincipal string   `json:"holder_principal"`
+	Reasons         []string `json:"reasons"`
+	// Since is the first moment the handoff was due. It is absent when a
+	// limit that is reached has no recorded crossing time, and it never
+	// moves forward while the handoff stays due.
+	Since *time.Time `json:"since,omitempty"`
+	// AgeReachedAt is when the session reached the age limit, when it has.
+	AgeReachedAt *time.Time `json:"age_reached_at,omitempty"`
 }
 
 // swarmScope is computed once per read and handed to every section reader.
@@ -475,14 +480,43 @@ func (s *Store) swarmSnapshotTx(ctx context.Context, tx pgx.Tx, sc swarmScope, l
 	// value is stable between reads.
 	if a, ok := sc.Sessions[swarmAgentID(sc.Campaign.RootAgent)]; ok && sc.Campaign.Active {
 		due := SwarmHandoffDue{HolderPrincipal: sc.Campaign.RootAgent, Reasons: []string{}}
+		// Since is the first moment the handoff was due. It is given only
+		// when every limit that is reached has a known crossing time: a
+		// crossing whose time the store does not hold may have come first,
+		// and a time that moves forward when a second limit is reached would
+		// make the row look newer than it is.
+		var first *time.Time
+		dated := true
+		earlier := func(at time.Time) {
+			if first == nil || at.Before(*first) {
+				first = &at
+			}
+		}
 		if limit := sc.Campaign.MaxCoordinatorAgeSeconds; limit != nil {
 			if at := a.StartedAt.Add(time.Duration(*limit) * time.Second); !at.After(sc.Now) {
 				due.Reasons = append(due.Reasons, "coordinator session age reached max_coordinator_age_seconds")
-				due.Since = &at
+				due.AgeReachedAt = &at
+				earlier(at)
 			}
 		}
 		if limit := sc.Campaign.MaxCoordinatorCompactions; limit != nil && a.CompactionCount >= *limit {
 			due.Reasons = append(due.Reasons, "coordinator compaction count reached max_coordinator_compactions")
+			// Only the first compaction has its own time in the store.
+			var compacted *time.Time
+			if *limit == 1 {
+				if err := tx.QueryRow(ctx, `SELECT first_compacted_at FROM cairn.agent_session WHERE repo=$1 AND agent_id=$2`,
+					sc.Repo, a.AgentID).Scan(&compacted); err != nil {
+					return snap, err
+				}
+			}
+			if compacted != nil && !compacted.IsZero() && !compacted.After(sc.Now) {
+				earlier(*compacted)
+			} else {
+				dated = false
+			}
+		}
+		if dated {
+			due.Since = first
 		}
 		if len(due.Reasons) > 0 {
 			snap.Handoff = &due

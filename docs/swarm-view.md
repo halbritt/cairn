@@ -227,10 +227,13 @@ operator CLI.
 
 When an action involves contacting someone, `refs.principal` identifies
 the recipient. The page checks current campaign membership before offering to
-send. A handoff row includes `since` when Cairn can date a threshold crossing
-from the session start or the recorded first compaction. The field can be
-absent when a later compaction triggered the handoff or its timestamp is
-unavailable.
+send. A handoff row includes `since`, the first moment the handoff was due,
+only when Cairn can date every limit that is reached: the age limit from the
+session start, and a compaction limit of one from the recorded first
+compaction. It is absent when a later compaction counts toward the limit or
+when that timestamp is unavailable, because the undated crossing may have come
+first; `since` never moves forward while the handoff stays due. The snapshot's
+`handoff.age_reached_at` gives the time the age limit was reached on its own.
 
 Campaign board reads start at campaign creation. Landing board reads cover
 the last 72 hours. These bounds apply even to a question without a card.
