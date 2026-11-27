@@ -45,7 +45,19 @@ func newHerdrPaneReader(bindingsDir, procRoot string) swarmPaneReader {
 			observation.Error = err.Error()
 			return observation
 		}
-		matches, err := scan.client.ObservePanes(ctx, scan.sessions, os.Environ())
+		if scan.unreadableStateFile {
+			observation.Error = "could not read Cairn session state"
+			return observation
+		}
+		if scan.client.Executable == "" {
+			observation.Error = "no Cairn binding has an absolute Herdr executable"
+			return observation
+		}
+		sessions := make([]wake.PaneSession, 0, len(scan.sessions))
+		for _, session := range scan.sessions {
+			sessions = append(sessions, session.PaneSession)
+		}
+		matches, err := scan.client.ObservePanes(ctx, sessions, os.Environ())
 		if err != nil {
 			var hostErr *wake.HerdrError
 			switch {
@@ -83,13 +95,15 @@ type swarmHerdrBinding struct {
 	Harness    string `json:"harness"`
 	StateDir   string `json:"state_dir"`
 	IdleWakeup string `json:"idle_wakeup"`
+	ConfigHome string `json:"config_home"`
 }
 
 type swarmHerdrState struct {
-	Retired swarmStateFlag  `json:"retired"`
-	Ending  swarmStateFlag  `json:"ending"`
-	Process wake.ProcessRef `json:"process"`
-	Agent   struct {
+	Retired   swarmStateFlag  `json:"retired"`
+	Ending    swarmStateFlag  `json:"ending"`
+	Process   wake.ProcessRef `json:"process"`
+	Workspace string          `json:"workspace"`
+	Agent     struct {
 		ID       string `json:"agent_id"`
 		NativeID string `json:"native_session_id"`
 		Metadata struct {
@@ -111,9 +125,16 @@ func (flag *swarmStateFlag) UnmarshalJSON(data []byte) error {
 }
 
 type swarmHerdrScan struct {
-	client            wake.HerdrClient
-	sessions          []wake.PaneSession
-	skippedStateFiles int
+	client              wake.HerdrClient
+	sessions            []swarmLocalSession
+	skippedStateFiles   int
+	unreadableStateFile bool
+}
+
+type swarmLocalSession struct {
+	wake.PaneSession
+	ConfigHome string
+	Workspace  string
 }
 
 func swarmHerdrSessions(ctx context.Context, bindingsDir, procRoot string) (swarmHerdrScan, error) {
@@ -174,20 +195,17 @@ func scanSwarmHerdrSessions(ctx context.Context, bindingsDir, procRoot string) (
 			continue
 		}
 		stateDirs[directory] = true
-		if err := appendSwarmHerdrSessions(ctx, &scan, directory, binding.Harness); err != nil {
+		if err := appendSwarmHerdrSessions(ctx, &scan, directory, binding); err != nil {
 			return scan, err
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return scan, err
 	}
-	if scan.client.Executable == "" {
-		return scan, errors.New("no Cairn binding has an absolute Herdr executable")
-	}
 	return scan, nil
 }
 
-func appendSwarmHerdrSessions(ctx context.Context, scan *swarmHerdrScan, directory, bindingHarness string) error {
+func appendSwarmHerdrSessions(ctx context.Context, scan *swarmHerdrScan, directory string, binding swarmHerdrBinding) error {
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return errors.New("could not list Cairn session state")
@@ -206,7 +224,8 @@ func appendSwarmHerdrSessions(ctx context.Context, scan *swarmHerdrScan, directo
 			continue
 		}
 		if err != nil {
-			return errors.New("could not read Cairn session state")
+			scan.unreadableStateFile = true
+			continue
 		}
 		var state swarmHerdrState
 		if err := json.Unmarshal(data, &state); err != nil {
@@ -229,11 +248,14 @@ func appendSwarmHerdrSessions(ctx context.Context, scan *swarmHerdrScan, directo
 		}
 		harness := state.Agent.Metadata.Harness
 		if harness == "" {
-			harness = bindingHarness
+			harness = binding.Harness
 		}
-		scan.sessions = append(scan.sessions, wake.PaneSession{
-			AgentID: state.Agent.ID, NativeSessionID: state.Agent.NativeID, Harness: harness,
-			Process: state.Process, StateDir: directory, StatePath: path,
+		scan.sessions = append(scan.sessions, swarmLocalSession{
+			PaneSession: wake.PaneSession{
+				AgentID: state.Agent.ID, NativeSessionID: state.Agent.NativeID, Harness: harness,
+				Process: state.Process, StateDir: directory, StatePath: path,
+			},
+			ConfigHome: binding.ConfigHome, Workspace: state.Workspace,
 		})
 	}
 	return nil
