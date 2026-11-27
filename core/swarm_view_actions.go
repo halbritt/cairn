@@ -86,14 +86,14 @@ type SwarmRefusal struct {
 
 // GetSwarmCancelPreview reads what a cancel of one delivery would affect.
 func (s *Store) GetSwarmCancelPreview(ctx context.Context, req SwarmCancelPreviewRequest) (SwarmCancelPreview, error) {
-	if err := validID(req.DeliveryID); err != nil {
-		return SwarmCancelPreview{}, err
-	}
 	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign)
 	if err != nil {
 		return SwarmCancelPreview{}, err
 	}
 	defer tx.Rollback(context.Background())
+	if err := validID(req.DeliveryID); err != nil {
+		return SwarmCancelPreview{}, err
+	}
 
 	delivery, err := swarmActionDeliveryTx(ctx, tx, sc, req.DeliveryID)
 	if err != nil {
@@ -516,6 +516,9 @@ func (s *Store) swarmActionGuard(ctx context.Context, req SwarmActionRequest, ch
 		if err := lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
 			return err
 		}
+		if req.Campaign == "" { // Acknowledge can use the landing page.
+			return check(tx, swarmScope{Repo: req.Repo})
+		}
 		sc, _, _, err := s.swarmScopeTx(ctx, tx, req.Repo, req.Campaign)
 		if err != nil {
 			return err
@@ -543,14 +546,14 @@ func (s *Store) GetSwarmEvent(ctx context.Context, repo, campaign, eventID strin
 }
 
 func (s *Store) swarmEventDetails(ctx context.Context, repo, campaign, eventID string, includeBody bool) (SwarmEventDetails, error) {
-	if err := validID(eventID); err != nil {
-		return SwarmEventDetails{}, err
-	}
 	tx, sc, err := s.beginSwarmActionRead(ctx, repo, campaign)
 	if err != nil {
 		return SwarmEventDetails{}, err
 	}
 	defer tx.Rollback(context.Background())
+	if err := validID(eventID); err != nil {
+		return SwarmEventDetails{}, err
+	}
 	event, err := s.swarmActionEventTx(ctx, tx, sc, eventID)
 	if err != nil {
 		return SwarmEventDetails{}, err
@@ -707,24 +710,22 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 	if err := s.normalizeSwarmAction(&req.SwarmActionRequest); err != nil {
 		return SwarmAcknowledgeResult{}, err
 	}
-	if err := validID(req.DeliveryID); err != nil {
-		return SwarmAcknowledgeResult{}, err
-	}
+	var sc swarmScope
 	var system string
-	readScope := func(tx pgx.Tx) (swarmScope, error) {
-		if req.Campaign == "" {
-			return swarmScope{Repo: req.Repo}, nil
-		}
-		sc, _, _, err := s.swarmScopeTx(ctx, tx, req.Repo, req.Campaign)
-		return sc, err
-	}
+	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(_ pgx.Tx, scope swarmScope) error {
+		sc = scope
+		return validID(req.DeliveryID)
+	})
 	wrongHead := func() *SwarmAcknowledgeConflict {
 		return &SwarmAcknowledgeConflict{
 			Expected: req.DeliveryID,
 			refusal:  &Error{Code: "VERSION_CONFLICT", Message: "the delivery is not the oldest in the operator's inbox"},
 		}
 	}
-	checkTarget := func(tx pgx.Tx, sc swarmScope) error {
+	checkTarget := func(tx pgx.Tx) error {
+		if req.Campaign != "" && !sc.Campaign.Active {
+			return wrongHead()
+		}
 		d, err := swarmActionInboxDeliveryTx(ctx, tx, sc, req.DeliveryID)
 		if Code(err) == "NOT_FOUND" {
 			return wrongHead()
@@ -738,24 +739,13 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 		system = d.System
 		return nil
 	}
-	replay := func(tx pgx.Tx) error {
-		sc, err := readScope(tx)
-		if err != nil {
-			return err
-		}
-		return checkTarget(tx, sc)
-	}
 	intent := struct {
 		SwarmDeliveryActionRequest
 		Collection string `json:"collection"`
 	}{req, req.Repo}
-	out, err := mutateWithReplayGuard(ctx, s, "swarm-acknowledge", req.RequestID, intent, replay, func(tx pgx.Tx) (SwarmAcknowledgeResult, error) {
+	out, err := mutateWithReplayGuard(ctx, s, "swarm-acknowledge", req.RequestID, intent, checkTarget, func(tx pgx.Tx) (SwarmAcknowledgeResult, error) {
 		out := SwarmAcknowledgeResult{}
-		sc, err := readScope(tx)
-		if err != nil {
-			return out, err
-		}
-		if err := checkTarget(tx, sc); err != nil {
+		if err := checkTarget(tx); err != nil {
 			return out, err
 		}
 		seconds, _ := leaseSeconds(0)
@@ -791,9 +781,7 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 		seen, err := swarmActionInboxDeliveryTx(ctx, tx, sc, d.DeliveryID)
 		out.Delivery = &seen
 		return out, err
-	}, func(tx pgx.Tx) error {
-		return lock(ctx, tx, "agent-events:"+req.Repo)
-	})
+	}, guard)
 	// Cached acknowledgement replies may predate the field or outlive the
 	// origin receipt. Use the origin from the current authorized read.
 	if err == nil && out.Delivery != nil {
@@ -807,21 +795,23 @@ func (s *Store) CancelSwarmDelivery(ctx context.Context, req SwarmCancelDelivery
 	if err := s.normalizeSwarmCampaignAction(&req.SwarmActionRequest); err != nil {
 		return out, err
 	}
-	if err := validID(req.DeliveryID); err != nil {
-		return out, err
-	}
-	replay := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(tx pgx.Tx, sc swarmScope) error {
+	var sc swarmScope
+	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(_ pgx.Tx, scope swarmScope) error {
+		sc = scope
+		return validID(req.DeliveryID)
+	})
+	replay := func(tx pgx.Tx) error {
 		delivery, err := swarmActionDeliveryTx(ctx, tx, sc, req.DeliveryID)
 		if err == nil && !delivery.canReadCancellation(sc) {
 			return swarmDeliveryNotFound()
 		}
 		return err
-	})
+	}
 	intent := struct {
 		SwarmCancelDeliveryRequest
 		Collection string `json:"collection"`
 	}{req, req.Repo}
-	confirm := func(tx pgx.Tx, sc swarmScope) error {
+	confirm := func(tx pgx.Tx) error {
 		delivery, err := swarmActionDeliveryTx(ctx, tx, sc, req.DeliveryID)
 		if err != nil {
 			return err
@@ -850,8 +840,7 @@ func (s *Store) CancelSwarmDelivery(ctx context.Context, req SwarmCancelDelivery
 		return nil
 	}
 	scope := &scopedCancellation{
-		intent: intent, authorizeReplay: replay, notFound: swarmDeliveryNotFound,
-		confirm: s.swarmActionGuard(ctx, req.SwarmActionRequest, confirm),
+		intent: intent, resolvePage: guard, authorizeReplay: replay, confirm: confirm, notFound: swarmDeliveryNotFound,
 	}
 	cancel, cancelErr := s.cancelWork(ctx, CancelWorkRequest{
 		RequestID: req.RequestID, Repo: req.Repo, DeliveryID: req.DeliveryID, Reason: req.Reason,
@@ -914,9 +903,11 @@ func (s *Store) CancelSwarmWait(ctx context.Context, req SwarmCancelWaitRequest)
 	if err := s.normalizeSwarmCampaignAction(&req.SwarmActionRequest); err != nil {
 		return out, err
 	}
-	if err := validID(req.WaitID); err != nil {
-		return out, err
-	}
+	var sc swarmScope
+	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(_ pgx.Tx, scope swarmScope) error {
+		sc = scope
+		return validID(req.WaitID)
+	})
 	readOwned := func(tx pgx.Tx, scope swarmScope) (SwarmWait, error) {
 		w, err := swarmActionWaitTx(ctx, tx, scope, req.WaitID)
 		if err == nil && !scope.isMember(w.Owner) {
@@ -924,15 +915,15 @@ func (s *Store) CancelSwarmWait(ctx context.Context, req SwarmCancelWaitRequest)
 		}
 		return w, err
 	}
-	replay := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(tx pgx.Tx, sc swarmScope) error {
+	replay := func(tx pgx.Tx) error {
 		_, err := readOwned(tx, sc)
 		return err
-	})
+	}
 	intent := struct {
 		SwarmCancelWaitRequest
 		Collection string `json:"collection"`
 	}{req, req.Repo}
-	confirm := func(tx pgx.Tx, sc swarmScope) error {
+	confirm := func(tx pgx.Tx) error {
 		w, err := readOwned(tx, sc)
 		if err != nil {
 			return err
@@ -951,8 +942,7 @@ func (s *Store) CancelSwarmWait(ctx context.Context, req SwarmCancelWaitRequest)
 		return nil
 	}
 	scope := &scopedCancellation{
-		intent: intent, authorizeReplay: replay, notFound: swarmWaitNotFound,
-		confirm: s.swarmActionGuard(ctx, req.SwarmActionRequest, confirm),
+		intent: intent, resolvePage: guard, authorizeReplay: replay, confirm: confirm, notFound: swarmWaitNotFound,
 	}
 	_, err := s.cancelWait(ctx, CancelWaitRequest{
 		RequestID: req.RequestID, Collection: req.Repo, WaitUUID: req.WaitID,

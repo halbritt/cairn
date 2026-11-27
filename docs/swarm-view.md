@@ -348,6 +348,9 @@ UUID and the same fields. Reusing that UUID with a different intent returns
 Only Acknowledge accepts an empty `campaign`, which selects the landing page.
 Send, Cancel delivery, Cancel wait, Cancel preview and Event detail require a
 campaign name.
+An unknown campaign returns HTTP 404 with `NOT_FOUND` and the message
+“team campaign not found” on every route. The server resolves the campaign
+before looking up the requested target.
 
 | Route | Other request fields | Successful reply |
 | --- | --- | --- |

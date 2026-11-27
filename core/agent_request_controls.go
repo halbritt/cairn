@@ -126,20 +126,21 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 }
 
 // scopedCancellation binds browser intent to the existing store receipt.
-// The replay check runs on a matching receipt. A new cancellation checks
-// scope and confirmation under the selected delivery or wait row's lock.
+// The page resolves before any target lookup. The replay check runs on a
+// matching receipt, and confirmation runs under the selected row's lock.
 type scopedCancellation struct {
 	intent          any
+	resolvePage     func(pgx.Tx) error
 	authorizeReplay func(pgx.Tx) error
 	confirm         func(pgx.Tx) error
 	notFound        func() error
 }
 
-func (scope *scopedCancellation) mutation(req any) (any, func(pgx.Tx) error) {
+func (scope *scopedCancellation) mutation(req any) (any, func(pgx.Tx) error, []func(pgx.Tx) error) {
 	if scope == nil {
-		return req, nil
+		return req, nil, nil
 	}
-	return scope.intent, scope.authorizeReplay
+	return scope.intent, scope.authorizeReplay, []func(pgx.Tx) error{scope.resolvePage}
 }
 
 func (scope *scopedCancellation) missing(message string) error {
@@ -155,20 +156,20 @@ func (s *Store) cancelWork(ctx context.Context, req CancelWorkRequest, scope *sc
 	if req.Repo, err = s.requestControlScope(req.Repo); err != nil {
 		return zero, err
 	}
-	if (req.DeliveryID == "") == (req.PoolEventID == "") {
-		return zero, failure("INVALID_REQUEST", "choose delivery_id or pool_event_id")
-	}
-	for _, id := range []string{req.DeliveryID, req.PoolEventID} {
-		if id != "" && validID(id) != nil {
-			return zero, failure("INVALID_REQUEST", "work identifiers must be UUIDs")
-		}
-	}
 	if scope == nil {
+		if (req.DeliveryID == "") == (req.PoolEventID == "") {
+			return zero, failure("INVALID_REQUEST", "choose delivery_id or pool_event_id")
+		}
+		for _, id := range []string{req.DeliveryID, req.PoolEventID} {
+			if id != "" && validID(id) != nil {
+				return zero, failure("INVALID_REQUEST", "work identifiers must be UUIDs")
+			}
+		}
 		if err = reasonValid(req.Reason); err != nil {
 			return zero, err
 		}
 	}
-	intent, replay := scope.mutation(req)
+	intent, replay, guards := scope.mutation(req)
 	return mutateWithReplayGuard(ctx, s, "work-cancel", req.RequestID, intent, replay, func(tx pgx.Tx) (WorkCancellation, error) {
 		if _, err := retrievalGeneration(ctx, tx); err != nil {
 			return zero, err
@@ -273,7 +274,7 @@ func (s *Store) cancelWork(ctx context.Context, req CancelWorkRequest, scope *sc
 		out := WorkCancellation{EventID: eventID, DeliveryID: delivery, Held: wake, Control: &WorkControl{}}
 		err = tx.QueryRow(ctx, `SELECT control_at,control_by,code,control_reason FROM cairn.agent_delivery WHERE delivery_id=$1`, delivery).Scan(&out.Control.At, &out.Control.By, &out.Control.Code, &out.Control.Reason)
 		return out, err
-	})
+	}, guards...)
 }
 
 // stopRequestDelivery fails live work as the caller's stop decision and

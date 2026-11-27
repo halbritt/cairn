@@ -815,7 +815,7 @@ func (s *Store) cancelWait(ctx context.Context, req CancelWaitRequest, dest Dest
 	if err := validID(req.RequestID); err != nil {
 		return AgentWait{}, err
 	}
-	if req.WaitUUID == "" && req.DependencyEventUUID == "" {
+	if scope == nil && req.WaitUUID == "" && req.DependencyEventUUID == "" {
 		return AgentWait{}, failure("INVALID_REQUEST", "wait UUID or dependency event UUID required for cancellation")
 	}
 
@@ -825,7 +825,7 @@ func (s *Store) cancelWait(ctx context.Context, req CancelWaitRequest, dest Dest
 	}
 	req.Collection = repo
 
-	intent, replay := scope.mutation(req)
+	intent, replay, guards := scope.mutation(req)
 	return mutateWithReplayGuard(ctx, s, "wait-cancel", req.RequestID, intent, replay, func(tx pgx.Tx) (AgentWait, error) {
 		callerAgentUUID, isOperator, err := s.authenticateWaitCaller(ctx, tx, req.Session, repo, dest)
 		if err != nil {
@@ -898,7 +898,7 @@ ORDER BY w.created_at DESC LIMIT 1 FOR UPDATE OF w`, repo, req.WaitUUID, req.Dep
 		}
 
 		return w, nil
-	})
+	}, guards...)
 }
 
 func resolveWaitsOnEvent(ctx context.Context, tx pgx.Tx, event AgentEvent) error {

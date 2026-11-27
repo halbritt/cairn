@@ -936,3 +936,120 @@ func TestSwarmActionHTTPHiddenCancellationTargetsMatchUnknownIDs(t *testing.T) {
 	unknownWait.WaitID = uuid.NewString()
 	assertHidden(http.MethodPost, waitPath, waitPath, cancelWait, unknownWait)
 }
+
+func TestSwarmActionHTTPCampaignRefusalsDoNotDependOnTargets(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	swarmActionEnableWaits(t, f)
+	member, _ := f.member("action-refusal-member")
+	outsider, outsideView := f.session("action-refusal-outsider")
+	operator := f.op.Channel().Principal
+	type target struct {
+		recipient, deliveryID, operatorDeliveryID, waitID, eventID string
+	}
+	deliveryID := func(view *core.Store, event core.AgentEvent) string {
+		t.Helper()
+		status, err := view.AgentEventStatus(ctx, core.EventStatusRequest{EventID: event.EventID}, f.dest)
+		if err != nil || len(status.Deliveries) != 1 {
+			t.Fatalf("seed delivery: %+v %v", status, err)
+		}
+		return status.Deliveries[0].DeliveryID
+	}
+	seed := func(view *core.Store, recipient string) target {
+		t.Helper()
+		request := swarmActionPublishEvent(t, f, view, "request", recipient, "", "")
+		notice := swarmActionPublishEvent(t, f, view, "notice", operator, "", "")
+		wait, err := view.CreateWait(ctx, core.CreateWaitRequest{
+			RequestID: uuid.NewString(), Collection: f.repo, DependencyEventUUID: request.EventID,
+			PredicateKind: core.WaitPredicateRequestResponse, Deadline: time.Now().Add(time.Hour),
+		}, f.dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return target{recipient, deliveryID(view, request), deliveryID(view, notice), wait.WaitUUID, request.EventID}
+	}
+	visible := seed(f.rootView, member.Inbox)
+	outsideRecipient, _ := f.session("action-refusal-outside-recipient")
+	hidden := seed(outsideView, outsideRecipient.Inbox)
+	hidden.recipient = outsider.Inbox
+	targets := []struct {
+		name string
+		target
+	}{
+		{"existing", visible},
+		{"hidden", hidden},
+		{"random", target{"agent/" + uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()}},
+		{"malformed", target{"role/bad", "bad-id", "bad-id", "bad-id", "bad-id"}},
+	}
+	type route struct {
+		name, method string
+		request      func(core.SwarmActionRequest, target) (string, any)
+	}
+	sendRoute := route{"send", http.MethodPost, func(req core.SwarmActionRequest, target target) (string, any) {
+		return "/api/swarm/action/send", core.SwarmSendRequest{
+			SwarmActionRequest: req, To: target.recipient, Kind: "notice", Action: "review", Summary: "Scope check", Body: "Scope check",
+		}
+	}}
+	ackRoute := route{"acknowledge", http.MethodPost, func(req core.SwarmActionRequest, target target) (string, any) {
+		return "/api/swarm/action/acknowledge", core.SwarmDeliveryActionRequest{SwarmActionRequest: req, DeliveryID: target.operatorDeliveryID}
+	}}
+	routes := []route{
+		sendRoute, ackRoute,
+		{"cancel-delivery", http.MethodPost, func(req core.SwarmActionRequest, target target) (string, any) {
+			return "/api/swarm/action/cancel-delivery", core.SwarmCancelDeliveryRequest{
+				SwarmDeliveryActionRequest: core.SwarmDeliveryActionRequest{SwarmActionRequest: req, DeliveryID: target.deliveryID},
+			}
+		}},
+		{"cancel-wait", http.MethodPost, func(req core.SwarmActionRequest, target target) (string, any) {
+			return "/api/swarm/action/cancel-wait", core.SwarmCancelWaitRequest{SwarmActionRequest: req, WaitID: target.waitID}
+		}},
+		{"cancel-preview", http.MethodGet, func(req core.SwarmActionRequest, target target) (string, any) {
+			return "/api/swarm/action/cancel-preview?campaign=" + req.Campaign + "&delivery_id=" + target.deliveryID, nil
+		}},
+		{"event", http.MethodGet, func(req core.SwarmActionRequest, target target) (string, any) {
+			return "/api/swarm/event?campaign=" + req.Campaign + "&event_id=" + target.eventID, nil
+		}},
+	}
+	headers := map[string]string{"X-CSRF-Token": f.csrf}
+	for _, route := range routes {
+		t.Run("unknown/"+route.name, func(t *testing.T) {
+			req := core.SwarmActionRequest{Campaign: "no-such-campaign", RequestID: uuid.NewString()}
+			for _, tt := range targets {
+				t.Run(tt.name, func(t *testing.T) {
+					path, body := route.request(req, tt.target)
+					resp, raw := f.do(route.method, path, body, headers)
+					refusal := swarmActionJSON[map[string]string](t, resp, raw, http.StatusNotFound)
+					want := map[string]string{"code": "NOT_FOUND", "error": "NOT_FOUND: team campaign not found"}
+					if !maps.Equal(refusal, want) {
+						t.Fatalf("unknown campaign refusal: %s", raw)
+					}
+				})
+			}
+		})
+	}
+	inactive := false
+	if _, err := f.rootView.SetTeamCampaign(ctx, core.SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign, Active: &inactive,
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("inactive/send", func(t *testing.T) {
+		req := swarmActionRequest(f)
+		for _, tt := range targets {
+			path, body := sendRoute.request(req, tt.target)
+			resp, raw := f.do(http.MethodPost, path, body, headers)
+			refusal := swarmActionJSON[map[string]string](t, resp, raw, http.StatusForbidden)
+			want := map[string]string{"code": "AUTHORITY_DENIED", "error": "AUTHORITY_DENIED: campaign is inactive"}
+			if !maps.Equal(refusal, want) {
+				t.Errorf("inactive send with %s target: %s", tt.name, raw)
+			}
+		}
+	})
+	t.Run("inactive/acknowledge", func(t *testing.T) {
+		req := swarmActionRequest(f)
+		for _, tt := range targets[:3] {
+			_, body := ackRoute.request(req, tt.target)
+			swarmActionAssertNeutralAck(t, f, body.(core.SwarmDeliveryActionRequest), visible.eventID)
+		}
+	})
+}
