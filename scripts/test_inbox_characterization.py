@@ -696,6 +696,8 @@ class InboxCharacterization(unittest.TestCase):
         self.addCleanup(wake.doCleanups)
         self.extra_roots.append((wake.root, '$WAKE_FIXTURE'))
         wake.cc['cairn'] = wake.mc['cairn'] = str(self.cairn)
+        # The golden holds the legacy view of the pinned oracle; the default is now compact/1.
+        wake.mc['recall_view'] = 'full'
         source = fixture.FAKE.replace("argv[-1] if argv[0] == 'agent'",
             "argv[9] if argv[0] == 'agent' and argv[5] == '--agent-id' else argv[5] if argv[0] == 'agent'")
         self.cairn.write_text(source.replace("queue = replies.get(operation)",

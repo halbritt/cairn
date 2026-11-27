@@ -87,7 +87,10 @@ class OptionalExcerptFitTests(unittest.TestCase):
                                  entry['summary'][3:-3].encode())
                 self.assertEqual(response['source_extent'], 'partial_span')
                 self.assertEqual(response['selection']['record']['body'], '')
-                self.assertIn('partial_span omits context: pull current whole notes for broader claims', text)
+                # No view is configured, so the default cue leads the text.
+                cue = hook.COMPACT_AGENT_TOOLS_CUE.format(budget=9500)
+                self.assertTrue(text.startswith(cue))
+                self.assertIn('partial_span omits context', cue)
                 self.assertEqual(view['selected'], case.result['selected'])
                 self.assertEqual(view['candidate_inspection']['pull_calls'], 2)
                 self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 2)
@@ -97,7 +100,7 @@ class OptionalExcerptFitTests(unittest.TestCase):
                 fixed = dict(view, index=[], candidate_bodies=[], remaining_memory_bytes=9500,
                              candidate_inspection=dict(pull_calls=0, remaining_pull_calls=4,
                                                        delivered_records=0, refusals={}))
-                fixed_text = hook.AGENT_TOOLS_CUE.format(budget=9500) + hook.encoded(fixed)
+                fixed_text = cue + hook.encoded(fixed)
                 reserve = min(9500 // 2, 9500 - measure(fixed_text))
                 self.assertGreaterEqual(view['remaining_memory_bytes'], reserve)
                 self.assertLessEqual(measure(text) + view['remaining_memory_bytes'], 9500)
