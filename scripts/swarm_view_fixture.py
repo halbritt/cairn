@@ -629,6 +629,11 @@ class Fixture:
         require("where should the swarm token file live" in text, "board question is not listed")
         require("flow reader note" in text, "operator-addressed event is not listed")
         require("Lead decides the flow sort order" not in text, "lead-owned decision listed in needs you")
+        # A board question is answered on the board: no compose or reply control.
+        board = page.locator("#needs li.need[data-type='board_question']").first
+        self.expect(board).to_contain_text("Answer on the board")
+        buttons = board.locator("button").all_inner_texts()
+        require(all(b.startswith("Copy") for b in buttons), "a board question offers a control: " + json.dumps(buttons))
 
     def cancel(self, page):
         snapshot = self.snapshot()

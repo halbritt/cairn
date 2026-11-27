@@ -777,7 +777,16 @@
       controls.append(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery) }));
     } else if (action.kind === "cancel_wait" && refs.wait_id) {
       controls.append(el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(refs.wait_id) }));
-    } else if ((action.kind === "reply" || action.kind === "answer_board" || action.kind === "decide") && need.subject && state.campaign) {
+    } else if (action.kind === "answer_board") {
+      // A message without causation is not an answer: the board is where it is answered.
+      controls.append(el("strong", { class: "board-answer", text: "Answer on the board" }));
+      if (action.command) controls.append(copyButton(action.command, "Copy command"));
+      row.append(controls);
+      return row;
+    } else if (action.kind === "reply" && refs.event_id && state.campaign) {
+      const to = need.subject || (state.log.get(refs.event_id) || {}).from;
+      if (to) controls.append(el("button", { type: "button", text: `Reply to ${labelOf(to)}`, onclick: () => replyTo(to, refs.event_id, need.title) }));
+    } else if (action.kind === "decide" && need.subject && state.campaign) {
       controls.append(el("button", { type: "button", text: `Write to ${labelOf(need.subject)}`, onclick: () => openDetail(need.subject, true) }));
     }
     if (refs.event_id && state.campaign) controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id) }));
@@ -1489,6 +1498,34 @@
       return "Acknowledged." + outcomeText(reply);
     });
     openDialog("confirm");
+  }
+
+  // A reply to a request addressed to the owner: a response whose causation
+  // is that request. The server refuses any other causation.
+  function replyTo(to, eventID, title) {
+    byID("confirm-title").textContent = `Reply to ${labelOf(to)}`;
+    const ids = { summary: uuid(), body: uuid() };
+    const summary = el("input", { id: ids.summary, type: "text", maxlength: "280", autocomplete: "off" });
+    const message = el("textarea", { id: ids.body, rows: "5" });
+    byID("confirm-body").replaceChildren(
+      el("p", {}, "In answer to: ", linked(title || (state.log.get(eventID) || {}).summary || eventID)),
+      el("div", { class: "compose" },
+        el("div", { class: "row" }, el("label", { for: ids.summary, text: "Summary" }), summary),
+        el("div", { class: "row" }, el("label", { for: ids.body, text: "Message" }), message)),
+      note("The agent sees the reply at its next turn boundary."));
+    prepareConfirm(true, "Send the reply", async () => {
+      const payload = { campaign: state.campaign, to, kind: "response", causation_id: eventID,
+        summary: summary.value.trim(), body: message.value };
+      if (!payload.summary || !payload.body.trim()) throw new APIError("write a summary and a message", "INVALID_REQUEST", 0);
+      // The same reply retried keeps its request UUID.
+      const key = "reply:" + JSON.stringify(payload);
+      payload.request_id = requestID(key);
+      const reply = await post("/api/swarm/action/send", payload);
+      pendingRequests.delete(key);
+      return "Sent; shown as sent and not yet seen until the agent claims it." + outcomeText(reply);
+    });
+    openDialog("confirm");
+    summary.focus();
   }
 
   async function cancelWait(waitID) {
