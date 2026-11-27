@@ -524,9 +524,9 @@ func TestSwarmCommitAdmissionExcludesTheEndOfTheSession(t *testing.T) {
 	}
 	signOut := func(id string) {
 		s.server.mu.Lock()
-		commits := s.server.endSessionLocked(id)
+		session := s.server.sessions[id]
 		s.server.mu.Unlock()
-		commits.drain()
+		s.server.signOut(id, session)
 	}
 	t.Run("an admitted commit holds the sign-out until it is released", func(t *testing.T) {
 		// Through the real sign-out route: its answer is the report.
@@ -585,6 +585,38 @@ func TestSwarmCommitAdmissionExcludesTheEndOfTheSession(t *testing.T) {
 		}
 		if _, err := s.server.admitCommit(id, commits); !errors.Is(err, errSwarmSessionEnded) {
 			t.Fatalf("a commit was admitted after the sign-out: %v", err)
+		}
+	})
+	t.Run("a second sign-out waits as well, although the first already removed the session", func(t *testing.T) {
+		id, commits := open(t)
+		s.server.mu.Lock()
+		session := s.server.sessions[id]
+		s.server.mu.Unlock()
+		release, err := s.server.admitCommit(id, commits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Another request, a sign-out or an eviction, has removed the entry
+		// and is still waiting for the commit. This request was admitted
+		// with the same session before that.
+		s.server.mu.Lock()
+		s.server.endSessionLocked(id)
+		s.server.mu.Unlock()
+		signedOut := make(chan struct{})
+		go func() {
+			s.server.signOut(id, session)
+			close(signedOut)
+		}()
+		select {
+		case <-signedOut:
+			t.Fatal("the second sign-out was reported while a commit of the session was in flight")
+		case <-time.After(100 * time.Millisecond):
+		}
+		release()
+		select {
+		case <-signedOut:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the second sign-out never returned")
 		}
 	})
 	t.Run("no commit is admitted after the sign-out", func(t *testing.T) {

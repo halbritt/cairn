@@ -94,6 +94,9 @@ func (c *swarmSessionCommits) admit() (func(), error) {
 
 // end refuses every later commit.
 func (c *swarmSessionCommits) end() {
+	if c == nil {
+		return
+	}
 	c.mu.Lock()
 	c.ended = true
 	c.mu.Unlock()
@@ -287,6 +290,19 @@ func (s *swarmServer) endSessionLocked(id string) *swarmSessionCommits {
 		session.commits.end()
 	}
 	return session.commits
+}
+
+// signOut ends the session of a request that was admitted with it. When it
+// returns, nothing of that session commits any more. It waits on the commits
+// of the session the request carried, not on what the session table still
+// holds: another sign-out or an eviction may have removed the entry already
+// while a commit that was admitted earlier is still under way.
+func (s *swarmServer) signOut(id string, session swarmBrowserSession) {
+	s.mu.Lock()
+	s.endSessionLocked(id)
+	s.mu.Unlock()
+	session.commits.end()
+	session.commits.drain()
 }
 
 // admitCommit is the commit gate of one signed-in request: the store asks it
@@ -595,11 +611,7 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			swarmMethod(w, http.MethodPost)
 			return
 		}
-		s.mu.Lock()
-		commits := s.endSessionLocked(id)
-		s.mu.Unlock()
-		// When this answers, nothing of the session commits any more.
-		commits.drain()
+		s.signOut(id, session)
 		http.SetCookie(plain, &http.Cookie{Name: s.cookieName(), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		writeSwarmJSON(plain, http.StatusOK, map[string]any{"ok": true})
 	case r.URL.Path == "/api/swarm/landing":
