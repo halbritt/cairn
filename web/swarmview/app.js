@@ -904,7 +904,10 @@
     const due = state.snapshot.handoff;
     const dueBox = byID("handoff-due");
     dueBox.replaceChildren();
-    if (due) dueBox.append(note(`Coordinator handoff due for ${labelOf(due.holder_principal)}: ${(due.reasons || []).join("; ")}`, "warning"));
+    if (due) {
+      dueBox.append(el("p", { class: "note warning" }, `Coordinator handoff due for ${labelOf(due.holder_principal)}: ${(due.reasons || []).join("; ")}`,
+        due.age_reached_at ? [" · age limit reached ", timeEl(due.age_reached_at)] : null));
+    }
 
     const feature = flow().waits_feature;
     if (!sectionError("flow") && feature !== "active") {
@@ -1475,7 +1478,7 @@
       : note(sectionError("flow") ? "unavailable: " + sectionError("flow") : `none (waits feature ${flow().waits_feature})`));
 
     const recent = eventsNewestFirst().filter((event) => involves(event, principal)).slice(0, 20);
-    body.append(el("h3", { text: "Recent events" }), recent.length ? el("ul", { class: "plain" }, recent.map((event) => el("li", {},
+    body.append(el("h3", { text: "Recent events" }), recent.length ? el("ul", { class: "plain recent" }, recent.map((event) => el("li", { dataset: { event: event.event_id } },
       el("span", { class: "tag", text: event.kind }), ` ${senderLabel(event)} → ${destinationLabel(event.to)}: `, linked(event.summary || ""), " · ", timeEl(event.created_at), " ",
       el("button", { type: "button", class: "secondary", text: "Open", onclick: () => openEvent(event.event_id) }))))
       : note("none in the window"));
@@ -1493,7 +1496,7 @@
   function deliveryList(list, incoming) {
     if (sectionError("flow")) return note("unavailable: " + sectionError("flow"), "unavailable");
     if (!list.length) return note("none");
-    return el("ul", { class: "plain" }, list.map((delivery) => el("li", {},
+    return el("ul", { class: "plain deliveries-list" }, list.map((delivery) => el("li", { dataset: { event: delivery.event_id } },
       deliveryChip(delivery, fromOwner(delivery)), " ",
       el("span", { class: "tag", text: delivery.kind }), " ",
       linked(delivery.summary || ""), ` · ${incoming ? "from " + senderLabel(delivery) : "to " + labelOf(delivery.consumer)} · `, timeEl(delivery.created_at), " ",

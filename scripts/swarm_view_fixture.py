@@ -349,6 +349,8 @@ class Fixture:
                                                      expect_by=rfc3339(timedelta(seconds=4)))
             self.waits["short"] = self.wait("lead", "request_response", self.events["checkpoint"]["event_id"],
                                             deadline=timedelta(seconds=4))
+            outside = self.publish("bystander", "Unrelated request.", self.to("bystander"), summary="Bystander asks itself")
+            self.waits["outside"] = self.wait("bystander", "request_response", outside["event_id"], deadline=timedelta(seconds=4))
             time.sleep(6)
             return self.host.operator("schedule-serve", args=("--repo", self.collection, "--once", "--overdue-grace-seconds", "0"))
         self.step("missed checkpoint and timed-out wait (real sweep)", short_deadlines)
@@ -618,19 +620,17 @@ class Fixture:
         self.check("an owner notice is shown as sent, not yet seen", lambda: self.send_unseen(page), page,
                    category="slice:CAIRN-833")
         self.check("the landing page acknowledges a delivery outside any campaign; a campaign page says it is not the next",
-                   lambda: self.landing_acknowledge(page), page, category="waiting:landing-ack")
+                   lambda: self.landing_acknowledge(page), page, category="slice:CAIRN-833")
         self.check("Supersede is offered only on the owner's notice that is still open", lambda: self.supersede_open_only(page), page,
                    category="slice:CAIRN-833")
         self.check("a cancel confirmed after a handoff is refused with a fresh preview, then confirmed again",
                    lambda: self.cancel_conflict(page), page, category="slice:CAIRN-833")
         self.check("a wait cancelled after its owner changed is refused with the current wait, then confirmed again",
                    lambda: self.wait_conflict(page), page, category="slice:CAIRN-833")
-        self.check("Cairn's own notices are labelled from Cairn, never as the owner's", lambda: self.system_events(page), page,
-                   category="slice:CAIRN-830")
-        self.check("Cairn's notices read as from Cairn in the recipient's Details too", lambda: self.system_in_details(page), page,
+        self.check("every Cairn-published event reads as from Cairn wherever a sender is shown", lambda: self.system_everywhere(page), page,
                    category="slice:CAIRN-830")
         self.check("an open Cairn delivery whose event is outside the window still reads as from Cairn",
-                   lambda: self.system_outside_window(page), page, category="waiting:delivery-system")
+                   lambda: self.system_outside_window(page), page, category="slice:CAIRN-830")
         self.check("an ended session shows sign-in over dialogs and on the landing page; routes answer 401",
                    lambda: self.signed_out_routes(page), page)
         self.check("a member that left gets no send control and the store refuses a send to it",
@@ -1260,50 +1260,66 @@ class Fixture:
         require(status[0] >= 400, "the store accepted a send to a member that left: " + json.dumps(status)[:300])
         self.report["send_to_left_member"] = status[1].get("code")
 
-    def system_events(self, page):
-        # The fixture's real scheduler sweep published a timed-out wait notice
-        # and an overdue-checkpoint notice under the operator principal.
-        snapshot_log = page.evaluate("() => window.cairnSwarmView.logIDs()")
-        flagged = page.evaluate("() => [...document.querySelectorAll('#flow li.event')].filter((n) => n.querySelector('.tag.system')).map((n) => [n.dataset.event, n.innerText])")
-        self.report["system_events"] = [next((line for line in text.split("\n") if "Cairn (" in line), text[:80])[:120] for _, text in flagged]
-        require(len(flagged) >= 2, f"fewer than two Cairn-published events are labelled: {len(flagged)}")
-        kinds = " ".join(text for _, text in flagged)
-        require("Cairn (wait notice)" in kinds and "Cairn (overdue checkpoint)" in kinds,
-                "the timed-out wait and the missed checkpoint are not both labelled from Cairn: " + json.dumps(self.report["system_events"]))
-        for event_id, text in flagged:
-            row = page.locator(f"#flow li.event[data-event='{event_id}']")
-            require("you (operator)" not in text and "sent, not yet seen" not in text, "a Cairn notice is worded as the owner's: " + text[:200])
-            require("owner-sent" not in (row.get_attribute("class") or ""), "a Cairn notice has owner styling")
-            require(row.locator("button", has_text="Supersede").count() == 0, "a Cairn notice offers Supersede")
-        # An operator send still reads as the owner's.
+    def system_everywhere(self, page):
+        """Every Cairn-published event, in every place the page shows a sender."""
+        snapshot = self.snapshot()
+        expected = {}
+        for delivery in snapshot["flow"]["deliveries"]:
+            if delivery.get("system"):
+                expected.setdefault(delivery["event_id"], []).append(delivery)
+        kinds = {d[0]["system"] for d in expected.values()}
+        self.report["system_expected"] = sorted(kinds)
+        require({"wait_notice", "overdue_checkpoint"} <= kinds, "the store marks fewer system events than the fixture produced: " + json.dumps(sorted(kinds)))
+        logged = set(page.evaluate("() => window.cairnSwarmView.logIDs()"))
+        seen = []
+
+        def cairn_only(text, where):
+            require("Cairn (" in text, f"{where} does not label a Cairn event as from Cairn: " + text[:200])
+            require("you (operator) →" not in text and "from you (operator)" not in text, f"{where} labels a Cairn event as the owner's: " + text[:200])
+            require("sent, not yet seen" not in text, f"{where} gives a Cairn event the owner's unseen mark: " + text[:200])
+
+        for event_id, deliveries in expected.items():
+            if event_id in logged:
+                row = page.locator(f"#flow li.event[data-event='{event_id}']")
+                cairn_only(row.inner_text(), "the flow")
+                require("owner-sent" not in (row.get_attribute("class") or ""), "a Cairn event has owner styling in the flow")
+                require(row.locator("button", has_text="Supersede").count() == 0, "a Cairn event offers Supersede")
+                row.locator("button", has_text="Open").click()
+                self.expect(page.locator("#event-body")).to_contain_text("From", timeout=10000)
+                cairn_only(page.locator("#event-body dl").first.inner_text(), "the event panel")
+                page.locator("#event-detail button.close").click()
+                seen.append("flow+event")
+            for consumer in sorted({d["consumer"] for d in deliveries}):
+                card = page.locator(f"#agents .agent[data-member='{consumer}']")
+                if card.count() == 0:
+                    continue
+                card.locator("button", has_text="Details").click()
+                try:
+                    detail = page.locator("#detail")
+                    rows = detail.locator(f"li[data-event='{event_id}']")
+                    require(rows.count() >= 1, "the recipient's Details do not list the Cairn event")
+                    for text in rows.all_inner_texts():
+                        cairn_only(text, "the recipient's Details")
+                    seen.append("details")
+                finally:
+                    page.locator("#detail button.close").click()
+        # Cairn's notices outside any campaign appear on the landing page.
+        landing = page.context.new_page()
+        try:
+            landing.goto(f"http://127.0.0.1:{self.port}/")
+            self.expect(landing.locator("#campaigns")).to_contain_text(CAMPAIGN, timeout=15000)
+            outside = [e for e in self.page_json("/api/swarm/landing")["events"] if e.get("system")]
+            require(outside, "no Cairn-published event outside a campaign is on the landing page")
+            for event in outside:
+                cairn_only(landing.locator(f"#landing-events li[data-event='{event['event_id']}']").inner_text(), "the landing page")
+            seen.append("landing")
+        finally:
+            landing.close()
+        self.report["system_places"] = sorted(set(seen))
+        # The owner's own send still reads as the owner's.
         owner = page.locator("#flow li.event.owner-sent").first
         self.expect(owner).to_contain_text("you (operator)")
         require(owner.locator(".tag.system").count() == 0, "the owner's own send is labelled as from Cairn")
-
-    def system_in_details(self, page, require_all=True):
-        """Cairn's notices to the lead read as from Cairn in the lead's Details too."""
-        page.locator(f"#agents .agent[data-member='{self.principal('lead')}'] button", has_text="Details").click()
-        try:
-            detail = page.locator("#detail")
-            self.expect(detail).to_be_visible()
-            # Every row of Recent events and of the open deliveries in or out that
-            # carries a Cairn sender label must not also read as the owner's.
-            items = detail.locator("li").all_inner_texts()
-            cairn_rows = [t for t in items if "Cairn (" in t]
-            for text in items:
-                if "Cairn (" in text:
-                    require("you (operator)" not in text.split("→")[0] and "sent, not yet seen" not in text,
-                            "a Cairn notice reads as the owner's in Details: " + text[:200])
-            # The wait notice and the overdue checkpoint are both in the lead's inbox.
-            wanted = ("wait notice", "overdue checkpoint")
-            for kind in wanted:
-                require(any(f"Cairn ({kind})" in t for t in cairn_rows), f"the lead's Details do not label the {kind} as from Cairn")
-            owner_rows = [t for t in items if "from you (operator)" in t or t.startswith("notice you (operator)") or " you (operator) →" in t]
-            for text in owner_rows:
-                require("Cairn (" not in text, "a row is labelled both ways: " + text[:200])
-            self.report["details_system_rows"] = [t.split("·")[0][:100] for t in cairn_rows][:6]
-        finally:
-            page.locator("#detail button.close").click()
 
     def system_outside_window(self, page):
         # Push the scheduler's notices out of the page's window: publish more
