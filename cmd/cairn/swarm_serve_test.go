@@ -246,16 +246,17 @@ func TestSwarmServerAccessChecks(t *testing.T) {
 
 	// Host and Origin: only this loopback listener and this page's origin.
 	for name, header := range map[string]map[string]string{
-		"foreign host":         {"Host": "example.com:" + port},
-		"other port":           {"Host": "127.0.0.1:1"},
-		"no port":              {"Host": "127.0.0.1"},
-		"rebinding host":       {"Host": "127.0.0.1." + port + ".example.com:" + port},
-		"foreign origin":       {"Origin": "http://example.com:" + port},
-		"https origin":         {"Origin": "https://127.0.0.1:" + port},
-		"other loopback port":  {"Origin": "http://127.0.0.1:1"},
-		"origin without port":  {"Origin": "http://127.0.0.1"},
-		"null origin":          {"Origin": "null"},
-		"localhost other port": {"Origin": "http://localhost:1"},
+		"foreign host":                       {"Host": "example.com:" + port},
+		"other port":                         {"Host": "127.0.0.1:1"},
+		"no port":                            {"Host": "127.0.0.1"},
+		"rebinding host":                     {"Host": "127.0.0.1." + port + ".example.com:" + port},
+		"foreign origin":                     {"Origin": "http://example.com:" + port},
+		"https origin":                       {"Origin": "https://127.0.0.1:" + port},
+		"other loopback port":                {"Origin": "http://127.0.0.1:1"},
+		"origin without port":                {"Origin": "http://127.0.0.1"},
+		"null origin":                        {"Origin": "null"},
+		"localhost other port":               {"Origin": "http://localhost:1"},
+		"origin under another loopback name": {"Origin": "http://localhost:" + port},
 	} {
 		if resp, raw := s.do(http.MethodGet, "/api/auth/session", nil, header); resp.StatusCode != http.StatusForbidden {
 			t.Fatalf("%s: %d %s", name, resp.StatusCode, raw)
@@ -265,11 +266,11 @@ func TestSwarmServerAccessChecks(t *testing.T) {
 		}
 	}
 	for name, header := range map[string]map[string]string{
-		"plain":            nil,
-		"localhost host":   {"Host": "localhost:" + port},
-		"own origin":       {"Origin": own},
-		"localhost origin": {"Origin": "http://localhost:" + port},
-		"same-origin":      {"Sec-Fetch-Site": "same-origin"},
+		"plain":          nil,
+		"localhost host": {"Host": "localhost:" + port},
+		"own origin":     {"Origin": own},
+		"localhost pair": {"Host": "localhost:" + port, "Origin": "http://localhost:" + port},
+		"same-origin":    {"Sec-Fetch-Site": "same-origin"},
 	} {
 		if resp, raw := s.do(http.MethodGet, "/api/auth/session", nil, header); resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"authenticated":false`) {
 			t.Fatalf("%s: %d %s", name, resp.StatusCode, raw)

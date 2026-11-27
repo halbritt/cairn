@@ -125,7 +125,8 @@ func readOrCreateSwarmToken(path string) (string, error) {
 	}
 	// Check the file that is read, not the path: open it without following a
 	// link and take the mode and owner from the open descriptor.
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	// Non-blocking, so that a path swapped for a FIFO cannot stall the open.
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return "", invalid("token file cannot be opened as a regular file: " + path)
 	}
@@ -251,11 +252,21 @@ func (s *swarmServer) checkHostOrigin(r *http.Request) bool {
 	}
 	if origin := r.Header.Get("Origin"); origin != "" {
 		u, err := url.Parse(origin)
-		if err != nil || u.Scheme != "http" || u.User != nil || !s.ownAuthority(u.Host) {
+		// The page's own origin: the same loopback name and port as the
+		// request's Host, not merely another spelling of this listener.
+		if err != nil || u.Scheme != "http" || u.User != nil || !s.ownAuthority(u.Host) || swarmAuthority(u.Host) != swarmAuthority(r.Host) {
 			return false
 		}
 	}
 	return true
+}
+
+// swarmAuthority writes host[:port] with the port always present.
+func swarmAuthority(authority string) string {
+	if _, _, err := net.SplitHostPort(authority); err != nil {
+		return authority + ":80"
+	}
+	return authority
 }
 
 // ownAuthority reports whether host[:port] names this listener. A browser
