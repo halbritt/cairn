@@ -354,7 +354,11 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		}
 		prior := clone(state)
 		recallStarted := time.Now()
-		trace["stage"] = "recall"
+		// Source enters the recall stage only when a recall will run.
+		skipReason, skip := skipEmptyRecall(config, event, env, bound)
+		if !skip {
+			trace["stage"] = "recall"
+		}
 		status := value.Mapping(value.Field("at", floating(float64(time.Now().UnixNano())/1e9)), value.Field("hook_event_name", event.Get("hook_event_name")), value.Field("outcome", value.Text("empty")), value.Field("records", array()), value.Field("bytes", integer(0)), value.Field("discovery", value.Text("lexical")), value.Field("inspected", integer(0)), value.Field("rejected", value.Mapping()))
 		recallStatus = status
 		state.Set("last_recall", status)
@@ -362,7 +366,7 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 		if err != nil {
 			return err
 		}
-		if skipReason, skip := skipEmptyRecall(config, event, env, bound); skip {
+		if skip {
 			status.Set("outcome", value.Text("skipped"))
 			status.Set("discovery", value.Text("deferred"))
 			status.Set("optional_deferred", value.Text(skipReason))
@@ -370,7 +374,8 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 			if err = saveState(path, state); err != nil {
 				return err
 			}
-			trace["stage"] = "saved"
+			// Source's label for this return; a failure above stays an error.
+			trace["outcome"] = "early_return:skipped_empty_recall"
 			trace["context_bytes"] = 0
 			output := value.Mapping()
 			if value.SameText(config.Get("harness"), "hermes") {
