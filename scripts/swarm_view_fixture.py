@@ -529,7 +529,8 @@ class Fixture:
         page.route("**/api/swarm/stream*", forge)
         try:
             page.reload()
-            page.wait_for_function("window.cairnSwarmView && window.cairnSwarmView.resets().includes('STALE_CURSOR')", timeout=15000)
+            # A function, not an expression: the page's CSP forbids eval.
+            page.wait_for_function("() => !!window.cairnSwarmView && window.cairnSwarmView.resets().includes('STALE_CURSOR')", timeout=15000)
             self.expect(page.locator("#live")).to_have_text("live", timeout=15000)
             self.expect(page.locator("#flow li.event").first).to_be_visible(timeout=10000)
             require(len(requests) >= 2 and "cursor=" not in requests[1], "the page did not restart without a cursor: " + json.dumps(requests[:3]))
