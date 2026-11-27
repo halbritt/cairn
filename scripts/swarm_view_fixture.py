@@ -425,6 +425,12 @@ class Fixture:
                 require(self.principal(role) in labels, f"agent row missing for {role}")
             expect(page.locator("#flow li.event").first).to_be_visible(timeout=10000)
             require(page.locator("#observations li").count() == 3, "three observation ages expected")
+            flags = self.report.get("campaign_metadata_flags", {})
+            if flags.get("description"):
+                expect(page.locator("#description")).to_contain_text("one lead and three workers build a page")
+            if flags.get("role_label"):
+                lead = page.locator(f"#agents article.agent[data-member='{self.principal('lead')}'] .agent-head")
+                expect(lead).to_contain_text(ROLE_LABELS["lead"])
             require(not page.evaluate("window.swarmInjected === true"), "summary text was parsed as HTML")
             require(page.locator("img").count() == 0, "an image element was created from server text")
             link = page.locator("a.issue", has_text="CAIRN-829").first
