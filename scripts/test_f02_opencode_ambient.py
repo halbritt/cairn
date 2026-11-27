@@ -277,6 +277,7 @@ class OpenCodeAmbientTests(unittest.TestCase):
 
     def test_deferred_start_notification_and_required_only_context(self):
         self.optional_note('Current lifecycle recall implementation must stay deferred.')
+        self.configure(skip_empty_recall=False)
         for required in (False, True):
             if required: self.required()
             for name, prompt, reason in (('SessionStart', '', 'taskless_startup'),
