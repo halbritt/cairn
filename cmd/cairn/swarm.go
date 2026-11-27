@@ -8,7 +8,7 @@ import (
 
 const swarmHelp = `cairn swarm: the swarm view, one live page per campaign (local operator)
 
-  cairn swarm serve --collection REPO [--port PORT] [--token-file PATH] [--bindings DIR]
+  cairn swarm serve --collection REPO [--port PORT] [--token-file PATH] [--bindings DIR] [--plane-url TEMPLATE]
       Serve the page on 127.0.0.1 (default port 8087) until interrupted. The
       page signs in with the token in the token file. A missing token file is
       created with mode 0600 in the Cairn state directory.

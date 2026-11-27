@@ -31,6 +31,7 @@ in and removes it from the address bar.
 | `--port PORT` | Loopback port. Default 8087; `0` picks a free port. |
 | `--token-file PATH` | Login token file. Default `swarm-view.token` in the Cairn state directory. |
 | `--bindings DIR` | Coordination bindings directory for the Herdr read. Default `coordination/bindings` in the Cairn state directory. |
+| `--plane-url TEMPLATE` | Address of a tracker item, with `{id}` for the identifier. Optional. |
 
 The server opens the store with the local operator channel, as other operator
 commands do. It needs schema version 95 or later.
@@ -100,7 +101,7 @@ window, and the page replaces its log.
 
 | Event | Stream ID | Data |
 | --- | --- | --- |
-| `hello` | | `schema`, `collection`, `campaign`, `operator_principal`, `tick_ms`, `log_window`, `server_time`. |
+| `hello` | | `schema`, `collection`, `campaign`, `operator_principal`, `tick_ms`, `log_window`, `plane_url`, `server_time`. |
 | `resync` | | `reason` (`new_window` or `membership_changed`), `membership_epoch`. The page clears its log; the `log` events that follow are the new window, oldest first. |
 | `log` | cursor | One event envelope (`SwarmEvent`). No record body. |
 | `snapshot` | cursor | The whole snapshot (`cairn.swarm-snapshot/1`). |
@@ -134,6 +135,31 @@ The page shows the pane's status, ID and terminal title, with a copy control
 for `herdr agent focus PANE`. A session with no match shows "no pane on this
 host". Nothing read from Herdr is written to the store.
 
+## Message flow
+
+The flow lists the campaign's requests, responses and notices, newest first,
+each with the delivery state of every recipient. Selecting an agent filters
+the flow to that agent. (CAIRN-830 completes this section.)
+
+## What needs the owner
+
+The list at the top of the page holds only work that the owner can advance,
+and each row names the action. (CAIRN-831 completes this section.)
+
+## Context room
+
+The true fill of an agent's window is known only to its harness. The page
+shows what Cairn can state truthfully, labelled as a proxy. (CAIRN-832
+completes this section.)
+
+## Plane
+
+Plane stays the tracker of record. The page shows no Plane status. An
+identifier such as `CAIRN-829` in a ledger item or a task summary becomes a
+link when the server is started with `--plane-url`, for example
+`--plane-url 'https://plane.example/WORKSPACE/browse/{id}/'`. Without the
+flag the identifier is plain text.
+
 ## Other routes
 
 All routes answer JSON. An error is `{"error": "...", "code": "..."}` with the
@@ -141,7 +167,7 @@ store's refusal code.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/auth/session` | `{"authenticated": bool, "csrf_token": "..."}`. |
+| `GET /api/auth/session` | `{"authenticated": bool, "csrf_token": "...", "collection": "...", "plane_url": "..."}`. The last three only when signed in. |
 | `POST /api/auth/login` | Body `{"token": "..."}`. Sets the session cookie. |
 | `POST /api/auth/logout` | Ends the session. |
 | `GET /api/swarm/landing` | Active campaigns, online sessions in no campaign, and the owner attention rows that belong to no campaign (`cairn.swarm-landing/1`). |

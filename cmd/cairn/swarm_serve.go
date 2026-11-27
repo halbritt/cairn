@@ -53,9 +53,12 @@ type swarmServer struct {
 	collection string
 	port       int
 	tokenHash  [sha256.Size]byte
-	tick       time.Duration
-	panes      *swarmPaneLoop
-	now        func() time.Time
+	// planeURL is the address of a tracker item with "{id}" for the
+	// identifier, or empty. Plane is linked, never read.
+	planeURL string
+	tick     time.Duration
+	panes    *swarmPaneLoop
+	now      func() time.Time
 
 	mu       sync.Mutex
 	sessions map[string]swarmBrowserSession
@@ -299,7 +302,7 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, session, ok := s.session(r); ok {
-			writeSwarmJSON(w, http.StatusOK, map[string]any{"authenticated": true, "csrf_token": session.csrf})
+			writeSwarmJSON(w, http.StatusOK, map[string]any{"authenticated": true, "csrf_token": session.csrf, "collection": s.collection, "plane_url": s.planeURL})
 		} else {
 			writeSwarmJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 		}
@@ -412,11 +415,18 @@ func runSwarmServe(ctx context.Context, store *core.Store, args []string) (any, 
 	collection := fs.String("collection", "", "collection (repository) to show")
 	tokenFile := fs.String("token-file", "", "owner-only token file (default: the Cairn state directory)")
 	bindings := fs.String("bindings", "", "coordination bindings directory for the Herdr read (default: the Cairn state directory)")
+	planeURL := fs.String("plane-url", "", "address of a tracker item, with {id} for the identifier")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
 	if fs.NArg() != 0 || strings.TrimSpace(*collection) == "" || *port < 0 || *port > 65535 {
-		return nil, invalid("usage: cairn swarm serve --collection REPO [--port PORT] [--token-file PATH] [--bindings DIR]")
+		return nil, invalid("usage: cairn swarm serve --collection REPO [--port PORT] [--token-file PATH] [--bindings DIR] [--plane-url TEMPLATE]")
+	}
+	if *planeURL != "" {
+		parsed, pErr := url.Parse(*planeURL)
+		if pErr != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || !strings.Contains(*planeURL, "{id}") {
+			return nil, invalid("--plane-url must be an http or https address that contains {id}")
+		}
 	}
 	// The view never writes a schema, so it needs the store it was built for.
 	if err := store.CheckCompatibilityFloor(ctx, 95); err != nil {
@@ -444,6 +454,7 @@ func runSwarmServe(ctx context.Context, store *core.Store, args []string) (any, 
 	}
 	bound := listener.Addr().(*net.TCPAddr).Port
 	server := newSwarmServer(store, *collection, bound, token, newHerdrPaneReader(directory, "/proc"))
+	server.planeURL = *planeURL
 	fmt.Fprintf(os.Stderr, "cairn swarm view: http://127.0.0.1:%d/ (collection %s; token file %s)\n", bound, *collection, path)
 	// No write timeout: the stream stays open. Each stream write sets its own deadline.
 	httpServer := &http.Server{Handler: server, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}

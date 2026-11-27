@@ -206,7 +206,7 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request) {
 	if err = stream.send("hello", "", map[string]any{
 		"schema": core.SwarmStreamSchema, "collection": s.collection, "campaign": read.Snapshot.Campaign.Campaign,
 		"operator_principal": read.Snapshot.OperatorPrincipal, "tick_ms": s.tick.Milliseconds(),
-		"log_window": core.SwarmFlowEventWindow, "server_time": s.now(),
+		"log_window": core.SwarmFlowEventWindow, "plane_url": s.planeURL, "server_time": s.now(),
 	}); err != nil {
 		return
 	}
