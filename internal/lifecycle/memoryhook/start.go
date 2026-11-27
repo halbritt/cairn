@@ -367,7 +367,6 @@ func runMemory(ctx context.Context, config, event *value.Value, bound bool, dire
 			status.Set("discovery", value.Text("deferred"))
 			status.Set("optional_deferred", value.Text(skipReason))
 			status.Set("expansion_reason", value.Text("skipped_"+skipReason))
-			status.Set("duration_ms", floating(math.Round(float64(time.Since(recallStarted))/float64(time.Microsecond))/1000))
 			if err = saveState(path, state); err != nil {
 				return err
 			}
