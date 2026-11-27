@@ -133,11 +133,18 @@ func agentEventNormalise(text string) string {
 // writes to the table. Block comments nest, as they do in PostgreSQL. A line
 // comment ends at the line's end. In a source file that is read whole, a
 // quoted string spells a line's end and a tab as an escape, so those escapes
-// are separators here too.
-func agentEventStripComments(text string) string {
+// are separators too.
+//
+// Comment punctuation inside an SQL string is not a comment: in
+// WITH s AS (SELECT '--') INSERT INTO cairn.agent_event the two dashes are
+// data. strings says which quotes protect their content: 0 for none, which
+// reads SQL that sits inside a string of the language around it; 1 for
+// single-quoted and dollar-quoted strings; 2 for those and double-quoted
+// identifiers, which is SQL as PostgreSQL reads it.
+func agentEventStripComments(text string, strings_ int) string {
 	out := make([]byte, 0, len(text))
 	for i := 0; i < len(text); {
-		switch {
+		switch c := text[i]; {
 		case strings.HasPrefix(text[i:], "/*"):
 			i += 2
 			for depth := 1; i < len(text) && depth > 0; {
@@ -158,30 +165,100 @@ func agentEventStripComments(text string) string {
 				i++
 			}
 			out = append(out, ' ')
-		case text[i] == '\\' && i+1 < len(text) && strings.IndexByte("ntr", text[i+1]) >= 0:
+		case c == '\'' && strings_ >= 1:
+			// An escape string, E'...', takes a backslash before a quote.
+			escapes := i > 0 && (text[i-1] == 'e' || text[i-1] == 'E') && (i < 2 || !agentEventWordByte(text[i-2]))
+			end := i + 1
+			for end < len(text) {
+				switch {
+				case escapes && text[end] == '\\' && end+1 < len(text):
+					end += 2
+				case text[end] == '\'' && end+1 < len(text) && text[end+1] == '\'':
+					end += 2
+				case text[end] == '\'':
+					end++
+					out = append(out, text[i:end]...)
+					i = end
+					end = len(text) + 1
+				default:
+					end++
+				}
+			}
+			if end == len(text) {
+				// The string never ends: keep the quote and read on.
+				out = append(out, c)
+				i++
+			}
+		case c == '"' && strings_ >= 2:
+			end := i + 1
+			for end < len(text) {
+				switch {
+				case text[end] == '"' && end+1 < len(text) && text[end+1] == '"':
+					end += 2
+				case text[end] == '"':
+					end++
+					out = append(out, text[i:end]...)
+					i = end
+					end = len(text) + 1
+				default:
+					end++
+				}
+			}
+			if end == len(text) {
+				out = append(out, c)
+				i++
+			}
+		case c == '$' && strings_ >= 1:
+			// A dollar-quoted string: $tag$ ... $tag$, with a tag that may be empty.
+			tag := i + 1
+			for tag < len(text) && agentEventWordByte(text[tag]) {
+				tag++
+			}
+			if tag < len(text) && text[tag] == '$' && (i == 0 || !agentEventWordByte(text[i-1])) {
+				quote := text[i : tag+1]
+				if close := strings.Index(text[tag+1:], quote); close >= 0 {
+					end := tag + 1 + close + len(quote)
+					out = append(out, text[i:end]...)
+					i = end
+					continue
+				}
+			}
+			out = append(out, c)
+			i++
+		case c == '\\' && i+1 < len(text) && strings.IndexByte("ntr", text[i+1]) >= 0:
 			out = append(out, ' ')
 			i += 2
 		default:
-			out = append(out, text[i])
+			out = append(out, c)
 			i++
 		}
 	}
 	return string(out)
 }
 
+func agentEventWordByte(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
 // agentEventWriteKind reads a string literal or a whole file: "insert" for
 // an INSERT statement into the table, "other" for a write in a form that the
 // guard cannot check, and "" for text that does not write to the table. The
-// text is read twice, as written and with its SQL comments taken as
-// separators: in text that is not SQL, "--" and "/*" mean something else,
-// and neither reading may hide a statement from the other.
+// text is read as written and with its SQL comments taken as separators, the
+// latter once for each way its quotes can be meant: in text that is not SQL,
+// "--" and "/*" mean something else, the quotes of the language around an SQL
+// statement are not SQL's, and no reading may hide a statement from another.
 func agentEventWriteKind(text string) string {
 	if !strings.Contains(strings.ToLower(text), "agent_event") {
 		// Every pattern needs the name. Most files do not have it, and the
 		// second pattern is slow over a whole file.
 		return ""
 	}
-	readings := []string{agentEventNormalise(text), agentEventNormalise(agentEventStripComments(text))}
+	readings := []string{
+		agentEventNormalise(text),
+		agentEventNormalise(agentEventStripComments(text, 0)),
+		agentEventNormalise(agentEventStripComments(text, 1)),
+		agentEventNormalise(agentEventStripComments(text, 2)),
+	}
 	for _, reading := range readings {
 		if agentEventInsert.MatchString(reading) {
 			return "insert"
@@ -729,6 +806,19 @@ func TestAgentEventInsertGuardRecognisesLockCalls(t *testing.T) {
 		`run("INSERT\n\tINTO\r\ncairn.agent_event(event_id) VALUES(1)")`:    "insert",
 		"MERGE /* c */ INTO cairn.agent_event e USING staged s ON false":    "other",
 		"COPY /* c */ cairn.agent_event(event_id) FROM STDIN":               "other",
+		// Comment punctuation inside an SQL string is data, whatever else
+		// the statement holds.
+		"WITH s AS (SELECT '--' AS sep) INSERT /* c */ INTO cairn.agent_event(event_id) SELECT 1":         "insert",
+		"WITH s AS (SELECT '/*' AS open) INSERT -- c\n INTO cairn.agent_event(event_id) SELECT 1":         "insert",
+		"WITH s AS (SELECT 'it''s -- not' AS t) INSERT /* c */ INTO cairn.agent_event(event_id) SELECT 1": "insert",
+		`WITH s AS (SELECT E'a\'-- b' AS t) INSERT /* c */ INTO cairn.agent_event(event_id) SELECT 1`:     "insert",
+		"WITH s AS (SELECT $$ -- $$ AS t) INSERT /* c */ INTO cairn.agent_event(event_id) SELECT 1":       "insert",
+		"WITH s AS (SELECT $q$ /* $q$ AS t) INSERT /* c */ INTO cairn.agent_event(event_id) SELECT 1":     "insert",
+		`WITH s AS (SELECT 1 AS "a--b") INSERT /* c */ INTO cairn.agent_event(event_id) SELECT 1`:         "insert",
+		`WITH s AS (SELECT 1 AS "a/*b") INSERT /* c */ INTO "cairn"."agent_event"(event_id) SELECT 1`:     "insert",
+		`run("WITH s AS (SELECT '--' AS sep) INSERT /* c */ INTO cairn.agent_event(event_id) SELECT 1")`:  "insert",
+		"WITH s AS (SELECT '--' AS sep) INSERT /* c */ INTO cairn.agent_event_review(event_id) SELECT 1":  "",
+		"SELECT '-- INSERT INTO' AS t, 'cairn.agent_event' AS u":                                          "",
 		// A flag is not a comment: the reading as written still stands.
 		`psql --command "INSERT INTO cairn.agent_event(event_id) VALUES('x')"`:   "insert",
 		"INSERT INTO /* cairn.agent_event */ cairn.agent_delivery(a) VALUES($1)": "",
@@ -1378,6 +1468,11 @@ func (s *Store) insertEventsTx(ctx context.Context, tx pgx.Tx, ids []string) err
 		{name: "line comments between the keywords", sql: `"INSERT -- why\n INTO -- where\n cairn.agent_event(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
 		{name: "line comments between the keywords in a raw string", sql: "`INSERT -- why\n INTO -- where\n cairn.agent_event(event_id) VALUES($1)`", sites: 1, violations: 1, want: "it has no caller"},
 		{name: "comment that names the table in a write to another one", sql: `"INSERT INTO /* not cairn.agent_event */ cairn.agent_delivery(delivery_id) VALUES($1)"`, sites: 0},
+		{name: "comment punctuation inside a string before a commented insert", sql: "`WITH s AS (SELECT '--' AS sep) INSERT /* why */ INTO cairn.agent_event(event_id) SELECT $1`", sites: 1, violations: 1, want: "it has no caller"},
+		{name: "comment punctuation inside a string before a commented insert below the lock", before: house, sql: "`WITH s AS (SELECT '--' AS sep) INSERT /* why */ INTO cairn.agent_event(event_id) SELECT $1`", sites: 1},
+		{name: "block comment opener inside a string before a line-commented insert", sql: "`WITH s AS (SELECT '/*' AS open)\nINSERT -- why\nINTO cairn.agent_event(event_id) SELECT $1`", sites: 1, violations: 1, want: "it has no caller"},
+		{name: "comment punctuation inside a dollar-quoted string before a commented insert", sql: "`WITH s AS (SELECT $$ -- $$ AS t) INSERT /* why */ INTO cairn.agent_event(event_id) SELECT $1`", sites: 1, violations: 1, want: "it has no caller"},
+		{name: "comment punctuation inside a quoted identifier before a commented insert", sql: "`WITH s AS (SELECT 1 AS \"a--b\") INSERT /* why */ INTO cairn.agent_event(event_id) SELECT $1`", sites: 1, violations: 1, want: "it has no caller"},
 
 		// The statement must be executed where it is written.
 		{
