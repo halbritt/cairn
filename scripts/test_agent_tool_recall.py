@@ -270,6 +270,9 @@ class AgentToolRecallTests(unittest.TestCase):
 
     def test_taskless_start_and_wake_keep_existing_deferral(self):
         from test_startup_recall import notification
+        # An empty SessionStart is skipped before retrieval by default; this
+        # test is about the deferral that the retrieval path records.
+        self.config['skip_empty_recall'] = False
         for event, reason in ((dict(hook_event_name='SessionStart', source='startup', prompt=''), 'taskless_startup'),
                               (dict(prompt=notification()), 'taskless_notification')):
             with self.subTest(reason=reason):

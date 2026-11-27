@@ -65,6 +65,9 @@ class CodexTurnBudgetTests(unittest.TestCase):
         self.assertEqual(len(self.searches), 5, 'required-context searches still run')
 
     def test_startup_required_bytes_are_charged_before_first_turn_grant(self):
+        # An empty SessionStart is skipped before retrieval by default; this
+        # test is about the bytes that a startup lookup charges.
+        self.config['skip_empty_recall'] = False
         self.selected = [dict(mandatory=True, record=dict(body='Keep complete 日本語 "qualifiers".'))]
         startup = self.text(self.invoke(hook_event_name='SessionStart', source='startup',
                                         turn_id=None, prompt=''))
@@ -89,6 +92,9 @@ class CodexTurnBudgetTests(unittest.TestCase):
         self.assertEqual(self.ledger(), before, 'refusal cannot refund reserved native bytes')
 
     def test_unbound_startup_required_context_is_whole_and_cumulative(self):
+        # An empty SessionStart is skipped before retrieval by default; this
+        # test is about the required context that a startup lookup returns.
+        self.config['skip_empty_recall'] = False
         self.selected = [dict(mandatory=True, record=dict(body='Preserve 日本語. ' * 30))]
         size = len(hook.render_recall(self.selected, []).encode())
         self.config['context_bytes'] = 2 * size
