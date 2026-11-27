@@ -149,12 +149,12 @@ func (r *swarmNeedsReader) read(ctx context.Context, tx pgx.Tx, sources []string
 	r.out.Items = append(r.out.Items, items...)
 }
 
-func (r *swarmNeedsReader) readShared(ctx context.Context, tx pgx.Tx) {
+func (r *swarmNeedsReader) readShared(ctx context.Context, tx pgx.Tx, sc swarmScope) {
 	r.read(ctx, tx, []string{SwarmNeedBoardQuestion}, func(sp pgx.Tx) ([]SwarmNeed, error) {
 		return r.board(ctx, sp)
 	})
 	r.read(ctx, tx, []string{SwarmNeedOperatorDelivery}, func(sp pgx.Tx) ([]SwarmNeed, error) {
-		return r.operatorDeliveries(ctx, sp)
+		return r.operatorDeliveries(ctx, sp, sc)
 	})
 	r.read(ctx, tx, []string{SwarmNeedWorkstreamDecision}, func(sp pgx.Tx) ([]SwarmNeed, error) {
 		return r.workstreams(ctx, sp)
@@ -193,7 +193,7 @@ func (s *Store) swarmNeedsYouTx(ctx context.Context, tx pgx.Tx, sc swarmScope, s
 			return swarmNeedHandoff(ctx, sp, sc, *handoff)
 		})
 	}
-	r.readShared(ctx, tx)
+	r.readShared(ctx, tx, sc)
 	if snap.Flow.WaitsTruncated {
 		r.out.Unavailable = append(r.out.Unavailable, SwarmNeedSource{"waiters", "Campaign wait counts may be incomplete"})
 	}
@@ -267,7 +267,7 @@ func (s *Store) swarmLandingNeedsYouTx(ctx context.Context, tx pgx.Tx, repo stri
 		}
 		return items, nil
 	})
-	r.readShared(ctx, tx)
+	r.readShared(ctx, tx, swarmScope{Repo: repo})
 	var ids []string
 	for _, item := range r.out.Items {
 		ids = append(ids, swarmNeedEvents(item)...)
@@ -520,8 +520,8 @@ func swarmNeedEventTitle(summary, kind, eventID string) string {
 	return kind + " " + eventID
 }
 
-func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, error) {
-	// Check the collection inbox before filtering to the page's publishers.
+func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx, sc swarmScope) ([]SwarmNeed, error) {
+	// Check the collection inbox before filtering to the page's event scope.
 	// A delivery on another page can be first in the operator's inbox.
 	busy, err := principalWorkOpen(ctx, tx, r.operator)
 	if err != nil {
@@ -534,10 +534,11 @@ func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx) ([
 			return nil, err
 		}
 	}
-	rows, err := tx.Query(ctx, `SELECT d.delivery_id::text,e.event_id::text,e.publisher,e.created_at,COALESCE(e.summary,''),e.kind,e.record_id::text,e.version
+	filter, args := sc.inboxEventFilter()
+	query := `SELECT d.delivery_id::text,e.event_id::text,e.publisher,e.created_at,COALESCE(e.summary,''),e.kind,e.record_id::text,e.version
 		FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
-		WHERE e.repo=$1 AND d.consumer=$2 AND d.state IN ('pending','leased')
-		AND (e.publisher=ANY($3::text[])) <> $4`, r.repo, r.operator, r.principals, r.landing)
+		WHERE ` + filter + fmt.Sprintf(` AND d.consumer=$%d AND d.state IN ('pending','leased')`, len(args)+1)
+	rows, err := tx.Query(ctx, query, append(args, r.operator)...)
 	if err != nil {
 		return nil, err
 	}
@@ -556,7 +557,7 @@ func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx) ([
 		if !item.InboxHead {
 			item.Action.Label = "Read this delivery and acknowledge it when it reaches the head of the inbox"
 		}
-		if kind == "request" {
+		if kind == "request" && !r.landing {
 			item.Refs.Principal = item.Subject
 			item.Action = SwarmNeedAction{Kind: "reply", Label: "Open the request and reply to its sender"}
 		}

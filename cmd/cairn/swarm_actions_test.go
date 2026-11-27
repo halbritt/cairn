@@ -309,6 +309,143 @@ func TestSwarmActionHTTPAcknowledgeOrderAndReplay(t *testing.T) {
 	}
 }
 
+func TestSwarmActionHTTPAcknowledgeLandingScope(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	root, rootView := f.session("action-landing-campaign-root")
+	operator := f.op.Channel().Principal
+	// The same publisher sends all three events. Only the last event was
+	// published after its campaign was created.
+	first := swarmActionPublishEvent(t, f, rootView, "request", operator, "", "")
+	second := swarmActionPublishEvent(t, f, rootView, "notice", operator, "", "")
+	f.campaign = "ack-landing"
+	if _, err := rootView.SetTeamCampaign(ctx, core.SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign, RootAgent: root.Inbox,
+		OutOfChainPolicy: "allow", Sensitivity: "shareable",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	inside := swarmActionPublishEvent(t, f, rootView, "notice", operator, "", "")
+	operatorNeeds := func(landing bool) map[string]core.SwarmNeed {
+		t.Helper()
+		var needs core.SwarmNeedsYou
+		if landing {
+			resp, raw := f.do(http.MethodGet, "/api/swarm/landing", nil, nil)
+			page := swarmActionJSON[core.SwarmLanding](t, resp, raw, http.StatusOK)
+			containsEvent := func(id string) bool {
+				return slices.ContainsFunc(page.Events, func(event core.SwarmEvent) bool { return event.EventID == id })
+			}
+			if !containsEvent(first.EventID) || !containsEvent(second.EventID) || containsEvent(inside.EventID) {
+				t.Fatalf("unexpected landing events: %+v", page.Events)
+			}
+			needs = page.NeedsYou
+		} else {
+			resp, raw := f.do(http.MethodGet, "/api/swarm/campaign?campaign="+f.campaign, nil, nil)
+			needs = swarmActionJSON[core.SwarmSnapshot](t, resp, raw, http.StatusOK).NeedsYou
+		}
+		items := make(map[string]core.SwarmNeed)
+		for _, item := range needs.Items {
+			if item.Type == core.SwarmNeedOperatorDelivery {
+				items[item.Refs.EventID] = item
+			}
+		}
+		return items
+	}
+	needID := func(items map[string]core.SwarmNeed, e core.AgentEvent, head bool) string {
+		t.Helper()
+		item := items[e.EventID]
+		if item.InboxHead != head || len(item.Refs.DeliveryIDs) != 1 {
+			t.Fatalf("event %s: expected delivery with inbox_head=%t, got %+v", e.EventID, head, item)
+		}
+		return item.Refs.DeliveryIDs[0]
+	}
+	landing, campaign := operatorNeeds(true), operatorNeeds(false)
+	if len(landing) != 2 || len(campaign) != 1 {
+		t.Fatalf("unexpected operator needs: landing=%+v campaign=%+v", landing, campaign)
+	}
+	firstID := needID(landing, first, true)
+	if item := landing[first.EventID]; item.Action.Kind != "acknowledge" {
+		t.Fatalf("landing request must offer acknowledgement: %+v", item.Action)
+	}
+	secondID := needID(landing, second, false)
+	insideID := needID(campaign, inside, false)
+	firstAck := swarmActionDeliveryRequest(f, firstID)
+	firstAck.Campaign = ""
+	secondAck := swarmActionDeliveryRequest(f, secondID)
+	secondAck.Campaign = ""
+	insideAck := swarmActionDeliveryRequest(f, insideID)
+	wrongScope := func(req core.SwarmDeliveryActionRequest, headEventID string) {
+		t.Helper()
+		resp, raw := f.do(http.MethodPost, "/api/swarm/action/acknowledge", req, map[string]string{"X-CSRF-Token": f.csrf})
+		conflict := swarmActionJSON[struct {
+			Error    string          `json:"error"`
+			Code     string          `json:"code"`
+			Expected string          `json:"expected"`
+			Oldest   json.RawMessage `json:"oldest"`
+		}](t, resp, raw, http.StatusConflict)
+		if conflict.Error != "VERSION_CONFLICT: the delivery is not the oldest in the operator's inbox" ||
+			conflict.Code != "VERSION_CONFLICT" || conflict.Expected != req.DeliveryID || string(conflict.Oldest) != "null" ||
+			strings.Contains(string(raw), headEventID) {
+			t.Fatalf("expected neutral inbox-head conflict: %s", raw)
+		}
+	}
+	wrongScope(secondAck, first.EventID)
+	wrongScope(insideAck, first.EventID)
+	changed := firstAck
+	changed.Campaign = f.campaign
+	wrongScope(changed, first.EventID)
+	ack := func(req core.SwarmDeliveryActionRequest) {
+		t.Helper()
+		out := swarmActionPost[core.SwarmAcknowledgeResult](t, f, "acknowledge", req)
+		if got := out.Delivery; got == nil || got.DeliveryID != req.DeliveryID || got.State != "handled" || !got.Seen || got.Attempts != 1 {
+			t.Fatalf("acknowledgement for %s: %+v", req.DeliveryID, got)
+		}
+	}
+	ack(firstAck)
+	ack(firstAck)
+	resp, raw := f.do(http.MethodPost, "/api/swarm/action/acknowledge", changed, map[string]string{"X-CSRF-Token": f.csrf})
+	if resp.StatusCode != http.StatusConflict || swarmErrorCode(raw) != "IDEMPOTENCY_CONFLICT" {
+		t.Fatalf("retry with changed campaign: %d %s", resp.StatusCode, raw)
+	}
+	needID(operatorNeeds(true), second, true)
+	ack(secondAck)
+	if remaining := operatorNeeds(true); len(remaining) != 0 {
+		t.Fatalf("unexpected landing needs after acknowledgement: %+v", remaining)
+	}
+	needID(operatorNeeds(false), inside, true)
+	wrong := insideAck
+	wrong.Campaign = ""
+	wrongScope(wrong, inside.EventID)
+	ack(insideAck)
+}
+
+func TestSwarmActionHTTPCampaignRequiredExceptAcknowledge(t *testing.T) {
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	e := swarmActionPublishEvent(t, f, f.rootView, "notice", f.op.Channel().Principal, "", "")
+	id := swarmActionGetEvent(t, f, e.EventID).Deliveries[0].DeliveryID
+	delivery := swarmActionDeliveryRequest(f, id)
+	delivery.Campaign = ""
+	send := swarmActionSend(f, f.root.Inbox, "notice", "A campaign is required")
+	send.Campaign = ""
+	for _, tc := range []struct {
+		name, method, path string
+		body               any
+	}{
+		{"send", http.MethodPost, "/api/swarm/action/send", send},
+		{"cancel-delivery", http.MethodPost, "/api/swarm/action/cancel-delivery", core.SwarmCancelDeliveryRequest{SwarmDeliveryActionRequest: delivery, Reason: "A campaign is required"}},
+		{"cancel-wait", http.MethodPost, "/api/swarm/action/cancel-wait", core.SwarmCancelWaitRequest{SwarmActionRequest: delivery.SwarmActionRequest, WaitID: uuid.NewString()}},
+		{"cancel-preview", http.MethodGet, "/api/swarm/action/cancel-preview?campaign=&delivery_id=" + id, nil},
+		{"event", http.MethodGet, "/api/swarm/event?campaign=&event_id=" + e.EventID, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, raw := f.do(tc.method, tc.path, tc.body, map[string]string{"X-CSRF-Token": f.csrf})
+			if resp.StatusCode != http.StatusBadRequest || swarmErrorCode(raw) != "INVALID_REQUEST" {
+				t.Fatalf("empty campaign: %d %s", resp.StatusCode, raw)
+			}
+		})
+	}
+}
+
 func swarmActionPreview(t *testing.T, f *swarmStoreFixture, id string) core.SwarmCancelPreview {
 	t.Helper()
 	resp, raw := f.do(http.MethodGet, "/api/swarm/action/cancel-preview?campaign="+f.campaign+"&delivery_id="+id, nil, nil)

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
@@ -246,11 +247,21 @@ func swarmActionDeliveryTx(ctx context.Context, tx pgx.Tx, sc swarmScope, id str
 }
 
 func swarmActionInboxDeliveryTx(ctx context.Context, tx pgx.Tx, sc swarmScope, id string) (SwarmDelivery, error) {
-	d, err := swarmActionDeliveryTx(ctx, tx, sc, id)
-	if err == nil && !d.eventInCampaign {
-		return SwarmDelivery{}, swarmDeliveryNotFound()
+	filter, args := sc.inboxEventFilter()
+	query := `SELECT ` + swarmActionDeliveryColumns + swarmActionDeliveryFrom +
+		` WHERE ` + filter + fmt.Sprintf(` AND d.delivery_id=$%d`, len(args)+1)
+	rows, err := tx.Query(ctx, query, append(args, id)...)
+	if err != nil {
+		return SwarmDelivery{}, err
 	}
-	return d.SwarmDelivery, err
+	d, err := pgx.CollectOneRow(rows, scanSwarmActionDelivery)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if sc.Campaign.Campaign == "" {
+			return d, failure("NOT_FOUND", "delivery not found on the landing page")
+		}
+		return d, swarmDeliveryNotFound()
+	}
+	return d, err
 }
 
 const swarmActionDeliveryColumns = `d.delivery_id::text,d.event_id::text,e.position,e.kind,e.publisher,
@@ -491,6 +502,16 @@ func (s *Store) normalizeSwarmAction(req *SwarmActionRequest) error {
 	return err
 }
 
+func (s *Store) normalizeSwarmCampaignAction(req *SwarmActionRequest) error {
+	if err := s.normalizeSwarmAction(req); err != nil {
+		return err
+	}
+	if !swarmCampaignName.MatchString(req.Campaign) {
+		return failure("INVALID_REQUEST", "campaign name is required")
+	}
+	return nil
+}
+
 // The scope check shares the existing collection lock with publication, team
 // edits and handoff. A pending delivery moved by handoff cannot leave the
 // campaign between this check and the mutation.
@@ -616,7 +637,7 @@ func swarmCheckSupersededEvents(ctx context.Context, tx pgx.Tx, sc swarmScope, i
 }
 
 func (s *Store) SendSwarmEvent(ctx context.Context, req SwarmSendRequest) (SwarmEventDetails, error) {
-	if err := s.normalizeSwarmAction(&req.SwarmActionRequest); err != nil {
+	if err := s.normalizeSwarmCampaignAction(&req.SwarmActionRequest); err != nil {
 		return SwarmEventDetails{}, err
 	}
 	var sc swarmScope
@@ -693,9 +714,14 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 	if err := validID(req.DeliveryID); err != nil {
 		return SwarmAcknowledgeResult{}, err
 	}
-	var sc swarmScope
-	guard := s.swarmActionGuard(ctx, req.SwarmActionRequest, func(tx pgx.Tx, scope swarmScope) error {
-		sc = scope
+	readScope := func(tx pgx.Tx) (swarmScope, error) {
+		if req.Campaign == "" {
+			return swarmScope{Repo: req.Repo}, nil
+		}
+		sc, _, _, err := s.swarmScopeTx(ctx, tx, req.Repo, req.Campaign)
+		return sc, err
+	}
+	checkTarget := func(tx pgx.Tx, sc swarmScope) error {
 		d, err := swarmActionInboxDeliveryTx(ctx, tx, sc, req.DeliveryID)
 		if err != nil {
 			return err
@@ -704,23 +730,41 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 			return failure("AUTHORITY_DENIED", "can only acknowledge a delivery addressed to the operator")
 		}
 		return nil
-	})
+	}
+	replay := func(tx pgx.Tx) error {
+		sc, err := readScope(tx)
+		if err != nil {
+			return err
+		}
+		return checkTarget(tx, sc)
+	}
 	intent := struct {
 		SwarmDeliveryActionRequest
 		Collection string `json:"collection"`
 	}{req, req.Repo}
-	return mutate(ctx, s, "swarm-acknowledge", req.RequestID, intent, func(tx pgx.Tx) (SwarmAcknowledgeResult, error) {
+	return mutateWithReplayGuard(ctx, s, "swarm-acknowledge", req.RequestID, intent, replay, func(tx pgx.Tx) (SwarmAcknowledgeResult, error) {
 		out := SwarmAcknowledgeResult{}
+		sc, err := readScope(tx)
+		if err != nil {
+			return out, err
+		}
+		targetErr := checkTarget(tx, sc)
+		if targetErr != nil && Code(targetErr) != "NOT_FOUND" {
+			return out, targetErr
+		}
 		seconds, _ := leaseSeconds(0)
 		// Check the oldest eligible row under its claim lock, before attempts
-		// and seen change. Never expose the envelope of another campaign.
+		// and seen change. The target must also have passed the page's scope.
 		next, err := s.nextEventTx(ctx, tx, sc.Repo, swarmOperatorDestination, seconds, func(id string) error {
-			if id == req.DeliveryID {
+			if id == req.DeliveryID && targetErr == nil {
 				return nil
 			}
 			conflict := &SwarmAcknowledgeConflict{
 				Expected: req.DeliveryID,
 				refusal:  &Error{Code: "VERSION_CONFLICT", Message: "the delivery is not the oldest in the operator's inbox"},
+			}
+			if targetErr != nil || req.Campaign == "" {
+				return conflict
 			}
 			oldest, err := swarmActionInboxDeliveryTx(ctx, tx, sc, id)
 			if Code(err) == "NOT_FOUND" {
@@ -732,8 +776,11 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 			conflict.Oldest = &oldest
 			return conflict
 		})
-		if err != nil || next.Delivery == nil {
+		if err != nil {
 			return out, err
+		}
+		if next.Delivery == nil {
+			return out, targetErr
 		}
 		d := next.Delivery
 		if _, err := s.completeEventTx(ctx, tx, CompleteEventRequest{
@@ -744,12 +791,14 @@ func (s *Store) AcknowledgeSwarmDelivery(ctx context.Context, req SwarmDeliveryA
 		seen, err := swarmActionInboxDeliveryTx(ctx, tx, sc, d.DeliveryID)
 		out.Delivery = &seen
 		return out, err
-	}, guard)
+	}, func(tx pgx.Tx) error {
+		return lock(ctx, tx, "agent-events:"+req.Repo)
+	})
 }
 
 func (s *Store) CancelSwarmDelivery(ctx context.Context, req SwarmCancelDeliveryRequest) (SwarmCancelDeliveryResult, error) {
 	var out SwarmCancelDeliveryResult
-	if err := s.normalizeSwarmAction(&req.SwarmActionRequest); err != nil {
+	if err := s.normalizeSwarmCampaignAction(&req.SwarmActionRequest); err != nil {
 		return out, err
 	}
 	if err := validID(req.DeliveryID); err != nil {
@@ -856,7 +905,7 @@ func swarmActionWaitTx(ctx context.Context, tx pgx.Tx, sc swarmScope, waitID str
 
 func (s *Store) CancelSwarmWait(ctx context.Context, req SwarmCancelWaitRequest) (SwarmCancelWaitResult, error) {
 	var out SwarmCancelWaitResult
-	if err := s.normalizeSwarmAction(&req.SwarmActionRequest); err != nil {
+	if err := s.normalizeSwarmCampaignAction(&req.SwarmActionRequest); err != nil {
 		return out, err
 	}
 	if err := validID(req.WaitID); err != nil {

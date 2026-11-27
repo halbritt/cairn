@@ -245,7 +245,7 @@ Cairn excludes answered requests before reading card metadata.
 | Row | When it appears | Owner action |
 | --- | --- | --- |
 | Board question | An unanswered request on `agent-board` within its lifetime. The event summary supplies the title when present. The card supplies its lifetime and whether a default was declared. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |
-| Operator delivery | A pending or leased delivery addressed to the operator. Only the collection's oldest eligible delivery has `inbox_head: true`. If it belongs to another page, this page has no marked row. | Open the event and reply to a request. Acknowledge a delivery when it reaches the head of the operator inbox. |
+| Operator delivery | A pending or leased delivery addressed to the operator. Only the collection's oldest eligible delivery has `inbox_head: true`. If it belongs to another page, this page has no marked row. | Acknowledge the inbox head from the page that shows it. On a campaign page, open the event to read the delivery and follow up on a request. |
 | Decision | An open ledger decision owned by the coordinator or operator. A lead's decision appears on the lead's row. | Make the decision and record the outcome in the campaign ledger. |
 | Escalation | A ledger blocker marked escalated. | Review the campaign ledger and resolve the escalation with its owner. |
 | Workstream decision | The workstream has a nonempty `decision_needed` field. | Give the workstream owner a decision and clear the request. |
@@ -333,11 +333,14 @@ principal. Every
 a canonical `request_id` UUID. A retry of a committed request uses the same
 UUID and the same fields. Reusing that UUID with a different intent returns
 `IDEMPOTENCY_CONFLICT`. The server rejects unknown fields.
+Only Acknowledge accepts an empty `campaign`, which selects the landing page.
+Send, Cancel delivery, Cancel wait, Cancel preview and Event detail require a
+campaign name.
 
 | Route | Other request fields | Successful reply |
 | --- | --- | --- |
 | `POST /api/swarm/action/send` | `to` (current campaign principal), `kind` (`request` or `notice`), `summary`, `body`. Notices require `action` (`none`, `review` or `decide`) and may carry a `supersedes` key. | `{event, deliveries}`. The store commits one shareable source with the event. |
-| `POST /api/swarm/action/acknowledge` | `delivery_id` (the operator's expected delivery). | `{delivery}`, with `delivery: null` when the inbox is empty. The server claims and completes the oldest eligible delivery in the operator's inbox. |
+| `POST /api/swarm/action/acknowledge` | `delivery_id` (the operator's expected delivery). | `{delivery}`, with `delivery: null` when the inbox is empty. The server claims and completes the oldest eligible delivery in one transaction. |
 | `GET /api/swarm/action/cancel-preview` | Query `campaign`, `delivery_id`. | `SwarmCancelPreview` (`cairn.swarm-cancel-preview/1`), with an opaque `preview_token` for confirmation. It gives the recipient, sibling deliveries, refusal if any, direct-reply waits and, for a grouped request, the group state, reply count, whether this delivery's reply counts and closure waits. Waits appear while their state is `waiting`. Each lookup reports `found`, `empty` or `unavailable`. For an unavailable lookup the browser receives a fixed message and the server log records the diagnostic. |
 | `POST /api/swarm/action/cancel-delivery` | `delivery_id`, `reason` (8–4000 characters), `preview_token` from the preview. | `{outcome, delivery, detail?}`. The outcome is `cancelled`, `cancel_pending` while a supported native turn still has an open delivery, or `already_terminal` when the delivery reached another terminal outcome first. The reply includes the current delivery. |
 | `POST /api/swarm/action/cancel-wait` | `wait_id`, `expected_owner` (the wait owner shown in the view). | `{outcome: "cancelled", wait}` with the resolved wait. |
@@ -360,10 +363,15 @@ target and an unknown ID both return `NOT_FOUND` before confirmation fields
 are checked. A matching committed cancellation receipt can read back its
 terminal result if the recipient or wait owner still passes campaign scope.
 
+Acknowledge checks the collection-wide operator inbox before applying the
+page's scope, as does the `inbox_head` flag in Needs You. On the landing page,
+the delivery's event must belong to no active campaign under the event log's
+attribution rule. On a campaign page, the event must belong to that campaign.
 A wrong inbox head returns HTTP 409 with
 `{error, code: "VERSION_CONFLICT", expected, oldest}`. The oldest delivery
-is unchanged, and `oldest` is null when the view cannot show it. A live
-manual lease is refused with `UNSUPPORTED_CONTROL`. The preview token binds
+is unchanged. `oldest` is null on the landing page and when a campaign page
+cannot show the expected or oldest delivery. A live manual lease is refused
+with `UNSUPPORTED_CONTROL`. The preview token binds
 the recipient, siblings, group reply counts, wait lookup statuses, and the
 ID, owner, predicate and dependency of each listed wait. When those facts
 change, HTTP 409 returns

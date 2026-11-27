@@ -683,10 +683,8 @@ func decodeSwarmCursor(raw string, sc swarmScope) (*swarmCursor, error) {
 // a pool delivery is not used. The journal link to a ledger item is written
 // in a later transaction and is never used either. Parameters: $1 repo,
 // $2 principals, $3 campaign name, $4 campaign creation time.
-// The definition is written once and used twice: for one campaign's log
-// (swarmEventInCampaign) and, negated over every active campaign, for the
-// landing page's list of messages that no campaign claims
-// (swarmEventInAnyCampaign). %[1]s is the principals array, %[2]s the campaign
+// The same definition scopes campaign events and, negated over every active
+// campaign, landing events. %[1]s is the principals array, %[2]s the campaign
 // name and %[3]s the campaign's creation time.
 const swarmEventAttribution = `e.created_at>=%[3]s AND (
 	e.publisher=ANY(%[1]s)
@@ -697,8 +695,12 @@ const swarmEventAttribution = `e.created_at>=%[3]s AND (
 		OR EXISTS(SELECT 1 FROM cairn.agent_organic_notice q WHERE q.event_id=e.event_id AND q.recipient_inbox=ANY(%[1]s)))))`
 
 var (
-	swarmEventInCampaign    = "e.repo=$1 AND " + fmt.Sprintf(swarmEventAttribution, "$2", "$3", "$4")
-	swarmEventInAnyCampaign = fmt.Sprintf(swarmEventAttribution, "camp.principals", "camp.campaign", "camp.created_at")
+	swarmEventInCampaign = "e.repo=$1 AND " + fmt.Sprintf(swarmEventAttribution, "$2", "$3", "$4")
+	swarmLandingEvent    = `e.repo=$1 AND NOT EXISTS (
+		SELECT 1 FROM (
+			SELECT c.campaign, c.created_at, ` + swarmCampaignPrincipals + ` AS principals
+			FROM cairn.agent_team_campaign c WHERE c.repo=$1 AND c.active
+		) camp WHERE ` + fmt.Sprintf(swarmEventAttribution, "camp.principals", "camp.campaign", "camp.created_at") + `)`
 )
 
 // swarmCampaignPrincipals is every principal that attributes an event to the
@@ -710,6 +712,14 @@ const swarmCampaignPrincipals = `ARRAY(SELECT p FROM (
 	UNION SELECT unnest(ARRAY[b.role_address, b.holder_principal]) FROM cairn.campaign_role_binding b WHERE b.repo=c.repo AND b.campaign=c.campaign
 	UNION SELECT unnest(ARRAY[h.from_principal, h.to_principal]) FROM cairn.campaign_coordinator_handoff h WHERE h.repo=c.repo AND h.campaign=c.campaign
 ) principals WHERE p<>'')`
+
+// Both the inbox preview and acknowledgement scope the same event rows.
+func (sc swarmScope) inboxEventFilter() (string, []any) {
+	if sc.Campaign.Campaign == "" {
+		return swarmLandingEvent, []any{sc.Repo}
+	}
+	return swarmEventInCampaign, []any{sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt}
+}
 
 func (s *Store) swarmEventsTx(ctx context.Context, tx pgx.Tx, sc swarmScope, query string, args ...any) ([]SwarmEvent, error) {
 	base := []any{sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt}
@@ -984,8 +994,7 @@ func (s *Store) GetSwarmLanding(ctx context.Context, repo string) (SwarmLanding,
 	// attribution rule as a campaign's log, so that an event is on a
 	// campaign page or here and never on both or on neither. The landing
 	// page is not a resumable log: it is read whole each time.
-	rows, err = tx.Query(ctx, `WITH camp AS (SELECT c.campaign, c.created_at, `+swarmCampaignPrincipals+` AS principals FROM cairn.agent_team_campaign c WHERE c.repo=$1 AND c.active)
-		SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.repo=$1 AND NOT EXISTS(SELECT 1 FROM camp WHERE `+swarmEventInAnyCampaign+`) ORDER BY e.position DESC LIMIT $2`, repo, swarmLandingEvents)
+	rows, err = tx.Query(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE `+swarmLandingEvent+` ORDER BY e.position DESC LIMIT $2`, repo, swarmLandingEvents)
 	if err != nil {
 		return out, err
 	}
