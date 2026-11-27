@@ -177,9 +177,31 @@ host". Nothing read from Herdr is written to the store.
 
 ## Message flow
 
-The flow lists the campaign's requests, responses and notices, newest first,
-each with the delivery state of every recipient. Selecting an agent filters
-the flow to that agent. (CAIRN-830 completes this section.)
+The campaign log shows requests, responses and notices newest first, with the
+sender, recipient, summary and delivery state. Selecting an agent filters the
+log. The snapshot includes deliveries for the newest 300 campaign events and
+open deliveries from older campaign events or to campaign members. It keeps up
+to 2,000 deliveries, giving priority to each member's oldest eligible delivery
+and other open deliveries when the list is truncated. Agent details show open
+deliveries in and out of that inbox.
+
+A delivery can be pending, leased, held, settled, superseded, ignored, failed,
+cancelled or expired. Held means an unfinished wake or native attempt owns the
+delivery. Settled means the recipient handled it. An ignored delivery with code
+`superseded` appears as superseded. Failed deliveries with operator cancellation,
+release or consumer retirement codes appear as cancelled. Admission expiry and
+task deadlines appear as expired. Seen means the delivery has been claimed at
+least once. A request shows replied when a response from that recipient names
+the request as its cause.
+
+Each agent row shows its oldest eligible inbox item and the registered waits
+that depend on its reply. An old notice can be first in the inbox while a peer
+waits on a newer request. The view shows the waits each agent owns and lists
+the recipients still awaited. It joins each wait to its exact dependency event
+and labels direct replies and response-group closure separately. The snapshot
+includes all scoped waiting waits and the 300 most recently resolved ones.
+The waits feature status appears even when registration is disabled, and
+existing waits remain visible.
 
 ## What needs the owner
 

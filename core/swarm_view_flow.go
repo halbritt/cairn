@@ -1,7 +1,10 @@
 package core
 
 import (
+	"cmp"
 	"context"
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,9 +23,8 @@ type SwarmFlow struct {
 	// WaitsFeature is the status of coordination-waits/1: active, disabled
 	// or retired. Agents can only register waits while it is active.
 	WaitsFeature string `json:"waits_feature"`
-	// Deliveries holds every open delivery of a campaign event (pending,
-	// leased or held) and every delivery of the newest SwarmFlowEventWindow
-	// campaign events, whatever its state.
+	// Deliveries includes open deliveries of campaign events or to members,
+	// and deliveries in the newest SwarmFlowEventWindow campaign events.
 	Deliveries          []SwarmDelivery `json:"deliveries"`
 	DeliveriesTruncated bool            `json:"deliveries_truncated,omitempty"`
 	// Waits holds every wait that is still waiting, and recently resolved
@@ -37,6 +39,11 @@ type SwarmFlow struct {
 // terminal deliveries in the snapshot. The page keeps the same number of log
 // events.
 const SwarmFlowEventWindow = 300
+
+const (
+	swarmFlowDeliveryLimit     = 2000
+	swarmFlowResolvedWaitLimit = 300
+)
 
 // SwarmDelivery is one recipient's delivery of one campaign event. The
 // envelope is repeated so that a row renders without the event log.
@@ -120,7 +127,256 @@ func emptySwarmFlow() SwarmFlow {
 	return SwarmFlow{WaitsFeature: "disabled", Deliveries: []SwarmDelivery{}, Waits: []SwarmWait{}, ByMember: map[string]SwarmMemberFlow{}}
 }
 
-// swarmFlowTx reads snapshot.flow. CAIRN-830 replaces this stub.
+// swarmFlowTx reads all flow panels from the caller's snapshot.
 func (s *Store) swarmFlowTx(ctx context.Context, tx pgx.Tx, sc swarmScope) (SwarmFlow, error) {
-	return emptySwarmFlow(), nil
+	flow := emptySwarmFlow()
+	status, err := s.getWorkFeatureStatusTx(ctx, tx, "coordination-waits/1")
+	if err != nil {
+		return flow, fmt.Errorf("read waits feature: %w", err)
+	}
+	flow.WaitsFeature = status
+	oldest, err := swarmFlowMembers(ctx, tx, sc, flow.ByMember)
+	if err != nil {
+		return flow, fmt.Errorf("read member inboxes: %w", err)
+	}
+	flow.Deliveries, flow.DeliveriesTruncated, err = swarmFlowDeliveries(ctx, tx, sc, oldest)
+	if err != nil {
+		return flow, fmt.Errorf("read deliveries: %w", err)
+	}
+	flow.Waits, flow.WaitsTruncated, err = swarmFlowWaits(ctx, tx, sc)
+	if err != nil {
+		return flow, fmt.Errorf("read waits: %w", err)
+	}
+	if err := swarmFlowReplies(ctx, tx, sc.Repo, &flow); err != nil {
+		return flow, fmt.Errorf("read replies: %w", err)
+	}
+	return flow, nil
+}
+
+const swarmFlowHeld = `NOT (` + wakeHold + ` AND ` + sessionInboxHold + `)`
+
+func swarmFlowMembers(ctx context.Context, tx pgx.Tx, sc swarmScope, members map[string]SwarmMemberFlow) ([]string, error) {
+	// Count inbox rows independently of the delivery window. Use the same
+	// admission and hold predicates as the inbox when choosing its oldest row.
+	rows, err := tx.Query(ctx, `
+WITH inbox AS MATERIALIZED (
+	SELECT d.consumer, d.delivery_id, e.position, d.state, `+swarmFlowHeld+` AS held,
+		((e.sensitivity='shareable' OR COALESCE(a.visibility='local',false))
+		 AND d.available_at<=$3 AND e.task_deadline IS NULL AND `+requestAdmissionOpen+`
+		 AND `+waitNotificationAdmissionOpen+`
+		 AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=$3))) AS eligible
+	FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
+	LEFT JOIN cairn.agent_session a ON a.repo=$1 AND 'agent/'||a.agent_id::text=d.consumer
+	WHERE e.repo=$1 AND d.consumer=ANY($2)
+		AND (d.state IN ('pending','leased','failed') OR `+swarmFlowHeld+`)
+), counts AS (
+	SELECT consumer, count(*) FILTER (WHERE state='pending' AND NOT held) AS pending,
+		count(*) FILTER (WHERE state='leased' AND NOT held) AS leased,
+		count(*) FILTER (WHERE held) AS held,
+		count(*) FILTER (WHERE state='failed' AND NOT held) AS failed
+	FROM inbox GROUP BY consumer
+), oldest AS (
+	SELECT DISTINCT ON (consumer) consumer, delivery_id
+	FROM inbox WHERE eligible AND NOT held ORDER BY consumer, position
+)
+SELECT m.consumer, COALESCE(c.pending,0), COALESCE(c.leased,0), COALESCE(c.held,0), COALESCE(c.failed,0),
+	COALESCE(o.delivery_id::text,'')
+FROM unnest($2::text[]) AS m(consumer) LEFT JOIN counts c USING(consumer) LEFT JOIN oldest o USING(consumer)`,
+		sc.Repo, sc.MemberPrincipals, sc.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	oldest := []string{}
+	for rows.Next() {
+		var principal string
+		m := SwarmMemberFlow{WaitsOn: []string{}, PeerWaits: []string{}}
+		if err := rows.Scan(&principal, &m.Pending, &m.Leased, &m.Held, &m.Failed, &m.OldestPending); err != nil {
+			return nil, err
+		}
+		members[principal] = m
+		if m.OldestPending != "" {
+			oldest = append(oldest, m.OldestPending)
+		}
+	}
+	return oldest, rows.Err()
+}
+
+func swarmFlowDeliveries(ctx context.Context, tx pgx.Tx, sc swarmScope, oldest []string) ([]SwarmDelivery, bool, error) {
+	// Prefer the named inbox heads and other open rows if the delivery limit
+	// cuts the window. Return the retained rows in event order for the page.
+	rows, err := tx.Query(ctx, `
+WITH recent AS MATERIALIZED (
+	SELECT e.event_id FROM cairn.agent_event e WHERE `+swarmEventInCampaign+`
+	ORDER BY e.position DESC LIMIT $5
+)
+	SELECT d.delivery_id::text, e.event_id::text, e.position, e.kind, e.publisher, d.consumer,
+		COALESCE(e.summary,''), COALESCE(e.notice_action,''), e.blocker, COALESCE(e.causation_id::text,''), e.created_at,
+		d.state, d.code, h.held, d.attempts, d.available_at, d.lease_until, d.completed_at, COALESCE(d.superseded_by::text,'')
+	FROM cairn.agent_event e JOIN cairn.agent_delivery d USING(event_id)
+	CROSS JOIN LATERAL (SELECT `+swarmFlowHeld+` AS held) h
+	WHERE e.repo=$1 AND (e.event_id IN (SELECT event_id FROM recent)
+		OR ((d.state IN ('pending','leased') OR h.held) AND (d.consumer=ANY($6) OR (`+swarmEventInCampaign+`))))
+	ORDER BY (d.delivery_id=ANY($7::uuid[])) DESC, (d.state IN ('pending','leased') OR h.held) DESC,
+		e.position DESC, d.consumer
+	LIMIT $8`,
+		sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt,
+		SwarmFlowEventWindow, sc.MemberPrincipals, oldest, swarmFlowDeliveryLimit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	out := []SwarmDelivery{}
+	for rows.Next() {
+		var d SwarmDelivery
+		if err := rows.Scan(&d.DeliveryID, &d.EventID, &d.EventPosition, &d.Kind, &d.From, &d.Consumer,
+			&d.Summary, &d.Action, &d.Blocker, &d.CausationID, &d.CreatedAt, &d.State, &d.Code, &d.Held,
+			&d.Attempts, &d.AvailableAt, &d.LeaseUntil, &d.CompletedAt, &d.SupersededBy); err != nil {
+			return nil, false, err
+		}
+		d.Display = swarmDeliveryDisplay(d)
+		d.Seen = d.Attempts > 0
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	truncated := len(out) > swarmFlowDeliveryLimit
+	if truncated {
+		out = out[:swarmFlowDeliveryLimit]
+	}
+	slices.SortFunc(out, func(a, b SwarmDelivery) int {
+		if a.EventPosition != b.EventPosition {
+			return cmp.Compare(b.EventPosition, a.EventPosition)
+		}
+		return cmp.Compare(a.Consumer, b.Consumer)
+	})
+	return out, truncated, nil
+}
+
+func swarmDeliveryDisplay(d SwarmDelivery) string {
+	switch {
+	case d.Held:
+		return "held"
+	case d.State == "handled":
+		return "settled"
+	case d.State == "ignored" && d.Code == "superseded":
+		return "superseded"
+	case d.State == "failed":
+		switch d.Code {
+		case "operator_cancelled", "operator_released", "consumer_retired":
+			return "cancelled"
+		case "admission_expired", "task_deadline":
+			return "expired"
+		}
+	}
+	return d.State
+}
+
+func swarmFlowWaits(ctx context.Context, tx pgx.Tx, sc swarmScope) ([]SwarmWait, bool, error) {
+	rows, err := tx.Query(ctx, `
+WITH relevant AS (
+	SELECT w.wait_uuid, w.owner_principal, w.predicate_kind, w.dependency_event_uuid,
+		COALESCE(e.summary,'') AS summary, w.state, w.terminal_reason, w.deadline, w.created_at, w.resolved_at
+	FROM cairn.agent_wait w JOIN cairn.agent_event e ON e.event_id=w.dependency_event_uuid
+	WHERE w.collection=$1 AND e.repo=$1 AND (w.owner_principal=ANY($2) OR (`+swarmEventInCampaign+`)
+		OR EXISTS(SELECT 1 FROM cairn.agent_delivery d WHERE d.event_id=e.event_id AND d.consumer=ANY($5)))
+), selected AS (
+	SELECT * FROM relevant WHERE state='waiting'
+	UNION ALL
+	(SELECT * FROM relevant WHERE state<>'waiting' ORDER BY resolved_at DESC, wait_uuid DESC LIMIT $6)
+)
+SELECT wait_uuid::text, owner_principal, predicate_kind, dependency_event_uuid::text, summary, state, terminal_reason,
+	deadline, created_at, resolved_at,
+	CASE WHEN state='waiting' THEN ARRAY(SELECT d.consumer FROM cairn.agent_delivery d
+		WHERE d.event_id=dependency_event_uuid ORDER BY d.consumer) ELSE ARRAY[]::text[] END
+FROM selected ORDER BY resolved_at DESC NULLS FIRST, CASE WHEN resolved_at IS NULL THEN deadline END, wait_uuid DESC`,
+		sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, sc.MemberPrincipals, swarmFlowResolvedWaitLimit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	out := []SwarmWait{}
+	resolved := 0
+	for rows.Next() {
+		var w SwarmWait
+		if err := rows.Scan(&w.WaitID, &w.Owner, &w.Predicate, &w.DependencyEventID, &w.DependencySummary, &w.State,
+			&w.TerminalReason, &w.Deadline, &w.CreatedAt, &w.ResolvedAt, &w.Awaited); err != nil {
+			return nil, false, err
+		}
+		if w.State == WaitStateWaiting {
+			w.Overdue = !w.Deadline.After(sc.Now)
+		} else {
+			resolved++
+			if resolved > swarmFlowResolvedWaitLimit {
+				continue
+			}
+		}
+		out = append(out, w)
+	}
+	return out, resolved > swarmFlowResolvedWaitLimit, rows.Err()
+}
+
+func swarmFlowReplies(ctx context.Context, tx pgx.Tx, repo string, flow *SwarmFlow) error {
+	// Use a set of request IDs so one read can find replies for both panels,
+	// including replies that are older than the visible event window.
+	requests := map[string]struct{}{}
+	for _, d := range flow.Deliveries {
+		if d.Kind == "request" {
+			requests[d.EventID] = struct{}{}
+		}
+	}
+	for _, w := range flow.Waits {
+		if w.State == WaitStateWaiting {
+			requests[w.DependencyEventID] = struct{}{}
+		}
+	}
+	ids := make([]string, 0, len(requests))
+	for id := range requests {
+		ids = append(ids, id)
+	}
+	type replyKey struct{ request, consumer string }
+	replies := map[replyKey]bool{}
+	if len(ids) > 0 {
+		rows, err := tx.Query(ctx, `SELECT DISTINCT causation_id::text, publisher FROM cairn.agent_event
+			WHERE repo=$1 AND kind='response' AND causation_id=ANY($2::uuid[])`, repo, ids)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var key replyKey
+			if err := rows.Scan(&key.request, &key.consumer); err != nil {
+				return err
+			}
+			replies[key] = true
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+	for i := range flow.Deliveries {
+		d := &flow.Deliveries[i]
+		d.Replied = d.Kind == "request" && replies[replyKey{d.EventID, d.Consumer}]
+	}
+	for i := range flow.Waits {
+		w := &flow.Waits[i]
+		if w.State != WaitStateWaiting {
+			continue
+		}
+		w.Awaited = slices.DeleteFunc(w.Awaited, func(recipient string) bool {
+			return replies[replyKey{w.DependencyEventID, recipient}]
+		})
+		if m, ok := flow.ByMember[w.Owner]; ok {
+			m.WaitsOn = append(m.WaitsOn, w.WaitID)
+			flow.ByMember[w.Owner] = m
+		}
+		for _, recipient := range w.Awaited {
+			if m, ok := flow.ByMember[recipient]; ok {
+				m.PeerWaits = append(m.PeerWaits, w.WaitID)
+				flow.ByMember[recipient] = m
+			}
+		}
+	}
+	return nil
 }
