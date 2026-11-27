@@ -27,6 +27,31 @@ processes.
     `--semantic-rust-config`, `agent clients --limit` states 1 to 128, the
     `recall-observation` example uses an accepted stage, and
     `cairn_prepare_note` describes both inspection policies.
+- Ran the full Go, Python and integration suites to completion on an idle
+  host and fixed what was red (CAIRN-846):
+  - The Go lifecycle start hook now matches the Python one on a skipped empty
+    recall: no `duration_ms`, no recall or budget files on a disabled binding,
+    and the same invocation-trace outcome.
+  - `scripts/check_effective_recall_deployment.py` reads the banner texts from
+    the checkout and compares rendered output with what the checkout's engine
+    emits, so it no longer reports a current deployment as stale after the
+    default recall view changed to `compact/1`.
+  - OpenCode's native `cairn_pull` accepts `force`. A parity test now compares
+    the argument names of every tool the adapter shares with the MCP server.
+  - Fixtures that start `opencode run`, `claude --print` or `agy --print`
+    give the child `/dev/null` as stdin; an inherited open pipe made
+    `opencode run` wait until the fixture timed out.
+  - The Hermes installer passes `--client-harness hermes`, and the client
+    setup guides pass each harness's label.
+  - `scripts/recovery_model_report.py` enforces the store's attempt-id rule
+    per recovery action and has a separate `--max-actions`.
+  - Updated 161 tests that still expected behavior changed on 2026-11-25
+    (`client_generated_at` in observations, the `compact/1` default view,
+    skipped empty startup recall, default capture observations, the reconcile
+    backoff).
+- Restored further tests the cleanup removed in error: eight store
+  coordination tests in `core`, the Codex wake-join and socket probes, and the
+  Agy Stop decoder check.
 - Restored tests that the 2026-11-25 cleanup removed in error: the three
   semantic worker acceptance tests with their strict comparison runner, and
   the semantic index transition fixtures with `check_semantic_transition.py`.
