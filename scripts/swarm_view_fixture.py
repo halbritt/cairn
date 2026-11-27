@@ -254,8 +254,8 @@ class Fixture:
         # A board question published before the campaign exists: it is listed on
         # the campaign page, but its event is not in the campaign's log.
         self.events["early_board"] = self.step("board question before the campaign", lambda: self.publish(
-            "worker_b", "Is the flow order settled?", {"type": "topic", "name": BOARD_TOPIC},
-            summary="Board question: is the flow order settled?"))
+            "worker_b", "Is the flow order final?", {"type": "topic", "name": BOARD_TOPIC},
+            summary="Board question: is the flow order final?"))
         time.sleep(1)
         describe = self.supports(["team", "set-campaign"], "--description")
         labels = self.supports(["team", "set-member"], "--role-label")
