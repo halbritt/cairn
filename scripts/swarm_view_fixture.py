@@ -10,6 +10,7 @@ stops and removes it on interrupt. Without it, the browser assertions run and a
 failure exits nonzero.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -33,13 +34,16 @@ ASSETS = ROOT / "tests/fixtures/swarm_ui"
 CAMPAIGN = "swarm-fixture"
 TOPIC = "swarm-fixture.review"
 BOARD_TOPIC = "agent-board"
-ROLES = ("root", "lead", "worker_a", "worker_b", "worker_c")
+ROLES = ("root", "lead", "worker_a", "worker_b", "worker_c", "bystander")
 WORKERS = ("worker_a", "worker_b", "worker_c")
 HARNESS = {"root": ("claude", "claude-opus-5-5"), "lead": ("codex", "gpt-5.5-codex"),
            "worker_a": ("claude", "claude-sonnet-5-5"), "worker_b": ("opencode", "qwen3.8-27b"),
-           "worker_c": ("agy", "gemini-3-pro")}
+           "worker_c": ("agy", "gemini-3-pro"), "bystander": ("hermes", "qwen3.8-27b")}
 ROLE_LABELS = {"lead": "Integration lead (CAIRN-829)", "worker_a": "Page builder",
-               "worker_b": "Flow reader", "worker_c": "Context counters"}
+               "worker_b": "Flow reader", "worker_c": "Context counters", "bystander": "Unrelated session"}
+TASKS = {"root": "Coordinate the swarm view campaign (CAIRN-826)", "lead": "Integrate the swarm view slices (CAIRN-829)",
+         "worker_a": "Build the swarm page (CAIRN-829)", "worker_b": "Fill the message flow (CAIRN-830)",
+         "worker_c": "Read the context counters (CAIRN-832)", "bystander": "Unrelated maintenance outside any campaign"}
 DESCRIPTION = ("Disposable swarm view fixture: one lead and three workers build a page. "
                "Plane issue CAIRN-829 is linked, never mirrored.")
 LONG_SUMMARY = ("Untrusted <img src=x onerror=\"window.swarmInjected=true\"> summary that is long "
@@ -165,7 +169,7 @@ class Fixture:
                 "metadata": {"harness": harness, "model": model, "observed_model": model, "project": "cairn",
                              "workspace": str(self.runtime / role), "state": "busy" if role != "worker_c" else "idle",
                              "delivery_mode": "existing-session",
-                             "task_summary": f"{ROLE_LABELS.get(role, 'Campaign root')} for CAIRN-82{ROLES.index(role) + 6}"}}
+                             "task_summary": TASKS[role]}}
         session = self.host.agent(role, "agent-register", body)
         self.sessions[role] = session
         return session
@@ -235,7 +239,7 @@ class Fixture:
                   "--collection", self.collection])
         for role in ROLES:
             self.register(role)
-        self.seeded("five sessions registered with harnesses " + ", ".join(sorted({h for h, _ in HARNESS.values()})))
+        self.seeded("six sessions registered with harnesses " + ", ".join(sorted({h for h, _ in HARNESS.values()})))
 
         describe = self.supports(["team", "set-campaign"], "--description")
         labels = self.supports(["team", "set-member"], "--role-label")
@@ -305,6 +309,11 @@ class Fixture:
                 summary=f"For the owner: flow reader note {n}"))
         self.step("hostile and long summary", lambda: self.publish("lead", "Long text.", self.to("worker_a"), kind="notice",
                                                                    action="none", summary=LONG_SUMMARY[:280]))
+
+        # A session in no campaign and a message that no campaign claims.
+        self.events["bystander"] = self.step("message outside the campaign", lambda: self.publish(
+            "bystander", "Unrelated work.", self.to("bystander"), kind="notice", action="none",
+            summary="Bystander note outside any campaign"))
 
         # Ledger items of each kind.
         self.step("ledger hold", lambda: self.ledger("set", "--kind", "hold", "--key", "integration-slot", "--status", "active",
@@ -424,7 +433,9 @@ class Fixture:
             for role in ("lead", *WORKERS):
                 require(self.principal(role) in labels, f"agent row missing for {role}")
             expect(page.locator("#flow li.event").first).to_be_visible(timeout=10000)
-            require(page.locator("#observations li").count() == 3, "three observation ages expected")
+            ages = page.locator("#observations li").all_inner_texts()
+            require(len(ages) == 4 and any(a.startswith("Transcripts") for a in ages),
+                    "four observation ages (database, Herdr, transcripts, session counters) expected: " + json.dumps(ages))
             flags = self.report.get("campaign_metadata_flags", {})
             if flags.get("description"):
                 expect(page.locator("#description")).to_contain_text("one lead and three workers build a page")
@@ -489,6 +500,9 @@ class Fixture:
             require(during["event_id"] in ids, "event published while the server was down is missing")
         self.check("a server restart neither loses nor repeats an event", server_restart, page)
 
+        self.check("a reset with STALE_CURSOR starts a new stream without a cursor", lambda: self.stale_cursor(page), page)
+        self.check("sign-out in a second tab ends the first tab's stream", lambda: self.second_tab_signout(page), page)
+        self.check("the context cell renders the transcript observation", lambda: self.context_cell(page), page)
         self.check("needs you lists the board question and the operator event, not the lead decision",
                    lambda: self.needs_you(page), page, category="slice:CAIRN-831")
         self.check("cancel preview names the recipient and waits before confirm; siblings and counted reply unchanged",
@@ -497,11 +511,84 @@ class Fixture:
         self.check("no forbidden control exists", lambda: self.forbidden(page), page)
         self.shot(page, "desktop-final")
 
+    def stale_cursor(self, page):
+        cursor = page.evaluate("window.cairnSwarmView.cursor()")
+        require(cursor, "the page holds no cursor")
+        raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        raw["g"] = int(raw["g"]) + 1  # a cursor from another restore generation
+        forged = base64.urlsafe_b64encode(json.dumps(raw, separators=(",", ":")).encode()).decode().rstrip("=")
+        requests = []
+
+        def forge(route):
+            url = route.request.url
+            requests.append(url)
+            if len(requests) == 1:
+                route.continue_(url=url + "&cursor=" + forged)
+            else:
+                route.continue_()
+        page.route("**/api/swarm/stream*", forge)
+        try:
+            page.reload()
+            page.wait_for_function("window.cairnSwarmView && window.cairnSwarmView.resets().includes('STALE_CURSOR')", timeout=15000)
+            self.expect(page.locator("#live")).to_have_text("live", timeout=15000)
+            self.expect(page.locator("#flow li.event").first).to_be_visible(timeout=10000)
+            require(len(requests) >= 2 and "cursor=" not in requests[1], "the page did not restart without a cursor: " + json.dumps(requests[:3]))
+            ids = page.evaluate("window.cairnSwarmView.logIDs()")
+            require(ids and len(ids) == len(set(ids)), "the new window is empty or repeats an event")
+            require(page.locator("#signin").is_hidden(), "a stale cursor asked for sign-in")
+        finally:
+            page.unroute("**/api/swarm/stream*")
+
+    def second_tab_signout(self, page):
+        other = page.context.new_page()
+        try:
+            other.goto(self.campaign_url(token=False))
+            self.expect(other.locator("#live")).to_have_text("live", timeout=15000)
+            other.click("#signout")
+            self.expect(page.locator("#signin")).to_be_visible(timeout=20000)
+            require("UNAUTHENTICATED" in page.evaluate("window.cairnSwarmView.resets()"), "the stream did not end with UNAUTHENTICATED")
+        finally:
+            other.close()
+        before = set(page.evaluate("window.cairnSwarmView.logIDs()"))
+        page.fill("#token-input", self.token)
+        page.click("#signin button[type=submit]")
+        self.expect(page.locator("#live")).to_have_text("live", timeout=15000)
+        marker = "signin-" + uid()[:8]
+        self.publish("lead", "After signing in again.", self.to("worker_a"), kind="notice", action="none", summary="Back " + marker)
+        self.expect(page.locator("#flow li.event", has_text=marker)).to_have_count(1, timeout=15000)
+        ids = page.evaluate("window.cairnSwarmView.logIDs()")
+        require(len(ids) == len(set(ids)) and not (before - set(ids)), "signing in again lost or repeated an event")
+
+    def context_cell(self, page):
+        observed = self.page_json("/api/swarm/panes")["window"]
+        self.report["window_observation"] = {k: observed.get(k) for k in ("status", "error", "stale", "sessions", "near_limit_rule")}
+        self.report["window_observation"]["unknown"] = observed.get("unknown")
+        agent_id = self.sessions["lead"]["agent_id"]
+        cell = page.locator(f"#agents .agent[data-member='{self.principal('lead')}'] td").nth(4)
+        text = cell.inner_text()
+        windows, unknown = observed.get("windows") or {}, observed.get("unknown") or {}
+        if agent_id in windows:
+            require("%" in text or "tokens" in text, "a known window is not shown as a figure: " + text)
+        elif agent_id in unknown:
+            require("unknown" in text and unknown[agent_id] in text, "the unknown reason is not shown: " + text)
+        elif observed.get("status") == "unavailable":
+            require("transcripts unavailable" in text, "unavailable transcripts are not shown: " + text)
+        else:
+            require("unknown" in text or "reading transcripts" in text, "context cell is not honest: " + text)
+        require("Cairn-injected since compaction" in text, "the Cairn proxy is not labelled under the true figure")
+        cases = [({"used_tokens": 807000, "window_tokens": 1000000}, "81% · 807k of 1M tokens"),
+                 ({"used_tokens": 807000, "window_tokens": 0}, "807k tokens"),
+                 ({"used_tokens": 150000, "window_tokens": 200000}, "75% · 150k of 200k tokens"),
+                 ({"used_tokens": 1234567, "window_tokens": 2000000}, "62% · 1.2M of 2M tokens")]
+        for window, expected in cases:
+            got = page.evaluate("(w) => window.cairnSwarmView.formatWindow(w)", window)
+            require(got == expected, f"formatWindow({window}) gave {got!r}, expected {expected!r}")
+
     def agent_rows(self, page):
         require(page.locator("#agents table.agents-table").count() == 1, "agents are not a table at 1280 px")
         headers = page.locator("#agents table.agents-table thead th").all_inner_texts()
         for name in ("Agent", "State", "Working on", "Holds", "Waiting", "Context room", "Pane"):
-            require(name in headers, f"agents table lacks the {name} column")
+            require(any(h.startswith(name) for h in headers), f"agents table lacks the {name} column")
         lead = page.locator(f"#agents .agent[data-member='{self.principal('lead')}']")
         text = lead.inner_text()
         require(HARNESS["lead"][0] in text, "lead row lacks its harness")
@@ -638,6 +725,9 @@ class Fixture:
             self.shot(page, "phone-campaign")
             page.goto(f"http://127.0.0.1:{self.port}/")
             self.expect(page.locator("#campaigns")).to_contain_text(CAMPAIGN, timeout=15000)
+            if self.events.get("bystander"):
+                self.expect(page.locator("#landing-events")).to_contain_text("Bystander note outside any campaign", timeout=10000)
+                self.expect(page.locator("#unaffiliated")).to_contain_text(HARNESS["bystander"][0])
             self.shot(page, "phone-landing")
         finally:
             context.close()

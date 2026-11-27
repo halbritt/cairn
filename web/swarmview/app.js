@@ -27,6 +27,9 @@
     snapshot: null,
     herdr: null,
     paneTick: null,
+    window: null, // context-window observation read from harness transcripts
+    windowTick: null,
+    resets: [], // reset codes received, newest last (read by the fixture)
     dbObservedAt: null,
     fault: null,
     log: new Map(), // event_id -> SwarmEvent; one entry per event, never two
@@ -334,6 +337,7 @@
             timeEl(campaign.created_at))));
       }
       campaigns.append(list);
+      if (landing.campaigns_truncated) campaigns.append(note("More active campaigns exist than are listed here."));
     }
 
     const sessions = byID("unaffiliated");
@@ -350,6 +354,24 @@
           el("p", { class: "meta" }, "started ", timeEl(session.started_at))));
       }
       sessions.append(list);
+    }
+
+    // The newest messages that no active campaign claims.
+    const events = byID("landing-events");
+    events.replaceChildren();
+    if (errors.events) events.append(el("li", { class: "empty unavailable", text: "Messages unavailable: " + errors.events }));
+    else if (!(landing.events || []).length) events.append(el("li", { class: "empty", text: "No message outside a campaign." }));
+    else {
+      for (const event of landing.events.slice().sort((a, b) => b.position - a.position)) {
+        events.append(el("li", { class: `event event-${event.kind}`, dataset: { event: event.event_id } },
+          el("div", { class: "event-head" },
+            el("span", { class: "tag kind", text: event.kind }),
+            event.action ? el("span", { class: "tag", text: "action " + event.action }) : null,
+            event.blocker ? el("span", { class: "tag flag", text: "blocker" }) : null,
+            el("span", { class: "route", text: `${labelOf(event.from)} → ${destinationLabel(event.to)}` }),
+            el("span", { class: "muted" }, " · ", timeEl(event.created_at))),
+          el("p", { class: "summary" }, event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" }))));
+      }
     }
   }
 
@@ -422,9 +444,17 @@
       renderAgents();
       renderObservations();
     });
+    on("window", (data) => {
+      state.window = data;
+      state.windowTick = data;
+      renderAgents();
+      renderNearLimit();
+      renderObservations();
+    });
     on("tick", (data) => {
       state.dbObservedAt = data.db_observed_at || state.dbObservedAt;
       state.paneTick = data.panes || state.paneTick;
+      state.windowTick = data.window || state.windowTick;
       state.fault = null;
       hideFault();
       renderObservations();
@@ -435,10 +465,24 @@
       renderObservations();
     });
     on("reset", (data) => {
-      // The stream cannot continue: start a new one without a cursor.
-      showFault(`The stream restarted (${data.code || "reset"}): ${data.error || ""}`);
-      state.cursor = "";
-      openStream("");
+      // The server closes the stream after a reset; the code decides what next.
+      const code = data.code || "";
+      state.resets.push(code);
+      closeStream();
+      if (code === "STALE_CURSOR" || code === "INVALID_REQUEST") {
+        // The cursor cannot continue: a new window replaces the list.
+        state.cursor = "";
+        openStream("");
+      } else if (code === "NOT_FOUND") {
+        setLive("offline", "no such campaign");
+        showMissingCampaign(data.error);
+      } else if (code === "UNAUTHENTICATED") {
+        showSignIn("The session ended. Sign in again; the page continues where it stopped.");
+      } else {
+        setLive("stale", "store refused the read");
+        showFault(`The store refused the read (${code || "error"}): ${data.error || ""}. Trying again in 15 s.`);
+        setTimeout(() => { if (!state.source && state.campaign) openStream(state.cursor); }, 15000);
+      }
     });
     source.onerror = () => {
       if (state.source !== source) return;
@@ -488,6 +532,14 @@
       state.cursor = "";
     }
     openStream(state.cursor);
+  }
+
+  function showMissingCampaign(message) {
+    const fault = byID("fault");
+    fault.replaceChildren(`The campaign "${state.campaign}" does not exist${message ? " (" + message + ")" : ""}. `,
+      el("a", { href: "./", text: "Go to the list of campaigns" }));
+    fault.hidden = false;
+    byID("campaign").hidden = true;
   }
 
   function addLog(event) {
@@ -592,6 +644,7 @@
     renderHeader();
     renderNeeds(byID("needs"), state.snapshot.needs_you, sectionError("needs_you"), operator());
     renderAgents();
+    renderNearLimit();
     renderFlow();
     if (byID("detail").open && state.detailMember) renderDetail(state.detailMember);
   }
@@ -635,7 +688,15 @@
     else {
       const unavailable = panes.status === "unavailable";
       list.append(observation("Herdr", parseTime(panes.observed_at), !!panes.stale || unavailable,
-        unavailable ? "unavailable" + (panes.error ? ": " + panes.error : "") : ""));
+        unavailable ? "unavailable" + (panes.error ? " (" + panes.error + ")" : "") : ""));
+    }
+
+    const transcripts = state.windowTick || state.window;
+    if (!transcripts || transcripts.status === "pending") list.append(observation("Transcripts", null, false, "first read pending"));
+    else {
+      const unavailable = transcripts.status === "unavailable";
+      list.append(observation("Transcripts", parseTime(transcripts.observed_at), !!transcripts.stale || unavailable,
+        unavailable ? "unavailable" + (transcripts.error ? " (" + transcripts.error + ")" : "") : ""));
     }
 
     const room = state.snapshot && state.snapshot.context_room;
@@ -645,10 +706,13 @@
   }
 
   function observation(name, time, stale, detail) {
+    const unavailable = detail.startsWith("unavailable");
     const item = el("li", { class: stale ? "stale" : "" }, el("strong", { text: name + ": " }));
     if (time !== null) item.append(timeEl(time));
-    if (stale) item.append(el("span", { class: "flag", text: " stale" }));
-    if (detail) item.append(el("span", { class: "muted", text: (time !== null ? " · " : "") + detail }));
+    if (stale && !unavailable) item.append(el("span", { class: "flag", text: " stale" }));
+    if (unavailable) item.append(el("span", { class: "flag", text: " unavailable" }));
+    const rest = unavailable ? detail.replace(/^unavailable:?\s*/, "") : detail;
+    if (rest) item.append(el("span", { class: "muted", text: (time !== null || unavailable ? " · " : "") + rest }));
     return item;
   }
 
@@ -764,6 +828,8 @@
     if (!sectionError("flow") && feature !== "active") {
       dueBox.append(note(`Waits feature ${feature}: agents cannot register waits, so "Waits on" and peer waits stay empty.`));
     }
+    // The near-limit rule is stated once, above the Context room column.
+    if (nearLimitRule()) dueBox.append(el("p", { class: "rule context-rule" }, el("strong", { text: "Context room: " }), nearLimitRule()));
     const ordered = members().slice().sort(memberOrder);
     const active = ordered.filter((member) => member.active || holders.has(member.member));
     const inactive = ordered.filter((member) => !member.active && !holders.has(member.member) && !handedOff.has(member.member));
@@ -806,7 +872,7 @@
       const body = el("tbody");
       for (const member of list) {
         const selected = state.filter === member.member;
-        const row = el("tr", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}`,
+        const row = el("tr", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${nearLimit(member) ? " near-limit-row" : ""}`,
           dataset: { member: member.member, label: member.label || shortPrincipal(member.member) } },
           agentColumns.map((column, i) => el(i === 0 ? "th" : "td", i === 0 ? { scope: "row" } : {}, column.cell(member))));
         // A click anywhere on the row opens the detail panel; the controls in
@@ -828,7 +894,7 @@
   function agentCard(member) {
     const label = member.label || shortPrincipal(member.member);
     const selected = state.filter === member.member;
-    const card = el("article", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}`, dataset: { member: member.member, label }, "aria-label": label });
+    const card = el("article", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${nearLimit(member) ? " near-limit-row" : ""}`, dataset: { member: member.member, label }, "aria-label": label });
     card.append(el("header", { class: "agent-head" }, agentCell(member)));
     const fields = el("dl", { class: "fields" });
     for (const column of agentColumns.slice(1)) fields.append(field(column.name, column.cell(member)));
@@ -850,6 +916,7 @@
         member.role_label && member.role ? el("span", { class: "muted", text: ` (${member.role})` }) : null),
       member.role_address ? el("code", { class: "role-address", text: member.role_address }) : null,
       member.active ? null : el("span", { class: "tag", text: "inactive member" }),
+      nearLimit(member) ? el("span", { class: "tag flag near-limit-tag", text: "⚠ near context limit" }) : null,
       el("div", { class: "agent-actions" },
         el("button", { type: "button", class: "small", text: "Details", "aria-label": `Details and actions for ${label}`, onclick: () => openDetail(member.member) }),
         el("button", { type: "button", class: "small secondary", "aria-pressed": selected ? "true" : "false",
@@ -967,23 +1034,98 @@
     return parts;
   }
 
-  function contextView(member) {
-    if (sectionError("context_room")) return el("span", { class: "unavailable", text: "unavailable: " + sectionError("context_room") });
-    const room = (state.snapshot.context_room && state.snapshot.context_room.by_agent) || {};
-    const entry = member.agent_id ? room[member.agent_id] : null;
-    if (!entry || !entry.known) return el("span", { class: "muted", text: "unknown" });
-    const parts = [];
-    if (entry.near_limit) parts.push(el("p", { class: "near-limit" }, el("strong", { text: "⚠ near its limit" }), entry.reasons && entry.reasons.length ? `: ${entry.reasons.join("; ")}` : ""));
-    if (entry.injected_bytes !== undefined && entry.injected_bytes !== null) {
-      const counts = [];
-      if (entry.injected_deliveries !== undefined && entry.injected_deliveries !== null) counts.push(`${entry.injected_deliveries} deliveries`);
-      if (entry.injected_recalls !== undefined && entry.injected_recalls !== null) counts.push(`${entry.injected_recalls} recalls`);
-      parts.push(el("p", {}, "Cairn-injected since compaction: ", el("strong", { text: bytes(entry.injected_bytes) }), counts.length ? ` (${counts.join(", ")})` : ""));
-    } else {
-      parts.push(el("p", { text: "Cairn-injected since compaction: unknown" }));
+  // Token counts as the owner reads them: 807k, 1M, 1.2M.
+  function tokens(value) {
+    const n = Number(value) || 0;
+    if (n >= 1e6) return `${Number((n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 1))}M`;
+    if (n >= 1e3) return `${Math.round(n / 1e3)}k`;
+    return String(n);
+  }
+
+  // The true fill read from the harness transcript: "81% · 807k of 1M tokens",
+  // or tokens only when the window size is not known.
+  function formatWindow(window) {
+    const used = Number(window && window.used_tokens) || 0;
+    const size = Number(window && window.window_tokens) || 0;
+    if (size > 0) return `${Math.round((used / size) * 100)}% · ${tokens(used)} of ${tokens(size)} tokens`;
+    return `${tokens(used)} tokens`;
+  }
+
+  function windowOf(member) {
+    const observed = state.window;
+    if (!observed || !member.agent_id) return null;
+    return (observed.windows || {})[member.agent_id] || null;
+  }
+
+  function proxyOf(member) {
+    const room = (state.snapshot && state.snapshot.context_room && state.snapshot.context_room.by_agent) || {};
+    return member.agent_id ? room[member.agent_id] || null : null;
+  }
+
+  // Near the limit by the transcript's rule, or by the Cairn proxy's rule.
+  function nearLimit(member) {
+    const window = windowOf(member);
+    if (window && window.near_limit) return true;
+    const proxy = proxyOf(member);
+    return !!(proxy && proxy.known && proxy.near_limit);
+  }
+
+  function renderNearLimit() {
+    const box = byID("near-limit-count");
+    if (!state.campaign || !state.snapshot) {
+      box.hidden = true;
+      return;
     }
-    parts.push(el("p", {}, "Compactions: ", entry.compactions === undefined || entry.compactions === null ? "unknown" : String(entry.compactions),
-      " · last ", entry.last_compaction_at ? timeEl(entry.last_compaction_at) : el("span", { class: "muted", text: "unknown" })));
+    const near = members().filter((member) => (member.active || member.role_address) && nearLimit(member));
+    box.hidden = !near.length;
+    box.textContent = near.length
+      ? `⚠ ${near.length} agent${near.length === 1 ? "" : "s"} near ${near.length === 1 ? "its" : "their"} context limit: ${near.map((m) => m.label || shortPrincipal(m.member)).join(", ")}`
+      : "";
+  }
+
+  function nearLimitRule() {
+    return (state.window && state.window.near_limit_rule) || (state.snapshot && state.snapshot.context_room && state.snapshot.context_room.near_limit_rule) || "";
+  }
+
+  function contextView(member) {
+    const parts = [];
+    const window = windowOf(member);
+    const observed = state.window;
+    if (window) {
+      if (window.near_limit) parts.push(el("p", { class: "near-limit" }, el("strong", { text: "⚠ near its limit" })));
+      parts.push(el("p", { class: "window-fill" }, el("strong", { text: formatWindow(window) })));
+      const detail = [];
+      detail.push(`${window.compactions} compaction${window.compactions === 1 ? "" : "s"}`);
+      parts.push(el("p", { class: "small-text muted" }, detail.join(""),
+        window.last_compaction_at ? [", last ", timeEl(window.last_compaction_at)] : "",
+        " · measured ", timeEl(window.measured_at), window.source ? ` · ${window.source}` : ""));
+    } else if (observed && member.agent_id && (observed.unknown || {})[member.agent_id]) {
+      parts.push(el("p", {}, el("strong", { text: "unknown" }), el("span", { class: "muted", text: `: ${observed.unknown[member.agent_id]}` })));
+    } else if (!observed || observed.status === "pending") {
+      parts.push(el("p", { class: "muted", text: "reading transcripts" }));
+    } else if (observed.status === "unavailable") {
+      parts.push(el("p", { class: "unavailable", title: observed.error || "", text: "unknown: transcripts unavailable" }));
+    } else {
+      parts.push(el("p", { class: "muted", text: "unknown: no transcript on this host" }));
+    }
+
+    // The Cairn proxy stays under the true figure, labelled as a proxy.
+    if (sectionError("context_room")) {
+      parts.push(el("p", { class: "small-text unavailable", text: "Cairn-injected since compaction: unavailable" }));
+      return parts;
+    }
+    const proxy = proxyOf(member);
+    if (proxy && proxy.known) {
+      const counts = [];
+      if (proxy.injected_deliveries !== undefined && proxy.injected_deliveries !== null) counts.push(`${proxy.injected_deliveries} deliveries`);
+      if (proxy.injected_recalls !== undefined && proxy.injected_recalls !== null) counts.push(`${proxy.injected_recalls} recalls`);
+      parts.push(el("p", { class: "small-text proxy" }, "Cairn-injected since compaction (proxy): ",
+        proxy.injected_bytes !== undefined && proxy.injected_bytes !== null ? bytes(proxy.injected_bytes) : "unknown",
+        counts.length ? ` (${counts.join(", ")})` : "",
+        proxy.near_limit ? el("strong", { class: "near-limit", text: " ⚠ near limit" + (proxy.reasons && proxy.reasons.length ? ": " + proxy.reasons.join("; ") : "") }) : null));
+    } else {
+      parts.push(el("p", { class: "small-text muted", text: "Cairn-injected since compaction (proxy): unknown" }));
+    }
     return parts;
   }
 
@@ -1464,6 +1606,8 @@
   window.cairnSwarmView = Object.freeze({
     logIDs: () => [...state.log.keys()],
     cursor: () => state.cursor,
+    resets: () => state.resets.slice(),
+    formatWindow,
   });
 
   start();

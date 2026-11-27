@@ -321,3 +321,21 @@ button.small { padding: 1px 8px; font-size: 0.82rem; }
 .inactive-members { margin-top: 10px; }
 .inactive-members > summary { cursor: pointer; color: var(--muted); }
 .agents-table .agent-actions { flex-wrap: nowrap; }
+
+/* Context room and near-limit marks */
+.near-limit-count {
+  margin: 6px 0 0;
+  padding: 4px 10px;
+  border-left: 4px solid var(--bad-line);
+  background: var(--bad-bg);
+  font-weight: 600;
+}
+.agents-table tr.near-limit-row { box-shadow: inset 4px 0 0 var(--bad-line); }
+.agents-table tr.near-limit-row.selected { box-shadow: inset 4px 0 0 var(--bad-line), inset 8px 0 0 var(--accent); }
+.agent.near-limit-row { border-left: 4px solid var(--bad-line); }
+.near-limit-tag { display: inline-block; margin-top: 2px; }
+.rule { display: block; font-size: 0.75rem; font-weight: normal; color: var(--muted); }
+.card-rule { grid-column: 1 / -1; margin: 0; }
+.window-fill { margin: 0; }
+.proxy { color: var(--muted); margin-top: 4px; }
+.context-rule { margin: 4px 0 8px; }
