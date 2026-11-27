@@ -682,11 +682,19 @@
     } else {
       description.hidden = true;
     }
-    const active = members().filter((member) => member.active).length;
+    const enrolled = members().filter((member) => member.active);
+    const presence = { online: 0, offline: 0, stopped: 0 };
+    for (const member of enrolled) {
+      const p = member.session ? member.session.presence : "";
+      if (p in presence) presence[p] += 1;
+    }
+    const states = Object.entries(presence).filter(([, n]) => n > 0).map(([p, n]) => `${n} ${p}`);
+    const left = members().length - enrolled.length;
     const meta = byID("campaign-meta");
     meta.hidden = false;
     meta.replaceChildren(
-      `${active} active member${active === 1 ? "" : "s"} of ${members().length} · started `,
+      `${enrolled.length} member${enrolled.length === 1 ? "" : "s"} enrolled${states.length ? " (" + states.join(", ") + ")" : ""}`,
+      left ? ` · ${left} no longer enrolled` : "", " · started ",
       timeEl(campaign.created_at),
       campaign.active === false ? " · campaign inactive" : "",
       snapshot.collection ? ` · collection ${snapshot.collection}` : "");
@@ -776,6 +784,27 @@
     return needLabels[type] || type;
   }
 
+  // The request behind a row, when its event is in the window and the title
+  // does not already name it.
+  function needEventLine(need) {
+    const refs = need.refs || {};
+    const event = refs.event_id ? state.log.get(refs.event_id) : null;
+    if (!event || need.type === "board_question" || need.type === "operator_delivery") return null;
+    if (event.summary && (need.title || "").includes(event.summary)) return null;
+    return el("p", { class: "detail" }, `${event.kind} from ${labelOf(event.from)} to ${destinationLabel(event.to)}: `,
+      event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" }));
+  }
+
+  // Send goes only to current principals of an active campaign: the root,
+  // members whose membership is active, and the campaign's role addresses.
+  function canWrite(principal) {
+    if (!state.snapshot || !principal) return false;
+    const campaign = state.snapshot.campaign || {};
+    if (campaign.active === false) return false;
+    if (principal === campaign.root_agent || principal === campaign.role_address) return true;
+    return members().some((m) => (m.member === principal && m.active) || m.role_address === principal);
+  }
+
   function needRow(need, operatorPrincipal) {
     const action = need.action || {};
     const refs = need.refs || {};
@@ -785,6 +814,7 @@
         el("strong", {}, linked(need.title || "")),
         need.count > 1 ? el("span", { class: "count", text: ` ×${need.count}` }) : null),
       need.detail ? el("p", { class: "detail" }, linked(need.detail)) : null,
+      needEventLine(need),
       el("p", { class: "meta" },
         need.subject ? `${labelOf(need.subject)} · ` : "",
         need.since ? ["since ", timeEl(need.since)] : "",
@@ -795,20 +825,24 @@
     const controls = el("div", { class: "need-action" }, el("span", { class: "action-label", text: "Action: " + actionText }));
     const delivery = (refs.delivery_ids || [])[0];
     if (action.kind === "acknowledge" && delivery) {
-      controls.append(el("button", { type: "button", text: "Acknowledge", onclick: () => acknowledge(delivery, refs.event_id) }));
+      // The store acknowledges the operator's oldest delivery only. Until the
+      // row says it is the inbox head, it is not.
+      if (need.inbox_head === true) {
+        controls.append(el("button", { type: "button", text: "Acknowledge", onclick: () => acknowledge(delivery, refs.event_id) }));
+      } else {
+        controls.append(el("span", { class: "muted not-head", text: "An older delivery to you comes first" }));
+      }
     } else if (action.kind === "cancel_delivery" && delivery) {
       controls.append(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery) }));
     } else if (action.kind === "cancel_wait" && refs.wait_id) {
       controls.append(el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(refs.wait_id) }));
     } else if (action.kind === "answer_board") {
-      // A message without causation is not an answer: the board is where it is answered.
-      if (action.command) controls.append(copyButton(action.command, "Copy command"));
-      row.append(controls);
-      return row;
+      // A message without causation is not an answer: the board is where it
+      // is answered, so the page offers no compose control here.
     } else if (action.kind === "reply" && refs.event_id && state.campaign) {
       const to = need.subject || (state.log.get(refs.event_id) || {}).from;
-      if (to) controls.append(el("button", { type: "button", text: `Reply to ${labelOf(to)}`, onclick: () => replyTo(to, refs.event_id, need.title) }));
-    } else if (action.kind === "decide" && need.subject && state.campaign) {
+      if (to && canWrite(to)) controls.append(el("button", { type: "button", text: `Send a notice to ${labelOf(to)}`, onclick: () => replyTo(to, refs.event_id, need.title) }));
+    } else if (action.kind === "decide" && need.subject && state.campaign && canWrite(need.subject)) {
       controls.append(el("button", { type: "button", text: `Write to ${labelOf(need.subject)}`, onclick: () => openDetail(need.subject, true) }));
     }
     if (refs.event_id && state.campaign) controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id) }));
@@ -910,6 +944,8 @@
         // the first cell keep their own meaning and are the keyboard path.
         row.addEventListener("click", (event) => {
           if (event.target.closest("button, a, summary, input, select, textarea, details[open]")) return;
+          // Selecting text is not a request to open the row.
+          if (String(window.getSelection() || "").trim()) return;
           openDetail(member.member);
         });
         body.append(row);
@@ -966,21 +1002,61 @@
   // What the member itself holds first: its open assignments. The reported
   // task summary follows, unless it is the derived campaign line, which says
   // nothing about this agent.
+  // The members below a coordinator: its reports, their reports, and so on.
+  function subtreeOf(member) {
+    const below = [];
+    const seen = new Set([member.member]);
+    let frontier = [member.member];
+    while (frontier.length) {
+      const next = [];
+      for (const m of members()) {
+        if (m.active && m.lead && frontier.includes(m.lead) && !seen.has(m.member)) {
+          seen.add(m.member);
+          below.push(m);
+          next.push(m.member);
+        }
+      }
+      frontier = next;
+    }
+    return below;
+  }
+
+  // Who is working on what, without opening anything. In this order, each
+  // labelled by its source: the member's open ledger assignments; for a
+  // coordinator, what it coordinates; the session's own task text, also when
+  // it is the summary that the ledger sync writes.
   function workingCell(member) {
+    const parts = [];
     const assignments = (member.holds || []).filter((hold) => hold.kind === "assignment")
       .sort((a, b) => (assignmentOrder[a.status] ?? 4) - (assignmentOrder[b.status] ?? 4));
-    const parts = [];
     if (assignments.length) {
-      parts.push(el("ul", { class: "plain working" }, assignments.map((hold) => el("li", {},
-        el("span", { class: `tag status-${hold.status}`, text: hold.status.replace("_", " ") }), " ",
-        linked(hold.summary || hold.item_key),
-        (hold.plane_issues || []).filter((id) => !(hold.summary || "").includes(id)).map((id) => [" ", planeLink(id)]),
-        hold.due_at ? [" · due ", timeEl(hold.due_at)] : null))));
+      parts.push(el("div", { class: "source" }, el("span", { class: "source-label", text: "Ledger assignments" }),
+        el("ul", { class: "plain working" }, assignments.map((hold) => el("li", {},
+          el("span", { class: `tag status-${hold.status}`, text: hold.status.replace("_", " ") }), " ",
+          linked(hold.summary || hold.item_key),
+          (hold.plane_issues || []).filter((id) => !(hold.summary || "").includes(id)).map((id) => [" ", planeLink(id)]),
+          hold.due_at ? [" · due ", timeEl(hold.due_at)] : null)))));
+    }
+    const coordinator = member.role === "root" || member.role === "lead" ||
+      (state.snapshot && state.snapshot.campaign && state.snapshot.campaign.root_agent === member.member);
+    if (coordinator) {
+      const below = member.role === "root" || member.role_address ? members().filter((m) => m.active && m.member !== member.member) : subtreeOf(member);
+      const principals = new Set(below.map((m) => m.member));
+      const open = ((state.snapshot && state.snapshot.ledger) || []).filter((item) => item.open && principals.has(item.owner));
+      const count = (kind) => open.filter((item) => item.kind === kind).length;
+      const reports = members().filter((m) => m.active && m.lead === member.member);
+      if (below.length || open.length) {
+        const counts = [["assignment", "assignments"], ["blocker", "blockers"], ["decision", "decisions"], ["hold", "holds"]]
+          .map(([kind, plural]) => [count(kind), kind, plural]).filter(([n]) => n > 0)
+          .map(([n, kind, plural]) => `${n} ${n === 1 ? kind : plural}`);
+        parts.push(el("div", { class: "source" }, el("span", { class: "source-label", text: "Coordinates" }),
+          el("p", {}, reports.length ? `${reports.map((m) => m.label || shortPrincipal(m.member)).join(", ")}` : `${below.length} member${below.length === 1 ? "" : "s"}`,
+            counts.length ? ` · open: ${counts.join(", ")}` : " · nothing open in the ledger")));
+      }
     }
     const task = member.session && member.session.task_summary;
-    const campaign = (state.snapshot && state.snapshot.campaign && state.snapshot.campaign.campaign) || state.campaign;
-    if (task && !task.startsWith(`campaign ${campaign} [`)) {
-      parts.push(el("div", { class: "reported" }, el("span", { class: "muted", text: "reported: " }), longText(task, 120)));
+    if (task) {
+      parts.push(el("div", { class: "source" }, el("span", { class: "source-label", text: "Reported by the session" }), longText(task, 140)));
     }
     if (!parts.length) parts.push(el("span", { class: "muted", text: "no assignment recorded" }));
     return parts;
@@ -1013,6 +1089,7 @@
     const memberFlow = flow().by_member[member.member];
     return el("dl", { class: "facts" },
       el("dt", { text: "Waits on" }), el("dd", {}, waitsOnView(member, memberFlow)),
+      el("dt", { text: "Oldest pending" }), el("dd", {}, oldestPendingView(memberFlow)),
       el("dt", { text: "Waited on" }), el("dd", {}, waitedOnView(member, memberFlow)));
   }
 
@@ -1045,25 +1122,25 @@
     return el("ul", { class: "plain" }, ids.map((id) => el("li", {}, waitText(waitByID(id)))));
   }
 
+  // The oldest item in its inbox. Queue age alone does not mean a peer waits.
+  function oldestPendingView(memberFlow) {
+    if (sectionError("flow")) return el("span", { class: "unavailable", text: "unavailable" });
+    if (!memberFlow || !memberFlow.oldest_pending) return el("span", { class: "muted", text: "inbox empty" });
+    const delivery = flow().deliveries.find((d) => d.delivery_id === memberFlow.oldest_pending);
+    return el("span", {},
+      delivery ? [linked(delivery.summary || delivery.kind), ` from ${labelOf(delivery.from)}, `, timeEl(delivery.created_at)] : memberFlow.oldest_pending,
+      memberFlow.pending > 1 ? ` (${memberFlow.pending} pending)` : "");
+  }
+
+  // A registered wait of a peer on this member's reply.
   function waitedOnView(member, memberFlow) {
     if (sectionError("flow")) return el("span", { class: "unavailable", text: "unavailable" });
-    const parts = [];
-    if (memberFlow && memberFlow.oldest_pending) {
-      const delivery = flow().deliveries.find((d) => d.delivery_id === memberFlow.oldest_pending);
-      parts.push(el("p", {}, el("strong", { text: "Oldest pending: " }),
-        delivery ? [linked(delivery.summary || delivery.kind), ` from ${labelOf(delivery.from)}, `, timeEl(delivery.created_at)] : memberFlow.oldest_pending,
-        memberFlow.pending > 1 ? ` (${memberFlow.pending} pending)` : ""));
-    }
     const peers = (memberFlow && memberFlow.peer_waits) || [];
-    if (peers.length) {
-      parts.push(el("p", {}, el("strong", { text: "A peer waits on it: " })));
-      parts.push(el("ul", { class: "plain" }, peers.map((id) => {
-        const wait = waitByID(id);
-        return el("li", {}, wait ? `${labelOf(wait.owner)} waits for ` : "", waitText(wait));
-      })));
-    }
-    if (!parts.length) parts.push(el("span", { class: "muted", text: "nothing pending" }));
-    return parts;
+    if (!peers.length) return el("span", { class: "muted", text: "no peer waiting" });
+    return el("ul", { class: "plain" }, peers.map((id) => {
+      const wait = waitByID(id);
+      return el("li", {}, wait ? `${labelOf(wait.owner)} waits for ` : "", waitText(wait));
+    }));
   }
 
   // Token counts as the owner reads them: 807k, 1M, 1.2M.
@@ -1216,7 +1293,10 @@
     }
     const currentFlow = flow();
     const meta = byID("flow-meta");
-    const metaParts = [`${state.log.size} event${state.log.size === 1 ? "" : "s"} in the window (newest ${state.logWindow} kept)`];
+    const shownCount = state.filter ? eventsNewestFirst().filter((event) => involves(event, state.filter)).length : state.log.size;
+    const metaParts = [state.filter
+      ? `${shownCount} of ${state.log.size} events in the window, filtered to ${labelOf(state.filter)}`
+      : `${state.log.size} event${state.log.size === 1 ? "" : "s"} in the window (newest ${state.logWindow} kept)`];
     if (sectionError("flow")) metaParts.push("delivery states unavailable: " + sectionError("flow"));
     else metaParts.push(`waits feature ${currentFlow.waits_feature}`);
     if (currentFlow.deliveries_truncated) metaParts.push("delivery list truncated");
@@ -1244,7 +1324,7 @@
     const display = delivery.display || delivery.state || "unknown";
     const chip = el("span", { class: `chip chip-${display}`, dataset: { delivery: delivery.delivery_id, display } },
       `${labelOf(delivery.consumer)}: `, el("span", { "aria-hidden": "true", text: (displayMarks[display] || "?") + " " }), displayWords[display] || display);
-    if (delivery.code) chip.append(` (${delivery.code})`);
+    if (delivery.code && delivery.code !== display) chip.append(` (${delivery.code})`);
     if (ownerSent && !delivery.seen && openDisplays.has(display)) chip.append(el("span", { class: "unseen", text: " · sent, not yet seen" }));
     if (delivery.replied) chip.append(" · replied");
     return chip;
@@ -1261,10 +1341,14 @@
       event.grouped ? el("span", { class: "tag", text: "grouped" }) : null,
       el("span", { class: "route", text: `${labelOf(event.from)} → ${destinationLabel(event.to)}` }),
       el("span", { class: "muted" }, " · ", timeEl(event.created_at))));
-    row.append(el("p", { class: "summary" }, event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" })));
+    const cause = event.causation_id ? state.log.get(event.causation_id) : null;
+    row.append(el("p", { class: "summary" }, event.summary ? linked(event.summary)
+      : cause ? ["Reply to: ", linked(cause.summary || cause.kind)]
+      : el("span", { class: "muted", text: event.kind === "response" ? "reply to a request outside the window" : "no summary" })));
     const states = el("div", { class: "deliveries", "aria-label": "Delivery state of each recipient" });
     if (deliveries.length) states.append(...deliveries.map((delivery) => deliveryChip(delivery, ownerSent)));
-    else states.append(el("span", { class: "muted", text: sectionError("flow") ? "delivery state unavailable" : "no delivery in the snapshot" }));
+    else states.append(el("span", { class: "muted", text: sectionError("flow") ? "delivery state unavailable"
+      : event.to && event.to.type === "topic" ? "no subscriber received it" : "no recipient recorded" }));
     row.append(states);
     if (event.supersedes) row.append(el("p", { class: "meta", text: "topic key " + event.supersedes }));
     if (ledgerItems.length) {
@@ -1347,7 +1431,13 @@
       : note("none in the window"));
 
     body.append(el("h3", { text: "Write to " + label }));
-    body.append(draft || composeForm(principal));
+    if (canWrite(principal) || (member && member.role_address && canWrite(member.role_address))) {
+      body.append(draft || composeForm(principal, member && member.role_address));
+    } else {
+      body.append(note(state.snapshot && state.snapshot.campaign && state.snapshot.campaign.active === false
+        ? "The campaign is inactive; the page sends to no one in it."
+        : "Not a current principal of the campaign (it left, or handed off); the page sends only to the root, active members and role addresses."));
+    }
   }
 
   function deliveryList(list, incoming) {
@@ -1363,11 +1453,21 @@
   function deliveryControls(delivery) {
     const controls = [];
     if (delivery.consumer === operator() && openDisplays.has(delivery.display || delivery.state)) {
-      controls.push(el("button", { type: "button", text: "Acknowledge", onclick: () => acknowledge(delivery.delivery_id, delivery.event_id) }));
+      if (isInboxHead(delivery.delivery_id)) {
+        controls.push(el("button", { type: "button", text: "Acknowledge", onclick: () => acknowledge(delivery.delivery_id, delivery.event_id) }));
+      } else {
+        controls.push(el("span", { class: "muted not-head", text: "An older delivery to you comes first" }));
+      }
     } else if (openDisplays.has(delivery.display || delivery.state)) {
       controls.push(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery.delivery_id) }));
     }
     return controls;
+  }
+
+  // The needs-you row that the store marks as the operator's oldest eligible delivery.
+  function isInboxHead(deliveryID) {
+    const items = (state.snapshot && state.snapshot.needs_you && state.snapshot.needs_you.items) || [];
+    return items.some((need) => need.inbox_head === true && ((need.refs || {}).delivery_ids || []).includes(deliveryID));
   }
 
   function updateComposeKind(form) {
@@ -1375,10 +1475,17 @@
     form.querySelector(".notice-only").hidden = !notice;
   }
 
-  function composeForm(principal) {
+  function composeForm(principal, roleAddress) {
     const form = el("form", { class: "compose", dataset: { principal } });
-    const ids = { kind: uuid(), action: uuid(), summary: uuid(), body: uuid(), supersedes: uuid() };
+    const ids = { to: uuid(), kind: uuid(), action: uuid(), summary: uuid(), body: uuid(), supersedes: uuid() };
+    // The holder of a role address can be written to by its address, which
+    // follows the role across a handoff.
+    const targets = [principal, roleAddress].filter((target) => target && canWrite(target));
     form.append(
+      el("div", { class: "row" },
+        el("label", { for: ids.to, text: "To" }),
+        el("select", { id: ids.to, name: "to" }, targets.map((target) => el("option", { value: target,
+          text: target === roleAddress ? `${target} (the role, whoever holds it)` : `${labelOf(target)} (${target})` })))),
       el("div", { class: "row" },
         el("label", { for: ids.kind, text: "Kind" }),
         el("select", { id: ids.kind, name: "kind" }, el("option", { value: "request", text: "request" }), el("option", { value: "notice", text: "notice" }))),
@@ -1402,7 +1509,7 @@
       event.preventDefault();
       const kind = form.elements.kind.value;
       const payload = {
-        campaign: state.campaign, to: principal, kind,
+        campaign: state.campaign, to: form.elements.to.value, kind,
         summary: form.elements.summary.value.trim(), body: form.elements.body.value,
       };
       if (kind === "notice") {
@@ -1497,6 +1604,12 @@
   }
 
   function eventEnvelope(event) {
+    const board = event.to && event.to.type === "topic" && event.to.name === "agent-board" && event.kind === "request";
+    return el("div", {}, board ? note("This is a question on the board. Answer it on the board; the page has no control for it.", "warning") : null,
+      eventFields(event));
+  }
+
+  function eventFields(event) {
     return el("dl", { class: "fields" },
       field("From", labelOf(event.from)),
       field("To", destinationLabel(event.to)),
@@ -1544,7 +1657,7 @@
   // the requester; it does not mark the request answered in the store, and
   // the owner acknowledges the request separately.
   function replyTo(to, eventID, title) {
-    byID("confirm-title").textContent = `Reply to ${labelOf(to)}`;
+    byID("confirm-title").textContent = `Send a notice to ${labelOf(to)}`;
     const ids = { summary: uuid(), body: uuid() };
     const summary = el("input", { id: ids.summary, type: "text", maxlength: "280", autocomplete: "off" });
     const message = el("textarea", { id: ids.body, rows: "5" });
@@ -1553,8 +1666,8 @@
       el("div", { class: "compose" },
         el("div", { class: "row" }, el("label", { for: ids.summary, text: "Summary" }), summary),
         el("div", { class: "row" }, el("label", { for: ids.body, text: "Message" }), message)),
-      note("Sent as a notice to the requester; the agent sees it at its next turn boundary. It does not mark the request answered: acknowledge the request when you are done with it."));
-    prepareConfirm(true, "Send the reply", async () => {
+      note("This sends a review notice to the requester, who sees it at its next turn boundary. It does not answer the request: a wait on the request keeps waiting. Acknowledge the request when you are done with it."));
+    prepareConfirm(true, "Send the notice", async () => {
       const payload = { campaign: state.campaign, to, kind: "notice", action: "review",
         summary: summary.value.trim(), body: message.value };
       if (!payload.summary || !payload.body.trim()) throw new APIError("write a summary and a message", "INVALID_REQUEST", 0);
@@ -1569,17 +1682,36 @@
     summary.focus();
   }
 
-  async function cancelWait(waitID) {
-    const key = "cancel-wait:" + waitID;
-    const wait = waitByID(waitID);
+  // cancel-wait names the owner the page showed. A 409 with the current wait
+  // means it changed: the page shows it and asks again. Nothing is resent.
+  async function cancelWait(waitID, shown, changed) {
+    const wait = shown || waitByID(waitID);
     byID("confirm-title").textContent = "Cancel the wait";
     byID("confirm-body").replaceChildren(
+      changed ? note("The wait changed since it was shown. Review it and confirm again.", "warning") : null,
       wait ? el("p", {}, `${labelOf(wait.owner)} stops waiting for `, waitText(wait)) : el("p", {}, "Wait ", el("code", { text: waitID })),
       note("The waiting agent sees the cancellation at its next turn boundary."));
+    if (!wait) {
+      byID("confirm-body").append(note("The wait is not in the current view, so its owner cannot be confirmed.", "unavailable"));
+      prepareConfirm(false, "Cancel the wait", null);
+      openDialog("confirm");
+      return;
+    }
+    // A new confirmation is a new request; a retry of this one keeps its UUID.
+    const key = `cancel-wait:${waitID}:${wait.owner}:${changed ? uuid() : ""}`;
     prepareConfirm(true, "Cancel the wait", async () => {
-      const reply = await post("/api/swarm/action/cancel-wait", { request_id: requestID(key), campaign: state.campaign, wait_id: waitID });
-      pendingRequests.delete(key);
-      return (reply && reply.outcome ? "" : "Done.") + outcomeText(reply);
+      try {
+        const reply = await post("/api/swarm/action/cancel-wait", { request_id: requestID(key), campaign: state.campaign, wait_id: waitID, expected_owner: wait.owner });
+        pendingRequests.delete(key);
+        return (reply && reply.outcome ? "" : "Done.") + outcomeText(reply);
+      } catch (error) {
+        if (error.status === 409 && error.body && error.body.wait) {
+          pendingRequests.delete(key);
+          cancelWait(waitID, error.body.wait, true);
+          return { reconfirm: "The wait changed; review it above and confirm again." };
+        }
+        throw error;
+      }
     });
     openDialog("confirm");
   }
@@ -1599,7 +1731,6 @@
   }
 
   async function cancelDelivery(deliveryID) {
-    const key = "cancel-delivery:" + deliveryID;
     byID("confirm-title").textContent = "Cancel this recipient's delivery";
     const body = byID("confirm-body");
     body.replaceChildren(note("Reading what the cancel affects…"));
@@ -1612,40 +1743,76 @@
       body.replaceChildren(note("The preview is unavailable, so the cancel cannot be confirmed. " + refusalText(error), "unavailable"));
       return;
     }
+    showCancelPreview(deliveryID, preview, false);
+  }
+
+  // The confirmation shows exactly what the store previewed, and sends its
+  // preview_token. A 409 with a new preview means what was shown changed:
+  // the page shows the new preview and asks for a new confirmation.
+  function showCancelPreview(deliveryID, preview, changed) {
+    const body = byID("confirm-body");
     const delivery = preview.delivery || {};
     body.replaceChildren(
+      changed ? note("What this cancel affects changed since it was shown: the recipient or the waits are different. Review it and confirm again.", "warning") : null,
       el("dl", { class: "fields preview" },
         field("Recipient", el("strong", { text: labelOf(delivery.consumer) }), " ", el("code", { text: delivery.consumer || "" })),
         field("Message", linked(delivery.summary || delivery.event_id || ""), ` from ${labelOf(delivery.from)}`),
         field("Now", deliveryChip(delivery, delivery.from === operator()))),
       note("Only this recipient's delivery is cancelled. Other recipients, and a reply that already counts in a group, are not changed."),
       lookupView("Direct-reply waits on the request", preview.direct_reply_waits));
+    const lookups = [preview.direct_reply_waits];
     if (preview.group) {
       const group = preview.group;
       body.append(el("div", { class: "lookup" }, el("h4", { text: "Response group" }),
         el("p", {}, `${group.state}, policy ${group.policy}: ${group.responded} of ${group.expected} replies counted · deadline `, timeEl(group.deadline)),
         el("p", { class: "counts", text: group.recipient_reply_counts ? "This recipient's reply already counts; the cancel does not remove it." : "This recipient's reply does not count yet." })),
         lookupView("Waits on the group's closure", group.closure_waits));
+      lookups.push(group.closure_waits);
     }
     const siblings = preview.siblings || [];
     body.append(el("div", { class: "lookup" }, el("h4", { text: "Other recipients (unchanged)" }),
       siblings.length ? el("ul", { class: "plain" }, siblings.map((sibling) => el("li", {}, deliveryChip(sibling, sibling.from === operator())))) : note("none")));
     if (!preview.cancellable) {
       body.append(note("The store would refuse this cancel now. " + (preview.refusal ? `${preview.refusal.code}: ${preview.refusal.message}` : ""), "refused"));
+      prepareConfirm(false, "Cancel this delivery", null);
       return;
     }
     const reasonID = uuid();
     const reason = el("input", { id: reasonID, type: "text", minlength: "8", maxlength: "4000", value: "Cancelled by the owner from the swarm view", autocomplete: "off" });
-    body.append(el("div", { class: "compose" }, el("div", { class: "row" }, el("label", { for: reasonID, text: "Reason (recorded with the cancellation)" }), reason)));
-    prepareConfirm(true, "Cancel this delivery", async () => {
+    body.append(el("div", { class: "compose" }, el("div", { class: "row" }, el("label", { for: reasonID, text: "Reason (recorded with the cancellation, 8 to 4000 characters)" }), reason)));
+    // An unavailable wait lookup needs an explicit extra step.
+    const unknown = lookups.some((lookup) => !lookup || lookup.status === "unavailable");
+    let acknowledged = null;
+    if (unknown) {
+      const id = uuid();
+      acknowledged = el("input", { id, type: "checkbox", class: "unknown-waits" });
+      body.append(el("p", { class: "unknown-step" }, acknowledged, " ",
+        el("label", { for: id, text: "The affected waits are unknown. Cancel anyway." })));
+    }
+    // Each preview is its own confirmation; a retry of it keeps its UUID.
+    const token = preview.preview_token || "";
+    const key = `cancel-delivery:${deliveryID}:${token || uuid()}`;
+    const run = async () => {
       const text = reason.value.trim();
       if (text.length < 8 || text.length > 4000) throw new APIError("the reason must be 8 to 4000 characters", "INVALID_REQUEST", 0);
-      // A retry keeps the request UUID; a changed reason is a new request.
       const attempt = key + ":" + text;
-      const reply = await post("/api/swarm/action/cancel-delivery", { request_id: requestID(attempt), campaign: state.campaign, delivery_id: deliveryID, reason: text });
-      pendingRequests.delete(attempt);
-      return (reply && reply.outcome ? "" : "Done.") + outcomeText(reply);
-    });
+      const request = { request_id: requestID(attempt), campaign: state.campaign, delivery_id: deliveryID, reason: text };
+      if (token) request.preview_token = token;
+      try {
+        const reply = await post("/api/swarm/action/cancel-delivery", request);
+        pendingRequests.delete(attempt);
+        return (reply && reply.outcome ? "" : "Done.") + outcomeText(reply);
+      } catch (error) {
+        if (error.status === 409 && error.code === "VERSION_CONFLICT" && error.body && error.body.preview) {
+          pendingRequests.delete(attempt);
+          showCancelPreview(deliveryID, error.body.preview, true);
+          return { reconfirm: "What the cancel affects changed; review it above and confirm again." };
+        }
+        throw error;
+      }
+    };
+    prepareConfirm(!unknown, "Cancel this delivery", run);
+    if (acknowledged) acknowledged.addEventListener("change", () => { byID("confirm-go").disabled = !acknowledged.checked; });
   }
 
   function prepareConfirm(enabled, label, run) {
@@ -1660,7 +1827,13 @@
       result.className = "";
       result.textContent = "Working…";
       try {
-        result.textContent = await run();
+        const outcome = await run();
+        if (outcome && outcome.reconfirm) {
+          // What was shown changed: a new confirmation is required.
+          result.textContent = outcome.reconfirm;
+          return;
+        }
+        result.textContent = outcome;
         go.hidden = true;
         refreshSnapshot();
       } catch (error) {
@@ -1688,6 +1861,7 @@
     resets: () => state.resets.slice(),
     faults: () => state.faults,
     formatWindow,
+    canWrite,
   });
 
   start();

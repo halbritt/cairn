@@ -96,6 +96,9 @@ class Fixture:
         self.runtime = Path(tempfile.mkdtemp(prefix="cairn-swarm-ui."))
         self.binary = self.runtime / "cairn"
         self.cluster = None
+        self.sleeper = None
+        self.preview_token = ""
+        self.context_expected = {}
         self.host = None
         self.serve = None
         self.port = 0
@@ -377,6 +380,59 @@ class Fixture:
                              "--request-id", uid()])
         self.step("handoff due (compaction limit)", handoff_due)
 
+    # ------------------------------------------------------- context room
+
+    # Two Claude sessions with sample transcripts (one below, one at or above
+    # 90% of the window) and one OpenCode session whose transcript the reader
+    # cannot decode. A long-lived child process stands in for each harness
+    # process; the readers check it by PID, start time and boot ID.
+    WINDOWS = {"root_next": ("claude-opus-5-5", 20_000, 880_000, 20_000, True),
+               "worker_a": ("claude-sonnet-5-5", 10_000, 400_000, 10_000, False)}
+
+    def seed_context(self):
+        self.sleeper = subprocess.Popen(["sleep", "infinity"], stdin=subprocess.DEVNULL,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stat = Path(f"/proc/{self.sleeper.pid}/stat").read_text()
+        start = int(stat[stat.rindex(")") + 1:].split()[19])
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        process = {"pid": self.sleeper.pid, "start": start, "boot": boot}
+        bindings = self.runtime / "bindings"
+        bindings.mkdir(mode=0o700)
+        expected = {}
+        for harness in ("claude", "opencode"):
+            state_dir, home = self.runtime / f"state-{harness}", self.runtime / f"{harness}-home"
+            state_dir.mkdir(mode=0o700)
+            home.mkdir(mode=0o700)
+            disposable_host.write_private(bindings / f"{harness}.json", json.dumps(
+                {"harness": harness, "state_dir": str(state_dir), "config_home": str(home)}))
+        now = datetime.now(timezone.utc)
+        for role, (model, fresh, read, written, near) in self.WINDOWS.items():
+            session = self.sessions.get(role)
+            if not session:
+                continue
+            native, workspace = uid(), str(self.runtime / "ws" / role)
+            slug = re.sub(r"[^A-Za-z0-9]", "-", workspace)
+            folder = self.runtime / "claude-home" / "projects" / slug
+            folder.mkdir(mode=0o700, parents=True)
+            lines = [{"type": "system", "subtype": "compact_boundary", "timestamp": (now - timedelta(minutes=30)).isoformat()},
+                     {"type": "assistant", "timestamp": (now - timedelta(minutes=1)).isoformat(),
+                      "message": {"model": model, "usage": {"input_tokens": fresh, "cache_read_input_tokens": read,
+                                                            "cache_creation_input_tokens": written}}}]
+            disposable_host.write_private(folder / f"{native}.jsonl", "\n".join(json.dumps(line) for line in lines) + "\n")
+            disposable_host.write_private(self.runtime / "state-claude" / f"{role}.json", json.dumps({
+                "process": process, "workspace": workspace,
+                "agent": {"agent_id": session["agent_id"], "native_session_id": native, "metadata": {"harness": "claude"}}}))
+            used = fresh + read + written
+            expected[session["agent_id"]] = dict(role=role, used=used, window=1_000_000, near=near)
+        worker_b = self.sessions["worker_b"]
+        disposable_host.write_private(self.runtime / "state-opencode" / "worker_b.json", json.dumps({
+            "process": process, "workspace": str(self.runtime / "ws" / "worker_b"),
+            "agent": {"agent_id": worker_b["agent_id"], "native_session_id": uid(), "metadata": {"harness": "opencode"}}}))
+        self.context_expected = expected
+        self.report["context_seed"] = {"claude_sessions": sorted(v["role"] for v in expected.values()),
+                                       "unknown_session": "worker_b (opencode)"}
+        self.seeded("bindings, session state and sample transcripts for the context room")
+
     def ledger_send(self, role, target, key, summary):
         reply = self.cli(["ledger", "send", *self.session_flags(role), "--campaign", CAMPAIGN, "--op-key", "send-" + key,
                           "--to", self.principal(target), "--kind", "request", "--stdin", "--shareable",
@@ -537,7 +593,15 @@ class Fixture:
         self.check("a refusal that persists stays visible and is retried slowly", lambda: self.persistent_refusal(page), page)
         self.check("a transient store fault keeps the cursor", lambda: self.store_fault(page), page)
         self.check("sign-out in a second tab ends the first tab's stream", lambda: self.second_tab_signout(page), page)
-        self.check("the context cell renders the transcript observation", lambda: self.context_cell(page), page)
+        self.check("the context room shows the transcript fill, the near-limit mark and unknowns", lambda: self.context_cell(page), page)
+        self.check("every member row says what it works on, by source", lambda: self.working_on(page), page)
+        self.check("the header counts enrolled, online and stopped apart", lambda: self.header_counts(page), page)
+        self.check("waits on, oldest pending and waited on are separate facts", lambda: self.waiting_facts(page), page)
+        self.check("needs-you rows: board opens the event, failed delivery names its request", lambda: self.needs_rows(page), page)
+        self.check("every command a needs-you row offers runs with exit 0", lambda: self.copy_commands(page), page,
+                   category="slice:CAIRN-831")
+        self.check("send is offered only to current principals", lambda: self.current_principals(page), page)
+        self.check("paper cuts: close button, selection, reply naming, plain words, filtered count", lambda: self.paper_cuts(page), page)
         self.check("flow rows show each recipient's state; agent rows label waits apart", lambda: self.flow_rows(page), page,
                    category="slice:CAIRN-830")
         self.check("needs you lists the board question and the operator event, not the lead decision",
@@ -546,10 +610,12 @@ class Fixture:
                    category="slice:CAIRN-831")
         self.check("cancel preview names the recipient and waits before confirm; siblings and counted reply unchanged",
                    lambda: self.cancel(page), page, category="slice:CAIRN-830+833")
+        self.check("confirmation contract: preview token conflict and cancel-wait expected_owner",
+                   lambda: self.waiting_store_side(page), page, category="waiting:store-side")
         self.check("a refused cancel shows the store's reason and cannot be confirmed", lambda: self.refused_cancel(page), page,
                    category="slice:CAIRN-833")
-        self.check("an out-of-order acknowledge shows expected against oldest; the oldest is acknowledged",
-                   lambda: self.acknowledge_conflict(page), page, category="slice:CAIRN-833")
+        self.check("acknowledge is offered only on the inbox head, and acknowledges it",
+                   lambda: self.acknowledge_head(page), page, category="waiting:inbox_head")
         self.check("an owner notice is shown as sent, not yet seen", lambda: self.send_unseen(page), page,
                    category="slice:CAIRN-833")
         self.check("no forbidden control exists", lambda: self.forbidden(page), page)
@@ -659,23 +725,38 @@ class Fixture:
         ids = page.evaluate("window.cairnSwarmView.logIDs()")
         require(len(ids) == len(set(ids)) and not (before - set(ids)), "signing in again lost or repeated an event")
 
+    def member_row(self, page, role):
+        return page.locator(f"#agents .agent[data-member='{self.principal(role)}']")
+
     def context_cell(self, page):
         observed = self.page_json("/api/swarm/panes")["window"]
-        self.report["window_observation"] = {k: observed.get(k) for k in ("status", "error", "stale", "sessions", "near_limit_rule")}
-        self.report["window_observation"]["unknown"] = observed.get("unknown")
-        agent_id = self.sessions["lead"]["agent_id"]
-        cell = page.locator(f"#agents .agent[data-member='{self.principal('lead')}'] td").nth(4)
-        text = cell.inner_text()
+        self.report["window_observation"] = {k: observed.get(k) for k in ("status", "error", "stale", "sessions", "unknown")}
+        require(observed.get("status") == "ok", "the transcript reader is not ok: " + json.dumps(observed)[:300])
         windows, unknown = observed.get("windows") or {}, observed.get("unknown") or {}
-        if agent_id in windows:
-            require("%" in text or "tokens" in text, "a known window is not shown as a figure: " + text)
-        elif agent_id in unknown:
-            require("unknown" in text and unknown[agent_id] in text, "the unknown reason is not shown: " + text)
-        elif observed.get("status") == "unavailable":
-            require("transcripts unavailable" in text, "unavailable transcripts are not shown: " + text)
-        else:
-            require("unknown" in text or "reading transcripts" in text, "context cell is not honest: " + text)
-        require("Cairn-injected since compaction" in text, "the Cairn proxy is not labelled under the true figure")
+        self.expect(page.locator("#observations")).to_contain_text("Transcripts")
+        for agent_id, want in self.context_expected.items():
+            require(agent_id in windows, f"the reader did not measure {want['role']}: " + json.dumps(unknown.get(agent_id)))
+            got = windows[agent_id]
+            require(got["used_tokens"] == want["used"] and got["window_tokens"] == want["window"] and got["near_limit"] == want["near"],
+                    f"the reader measured {want['role']} differently: {got}")
+            role = "root" if want["role"] == "root_next" else want["role"]
+            row = page.locator(f"#agents .agent[data-member='agent/{agent_id}']")
+            text = row.inner_text()
+            percent = f"{round(want['used'] * 100 / want['window'])}% · "
+            require(percent in text, f"{role}'s row does not show its fill {percent!r}: " + text[:300])
+            require("1 compaction" in text, f"{role}'s row does not show the transcript's compaction")
+            if want["near"]:
+                require("near context limit" in text and "near its limit" in text, f"{role}'s row lacks the near-limit mark")
+                require("near-limit-row" in (row.get_attribute("class") or ""), f"{role}'s row is not marked near its limit")
+            else:
+                require("near context limit" not in text, f"{role}'s row is marked near its limit")
+        near = sum(1 for want in self.context_expected.values() if want["near"])
+        if near:
+            self.expect(page.locator("#near-limit-count")).to_contain_text(f"{near} agent{'' if near == 1 else 's'} near")
+        worker_b = self.sessions["worker_b"]["agent_id"]
+        require(worker_b in unknown, "the opencode session is not reported unknown by the reader")
+        self.expect(self.member_row(page, "worker_b")).to_contain_text("unknown: " + unknown[worker_b][:40])
+        self.expect(self.member_row(page, "lead")).to_contain_text("unknown: no transcript on this host")
         cases = [({"used_tokens": 807000, "window_tokens": 1000000}, "81% · 807k of 1M tokens"),
                  ({"used_tokens": 807000, "window_tokens": 0}, "807k tokens"),
                  ({"used_tokens": 150000, "window_tokens": 200000}, "75% · 150k of 200k tokens"),
@@ -683,6 +764,137 @@ class Fixture:
         for window, expected in cases:
             got = page.evaluate("(w) => window.cairnSwarmView.formatWindow(w)", window)
             require(got == expected, f"formatWindow({window}) gave {got!r}, expected {expected!r}")
+
+    def working_on(self, page):
+        # Every member row answers "working on what" without opening anything.
+        for role in ("root_next", "lead", "worker_a", "worker_b", "worker_c"):
+            if role not in self.sessions:
+                continue
+            row = page.locator(f"#agents .agent[data-member='{self.sessions[role]['inbox']}']")
+            text = row.inner_text()
+            require("no assignment recorded" not in text, f"{role} shows no assignment recorded")
+        for role in ("root_next", "lead"):
+            text = page.locator(f"#agents .agent[data-member='{self.sessions[role]['inbox']}']").inner_text()
+            require("Coordinates" in text, f"{role} does not say what it coordinates")
+            require("Reported by the session" in text, f"{role} hides what its session reports")
+        worker_c = self.member_row(page, "worker_c").inner_text()
+        require("Reported by the session" in worker_c, "a worker with no assignment hides its reported task")
+        worker_a = self.member_row(page, "worker_a").inner_text()
+        require(worker_a.index("Ledger assignments") < worker_a.index("Reported by the session"), "assignments do not come first")
+
+    def header_counts(self, page):
+        snapshot = self.snapshot()
+        enrolled = [m for m in snapshot["members"] if m["active"]]
+        presence = {}
+        for m in enrolled:
+            p = (m.get("session") or {}).get("presence")
+            presence[p] = presence.get(p, 0) + 1
+        text = page.locator("#campaign-meta").inner_text()
+        require(f"{len(enrolled)} members enrolled" in text, "enrolled count missing: " + text)
+        for p in ("online", "stopped"):
+            if presence.get(p):
+                require(f"{presence[p]} {p}" in text, f"the header does not count {p} members: " + text)
+        require(" active member" not in text, "the header still says active members: " + text)
+
+    def waiting_facts(self, page):
+        lead = self.member_row(page, "lead")
+        labels = lead.locator("dl.facts dt").all_inner_texts()
+        require(labels == ["Waits on", "Oldest pending", "Waited on"], "waiting facts are not three separate labels: " + json.dumps(labels))
+        snapshot = self.snapshot()
+        member = snapshot["flow"]["by_member"].get(self.principal("lead"), {})
+        waited = lead.locator("dl.facts dd").nth(2).inner_text()
+        if not member.get("peer_waits"):
+            require("no peer waiting" in waited, "a member with no peer waiting does not say so: " + waited)
+        worker_b = self.member_row(page, "worker_b").locator("dl.facts dd").nth(2).inner_text()
+        if snapshot["flow"]["by_member"].get(self.principal("worker_b"), {}).get("peer_waits"):
+            require("waits for" in worker_b, "worker_b's peer waits are not under Waited on")
+
+    def needs_rows(self, page):
+        board = page.locator("#needs li.need[data-type='board_question']").first
+        self.expect(board.locator("button", has_text="Open the event")).to_have_count(1)
+        require(board.inner_text().count("on the board") == 1, "the board row repeats its action text")
+        buttons = board.locator("button").all_inner_texts()
+        require(all(b in ("Open the event",) or b.startswith("Copy") for b in buttons), "a board question offers a compose control: " + json.dumps(buttons))
+        board.locator("button", has_text="Open the event").click()
+        self.expect(page.locator("#event-body")).to_contain_text("Answer it on the board", timeout=10000)
+        page.locator("#event-detail button.close").click()
+        failed = page.locator("#needs li.need[data-type='failed_delivery']").first.inner_text()
+        require("Run the flaky check" in failed and self.label(self.snapshot(), "lead") in failed,
+                "the failed-delivery row does not name the request and its sender: " + failed[:300])
+
+    def acknowledge_head(self, page):
+        items = [i for i in self.snapshot()["needs_you"]["items"] if i["type"] == "operator_delivery"]
+        heads = [i for i in items if i.get("inbox_head") is True]
+        rows = page.locator("#needs li.need[data-type='operator_delivery']")
+        for item in items:
+            row = page.locator(f"#needs li.need[data-need='{item['id']}']")
+            has_button = row.locator("button", has_text="Acknowledge").count() == 1
+            require(has_button == (item.get("inbox_head") is True), f"acknowledge offered on the wrong row: {item['title']}")
+            if not has_button:
+                self.expect(row).to_contain_text("An older delivery to you comes first")
+        if not heads:
+            raise AssertionError("waiting: the snapshot marks no inbox_head row, so no row offers Acknowledge (needs-you author's field)")
+        head = page.locator(f"#needs li.need[data-need='{heads[0]['id']}']")
+        head.locator("button", has_text="Acknowledge").click()
+        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
+            page.locator("#confirm-go").click()
+        reply = info.value.json()
+        require(info.value.ok and (reply.get("delivery") or {}).get("state") == "handled", "acknowledge: " + json.dumps(reply)[:300])
+        self.expect(page.locator(f"#needs li.need[data-need='{heads[0]['id']}']")).to_have_count(0, timeout=15000)
+
+    def copy_commands(self, page):
+        env = dict(self.host.env, PATH=str(self.runtime) + os.pathsep + self.host.env.get("PATH", ""))
+        commands = sorted({i["action"]["command"] for i in self.snapshot()["needs_you"]["items"] if i.get("action", {}).get("command")})
+        failed = []
+        for command in commands:
+            result = subprocess.run(["bash", "-c", command], env=env, capture_output=True, text=True, timeout=30,
+                                    stdin=subprocess.DEVNULL, cwd=str(self.runtime))
+            if result.returncode != 0:
+                failed.append(f"{command[:120]} -> exit {result.returncode}: {(result.stdout + result.stderr).strip()[:160]}")
+        self.report["copy_commands"] = dict(run=len(commands), failed=failed)
+        require(commands, "no row offers a command to copy")
+        require(not failed, "copy commands fail: " + " | ".join(failed))
+
+    def current_principals(self, page):
+        snapshot = self.snapshot()
+        lineage = snapshot.get("lineage") or []
+        require(lineage, "the fixture's handoff is not in the lineage")
+        old = lineage[0]["from_principal"]
+        can = lambda p: page.evaluate("(p) => window.cairnSwarmView.canWrite(p)", p)
+        require(can(old) is False, "the page would send to a coordinator that handed off")
+        require(can(self.principal("lead")) is True, "the page would not send to an active member")
+        require(can(snapshot["campaign"]["role_address"]) is True, "the page would not send to the role address")
+        require(page.locator("#lineage button").count() == 0, "the lineage offers a control")
+        root = page.locator(f"#agents .agent[data-member='{self.sessions['root_next']['inbox']}'] button", has_text="Details")
+        root.click()
+        options = page.locator("#detail form.compose select[name=to] option").evaluate_all("nodes => nodes.map(n => n.value)")
+        require(snapshot["campaign"]["role_address"] in options, "the root holder cannot be written to by its role address")
+        page.locator("#detail button.close").click()
+
+    def paper_cuts(self, page):
+        # A long event title does not wrap the Close button.
+        row = page.locator("#flow li.event", has_text="Untrusted").first
+        row.locator("button", has_text="Open").click()
+        close = page.locator("#event-detail .panel-head button.close")
+        box = close.bounding_box()
+        require(box and box["height"] < 40, f"the Close button wraps: {box}")
+        page.locator("#event-detail button.close").click()
+        # Selecting text in an agent row does not open the detail panel.
+        cell = self.member_row(page, "worker_a").locator("td").nth(1)
+        cell.evaluate("(td) => { const r = document.createRange(); r.selectNodeContents(td); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }")
+        cell.click()
+        require(not page.evaluate("() => document.getElementById('detail').open"), "a click while selecting text opened the detail panel")
+        page.evaluate("() => getSelection().removeAllRanges()")
+        # A response names the request it answers; a superseded chip says it once.
+        response = page.locator("#flow li.event-response").first
+        self.expect(response).to_contain_text("Reply to:")
+        chips = page.locator("#flow .chip-superseded").all_inner_texts()
+        require(chips and all("(superseded)" not in c for c in chips), "a superseded chip says it twice: " + json.dumps(chips[:2]))
+        require("no delivery in the snapshot" not in page.locator("#flow").inner_text(), "the flow still says no delivery in the snapshot")
+        # The count follows the filter.
+        self.member_row(page, "worker_b").locator("button", has_text="Messages").click()
+        self.expect(page.locator("#flow-meta")).to_contain_text(re.compile(r"\d+ of \d+ events in the window, filtered to"))
+        self.member_row(page, "worker_b").locator("button", has_text="All messages").click()
 
     def agent_rows(self, page):
         require(page.locator("#agents table.agents-table").count() == 1, "agents are not a table at 1280 px")
@@ -696,7 +908,6 @@ class Fixture:
         require("unknown" in text or "Cairn-injected since compaction" in text, "context room cell is empty")
         worker = page.locator(f"#agents .agent[data-member='{self.principal('worker_a')}']").inner_text()
         require("Build the swarm page" in worker, "working on does not lead with the member's open assignment")
-        require(f"campaign {CAMPAIGN} [" not in worker, "working on repeats the derived campaign line")
         order = page.locator("#agents .agent").evaluate_all("nodes => nodes.map(n => n.dataset.member)")
         snapshot = self.snapshot()
         roles = {m["member"]: m["role"] for m in snapshot["members"]}
@@ -742,7 +953,7 @@ class Fixture:
         board = page.locator("#needs li.need[data-type='board_question']").first
         self.expect(board).to_contain_text("Answer on the board")
         buttons = board.locator("button").all_inner_texts()
-        require(all(b.startswith("Copy") for b in buttons), "a board question offers a control: " + json.dumps(buttons))
+        require(all(b == "Open the event" or b.startswith("Copy") for b in buttons), "a board question offers a control: " + json.dumps(buttons))
 
     PRODUCED_NEEDS = ("board_question", "operator_delivery", "decision", "escalation", "workstream_decision",
                       "handoff_due", "failed_delivery", "stopped_backlog", "wait_timed_out", "missed_checkpoint")
@@ -772,7 +983,7 @@ class Fixture:
             require("Oldest pending" in lead, "the lead row omits its oldest pending item")
         worker_b = page.locator(f"#agents .agent[data-member='{self.principal('worker_b')}']").inner_text()
         if snapshot["flow"]["by_member"].get(self.principal("worker_b"), {}).get("peer_waits"):
-            require("A peer waits on it" in worker_b, "worker_b's peer waits are not shown")
+            require("waits for" in worker_b, "worker_b's peer waits are not shown")
 
     def need_types(self, page):
         items = self.snapshot()["needs_you"]["items"]
@@ -807,6 +1018,10 @@ class Fixture:
         def delay(route):
             response = route.fetch()
             held.append(response.status)
+            try:
+                self.preview_token = json.loads(response.text()).get("preview_token") or ""
+            except ValueError:
+                self.preview_token = ""
             page.wait_for_timeout(3000)
             route.fulfill(response=response)
         page.route("**/api/swarm/action/cancel-preview*", delay)
@@ -838,6 +1053,9 @@ class Fixture:
         with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/cancel-delivery")) as info:
             go.click()
         reply = info.value.json()
+        sent = info.value.request.post_data_json or {}
+        self.report["preview_token"] = dict(served=bool(self.preview_token), sent=bool(sent.get("preview_token")))
+        require(sent.get("preview_token", "") == self.preview_token, "the cancel did not send the preview's token")
         require(info.value.ok and reply.get("outcome") == "cancelled", "cancel outcome: " + json.dumps(reply)[:300])
         self.expect(page.locator("#confirm-result")).to_contain_text("The store recorded the cancellation", timeout=10000)
         after_status = {d["delivery_id"]: d["state"] for d in self.event_status(group_id)["deliveries"]}
@@ -847,6 +1065,14 @@ class Fixture:
                 require(after_status.get(delivery) == state, "a sibling delivery changed state")
         require(self.group_state()["responded"] == before_group["responded"], "the counted reply changed")
         self.report["cancel_outcome"] = reply.get("outcome")
+
+    def waiting_store_side(self, page):
+        token = self.report.get("preview_token", {})
+        missing = []
+        if not token.get("served"):
+            missing.append("the preview carries no preview_token, so the 409 re-preview path cannot be driven")
+        missing.append("cancel-wait sends expected_owner; this store refuses the unknown field until the actions author lands it")
+        raise AssertionError("waiting: " + "; ".join(missing))
 
     def refused_cancel(self, page):
         # worker_a takes a live manual lease on its oldest delivery through the CLI.
@@ -861,28 +1087,6 @@ class Fixture:
             require(page.locator("#confirm-go").is_disabled(), "confirm is enabled for a cancel the store refuses")
         finally:
             self.complete("worker_a", leased)
-
-    def acknowledge_conflict(self, page):
-        first, second = self.events["operator_1"], self.events["operator_2"]
-        row = page.locator(f"#needs li.need[data-event='{second['event_id']}']")
-        row.locator("button", has_text="Acknowledge").click()
-        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
-            page.locator("#confirm-go").click()
-        body = info.value.json()
-        require(info.value.status == 409 and body.get("code") == "VERSION_CONFLICT", "an out-of-order acknowledge was not refused: " + json.dumps(body)[:300])
-        result = page.locator("#confirm-result")
-        self.expect(result).to_contain_text("VERSION_CONFLICT", timeout=5000)
-        self.expect(result).to_contain_text("flow reader note 2")
-        self.expect(result).to_contain_text("flow reader note 1")
-        page.locator("#confirm button[data-close='confirm']").first.click()
-        # The oldest is acknowledged, and the store records it handled.
-        page.locator(f"#needs li.need[data-event='{first['event_id']}'] button", has_text="Acknowledge").click()
-        with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
-            page.locator("#confirm-go").click()
-        reply = info.value.json()
-        require(info.value.ok and (reply.get("delivery") or {}).get("state") == "handled", "acknowledge: " + json.dumps(reply)[:300])
-        self.expect(page.locator(f"#needs li.need[data-event='{first['event_id']}']")).to_have_count(0, timeout=15000)
-        page.locator("#confirm button[data-close='confirm']").first.click()
 
     def send_unseen(self, page):
         marker = "owner-" + uid()[:8]
@@ -961,6 +1165,7 @@ class Fixture:
         require(self.host.env["CAIRN_HOME"].startswith(str(self.runtime)), "fixture state directory escaped the runtime")
         self.report["collection"] = self.collection
         self.seed()
+        self.seed_context()
         self.heartbeat = threading.Thread(target=self.beat, daemon=True)
         self.heartbeat.start()
         self.start_serve()
@@ -1012,6 +1217,8 @@ class Fixture:
 
     def close(self):
         self.heartbeat_stop.set()
+        if getattr(self, "sleeper", None) is not None:
+            stop_process(self.sleeper, timeout=5, label="stand-in harness process")
         try:
             self.stop_serve()
         finally:
