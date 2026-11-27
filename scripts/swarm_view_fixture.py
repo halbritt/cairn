@@ -1280,6 +1280,7 @@ class Fixture:
         text = body.inner_text()
         require("from Cairn (" in text and "from you (operator)" not in text and "sent, not yet seen" not in text,
                 "the cancel preview labels a Cairn delivery as the owner's: " + text[:300])
+        require("null" not in [line.strip() for line in text.splitlines()], "the cancel preview prints a null line")
         page.locator("#confirm-keep").click()
         page.locator("#detail button.close").click()
 

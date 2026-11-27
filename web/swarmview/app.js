@@ -74,6 +74,13 @@
     return node;
   }
 
+  // Replace a node's children. Like append, an absent value adds nothing
+  // (replaceChildren itself would print null as text).
+  function setChildren(node, ...children) {
+    node.replaceChildren();
+    return append(node, children);
+  }
+
   function uuid() {
     if (crypto.randomUUID) return crypto.randomUUID();
     const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -320,7 +327,7 @@
     for (const session of landing.unaffiliated || []) state.landingLabels.set("agent/" + session.agent_id, session.label);
     const meta = byID("campaign-meta");
     meta.hidden = false;
-    meta.replaceChildren(`Collection ${landing.collection} · read `, timeEl(landing.observed_at));
+    setChildren(meta, `Collection ${landing.collection} · read `, timeEl(landing.observed_at));
     const errors = landing.section_errors || {};
 
     renderNeeds(byID("landing-needs"), landing.needs_you, errors.needs_you, landing.operator_principal);
@@ -543,7 +550,7 @@
 
   function showMissingCampaign(message) {
     const fault = byID("fault");
-    fault.replaceChildren(`The campaign "${state.campaign}" does not exist${message ? " (" + message + ")" : ""}. `,
+    setChildren(fault, `The campaign "${state.campaign}" does not exist${message ? " (" + message + ")" : ""}. `,
       el("a", { href: "./", text: "Go to the list of campaigns" }));
     fault.hidden = false;
     byID("campaign").hidden = true;
@@ -697,7 +704,7 @@
     const left = members().length - enrolled.length;
     const meta = byID("campaign-meta");
     meta.hidden = false;
-    meta.replaceChildren(
+    setChildren(meta, 
       `${enrolled.length} member${enrolled.length === 1 ? "" : "s"} enrolled${states.length ? " (" + states.join(", ") + ")" : ""}`,
       left ? ` · ${left} no longer enrolled` : "", " · started ",
       timeEl(campaign.created_at),
@@ -1306,7 +1313,7 @@
     const filterNote = byID("flow-filter");
     if (state.filter) {
       filterNote.hidden = false;
-      filterNote.replaceChildren(`Showing messages of ${labelOf(state.filter)}. `,
+      setChildren(filterNote, `Showing messages of ${labelOf(state.filter)}. `,
         el("button", { type: "button", text: "Show all", onclick: () => setFilter("") }));
     } else {
       filterNote.hidden = true;
@@ -1641,13 +1648,13 @@
     const event = state.log.get(eventID);
     byID("event-title").textContent = event ? `${event.kind}: ${event.summary || event.event_id}` : "Event " + eventID;
     const body = byID("event-body");
-    body.replaceChildren(note("Reading the event…"));
+    setChildren(body, note("Reading the event…"));
     openDialog("event-detail");
     if (event) body.prepend(eventEnvelope(event));
     try {
       const reply = await api(`/api/swarm/event?campaign=${encodeURIComponent(state.campaign)}&event_id=${encodeURIComponent(eventID)}`);
       if (state.eventDetail !== eventID) return;
-      body.replaceChildren(eventEnvelope(reply.event || event || {}));
+      setChildren(body, eventEnvelope(reply.event || event || {}));
       const deliveries = reply.deliveries || deliveriesOf(eventID);
       body.append(el("h3", { text: "Recipients" }), deliveries.length ? el("ul", { class: "plain" }, deliveries.map((delivery) => el("li", {},
         deliveryChip(delivery, fromOwner(reply.event || event)), " ", deliveryControls(delivery)))) : note("no delivery"));
@@ -1691,7 +1698,7 @@
     const key = "ack:" + deliveryID;
     const body = byID("confirm-body");
     byID("confirm-title").textContent = "Acknowledge your delivery";
-    body.replaceChildren(
+    setChildren(body, 
       note("The server claims your oldest eligible delivery and completes it, so your inbox is acknowledged in order."),
       eventID && state.log.get(eventID) ? el("p", {}, "Expected: ", linked(state.log.get(eventID).summary || eventID)) : null);
     prepareConfirm(true, "Acknowledge", async () => {
@@ -1726,7 +1733,7 @@
     const ids = { summary: uuid(), body: uuid() };
     const summary = el("input", { id: ids.summary, type: "text", maxlength: "280", autocomplete: "off" });
     const message = el("textarea", { id: ids.body, rows: "5" });
-    byID("confirm-body").replaceChildren(
+    setChildren(byID("confirm-body"), 
       el("p", {}, "In answer to: ", linked(title || (state.log.get(eventID) || {}).summary || eventID)),
       el("div", { class: "compose" },
         el("div", { class: "row" }, el("label", { for: ids.summary, text: "Summary" }), summary),
@@ -1752,7 +1759,7 @@
   async function cancelWait(waitID, shown, changed) {
     const wait = shown || waitByID(waitID);
     byID("confirm-title").textContent = "Cancel the wait";
-    byID("confirm-body").replaceChildren(
+    setChildren(byID("confirm-body"), 
       changed ? note("The wait changed since it was shown. Review it and confirm again.", "warning") : null,
       wait ? el("p", {}, `${labelOf(wait.owner)} stops waiting for `, waitText(wait)) : el("p", {}, "Wait ", el("code", { text: waitID })),
       note("The waiting agent sees the cancellation at its next turn boundary."));
@@ -1798,14 +1805,14 @@
   async function cancelDelivery(deliveryID) {
     byID("confirm-title").textContent = "Cancel this recipient's delivery";
     const body = byID("confirm-body");
-    body.replaceChildren(note("Reading what the cancel affects…"));
+    setChildren(body, note("Reading what the cancel affects…"));
     prepareConfirm(false, "Cancel this delivery", null);
     openDialog("confirm");
     let preview;
     try {
       preview = await api(`/api/swarm/action/cancel-preview?campaign=${encodeURIComponent(state.campaign)}&delivery_id=${encodeURIComponent(deliveryID)}`);
     } catch (error) {
-      body.replaceChildren(note("The preview is unavailable, so the cancel cannot be confirmed. " + refusalText(error), "unavailable"));
+      setChildren(body, note("The preview is unavailable, so the cancel cannot be confirmed. " + refusalText(error), "unavailable"));
       return;
     }
     showCancelPreview(deliveryID, preview, false);
@@ -1819,7 +1826,7 @@
     const delivery = preview.delivery || {};
     // A handoff can move the delivery: the confirmation targets what the preview shows.
     const deliveryID = delivery.delivery_id || shownID;
-    body.replaceChildren(
+    setChildren(body, 
       changed ? note("What this cancel affects changed since it was shown: the recipient or the waits are different. Review it and confirm again.", "warning") : null,
       el("dl", { class: "fields preview" },
         field("Recipient", el("strong", { text: labelOf(delivery.consumer) }), " ", el("code", { text: delivery.consumer || "" })),
