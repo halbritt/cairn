@@ -341,21 +341,26 @@ Sending requires an active campaign. Both the chosen address and the
 resolved destination must be its current root, an active member, or a role
 address of that campaign. Historic principals remain in the log. A
 supersession replaces eligible notices from the same publisher and recipient
-only when every affected notice belongs to a campaign event. If the key
-would replace a notice outside the campaign, the whole send is refused.
+only when every affected notice belongs to a campaign event. Otherwise the
+whole send is refused with `AUTHORITY_DENIED` and the message “this notice
+cannot replace an earlier one from this page”.
 
 Delivery cancellation and preview require a campaign consumer. The delivery
 must belong to a campaign event or be live for an active member. Siblings in
 a preview give context about a shared event. Wait cancellation requires a
 waiting state and a campaign owner. A wait can be visible through its
 dependency even when that owner is outside the campaign. An out-of-scope
-target and an unknown ID both return `NOT_FOUND`.
+target and an unknown ID both return `NOT_FOUND` before confirmation fields
+are checked. A matching committed cancellation receipt can read back its
+terminal result if the recipient or wait owner still passes campaign scope.
 
 A wrong inbox head returns HTTP 409 with
 `{error, code: "VERSION_CONFLICT", expected, oldest}`. The oldest delivery
 is unchanged, and `oldest` is null when the view cannot show it. A live
-manual lease is refused with `UNSUPPORTED_CONTROL`. When a cancellation's
-recipient or related waits or group replies have changed, HTTP 409 returns
+manual lease is refused with `UNSUPPORTED_CONTROL`. The preview token binds
+the recipient, siblings, group reply counts, wait lookup statuses, and the
+ID, owner, predicate and dependency of each listed wait. When those facts
+change, HTTP 409 returns
 `{error, code: "VERSION_CONFLICT", preview}` with a fresh token. If the
 eligible wait's owner changed, HTTP 409 returns
 `{error, code: "VERSION_CONFLICT", wait}`. A conflict leaves the target

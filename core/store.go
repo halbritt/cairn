@@ -338,9 +338,16 @@ func (s *Store) beginLevel(ctx context.Context, level pgx.TxIsoLevel) (pgx.Tx, e
 // One request lock covers lookup, effect and stored response. A lost response can
 // be retried without repeating the effect; a different intent cannot reuse a key.
 func mutate[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
+	return mutateWithReplayGuard(ctx, s, operation, requestID, request, nil, apply, guards...)
+}
+
+// A replay guard applies only to a retained, exact receipt. Fresh operations
+// perform their own authorization in apply. Ordinary pre-receipt guards keep
+// their existing behavior for operations that authorize both paths alike.
+func mutateWithReplayGuard[T any](ctx context.Context, s *Store, operation, requestID string, request any, authorizeReplay func(pgx.Tx) error, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
 	var zero T
 	for attempt := 0; attempt < privilegedAttempts; attempt++ {
-		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.ReadCommitted, apply, guards...)
+		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.ReadCommitted, authorizeReplay, apply, guards...)
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || (pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "mutation_request_pkey")) {
 			return result, err
@@ -359,7 +366,7 @@ const privilegedAttempts = 8
 func privileged[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
 	var zero T
 	for attempt := 0; attempt < privilegedAttempts; attempt++ {
-		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.Serializable, apply, guards...)
+		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.Serializable, nil, apply, guards...)
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" &&
 			!(pgErr.Code == "23505" && pgErr.ConstraintName == "mutation_request_pkey") &&
@@ -397,7 +404,7 @@ func mutationDigest(requestID string, request any) ([sha256.Size]byte, error) {
 	return sha256.Sum256(canonical), nil
 }
 
-func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID string, request any, level pgx.TxIsoLevel, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
+func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID string, request any, level pgx.TxIsoLevel, authorizeReplay func(pgx.Tx) error, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
 	var zero T
 	digest, err := mutationDigest(requestID, request)
 	if err != nil {
@@ -408,7 +415,7 @@ func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID strin
 		return zero, err
 	}
 	defer tx.Rollback(context.Background())
-	out, err := applyMutationTx(ctx, s, tx, operation, requestID, digest, apply, guards...)
+	out, err := applyMutationTx(ctx, s, tx, operation, requestID, digest, authorizeReplay, apply, guards...)
 	if err != nil {
 		return zero, err
 	}
@@ -419,7 +426,7 @@ func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID strin
 }
 
 // applyMutationTx binds the mutation receipt to the caller's transaction.
-func applyMutationTx[T any](ctx context.Context, s *Store, tx pgx.Tx, operation, requestID string, digest [sha256.Size]byte, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
+func applyMutationTx[T any](ctx context.Context, s *Store, tx pgx.Tx, operation, requestID string, digest [sha256.Size]byte, authorizeReplay func(pgx.Tx) error, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
 	var zero T
 	if err := lock(ctx, tx, "request:"+s.channel.Principal+":"+operation+":"+requestID); err != nil {
 		return zero, err
@@ -437,6 +444,11 @@ func applyMutationTx[T any](ctx context.Context, s *Store, tx pgx.Tx, operation,
 	if err == nil {
 		if !bytes.Equal(previousDigest, digest[:]) {
 			return zero, failure("IDEMPOTENCY_CONFLICT", "request UUID already used with different content")
+		}
+		if authorizeReplay != nil {
+			if err := authorizeReplay(tx); err != nil {
+				return zero, err
+			}
 		}
 		if responseDeleted {
 			return zero, failure("PAYLOAD_UNAVAILABLE", "the original response payload was excluded by deletion; the mutation remains committed")

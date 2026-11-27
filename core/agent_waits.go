@@ -825,8 +825,8 @@ func (s *Store) cancelWait(ctx context.Context, req CancelWaitRequest, dest Dest
 	}
 	req.Collection = repo
 
-	intent, guards := scope.mutation(req)
-	return mutate(ctx, s, "wait-cancel", req.RequestID, intent, func(tx pgx.Tx) (AgentWait, error) {
+	intent, replay := scope.mutation(req)
+	return mutateWithReplayGuard(ctx, s, "wait-cancel", req.RequestID, intent, replay, func(tx pgx.Tx) (AgentWait, error) {
 		callerAgentUUID, isOperator, err := s.authenticateWaitCaller(ctx, tx, req.Session, repo, dest)
 		if err != nil {
 			return AgentWait{}, err
@@ -865,7 +865,7 @@ ORDER BY w.created_at DESC LIMIT 1 FOR UPDATE OF w`, repo, req.WaitUUID, req.Dep
 			&w.ReservedNoticeEventUUID, &w.ReservedSourceRecordUUID, &w.CreatedAt, &w.ResolvedAt,
 			&w.TerminalReason, &outboxState, &outboxErrReason, &now)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return AgentWait{}, failure("NOT_FOUND", "wait not found")
+			return AgentWait{}, scope.missing("wait not found")
 		}
 		if err != nil {
 			return AgentWait{}, err
@@ -898,7 +898,7 @@ ORDER BY w.created_at DESC LIMIT 1 FOR UPDATE OF w`, repo, req.WaitUUID, req.Dep
 		}
 
 		return w, nil
-	}, guards...)
+	})
 }
 
 func resolveWaitsOnEvent(ctx context.Context, tx pgx.Tx, event AgentEvent) error {

@@ -363,11 +363,9 @@ func TestSwarmActionHTTPCancelDeliveryAndCompletionRace(t *testing.T) {
 	}
 }
 
-func TestSwarmActionHTTPCancelWaitAndForeignResources(t *testing.T) {
+func swarmActionEnableWaits(t *testing.T, f *swarmStoreFixture) {
+	t.Helper()
 	ctx := context.Background()
-	f := newSwarmStoreFixture(t, swarmNoPanes)
-	member, _ := f.member("action-wait-member")
-	outsider, outsiderView := f.session("action-wait-outsider")
 	if _, err := f.op.SetCoordinationWaitsEnabled(ctx, core.WaitFeatureSetRequest{RequestID: uuid.NewString(), Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -376,6 +374,14 @@ func TestSwarmActionHTTPCancelWaitAndForeignResources(t *testing.T) {
 			t.Error(err)
 		}
 	})
+}
+
+func TestSwarmActionHTTPCancelWaitAndForeignResources(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	member, _ := f.member("action-wait-member")
+	outsider, outsiderView := f.session("action-wait-outsider")
+	swarmActionEnableWaits(t, f)
 	dependency := swarmActionPublishEvent(t, f, f.rootView, "request", member.Inbox, "", "")
 	foreign := swarmActionPublishEvent(t, f, outsiderView, "request", outsider.Inbox, "", "")
 	wait := func(view *core.Store, id string) core.AgentWait {
@@ -570,4 +576,118 @@ func TestSwarmActionStoreErrorsUsePublicMessages(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSwarmActionHTTPCancelPreviewTracksWaitOwnerAfterHandoff(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	swarmActionEnableWaits(t, f)
+	worker, _ := f.member("action-preview-wait-worker")
+	event := swarmActionPublishEvent(t, f, f.rootView, "request", worker.Inbox, "", "")
+	wait, err := f.rootView.CreateWait(ctx, core.CreateWaitRequest{
+		RequestID: uuid.NewString(), Collection: f.repo, DependencyEventUUID: event.EventID,
+		PredicateKind: core.WaitPredicateRequestResponse, Deadline: time.Now().Add(time.Hour),
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := swarmActionGetEvent(t, f, event.EventID).Deliveries[0].DeliveryID
+	before := swarmActionPreview(t, f, id)
+	if len(before.DirectReplyWaits.Waits) != 1 || before.DirectReplyWaits.Waits[0].Owner != f.root.Inbox {
+		t.Fatalf("original wait owner: %+v", before.DirectReplyWaits)
+	}
+
+	handoff, err := f.rootView.HandoffCampaignCoordinator(ctx, core.HandoffCampaignCoordinatorRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign,
+		NewSession: &core.NewCoordinatorSessionSpec{Binding: "swarm-root", NativeSessionID: "action-preview-wait-successor"},
+		Note:       "Transfer the active wait", Shareable: true,
+	}, f.dest)
+	if err != nil || !handoff.Performed || handoff.ToPrincipal == f.root.Inbox || handoff.TransferredDeliveries != 0 {
+		t.Fatalf("wait owner handoff: %+v %v", handoff, err)
+	}
+	req := core.SwarmCancelDeliveryRequest{
+		SwarmDeliveryActionRequest: swarmActionDeliveryRequest(f, id),
+		Reason:                     "Cancel the delivery with the reviewed waiter", PreviewToken: before.PreviewToken,
+	}
+	resp, raw := f.do(http.MethodPost, "/api/swarm/action/cancel-delivery", req, map[string]string{"X-CSRF-Token": f.csrf})
+	conflict := swarmActionJSON[struct {
+		Code    string                  `json:"code"`
+		Preview core.SwarmCancelPreview `json:"preview"`
+	}](t, resp, raw, http.StatusConflict)
+	fresh := conflict.Preview
+	if conflict.Code != "VERSION_CONFLICT" || fresh.PreviewToken == before.PreviewToken ||
+		fresh.Delivery.DeliveryID != id || fresh.Delivery.Consumer != worker.Inbox ||
+		fresh.Delivery.State != "pending" || fresh.Delivery.Seen ||
+		len(fresh.DirectReplyWaits.Waits) != 1 || fresh.DirectReplyWaits.Waits[0].WaitID != wait.WaitUUID ||
+		fresh.DirectReplyWaits.Waits[0].Owner != handoff.ToPrincipal {
+		t.Fatalf("new wait owner was not reflected in the confirmation: %+v", conflict)
+	}
+}
+
+func TestSwarmActionHTTPHiddenCancellationTargetsMatchUnknownIDs(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	swarmActionEnableWaits(t, f)
+	later, laterView := f.session("action-later-root")
+	outsider, outsiderView := f.session("action-later-outsider")
+	event := swarmActionPublishEvent(t, f, outsiderView, "request", later.Inbox, "", "")
+	lease, err := laterView.NextEvent(ctx, core.NextEventRequest{Repo: f.repo}, f.dest)
+	if err != nil || lease.Delivery == nil || lease.Delivery.Event.EventID != event.EventID {
+		t.Fatalf("pre-campaign lease: %+v %v", lease, err)
+	}
+	id := lease.Delivery.DeliveryID
+	if _, err := laterView.CompleteEvent(ctx, core.CompleteEventRequest{
+		RequestID: uuid.NewString(), DeliveryID: id, LeaseID: lease.Delivery.LeaseID, Disposition: "handled",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+
+	dependency := swarmActionPublishEvent(t, f, laterView, "request", outsider.Inbox, "", "")
+	wait, err := laterView.CreateWait(ctx, core.CreateWaitRequest{
+		RequestID: uuid.NewString(), Collection: f.repo, DependencyEventUUID: dependency.EventID,
+		PredicateKind: core.WaitPredicateRequestResponse, Deadline: time.Now().Add(time.Hour),
+	}, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.op.CancelWait(ctx, core.CancelWaitRequest{
+		RequestID: uuid.NewString(), Collection: f.repo, WaitUUID: wait.WaitUUID,
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+
+	const campaign = "action-created-later"
+	if _, err := laterView.SetTeamCampaign(ctx, core.SetTeamCampaignRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: campaign, RootAgent: later.Inbox, Sensitivity: "shareable",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	f.campaign = campaign
+	assertHidden := func(method, path, unknownPath string, existing, unknown any) {
+		t.Helper()
+		headers := map[string]string{"X-CSRF-Token": f.csrf}
+		resp, raw := f.do(method, path, existing, headers)
+		other, otherRaw := f.do(method, unknownPath, unknown, headers)
+		if resp.StatusCode != http.StatusNotFound || other.StatusCode != resp.StatusCode ||
+			swarmErrorCode(raw) != "NOT_FOUND" || string(raw) != string(otherRaw) {
+			t.Fatalf("%s hidden %d %s differs from unknown %d %s", path, resp.StatusCode, raw, other.StatusCode, otherRaw)
+		}
+	}
+	unknownID := uuid.NewString()
+	preview := "/api/swarm/action/cancel-preview?campaign=" + campaign + "&delivery_id="
+	assertHidden(http.MethodGet, preview+id, preview+unknownID, nil, nil)
+
+	cancelPath := "/api/swarm/action/cancel-delivery"
+	req := core.SwarmCancelDeliveryRequest{SwarmDeliveryActionRequest: swarmActionDeliveryRequest(f, id)}
+	unknownDelivery := req
+	unknownDelivery.DeliveryID = unknownID
+	assertHidden(http.MethodPost, cancelPath, cancelPath, req, unknownDelivery)
+	req.Reason, unknownDelivery.Reason = "Cancel the earlier work", "Cancel the earlier work"
+	assertHidden(http.MethodPost, cancelPath, cancelPath, req, unknownDelivery)
+
+	waitPath := "/api/swarm/action/cancel-wait"
+	cancelWait := core.SwarmCancelWaitRequest{SwarmActionRequest: swarmActionRequest(f), WaitID: wait.WaitUUID}
+	unknownWait := cancelWait
+	unknownWait.WaitID = uuid.NewString()
+	assertHidden(http.MethodPost, waitPath, waitPath, cancelWait, unknownWait)
 }

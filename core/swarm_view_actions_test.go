@@ -642,7 +642,7 @@ func TestSwarmActionSupersessionRejectsMixedCampaignDeliveries(t *testing.T) {
 	}
 	_, err := op.SendSwarmEvent(ctx, req)
 	requireCode(t, err, "AUTHORITY_DENIED")
-	if err.Error() != "AUTHORITY_DENIED: supersedes key is in use outside this campaign" {
+	if err.Error() != "AUTHORITY_DENIED: this notice cannot replace an earlier one from this page" {
 		t.Fatalf("unexpected supersession refusal: %v", err)
 	}
 	swarmActionAssertSourceCount(t, op, req, 0)
@@ -781,6 +781,9 @@ func TestSwarmActionPreviewTokenTracksOnlyConfirmationFacts(t *testing.T) {
 		{"recipient", func(p *SwarmCancelPreview) { p.Delivery.Consumer = "successor" }},
 		{"sibling", func(p *SwarmCancelPreview) { p.Siblings[0].Consumer = "changed" }},
 		{"direct wait ID", func(p *SwarmCancelPreview) { p.DirectReplyWaits.Waits[0].WaitID = "new" }},
+		{"direct wait owner", func(p *SwarmCancelPreview) { p.DirectReplyWaits.Waits[0].Owner = "successor" }},
+		{"direct wait kind", func(p *SwarmCancelPreview) { p.DirectReplyWaits.Waits[0].Predicate = WaitPredicateRequestResponse }},
+		{"direct wait dependency", func(p *SwarmCancelPreview) { p.DirectReplyWaits.Waits[0].DependencyEventID = "other-request" }},
 		{"closure lookup", func(p *SwarmCancelPreview) { p.Group.ClosureWaits.Status = "unavailable" }},
 		{"reply count", func(p *SwarmCancelPreview) { p.Group.Responded++ }},
 		{"selected reply", func(p *SwarmCancelPreview) { p.Group.RecipientReplyCounts = true }},
