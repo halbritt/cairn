@@ -656,12 +656,15 @@
 
   function renderNeeds(container, needs, unavailableReason, operatorPrincipal) {
     container.replaceChildren();
+    const heading = container.closest("section").querySelector("h2");
     if (unavailableReason) {
+      heading.textContent = "Needs you (unavailable)";
       container.append(note("Needs you is unavailable: " + unavailableReason, "unavailable"));
       return;
     }
     const items = (needs && needs.items) || [];
     const unavailable = (needs && needs.unavailable) || [];
+    heading.textContent = items.length ? `Needs you (${items.length})` : "Needs you";
     if (unavailable.length) {
       const list = el("ul", { class: "unavailable-sources", "aria-label": "Sources that could not be read" });
       for (const source of unavailable) list.append(el("li", { class: "unavailable", text: `${needLabel(source.type)}: unavailable (${source.reason})` }));
@@ -721,6 +724,26 @@
 
   // ------------------------------------------------------------------- agents
 
+  // At desktop width the agents are a table, one row per member, so that the
+  // owner can read down a column; below it each member is a card.
+  const wideAgents = window.matchMedia("(min-width: 1100px)");
+  wideAgents.addEventListener("change", () => renderAgents());
+
+  const roleOrder = { root: 0, lead: 1, worker: 2 };
+  const presenceOrder = { online: 0, offline: 1, stopped: 2 };
+  const assignmentOrder = { in_progress: 0, review: 1, dispatched: 2, planned: 3 };
+
+  // Root first, then leads, then workers; within a group online before
+  // offline before stopped, then by label.
+  function memberOrder(a, b) {
+    const role = (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3);
+    if (role) return role;
+    const presence = (m) => (m.session ? presenceOrder[m.session.presence] ?? 3 : 4);
+    const live = presence(a) - presence(b);
+    if (live) return live;
+    return String(a.label || a.member).localeCompare(String(b.label || b.member), undefined, { numeric: true });
+  }
+
   function renderAgents() {
     const container = byID("agents");
     if (!state.snapshot) return;
@@ -737,9 +760,19 @@
     dueBox.replaceChildren();
     if (due) dueBox.append(note(`Coordinator handoff due for ${labelOf(due.holder_principal)}: ${(due.reasons || []).join("; ")}`, "warning"));
 
-    const shown = members().filter((member) => !(handedOff.has(member.member) && !member.active && !holders.has(member.member)));
-    if (!shown.length) container.append(note("This campaign has no members."));
-    for (const member of shown) container.append(agentRow(member));
+    const feature = flow().waits_feature;
+    if (!sectionError("flow") && feature !== "active") {
+      dueBox.append(note(`Waits feature ${feature}: agents cannot register waits, so "Waits on" and peer waits stay empty.`));
+    }
+    const ordered = members().slice().sort(memberOrder);
+    const active = ordered.filter((member) => member.active || holders.has(member.member));
+    const inactive = ordered.filter((member) => !member.active && !holders.has(member.member) && !handedOff.has(member.member));
+    if (!active.length) container.append(note("This campaign has no active member."));
+    else container.append(agentLayout(active));
+    if (inactive.length) {
+      container.append(el("details", { class: "inactive-members" },
+        el("summary", { text: `Inactive members (${inactive.length})` }), agentLayout(inactive)));
+    }
 
     const lineageBox = byID("lineage");
     lineageBox.replaceChildren();
@@ -754,60 +787,111 @@
     }
   }
 
+  // Each column of the table and each field of a card is one of these.
+  const agentColumns = [
+    { name: "Agent", cell: agentCell },
+    { name: "State", cell: stateCell },
+    { name: "Working on", cell: workingCell },
+    { name: "Holds", cell: holdsCell },
+    { name: "Waiting", cell: waitingCell },
+    { name: "Context room", cell: contextView },
+    { name: "Pane", cell: paneView },
+  ];
+
+  function agentLayout(list) {
+    if (wideAgents.matches) {
+      const table = el("table", { class: "agents-table" },
+        el("caption", { class: "visually-hidden", text: "Campaign members" }),
+        el("thead", {}, el("tr", {}, agentColumns.map((column) => el("th", { scope: "col", text: column.name })))));
+      const body = el("tbody");
+      for (const member of list) {
+        const selected = state.filter === member.member;
+        const row = el("tr", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}`,
+          dataset: { member: member.member, label: member.label || shortPrincipal(member.member) } },
+          agentColumns.map((column, i) => el(i === 0 ? "th" : "td", i === 0 ? { scope: "row" } : {}, column.cell(member))));
+        // A click anywhere on the row opens the detail panel; the controls in
+        // the first cell keep their own meaning and are the keyboard path.
+        row.addEventListener("click", (event) => {
+          if (event.target.closest("button, a, summary, input, select, textarea, details[open]")) return;
+          openDetail(member.member);
+        });
+        body.append(row);
+      }
+      table.append(body);
+      return el("div", { class: "table-wrap" }, table);
+    }
+    const cards = el("div", { class: "agents-cards" });
+    for (const member of list) cards.append(agentCard(member));
+    return cards;
+  }
+
+  function agentCard(member) {
+    const label = member.label || shortPrincipal(member.member);
+    const selected = state.filter === member.member;
+    const card = el("article", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}`, dataset: { member: member.member, label }, "aria-label": label });
+    card.append(el("header", { class: "agent-head" }, agentCell(member)));
+    const fields = el("dl", { class: "fields" });
+    for (const column of agentColumns.slice(1)) fields.append(field(column.name, column.cell(member)));
+    card.append(fields);
+    return card;
+  }
+
   function field(name, ...value) {
     return el("div", { class: "field" }, el("dt", { text: name }), el("dd", {}, ...value));
   }
 
-  function agentRow(member) {
-    const session = member.session;
-    const memberFlow = flow().by_member[member.member];
+  function agentCell(member) {
     const label = member.label || shortPrincipal(member.member);
-    const role = member.role_label || member.role || "member";
     const selected = state.filter === member.member;
-    const card = el("article", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}`, dataset: { member: member.member, label }, "aria-label": label });
-    card.append(el("header", { class: "agent-head" },
-      el("h3", { text: label }),
-      el("span", { class: "role", text: role }),
-      member.role_label && member.role ? el("span", { class: "muted", text: ` (${member.role})` }) : null,
+    return el("div", { class: "agent-cell" },
+      el("div", { class: "agent-name" },
+        el("strong", { class: "agent-label", text: label }), " ",
+        el("span", { class: "role", text: member.role_label || member.role || "member" }),
+        member.role_label && member.role ? el("span", { class: "muted", text: ` (${member.role})` }) : null),
       member.role_address ? el("code", { class: "role-address", text: member.role_address }) : null,
-      member.active ? null : el("span", { class: "tag", text: "inactive member" })));
-
-    const fields = el("dl", { class: "fields" });
-    if (session) {
-      fields.append(field("Harness", [session.harness, session.observed_model || session.model].filter(Boolean).join(" · ") || "not reported"));
-      fields.append(field("State", presenceText(session)));
-      fields.append(field("Task", session.task_summary ? longText(session.task_summary) : el("span", { class: "muted", text: "no task reported" })));
-    } else {
-      fields.append(field("Session", el("span", { class: "muted", text: "no registered session for this principal" })));
-    }
-    fields.append(field("Holds", holdsView(member, memberFlow)));
-    fields.append(field("Waits on", waitsOnView(member, memberFlow)));
-    fields.append(field("Waited on", waitedOnView(member, memberFlow)));
-    fields.append(field("Context room", contextView(member)));
-    fields.append(field("Pane", paneView(member)));
-    const issues = member.plane_issues || [];
-    if (issues.length) fields.append(field("Plane", issues.map((id, i) => [i ? ", " : "", planeLink(id)])));
-    const decisions = ((state.snapshot.needs_you && state.snapshot.needs_you.lead_decisions) || {})[member.member] || [];
-    if (decisions.length) {
-      fields.append(field("Decisions to make", el("ul", { class: "plain" }, decisions.map((d) => el("li", {}, el("strong", { text: d.item_key + ": " }), linked(d.summary), " · ", timeEl(d.updated_at))))));
-    }
-    card.append(fields);
-    card.append(el("div", { class: "agent-actions" },
-      el("button", { type: "button", "aria-pressed": selected ? "true" : "false", text: selected ? "Show all messages" : "Show its messages", onclick: () => setFilter(selected ? "" : member.member) }),
-      el("button", { type: "button", text: "Details and actions", onclick: () => openDetail(member.member) })));
-    return card;
+      member.active ? null : el("span", { class: "tag", text: "inactive member" }),
+      el("div", { class: "agent-actions" },
+        el("button", { type: "button", class: "small", text: "Details", "aria-label": `Details and actions for ${label}`, onclick: () => openDetail(member.member) }),
+        el("button", { type: "button", class: "small secondary", "aria-pressed": selected ? "true" : "false",
+          text: selected ? "All messages" : "Messages", "aria-label": selected ? "Show all messages" : `Show the messages of ${label}`,
+          onclick: () => setFilter(selected ? "" : member.member) })));
   }
 
-  function presenceText(session) {
-    const parts = [session.presence || "unknown"];
-    if (session.state) parts.push(session.state);
-    const text = parts.join(", ");
-    if (session.presence !== "online" && session.last_seen) return el("span", {}, text + " · last seen ", timeEl(session.last_seen));
-    return el("span", { class: `presence presence-${session.presence || "unknown"}`, text });
+  function stateCell(member) {
+    const session = member.session;
+    if (!session) return el("span", { class: "muted", text: "no registered session" });
+    return el("div", {}, presenceText(session),
+      el("div", { class: "small-text muted", text: [session.harness, session.observed_model || session.model].filter(Boolean).join(" · ") || "harness not reported" }));
   }
 
-  function holdsView(member, memberFlow) {
-    const holds = member.holds || [];
+  // What the member itself holds first: its open assignments. The reported
+  // task summary follows, unless it is the derived campaign line, which says
+  // nothing about this agent.
+  function workingCell(member) {
+    const assignments = (member.holds || []).filter((hold) => hold.kind === "assignment")
+      .sort((a, b) => (assignmentOrder[a.status] ?? 4) - (assignmentOrder[b.status] ?? 4));
+    const parts = [];
+    if (assignments.length) {
+      parts.push(el("ul", { class: "plain working" }, assignments.map((hold) => el("li", {},
+        el("span", { class: `tag status-${hold.status}`, text: hold.status.replace("_", " ") }), " ",
+        linked(hold.summary || hold.item_key),
+        (hold.plane_issues || []).filter((id) => !(hold.summary || "").includes(id)).map((id) => [" ", planeLink(id)]),
+        hold.due_at ? [" · due ", timeEl(hold.due_at)] : null))));
+    }
+    const task = member.session && member.session.task_summary;
+    const campaign = (state.snapshot && state.snapshot.campaign && state.snapshot.campaign.campaign) || state.campaign;
+    if (task && !task.startsWith(`campaign ${campaign} [`)) {
+      parts.push(el("div", { class: "reported" }, el("span", { class: "muted", text: "reported: " }), longText(task, 120)));
+    }
+    if (!parts.length) parts.push(el("span", { class: "muted", text: "no assignment recorded" }));
+    return parts;
+  }
+
+  // Open ledger items other than assignments, leased deliveries, and on a
+  // lead's row the decisions that lead owns.
+  function holdsCell(member) {
+    const memberFlow = flow().by_member[member.member];
+    const holds = (member.holds || []).filter((hold) => hold.kind !== "assignment");
     const parts = [];
     if (holds.length) {
       parts.push(el("ul", { class: "plain" }, holds.map((hold) => el("li", {},
@@ -816,8 +900,29 @@
     if (memberFlow && (memberFlow.leased || memberFlow.held)) {
       parts.push(el("p", { text: `${memberFlow.leased || 0} leased deliver${memberFlow.leased === 1 ? "y" : "ies"}${memberFlow.held ? `, ${memberFlow.held} held` : ""}` }));
     }
+    const decisions = ((state.snapshot.needs_you && state.snapshot.needs_you.lead_decisions) || {})[member.member] || [];
+    if (decisions.length) {
+      parts.push(el("div", { class: "decisions" }, el("strong", { text: "Decisions to make" }),
+        el("ul", { class: "plain" }, decisions.map((d) => el("li", {}, el("strong", { text: d.item_key + ": " }), linked(d.summary), " · ", timeEl(d.updated_at))))));
+    }
     if (!parts.length) parts.push(el("span", { class: "muted", text: "nothing open" }));
     return parts;
+  }
+
+  // Waits on, waited on by a peer, and the oldest pending item stay separate facts.
+  function waitingCell(member) {
+    const memberFlow = flow().by_member[member.member];
+    return el("dl", { class: "facts" },
+      el("dt", { text: "Waits on" }), el("dd", {}, waitsOnView(member, memberFlow)),
+      el("dt", { text: "Waited on" }), el("dd", {}, waitedOnView(member, memberFlow)));
+  }
+
+  function presenceText(session) {
+    const parts = [session.presence || "unknown"];
+    if (session.state) parts.push(session.state);
+    const text = parts.join(", ");
+    if (session.presence !== "online" && session.last_seen) return el("span", { class: `presence presence-${session.presence || "unknown"}` }, text + " · last seen ", timeEl(session.last_seen));
+    return el("span", { class: `presence presence-${session.presence || "unknown"}`, text });
   }
 
   function waitByID(id) {
@@ -837,7 +942,7 @@
   function waitsOnView(member, memberFlow) {
     if (sectionError("flow")) return el("span", { class: "unavailable", text: "unavailable" });
     const ids = (memberFlow && memberFlow.waits_on) || [];
-    if (!ids.length) return el("span", { class: "muted", text: flow().waits_feature === "active" ? "no registered wait" : `no registered wait (waits feature ${flow().waits_feature})` });
+    if (!ids.length) return el("span", { class: "muted", text: "no registered wait" });
     return el("ul", { class: "plain" }, ids.map((id) => el("li", {}, waitText(waitByID(id)))));
   }
 
@@ -893,7 +998,8 @@
         panes.stale ? el("span", { class: "flag", text: " stale" }) : null,
         el("br"), copyButton(pane.focus_command || `herdr agent focus ${pane.pane_id}`, "Copy focus command"));
     }
-    if (panes.status === "unavailable") return el("span", { class: "unavailable", text: "Herdr unavailable" + (panes.error ? ": " + panes.error : "") });
+    // The reason is in the header, once.
+    if (panes.status === "unavailable") return el("span", { class: "unavailable", title: panes.error || "", text: "Herdr unavailable" });
     return el("span", { class: "muted", text: "no pane on this host" });
   }
 

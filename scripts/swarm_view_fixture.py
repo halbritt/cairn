@@ -419,8 +419,8 @@ class Fixture:
         def regions():
             expect(page.locator("#title")).to_have_text(CAMPAIGN)
             expect(page.locator("#needs")).not_to_be_empty()
-            expect(page.locator("#agents article.agent").first).to_be_visible(timeout=10000)
-            labels = page.locator("#agents article.agent").evaluate_all("nodes => nodes.map(n => n.dataset.member)")
+            expect(page.locator("#agents .agent").first).to_be_visible(timeout=10000)
+            labels = page.locator("#agents .agent").evaluate_all("nodes => nodes.map(n => n.dataset.member)")
             for role in ("lead", *WORKERS):
                 require(self.principal(role) in labels, f"agent row missing for {role}")
             expect(page.locator("#flow li.event").first).to_be_visible(timeout=10000)
@@ -429,7 +429,7 @@ class Fixture:
             if flags.get("description"):
                 expect(page.locator("#description")).to_contain_text("one lead and three workers build a page")
             if flags.get("role_label"):
-                lead = page.locator(f"#agents article.agent[data-member='{self.principal('lead')}'] .agent-head")
+                lead = page.locator(f"#agents .agent[data-member='{self.principal('lead')}'] .agent-cell")
                 expect(lead).to_contain_text(ROLE_LABELS["lead"])
             require(not page.evaluate("window.swarmInjected === true"), "summary text was parsed as HTML")
             require(page.locator("img").count() == 0, "an image element was created from server text")
@@ -498,10 +498,24 @@ class Fixture:
         self.shot(page, "desktop-final")
 
     def agent_rows(self, page):
-        lead = page.locator(f"#agents article.agent[data-member='{self.principal('lead')}']")
+        require(page.locator("#agents table.agents-table").count() == 1, "agents are not a table at 1280 px")
+        headers = page.locator("#agents table.agents-table thead th").all_inner_texts()
+        for name in ("Agent", "State", "Working on", "Holds", "Waiting", "Context room", "Pane"):
+            require(name in headers, f"agents table lacks the {name} column")
+        lead = page.locator(f"#agents .agent[data-member='{self.principal('lead')}']")
         text = lead.inner_text()
         require(HARNESS["lead"][0] in text, "lead row lacks its harness")
-        require("Context room" in text and ("unknown" in text or "Cairn-injected since compaction" in text), "context room is not labelled")
+        require("unknown" in text or "Cairn-injected since compaction" in text, "context room cell is empty")
+        worker = page.locator(f"#agents .agent[data-member='{self.principal('worker_a')}']").inner_text()
+        require("Build the swarm page" in worker, "working on does not lead with the member's open assignment")
+        require(f"campaign {CAMPAIGN} [" not in worker, "working on repeats the derived campaign line")
+        order = page.locator("#agents .agent").evaluate_all("nodes => nodes.map(n => n.dataset.member)")
+        snapshot = self.snapshot()
+        roles = {m["member"]: m["role"] for m in snapshot["members"]}
+        presence = {m["member"]: (m.get("session") or {}).get("presence") for m in snapshot["members"]}
+        rank = [({"root": 0, "lead": 1, "worker": 2}.get(roles.get(m), 3),
+                 {"online": 0, "offline": 1, "stopped": 2}.get(presence.get(m), 3)) for m in order if m in roles]
+        require(rank == sorted(rank), "members are not ordered root, leads, workers, then online before stopped")
         require("no pane on this host" in text or "Herdr" in text or "reading Herdr" in text or "herdr agent focus" in text,
                 "pane cell is not labelled")
         snapshot = self.snapshot()
@@ -519,6 +533,8 @@ class Fixture:
         snapshot = self.snapshot()
         items = snapshot["needs_you"]["items"]
         text = page.locator("#needs").inner_text()
+        heading = page.locator("#needs-heading").inner_text()
+        require(heading == (f"Needs you ({len(items)})" if items else "Needs you"), "needs-you heading count is wrong: " + heading)
         if not items:
             require("Nothing waits on you" in text or "unavailable" in text, "empty needs-you is not shown honestly")
             raise AssertionError("snapshot.needs_you is empty in this candidate: the CAIRN-831 slice is not present")
@@ -536,7 +552,7 @@ class Fixture:
         require(target, "worker_a's pending group delivery is not in the snapshot")
         before_status = {d["delivery_id"]: d["state"] for d in self.event_status(group_id)["deliveries"]}
         before_group = self.group_state()
-        page.locator(f"#agents article.agent[data-member='{self.principal('worker_a')}'] button", has_text="Details").click()
+        page.locator(f"#agents .agent[data-member='{self.principal('worker_a')}'] button", has_text="Details").click()
         item = page.locator("#detail li", has=page.locator(f"[data-delivery='{target['delivery_id']}']"))
         item.locator("button", has_text="Cancel this recipient's delivery").click()
         confirm = page.locator("#confirm")
@@ -568,7 +584,7 @@ class Fixture:
         return role
 
     def refusal(self, page):
-        page.locator(f"#agents article.agent[data-member='{self.principal('worker_a')}'] button", has_text="Details").click()
+        page.locator(f"#agents .agent[data-member='{self.principal('worker_a')}'] button", has_text="Details").click()
         form = page.locator("#detail form.compose")
         form.locator("select[name=kind]").select_option("notice")
         form.locator("input[name=summary]").fill("Refusal probe")
@@ -602,7 +618,7 @@ class Fixture:
     def forbidden(self, page):
         for dialog in ("#detail", "#event-detail", "#confirm"):
             page.evaluate("(sel) => { const d = document.querySelector(sel); if (d && d.open) d.close(); }", dialog)
-        page.locator(f"#agents article.agent[data-member='{self.principal('lead')}'] button", has_text="Details").click()
+        page.locator(f"#agents .agent[data-member='{self.principal('lead')}'] button", has_text="Details").click()
         controls = page.locator("button, a, input, select, textarea, [role=button]").evaluate_all(
             "nodes => nodes.map(n => (n.innerText || n.value || n.getAttribute('aria-label') || '').trim())")
         bad = [c for c in controls if FORBIDDEN.search(c) and not c.startswith("Copy")]
@@ -615,7 +631,7 @@ class Fixture:
         page = context.new_page()
         try:
             page.goto(self.campaign_url())
-            self.expect(page.locator("#agents article.agent").first).to_be_visible(timeout=20000)
+            self.expect(page.locator("#agents .agent").first).to_be_visible(timeout=20000)
             page.wait_for_timeout(1000)
             overflow = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             require(overflow <= 1, f"page scrolls horizontally by {overflow}px at phone width")
