@@ -295,51 +295,22 @@ func (c HerdrClient) HostEligible(host map[string]any) bool { return HostEligibl
 var herdrRolloutPattern = regexp.MustCompile(`/rollout-[^/]*-([0-9a-f-]{36})\.jsonl$`)
 
 func (c HerdrClient) HostIdentifiesSession(ctx context.Context, harness, nativeSessionID string, sessionProcess ProcessRef, host map[string]any, env []string) (bool, error) {
-	if host["agent"] != harness {
-		return false, nil
-	}
-	var session map[string]any
-	if v := host["agent_session"]; v != nil {
-		var ok bool
-		session, ok = v.(map[string]any)
-		if !ok {
-			return false, nil
-		}
-	}
-	if len(session) != 0 {
-		if session["kind"] != "id" || session["value"] != nativeSessionID || session["agent"] != harness {
-			return false, nil
-		}
-	} else if harness == HarnessCodex {
-		directory := filepath.Join(c.procRoot(), strconv.Itoa(sessionProcess.PID), "fd")
-		entries, err := os.ReadDir(directory)
+	explicit, rollout := herdrSessionIdentity(harness, nativeSessionID, host)
+	if rollout {
+		id, err := c.codexRolloutSession(sessionProcess)
 		if err != nil {
 			return false, err
 		}
-		ids := map[string]bool{}
-		for _, entry := range entries {
-			target, err := os.Readlink(filepath.Join(directory, entry.Name()))
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			if err != nil {
-				return false, err
-			}
-			if match := herdrRolloutPattern.FindStringSubmatch(target); match != nil {
-				ids[match[1]] = true
-			}
-		}
-		if len(ids) != 1 || !ids[nativeSessionID] {
-			return false, nil
-		}
-	} else {
+		explicit = id != "" && id == nativeSessionID
+	}
+	if !explicit {
 		return false, nil
 	}
 	pane, ok := host["pane_id"].(string)
 	if !ok || pane == "" {
 		return false, nil
 	}
-	response, err := c.Call(ctx, env, "pane", "process-info", "--pane", pane)
+	info, err := c.herdrForeground(ctx, env, pane)
 	if err != nil {
 		var e *HerdrError
 		if errors.As(err, &e) && e.Code == "HOST_TARGET_GONE" {
@@ -347,7 +318,65 @@ func (c HerdrClient) HostIdentifiesSession(ctx context.Context, harness, nativeS
 		}
 		return false, err
 	}
-	info := response["process_info"].(map[string]any)
+	return c.foregroundIdentifiesSession(info, sessionProcess)
+}
+
+// Herdr supplies explicit IDs for some harnesses. A Codex pane without one
+// must instead be identified by the rollout file and foreground process.
+func herdrSessionIdentity(harness, nativeSessionID string, host map[string]any) (explicit, rollout bool) {
+	if host["agent"] != harness {
+		return false, false
+	}
+	var session map[string]any
+	if v := host["agent_session"]; v != nil {
+		var ok bool
+		session, ok = v.(map[string]any)
+		if !ok {
+			return false, false
+		}
+	}
+	if len(session) != 0 {
+		return session["kind"] == "id" && session["value"] == nativeSessionID && session["agent"] == harness, false
+	}
+	return false, harness == HarnessCodex
+}
+
+func (c HerdrClient) codexRolloutSession(process ProcessRef) (string, error) {
+	directory := filepath.Join(c.procRoot(), strconv.Itoa(process.PID), "fd")
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return "", err
+	}
+	var id string
+	var ambiguous bool
+	for _, entry := range entries {
+		target, err := os.Readlink(filepath.Join(directory, entry.Name()))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if match := herdrRolloutPattern.FindStringSubmatch(target); match != nil {
+			ambiguous = ambiguous || (id != "" && id != match[1])
+			id = match[1]
+		}
+	}
+	if ambiguous {
+		return "", nil
+	}
+	return id, nil
+}
+
+func (c HerdrClient) herdrForeground(ctx context.Context, env []string, pane string) (map[string]any, error) {
+	response, err := c.Call(ctx, env, "pane", "process-info", "--pane", pane)
+	if err != nil {
+		return nil, err
+	}
+	return response["process_info"].(map[string]any), nil
+}
+
+func (c HerdrClient) foregroundIdentifiesSession(info map[string]any, sessionProcess ProcessRef) (bool, error) {
 	pgid, _ := parseExactInt64(info["foreground_process_group_id"])
 	raw, err := os.ReadFile(filepath.Join(c.procRoot(), strconv.Itoa(sessionProcess.PID), "stat"))
 	if err != nil {
@@ -451,16 +480,28 @@ func herdrTruthy(v any) bool {
 	return true
 }
 
-func (c HerdrClient) agyParent(ctx context.Context, request TerminalWakeRequest, candidates []map[string]any, env []string) (map[string]any, error) {
-	if request.Harness != "agy" {
-		return nil, nil
-	}
-	paths, err := filepath.Glob(filepath.Join(request.StateDir, "*.json"))
+type agySessionState struct {
+	path, nativeID string
+	process        ProcessRef
+	agent          map[string]any
+}
+
+func (s agySessionState) parentOf(path, nativeID string, process ProcessRef) bool {
+	return s.process == process && s.nativeID != nativeID && s.path != filepath.Clean(path)
+}
+
+func visitAgySessionStates(ctx context.Context, stateDir, skipPath string, visit func(agySessionState) (bool, error)) error {
+	paths, err := filepath.Glob(filepath.Join(stateDir, "*.json"))
 	if err != nil {
-		return nil, err
+		return err
 	}
+	skipPath = filepath.Clean(skipPath)
 	for _, path := range paths {
-		if filepath.Clean(path) == filepath.Clean(request.StatePath) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		path = filepath.Clean(path)
+		if path == skipPath {
 			continue
 		}
 		raw, err := os.ReadFile(path)
@@ -480,24 +521,42 @@ func (c HerdrClient) agyParent(ctx context.Context, request TerminalWakeRequest,
 			continue
 		}
 		process, ok := decodeProcessProjection(state["process"])
-		if !ok || process != request.Process {
+		if !ok {
 			continue
 		}
 		native, ok := agent["native_session_id"].(string)
-		if !ok || native == request.NativeSessionID {
+		if !ok {
 			continue
 		}
-		for _, host := range candidates {
-			match, err := c.HostIdentifiesSession(ctx, request.Harness, native, process, host, env)
-			if err != nil {
-				return nil, err
-			}
-			if match {
-				return agent, nil
-			}
+		if stop, err := visit(agySessionState{path: path, nativeID: native, process: process, agent: agent}); stop || err != nil {
+			return err
 		}
 	}
-	return nil, nil
+	return nil
+}
+
+func (c HerdrClient) agyParent(ctx context.Context, request TerminalWakeRequest, candidates []map[string]any, env []string) (map[string]any, error) {
+	if request.Harness != "agy" {
+		return nil, nil
+	}
+	var parent map[string]any
+	err := visitAgySessionStates(context.WithoutCancel(ctx), request.StateDir, request.StatePath, func(state agySessionState) (bool, error) {
+		if !state.parentOf(request.StatePath, request.NativeSessionID, request.Process) {
+			return false, nil
+		}
+		for _, host := range candidates {
+			match, err := c.HostIdentifiesSession(ctx, request.Harness, state.nativeID, state.process, host, env)
+			if err != nil {
+				return false, err
+			}
+			if match {
+				parent = state.agent
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	return parent, err
 }
 
 func (c HerdrClient) PrepareTerminalWake(ctx context.Context, request TerminalWakeRequest, baseEnv []string) (*PreparedTerminalWake, *TerminalWakeRefusal, error) {
