@@ -48,8 +48,18 @@ type swarmBrowserSession struct {
 	expires time.Time
 }
 
+// swarmReads is the read side of the view. The store implements it; a test
+// can script it.
+type swarmReads interface {
+	ReadSwarmStream(ctx context.Context, req core.SwarmStreamRequest) (core.SwarmStreamRead, error)
+	GetSwarmSnapshot(ctx context.Context, req core.SwarmSnapshotRequest) (core.SwarmSnapshot, error)
+	GetSwarmLanding(ctx context.Context, repo string) (core.SwarmLanding, error)
+}
+
 type swarmServer struct {
+	// store performs the operator actions. reads is the same store.
 	store      *core.Store
+	reads      swarmReads
 	collection string
 	port       int
 	tokenHash  [sha256.Size]byte
@@ -66,7 +76,7 @@ type swarmServer struct {
 
 func newSwarmServer(store *core.Store, collection string, port int, token string, panes swarmPaneReader) *swarmServer {
 	return &swarmServer{
-		store: store, collection: collection, port: port, tokenHash: sha256.Sum256([]byte(token)),
+		store: store, reads: store, collection: collection, port: port, tokenHash: sha256.Sum256([]byte(token)),
 		tick: 2 * time.Second, panes: newSwarmPaneLoop(panes, 5*time.Second, 15*time.Second),
 		now: time.Now, sessions: map[string]swarmBrowserSession{},
 	}
@@ -342,7 +352,7 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			swarmMethod(w, http.MethodGet)
 			return
 		}
-		landing, err := s.store.GetSwarmLanding(r.Context(), s.collection)
+		landing, err := s.reads.GetSwarmLanding(r.Context(), s.collection)
 		if err != nil {
 			writeSwarmError(w, err)
 			return
@@ -353,7 +363,7 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			swarmMethod(w, http.MethodGet)
 			return
 		}
-		snapshot, err := s.store.GetSwarmSnapshot(r.Context(), core.SwarmSnapshotRequest{Repo: s.collection, Campaign: r.URL.Query().Get("campaign")})
+		snapshot, err := s.reads.GetSwarmSnapshot(r.Context(), core.SwarmSnapshotRequest{Repo: s.collection, Campaign: r.URL.Query().Get("campaign")})
 		if err != nil {
 			writeSwarmError(w, err)
 			return

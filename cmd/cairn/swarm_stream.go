@@ -189,7 +189,7 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 	// The first read decides the status line: an unknown campaign or a
 	// refused cursor is an error response, not an empty stream.
-	read, err := s.store.ReadSwarmStream(ctx, request)
+	read, err := s.reads.ReadSwarmStream(ctx, request)
 	if err != nil {
 		writeSwarmError(w, err)
 		return
@@ -249,7 +249,7 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for {
-			next, rErr := s.store.ReadSwarmStream(ctx, request)
+			next, rErr := s.reads.ReadSwarmStream(ctx, request)
 			if rErr == nil {
 				read = next
 				break
