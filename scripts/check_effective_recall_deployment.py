@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Read-only inventory and fixture verification for effective Cairn recall guidance."""
 import argparse
+import ast
 import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import sys
 import tempfile
@@ -20,21 +22,30 @@ bundle = importlib.util.module_from_spec(_bundle_spec)
 _bundle_spec.loader.exec_module(bundle)
 DISPATCH_SCHEMA = "cairn.recall-dispatch/1"
 
-ENGINE_REQUIRED_CUES = (
-    "You may exceed automatic recall byte/call limits when the task needs more context; no user approval needed.",
-    "Use inspection_policy:first-fitting-whole/2 when exposed.",
-    "Explicit user limits still apply.",
-)
+# The current recall guidance is not restated here. It is read from the lifecycle
+# sources beside this script (the checkout the verifier runs from), which are the
+# same definitions the renderers use, so a wording change cannot leave this
+# verifier requiring text that no current hook emits.
+#
+# An installed hook is current when:
+#   - its own source defines every banner below with the checkout's exact text
+#     (checked statically, for a bound engine and bridge), and
+#   - its rendered fixture contains the banner that the checkout's renderer emits
+#     for the same fixture and configuration. Which banner that is (full or
+#     compact) is decided by running the checkout's renderer, not by a default
+#     copied here: a hook from before the compact default has both texts
+#     unchanged and differs only in the banner it selects.
+# The internal/lifecycle/memoryhook Go renderer carries the same texts;
+# scripts/test_check_effective_recall_deployment.py holds the two in agreement.
+REFERENCE_DIR = Path(__file__).resolve().parents[1] / "integrations/lifecycle"
+ENGINE_BANNER_NAMES = ("AGENT_TOOLS_CUE", "COMPACT_AGENT_TOOLS_CUE")
+BRIDGE_BANNER_NAMES = ("allowance_prefix", "allowance_suffix")
+BANNER_NUMBER = "{budget}"
+
+# Retired wording that must not appear in an installed source or in a rendered
+# fixture. These are history, so they are literals.
 ENGINE_STALE_CUES = (
     "Task-requested reads, including full handoffs, may exceed automatic recall limits",
-)
-
-BRIDGE_REQUIRED_CUES = (
-    "Automatic exact-source read allowance: ",
-    "This limits automatic recall only.",
-    "If the task needs more context, you may exceed automatic byte/call limits without user approval.",
-    "use inspection_policy:first-fitting-whole/2 when exposed.",
-    "Explicit user limits still apply.",
 )
 BRIDGE_STALE_CUES = (
     "It is not a general optional memory budget; do not run additional optional searches from a fallback or notice turn.",
@@ -124,6 +135,101 @@ def check_cues(text, required_cues, stale_cues):
     }
 
 
+def banner_literals(source, names):
+    """Statically read the named string assignments of a lifecycle source.
+
+    Nothing is executed. A name that is absent, not a string literal or assigned
+    two different texts is left out, so it can never compare equal.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return {}
+    found, ambiguous = {}, set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names):
+            continue
+        name = node.targets[0].id
+        try:
+            value = ast.literal_eval(node.value)
+        except (ValueError, SyntaxError):
+            value = None
+        if not isinstance(value, str) or found.setdefault(name, value) != value:
+            ambiguous.add(name)
+    return {name: value for name, value in found.items() if name not in ambiguous}
+
+
+def _reference_banners(filename, names):
+    banners = banner_literals(REFERENCE_SOURCES[filename].decode("utf-8"), names)
+    absent = [name for name in names if name not in banners]
+    if absent:
+        # Fail loudly: the renderer was restructured and this verifier must follow it.
+        raise RuntimeError(f"{REFERENCE_DIR / filename} no longer defines " + ", ".join(absent))
+    return banners
+
+
+def _banner_pattern(template):
+    """Match a banner whose byte allowance is whatever the fixture computed."""
+    return re.compile(r"\d+".join(re.escape(part) for part in template.split(BANNER_NUMBER)))
+
+
+REFERENCE_SOURCES = bundle.Bundle(REFERENCE_DIR).sources
+REFERENCE_ENGINE_BANNERS = _reference_banners("memory.py", ENGINE_BANNER_NAMES)
+REFERENCE_BRIDGE_BANNERS = _reference_banners("inbox_recall.py", BRIDGE_BANNER_NAMES)
+ENGINE_BANNER_PATTERNS = {name: _banner_pattern(text) for name, text in REFERENCE_ENGINE_BANNERS.items()}
+BRIDGE_ALLOWANCE_PATTERN = _banner_pattern(
+    REFERENCE_BRIDGE_BANNERS["allowance_prefix"] + BANNER_NUMBER + REFERENCE_BRIDGE_BANNERS["allowance_suffix"])
+_expected_engine_banner_cache = {}
+
+
+def _cue_result(missing, stale):
+    return {"cues_current": not missing and not stale, "missing_cues": missing, "stale_cues": stale}
+
+
+def check_source_banners(source, reference, origin, stale_cues):
+    """Compare an installed source's banner definitions with the checkout's."""
+    installed = banner_literals(source, tuple(reference))
+    missing = [f"{name} differs from {origin} in this checkout"
+               for name, text in reference.items() if installed.get(name) != text]
+    return _cue_result(missing, [cue for cue in stale_cues if cue in source])
+
+
+def expected_engine_banner(memory_config=None):
+    """Name the banner the checkout's renderer emits for this configuration.
+
+    The checkout's engine renders the same ordinary fixture; the result is None
+    when it emits no known banner or more than one.
+    """
+    key = json.dumps(memory_config if isinstance(memory_config, dict) else {}, sort_keys=True,
+                     separators=(",", ":"), default=str)
+    if key not in _expected_engine_banner_cache:
+        text = _render_ordinary_recall_text(REFERENCE_DIR / "memory.py", REFERENCE_SOURCES["memory.py"],
+                                            memory_config, sources=REFERENCE_SOURCES)
+        emitted = [name for name, pattern in ENGINE_BANNER_PATTERNS.items() if pattern.search(text)]
+        _expected_engine_banner_cache[key] = emitted[0] if len(emitted) == 1 else None
+    return _expected_engine_banner_cache[key]
+
+
+def check_engine_render(text, memory_config=None):
+    """Require the banner the checkout's renderer emits for this configuration."""
+    name = expected_engine_banner(memory_config)
+    if name is None:
+        missing = ["the checkout renderer emits no single recall banner for this configuration"]
+    elif not ENGINE_BANNER_PATTERNS[name].search(text):
+        missing = [f"{name} as rendered by integrations/lifecycle/memory.py in this checkout"]
+    else:
+        missing = []
+    return _cue_result(missing, [cue for cue in ENGINE_STALE_CUES if cue in text])
+
+
+def check_bridge_render(text):
+    """Require the exact-source allowance sentence the checkout's bridge appends."""
+    missing = [] if BRIDGE_ALLOWANCE_PATTERN.search(text) else [
+        "allowance_prefix/allowance_suffix as rendered by integrations/lifecycle/inbox_recall.py in this checkout"]
+    return _cue_result(missing, [cue for cue in BRIDGE_STALE_CUES if cue in text])
+
+
 def snapshot_paths(file_paths, state_dirs):
     """Capture metadata snapshot without reading raw session or memory state files."""
     files = {}
@@ -198,6 +304,15 @@ def _fixture_payload(note_body, task_body, *, fail_history=None):
 
 
 def render_ordinary_recall_fixture(engine_path, engine_bytes, memory_config=None, *, sources=None):
+    text = _render_ordinary_recall_text(engine_path, engine_bytes, memory_config, sources=sources)
+    return dict(
+        rendered=bool(text),
+        has_remaining_memory_bytes=("remaining_memory_bytes" in text),
+        **check_engine_render(text, memory_config),
+    )
+
+
+def _render_ordinary_recall_text(engine_path, engine_bytes, memory_config=None, *, sources=None):
     note = "Preserve fixture scope until source verification completes."
     task = "Verify effective recall deployment guidance."
     with tempfile.TemporaryDirectory() as tmp:
@@ -233,13 +348,7 @@ def render_ordinary_recall_fixture(engine_path, engine_bytes, memory_config=None
             "prompt": "Inspect fixture deployment guidance.",
         }
         result = engine.handle(mc, event)
-        text = result.get("hookSpecificOutput", {}).get("additionalContext", "")
-        cues = check_cues(text, ENGINE_REQUIRED_CUES, ENGINE_STALE_CUES)
-        return dict(
-            rendered=bool(text),
-            has_remaining_memory_bytes=("remaining_memory_bytes" in text),
-            **cues,
-        )
+        return result.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
 def _run_inbox_case(root, bridge_mod, bridge_bytes, engine_bytes, harness, kind, fail_history=None, *, runtime_sources=None):
@@ -351,13 +460,14 @@ def render_inbox_bridge_fixtures(bridge_path, bridge_bytes, engine_path, engine_
         results["admitted_request"] = dict(
             rendered=bool(admitted_text),
             status_present=('"status":"task_source"' in admitted_text),
-            **check_cues(admitted_text, ENGINE_REQUIRED_CUES, ENGINE_STALE_CUES),
+            # _run_inbox_case writes its own memory configuration, which names no view.
+            **check_engine_render(admitted_text, {"harness": harness}),
         )
         notice_text = _run_inbox_case(base / "notice_response", bridge_mod, bridge_bytes, engine_bytes, harness, "notice", runtime_sources=runtime_sources)
         results["notice_response"] = dict(
             rendered=bool(notice_text),
             status_present=('"status":"required_only"' in notice_text),
-            **check_cues(notice_text, BRIDGE_REQUIRED_CUES, BRIDGE_STALE_CUES),
+            **check_bridge_render(notice_text),
         )
         fallback_text = _run_inbox_case(
             base / "source_fallback",
@@ -372,7 +482,7 @@ def render_inbox_bridge_fixtures(bridge_path, bridge_bytes, engine_path, engine_
         results["source_fallback"] = dict(
             rendered=bool(fallback_text),
             status_present=('"status":"source_temporarily_unavailable_read_exact_source"' in fallback_text),
-            **check_cues(fallback_text, BRIDGE_REQUIRED_CUES, BRIDGE_STALE_CUES),
+            **check_bridge_render(fallback_text),
         )
     results["all_cues_current"] = all(
         results[k]["cues_current"] and results[k]["status_present"]
@@ -730,8 +840,10 @@ def _finish_inbox_binding(result, manifest, hooks_by_home, tracked_files, tracke
     if b_raw and e_raw:
         b_text = b_raw.decode("utf-8", errors="replace")
         e_text = e_raw.decode("utf-8", errors="replace")
-        b_cues = check_cues(b_text, BRIDGE_REQUIRED_CUES, BRIDGE_STALE_CUES)
-        e_cues = check_cues(e_text, ENGINE_REQUIRED_CUES, ENGINE_STALE_CUES)
+        b_cues = check_source_banners(b_text, REFERENCE_BRIDGE_BANNERS,
+                                      "integrations/lifecycle/inbox_recall.py", BRIDGE_STALE_CUES)
+        e_cues = check_source_banners(e_text, REFERENCE_ENGINE_BANNERS,
+                                      "integrations/lifecycle/memory.py", ENGINE_STALE_CUES)
         b_spec.update(b_cues)
         e_spec.update(e_cues)
         if not b_cues["cues_current"]:
@@ -987,9 +1099,15 @@ def _finalize_deployment_report(
             "active_grants_rewritten": False,
             "work_replayed": False,
             "claim_boundary": (
-                "Verifies installed hook/binding pins and renders representative recall cues in disposable fixtures; "
+                "Verifies installed hook/binding pins and renders representative recall cues in disposable fixtures, "
+                "comparing them with the lifecycle sources of the checkout this verifier runs from; "
                 "does not prove a subsequent live native turn observed the updated wording unless separately recorded."
             ),
+        },
+        "reference": {
+            "lifecycle_dir": str(REFERENCE_DIR),
+            "memory_sha256": sha256_bytes(REFERENCE_SOURCES["memory.py"]),
+            "inbox_recall_sha256": sha256_bytes(REFERENCE_SOURCES["inbox_recall.py"]),
         },
         "coverage": {
             "complete": coverage_complete,

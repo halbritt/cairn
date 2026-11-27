@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import sys
@@ -156,6 +157,13 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
             descriptor["bundle"] = checker.bundle.bundle_descriptor(path.parent)
         return descriptor
 
+    def reworded_engine_source(self, inserted):
+        """The engine with other wording inside the banner the checkout renders by default."""
+        banner = checker.REFERENCE_ENGINE_BANNERS[checker.expected_engine_banner()]
+        ending = banner.rstrip("\n")[-40:]
+        self.assertEqual(self.engine_src.count(ending), 1)
+        return self.engine_src.replace(ending, inserted + ending)
+
     def freeze_bundle(self, root):
         (root / checker.bundle.MANIFEST).write_text(json.dumps(checker.bundle.bundle_descriptor(root)))
 
@@ -229,18 +237,9 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
         self.assertTrue(any("bound inbox bridge has stale or missing fallback cue" in i for i in report["issues"]))
 
     def test_deliberately_stale_bound_engine_detected_when_ordinary_hooks_are_current(self):
-        old_line = (
-            "Task-requested reads, including full handoffs, may exceed automatic recall limits: "
-            "start a new search declaring available_tokens and memory_budget_bytes for the complete source"
-        )
-        new_line = (
-            "You may exceed automatic recall byte/call limits when the task needs more context; no user approval needed. "
-            "State why; start a new search with available_tokens and memory_budget_bytes covering the whole source/envelopes "
-            "within free context/tool ceiling. Use inspection_policy:first-fitting-whole/2 when exposed. "
-            "Explicit user limits still apply."
-        )
-        self.assertIn(new_line, self.engine_src)
-        self.bound_claude_engine.write_text(self.engine_src.replace(new_line, old_line))
+        # A rewording that is on no retired-wording list: only the comparison with
+        # the checkout's banner can find it.
+        self.bound_claude_engine.write_text(self.reworded_engine_source("Superseded guidance. "))
         self.refresh_manifests()
 
         report = checker.check_deployment(home=self.home)
@@ -255,7 +254,65 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
             self.assertFalse(b["fixtures"]["admitted_request"]["cues_current"])
             self.assertTrue(b["fixtures"]["notice_response"]["cues_current"])
             self.assertFalse(b["coordination_configs"][0]["bound_engine_matches_ordinary"])
+            self.assertEqual(b["engine"]["stale_cues"], [])
+            self.assertEqual(len(b["engine"]["missing_cues"]), 1)
+            self.assertIn(checker.expected_engine_banner(), b["engine"]["missing_cues"][0])
         self.assertTrue(any("bound memory engine has stale or missing recall cue" in i for i in report["issues"]))
+
+    def test_engine_selecting_another_banner_is_stale_with_identical_wording(self):
+        # The hook from before the compact default: both banner texts equal the
+        # checkout's, and it differs only in the banner it selects.
+        selecting = self.engine_src
+        selection = "(COMPACT_AGENT_TOOLS_CUE if view_name == 'compact/1' else AGENT_TOOLS_CUE)"
+        self.assertEqual(selecting.count(selection), 1)
+        selecting = selecting.replace(
+            selection, "(AGENT_TOOLS_CUE if view_name == 'compact/1' else COMPACT_AGENT_TOOLS_CUE)")
+        self.bound_claude_engine.write_text(selecting)
+        self.refresh_manifests()
+
+        report = checker.check_deployment(home=self.home)
+        self.assertFalse(report["ok"])
+        for b in (b for b in report["inbox_bindings"] if "claude" in b["binding_path"]):
+            self.assertTrue(b["engine"]["cues_current"])
+            self.assertFalse(b["fixtures"]["admitted_request"]["cues_current"])
+            self.assertEqual(b["fixtures"]["admitted_request"]["stale_cues"], [])
+            self.assertFalse(b["cues_current"])
+        self.assertTrue(any("rendered fixture admitted_request has stale or missing recall cue" in i
+                            for i in report["issues"]))
+
+    def test_ordinary_hook_follows_the_configured_view(self):
+        current = checker.expected_engine_banner({})
+        for view in ("full", "compact/1"):
+            expected = checker.expected_engine_banner({"recall_view": view})
+            self.assertIn(expected, checker.ENGINE_BANNER_NAMES)
+            rendered = checker.render_ordinary_recall_fixture(
+                self.ord_codex_engine, self.ord_codex_engine.read_bytes(), {"recall_view": view},
+                sources=checker.bundle.checked_sources(
+                    self.ord_codex_engine.parent, checker.bundle.read_manifest(self.ord_codex_engine.parent)))
+            self.assertTrue(rendered["cues_current"], rendered)
+        self.assertNotEqual(checker.expected_engine_banner({"recall_view": "full"}),
+                            checker.expected_engine_banner({"recall_view": "compact/1"}))
+        self.assertEqual(current, checker.expected_engine_banner({"recall_view": "compact/1"}))
+
+    def test_reference_banners_are_the_renderers_definitions(self):
+        engine = checker.load_python_module(
+            "reference_engine", checker.REFERENCE_DIR / "memory.py", checker.REFERENCE_SOURCES["memory.py"],
+            sources=checker.REFERENCE_SOURCES, role="memory")
+        for name in checker.ENGINE_BANNER_NAMES:
+            self.assertEqual(checker.REFERENCE_ENGINE_BANNERS[name], getattr(engine, name))
+            self.assertEqual(checker.REFERENCE_ENGINE_BANNERS[name].count(checker.BANNER_NUMBER), 1)
+        # The Go renderers carry the same texts as interpreted string constants.
+        candidates = (ROOT / "internal/lifecycle/memoryhook/candidates.go").read_text()
+        delivery = (ROOT / "internal/lifecycle/memoryhook/inbox_delivery.go").read_text()
+        for source, go_name, expected in (
+            (candidates, "agentToolsCue", checker.REFERENCE_ENGINE_BANNERS["AGENT_TOOLS_CUE"]),
+            (candidates, "compactAgentToolsCue", checker.REFERENCE_ENGINE_BANNERS["COMPACT_AGENT_TOOLS_CUE"]),
+            (delivery, "allowancePrefix", checker.REFERENCE_BRIDGE_BANNERS["allowance_prefix"]),
+            (delivery, "allowanceSuffix", checker.REFERENCE_BRIDGE_BANNERS["allowance_suffix"]),
+        ):
+            declared = re.findall(r"^\s*const " + go_name + r" = (\".*\")$", source, re.M)
+            self.assertEqual(len(declared), 1, go_name)
+            self.assertEqual(json.loads(declared[0]), expected, go_name)
 
 
     def test_hash_mismatch_detected(self):
@@ -387,12 +444,7 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
     def test_dispatch_wrapped_hook_and_cli_main(self):
         stale_cand = self.deploy / "stale-candidate/memory.py"
         checker.bundle.stage_runtime(ROOT / "integrations/lifecycle", stale_cand.parent)
-        stale_cand.write_text(
-            self.engine_src.replace(
-                "You may exceed automatic recall byte/call limits when the task needs more context; no user approval needed.",
-                "Task-requested reads, including full handoffs, may exceed automatic recall limits",
-            )
-        )
+        stale_cand.write_text(self.reworded_engine_source(checker.ENGINE_STALE_CUES[0] + ". "))
         stale_cand.chmod(0o700)
         self.freeze_bundle(stale_cand.parent)
         self.wrap_dispatch(stale_cand)
