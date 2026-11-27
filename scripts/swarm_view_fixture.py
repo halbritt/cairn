@@ -1183,7 +1183,7 @@ class Fixture:
                                "worker_c inactive")
         # The page learns it from its next live snapshot.
         page.wait_for_function("(p) => window.cairnSwarmView.canWrite(p) === false", arg=self.principal("worker_c"), timeout=15000)
-        page.locator("#agents details.inactive-members summary").click()
+        page.locator("#agents details.inactive-members > summary").click()
         page.locator(f"#agents .agent[data-member='{self.principal('worker_c')}'] button", has_text="Details").click()
         self.expect(page.locator("#detail")).to_contain_text("Not a current principal")
         require(page.locator("#detail form.compose").count() == 0, "a send form is offered to a member that left")
