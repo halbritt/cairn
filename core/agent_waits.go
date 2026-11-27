@@ -808,6 +808,10 @@ WHERE w.collection=$1
 }
 
 func (s *Store) CancelWait(ctx context.Context, req CancelWaitRequest, dest Destination) (AgentWait, error) {
+	return s.cancelWait(ctx, req, dest)
+}
+
+func (s *Store) cancelWait(ctx context.Context, req CancelWaitRequest, dest Destination, guards ...func(pgx.Tx) error) (AgentWait, error) {
 	if err := validID(req.RequestID); err != nil {
 		return AgentWait{}, err
 	}
@@ -888,7 +892,7 @@ ORDER BY w.created_at DESC LIMIT 1 FOR UPDATE OF w`, repo, req.WaitUUID, req.Dep
 		}
 
 		return w, nil
-	})
+	}, guards...)
 }
 
 func resolveWaitsOnEvent(ctx context.Context, tx pgx.Tx, event AgentEvent) error {

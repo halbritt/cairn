@@ -112,9 +112,20 @@ type NativeCancelState struct {
 	RequestedAt  time.Time `json:"requested_at"`
 }
 
+const (
+	deliveryAlreadyTerminal          = "delivery already terminal"
+	claimedNotificationCancelRefusal = "only an unclaimed response, notice or note can be cancelled; a claimed one is acknowledged by its consumer"
+	nativeTurnCancelRefusal          = "this native attempt did not prove exclusive single-request turn ownership; reconcile its actual turn/process end"
+	manualLeaseCancelRefusal         = "running manual work lacks a supervisor stop contract; reconcile its actual turn/process end"
+)
+
 // CancelWork records the winner against completion. A wake's hold is independent
 // of delivery terminal state and can only be released by confirmed host cleanup.
 func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCancellation, error) {
+	return s.cancelWork(ctx, req)
+}
+
+func (s *Store) cancelWork(ctx context.Context, req CancelWorkRequest, guards ...func(pgx.Tx) error) (WorkCancellation, error) {
 	var zero WorkCancellation
 	var err error
 	if req.Repo, err = s.requestControlScope(req.Repo); err != nil {
@@ -172,7 +183,7 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 			return zero, err
 		}
 		if state != "pending" && state != "leased" {
-			return zero, failure("VERSION_CONFLICT", "delivery already terminal")
+			return zero, failure("VERSION_CONFLICT", deliveryAlreadyTerminal)
 		}
 		wake, native, err := deliveryHeld(ctx, tx, delivery)
 		if err != nil {
@@ -183,7 +194,7 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 			// it only before any consumer claimed it or a host began a wake for
 			// it; once claimed, only its consumer acknowledges it.
 			if state != "pending" || attempts != 0 || wake || native {
-				return zero, failure("UNSUPPORTED_CONTROL", "only an unclaimed response, notice or note can be cancelled; a claimed one is acknowledged by its consumer")
+				return zero, failure("UNSUPPORTED_CONTROL", claimedNotificationCancelRefusal)
 			}
 			if err = stopRequestDelivery(ctx, tx, s, delivery, eventID, state, req.RequestID, "operator_cancelled", req.Reason); err != nil {
 				return zero, err
@@ -207,7 +218,7 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 				return zero, err
 			}
 			if !turnExclusive || nativeTurn == "" {
-				return zero, failure("UNSUPPORTED_CONTROL", "this native attempt did not prove exclusive single-request turn ownership; reconcile its actual turn/process end")
+				return zero, failure("UNSUPPORTED_CONTROL", nativeTurnCancelRefusal)
 			}
 			if requestedAt == nil {
 				cancel, err := recordNativeCancellation(ctx, tx, attemptID, req.Reason)
@@ -222,7 +233,7 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 			}}, nil
 		}
 		if leased && !wake {
-			return zero, failure("UNSUPPORTED_CONTROL", "running manual work lacks a supervisor stop contract; reconcile its actual turn/process end")
+			return zero, failure("UNSUPPORTED_CONTROL", manualLeaseCancelRefusal)
 		}
 		if err = stopRequestDelivery(ctx, tx, s, delivery, eventID, state, req.RequestID, "operator_cancelled", req.Reason); err != nil {
 			return zero, err
@@ -230,7 +241,7 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 		out := WorkCancellation{EventID: eventID, DeliveryID: delivery, Held: wake, Control: &WorkControl{}}
 		err = tx.QueryRow(ctx, `SELECT control_at,control_by,code,control_reason FROM cairn.agent_delivery WHERE delivery_id=$1`, delivery).Scan(&out.Control.At, &out.Control.By, &out.Control.Code, &out.Control.Reason)
 		return out, err
-	})
+	}, guards...)
 }
 
 // stopRequestDelivery fails live work as the caller's stop decision and

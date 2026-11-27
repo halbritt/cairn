@@ -784,13 +784,15 @@ func (s *Store) publishEventInternalTx(ctx context.Context, tx pgx.Tx, req Publi
 }
 
 func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest Destination) (AgentEvent, error) {
+	return s.publishEvent(ctx, req, dest)
+}
+
+func (s *Store) publishEvent(ctx context.Context, req PublishEventRequest, dest Destination, guards ...func(pgx.Tx) error) (AgentEvent, error) {
 	var err error
 	if req, err = s.normalizePublication(req, dest); err != nil {
 		return AgentEvent{}, err
 	}
-	out, err := mutate(ctx, s, "event-publish", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
-		return s.publishEventTx(ctx, tx, req, dest, "")
-	}, func(tx pgx.Tx) error {
+	guards = append(guards, func(tx pgx.Tx) error {
 		// Cached publication responses must not bypass a profile's current destination.
 		var visible bool
 		err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.memory_record m JOIN cairn.record_version v USING(record_id) WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND (m.sensitivity='shareable' OR $4))`, req.Ref.RecordID, req.Ref.Version, req.Repo, dest.AllowLocal).Scan(&visible)
@@ -807,6 +809,9 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 		}
 		return nil
 	})
+	out, err := mutate(ctx, s, "event-publish", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
+		return s.publishEventTx(ctx, tx, req, dest, "")
+	}, guards...)
 	if err != nil {
 		return out, s.retainEventAdmissionRefusal(ctx, req.Repo, err)
 	}
@@ -995,6 +1000,17 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 		return out, err
 	}
 	defer tx.Rollback(ctx)
+	out, err = s.nextEventTx(ctx, tx, repo, dest, seconds, nil)
+	if err != nil {
+		return out, err
+	}
+	return out, tx.Commit(ctx)
+}
+
+// nextEventTx lets a caller validate and settle the lease before committing it.
+func (s *Store) nextEventTx(ctx context.Context, tx pgx.Tx, repo string, dest Destination, seconds int, beforeClaim func(string) error) (NextEventResult, error) {
+	var out NextEventResult
+	var err error
 	if _, err = retrievalGeneration(ctx, tx); err != nil {
 		return out, err
 	}
@@ -1015,15 +1031,24 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 		return out, err
 	}
 	if nativeBusy {
-		return out, tx.Commit(ctx)
+		return out, nil
+	}
+	rowLock := " FOR UPDATE OF d"
+	if beforeClaim == nil {
+		rowLock += " SKIP LOCKED"
 	}
 	var id string
-	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND `+waitNotificationAdmissionOpen+` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
+	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND `+waitNotificationAdmissionOpen+` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position`+rowLock+` LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, tx.Commit(ctx)
+		return out, nil
 	}
 	if err != nil {
 		return out, err
+	}
+	if beforeClaim != nil {
+		if err := beforeClaim(id); err != nil {
+			return out, err
+		}
 	}
 	if err = leaseDelivery(ctx, tx, id, uuid.NewString(), time.Duration(seconds)*time.Second); err != nil {
 		return out, err
@@ -1033,7 +1058,7 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 		return out, err
 	}
 	out.Delivery = &d
-	return out, tx.Commit(ctx)
+	return out, nil
 }
 
 func checkEventLease(ctx context.Context, tx pgx.Tx, d AgentDelivery, lease string) error {
@@ -1161,47 +1186,51 @@ func (s *Store) CompleteEvent(ctx context.Context, req CompleteEventRequest, des
 		}
 	}
 	return mutate(ctx, s, "event-complete", req.RequestID, req, func(tx pgx.Tx) (AgentDelivery, error) {
-		d, err := s.ownedDelivery(ctx, tx, req.DeliveryID, dest)
-		if err != nil {
-			return d, err
-		}
-		late, err := eventLease(ctx, tx, d, req.LeaseID, s.session)
-		if err != nil {
-			return d, err
-		}
-		var resultID *string
-		var resultVersion *int
-		if req.Draft != nil {
-			if req.Draft.Scope.Repo == "" {
-				req.Draft.Scope.Repo = d.Event.Repo
-			}
-			if err = req.Draft.validate(); err != nil {
-				return d, err
-			}
-			if req.Draft.Scope.Repo != d.Event.Repo {
-				return d, failure("AUTHORITY_DENIED", "result must use the event collection")
-			}
-			if req.Draft.AttemptID != "" {
-				if err = lock(ctx, tx, "attempt:"+req.Draft.AttemptID); err != nil {
-					return d, err
-				}
-			}
-			id := uuid.NewString()
-			if _, err = tx.Exec(ctx, `INSERT INTO cairn.memory_record(record_id,current_version,sensitivity) VALUES($1,1,$2)`, id, req.Draft.Sensitivity); err != nil {
-				return d, err
-			}
-			r, err := insertVersion(ctx, tx, id, 1, *req.Draft)
-			if err != nil {
-				return d, err
-			}
-			resultID = &r.RecordID
-			resultVersion = &r.Version
-		}
-		if err = settleDelivery(ctx, tx, d.DeliveryID, req.Disposition, req.Code, resultID, resultVersion, late); err != nil {
-			return d, err
-		}
-		return s.ownedDelivery(ctx, tx, d.DeliveryID, dest)
+		return s.completeEventTx(ctx, tx, req, dest)
 	}, func(tx pgx.Tx) error { _, err := s.ownedDelivery(ctx, tx, req.DeliveryID, dest); return err })
+}
+
+func (s *Store) completeEventTx(ctx context.Context, tx pgx.Tx, req CompleteEventRequest, dest Destination) (AgentDelivery, error) {
+	d, err := s.ownedDelivery(ctx, tx, req.DeliveryID, dest)
+	if err != nil {
+		return d, err
+	}
+	late, err := eventLease(ctx, tx, d, req.LeaseID, s.session)
+	if err != nil {
+		return d, err
+	}
+	var resultID *string
+	var resultVersion *int
+	if req.Draft != nil {
+		if req.Draft.Scope.Repo == "" {
+			req.Draft.Scope.Repo = d.Event.Repo
+		}
+		if err = req.Draft.validate(); err != nil {
+			return d, err
+		}
+		if req.Draft.Scope.Repo != d.Event.Repo {
+			return d, failure("AUTHORITY_DENIED", "result must use the event collection")
+		}
+		if req.Draft.AttemptID != "" {
+			if err = lock(ctx, tx, "attempt:"+req.Draft.AttemptID); err != nil {
+				return d, err
+			}
+		}
+		id := uuid.NewString()
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.memory_record(record_id,current_version,sensitivity) VALUES($1,1,$2)`, id, req.Draft.Sensitivity); err != nil {
+			return d, err
+		}
+		r, err := insertVersion(ctx, tx, id, 1, *req.Draft)
+		if err != nil {
+			return d, err
+		}
+		resultID = &r.RecordID
+		resultVersion = &r.Version
+	}
+	if err = settleDelivery(ctx, tx, d.DeliveryID, req.Disposition, req.Code, resultID, resultVersion, late); err != nil {
+		return d, err
+	}
+	return s.ownedDelivery(ctx, tx, d.DeliveryID, dest)
 }
 
 func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, dest Destination) (EventStatus, error) {

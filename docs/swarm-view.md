@@ -289,21 +289,35 @@ store's refusal code.
 
 ## Operator actions
 
-The page performs only operations the store already has, as the local
-operator principal. Each `POST` body carries a `request_id` UUID that the page
-keeps for a retry.
+The signed-in browser uses the listener's local operator channel. The server
+sets the collection and the operator principal from that channel. Every
+`POST` carries the session's CSRF token and a JSON object with `campaign` and
+a canonical `request_id` UUID. The browser reuses the UUID when it retries
+the same request. The server rejects unknown fields.
 
-| Action | Route | Store operation |
+| Route | Other request fields | Successful reply |
 | --- | --- | --- |
-| Send a request or notice to an agent; supersede the owner's earlier notice | `POST /api/swarm/action/send` | `event-publish` |
-| Acknowledge my delivery | `POST /api/swarm/action/acknowledge` | `event-next`, then `event-complete` |
-| Preview a cancel | `GET /api/swarm/action/cancel-preview?campaign=NAME&delivery_id=UUID` | read only (`cairn.swarm-cancel-preview/1`) |
-| Cancel this recipient's delivery | `POST /api/swarm/action/cancel-delivery` | `work-cancel` |
-| Cancel a wait | `POST /api/swarm/action/cancel-wait` | `wait-cancel` |
+| `POST /api/swarm/action/send` | `to` (campaign principal), `kind` (`request` or `notice`), `summary`, `body`. Notices require `action` (`none`, `review` or `decide`) and may carry a `supersedes` key. | `{event, deliveries}`. The store saves one shareable source and publishes one event. A superseding notice replaces eligible earlier notices from the same publisher and recipient. |
+| `POST /api/swarm/action/acknowledge` | `delivery_id` (the operator's expected delivery). | `{delivery}`, with `delivery: null` when the inbox is empty. The server claims and completes the oldest eligible delivery in the operator's inbox. |
+| `GET /api/swarm/action/cancel-preview` | Query `campaign`, `delivery_id`. | `SwarmCancelPreview` (`cairn.swarm-cancel-preview/1`). It gives the recipient, sibling deliveries, refusal if any, direct-reply waits and, for a grouped request, the group state, reply count, whether this delivery's reply counts and closure waits. Each wait lookup reports `found`, `empty` or `unavailable`. |
+| `POST /api/swarm/action/cancel-delivery` | `delivery_id`, `reason` (8–4000 characters). | `{outcome, delivery, detail?}`. The outcome is `cancelled`, `cancel_pending` for a supported native turn, or `already_terminal` with the stored delivery when the recipient finished first. |
+| `POST /api/swarm/action/cancel-wait` | `wait_id`. | `{outcome, wait}`. The outcome is `cancelled` or `already_terminal`. |
+| `GET /api/swarm/event` | Query `campaign`, `event_id`. | `{event, deliveries, body?, body_truncated?, body_unavailable?}`. Returns the exact referenced version up to 16 KiB of UTF-8, with `body_truncated: true` when cut. Every reply has either `body` or `body_unavailable`. |
 
-An action takes effect in the store at once, but an agent sees it only at its
-next turn boundary. Until the recipient claims the delivery, the page shows the
-action as sent and not yet seen.
+Event, delivery and wait values use the same types as the live view. The
+server checks campaign scope before acting. A wrong inbox head returns
+HTTP 409 with `{error, code: "VERSION_CONFLICT", expected, oldest}` and
+leaves the oldest delivery untouched. If it belongs to another campaign,
+the refusal gives no details of that delivery. A live manual lease is
+refused with the store's `UNSUPPORTED_CONTROL` code and reason.
+
+A cancellation targets one delivery. Siblings and replies that already count
+in a response group keep their stored state. A wait on the request or group
+keeps its own deadline. The browser shows the result from the store even if
+the state changed after the preview.
+
+The next live snapshot reflects the action. A published delivery appears as
+sent and not yet seen until the recipient claims it.
 
 ## Run it as a user unit
 
