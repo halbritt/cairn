@@ -145,9 +145,12 @@ type SwarmHandoff struct {
 type SwarmHandoffDue struct {
 	HolderPrincipal string   `json:"holder_principal"`
 	Reasons         []string `json:"reasons"`
-	// Since is the first moment the handoff was due. It is absent when a
-	// limit that is reached has no recorded crossing time, and it never
-	// moves forward while the handoff stays due.
+	// Since is the first moment the handoff was due under the campaign's
+	// limits as they are now. It is absent when a limit that is reached has
+	// no recorded crossing time. It is derived on each read and nothing
+	// stores it: while the limits stay as they are it does not move, and
+	// reaching a second limit does not move it; changing a limit dates it
+	// again from the new limit.
 	Since *time.Time `json:"since,omitempty"`
 	// AgeReachedAt is when the session reached the age limit, when it has.
 	AgeReachedAt *time.Time `json:"age_reached_at,omitempty"`
@@ -480,11 +483,12 @@ func (s *Store) swarmSnapshotTx(ctx context.Context, tx pgx.Tx, sc swarmScope, l
 	// value is stable between reads.
 	if a, ok := sc.Sessions[swarmAgentID(sc.Campaign.RootAgent)]; ok && sc.Campaign.Active {
 		due := SwarmHandoffDue{HolderPrincipal: sc.Campaign.RootAgent, Reasons: []string{}}
-		// Since is the first moment the handoff was due. It is given only
-		// when every limit that is reached has a known crossing time: a
-		// crossing whose time the store does not hold may have come first,
-		// and a time that moves forward when a second limit is reached would
-		// make the row look newer than it is.
+		// Since is the first moment the handoff was due under the limits in
+		// force now. It is given only when every limit that is reached has a
+		// known crossing time: a crossing whose time the store does not hold
+		// may have come first, and a time that moves forward when a second
+		// limit is reached would make the row look newer than it is. The
+		// view stores nothing, so an edited limit dates the handoff again.
 		var first *time.Time
 		dated := true
 		earlier := func(at time.Time) {

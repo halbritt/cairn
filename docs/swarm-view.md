@@ -229,13 +229,16 @@ operator CLI.
 
 When an action involves contacting someone, `refs.principal` identifies
 the recipient. The page checks current campaign membership before offering to
-send. A handoff row includes `since`, the first moment the handoff was due,
-only when Cairn can date every limit that is reached: the age limit from the
-session start, and a compaction limit of one from the recorded first
-compaction. It is absent when a later compaction counts toward the limit or
-when that timestamp is unavailable, because the undated crossing may have come
-first; `since` never moves forward while the handoff stays due. The snapshot's
-`handoff.age_reached_at` gives the time the age limit was reached on its own.
+send. A handoff row includes `since`, the first moment the handoff was due
+under the campaign's current limits, only when Cairn can date every limit that
+is reached: the age limit from the session start, and a compaction limit of
+one from the recorded first compaction. It is absent when a later compaction
+counts toward the limit or when that timestamp is unavailable, because the
+undated crossing may have come first. The view derives `since` on each read
+and stores nothing: while the limits stay as they are it does not move, and
+reaching a second limit does not move it, but changing a limit dates the
+handoff again from the new limit. The snapshot's `handoff.age_reached_at`
+gives the time the current age limit was reached on its own.
 
 Board questions follow the publisher's campaign affiliation regardless of
 when the campaign was created. Both pages read the last 72 hours of requests

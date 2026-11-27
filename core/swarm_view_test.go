@@ -1190,9 +1190,10 @@ func TestSwarmLandingEventsAreTheComplementOfCampaignLogs(t *testing.T) {
 	}
 }
 
-// The handoff's since is the first moment it was due. A limit reached at a
-// time the store does not hold leaves it out, and reaching a second limit
-// later does not bring in a later time.
+// The handoff's since is the first moment it was due under the limits in
+// force. A limit reached at a time the store does not hold leaves it out, and
+// reaching a second limit later does not bring in a later time. Nothing
+// stores it, so an edited limit dates the handoff again.
 func TestSwarmHandoffSinceNeverMovesForward(t *testing.T) {
 	ctx := context.Background()
 	f := newSwarmFixture(t, "handoff-since")
@@ -1280,6 +1281,20 @@ func TestSwarmHandoffSinceNeverMovesForward(t *testing.T) {
 	if _, has := row["since"]; !has {
 		t.Fatalf("needs row for a dated handoff has no since: %s", row)
 	}
+
+	// An edited limit dates the handoff again: since is relative to the
+	// limits as they are, and the view keeps no earlier value.
+	limits(3*hour, 100)
+	snap, _ = read()
+	if snap.Handoff != nil {
+		t.Fatalf("due under a limit the session has not reached: %+v", snap.Handoff)
+	}
+	limits(hour/2, 100)
+	snap, _ = read()
+	if snap.Handoff == nil || snap.Handoff.Since == nil || !snap.Handoff.Since.Equal(start.Add(hour/2*time.Second)) {
+		t.Fatalf("after the limit was edited: %+v", snap.Handoff)
+	}
+	limits(hour, 100)
 
 	// A compaction limit of one is dated by the recorded first compaction,
 	// and since is the earlier of the two crossings.
