@@ -100,22 +100,27 @@ var (
 )
 
 // agentEventNormalise brings SQL text to one spelling: lower case, no quotes
-// around identifiers, single spaces. It drops every double quote and
-// backquote together with the backslashes that escape it in the language
-// around the SQL, so the patterns also read a whole source file.
+// around identifiers, single spaces. Every double quote and backquote becomes
+// a space, together with the backslashes that escape it in the language
+// around the SQL, so the patterns also read a whole source file. A quote ends
+// a token: INTO"cairn"."agent_event" names the same table as the spaced form.
 func agentEventNormalise(text string) string {
 	text = strings.ToLower(text)
 	out := make([]byte, 0, len(text))
+	space := func() {
+		if len(out) > 0 && out[len(out)-1] != ' ' {
+			out = append(out, ' ')
+		}
+	}
 	for i := 0; i < len(text); i++ {
 		switch c := text[i]; c {
 		case '"', '`':
 			for len(out) > 0 && out[len(out)-1] == '\\' {
 				out = out[:len(out)-1]
 			}
+			space()
 		case ' ', '\t', '\n', '\r', '\f', '\v':
-			if len(out) > 0 && out[len(out)-1] != ' ' {
-				out = append(out, ' ')
-			}
+			space()
 		default:
 			out = append(out, c)
 		}
@@ -123,20 +128,69 @@ func agentEventNormalise(text string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// agentEventStripComments replaces each SQL comment with a space. A comment
+// separates tokens and names nothing: INSERT /* x */ INTO cairn.agent_event
+// writes to the table. Block comments nest, as they do in PostgreSQL. A line
+// comment ends at the line's end. In a source file that is read whole, a
+// quoted string spells a line's end and a tab as an escape, so those escapes
+// are separators here too.
+func agentEventStripComments(text string) string {
+	out := make([]byte, 0, len(text))
+	for i := 0; i < len(text); {
+		switch {
+		case strings.HasPrefix(text[i:], "/*"):
+			i += 2
+			for depth := 1; i < len(text) && depth > 0; {
+				switch {
+				case strings.HasPrefix(text[i:], "/*"):
+					depth++
+					i += 2
+				case strings.HasPrefix(text[i:], "*/"):
+					depth--
+					i += 2
+				default:
+					i++
+				}
+			}
+			out = append(out, ' ')
+		case strings.HasPrefix(text[i:], "--"):
+			for i < len(text) && text[i] != '\n' && !strings.HasPrefix(text[i:], `\n`) {
+				i++
+			}
+			out = append(out, ' ')
+		case text[i] == '\\' && i+1 < len(text) && strings.IndexByte("ntr", text[i+1]) >= 0:
+			out = append(out, ' ')
+			i += 2
+		default:
+			out = append(out, text[i])
+			i++
+		}
+	}
+	return string(out)
+}
+
 // agentEventWriteKind reads a string literal or a whole file: "insert" for
 // an INSERT statement into the table, "other" for a write in a form that the
-// guard cannot check, and "" for text that does not write to the table.
+// guard cannot check, and "" for text that does not write to the table. The
+// text is read twice, as written and with its SQL comments taken as
+// separators: in text that is not SQL, "--" and "/*" mean something else,
+// and neither reading may hide a statement from the other.
 func agentEventWriteKind(text string) string {
-	text = agentEventNormalise(text)
-	switch {
-	case !strings.Contains(text, "agent_event"):
+	if !strings.Contains(strings.ToLower(text), "agent_event") {
 		// Every pattern needs the name. Most files do not have it, and the
 		// second pattern is slow over a whole file.
 		return ""
-	case agentEventInsert.MatchString(text):
-		return "insert"
-	case agentEventOtherWrite.MatchString(text):
-		return "other"
+	}
+	readings := []string{agentEventNormalise(text), agentEventNormalise(agentEventStripComments(text))}
+	for _, reading := range readings {
+		if agentEventInsert.MatchString(reading) {
+			return "insert"
+		}
+	}
+	for _, reading := range readings {
+		if agentEventOtherWrite.MatchString(reading) {
+			return "other"
+		}
 	}
 	return ""
 }
@@ -661,6 +715,24 @@ func TestAgentEventInsertGuardRecognisesLockCalls(t *testing.T) {
 		"INSERT INTO agent_event(event_id) VALUES($1)":           "insert",
 		`INSERT INTO "agent_event"(event_id) VALUES($1)`:         "insert",
 		"InSeRt\n\t  INTO\r\n  Cairn.Agent_Event\n(event_id)":    "insert",
+		// A quote ends a token, and so does a comment.
+		`INSERT INTO"cairn"."agent_event"(event_id) VALUES($1)`:             "insert",
+		"INSERT /* c */ INTO cairn.agent_event(event_id) VALUES($1)":        "insert",
+		"INSERT INTO /* c */ cairn.agent_event(event_id) VALUES($1)":        "insert",
+		"INSERT/**/INTO/**/cairn.agent_event(event_id) VALUES($1)":          "insert",
+		"INSERT INTO cairn /* c */ . /* d */ agent_event(event_id)":         "insert",
+		`INSERT INTO "cairn"/* c */."agent_event"(event_id)`:                "insert",
+		"INSERT /* a /* nested */ b */ INTO cairn.agent_event(event_id)":    "insert",
+		"INSERT -- why\n INTO -- where\n cairn.agent_event(event_id)":       "insert",
+		"INSERT INTO -- an unfinished /* comment\n agent_event(event_id)":   "insert",
+		`run("INSERT -- why\n INTO cairn.agent_event(event_id) VALUES(1)")`: "insert",
+		`run("INSERT\n\tINTO\r\ncairn.agent_event(event_id) VALUES(1)")`:    "insert",
+		"MERGE /* c */ INTO cairn.agent_event e USING staged s ON false":    "other",
+		"COPY /* c */ cairn.agent_event(event_id) FROM STDIN":               "other",
+		// A flag is not a comment: the reading as written still stands.
+		`psql --command "INSERT INTO cairn.agent_event(event_id) VALUES('x')"`:   "insert",
+		"INSERT INTO /* cairn.agent_event */ cairn.agent_delivery(a) VALUES($1)": "",
+		"SELECT 1 -- then INSERT INTO\n FROM cairn.agent_event_review":           "",
 		// As the statement reads in a script, with the quotes of the shell.
 		`psql -c "INSERT INTO \"cairn\".\"agent_event\"(event_id) VALUES('x')"`: "insert",
 
@@ -1299,6 +1371,13 @@ func (s *Store) insertEventsTx(ctx context.Context, tx pgx.Tx, ids []string) err
 		{name: "bare table name without schema", sql: `"INSERT INTO agent_event(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
 		{name: "mixed case and odd whitespace between the words", sql: `"InSeRt\n\t  INTO\r\n  Cairn . Agent_Event\n\t(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
 		{name: "quoted name of another table", sql: `"INSERT INTO \"cairn\".\"agent_event_review\"(event_id) VALUES($1)"`, sites: 0},
+		{name: "quoted table directly after the keyword", sql: `"INSERT INTO\"cairn\".\"agent_event\"(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
+		{name: "block comment between the keywords", sql: `"INSERT /* why */ INTO cairn.agent_event(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
+		{name: "block comment between the keywords below the lock", before: house, sql: `"INSERT /* why */ INTO cairn.agent_event(event_id) VALUES($1)"`, sites: 1},
+		{name: "block comment between the schema and the table", sql: `"INSERT INTO cairn./* which */agent_event(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
+		{name: "line comments between the keywords", sql: `"INSERT -- why\n INTO -- where\n cairn.agent_event(event_id) VALUES($1)"`, sites: 1, violations: 1, want: "it has no caller"},
+		{name: "line comments between the keywords in a raw string", sql: "`INSERT -- why\n INTO -- where\n cairn.agent_event(event_id) VALUES($1)`", sites: 1, violations: 1, want: "it has no caller"},
+		{name: "comment that names the table in a write to another one", sql: `"INSERT INTO /* not cairn.agent_event */ cairn.agent_delivery(delivery_id) VALUES($1)"`, sites: 0},
 
 		// The statement must be executed where it is written.
 		{
