@@ -229,11 +229,45 @@ An action takes effect in the store at once, but an agent sees it only at its
 next turn boundary. Until the recipient claims the delivery, the page shows the
 action as sent and not yet seen.
 
+## Run it as a user unit
+
+The view is meant to be up without a manual start. Install the unit from
+`integrations/systemd/cairn-swarm.service`:
+
+```sh
+install -m 0644 integrations/systemd/cairn-swarm.service "$HOME/.config/systemd/user/cairn-swarm.service"
+systemctl --user daemon-reload
+systemctl --user enable --now cairn-swarm.service
+systemctl --user status cairn-swarm.service
+cairn swarm url
+```
+
+The unit serves the collection `%h/git/cairn` on port 8087. To change a flag,
+for example to add `--plane-url`, put a drop-in beside it that clears and
+replaces `ExecStart`:
+
+```sh
+mkdir -p "$HOME/.config/systemd/user/cairn-swarm.service.d"
+printf '%s\n' '[Service]' 'ExecStart=' \
+  "ExecStart=%h/.local/bin/cairn swarm serve --collection %h/git/cairn --plane-url https://plane.example/WORKSPACE/browse/{id}/" \
+  > "$HOME/.config/systemd/user/cairn-swarm.service.d/flags.conf"
+systemctl --user daemon-reload
+systemctl --user restart cairn-swarm.service
+```
+
+A unit that reads the store needs the same `CAIRN_DATABASE_URL` as the API
+unit when the store is not at the default socket.
+
 ## Turn it off
 
 ```sh
 systemctl --user disable --now cairn-swarm.service
 ```
 
-Stopping the server changes nothing in the store. Delete the token file to
-make every earlier login link useless; the next start creates a new token.
+Stopping the server changes nothing in the store and nothing for any agent.
+Delete the token file to make every earlier login link useless; the next
+start creates a new token:
+
+```sh
+rm "$HOME/.local/share/cairn/swarm-view.token"
+```
