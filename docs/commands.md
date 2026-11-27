@@ -1,5 +1,9 @@
 # Structured command examples
 
+Use the [CLI reference](reference/cli.md#work-projection-and-coordination) for
+work projection commands and the [swarm view guide](swarm-view.md) for the
+live campaign page.
+
 Every mutation has a caller-scoped request UUID. Reuse it only for retrying the
 same intent. These examples use placeholder UUIDs; substitute IDs returned by
 your own requests. CLI input is one JSON object, normally bounded to 128 KiB.

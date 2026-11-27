@@ -314,7 +314,7 @@ def discover_cli_schema(repo_root):
                   "version", "evidence", "send", "publish", "inbox", "ack", "complete",
                   "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events",
                   "event-status", "event-stats", "wake-attempts", "wait", "status", "team", "ledger"},
-        "work": {"project", "refresh", "list", "show", "associate", "unassociate", "progress", "blocker", "metadata", "artifact", "advice", "features", "serve"},
+        "work": {"project", "refresh", "list", "show", "associate", "unassociate", "progress", "blocker", "metadata", "artifact", "advice", "features"},
         "swarm": {"serve", "url"},
         "wait": {"create", "get", "list", "cancel"},
         "status": {"set", "get", "history", "authorize"},

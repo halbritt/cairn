@@ -18,6 +18,8 @@ or the [quickstart](quickstart.md) to try it with a local PostgreSQL store.
   review to exact recipients, wait for replies, link selected results and tear down.
 - [Operate work coordination](operator/work-coordination.md): inspect Plane work,
   link exact deliverables, wait for responses and manage quiet notices.
+- [See a swarm live](swarm-view.md): inspect campaign members, messages, waits
+  and context state.
 - [Integrate a Git candidate](git-integration.md): land checked changes and
   compare optional development evidence against the final candidate.
 - [Inspect a development checkpoint](development-checkpoints.md): install the
@@ -55,7 +57,7 @@ Lifecycle staging and native fixture references:
 [native Claude hook fixture](developer/native-claude-hook-fixture.md), and
 [native Codex hook fixture](developer/native-codex-hook-fixture.md).
 
-Designs for open work: the [swarm view](plans/swarm-view-design.md), and the
+Designs include the [swarm view](plans/swarm-view-design.md) and the
 [hybrid runtime consolidation](plans/hybrid-runtime-consolidation.md) with its
 [organization and implementation plan](plans/hybrid-runtime-implementation.md).
 See [plans](plans/README.md).

@@ -1,12 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -236,166 +233,6 @@ func TestWorkAdviceCLI_BasicWorkflow(t *testing.T) {
 	}
 }
 
-func TestWorkAdviceHTTP_APIEndpoints(t *testing.T) {
-	repo := "repo-advice-http-" + uuid.NewString()[:8]
-	s := testWorkAdviceStore(t, repo)
-	ctx := context.Background()
-	enableWorkAdviceFeatureCLI(t, s, ctx)
-
-	slug := "proj-" + uuid.NewString()[:8]
-	bindingID, itemUUID := setupAdviceCLIWorkProjectAndItem(t, s, ctx, slug)
-
-	// 1. POST /api/work/advice/profile/register
-	profBody := map[string]any{
-		"profile":          "http-prof",
-		"route":            "codex-subscription",
-		"executable":       "/usr/bin/codex",
-		"binary_sha256":    "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
-		"codex_home":       "/tmp/codex-home",
-		"model":            "o3-mini",
-		"timeout_ms":       120000,
-		"max_output_bytes": 65536,
-	}
-	bodyBytes, _ := json.Marshal(profBody)
-	req := httptest.NewRequest(http.MethodPost, "/api/work/advice/profile/register", bytes.NewReader(bodyBytes))
-	rec := httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("profile register HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// 2. GET /api/work/advice/profile/list
-	req = httptest.NewRequest(http.MethodGet, "/api/work/advice/profile/list", nil)
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("profile list HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// 3. GET /api/work/advice/profile/show
-	req = httptest.NewRequest(http.MethodGet, "/api/work/advice/profile/show?profile=http-prof", nil)
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("profile show HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// 4. GET /api/work/advice/policy
-	req = httptest.NewRequest(http.MethodGet, "/api/work/advice/policy?project="+slug, nil)
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("policy get HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// 5. POST /api/work/advice/policy
-	polBody := map[string]any{
-		"project": slug,
-		"fields":  []string{"identifier", "title", "blockers"},
-	}
-	pBytes, _ := json.Marshal(polBody)
-	req = httptest.NewRequest(http.MethodPost, "/api/work/advice/policy", bytes.NewReader(pBytes))
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("policy post HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// Seed completed proposal for HTTP apply/undo/reject
-	jobUUID := uuid.New()
-	job := &core.WorkAdviceJob{
-		JobUUID:             jobUUID,
-		BindingID:           bindingID,
-		PlaneItemUUID:       itemUUID,
-		ProfileName:         "http-prof",
-		ModelRoute:          "o3-mini",
-		TemplateVersion:     1,
-		RequestUUID:         uuid.New(),
-		InputManifestDigest: "m-dig",
-		InputPayloadDigest:  "p-dig",
-		Status:              "completed",
-		ExpiresAt:           time.Now().Add(1 * time.Hour),
-	}
-	if err := s.CreateAdviceJob(ctx, job); err != nil {
-		t.Fatalf("CreateAdviceJob failed: %v", err)
-	}
-
-	propUUID := uuid.New()
-	prop := &core.WorkAdviceProposal{
-		ProposalUUID:      propUUID,
-		JobUUID:           jobUUID,
-		BindingID:         bindingID,
-		PlaneItemUUID:     itemUUID,
-		ReviewVersion:     1,
-		Status:            "pending",
-		NormalizedPayload: json.RawMessage(`{"actions":[]}`),
-		ExpiresAt:         time.Now().Add(1 * time.Hour),
-	}
-	actUUID := uuid.New()
-	act := &core.WorkAdviceAction{
-		ActionUUID:    actUUID,
-		ProposalUUID:  propUUID,
-		ActionIndex:   0,
-		ActionType:    "annotate_progress",
-		TargetPayload: json.RawMessage(`{"text":"http progress test"}`),
-	}
-	if err := s.RecordAdviceProposal(ctx, prop, []*core.WorkAdviceAction{act}); err != nil {
-		t.Fatalf("RecordAdviceProposal failed: %v", err)
-	}
-
-	// 6. GET /api/work/advice/list
-	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/work/advice/list?project=%s&item=%s", slug, itemUUID), nil)
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("advice list HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// 7. GET /api/work/advice/show
-	req = httptest.NewRequest(http.MethodGet, "/api/work/advice/show?proposal="+propUUID.String(), nil)
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("advice show HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// 8. POST /api/work/advice/apply
-	applyReqUUID := uuid.New()
-	applyBody := map[string]any{
-		"proposal_uuid": propUUID,
-		"version":       1,
-		"actions":       []uuid.UUID{actUUID},
-		"request_id":    applyReqUUID.String(),
-	}
-	aBytes, _ := json.Marshal(applyBody)
-	req = httptest.NewRequest(http.MethodPost, "/api/work/advice/apply", bytes.NewReader(aBytes))
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("advice apply HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// 9. POST /api/work/advice/undo
-	undoBody := map[string]any{
-		"request_uuid": applyReqUUID,
-	}
-	uBytes, _ := json.Marshal(undoBody)
-	req = httptest.NewRequest(http.MethodPost, "/api/work/advice/undo", bytes.NewReader(uBytes))
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("advice undo HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// 10. POST /api/work/advice/reconcile
-	req = httptest.NewRequest(http.MethodPost, "/api/work/advice/reconcile", nil)
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("advice reconcile HTTP status %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestWorkAdviceControl_FlagPreservation(t *testing.T) {
 	repo := "repo-advice-ctrl-" + uuid.NewString()[:8]
 	s := testWorkAdviceStore(t, repo)
@@ -439,32 +276,6 @@ func TestWorkAdviceControl_FlagPreservation(t *testing.T) {
 		t.Fatalf("expected failure when neither flag is supplied")
 	}
 
-	// 3. HTTP: POST /api/work/advice/control with both nil should fail
-	emptyBody := map[string]any{}
-	eb, _ := json.Marshal(emptyBody)
-	req := httptest.NewRequest(http.MethodPost, "/api/work/advice/control", bytes.NewReader(eb))
-	rec := httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for empty control body, got %d", rec.Code)
-	}
-
-	// 4. HTTP: POST with only apply_enabled: true should preserve generation_enabled: true
-	applyOnlyBody := map[string]any{"apply_enabled": true}
-	ab, _ := json.Marshal(applyOnlyBody)
-	req = httptest.NewRequest(http.MethodPost, "/api/work/advice/control", bytes.NewReader(ab))
-	rec = httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for apply-only control body, got %d: %s", rec.Code, rec.Body.String())
-	}
-	ctrl, err = s.GetAdviceControl(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ctrl.GenerationEnabled || !ctrl.ApplyEnabled {
-		t.Fatalf("expected both true, got gen=%v apply=%v", ctrl.GenerationEnabled, ctrl.ApplyEnabled)
-	}
 }
 
 type showMockAdviceProvider struct {
@@ -481,6 +292,23 @@ func (p *showMockAdviceProvider) GenerateAdvice(ctx context.Context, snapshot *a
 		return nil, nil, err
 	}
 	return prop, &advice.ProcessResult{ExitCode: 0}, nil
+}
+
+func readWorkAdviceShow(t *testing.T, ctx context.Context, store *core.Store, proposal uuid.UUID) WorkAdviceShowEnvelope {
+	t.Helper()
+	out, err := workAdviceCommand(ctx, store, []string{"show", "--proposal", proposal.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var review WorkAdviceShowEnvelope
+	if err := json.Unmarshal(raw, &review); err != nil {
+		t.Fatal(err)
+	}
+	return review
 }
 
 func TestWorkAdviceShow_EnvelopeCapturedBeforeAndStaleCurrentness(t *testing.T) {
@@ -596,18 +424,7 @@ func TestWorkAdviceShow_EnvelopeCapturedBeforeAndStaleCurrentness(t *testing.T) 
 		t.Fatalf("GenerateWorkAdvice failed: %v", err)
 	}
 
-	url := fmt.Sprintf("/api/work/advice/show?proposal=%s", prop.ProposalUUID)
-	req := httptest.NewRequest(http.MethodGet, url, nil)
-	rec := httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET advice failed with code %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var show WorkAdviceShowEnvelope
-	if err := json.Unmarshal(rec.Body.Bytes(), &show); err != nil {
-		t.Fatalf("failed to decode show envelope: %v", err)
-	}
+	show := readWorkAdviceShow(t, ctx, s, prop.ProposalUUID)
 
 	if show.Currentness.State != "current" {
 		t.Fatalf("expected currentness state 'current', got %q", show.Currentness.State)
@@ -650,17 +467,7 @@ func TestWorkAdviceShow_EnvelopeCapturedBeforeAndStaleCurrentness(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	req2 := httptest.NewRequest(http.MethodGet, url, nil)
-	rec2 := httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec2, req2)
-	if rec2.Code != http.StatusOK {
-		t.Fatalf("GET advice failed with code %d: %s", rec2.Code, rec2.Body.String())
-	}
-
-	var show2 WorkAdviceShowEnvelope
-	if err := json.Unmarshal(rec2.Body.Bytes(), &show2); err != nil {
-		t.Fatalf("failed to decode show envelope: %v", err)
-	}
+	show2 := readWorkAdviceShow(t, ctx, s, prop.ProposalUUID)
 
 	if show2.Currentness.State != "stale" {
 		t.Fatalf("expected currentness state 'stale' after manual progress edit, got %q", show2.Currentness.State)
@@ -733,17 +540,7 @@ func TestWorkAdviceShow_UnavailableBeforeAndErrorPropagation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	showURL := fmt.Sprintf("/api/work/advice/show?proposal=%s", prop.ProposalUUID)
-	req := httptest.NewRequest(http.MethodGet, showURL, nil)
-	rec := httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET show failed: %d: %s", rec.Code, rec.Body.String())
-	}
-	var show WorkAdviceShowEnvelope
-	if err := json.Unmarshal(rec.Body.Bytes(), &show); err != nil {
-		t.Fatalf("decode show failed: %v", err)
-	}
+	show := readWorkAdviceShow(t, ctx, s, prop.ProposalUUID)
 	if len(show.Actions) != 1 {
 		t.Fatalf("expected 1 action, got %d", len(show.Actions))
 	}
@@ -759,24 +556,15 @@ func TestWorkAdviceShow_UnavailableBeforeAndErrorPropagation(t *testing.T) {
 	}
 
 	wrongRepoStore := testWorkAdviceStore(t, "wrong-repo-"+uuid.NewString()[:8])
-	reqWrong := httptest.NewRequest(http.MethodGet, showURL, nil)
-	recWrong := httptest.NewRecorder()
-	HandleWorkAdviceAPI(wrongRepoStore, wrongRepoStore.Channel().Repo, recWrong, reqWrong)
-	if recWrong.Code == http.StatusOK {
-		t.Fatalf("expected error on wrong repo, got 200 OK")
+	if _, err := workAdviceCommand(ctx, wrongRepoStore, []string{"show", "--proposal", prop.ProposalUUID.String()}); err == nil {
+		t.Fatal("expected advice show to fail in the wrong collection")
 	}
 
 	_, err = pool.Exec(ctx, `UPDATE cairn.work_advice_action SET target_payload = '{}'::jsonb WHERE action_uuid = $1`, actions[0].ActionUUID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	recPurged := httptest.NewRecorder()
-	HandleWorkAdviceAPI(s, repo, recPurged, req)
-	if recPurged.Code != http.StatusOK {
-		t.Fatalf("GET show purged failed: %d: %s", recPurged.Code, recPurged.Body.String())
-	}
-	var showPurged WorkAdviceShowEnvelope
-	_ = json.Unmarshal(recPurged.Body.Bytes(), &showPurged)
+	showPurged := readWorkAdviceShow(t, ctx, s, prop.ProposalUUID)
 	if showPurged.Actions[0].Review.After != nil {
 		t.Fatalf("expected nil after for purged payload, got: %v", showPurged.Actions[0].Review.After)
 	}

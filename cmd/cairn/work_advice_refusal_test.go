@@ -2,20 +2,15 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/halbritt/cairn/core"
 )
 
-// These are wire-contract expectations, exercised through the real CLI main
-// and work HTTP response writer. The synthetic API only supplies classified
-// failures; no database, provider, or domain authorization is simulated.
+// These are wire-contract expectations exercised through the real CLI main.
+// The synthetic API supplies classified failures.
 func TestWorkAdviceRefusalTransport(t *testing.T) {
 	cases := []struct {
 		code       string
@@ -83,45 +78,6 @@ func TestWorkAdviceRefusalTransport(t *testing.T) {
 			if exit != tc.exit || result.Status != tc.code || result.Message != wantMessage {
 				t.Errorf("CLI exit=%d response=%+v; want exit=%d code=%s message=%q", exit, result, tc.exit, tc.code, wantMessage)
 			}
-
-			// The actual work HTTP writer must use the same classified safe text.
-			// Raw advice-error normalization is a separate Store boundary test.
-			response := httptest.NewRecorder()
-			writeWorkAdviceHTTPError(response, &core.Error{Code: tc.code, Message: tc.detail})
-			var payload struct {
-				Code  string `json:"code"`
-				Error string `json:"error"`
-			}
-			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
-				t.Fatal(err)
-			}
-			if response.Code != tc.httpStatus || payload.Code != tc.code {
-				t.Errorf("HTTP status=%d code=%q; want status=%d code=%q", response.Code, payload.Code, tc.httpStatus, tc.code)
-			}
-			wantHTTPMessage := wantMessage
-			if tc.code == "FUTURE_ADVICE_ERROR" {
-				// Preserve the explicit unknown-code HTTP contract; untyped failures
-				// instead become STORE_ERROR and are redacted below.
-				wantHTTPMessage = tc.code + ": " + tc.detail
-			}
-			if payload.Error != wantHTTPMessage {
-				t.Errorf("HTTP error=%q; want %q", payload.Error, wantHTTPMessage)
-			}
 		})
-	}
-}
-
-func TestWorkAdviceHTTPUnknownFailureIsPrivate(t *testing.T) {
-	response := httptest.NewRecorder()
-	writeWorkAdviceHTTPError(response, errors.New("private unclassified database failure sentinel"))
-	var payload struct {
-		Code  string `json:"code"`
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
-		t.Fatal(err)
-	}
-	if response.Code != http.StatusInternalServerError || payload.Code != "STORE_ERROR" || payload.Error != "store operation failed" {
-		t.Fatalf("unknown failure disclosed or misclassified: HTTP %d %+v", response.Code, payload)
 	}
 }

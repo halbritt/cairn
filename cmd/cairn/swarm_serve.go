@@ -28,10 +28,9 @@ import (
 )
 
 // The swarm view server (docs/swarm-view.md). It is a separate loopback
-// process with the local operator channel. It keeps the host and origin
-// checks, the session cookie and the CSRF check of the Work View server, and
-// replaces the single-use launch code with a token read from an owner-only
-// file, because a view that stays up serves more than one browser session.
+// process with the local operator channel. It checks the host and origin,
+// uses session cookies and checks CSRF tokens. A sign-in token read from an
+// owner-only file serves multiple browser sessions.
 
 const (
 	swarmDefaultPort     = 8087

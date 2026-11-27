@@ -68,7 +68,7 @@ Everyday commands:
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST | proposal PROPOSAL_UUID | evidence EVIDENCE_UUID | refusal REFUSAL_UUID
   list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--task TASK] [--run RUN] [--limit N] [--offset N] [--days N] REPO | telemetry-report [--harness H] [--session SID] [--days N] REPO | run-report [--policy-rev REVISION_UUID|local-loop/1] [--task TASK] [--run RUN] [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
-  work project (add|list|show|disable) | work refresh | work list | work show | work associate | work unassociate | work progress | work blocker | work artifact | work advice | work metadata | work features | work serve
+  work project (add|list|show|disable) | work refresh | work list | work show | work associate | work unassociate | work progress | work blocker | work artifact | work advice | work metadata | work features
   swarm serve --collection REPO [--port PORT] [--token-file PATH] | swarm url [--port PORT] (the swarm view page; see docs/swarm-view.md)
 
 JSON commands (read one request from stdin):
@@ -220,8 +220,8 @@ func dispatch(ctx context.Context, args []string, input io.Reader) (any, error) 
 	if args[0] == "work" && len(args) > 1 && args[1] == "advice" && (len(args) == 2 || hasWorkHelpArg(args[2:])) {
 		return commandHelp(workAdviceHelp), nil
 	}
-	if args[0] == "work" && len(args) > 2 && args[1] == "serve" && (args[2] == "--help" || args[2] == "-h" || args[2] == "help") {
-		return commandHelp("cairn work serve [--project SLUG] [--port PORT] [--collection REPO]\n"), nil
+	if args[0] == "work" && !isWorkSubcommand(args[1]) {
+		return workCommand(ctx, nil, args[1:], input)
 	}
 	if args[0] == "swarm" && swarmHelpRequested(args[1:]) {
 		return commandHelp(swarmHelp), nil

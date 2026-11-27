@@ -11,10 +11,18 @@ processes.
 
 ## 2026-11-27
 
-- Swarm leads can store the owner's prose as a campaign description and give
-  each member a free-text role label (CAIRN-828). Team reads return both fields,
-  and one `ledger get` call returns them with the ledger items. Migration 096
-  adds the two optional fields to existing campaign and member rows.
+- `cairn swarm serve` runs the live campaign page on loopback, and
+  `cairn swarm url` prints its sign-in address. The page shows campaign members
+  and their assignments, messages and pending deliveries, waits, decisions and
+  blockers that need the owner, and each agent's context state. By the owner's
+  decision, Cairn reads actual context-window fill from local harness transcripts
+  and shows when that measurement is unavailable.
+- Swarm leads can record the owner's prose as the campaign description and give
+  each member a free-text role label (CAIRN-828). Migration 096 adds both fields.
+  Team reads return them, and one `ledger get` also returns the ledger items.
+- Removed `cairn work serve`, its HTTP routes, and the embedded `web/workview/`
+  page (CAIRN-837). Use the swarm view to inspect live coordination and the
+  `cairn work` CLI for work projection, artifacts and advice.
 
 ## 2026-11-26
 

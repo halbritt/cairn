@@ -42,8 +42,8 @@ The scheduler, wake supervisors, presence watcher and relevant timers were stopp
 then the API was stopped. A database inspection found no remaining application
 connections before migrations 075–084 ran. The read-only PostgreSQL exporter was
 the sole remaining external connection. Migration succeeded and the upgraded API
-and services restarted. A subsequently started `cairn-workview.service` also used
-the verified current executable; future maintenance inventories must include it.
+and services restarted. The additional local service started afterward also
+used the verified current executable.
 
 Closure reconciliation completed in the current restore generation. Five legacy
 reservations were recorded. Policy, pressure, closure and refusal views responded

@@ -186,7 +186,7 @@ ordinary memory commands.
 
 ## Work projection and coordination
 
-Use `cairn work` for shared work view projection from external issue trackers
+Use `cairn work` for read-only projection from external issue trackers
 (such as Plane), linking internal sessions and records, and adding local progress
 or blocker annotations without mutating external trackers.
 
@@ -201,12 +201,7 @@ cairn work progress add --project SLUG --item ITEM_UUID --text "Progress update"
 cairn work blocker add --project SLUG --item ITEM_UUID --text "Blocker description"
 cairn work blocker resolve --project SLUG --item ITEM_UUID --annotation-id ANNOTATION_UUID --expected-revision N
 cairn work metadata purge --project SLUG --pattern "sensitive text"
-cairn work serve --project SLUG
 ```
-
-`work serve` launches a protected local loopback server binding `127.0.0.1` with
-a single-use terminal launch token exchanged for an HttpOnly SameSite=Strict session
-cookie, Host/Origin verification, and CSRF protection.
 
 ## Swarm view
 

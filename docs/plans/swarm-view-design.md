@@ -142,7 +142,7 @@ and coordinator handoff do not keep them in commit order for a consumer.
 
 Recommended: a new command, `cairn swarm serve`, in the same binary. It is a
 separate process that listens on loopback and opens the store with the local
-operator channel, as `cairn work serve` does today.
+operator channel, as the prototype's `work serve` did.
 
 It is not put inside `cairn serve` for three reasons. The view needs
 host-local reads (Herdr, `/proc`) that the store daemon must not make. It
@@ -282,7 +282,7 @@ loopback security shell and the read-only coordination queries over waits. Not
 kept: the Plane board, the item detail modal, annotations, artifact pages and
 advice in the browser.
 
-Recommended for CAIRN-837: remove `web/workview/` and the `cairn work serve`
+Recommended for CAIRN-837: remove `web/workview/` and the `work serve`
 routes when the swarm view is active. `coordination-waits/1` becomes active,
 because the view and the agents use it. The remaining work features
 (`work-view/1`, `work-artifacts/1`, `work-advice/1`, `next-turn-notices/1`) are

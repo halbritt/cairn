@@ -63,7 +63,7 @@ prompt grows because the view exists. The
 | V7 | CAIRN-834 | Single-wake routing: an unaddressed post wakes one agent. |
 | V8 | CAIRN-835 | Single-holder custody with a lease on campaign ledger items. |
 | V9 | CAIRN-836 | A byte budget and a record for every model-visible injection. |
-| V10 | CAIRN-837 | Activate the view, remove the Work View page, verify on a real swarm. |
+| V10 | CAIRN-837 | Activate the swarm view, retire its predecessor, verify on a real swarm. |
 | V11 | CAIRN-840 | Decide the fate of the remaining work features. |
 
 The prerequisites (CAIRN-808, CAIRN-809 and PROXIMAL-15) have landed, so V1

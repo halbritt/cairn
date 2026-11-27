@@ -353,8 +353,7 @@ func TestSwarmServerAccessChecks(t *testing.T) {
 		t.Fatalf("cookie named for another port: %v %v", other, err)
 	}
 
-	// The token signs in more than one browser; the launch code it replaces
-	// could be used once.
+	// The same token can sign in more than one browser.
 	second := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
 	second.login()
 	second.login()

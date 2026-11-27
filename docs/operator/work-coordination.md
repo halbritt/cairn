@@ -1,18 +1,17 @@
 # Operate work coordination
 
-Cairn's work view combines a read-only Plane projection with selected local
+Cairn combines a read-only Plane projection with selected local
 progress, blockers, exact deliverable links, and agent coordination observations.
 Plane remains the owner of issue state and assignment. A reply, a satisfied wait,
 a handled notice, and an accepted task result remain separate facts.
 
 These commands use the operator's configured PostgreSQL connection unless they
-explicitly select an authenticated agent profile. The browser uses a private
-operator session on loopback, with Host, Origin and CSRF checks. Work-view access
-does not make its contents eligible for hosted memory or model input.
+explicitly select an authenticated agent profile. Current session, event, wait,
+and campaign state is available on the [swarm view](../swarm-view.md).
 
 ## Build and upgrade together
 
-Use one complete source revision for the CLI, API, scheduler and browser. Work
+Use one complete source revision for the CLI, API and scheduler. Work
 coordination requires migrations 075 through 079 together. Do not install a
 branch containing 077 without 076: migration history uses the ordered file
 position and digest. Installing that incomplete set makes later insertion of
@@ -51,16 +50,11 @@ cairn work project add --slug example --workspace WORKSPACE_UUID \
 cairn work refresh --project example --collection COLLECTION
 cairn work list --project example --collection COLLECTION
 cairn work show --project example --item ITEM_UUID --collection COLLECTION
-cairn work serve --project example --collection COLLECTION
 ```
 
-Open the loopback URL printed by `work serve` and enter the printed one-time
-terminal launch code (valid for 5 minutes) to establish the browser's operator
-session. Use Refresh to request a new Plane observation;
-ordinary page reads and coordination polling do not refresh Plane. A stale
-snapshot or failed current read is labelled. Auth rejection removes protected
-copied Plane fields from joined views; it does not silently serve an older
-authorized-looking copy.
+Use `work refresh` to request a new Plane observation. Reads show the retained
+snapshot and its freshness. Auth rejection removes protected copied Plane
+fields from joined views.
 
 Use explicit associations to connect a work item to a session, event, result or
 other supported target. Select exact UUIDs and versions from the existing
@@ -95,7 +89,7 @@ cairn work artifact impact --revision REVISION_UUID --collection COLLECTION
 
 Use the returned revision UUID in the link command. Cairn does not fetch a report,
 clone a repository, execute an artifact or infer that its claims are verified.
-The browser supports revision selection, links, retained history and reverse
+The artifact commands show revisions, links, retained history and reverse
 impact. Pagination performs a new visibility check for each page.
 
 Unlink removes the relationship at its expected revision and preserves its
@@ -193,7 +187,7 @@ request. It does not select another account, provider or API key.
 
 Select the project fields that may be sent, then save that explicit field policy.
 Select exact source versions and candidate artifact revisions for each request.
-Work-view access alone does not authorize model input. An empty source or artifact
+Work projection access alone does not authorize model input. An empty source or artifact
 selection stays empty. The review shows the retained input, its source identities,
 profile, model and currentness alongside the proposed before/after effects.
 Model text does not grant authority or establish that a claim is true.
@@ -270,8 +264,9 @@ cairn work advice sweep
 cairn work features status
 ```
 
-Reconcile preserves healthy jobs within their deadline and checks retained process
-identities before settling abandoned or expired execution. An unresolved result
+Run these maintenance commands manually. Reconcile preserves healthy jobs within
+their deadline and checks retained process identities before settling abandoned
+or expired execution. An unresolved result
 write stays uncertain even after its process has exited. Reconcile also runs
 retention maintenance. Sweep performs retention maintenance without
 launching a provider. Both commands remain available after generation is disabled.
@@ -293,7 +288,7 @@ maintenance commands and additive schema after retirement.
 
 | Feature | Stop new work | Settle retained work |
 | --- | --- | --- |
-| Work view | Disable new projection admission/writes. | Disable active project bindings with `work project disable`; retain inspectable history and purge maintenance. |
+| Work projection (`work-view/1`) | Disable new projection admission/writes. | Disable active project bindings with `work project disable`; retain inspectable history and purge maintenance. |
 | Artifacts | Disable registration and new links. | Unlink active relationships at exact revisions; preserve history and purge fences. Dependent advice must also be settled before artifact retirement. |
 | Waits | Disable creation. | Complete or explicitly cancel accepted waits, drain their original notification outbox and reconcile actual delivery. |
 | Quiet notices | Disable new admission. | Inspect queued notices, explicitly flush or expire them, and reconcile exact materialized native holds. |

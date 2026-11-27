@@ -195,8 +195,8 @@ cairn work artifact link --project SLUG --item ITEM_UUID --revision REVISION_UUI
 ```
 
 Other target types are `session` (`AGENT_UUID:EXECUTION_UUID`), `event` and
-`run_receipt`. The work view and `cairn work artifact list` show the links and exact
-revisions, not result bodies. A result read remains subject to its current scope,
+`run_receipt`. Use `cairn work artifact list` to read the links and exact
+revisions. A result read remains subject to its current scope,
 sensitivity and forgetting.
 
 ## 6. Optional updates: quiet or deferred notices
@@ -413,7 +413,7 @@ leaves (stopped), then resumes to unsubscribe. It checks that:
   `reported_task_outcome: unknown`;
 - each wait is satisfied and its notice published by a scheduler sweep;
 - selected results are readable at their exact versions and linked through the operator
-  channel, and the work view shows only explicit associations and no copied result text;
+  channel, and the work projection returns explicit associations with no copied result text;
 - the agent API returns `NOT_FOUND` for the work-association and artifact operations;
 - quiet delivery to an unsupported recipient refuses with no event, while a routine
   deferred notice stays pending;

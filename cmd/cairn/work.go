@@ -32,7 +32,6 @@ Subcommands:
   work metadata exclude --project SLUG --field FIELD --pattern PATTERN [--request-id UUID] [--collection REPO]
   work advice (generate|list|show|apply|reject|undo|profile|policy|control|reconcile|sweep) [FLAGS] [--collection REPO]
   work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]
-  work serve [--project SLUG] [--port PORT] [--collection REPO]
 
 Features: work-view/1, work-artifacts/1, coordination-waits/1, next-turn-notices/1, work-advice/1
 `
@@ -157,6 +156,15 @@ func refreshWorkProject(ctx context.Context, store *core.Store, collection, slug
 	}
 
 	return store.CommitRefreshSnapshot(ctx, refCtx, items, false, nil)
+}
+
+func isWorkSubcommand(name string) bool {
+	switch name {
+	case "project", "refresh", "list", "show", "associate", "unassociate", "progress", "blocker", "artifact", "advice", "metadata", "features":
+		return true
+	default:
+		return false
+	}
 }
 
 func workCommand(ctx context.Context, store *core.Store, args []string, input io.Reader) (any, error) {
@@ -694,12 +702,6 @@ func workCommand(ctx context.Context, store *core.Store, args []string, input io
 
 	case "features":
 		return workFeaturesCommand(ctx, store, args[1:])
-
-	case "serve":
-		if len(args) > 1 && (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
-			return commandHelp("cairn work serve [--project SLUG] [--port PORT] [--collection REPO]\n"), nil
-		}
-		return nil, runWorkServe(ctx, store, args[1:])
 
 	default:
 		return nil, invalid(fmt.Sprintf("unknown work subcommand %q", args[0]))

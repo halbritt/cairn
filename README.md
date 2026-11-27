@@ -66,6 +66,7 @@ account. It then links to authenticated agent setup.
 | Coordinate several agents | [Session coordination](docs/guides/session-coordination.md) |
 | Limit event fanout and backlog | [Event admission](docs/event-admission.md) and [rollout](docs/operator/event-admission-rollout.md) |
 | Inspect work and deliverables | [Work coordination](docs/operator/work-coordination.md) |
+| See a live campaign | [Swarm view](docs/swarm-view.md) |
 | Run a shared service | [Deployment](docs/operator/deployment.md) |
 | Understand or extend Cairn | [Architecture](docs/developer/architecture.md) and [contributing](docs/developer/contributing.md) |
 | Inspect the hybrid runtime campaign | [Code inventory and remaining work](docs/plans/hybrid-runtime-campaign-status.md) |

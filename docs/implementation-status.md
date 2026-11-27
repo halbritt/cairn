@@ -78,12 +78,15 @@ stalled or failed work. Cancellation has host-specific gates described in
 [request controls](request-controls.md); it is not universally available for
 arbitrary running agent tasks.
 
-The [work view](operator/work-coordination.md) projects an explicitly bound Plane
+The [work coordination CLI](operator/work-coordination.md) projects an explicitly bound Plane
 project and combines it with local annotations, exact artifact revisions and
 selected coordination associations. It does not update Plane's issue state or
 infer task acceptance from presence or message handling. Artifact registration,
 link history and reverse impact remain subject to current scope and source
 visibility.
+
+The [swarm view](swarm-view.md) shows live campaign membership, messages, waits,
+owner attention and context state.
 
 Durable waits support the request-response and response-group-closure predicates,
 with a terminal notification outbox. Quiet notices can wait for a verified owner

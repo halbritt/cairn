@@ -34,7 +34,7 @@ and [use observations](../use-outcome-loop.md).
 | `artifacts/` | Managed evidence storage and verification |
 | `semantic/` | Local semantic scoring and embedding interfaces |
 | `rust/` | Offline Rust semantic worker crates for tokenization, scoring, ranking, and ONNX inference |
-| `web/` | Embedded presentation assets for the work view (`work serve`) |
+| `web/` | Embedded presentation assets for the [swarm view](../swarm-view.md) |
 | `integrations/` | Harness adapters and service templates |
 | `scripts/` | Installers, lifecycle hooks, disposable fixtures, and validation |
 | `internal/` | Shared implementation details, including API contracts and refusal classification |
