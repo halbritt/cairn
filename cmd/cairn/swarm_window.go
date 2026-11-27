@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -40,6 +41,11 @@ type swarmWindowObservation struct {
 type swarmWindowReader func(ctx context.Context) swarmWindowObservation
 type swarmTranscriptOpener func(*os.Root, string) (*os.File, error)
 
+type swarmTranscriptAccess struct {
+	open swarmTranscriptOpener
+	stat func(*os.File) (os.FileInfo, error)
+}
+
 const (
 	// Codex's default auto-compact threshold is 90% of the context window.
 	// Use that threshold as a common indicator, independent of harness overrides.
@@ -49,28 +55,46 @@ const (
 )
 
 type cachedSwarmWindow struct {
-	info   os.FileInfo
 	window swarmWindow
 	reason string
 }
 
 type swarmWindowFile struct {
-	home, relative, harness string
+	home, directory, relative, harness string
+	heldDescriptor                     string
+	heldIdentity                       swarmTranscriptIdentity
+	processAlive                       func() bool
+}
+
+type swarmTranscriptIdentity struct {
+	device, inode uint64
+}
+
+type swarmTranscriptStamp struct {
+	identity swarmTranscriptIdentity
+	size     int64
+	modified time.Time
+	harness  string
 }
 
 func newTranscriptWindowReader(bindingsDir, procRoot string) swarmWindowReader {
-	return transcriptWindowReader(bindingsDir, procRoot, func(root *os.Root, name string) (*os.File, error) {
-		return root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	return transcriptWindowReader(bindingsDir, procRoot, swarmTranscriptAccess{
+		open: openSwarmTranscript,
+		stat: (*os.File).Stat,
 	})
 }
 
-func transcriptWindowReader(bindingsDir, procRoot string, open swarmTranscriptOpener) swarmWindowReader {
+func openSwarmTranscript(root *os.Root, name string) (*os.File, error) {
+	return root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+}
+
+func transcriptWindowReader(bindingsDir, procRoot string, access swarmTranscriptAccess) swarmWindowReader {
 	if procRoot == "" {
 		procRoot = "/proc"
 	}
 	paths := transcript.NewReader(transcript.NewCoordinationProfile("/", os.Getenv, os.LookupEnv))
 	paths.ProcRoot = procRoot
-	cache := make(map[swarmWindowFile]cachedSwarmWindow)
+	cache := make(map[swarmTranscriptStamp]cachedSwarmWindow)
 	gate := make(chan struct{}, 1)
 	return func(ctx context.Context) swarmWindowObservation {
 		observation := swarmWindowObservation{
@@ -92,7 +116,7 @@ func transcriptWindowReader(bindingsDir, procRoot string, open swarmTranscriptOp
 		}
 		resolver := paths
 		resolver.Alive = scan.client.ProcessAlive
-		next := make(map[swarmWindowFile]cachedSwarmWindow)
+		next := make(map[swarmTranscriptStamp]cachedSwarmWindow)
 		for _, session := range scan.sessions {
 			if ctx.Err() != nil {
 				observation.Unknown[session.AgentID] = "Context read canceled"
@@ -103,13 +127,7 @@ func transcriptWindowReader(bindingsDir, procRoot string, open swarmTranscriptOp
 				observation.Unknown[session.AgentID] = reason
 				continue
 			}
-			current, ok := next[file]
-			if !ok {
-				current = file.measure(ctx, open, cache[file])
-				if current.info != nil {
-					next[file] = current
-				}
-			}
+			current := file.measure(ctx, access, cache, next)
 			if current.reason != "" {
 				observation.Unknown[session.AgentID] = current.reason
 			} else {
@@ -131,12 +149,15 @@ func findSwarmWindowFile(resolver transcript.Reader, session swarmLocalSession) 
 	state := transcript.SessionState{
 		NativeSessionID: session.NativeSessionID, Workspace: session.Workspace, Process: session.Process,
 	}
+	file := swarmWindowFile{home: session.ConfigHome, harness: session.Harness}
 	var path string
 	var err error
 	switch session.Harness {
 	case wake.HarnessClaude:
+		file.directory = "projects"
 		path, err = transcript.ClaudeTranscriptPath(transcript.ClaudeConfig{ConfigHome: session.ConfigHome}, state)
 	case wake.HarnessCodex:
+		file.directory = "sessions"
 		path, err = resolver.CodexRolloutPath(transcript.CodexConfig{ConfigHome: session.ConfigHome}, state)
 	case "agy":
 		return swarmWindowFile{}, "Antigravity trajectory metadata has no supported per-request decoder"
@@ -150,39 +171,146 @@ func findSwarmWindowFile(resolver transcript.Reader, session swarmLocalSession) 
 	if err != nil {
 		return swarmWindowFile{}, "Session transcript could not be resolved"
 	}
-	relative, err := filepath.Rel(session.ConfigHome, path)
+	relative, err := filepath.Rel(filepath.Join(file.home, file.directory), path)
 	if err != nil || !filepath.IsLocal(relative) {
 		return swarmWindowFile{}, "Session transcript is outside its configured directory"
 	}
-	return swarmWindowFile{session.ConfigHome, relative, session.Harness}, ""
+	file.relative = relative
+	if session.Harness == wake.HarnessCodex {
+		file.heldDescriptor = findSwarmRolloutDescriptor(resolver.ProcRoot, session.Process.PID, path)
+		if file.heldDescriptor == "" {
+			return swarmWindowFile{}, "Codex process no longer holds the session rollout"
+		}
+		file.processAlive = func() bool { return resolver.Alive(session.Process) }
+		info, err := os.Stat(file.heldDescriptor)
+		if err != nil {
+			return swarmWindowFile{}, "Codex process no longer holds the session rollout"
+		}
+		held, owned := file.stamped(info)
+		if !owned || !file.processAlive() {
+			return swarmWindowFile{}, "Codex process no longer holds the session rollout"
+		}
+		file.heldIdentity = held.identity
+	}
+	return file, ""
 }
 
-func (file swarmWindowFile) measure(ctx context.Context, open swarmTranscriptOpener, previous cachedSwarmWindow) cachedSwarmWindow {
-	fail := func(reason string) cachedSwarmWindow { return cachedSwarmWindow{reason: reason} }
-	root, err := os.OpenRoot(file.home)
+func findSwarmRolloutDescriptor(procRoot string, pid int, path string) string {
+	directory := filepath.Join(procRoot, strconv.Itoa(pid), "fd")
+	entries, err := os.ReadDir(directory)
 	if err != nil {
-		return fail("Session transcript directory could not be opened")
+		return ""
+	}
+	for _, entry := range entries {
+		fd := filepath.Join(directory, entry.Name())
+		if target, err := os.Readlink(fd); err == nil && target == path {
+			return fd
+		}
+	}
+	return ""
+}
+
+func (file swarmWindowFile) stamped(info os.FileInfo) (swarmTranscriptStamp, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) || !info.Mode().IsRegular() {
+		return swarmTranscriptStamp{}, false
+	}
+	return swarmTranscriptStamp{
+		identity: swarmTranscriptIdentity{device: uint64(stat.Dev), inode: stat.Ino},
+		size:     info.Size(), modified: info.ModTime().UTC(), harness: file.harness,
+	}, true
+}
+
+func (file swarmWindowFile) matchesHeldDescriptor(identity swarmTranscriptIdentity) bool {
+	if file.heldDescriptor == "" {
+		return true
+	}
+	if identity != file.heldIdentity {
+		return false
+	}
+	info, err := os.Stat(file.heldDescriptor)
+	if err != nil {
+		return false
+	}
+	held, ok := file.stamped(info)
+	return ok && held.identity == identity && file.processAlive()
+}
+
+func (file swarmWindowFile) openRoot() (*os.Root, string) {
+	home, err := filepath.EvalSymlinks(file.home)
+	if err != nil {
+		return nil, "Session transcript directory could not be opened"
+	}
+	directory := filepath.Join(home, file.directory)
+	parent, err := filepath.EvalSymlinks(filepath.Join(directory, filepath.Dir(file.relative)))
+	if err != nil {
+		return nil, "Session transcript directory could not be opened"
+	}
+	if rel, err := filepath.Rel(directory, parent); err != nil || !filepath.IsLocal(rel) {
+		return nil, "Session transcript is outside its configured directory"
+	}
+	info, err := os.Lstat(directory)
+	if err != nil || !info.IsDir() {
+		return nil, "Session transcript directory could not be opened"
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return nil, "Session transcript directory could not be opened"
+	}
+	opened, err := root.Stat(".")
+	if err != nil || !os.SameFile(info, opened) {
+		root.Close()
+		return nil, "Session transcript directory changed while it was opened"
+	}
+	return root, ""
+}
+
+func (file swarmWindowFile) measure(ctx context.Context, access swarmTranscriptAccess, cache, next map[swarmTranscriptStamp]cachedSwarmWindow) cachedSwarmWindow {
+	fail := func(reason string) cachedSwarmWindow { return cachedSwarmWindow{reason: reason} }
+	root, reason := file.openRoot()
+	if reason != "" {
+		return fail(reason)
 	}
 	defer root.Close()
 	info, err := root.Lstat(file.relative)
 	if err != nil || !info.Mode().IsRegular() {
 		return fail("Session transcript is missing or is not a regular file")
 	}
-	if previous.info != nil && os.SameFile(previous.info, info) &&
-		previous.info.Size() == info.Size() && previous.info.ModTime().Equal(info.ModTime()) {
-		return previous
+	stamp, owned := file.stamped(info)
+	if !owned {
+		return fail("Session transcript is not owned by this user")
+	}
+	if !file.matchesHeldDescriptor(stamp.identity) {
+		return fail("Codex process no longer holds the session rollout")
+	}
+	if cached, ok := next[stamp]; ok {
+		return cached
+	}
+	if cached, ok := cache[stamp]; ok {
+		next[stamp] = cached
+		return cached
 	}
 	if ctx.Err() != nil {
 		return fail("Context read canceled")
 	}
-	f, err := open(root, file.relative)
+	f, err := access.open(root, file.relative)
 	if err != nil {
 		return fail("Session transcript could not be opened read-only")
 	}
 	defer f.Close()
-	opened, err := f.Stat()
-	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(opened, info) {
+	opened, err := access.stat(f)
+	if err != nil || !opened.Mode().IsRegular() {
+		return fail("Session transcript is not a regular file")
+	}
+	current, owned := file.stamped(opened)
+	if !owned {
+		return fail("Session transcript is not owned by this user")
+	}
+	if current.identity != stamp.identity {
 		return fail("Session transcript changed while it was opened")
+	}
+	if !file.matchesHeldDescriptor(current.identity) {
+		return fail("Codex process no longer holds the session rollout")
 	}
 	window, err := readSwarmWindowTail(ctx, f, opened.Size(), file.harness)
 	if err != nil {
@@ -191,10 +319,15 @@ func (file swarmWindowFile) measure(ctx context.Context, open swarmTranscriptOpe
 		}
 		return fail("Session transcript could not be read")
 	}
-	if window.MeasuredAt.IsZero() {
-		return cachedSwarmWindow{info: opened, reason: "No per-request usage found in the bounded transcript tail"}
+	if !file.matchesHeldDescriptor(current.identity) {
+		return fail("Codex process no longer holds the session rollout")
 	}
-	return cachedSwarmWindow{info: opened, window: window}
+	measured := cachedSwarmWindow{window: window}
+	if window.MeasuredAt.IsZero() {
+		measured.reason = "No per-request usage found in the bounded transcript tail"
+	}
+	next[current] = measured
+	return measured
 }
 
 type swarmWindowRecord struct {
