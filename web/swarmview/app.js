@@ -1346,6 +1346,7 @@
 
   const systemWords = {
     wait_notice: "wait notice", stopped_delivery_notice: "stopped-session notice", overdue_checkpoint: "overdue checkpoint",
+    scheduled_event: "scheduled message",
   };
 
   // Cairn itself publishes some events under the operator principal (the

@@ -624,7 +624,7 @@ class Fixture:
         self.check("a wait cancelled after its owner changed is refused with the current wait, then confirmed again",
                    lambda: self.wait_conflict(page), page, category="slice:CAIRN-833")
         self.check("Cairn's own notices are labelled from Cairn, never as the owner's", lambda: self.system_events(page), page,
-                   category="waiting:system")
+                   category="slice:CAIRN-830")
         self.check("an ended session shows sign-in over dialogs and on the landing page; routes answer 401",
                    lambda: self.signed_out_routes(page), page)
         self.check("a member that left gets no send control and the store refuses a send to it",
@@ -834,9 +834,13 @@ class Fixture:
             meta = row.locator("p.meta").inner_text().strip()
             require(not meta.endswith("·") and "· ·" not in meta, f"the {kind} row has a dangling separator: {meta!r}")
             item = next(i for i in self.snapshot()["needs_you"]["items"] if i["type"] == kind)
-            target = (item.get("refs") or {}).get("principal") or item.get("subject")
-            if target and page.evaluate("(p) => window.cairnSwarmView.canWrite(p)", target):
-                require(row.locator("button", has_text="Write to").count() == 1, f"the {kind} row offers no send control")
+            target = (item.get("refs") or {}).get("principal")
+            require(target, f"the {kind} row carries no refs.principal")
+            current = page.evaluate("(p) => window.cairnSwarmView.canWrite(p)", target)
+            buttons = row.locator("button", has_text="Write to").count()
+            require(buttons == (1 if current else 0), f"the {kind} row's send control does not match whether {target} is current")
+            if kind == "handoff_due" and not item.get("since"):
+                require("since" not in meta, f"the handoff row shows a since without one: {meta!r}")
         failed = page.locator("#needs li.need[data-type='failed_delivery']").first.inner_text()
         require("Run the flaky check" in failed and self.label(self.snapshot(), "lead") in failed,
                 "the failed-delivery row does not name the request and its sender: " + failed[:300])
@@ -1198,18 +1202,24 @@ class Fixture:
         self.report["send_to_left_member"] = status[1].get("code")
 
     def system_events(self, page):
-        events = page.evaluate("() => window.cairnSwarmView.logIDs()")
-        snapshot_events = self.page_json(f"/api/swarm/campaign?campaign={CAMPAIGN}")
-        flagged = page.evaluate("() => [...document.querySelectorAll('#flow li.event')].filter((n) => n.querySelector('.tag.system')).map((n) => n.dataset.event)")
-        overdue = self.events.get("checkpoint")
-        if not flagged:
-            raise AssertionError("waiting: no log event carries `system` yet, so Cairn's own notices still show as the operator's (flow author's field)")
-        for event_id in flagged:
+        # The fixture's real scheduler sweep published a timed-out wait notice
+        # and an overdue-checkpoint notice under the operator principal.
+        snapshot_log = page.evaluate("() => window.cairnSwarmView.logIDs()")
+        flagged = page.evaluate("() => [...document.querySelectorAll('#flow li.event')].filter((n) => n.querySelector('.tag.system')).map((n) => [n.dataset.event, n.innerText])")
+        self.report["system_events"] = [next((line for line in text.split("\n") if "Cairn (" in line), text[:80])[:120] for _, text in flagged]
+        require(len(flagged) >= 2, f"fewer than two Cairn-published events are labelled: {len(flagged)}")
+        kinds = " ".join(text for _, text in flagged)
+        require("Cairn (wait notice)" in kinds and "Cairn (overdue checkpoint)" in kinds,
+                "the timed-out wait and the missed checkpoint are not both labelled from Cairn: " + json.dumps(self.report["system_events"]))
+        for event_id, text in flagged:
             row = page.locator(f"#flow li.event[data-event='{event_id}']")
-            text = row.inner_text()
-            require("you (operator)" not in text and "sent, not yet seen" not in text, "a Cairn notice is shown as the owner's")
+            require("you (operator)" not in text and "sent, not yet seen" not in text, "a Cairn notice is worded as the owner's: " + text[:200])
             require("owner-sent" not in (row.get_attribute("class") or ""), "a Cairn notice has owner styling")
             require(row.locator("button", has_text="Supersede").count() == 0, "a Cairn notice offers Supersede")
+        # An operator send still reads as the owner's.
+        owner = page.locator("#flow li.event.owner-sent").first
+        self.expect(owner).to_contain_text("you (operator)")
+        require(owner.locator(".tag.system").count() == 0, "the owner's own send is labelled as from Cairn")
 
     def signed_out_routes(self, page):
         landing = page.context.new_page()
