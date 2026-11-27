@@ -789,6 +789,75 @@ func TestSwarmStreamEndsWithItsSession(t *testing.T) {
 		}
 		ended(t, reads, conn)
 	})
+	t.Run("logout while a read is waiting on the store", func(t *testing.T) {
+		s := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
+		blocked := &swarmBlockingReads{after: 1, entered: make(chan struct{}, 1), cancelled: make(chan struct{})}
+		blocked.swarmScriptedReads = &swarmScriptedReads{next: func(call int, req core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+			return core.SwarmStreamRead{Cursor: "cursor", Snapshot: swarmScriptedSnapshot(1)}, nil
+		}}
+		s.server.reads = blocked
+		s.login()
+		conn := s.stream("alpha", "", nil)
+		conn.until(t, "tick")
+		<-blocked.entered // the second read is waiting on the store
+		if resp, raw := s.do(http.MethodPost, "/api/auth/logout", nil, map[string]string{"X-CSRF-Token": s.csrf}); resp.StatusCode != http.StatusOK {
+			t.Fatalf("logout: %d %s", resp.StatusCode, raw)
+		}
+		// The waiting read is cancelled, and its failure is not reported as
+		// a store fault to a session that no longer exists.
+		for {
+			event := conn.next(t)
+			if event.Event == "fault" || event.Event == "snapshot" || event.Event == "log" {
+				t.Fatalf("%s sent after logout: %s", event.Event, event.Data)
+			}
+			if event.Event == "reset" {
+				if !strings.Contains(event.Data, `"code":"UNAUTHENTICATED"`) {
+					t.Fatalf("reset: %s", event.Data)
+				}
+				break
+			}
+		}
+		select {
+		case <-blocked.cancelled:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the read that was waiting on the store was not cancelled")
+		}
+	})
+	t.Run("logout in the middle of a batch", func(t *testing.T) {
+		s := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
+		const batch = 20000
+		events := make([]core.SwarmEvent, batch)
+		for i := range events {
+			events[i] = swarmScriptedEvent(int64(i + 1))
+			events[i].Summary = strings.Repeat("x", 200)
+		}
+		s.server.reads = &swarmScriptedReads{next: func(call int, req core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+			return core.SwarmStreamRead{Resync: true, ResyncReason: "new_window", Events: events, Cursor: "cursor", Snapshot: swarmScriptedSnapshot(1)}, nil
+		}}
+		s.login()
+		conn := s.stream("alpha", "", nil)
+		conn.until(t, "log")
+		if resp, raw := s.do(http.MethodPost, "/api/auth/logout", nil, map[string]string{"X-CSRF-Token": s.csrf}); resp.StatusCode != http.StatusOK {
+			t.Fatalf("logout: %d %s", resp.StatusCode, raw)
+		}
+		logs := 1
+		for {
+			event := conn.next(t)
+			if event.Event == "log" {
+				logs++
+				continue
+			}
+			if event.Event != "reset" || !strings.Contains(event.Data, `"code":"UNAUTHENTICATED"`) {
+				t.Fatalf("after logout mid-batch: %s %s", event.Event, event.Data)
+			}
+			break
+		}
+		// Frames already in flight may arrive; the rest of the batch, the
+		// snapshot and the host observations must not.
+		if logs >= batch {
+			t.Fatalf("the whole batch of %d was sent after logout", batch)
+		}
+	})
 	t.Run("another session's logout", func(t *testing.T) {
 		s, _, conn := open(t)
 		other := &swarmTestServer{t: t, server: s.server, http: s.http, client: &http.Client{}}
@@ -842,4 +911,27 @@ func TestSwarmStreamCarriesTheWindowObservation(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"herdr":{`) || !strings.Contains(string(raw), `"window":{`) {
 		t.Fatalf("host observations route: %d %s", resp.StatusCode, raw)
 	}
+}
+
+// swarmBlockingReads lets the first reads through and then waits on the
+// store until the read's context ends.
+type swarmBlockingReads struct {
+	*swarmScriptedReads
+	after     int
+	entered   chan struct{}
+	cancelled chan struct{}
+	once      sync.Once
+}
+
+func (r *swarmBlockingReads) ReadSwarmStream(ctx context.Context, req core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+	if len(r.swarmScriptedReads.cursors()) < r.after {
+		return r.swarmScriptedReads.ReadSwarmStream(ctx, req)
+	}
+	select {
+	case r.entered <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	r.once.Do(func() { close(r.cancelled) })
+	return core.SwarmStreamRead{}, ctx.Err()
 }

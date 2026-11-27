@@ -270,15 +270,39 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 	signedOut := func() {
 		_ = stream.send("reset", "", map[string]any{"code": "UNAUTHENTICATED", "error": "the session ended; sign in again"})
 	}
+	// The stream's reads and frames stop when the session ends, not only
+	// between ticks: a read that is waiting on the store is cancelled, and no
+	// frame is written after logout, eviction or the session's lifetime.
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	lifetime := time.NewTimer(time.Until(session.expires))
+	defer lifetime.Stop()
+	go func() {
+		select {
+		case <-session.revoked:
+		case <-lifetime.C:
+		case <-streamCtx.Done():
+		}
+		cancel()
+	}()
+	// emit writes one frame for a session that still stands. It reports
+	// false when the stream must end.
+	emit := func(event, id string, data any) bool {
+		if !s.sessionAlive(sessionID) {
+			signedOut()
+			return false
+		}
+		return stream.send(event, id, data) == nil
+	}
 	// wait pauses for one tick. It reports false when the stream must end.
 	wait := func() bool {
 		timer := time.NewTimer(s.tick)
 		defer timer.Stop()
 		select {
-		case <-ctx.Done():
-			return false
-		case <-session.revoked:
-			signedOut()
+		case <-streamCtx.Done():
+			if ctx.Err() == nil {
+				signedOut()
+			}
 			return false
 		case <-timer.C:
 			return true
@@ -292,67 +316,64 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 			signedOut()
 			return
 		}
-		read, err := s.reads.ReadSwarmStream(ctx, request)
+		read, err := s.reads.ReadSwarmStream(streamCtx, request)
+		if ctx.Err() != nil {
+			return
+		}
+		if streamCtx.Err() != nil || !s.sessionAlive(sessionID) {
+			// The session ended while the read was in flight. Its result,
+			// or its failure, is not reported.
+			signedOut()
+			return
+		}
 		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
 			code := core.Code(err)
 			if swarmStreamFatal[code] {
-				_ = stream.send("reset", "", map[string]any{"code": code, "error": err.Error()})
+				emit("reset", "", map[string]any{"code": code, "error": err.Error()})
 				return
 			}
 			// The store could not be read. Keep the connection and say so;
-			// the pane data is still its own observation.
-			if err = stream.send("fault", "", map[string]any{"code": code, "error": err.Error(), "at": s.now()}); err != nil {
-				return
-			}
-			if !wait() {
+			// the host observations are still their own.
+			if !emit("fault", "", map[string]any{"code": code, "error": err.Error(), "at": s.now()}) || !wait() {
 				return
 			}
 			continue
 		}
-		if !s.sessionAlive(sessionID) {
-			signedOut()
+		if read.Resync && !emit("resync", "", map[string]any{"reason": read.ResyncReason, "membership_epoch": read.Snapshot.MembershipEpoch}) {
 			return
 		}
-		if read.Resync {
-			if err = stream.send("resync", "", map[string]any{"reason": read.ResyncReason, "membership_epoch": read.Snapshot.MembershipEpoch}); err != nil {
-				return
-			}
-		}
 		for _, event := range read.Events {
-			if err = stream.send("log", event.Cursor, event); err != nil {
+			if !emit("log", event.Cursor, event) {
 				return
 			}
 		}
 		if digest := swarmSnapshotDigest(read.Snapshot); !sentSnapshot || digest != lastSnapshot {
-			if err = stream.send("snapshot", read.Cursor, read.Snapshot); err != nil {
+			if !emit("snapshot", read.Cursor, read.Snapshot) {
 				return
 			}
 			lastSnapshot, sentSnapshot = digest, true
 		}
 		panes := s.paneView(s.now())
 		if digest := swarmPaneDigest(panes); !sentPanes || digest != lastPanes {
-			if err = stream.send("herdr", "", panes); err != nil {
+			if !emit("herdr", "", panes) {
 				return
 			}
 			lastPanes, sentPanes = digest, true
 		}
 		windows := s.windowView(s.now())
 		if digest := swarmWindowDigest(windows); !sentWindows || digest != lastWindows {
-			if err = stream.send("window", "", windows); err != nil {
+			if !emit("window", "", windows) {
 				return
 			}
 			lastWindows, sentWindows = digest, true
 		}
 		// Each observation carries its own time, so the page can show the
 		// age of each and mark one stale without hiding the other.
-		if err = stream.send("tick", read.Cursor, map[string]any{
+		if !emit("tick", read.Cursor, map[string]any{
 			"db_observed_at": read.Snapshot.ObservedAt,
 			"panes":          map[string]any{"observed_at": panes.ObservedAt, "status": panes.Status, "error": panes.Error, "stale": panes.Stale},
 			"window":         map[string]any{"observed_at": windows.ObservedAt, "status": windows.Status, "error": windows.Error, "stale": windows.Stale},
-		}); err != nil {
+		}) {
 			return
 		}
 		request.Cursor = read.Cursor
