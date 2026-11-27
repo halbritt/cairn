@@ -34,7 +34,7 @@ in and removes it from the address bar.
 | `--plane-url TEMPLATE` | Address of a tracker item, with `{id}` for the identifier. Optional. |
 
 The server opens the store with the local operator channel, as other operator
-commands do. It needs schema version 95 or later.
+commands do. It needs schema version 96 or later.
 
 ## Access
 

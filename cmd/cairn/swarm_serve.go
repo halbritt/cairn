@@ -439,7 +439,7 @@ func runSwarmServe(ctx context.Context, store *core.Store, args []string) (any, 
 		}
 	}
 	// The view never writes a schema, so it needs the store it was built for.
-	if err := store.CheckCompatibilityFloor(ctx, 95); err != nil {
+	if err := store.CheckCompatibilityFloor(ctx, 96); err != nil {
 		return nil, err
 	}
 	path, err := swarmTokenPath(*tokenFile)
