@@ -280,11 +280,20 @@ func TestSwarmStreamOverHTTPReconnectsExactlyOnce(t *testing.T) {
 // The store's own refusals reach the browser with their codes.
 func TestSwarmStreamOverHTTPRefusals(t *testing.T) {
 	f := newSwarmStoreFixture(t, swarmNoPanes)
-	if conn := f.stream("gamma", "", nil); conn.Status != http.StatusNotFound || swarmErrorCode(conn.Body) != "NOT_FOUND" {
-		t.Fatalf("unknown campaign: %d %s", conn.Status, conn.Body)
-	}
-	if conn := f.stream("alpha", "not-a-cursor", nil); conn.Status != http.StatusBadRequest || swarmErrorCode(conn.Body) != "INVALID_REQUEST" {
-		t.Fatalf("malformed cursor: %d %s", conn.Status, conn.Body)
+	// A refused stream is still an event stream; the refusal is a reset event
+	// with the store's code, which an EventSource can read.
+	for name, try := range map[string][3]string{
+		"unknown campaign": {"gamma", "", "NOT_FOUND"},
+		"malformed cursor": {"alpha", "not-a-cursor", "INVALID_REQUEST"},
+	} {
+		conn := f.stream(try[0], try[1], nil)
+		if conn.Status != http.StatusOK {
+			t.Fatalf("%s: status %d %s", name, conn.Status, conn.Body)
+		}
+		reset, before := conn.until(t, "reset")
+		if len(before) != 1 || before[0].Event != "hello" || !strings.Contains(reset.Data, `"code":"`+try[2]+`"`) {
+			t.Fatalf("%s: %v then %s", name, before, reset.Data)
+		}
 	}
 	if resp, raw := f.do(http.MethodGet, "/api/swarm/campaign?campaign=gamma", nil, nil); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("snapshot of an unknown campaign: %d %s", resp.StatusCode, raw)

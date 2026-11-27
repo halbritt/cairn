@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -406,73 +408,173 @@ func TestSwarmStreamControlInsertWithoutTheCollectionLockLosesAnEvent(t *testing
 	}
 }
 
+// The ledger link of a campaign publication is written by a later transaction
+// than the one that commits the event. A client that already holds a cursor
+// resumes while the first event is still unlinked and a later event has been
+// delivered; it gets both, once. The link then appears in the snapshot and
+// resends nothing. The same holds when the coordinator hands off in between.
 func TestSwarmStreamDelayedJournalLinkIsNotAFilter(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+	for name, handoff := range map[string]bool{"same coordinator": false, "across a coordinator handoff": true} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			f := newSwarmFixture(t, "alpha")
+			// The publisher is a member that survives a handoff, so it can
+			// finish its own operation afterwards.
+			publisher, publisherView := f.member("worker-a")
+			reader, readerView := f.member("worker-b")
+
+			// The browser is connected before either event exists.
+			client := newSwarmClient(f)
+			if out := client.connect(0, -1); !out.Resync || len(out.Events) != 0 {
+				t.Fatalf("initial window: resync=%v events=%v", out.Resync, swarmEventIDs(out.Events))
+			}
+
+			// The coordinator plans the assignment; its owner then publishes
+			// against it.
+			if _, err := f.rootView.SetCampaignLedgerItem(ctx, SetCampaignLedgerItemRequest{RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign, Kind: "assignment", ItemKey: "slice-1", Owner: publisher.Inbox, Status: "planned", Summary: "Slice one"}, f.dest); err != nil {
+				t.Fatal(err)
+			}
+			// Make the link transaction fail after the event has committed,
+			// as a crash between the two transactions would.
+			gate := newSwarmGate(f)
+			gate.trigger("campaign_ledger_item", "BEFORE INSERT OR UPDATE", "", "IF NOT pg_try_advisory_xact_lock_shared(GATE) THEN RAISE EXCEPTION 'swarm test: ledger link delayed'; END IF;")
+			publication := CampaignPublishRequest{
+				Repo: f.repo, Campaign: f.campaign, OpKey: "send-slice-1", ItemKey: "slice-1",
+				Publication: PublishEventRequest{Kind: "request", Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{"agent", reader.Inbox}},
+			}
+			if _, err := publisherView.CampaignPublish(ctx, publication, f.dest); err == nil || !strings.Contains(err.Error(), "ledger link delayed") {
+				t.Fatalf("the link step should have failed after the event committed: %v", err)
+			}
+			var first, state string
+			if err := f.op.pool.QueryRow(ctx, `SELECT e.event_id::text, j.state FROM cairn.agent_event e JOIN cairn.campaign_operation_journal j ON j.repo=e.repo AND j.campaign=$2 AND j.op_key='send-slice-1' WHERE e.repo=$1 AND e.publisher=$3 AND e.kind='request'`, f.repo, f.campaign, publisher.Inbox).Scan(&first, &state); err != nil {
+				t.Fatal(err)
+			}
+			if state == "committed" {
+				t.Fatalf("journal is %s; the link was not delayed", state)
+			}
+
+			// A later event is published and delivered to its recipient.
+			later := f.notice(readerView, publisher.Inbox)
+			next, err := publisherView.NextEvent(ctx, NextEventRequest{Repo: f.repo, LeaseSeconds: 60}, f.dest)
+			if err != nil || next.Delivery == nil || next.Delivery.Event.EventID != later.EventID {
+				t.Fatalf("the recipient claims the later event: %+v %v", next, err)
+			}
+			if _, err = publisherView.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: next.Delivery.DeliveryID, LeaseID: next.Delivery.LeaseID, Disposition: "handled"}, f.dest); err != nil {
+				t.Fatal(err)
+			}
+			if handoff {
+				done, hErr := f.rootView.HandoffCampaignCoordinator(ctx, HandoffCampaignCoordinatorRequest{
+					RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign,
+					NewSession: &NewCoordinatorSessionSpec{Binding: "swarm-root", NativeSessionID: "swarm-root-2"}, Note: "handing off", Shareable: true,
+				}, f.dest)
+				if hErr != nil || !done.Performed {
+					t.Fatalf("handoff: %+v %v", done, hErr)
+				}
+			}
+			want := []string{first, later.EventID}
+			if handoff {
+				// The handoff may publish events of its own; all of them are
+				// the campaign's.
+				rows, qErr := f.op.pool.Query(ctx, `SELECT event_id::text FROM cairn.agent_event WHERE repo=$1 ORDER BY position`, f.repo)
+				if qErr != nil {
+					t.Fatal(qErr)
+				}
+				want = nil
+				for rows.Next() {
+					var id string
+					if qErr = rows.Scan(&id); qErr != nil {
+						t.Fatal(qErr)
+					}
+					want = append(want, id)
+				}
+				rows.Close()
+			}
+
+			// The browser resumes from the cursor it held before both events,
+			// while the first is still unlinked.
+			out := client.connect(0, -1)
+			if out.Resync != handoff {
+				t.Fatalf("resume: resync=%v reason=%q", out.Resync, out.ResyncReason)
+			}
+			client.requireExactlyOnce(want)
+			if client.seen[first] != 1 || client.seen[later.EventID] != 1 {
+				t.Fatalf("resume did not deliver both events: %v", swarmEventIDs(client.log))
+			}
+			for _, item := range out.Snapshot.Ledger {
+				if item.EventID == first {
+					t.Fatal("the ledger already links the first event; the link was not delayed")
+				}
+			}
+
+			// The publisher retries its operation, which writes the link. The
+			// cursor is already past both events.
+			gate.open()
+			retried, err := publisherView.CampaignPublish(ctx, publication, f.dest)
+			if err != nil || retried.EventID != first {
+				t.Fatalf("retry finalizes the same event: %+v %v", retried, err)
+			}
+			out = client.connect(0, -1)
+			if out.Resync || len(out.Events) != 0 {
+				t.Fatalf("reconnect after the link: resync=%v events=%v", out.Resync, swarmEventIDs(out.Events))
+			}
+			client.requireExactlyOnce(want)
+			linked := false
+			for _, item := range out.Snapshot.Ledger {
+				linked = linked || (item.Kind == "assignment" && item.ItemKey == "slice-1" && item.EventID == first)
+			}
+			if !linked {
+				t.Fatalf("snapshot does not annotate the event with its ledger item: %+v", out.Snapshot.Ledger)
+			}
+			fresh := newSwarmClient(f)
+			fresh.connect(0, -1)
+			fresh.requireExactlyOnce(want)
+		})
+	}
+}
+
+// A read is cut at the batch size and says so; the next read continues from
+// its cursor. A client that stopped reading when More was false too early
+// would lose the rest.
+func TestSwarmStreamBatchesSayWhenMoreRemains(t *testing.T) {
 	f := newSwarmFixture(t, "alpha")
-	worker, workerView := f.member("worker-a")
-
-	// The ledger link of a campaign publication is written by a later
-	// transaction than the one that commits the event. Make that later
-	// transaction fail, as a crash between the two would.
-	gate := newSwarmGate(f)
-	gate.trigger("campaign_ledger_item", "BEFORE INSERT OR UPDATE", "", "IF NOT pg_try_advisory_xact_lock_shared(GATE) THEN RAISE EXCEPTION 'swarm test: ledger link delayed'; END IF;")
-	publication := CampaignPublishRequest{
-		Repo: f.repo, Campaign: f.campaign, OpKey: "send-slice-1", ItemKey: "slice-1",
-		Publication: PublishEventRequest{Kind: "request", Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{"agent", worker.Inbox}},
+	_, a := f.member("worker-a")
+	start := f.read("").Cursor
+	var want []string
+	for i := 0; i < 7; i++ {
+		want = append(want, f.notice(a, f.root.Inbox).EventID)
 	}
-	if _, err := f.rootView.CampaignPublish(ctx, publication, f.dest); err == nil || !strings.Contains(err.Error(), "ledger link delayed") {
-		t.Fatalf("the link step should have failed after the event committed: %v", err)
+	var got []string
+	cursor := start
+	for i, size := range []int{3, 3, 1} {
+		out, err := f.op.ReadSwarmStream(context.Background(), SwarmStreamRequest{Repo: f.repo, Campaign: f.campaign, Cursor: cursor, Batch: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Resync || len(out.Events) != size || out.More != (i < 2) {
+			t.Fatalf("read %d: resync=%v events=%d more=%v", i, out.Resync, len(out.Events), out.More)
+		}
+		if out.More && out.Cursor != out.Events[len(out.Events)-1].Cursor {
+			t.Fatalf("read %d: a cut read must resume after its last event", i)
+		}
+		got = append(got, swarmEventIDs(out.Events)...)
+		cursor = out.Cursor
 	}
-	var first string
-	var state string
-	if err := f.op.pool.QueryRow(ctx, `SELECT e.event_id::text, j.state FROM cairn.agent_event e JOIN cairn.campaign_operation_journal j ON j.repo=e.repo AND j.campaign=$2 AND j.op_key='send-slice-1' WHERE e.repo=$1 AND e.publisher=$3 AND e.kind='request'`, f.repo, f.campaign, f.root.Inbox).Scan(&first, &state); err != nil {
-		t.Fatal(err)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("batched reads:\n got %v\nwant %v", got, want)
 	}
-	if state == "committed" {
-		t.Fatalf("journal is %s; the link was not delayed", state)
+	// A new window holds at most the window size, newest last, and never
+	// says More: the window is whole.
+	out, err := f.op.ReadSwarmStream(context.Background(), SwarmStreamRequest{Repo: f.repo, Campaign: f.campaign, Window: 4})
+	if err != nil || !out.Resync || out.More || strings.Join(swarmEventIDs(out.Events), ",") != strings.Join(want[3:], ",") {
+		t.Fatalf("window of four: resync=%v more=%v events=%v err=%v", out.Resync, out.More, swarmEventIDs(out.Events), err)
 	}
-
-	// A later event is published, delivered to its recipient and shown.
-	later := f.notice(workerView, f.root.Inbox)
-	next, err := f.rootView.NextEvent(ctx, NextEventRequest{Repo: f.repo, LeaseSeconds: 60}, f.dest)
-	if err != nil || next.Delivery == nil || next.Delivery.Event.EventID != later.EventID {
-		t.Fatalf("root claims the later event: %+v %v", next, err)
-	}
-	if _, err = f.rootView.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: next.Delivery.DeliveryID, LeaseID: next.Delivery.LeaseID, Disposition: "handled"}, f.dest); err != nil {
-		t.Fatal(err)
-	}
-	client := newSwarmClient(f)
-	out := client.connect(0, -1)
-	client.requireExactlyOnce([]string{first, later.EventID})
-	for _, item := range out.Snapshot.Ledger {
-		if item.EventID == first {
-			t.Fatal("the ledger already links the first event; the link was not delayed")
+	for _, bad := range []SwarmStreamRequest{{Window: -1}, {Window: swarmLogWindowMax + 1}, {Batch: -1}, {Batch: swarmLogBatchMax + 1}} {
+		bad.Repo, bad.Campaign = f.repo, f.campaign
+		if _, err := f.op.ReadSwarmStream(context.Background(), bad); Code(err) != "INVALID_REQUEST" {
+			t.Fatalf("window %d batch %d: %v", bad.Window, bad.Batch, err)
 		}
 	}
-
-	// The link is finalized after the browser has both events and its cursor
-	// is past them. A retry of the same operation writes it.
-	gate.open()
-	retried, err := f.rootView.CampaignPublish(ctx, publication, f.dest)
-	if err != nil || retried.EventID != first {
-		t.Fatalf("retry finalizes the same event: %+v %v", retried, err)
-	}
-	out = client.connect(0, -1)
-	if out.Resync || len(out.Events) != 0 {
-		t.Fatalf("reconnect after the link: resync=%v events=%v", out.Resync, swarmEventIDs(out.Events))
-	}
-	client.requireExactlyOnce([]string{first, later.EventID})
-	linked := false
-	for _, item := range out.Snapshot.Ledger {
-		linked = linked || (item.Kind == "assignment" && item.ItemKey == "slice-1" && item.EventID == first)
-	}
-	if !linked {
-		t.Fatalf("snapshot does not annotate the event with its ledger item: %+v", out.Snapshot.Ledger)
-	}
-	fresh := newSwarmClient(f)
-	fresh.connect(0, -1)
-	fresh.requireExactlyOnce([]string{first, later.EventID})
 }
 
 func TestSwarmStreamCoordinatorHandoffKeepsEveryEventExactlyOnce(t *testing.T) {
@@ -720,15 +822,44 @@ func TestSwarmStreamCursorBinding(t *testing.T) {
 	if err := read("not a name", ""); Code(err) != "INVALID_REQUEST" {
 		t.Fatalf("invalid campaign name: %v", err)
 	}
+	// The encoder's own output is always accepted, also for the longest
+	// collection name with characters that JSON escapes.
+	long := swarmScope{Repo: strings.Repeat("&", 256), Campaign: TeamCampaign{Campaign: strings.Repeat("c", 64)}, Generation: 1, Fence: uuid.NewString(), Epoch: strings.Repeat("e", 24)}
+	if c, err := decodeSwarmCursor(encodeSwarmCursor(long, 1<<40), long); err != nil || c == nil || c.Position != 1<<40 {
+		t.Fatalf("the longest cursor the encoder emits is refused: %v", err)
+	}
 	// A cursor ahead of the collection, as after a restore to an older state.
 	sc := swarmScope{Repo: f.repo, Campaign: TeamCampaign{Campaign: "alpha"}, Generation: f.read("").Snapshot.RestoreGeneration, Epoch: f.read("").Snapshot.MembershipEpoch}
+	if err := f.op.pool.QueryRow(ctx, `SELECT COALESCE((SELECT fence_id::text FROM cairn.restore_fence ORDER BY generation DESC LIMIT 1),'')`).Scan(&sc.Fence); err != nil {
+		t.Fatal(err)
+	}
+	if err := read("alpha", encodeSwarmCursor(sc, 0)); err != nil {
+		t.Fatalf("a cursor built for this store is refused: %v", err)
+	}
 	if err := read("alpha", encodeSwarmCursor(sc, 1<<40)); Code(err) != "STALE_CURSOR" {
 		t.Fatalf("cursor ahead of the collection: %v", err)
 	}
 	// A cursor from before a restore fence.
-	sc.Generation--
-	if err := read("alpha", encodeSwarmCursor(sc, 0)); Code(err) != "STALE_CURSOR" {
+	older := sc
+	older.Generation--
+	if err := read("alpha", encodeSwarmCursor(older, 0)); Code(err) != "STALE_CURSOR" {
 		t.Fatalf("cursor of an older generation: %v", err)
+	}
+	// Two restores of one backup reach the same generation number. The
+	// cursor of the discarded branch carries another fence identity and must
+	// not continue here, even at a position this branch has reached.
+	other := sc
+	other.Fence = uuid.NewString()
+	if err := read("alpha", encodeSwarmCursor(other, 0)); Code(err) != "STALE_CURSOR" {
+		t.Fatalf("cursor of another restore of the same backup: %v", err)
+	}
+	var fence string
+	if err := f.op.pool.QueryRow(ctx, `SELECT COALESCE((SELECT fence_id::text FROM cairn.restore_fence ORDER BY generation DESC LIMIT 1),'')`).Scan(&fence); err != nil {
+		t.Fatal(err)
+	}
+	var decoded swarmCursor
+	if raw, err := base64.RawURLEncoding.DecodeString(cursor); err != nil || json.Unmarshal(raw, &decoded) != nil || decoded.Fence != fence || decoded.Generation != sc.Generation {
+		t.Fatalf("cursor does not carry the store's fence %q and generation: %+v", fence, decoded)
 	}
 	// The read needs the operator channel, and a channel scoped to another
 	// collection is refused.
@@ -862,5 +993,120 @@ func TestSwarmReadTakesNoLock(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the read waited for a lock")
+	}
+}
+
+// A coordinator handoff moves the old coordinator's pending deliveries to its
+// successor. When either of them is a principal of another campaign, a topic
+// event enters or leaves that other campaign's log. Its readers must get a
+// new window then, or a reader that was connected and one that connects
+// afresh would disagree for good.
+func TestSwarmStreamHandoffInAnotherCampaignResendsTheWindow(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "alpha")
+	_, outsider := f.session("outsider")
+	subscribe := func(view *Store, topic string) {
+		t.Helper()
+		if _, err := view.SetSubscription(ctx, SubscriptionRequest{RequestID: uuid.NewString(), Repo: f.repo, Topic: topic, Active: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	topic := func(name string) string {
+		t.Helper()
+		e, err := outsider.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{"topic", name}}, f.dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e.EventID
+	}
+	campaign := func(name string, root AgentInstance, view *Store) *swarmFixture {
+		t.Helper()
+		if _, err := view.SetTeamCampaign(ctx, SetTeamCampaignRequest{RequestID: uuid.NewString(), Repo: f.repo, Campaign: name, RootAgent: root.Inbox, OutOfChainPolicy: "allow", Sensitivity: "shareable"}, f.dest); err != nil {
+			t.Fatal(err)
+		}
+		return &swarmFixture{nativeFixture: f.nativeFixture, campaign: name, root: root, rootView: view, op: f.op}
+	}
+	leave := func(c *swarmFixture, member AgentInstance) {
+		t.Helper()
+		inactive := false
+		if _, err := c.rootView.SetTeamMember(ctx, SetTeamMemberRequest{RequestID: uuid.NewString(), Repo: f.repo, Campaign: c.campaign, Member: member.Inbox, Lead: c.root.Inbox, Role: "worker", Active: &inactive}, f.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handoff := func(c *swarmFixture, to AgentInstance) {
+		t.Helper()
+		done, err := c.rootView.HandoffCampaignCoordinator(ctx, HandoffCampaignCoordinatorRequest{RequestID: uuid.NewString(), Repo: f.repo, Campaign: c.campaign, Successor: &AgentSessionRef{AgentID: to.AgentID, ExecutionID: to.ExecutionID}, Note: "handing off", Shareable: true}, f.dest)
+		if err != nil || !done.Performed {
+			t.Fatalf("handoff of %s to %s: %+v %v", c.campaign, to.DisplayName, done, err)
+		}
+	}
+	agree := func(name string, connected *swarmClient, c *swarmFixture, want []string) {
+		t.Helper()
+		out := connected.connect(0, -1)
+		if !out.Resync || out.ResyncReason != "membership_changed" {
+			t.Fatalf("%s: the connected reader got no new window: resync=%v reason=%q", name, out.Resync, out.ResyncReason)
+		}
+		fresh := newSwarmClient(c)
+		fresh.connect(0, -1)
+		if got, now := swarmEventIDs(connected.log), swarmEventIDs(fresh.log); strings.Join(got, ",") != strings.Join(now, ",") {
+			t.Fatalf("%s: a connected reader and a new reader disagree:\n connected %v\n new       %v", name, got, now)
+		}
+		for _, id := range want {
+			if connected.seen[id] != 1 {
+				t.Fatalf("%s: event %s is in the log %d times", name, id, connected.seen[id])
+			}
+		}
+	}
+
+	// An event enters another campaign's log. The successor of alpha's
+	// coordinator is a former member of beta.
+	betaRoot, betaView := f.session("beta-root")
+	beta := campaign("beta", betaRoot, betaView)
+	successor, _ := f.session("successor")
+	beta.join(successor)
+	leave(beta, successor)
+	subscribe(f.rootView, "swarm.alpha")
+	entering := topic("swarm.alpha") // delivered to alpha's coordinator only, and left pending
+	betaReader := newSwarmClient(beta)
+	betaReader.connect(0, -1)
+	if betaReader.seen[entering] != 0 {
+		t.Fatal("the topic event is in beta's log before any handoff")
+	}
+	handoff(f, successor)
+	agree("entering", betaReader, beta, []string{entering})
+
+	// An event leaves another campaign's log. The coordinator of gamma that
+	// hands off is a former member of delta.
+	deltaRoot, deltaView := f.session("delta-root")
+	delta := campaign("delta", deltaRoot, deltaView)
+	gammaRoot, gammaView := f.session("gamma-root")
+	delta.join(gammaRoot)
+	leave(delta, gammaRoot)
+	gamma := campaign("gamma", gammaRoot, gammaView)
+	subscribe(gammaView, "swarm.gamma")
+	leaving := topic("swarm.gamma") // delivered to gamma's coordinator, a delta principal
+	deltaReader := newSwarmClient(delta)
+	deltaReader.connect(0, -1)
+	if deltaReader.seen[leaving] != 1 {
+		t.Fatal("the topic event is not in delta's log before the handoff")
+	}
+	heir, _ := f.session("gamma-heir")
+	handoff(gamma, heir)
+	agree("leaving", deltaReader, delta, nil)
+	if deltaReader.seen[leaving] != 0 {
+		t.Fatal("the moved delivery's event stayed in delta's log for the connected reader only")
+	}
+
+	// A handoff that touches no principal of a campaign resends nothing there.
+	quietRoot, quietView := f.session("quiet-root")
+	quiet := campaign("quiet", quietRoot, quietView)
+	quietReader := newSwarmClient(quiet)
+	quietReader.connect(0, -1)
+	epsilonRoot, epsilonView := f.session("epsilon-root")
+	epsilon := campaign("epsilon", epsilonRoot, epsilonView)
+	epsilonHeir, _ := f.session("epsilon-heir")
+	handoff(epsilon, epsilonHeir)
+	if out := quietReader.connect(0, -1); out.Resync {
+		t.Fatalf("an unrelated handoff resent the window: %q", out.ResyncReason)
 	}
 }

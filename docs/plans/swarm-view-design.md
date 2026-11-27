@@ -370,6 +370,13 @@ Two limits that the independent review names and this design accepts:
 
 The fate of the other work features (decision 3) is CAIRN-840.
 
+On 2026-11-27 the owner settled the open half of decision 5: the view server
+reads harness transcripts on the host for the true window fill, in the first
+build ("read the transcripts"). The reader takes only token counts, model
+names, record types and times from a transcript; no message text leaves it and
+nothing is stored. The Cairn-attributed figures stay on the page beside it as
+a proxy. [Swarm view](../swarm-view.md#context-room) describes the result.
+
 Deferred, with no work: whether to revisit orchestration inside Cairn after
 Striatum-next lands.
 

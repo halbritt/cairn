@@ -46,6 +46,9 @@ var swarmTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{32,256}$`)
 type swarmBrowserSession struct {
 	csrf    string
 	expires time.Time
+	// revoked is closed when the session ends before its lifetime: at
+	// logout or when the session limit evicts it. An open stream ends then.
+	revoked chan struct{}
 }
 
 // swarmReads is the read side of the view. The store implements it; a test
@@ -111,13 +114,26 @@ func readOrCreateSwarmToken(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if !info.Mode().IsRegular() {
+		return "", invalid("token file must be a regular file with mode 0600: " + path)
+	}
+	// Check the file that is read, not the path: open it without following a
+	// link and take the mode and owner from the open descriptor.
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return "", invalid("token file cannot be opened as a regular file: " + path)
+	}
+	defer file.Close()
+	if info, err = file.Stat(); err != nil {
+		return "", err
+	}
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
 		return "", invalid("token file must be a regular file with mode 0600: " + path)
 	}
 	if stat, ok := info.Sys().(*syscall.Stat_t); !ok || int(stat.Uid) != os.Geteuid() {
 		return "", invalid("token file must be owned by this user: " + path)
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := io.ReadAll(io.LimitReader(file, 4096))
 	if err != nil {
 		return "", err
 	}
@@ -167,7 +183,7 @@ func (s *swarmServer) issueSession() (string, string, error) {
 	oldest, oldestAt := "", time.Time{}
 	for key, session := range s.sessions {
 		if !session.expires.After(now) {
-			delete(s.sessions, key)
+			s.endSessionLocked(key)
 			continue
 		}
 		if oldest == "" || session.expires.Before(oldestAt) {
@@ -175,10 +191,31 @@ func (s *swarmServer) issueSession() (string, string, error) {
 		}
 	}
 	if len(s.sessions) >= swarmSessionLimit {
-		delete(s.sessions, oldest)
+		s.endSessionLocked(oldest)
 	}
-	s.sessions[id] = swarmBrowserSession{csrf: csrf, expires: now.Add(swarmSessionLifetime)}
+	s.sessions[id] = swarmBrowserSession{csrf: csrf, expires: now.Add(swarmSessionLifetime), revoked: make(chan struct{})}
 	return id, csrf, nil
+}
+
+// endSessionLocked forgets a session and ends every stream it holds open.
+func (s *swarmServer) endSessionLocked(id string) {
+	if session, ok := s.sessions[id]; ok {
+		close(session.revoked)
+		delete(s.sessions, id)
+	}
+}
+
+// sessionAlive reports whether a session still stands. A stream asks before
+// every read, so an expired session reads nothing more.
+func (s *swarmServer) sessionAlive(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[id]
+	if ok && !session.expires.After(s.now()) {
+		s.endSessionLocked(id)
+		return false
+	}
+	return ok
 }
 
 func (s *swarmServer) session(r *http.Request) (string, swarmBrowserSession, bool) {
@@ -190,7 +227,7 @@ func (s *swarmServer) session(r *http.Request) (string, swarmBrowserSession, boo
 	defer s.mu.Unlock()
 	session, ok := s.sessions[cookie.Value]
 	if !ok || !session.expires.After(s.now()) {
-		delete(s.sessions, cookie.Value)
+		s.endSessionLocked(cookie.Value)
 		return "", swarmBrowserSession{}, false
 	}
 	return cookie.Value, session, true
@@ -203,17 +240,28 @@ func swarmLoopbackHost(host string) bool {
 // checkHostOrigin admits only requests addressed to this loopback listener
 // and, when an Origin is sent, only this page's own origin.
 func (s *swarmServer) checkHostOrigin(r *http.Request) bool {
-	host, port, err := net.SplitHostPort(r.Host)
-	if err != nil || !swarmLoopbackHost(host) || port != strconv.Itoa(s.port) {
+	if !s.ownAuthority(r.Host) {
 		return false
 	}
 	if origin := r.Header.Get("Origin"); origin != "" {
 		u, err := url.Parse(origin)
-		if err != nil || u.Scheme != "http" || !swarmLoopbackHost(u.Hostname()) || u.Port() != strconv.Itoa(s.port) {
+		if err != nil || u.Scheme != "http" || u.User != nil || !s.ownAuthority(u.Host) {
 			return false
 		}
 	}
 	return true
+}
+
+// ownAuthority reports whether host[:port] names this listener. A browser
+// leaves the port out when it is the default one for http.
+func (s *swarmServer) ownAuthority(authority string) bool {
+	host, port := authority, "80"
+	if h, p, err := net.SplitHostPort(authority); err == nil {
+		host, port = h, p
+	} else if strings.Contains(authority, ":") {
+		return false
+	}
+	return swarmLoopbackHost(host) && port == strconv.Itoa(s.port)
 }
 
 // swarmSameOrigin applies to every API route. A browser states where a
@@ -343,7 +391,7 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.mu.Lock()
-		delete(s.sessions, id)
+		s.endSessionLocked(id)
 		s.mu.Unlock()
 		http.SetCookie(w, &http.Cookie{Name: s.cookieName(), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		writeSwarmJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -379,7 +427,7 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer s.panes.release()
 		writeSwarmJSON(w, http.StatusOK, s.panes.wait(r.Context(), s.now, 5*time.Second))
 	case r.URL.Path == "/api/swarm/stream":
-		s.handleStream(w, r)
+		s.handleStream(w, r, id, session)
 	case strings.HasPrefix(r.URL.Path, "/api/swarm/action/"), r.URL.Path == "/api/swarm/event":
 		s.handleAction(w, r)
 	default:

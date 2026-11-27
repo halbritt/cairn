@@ -84,7 +84,12 @@ one of these holds:
 - its publisher is a campaign principal;
 - it is addressed to a campaign principal;
 - its routing information names the campaign;
-- it is a topic event with a delivery to a campaign principal.
+- it is a topic event that was published to a campaign principal (it has a
+  delivery to one, or a queued next-turn notice for one).
+
+The log carries envelopes: sender, recipient, kind and the one-line summary.
+A ledger item's summary can repeat a short message text, so do not treat the
+page as free of message content.
 
 Campaign principals are the members, active or not, every coordinator in the
 handoff lineage, and the campaign's role addresses. Each fact is fixed when
@@ -93,9 +98,18 @@ in a later transaction, so it is never a filter; it appears in the snapshot as
 `ledger[].event_id`. A pool request gets its delivery at assignment, so a pool
 delivery is not used either.
 
-When the set of campaign principals changes, events behind the cursor may now
-belong to the campaign. The server then sends a `resync` event and a new log
-window, and the page replaces its log.
+One of these facts can change after the commit. A coordinator handoff moves
+the old coordinator's pending deliveries and queued notices to its successor,
+so a topic event can enter or leave the log of any campaign that either of
+them is a principal of.
+
+The server therefore keeps a membership epoch for each campaign: the set of
+its principals, and every handoff in the collection that moves work from or to
+one of them. When the epoch changes, events behind the cursor may have entered
+or left the campaign. The server then sends a `resync` event and a new log
+window, and the page replaces its log. "Exactly once" holds within one window
+and its continuation; a new window repeats events on purpose. Making a member
+inactive or changing its role does not change the epoch.
 
 ### Stream events
 
@@ -108,12 +122,31 @@ window, and the page replaces its log.
 | `herdr` | | The pane observation: `observed_at`, `status` (`ok`, `unavailable`, `pending`), `error`, `stale`, `sessions`, `panes` by agent UUID. Sent when it changes. |
 | `tick` | cursor | `db_observed_at` and `panes` (`observed_at`, `status`, `error`, `stale`). Sent after every read. |
 | `fault` | | `code`, `error`, `at`. The store could not be read; the server keeps trying. |
-| `reset` | | `code`, `error`. The stream cannot continue; the page starts a new stream without a cursor. |
+| `reset` | | `code`, `error`. The stream cannot continue and the server closes it. |
 
-A cursor is bound to the collection, the campaign, the restore generation and
-the membership epoch. A cursor for another collection or campaign is refused
-with `INVALID_REQUEST`. A cursor from before a restore is refused with
-`STALE_CURSOR` and the page reloads.
+A stream request from a signed-in session is always answered as an event
+stream, also when the first read is refused or fails. A browser's
+`EventSource` gives up for good on any other answer and cannot read its status,
+so an error status would leave the page stuck until a manual reload. What the
+page does on `reset` depends on the code:
+
+| `reset` code | Meaning | The page |
+| --- | --- | --- |
+| `STALE_CURSOR`, `INVALID_REQUEST` | The cursor cannot continue. | Starts a new stream without a cursor. |
+| `NOT_FOUND` | No such campaign. | Says so and offers the landing page. |
+| `UNAUTHENTICATED` | The session ended. | Asks the owner to sign in again. |
+| any other | The store refuses the read. | Shows the store's reason. |
+
+A stream lives no longer than the session that opened it. It ends at logout,
+at the session's lifetime and when the session limit evicts the session, and
+the store is not read for it afterwards.
+
+A cursor is bound to the collection, the campaign, the restore generation, the
+identity of the restore fence and the membership epoch. A cursor for another
+collection or campaign is refused with `INVALID_REQUEST`. A cursor from before
+a restore, or from another restore of the same backup, is refused with
+`STALE_CURSOR`. The fence identity matters because the generation is a counter
+stored in the database: two restores of one backup reach the same number.
 
 The page keeps the newest 300 log events. The snapshot holds every open
 delivery of the campaign and every delivery of the newest 300 campaign events.
@@ -170,7 +203,7 @@ store's refusal code.
 | `GET /api/auth/session` | `{"authenticated": bool, "csrf_token": "...", "collection": "...", "plane_url": "..."}`. The last three only when signed in. |
 | `POST /api/auth/login` | Body `{"token": "..."}`. Sets the session cookie. |
 | `POST /api/auth/logout` | Ends the session. |
-| `GET /api/swarm/landing` | Active campaigns, online sessions in no campaign, and the owner attention rows that belong to no campaign (`cairn.swarm-landing/1`). |
+| `GET /api/swarm/landing` | Active campaigns, online sessions in no campaign, the newest messages that no active campaign claims, and the owner attention rows that belong to no campaign (`cairn.swarm-landing/1`). |
 | `GET /api/swarm/campaign?campaign=NAME` | One snapshot, without a stream. |
 | `GET /api/swarm/panes` | One pane observation, for a page with no stream open. |
 | `GET /api/swarm/event?campaign=NAME&event_id=UUID` | One event with its deliveries and note body, read when the owner opens it. |

@@ -32,11 +32,13 @@ const (
 	SwarmStreamSchema   = "cairn.swarm-stream/1"
 	SwarmLandingSchema  = "cairn.swarm-landing/1"
 
-	swarmLogWindowDefault = 200
+	swarmLogWindowDefault = SwarmFlowEventWindow
 	swarmLogWindowMax     = 500
 	swarmLogBatchDefault  = 200
 	swarmLogBatchMax      = 500
 	swarmLedgerMax        = 500
+	swarmCursorMax        = 8192
+	swarmLandingEvents    = 50
 )
 
 // swarmPlaneIdentifier finds tracker identifiers such as CAIRN-829 in a task
@@ -157,7 +159,11 @@ type swarmScope struct {
 	Operator   string
 	Now        time.Time
 	Generation int64
-	Epoch      string
+	// Fence is the identity of the latest restore fence, or empty when the
+	// store was never restored. Two restores of one backup reach the same
+	// generation number with different fences.
+	Fence string
+	Epoch string
 }
 
 func (sc swarmScope) isMember(principal string) bool {
@@ -263,7 +269,7 @@ func (s *Store) swarmScopeTx(ctx context.Context, tx pgx.Tx, repo, campaign stri
 	if !swarmCampaignName.MatchString(campaign) {
 		return sc, nil, nil, failure("INVALID_REQUEST", "campaign name is required")
 	}
-	if err := tx.QueryRow(ctx, `SELECT clock_timestamp(), (SELECT generation FROM cairn.retrieval_generation WHERE singleton)`).Scan(&sc.Now, &sc.Generation); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT clock_timestamp(), (SELECT generation FROM cairn.retrieval_generation WHERE singleton), COALESCE((SELECT fence_id::text FROM cairn.restore_fence ORDER BY generation DESC LIMIT 1),'')`).Scan(&sc.Now, &sc.Generation, &sc.Fence); err != nil {
 		return sc, nil, nil, err
 	}
 	camp, err := readTeamCampaignTx(ctx, tx, repo, campaign, true, true)
@@ -357,13 +363,33 @@ func (s *Store) swarmScopeTx(ctx context.Context, tx pgx.Tx, repo, campaign stri
 		}
 	}
 
-	// The epoch names the set of principals. When it changes, events that are
-	// behind a client's cursor may now belong to the campaign, so the log
-	// window is sent again from the start.
+	// The epoch names everything that decides which events behind a cursor
+	// belong to the campaign. When it changes, the log window is sent again
+	// from the start. Two things decide it:
+	//
+	//   - the set of campaign principals;
+	//   - every coordinator handoff in the collection, of any campaign, that
+	//     moves work from or to one of those principals. A handoff rewrites
+	//     the consumer of the old coordinator's pending deliveries (and the
+	//     recipient of its queued notices) to the successor. It is the only
+	//     writer that changes who a delivery belongs to, so a topic event can
+	//     enter or leave this campaign's log only then.
+	rows, err = tx.Query(ctx, `SELECT handoff_id::text FROM cairn.campaign_coordinator_handoff WHERE repo=$1 AND (from_principal=ANY($2) OR to_principal=ANY($2)) ORDER BY handoff_id`, repo, sc.Principals)
+	if err != nil {
+		return sc, nil, nil, err
+	}
+	transfers, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return sc, nil, nil, err
+	}
 	h := sha256.New()
 	h.Write([]byte(repo + "\x00" + camp.Campaign + "\x00" + camp.CreatedAt.UTC().Format(time.RFC3339Nano)))
 	for _, p := range sc.Principals {
 		h.Write([]byte("\x00" + p))
+	}
+	h.Write([]byte("\x00handoffs"))
+	for _, id := range transfers {
+		h.Write([]byte("\x00" + id))
 	}
 	sc.Epoch = hex.EncodeToString(h.Sum(nil))[:24]
 	return sc, lineage, roleHolders, nil
@@ -554,24 +580,27 @@ type swarmCursor struct {
 	Collection string `json:"c"`
 	Campaign   string `json:"n"`
 	Generation int64  `json:"g"`
+	Fence      string `json:"f"`
 	Epoch      string `json:"m"`
 	Position   int64  `json:"p"`
 }
 
 func encodeSwarmCursor(sc swarmScope, position int64) string {
-	raw, _ := json.Marshal(swarmCursor{Version: 1, Collection: sc.Repo, Campaign: sc.Campaign.Campaign, Generation: sc.Generation, Epoch: sc.Epoch, Position: position})
+	raw, _ := json.Marshal(swarmCursor{Version: 1, Collection: sc.Repo, Campaign: sc.Campaign.Campaign, Generation: sc.Generation, Fence: sc.Fence, Epoch: sc.Epoch, Position: position})
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 // decodeSwarmCursor returns nil for an empty cursor. A cursor for another
-// collection or campaign is a caller error. A cursor from before a restore is
-// stale: the page reloads.
+// collection or campaign is a caller error. A cursor from before a restore,
+// or from another restore of the same backup, is stale: the page reloads.
 func decodeSwarmCursor(raw string, sc swarmScope) (*swarmCursor, error) {
 	if raw == "" {
 		return nil, nil
 	}
 	invalid := failure("INVALID_REQUEST", "invalid swarm cursor")
-	if len(raw) > 2048 || strings.Contains(raw, "=") {
+	// A collection name may be 256 bytes and JSON may escape each of them
+	// to six, so the bound is well above the largest cursor the encoder emits.
+	if len(raw) > swarmCursorMax || strings.Contains(raw, "=") {
 		return nil, invalid
 	}
 	decoded, err := base64.RawURLEncoding.DecodeString(raw)
@@ -591,7 +620,10 @@ func decodeSwarmCursor(raw string, sc swarmScope) (*swarmCursor, error) {
 	if c.Version != 1 || c.Position < 0 || c.Epoch == "" || c.Collection != sc.Repo || c.Campaign != sc.Campaign.Campaign {
 		return nil, invalid
 	}
-	if c.Generation != sc.Generation {
+	// The generation is a counter stored in the database, so two restores of
+	// one backup both reach the same number. The fence identity tells them
+	// apart: a cursor of the discarded branch must not continue on the other.
+	if c.Generation != sc.Generation || c.Fence != sc.Fence {
 		return nil, failure("STALE_CURSOR", "swarm cursor predates the restore fence; reload the page")
 	}
 	return &c, nil
@@ -606,8 +638,15 @@ func decodeSwarmCursor(raw string, sc swarmScope) (*swarmCursor, error) {
 //     resolved recipient, also for a notice whose delivery row is written at
 //     a later turn);
 //   - routing_info names the campaign (role addresses and hierarchy routing);
-//   - a topic event has a delivery to a campaign principal. Topic deliveries
-//     are written with the event and never added later.
+//   - a topic event was published to a campaign principal: it has a delivery
+//     to one, or a queued next-turn notice for one. Both rows are written
+//     with the event and none is added later.
+//
+// The last rule reads who owns a delivery now, and a coordinator handoff moves
+// the old coordinator's pending deliveries and queued notices to its
+// successor. That is the one fact here that can change after the commit; the
+// membership epoch covers it (swarmScopeTx), so the window is resent when it
+// does.
 //
 // A pool request gets its delivery at assignment, after the event commits, so
 // a pool delivery is not used. The journal link to a ledger item is written
@@ -617,7 +656,9 @@ const swarmEventInCampaign = `e.repo=$1 AND e.created_at>=$4 AND (
 	e.publisher=ANY($2)
 	OR (e.destination_type='agent' AND e.destination_name=ANY($2))
 	OR e.routing_info->>'campaign'=$3
-	OR (e.destination_type='topic' AND EXISTS(SELECT 1 FROM cairn.agent_delivery a WHERE a.event_id=e.event_id AND a.consumer=ANY($2))))`
+	OR (e.destination_type='topic' AND (
+		EXISTS(SELECT 1 FROM cairn.agent_delivery a WHERE a.event_id=e.event_id AND a.consumer=ANY($2))
+		OR EXISTS(SELECT 1 FROM cairn.agent_organic_notice q WHERE q.event_id=e.event_id AND q.recipient_inbox=ANY($2)))))`
 
 func (s *Store) swarmEventsTx(ctx context.Context, tx pgx.Tx, sc swarmScope, query string, args ...any) ([]SwarmEvent, error) {
 	base := []any{sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt}
@@ -763,15 +804,19 @@ func (s *Store) ReadSwarmStream(ctx context.Context, req SwarmStreamRequest) (Sw
 // sessions that belong to none, so the page is useful before a swarm has a
 // campaign record.
 type SwarmLanding struct {
-	Schema            string                 `json:"schema"`
-	Collection        string                 `json:"collection"`
-	ObservedAt        time.Time              `json:"observed_at"`
-	RestoreGeneration int64                  `json:"restore_generation"`
-	OperatorPrincipal string                 `json:"operator_principal"`
-	Campaigns         []SwarmLandingCampaign `json:"campaigns"`
-	Unaffiliated      []SwarmLandingSession  `json:"unaffiliated"`
-	NeedsYou          SwarmNeedsYou          `json:"needs_you"`
-	SectionErrors     map[string]string      `json:"section_errors,omitempty"`
+	Schema             string                 `json:"schema"`
+	Collection         string                 `json:"collection"`
+	ObservedAt         time.Time              `json:"observed_at"`
+	RestoreGeneration  int64                  `json:"restore_generation"`
+	OperatorPrincipal  string                 `json:"operator_principal"`
+	Campaigns          []SwarmLandingCampaign `json:"campaigns"`
+	CampaignsTruncated bool                   `json:"campaigns_truncated,omitempty"`
+	Unaffiliated       []SwarmLandingSession  `json:"unaffiliated"`
+	// Events are the newest messages that belong to no active campaign: a
+	// direct message between two sessions that are in none appears here only.
+	Events        []SwarmEvent      `json:"events"`
+	NeedsYou      SwarmNeedsYou     `json:"needs_you"`
+	SectionErrors map[string]string `json:"section_errors,omitempty"`
 }
 
 type SwarmLandingCampaign struct {
@@ -794,7 +839,7 @@ type SwarmLandingSession struct {
 
 // GetSwarmLanding reads the landing page of one collection.
 func (s *Store) GetSwarmLanding(ctx context.Context, repo string) (SwarmLanding, error) {
-	out := SwarmLanding{Schema: SwarmLandingSchema, Campaigns: []SwarmLandingCampaign{}, Unaffiliated: []SwarmLandingSession{}, NeedsYou: emptySwarmNeedsYou(), OperatorPrincipal: s.channel.Principal}
+	out := SwarmLanding{Schema: SwarmLandingSchema, Campaigns: []SwarmLandingCampaign{}, Unaffiliated: []SwarmLandingSession{}, Events: []SwarmEvent{}, NeedsYou: emptySwarmNeedsYou(), OperatorPrincipal: s.channel.Principal}
 	repo, err := s.swarmRepo(repo)
 	if err != nil {
 		return out, err
@@ -808,13 +853,31 @@ func (s *Store) GetSwarmLanding(ctx context.Context, repo string) (SwarmLanding,
 	if err = tx.QueryRow(ctx, `SELECT clock_timestamp(), (SELECT generation FROM cairn.retrieval_generation WHERE singleton)`).Scan(&out.ObservedAt, &out.RestoreGeneration); err != nil {
 		return out, err
 	}
-	rows, err := tx.Query(ctx, `SELECT campaign FROM cairn.agent_team_campaign WHERE repo=$1 AND active ORDER BY created_at DESC, campaign LIMIT 200`, repo)
+	rows, err := tx.Query(ctx, `SELECT campaign FROM cairn.agent_team_campaign WHERE repo=$1 AND active ORDER BY created_at DESC, campaign LIMIT 201`, repo)
 	if err != nil {
 		return out, err
 	}
 	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
 		return out, err
+	}
+	if len(names) > 200 {
+		names, out.CampaignsTruncated = names[:200], true
+	}
+	// Affiliation is read for every active campaign, not only the listed
+	// ones, so a member of a campaign beyond the list is not shown as
+	// belonging to none.
+	rows, err = tx.Query(ctx, `SELECT DISTINCT m.member FROM cairn.agent_team_member m JOIN cairn.agent_team_campaign c ON c.repo=m.repo AND c.campaign=m.campaign WHERE m.repo=$1 AND c.active AND m.active`, repo)
+	if err != nil {
+		return out, err
+	}
+	members, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return out, err
+	}
+	affiliated := map[string]bool{}
+	for _, member := range members {
+		affiliated[member] = true
 	}
 	rows, err = tx.Query(ctx, `SELECT `+agentSessionColumns+` FROM cairn.agent_session WHERE repo=$1 AND NOT stopped AND expires_at>clock_timestamp() AND database_generation=$2 ORDER BY ordinal`, repo, out.RestoreGeneration)
 	if err != nil {
@@ -835,7 +898,6 @@ func (s *Store) GetSwarmLanding(ctx context.Context, repo string) (SwarmLanding,
 	if err = rows.Err(); err != nil {
 		return out, err
 	}
-	affiliated := map[string]bool{}
 	for _, name := range names {
 		camp, cErr := readTeamCampaignTx(ctx, tx, repo, name, true, true)
 		if cErr != nil {
@@ -847,7 +909,6 @@ func (s *Store) GetSwarmLanding(ctx context.Context, repo string) (SwarmLanding,
 				continue
 			}
 			row.ActiveMembers++
-			affiliated[m.Member] = true
 			if _, ok := online[m.Member]; ok {
 				row.OnlineMembers++
 			}
@@ -864,6 +925,25 @@ func (s *Store) GetSwarmLanding(ctx context.Context, repo string) (SwarmLanding,
 		}
 		a := online[principal]
 		out.Unaffiliated = append(out.Unaffiliated, SwarmLandingSession{AgentID: a.AgentID, Label: a.DisplayName, State: a.Metadata.State, Harness: a.Metadata.Harness, Model: a.Metadata.Model, Project: a.Metadata.Project, TaskSummary: a.Metadata.TaskSummary, StartedAt: a.StartedAt})
+	}
+	// The newest events that no active campaign claims by publisher or
+	// addressed recipient. The landing page is not a resumable log: it is
+	// read whole each time.
+	rows, err = tx.Query(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.repo=$1 AND NOT (e.publisher=ANY($2) OR (e.destination_type='agent' AND e.destination_name=ANY($2))) ORDER BY e.position DESC LIMIT $3`, repo, members, swarmLandingEvents)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		e, sErr := scanEvent(rows)
+		if sErr != nil {
+			rows.Close()
+			return out, sErr
+		}
+		out.Events = append(out.Events, SwarmEvent{Position: e.Position, EventID: e.EventID, Kind: e.Kind, From: e.From, To: e.Destination, Summary: e.Summary, Action: e.Action, Blocker: e.Blocker, Supersedes: e.Supersedes, CausationID: e.CausationID, CorrelationID: e.CorrelationID, Grouped: e.ResponseGroup != nil, ExpectBy: e.ExpectBy, ExpectNextBy: e.ExpectNextBy, Ref: e.Ref, CreatedAt: e.CreatedAt})
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return out, err
 	}
 	errs := map[string]string{}
 	swarmSection(ctx, tx, errs, "needs_you", func(sp pgx.Tx) error {

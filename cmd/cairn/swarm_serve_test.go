@@ -550,18 +550,54 @@ func TestSwarmStreamProtocol(t *testing.T) {
 		t.Fatalf("the first read ignored Last-Event-ID: %v", cursors)
 	}
 
-	// A refused first read is an error response, not an empty stream.
-	s.server.reads = &swarmScriptedReads{next: func(int, core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
-		return core.SwarmStreamRead{}, failing
-	}}
-	if conn = s.stream("alpha", "old", nil); conn.Status != http.StatusUnprocessableEntity || swarmErrorCode(conn.Body) != "STALE_CURSOR" {
-		t.Fatalf("stale cursor at connect: %d %s", conn.Status, conn.Body)
+	// A refused first read is still an event stream. A browser's EventSource
+	// gives up for good on any other answer and cannot read why, so a
+	// reconnect with a cursor from before a restore would strand the page.
+	for name, refusal := range map[string]*core.Error{
+		"stale cursor":     failing,
+		"unknown campaign": {Code: "NOT_FOUND", Message: "team campaign not found"},
+		"malformed cursor": {Code: "INVALID_REQUEST", Message: "invalid swarm cursor"},
+	} {
+		s.server.reads = &swarmScriptedReads{next: func(int, core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+			return core.SwarmStreamRead{}, refusal
+		}}
+		conn = s.stream("alpha", "old", nil)
+		if conn.Status != http.StatusOK {
+			t.Fatalf("%s at connect: status %d %s", name, conn.Status, conn.Body)
+		}
+		if first := conn.next(t); first.Event != "hello" {
+			t.Fatalf("%s at connect: first event %q", name, first.Event)
+		}
+		if reset := conn.next(t); reset.Event != "reset" || !strings.Contains(reset.Data, `"code":"`+refusal.Code+`"`) {
+			t.Fatalf("%s at connect: %q %s", name, reset.Event, reset.Data)
+		}
+		if _, open := <-conn.Events; open {
+			t.Fatalf("%s at connect: the stream stayed open", name)
+		}
 	}
-	s.server.reads = &swarmScriptedReads{next: func(int, core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
-		return core.SwarmStreamRead{}, &core.Error{Code: "NOT_FOUND", Message: "team campaign not found"}
+	// A first read that fails because the store is down is a fault, and the
+	// same connection delivers the window once the store answers.
+	s.server.reads = &swarmScriptedReads{next: func(call int, req core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+		if call < 2 {
+			return core.SwarmStreamRead{}, errors.New("connection refused")
+		}
+		return core.SwarmStreamRead{Resync: true, ResyncReason: "new_window", Events: []core.SwarmEvent{swarmScriptedEvent(1)}, Cursor: "cursor-1", Snapshot: swarmScriptedSnapshot(1)}, nil
 	}}
-	if conn = s.stream("gone", "", nil); conn.Status != http.StatusNotFound {
-		t.Fatalf("unknown campaign: %d %s", conn.Status, conn.Body)
+	conn = s.stream("alpha", "", nil)
+	var recovered []string
+	for {
+		event := conn.next(t)
+		if event.Event == "herdr" {
+			continue
+		}
+		recovered = append(recovered, event.Event)
+		if event.Event == "tick" {
+			break
+		}
+	}
+	conn.close()
+	if strings.Join(recovered, "|") != "hello|fault|fault|resync|log|snapshot|tick" {
+		t.Fatalf("store down at connect: %v", recovered)
 	}
 	// The stream is a GET with no Origin header; Sec-Fetch-Site keeps
 	// another local page out.
@@ -684,4 +720,88 @@ func TestSwarmStreamPaneLoopIsIndependent(t *testing.T) {
 	if laterStoreCalls := len(s.server.reads.(*swarmScriptedReads).cursors()); laterStoreCalls != storeCalls || laterPaneCalls != paneCalls {
 		t.Fatalf("reads continued with no browser: store %d -> %d, Herdr %d -> %d", storeCalls, laterStoreCalls, paneCalls, laterPaneCalls)
 	}
+}
+
+// A stream lives no longer than the session that opened it: it ends at
+// logout, at the session's lifetime and when the session limit evicts the
+// session, and nothing is read for it afterwards.
+func TestSwarmStreamEndsWithItsSession(t *testing.T) {
+	open := func(t *testing.T) (*swarmTestServer, *swarmScriptedReads, *swarmStreamConn) {
+		t.Helper()
+		s := newSwarmTestServer(t, nil, "fixture", swarmNoPanes)
+		reads := &swarmScriptedReads{next: func(call int, req core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+			return core.SwarmStreamRead{Cursor: "cursor", Snapshot: swarmScriptedSnapshot(int64(call))}, nil
+		}}
+		s.server.reads = reads
+		s.login()
+		conn := s.stream("alpha", "", nil)
+		if conn.Status != http.StatusOK {
+			t.Fatalf("stream: %d %s", conn.Status, conn.Body)
+		}
+		conn.until(t, "tick")
+		return s, reads, conn
+	}
+	ended := func(t *testing.T, reads *swarmScriptedReads, conn *swarmStreamConn) {
+		t.Helper()
+		reset, _ := conn.until(t, "reset")
+		if !strings.Contains(reset.Data, `"code":"UNAUTHENTICATED"`) {
+			t.Fatalf("reset: %s", reset.Data)
+		}
+		if _, open := <-conn.Events; open {
+			t.Fatal("the stream stayed open after its session ended")
+		}
+		before := len(reads.cursors())
+		time.Sleep(120 * time.Millisecond)
+		if after := len(reads.cursors()); after != before {
+			t.Fatalf("the store was read %d more times for an ended session", after-before)
+		}
+	}
+	t.Run("logout", func(t *testing.T) {
+		s, reads, conn := open(t)
+		if resp, raw := s.do(http.MethodPost, "/api/auth/logout", nil, map[string]string{"X-CSRF-Token": s.csrf}); resp.StatusCode != http.StatusOK {
+			t.Fatalf("logout: %d %s", resp.StatusCode, raw)
+		}
+		ended(t, reads, conn)
+		if again := s.stream("alpha", "", nil); again.Status != http.StatusUnauthorized {
+			t.Fatalf("a new stream after logout: %d", again.Status)
+		}
+	})
+	t.Run("lifetime", func(t *testing.T) {
+		s, reads, conn := open(t)
+		// The session reaches its lifetime while the stream is open.
+		s.server.mu.Lock()
+		for id, session := range s.server.sessions {
+			session.expires = time.Now().Add(-time.Second)
+			s.server.sessions[id] = session
+		}
+		s.server.mu.Unlock()
+		ended(t, reads, conn)
+	})
+	t.Run("evicted by the session limit", func(t *testing.T) {
+		s, reads, conn := open(t)
+		for i := 0; i < swarmSessionLimit; i++ {
+			// Other browsers sign in; each takes a session of its own.
+			fresh := &swarmTestServer{t: t, server: s.server, http: s.http, client: &http.Client{}}
+			resp, raw := fresh.do(http.MethodPost, "/api/auth/login", map[string]string{"token": swarmTestToken}, nil)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("login %d: %d %s", i, resp.StatusCode, raw)
+			}
+		}
+		ended(t, reads, conn)
+	})
+	t.Run("another session's logout", func(t *testing.T) {
+		s, _, conn := open(t)
+		other := &swarmTestServer{t: t, server: s.server, http: s.http, client: &http.Client{}}
+		jar, _ := cookiejar.New(nil)
+		other.client.Jar = jar
+		other.login()
+		if resp, raw := other.do(http.MethodPost, "/api/auth/logout", nil, map[string]string{"X-CSRF-Token": other.csrf}); resp.StatusCode != http.StatusOK {
+			t.Fatalf("logout of the other session: %d %s", resp.StatusCode, raw)
+		}
+		for i := 0; i < 3; i++ {
+			if event, _ := conn.until(t, "tick"); event.Event != "tick" {
+				t.Fatalf("the stream of the first session ended: %s", event.Event)
+			}
+		}
+	})
 }

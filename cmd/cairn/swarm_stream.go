@@ -167,12 +167,25 @@ func swarmPaneDigest(view swarmPaneView) [sha256.Size]byte {
 }
 
 // swarmStreamFatal lists the refusals after which the same stream cannot
-// continue. The page then starts again without a cursor.
+// continue. The page then decides: a refused cursor starts a new stream
+// without one, an unknown campaign is shown as such.
 var swarmStreamFatal = map[string]bool{
 	"STALE_CURSOR": true, "INVALID_REQUEST": true, "NOT_FOUND": true, "AUTHORITY_DENIED": true, "SCHEMA_MISMATCH": true,
 }
 
-func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request) {
+// handleStream serves one stream connection for a signed-in session.
+//
+// Once the session is accepted the answer is always an event stream, also
+// when the first read is refused or fails. A browser's EventSource gives up
+// for good on any other answer and cannot read its status or body, so a
+// reconnect that carries a cursor from before a restore, or one that arrives
+// while the store is down, would otherwise leave the page stuck until a
+// manual reload. A refusal is a "reset" event; a failed read is a "fault"
+// event and the server keeps trying.
+//
+// The stream lives no longer than its session: it ends at logout, at the
+// session's lifetime, and when the session limit evicts the session.
+func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessionID string, session swarmBrowserSession) {
 	if r.Method != http.MethodGet {
 		swarmMethod(w, http.MethodGet)
 		return
@@ -187,13 +200,6 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request) {
 	if request.Cursor == "" {
 		request.Cursor = r.URL.Query().Get("cursor")
 	}
-	// The first read decides the status line: an unknown campaign or a
-	// refused cursor is an error response, not an empty stream.
-	read, err := s.reads.ReadSwarmStream(ctx, request)
-	if err != nil {
-		writeSwarmError(w, err)
-		return
-	}
 	header := w.Header()
 	header.Set("Content-Type", "text/event-stream; charset=utf-8")
 	header.Set("Cache-Control", "no-store")
@@ -203,16 +209,66 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	s.panes.acquire()
 	defer s.panes.release()
-	if err = stream.send("hello", "", map[string]any{
-		"schema": core.SwarmStreamSchema, "collection": s.collection, "campaign": read.Snapshot.Campaign.Campaign,
-		"operator_principal": read.Snapshot.OperatorPrincipal, "tick_ms": s.tick.Milliseconds(),
+	operator := ""
+	if s.store != nil {
+		operator = s.store.Channel().Principal
+	}
+	if err := stream.send("hello", "", map[string]any{
+		"schema": core.SwarmStreamSchema, "collection": s.collection, "campaign": request.Campaign,
+		"operator_principal": operator, "tick_ms": s.tick.Milliseconds(),
 		"log_window": core.SwarmFlowEventWindow, "plane_url": s.planeURL, "server_time": s.now(),
 	}); err != nil {
 		return
 	}
+	signedOut := func() {
+		_ = stream.send("reset", "", map[string]any{"code": "UNAUTHENTICATED", "error": "the session ended; sign in again"})
+	}
+	// wait pauses for one tick. It reports false when the stream must end.
+	wait := func() bool {
+		timer := time.NewTimer(s.tick)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return false
+		case <-session.revoked:
+			signedOut()
+			return false
+		case <-timer.C:
+			return true
+		}
+	}
 	var lastSnapshot, lastPanes [sha256.Size]byte
 	sentSnapshot, sentPanes := false, false
 	for {
+		// Nothing is read for a session that has ended.
+		if !s.sessionAlive(sessionID) {
+			signedOut()
+			return
+		}
+		read, err := s.reads.ReadSwarmStream(ctx, request)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			code := core.Code(err)
+			if swarmStreamFatal[code] {
+				_ = stream.send("reset", "", map[string]any{"code": code, "error": err.Error()})
+				return
+			}
+			// The store could not be read. Keep the connection and say so;
+			// the pane data is still its own observation.
+			if err = stream.send("fault", "", map[string]any{"code": code, "error": err.Error(), "at": s.now()}); err != nil {
+				return
+			}
+			if !wait() {
+				return
+			}
+			continue
+		}
+		if !s.sessionAlive(sessionID) {
+			signedOut()
+			return
+		}
 		if read.Resync {
 			if err = stream.send("resync", "", map[string]any{"reason": read.ResyncReason, "membership_epoch": read.Snapshot.MembershipEpoch}); err != nil {
 				return
@@ -245,42 +301,8 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		request.Cursor = read.Cursor
-		if !read.More && !swarmSleep(ctx, s.tick) {
+		if !read.More && !wait() {
 			return
 		}
-		for {
-			next, rErr := s.reads.ReadSwarmStream(ctx, request)
-			if rErr == nil {
-				read = next
-				break
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			code := core.Code(rErr)
-			if swarmStreamFatal[code] {
-				_ = stream.send("reset", "", map[string]any{"code": code, "error": rErr.Error()})
-				return
-			}
-			// The database could not be read. Keep the connection and say
-			// so; the pane data is still its own observation.
-			if err = stream.send("fault", "", map[string]any{"code": code, "error": rErr.Error(), "at": s.now()}); err != nil {
-				return
-			}
-			if !swarmSleep(ctx, s.tick) {
-				return
-			}
-		}
-	}
-}
-
-func swarmSleep(ctx context.Context, d time.Duration) bool {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
 	}
 }
