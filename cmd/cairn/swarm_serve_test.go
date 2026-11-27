@@ -873,6 +873,80 @@ func TestSwarmStreamEndsWithItsSession(t *testing.T) {
 			}
 		}
 	})
+	// The router admitted the request and the session ended before the
+	// handler ran. Nothing is started for that session and nothing is sent to
+	// it but the request to sign in: no host reader, no store read, no hello
+	// frame with the operator and the tracker address.
+	for name, end := range map[string]func(s *swarmServer, id string){
+		"logged out before the handler ran": func(s *swarmServer, id string) {
+			s.mu.Lock()
+			s.endSessionLocked(id)
+			s.mu.Unlock()
+		},
+		"past its lifetime before the handler ran": func(s *swarmServer, id string) {
+			s.mu.Lock()
+			session := s.sessions[id]
+			session.expires = time.Now().Add(-time.Second)
+			s.sessions[id] = session
+			s.mu.Unlock()
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			started := make(chan string, 8)
+			s := newSwarmTestServer(t, nil, "fixture", func(ctx context.Context) swarmPaneObservation {
+				started <- "pane reader"
+				return swarmNoPanes(ctx)
+			})
+			s.server.windows = newSwarmWindowLoop(func(ctx context.Context) swarmWindowObservation {
+				started <- "transcript reader"
+				return swarmNoWindowReader(ctx)
+			}, time.Hour, time.Hour)
+			s.server.planeURL = "https://tracker.invalid/{id}/"
+			reads := &swarmScriptedReads{next: func(call int, req core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+				return core.SwarmStreamRead{Cursor: "cursor", Snapshot: swarmScriptedSnapshot(int64(call))}, nil
+			}}
+			s.server.reads = reads
+			id, _, err := s.server.issueSession()
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.server.mu.Lock()
+			session := s.server.sessions[id]
+			s.server.mu.Unlock()
+			// The router's check passed with this copy; then the session ended.
+			end(s.server, id)
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/api/swarm/stream?campaign=alpha", nil)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				s.server.handleStream(recorder, request, id, session)
+			}()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the stream of an ended session did not return")
+			}
+			body := recorder.Body.String()
+			if want := "event: reset\ndata: {\"code\":\"UNAUTHENTICATED\","; !strings.HasPrefix(body, want) || strings.Count(body, "event: ") != 1 {
+				t.Fatalf("an ended session was sent: %q", body)
+			}
+			for _, leak := range []string{"hello", "tracker.invalid", "operator_principal", "fixture"} {
+				if strings.Contains(body, leak) {
+					t.Fatalf("an ended session was sent %q: %q", leak, body)
+				}
+			}
+			if calls := len(reads.cursors()); calls != 0 {
+				t.Fatalf("the store was read %d times for an ended session", calls)
+			}
+			select {
+			case reader := <-started:
+				t.Fatalf("the %s was started for an ended session", reader)
+			case <-time.After(150 * time.Millisecond):
+			}
+		})
+	}
 }
 
 // The context-window observation is a third observation with its own loop

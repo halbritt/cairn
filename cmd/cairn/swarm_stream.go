@@ -252,27 +252,14 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 	w.WriteHeader(http.StatusOK)
 	stream := &swarmStreamWriter{w: w, flusher: flusher, controller: http.NewResponseController(w)}
 
-	s.panes.acquire()
-	defer s.panes.release()
-	s.windows.acquire()
-	defer s.windows.release()
-	operator := ""
-	if s.store != nil {
-		operator = s.store.Channel().Principal
-	}
-	if err := stream.send("hello", "", map[string]any{
-		"schema": core.SwarmStreamSchema, "collection": s.collection, "campaign": request.Campaign,
-		"operator_principal": operator, "tick_ms": s.tick.Milliseconds(),
-		"log_window": core.SwarmFlowEventWindow, "plane_url": s.planeURL, "server_time": s.now(),
-	}); err != nil {
-		return
-	}
 	signedOut := func() {
 		_ = stream.send("reset", "", map[string]any{"code": "UNAUTHENTICATED", "error": "the session ended; sign in again"})
 	}
 	// The stream's reads and frames stop when the session ends, not only
 	// between ticks: a read that is waiting on the store is cancelled, and no
-	// frame is written after logout, eviction or the session's lifetime.
+	// frame is written after logout, eviction or the session's lifetime. This
+	// is set up before anything is started or sent, so a session that ended
+	// between the router's check and this point gets nothing.
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	lifetime := time.NewTimer(time.Until(session.expires))
@@ -307,6 +294,26 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 		case <-timer.C:
 			return true
 		}
+	}
+	if !s.sessionAlive(sessionID) {
+		signedOut()
+		return
+	}
+	// The host readers run only while a live session's stream needs them.
+	s.panes.acquire()
+	defer s.panes.release()
+	s.windows.acquire()
+	defer s.windows.release()
+	operator := ""
+	if s.store != nil {
+		operator = s.store.Channel().Principal
+	}
+	if !emit("hello", "", map[string]any{
+		"schema": core.SwarmStreamSchema, "collection": s.collection, "campaign": request.Campaign,
+		"operator_principal": operator, "tick_ms": s.tick.Milliseconds(),
+		"log_window": core.SwarmFlowEventWindow, "plane_url": s.planeURL, "server_time": s.now(),
+	}) {
+		return
 	}
 	var lastSnapshot, lastPanes, lastWindows [sha256.Size]byte
 	sentSnapshot, sentPanes, sentWindows := false, false, false
