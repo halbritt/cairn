@@ -371,7 +371,7 @@
             el("span", { class: "tag kind", text: event.kind }),
             event.action ? el("span", { class: "tag", text: "action " + event.action }) : null,
             event.blocker ? el("span", { class: "tag flag", text: "blocker" }) : null,
-            el("span", { class: "route", text: `${labelOf(event.from)} → ${destinationLabel(event.to)}` }),
+            el("span", { class: "route", text: `${senderLabel(event)} → ${destinationLabel(event.to)}` }),
             el("span", { class: "muted" }, " · ", timeEl(event.created_at))),
           el("p", { class: "summary" }, event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" }))));
       }
@@ -1146,7 +1146,7 @@
     if (!memberFlow || !memberFlow.oldest_pending) return el("span", { class: "muted", text: "inbox empty" });
     const delivery = flow().deliveries.find((d) => d.delivery_id === memberFlow.oldest_pending);
     return el("span", {},
-      delivery ? [linked(delivery.summary || delivery.kind), ` from ${labelOf(delivery.from)}, `, timeEl(delivery.created_at)] : memberFlow.oldest_pending,
+      delivery ? [linked(delivery.summary || delivery.kind), ` from ${senderLabel(delivery)}, `, timeEl(delivery.created_at)] : memberFlow.oldest_pending,
       memberFlow.pending > 1 ? ` (${memberFlow.pending} pending)` : "");
   }
 
@@ -1354,25 +1354,34 @@
   };
 
   // Cairn itself publishes some events under the operator principal (the
-  // scheduler's wait and checkpoint notices). Such an event carries `system`
-  // and is labelled as from Cairn, never as from the owner.
-  function senderLabel(event) {
-    if (event && event.system) return `Cairn (${systemWords[event.system] || String(event.system).replace(/_/g, " ")})`;
-    return labelOf(event && event.from);
+  // scheduler's wait and checkpoint notices). Such an event, and each of its
+  // deliveries, carries `system`. A delivery without the value falls back to
+  // its event's when the event is in the window. These three functions are
+  // the only place that decides how a sender is shown and whether something
+  // is the owner's own.
+  function systemOf(item) {
+    if (!item) return "";
+    if (item.system) return item.system;
+    if (item.delivery_id && item.event_id) {
+      const event = state.log.get(item.event_id);
+      if (event && event.system) return event.system;
+    }
+    return "";
   }
 
-  function sentByOwner(event) {
-    return !!event && event.from === operator() && !event.system;
+  function senderLabel(item) {
+    const system = systemOf(item);
+    if (system) return `Cairn (${systemWords[system] || String(system).replace(/_/g, " ")})`;
+    return labelOf(item && item.from);
   }
 
-  function ownerSentDelivery(delivery) {
-    const event = state.log.get(delivery.event_id);
-    return delivery.from === operator() && !delivery.system && !(event && event.system);
+  function fromOwner(item) {
+    return !!item && item.from === operator() && !systemOf(item);
   }
 
   function flowRow(event, ledgerItems) {
     const deliveries = deliveriesOf(event.event_id);
-    const ownerSent = sentByOwner(event);
+    const ownerSent = fromOwner(event);
     const row = el("li", { class: `event event-${event.kind}${ownerSent ? " owner-sent" : ""}`, dataset: { event: event.event_id, position: String(event.position) } });
     row.append(el("div", { class: "event-head" },
       el("span", { class: "tag kind", text: event.kind }),
@@ -1468,7 +1477,7 @@
 
     const recent = eventsNewestFirst().filter((event) => involves(event, principal)).slice(0, 20);
     body.append(el("h3", { text: "Recent events" }), recent.length ? el("ul", { class: "plain" }, recent.map((event) => el("li", {},
-      el("span", { class: "tag", text: event.kind }), ` ${labelOf(event.from)} → ${destinationLabel(event.to)}: `, linked(event.summary || ""), " · ", timeEl(event.created_at), " ",
+      el("span", { class: "tag", text: event.kind }), ` ${senderLabel(event)} → ${destinationLabel(event.to)}: `, linked(event.summary || ""), " · ", timeEl(event.created_at), " ",
       el("button", { type: "button", class: "secondary", text: "Open", onclick: () => openEvent(event.event_id) }))))
       : note("none in the window"));
 
@@ -1486,9 +1495,9 @@
     if (sectionError("flow")) return note("unavailable: " + sectionError("flow"), "unavailable");
     if (!list.length) return note("none");
     return el("ul", { class: "plain" }, list.map((delivery) => el("li", {},
-      deliveryChip(delivery, ownerSentDelivery(delivery)), " ",
+      deliveryChip(delivery, fromOwner(delivery)), " ",
       el("span", { class: "tag", text: delivery.kind }), " ",
-      linked(delivery.summary || ""), ` · ${incoming ? "from " + labelOf(delivery.from) : "to " + labelOf(delivery.consumer)} · `, timeEl(delivery.created_at), " ",
+      linked(delivery.summary || ""), ` · ${incoming ? "from " + senderLabel(delivery) : "to " + labelOf(delivery.consumer)} · `, timeEl(delivery.created_at), " ",
       deliveryControls(delivery))));
   }
 
@@ -1639,7 +1648,7 @@
       body.replaceChildren(eventEnvelope(reply.event || event || {}));
       const deliveries = reply.deliveries || deliveriesOf(eventID);
       body.append(el("h3", { text: "Recipients" }), deliveries.length ? el("ul", { class: "plain" }, deliveries.map((delivery) => el("li", {},
-        deliveryChip(delivery, sentByOwner(reply.event || event)), " ", deliveryControls(delivery)))) : note("no delivery"));
+        deliveryChip(delivery, fromOwner(reply.event || event)), " ", deliveryControls(delivery)))) : note("no delivery"));
       body.append(el("h3", { text: "Message" }));
       if (typeof reply.body === "string") {
         body.append(el("pre", { class: "body", text: reply.body }));
@@ -1652,7 +1661,7 @@
       if (event) body.append(eventEnvelope(event));
       const deliveries = deliveriesOf(eventID);
       body.append(el("h3", { text: "Recipients" }), deliveries.length ? el("ul", { class: "plain" }, deliveries.map((delivery) => el("li", {},
-        deliveryChip(delivery, sentByOwner(event)), " ", deliveryControls(delivery)))) : note("no delivery in the snapshot"));
+        deliveryChip(delivery, fromOwner(event)), " ", deliveryControls(delivery)))) : note("no delivery in the snapshot"));
       body.append(note("The event body could not be read. " + refusalText(error), "unavailable"));
     }
   }
@@ -1695,7 +1704,7 @@
           const expected = flow().deliveries.find((d) => d.delivery_id === error.body.expected);
           refreshSnapshot();
           throw new APIError(`${error.message}. Nothing was changed. You chose "${expected ? expected.summary || expected.event_id : error.body.expected}", ` +
-            `but your oldest delivery is "${oldest.summary || oldest.event_id}" from ${labelOf(oldest.from)}. Acknowledge that one first`, error.code, error.status, error.body);
+            `but your oldest delivery is "${oldest.summary || oldest.event_id}" from ${senderLabel(oldest)}. Acknowledge that one first`, error.code, error.status, error.body);
         }
         throw error;
       }
@@ -1812,8 +1821,8 @@
       changed ? note("What this cancel affects changed since it was shown: the recipient or the waits are different. Review it and confirm again.", "warning") : null,
       el("dl", { class: "fields preview" },
         field("Recipient", el("strong", { text: labelOf(delivery.consumer) }), " ", el("code", { text: delivery.consumer || "" })),
-        field("Message", linked(delivery.summary || delivery.event_id || ""), ` from ${labelOf(delivery.from)}`),
-        field("Now", deliveryChip(delivery, ownerSentDelivery(delivery)))),
+        field("Message", linked(delivery.summary || delivery.event_id || ""), ` from ${senderLabel(delivery)}`),
+        field("Now", deliveryChip(delivery, fromOwner(delivery)))),
       note("Only this recipient's delivery is cancelled. Other recipients, and a reply that already counts in a group, are not changed."),
       lookupView("Direct-reply waits on the request", preview.direct_reply_waits));
     const lookups = [preview.direct_reply_waits];
@@ -1827,7 +1836,7 @@
     }
     const siblings = preview.siblings || [];
     body.append(el("div", { class: "lookup" }, el("h4", { text: "Other recipients (unchanged)" }),
-      siblings.length ? el("ul", { class: "plain" }, siblings.map((sibling) => el("li", {}, deliveryChip(sibling, ownerSentDelivery(sibling))))) : note("none")));
+      siblings.length ? el("ul", { class: "plain" }, siblings.map((sibling) => el("li", {}, deliveryChip(sibling, fromOwner(sibling))))) : note("none")));
     if (!preview.cancellable) {
       body.append(note("The store would refuse this cancel now. " + (preview.refusal ? `${preview.refusal.code}: ${withoutCode(preview.refusal.message, preview.refusal.code)}` : ""), "refused"));
       prepareConfirm(false, "Cancel this delivery", null);

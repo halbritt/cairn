@@ -627,6 +627,10 @@ class Fixture:
                    lambda: self.wait_conflict(page), page, category="slice:CAIRN-833")
         self.check("Cairn's own notices are labelled from Cairn, never as the owner's", lambda: self.system_events(page), page,
                    category="slice:CAIRN-830")
+        self.check("Cairn's notices read as from Cairn in the recipient's Details too", lambda: self.system_in_details(page), page,
+                   category="slice:CAIRN-830")
+        self.check("an open Cairn delivery whose event is outside the window still reads as from Cairn",
+                   lambda: self.system_outside_window(page), page, category="waiting:delivery-system")
         self.check("an ended session shows sign-in over dialogs and on the landing page; routes answer 401",
                    lambda: self.signed_out_routes(page), page)
         self.check("a member that left gets no send control and the store refuses a send to it",
@@ -1266,6 +1270,68 @@ class Fixture:
         owner = page.locator("#flow li.event.owner-sent").first
         self.expect(owner).to_contain_text("you (operator)")
         require(owner.locator(".tag.system").count() == 0, "the owner's own send is labelled as from Cairn")
+
+    def system_in_details(self, page, require_all=True):
+        """Cairn's notices to the lead read as from Cairn in the lead's Details too."""
+        page.locator(f"#agents .agent[data-member='{self.principal('lead')}'] button", has_text="Details").click()
+        try:
+            detail = page.locator("#detail")
+            self.expect(detail).to_be_visible()
+            # Every row of Recent events and of the open deliveries in or out that
+            # carries a Cairn sender label must not also read as the owner's.
+            items = detail.locator("li").all_inner_texts()
+            cairn_rows = [t for t in items if "Cairn (" in t]
+            for text in items:
+                if "Cairn (" in text:
+                    require("you (operator)" not in text.split("→")[0] and "sent, not yet seen" not in text,
+                            "a Cairn notice reads as the owner's in Details: " + text[:200])
+            # The wait notice and the overdue checkpoint are both in the lead's inbox.
+            wanted = ("wait notice", "overdue checkpoint")
+            for kind in wanted:
+                require(any(f"Cairn ({kind})" in t for t in cairn_rows), f"the lead's Details do not label the {kind} as from Cairn")
+            owner_rows = [t for t in items if "from you (operator)" in t or t.startswith("notice you (operator)") or " you (operator) →" in t]
+            for text in owner_rows:
+                require("Cairn (" not in text, "a row is labelled both ways: " + text[:200])
+            self.report["details_system_rows"] = [t.split("·")[0][:100] for t in cairn_rows][:6]
+        finally:
+            page.locator("#detail button.close").click()
+
+    def system_outside_window(self, page):
+        # Push the scheduler's notices out of the page's window: publish more
+        # campaign events than one window holds, then reload so the page reads a
+        # new window. Their deliveries to the lead stay open, so the snapshot still
+        # lists them, but no event of theirs is in the log any more.
+        system_ids = page.evaluate("() => [...document.querySelectorAll('#flow li.event')].filter((n) => n.querySelector('.tag.system')).map((n) => n.dataset.event)")
+        require(system_ids, "no Cairn-published event is in the window to push out")
+        for n in range(320):
+            self.publish("worker_a", f"Filler {n}.", {"type": "topic", "name": "swarm-fixture.filler"}, kind="notice",
+                         action="none", summary=f"Filler event {n}")
+        page.reload()
+        self.expect(page.locator("#live")).to_have_text("live", timeout=20000)
+        self.expect(page.locator("#flow li.event", has_text="Filler event 319")).to_have_count(1, timeout=20000)
+        ids = set(page.evaluate("() => window.cairnSwarmView.logIDs()"))
+        snapshot = self.snapshot()
+        lead = self.principal("lead")
+        require(not (set(system_ids) & ids), "the Cairn-published events are still in the window")
+        outside = [d for d in snapshot["flow"]["deliveries"]
+                   if d["event_id"] in system_ids and d["display"] in ("pending", "leased", "held")]
+        self.report["outside_window_candidates"] = [dict(consumer=d["consumer"][:14], display=d["display"]) for d in snapshot["flow"]["deliveries"] if d["event_id"] in system_ids]
+        require(outside, "no open delivery of a Cairn-published event outside the window is in the snapshot")
+        lead = outside[0]["consumer"]
+        self.report["outside_window_system"] = [dict(summary=d.get("summary"), system=d.get("system")) for d in outside]
+        page.locator(f"#agents .agent[data-member='{lead}'] button", has_text="Details").click()
+        try:
+            for delivery in [d for d in outside if d["consumer"] == lead]:
+                row = page.locator("#detail li", has=page.locator(f"[data-delivery='{delivery['delivery_id']}']"))
+                self.expect(row).to_have_count(1, timeout=10000)
+                text = row.inner_text()
+                if not delivery.get("system"):
+                    raise AssertionError("waiting: the snapshot's delivery carries no `system` value (flow author's field), "
+                                         "so a delivery outside the window cannot be told apart from the owner's: " + text[:160])
+                require("Cairn (" in text and "from you (operator)" not in text, "an open Cairn delivery outside the window reads as the owner's: " + text[:200])
+                require("sent, not yet seen" not in text, "an open Cairn delivery outside the window has the owner's unseen mark")
+        finally:
+            page.locator("#detail button.close").click()
 
     def signed_out_routes(self, page):
         landing = page.context.new_page()
