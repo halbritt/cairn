@@ -215,18 +215,19 @@ pages use the event log's campaign principal set, which includes former
 members. The landing page shows items whose subjects belong to no active
 campaign. Rows with more distinct sessions waiting directly
 on their events come first, then older rows. A source read failure is shown
-with its reason. The other sources can still show their items.
+with its reason. The other sources can still show their items. A copy command appears only
+where the local operator CLI can perform the stated inspection.
 
 | Row | When it appears | Owner action |
 | --- | --- | --- |
 | Board question | An unanswered request on `agent-board` within its lifetime. The event summary supplies the title when present. The card supplies its lifetime and whether a default was declared. A card without a lifetime uses 24 hours, capped at 72 hours after publication. A request without a card has no displayed expiry. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |
-| Operator delivery | A pending or leased delivery addressed to the operator. | Open the event and reply to a request, or read and acknowledge an inbox message. |
+| Operator delivery | A pending or leased delivery addressed to the operator. Only the collection's oldest eligible delivery has `inbox_head: true`. If it belongs to another page, this page has no marked row. | Open the event and reply to a request. Acknowledge a delivery when it reaches the head of the operator inbox. |
 | Decision | An open ledger decision owned by the coordinator or operator. A lead's decision appears on the lead's row. | Make the decision and record the outcome in the campaign ledger. |
 | Escalation | A ledger blocker marked escalated. | Review the campaign ledger and resolve the escalation with its owner. |
 | Workstream decision | The workstream has a nonempty `decision_needed` field. | Give the workstream owner a decision and clear the request. |
 | Handoff due | The coordinator reached the campaign's age or compaction limit. | Review the ledger and arrange a coordinator handoff. |
 | Owner turn | The session has eligible inbox work and the host reported `owner_turn_required` for its current execution within the existing 120-second freshness window. | Find the session in Herdr and take a turn. |
-| Failed delivery | Unresolved failed deliveries, grouped by their recorded code. Operator cancellations, releases, and consumer retirements are excluded. A reissue clears its original failure from the list. | Inspect the individual deliveries and review prior effects before choosing recovery. |
+| Failed delivery | Unresolved failed deliveries, grouped by their recorded code. The title names the oldest failed event and its recipient. Operator cancellations, releases, and consumer retirements are excluded. A reissue clears its original failure from the list. | Inspect the individual deliveries and review prior effects before choosing recovery. |
 | Stalled agent | A current session meets `pending_starved` or `hold_stalled`. | Inspect the session and its oldest affected delivery before intervening. |
 | Stopped session backlog | A stopped session still has eligible pending or leased work. | Review the stranded deliveries before deciding whether to notify the publishers or recover the work. |
 | Timed-out wait | A registered wait timed out within the last 24 hours in the current restore generation. | Inspect the wait and follow up with its owner. |

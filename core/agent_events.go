@@ -1033,6 +1033,15 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 	return out, tx.Commit(ctx)
 }
 
+// nextEventCandidate is shared by the claim and the swarm's read-only inbox
+// head preview. The claim alone adds its row lock.
+const nextEventCandidate = `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
+	WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3)
+	AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL
+	AND ` + requestAdmissionOpen + ` AND ` + wakeHold + ` AND ` + waitNotificationAdmissionOpen + `
+	AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp()))
+	ORDER BY e.position`
+
 // nextEventTx lets a scoped caller check the inbox head before leasing it.
 // That caller skips the general expiry sweep and changes only the selected
 // delivery. The claim query still excludes work past its admission limit.
@@ -1068,7 +1077,7 @@ func (s *Store) nextEventTx(ctx context.Context, tx pgx.Tx, repo string, dest De
 		rowLock += " SKIP LOCKED"
 	}
 	var id string
-	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND `+waitNotificationAdmissionOpen+` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position`+rowLock+` LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
+	err = tx.QueryRow(ctx, nextEventCandidate+rowLock+` LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, nil
 	}

@@ -75,7 +75,7 @@ func swarmNeedsTestItem(t *testing.T, needs SwarmNeedsYou, kind, subject, action
 	for _, item := range needs.Items {
 		if item.Type == kind && item.Subject == subject {
 			if item.ID == "" || item.Title == "" || !item.Since.Equal(since) || item.Action.Kind != action ||
-				item.Action.Label == "" || item.Action.Command == "" {
+				item.Action.Label == "" {
 				t.Fatalf("wrong needs row: %+v, want subject %s action %s since %s", item, subject, action, since)
 			}
 			return item
@@ -125,7 +125,7 @@ func TestSwarmNeedsBoardQuestionOnlyOwnerAction(t *testing.T) {
 	want := swarmNeedsTestItem(t, needs, SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", board.CreatedAt)
 	if len(needs.Items) != 1 || want.Refs.EventID != board.EventID || want.Refs.Record == nil ||
 		*want.Refs.Record != board.Ref || want.ExpiresAt == nil || !want.ExpiresAt.Equal(board.CreatedAt.Add(10*time.Minute)) ||
-		want.Title != "Board question" || want.Detail != "Unattended default declared" {
+		want.Title != "Board question from "+f.root.DisplayName || want.Detail != "Unattended default declared" {
 		t.Fatalf("board-only needs rows: %+v and %+v", needs, want)
 	}
 	if got := needs.LeadDecisions[lead.Inbox]; len(got) != 1 || got[0].ItemKey != decision.ItemKey ||
@@ -277,7 +277,13 @@ func TestSwarmNeedsFailedDeliveryGroups(t *testing.T) {
 	codes := []string{"processing_failed", "processing_failed", "task_deadline", "operator_cancelled", "operator_released", "consumer_retired"}
 	events, ids := make([]AgentEvent, len(codes)), make([]string, len(codes))
 	for i, code := range codes {
-		events[i] = swarmNeedsTestPublish(f, f.rootView, "request", "agent", a.Inbox, "Process material", "")
+		summary := ""
+		if i < 2 {
+			summary = "Process material"
+		}
+		events[i] = swarmNeedsTestPublishRequest(f, f.rootView, "Note body should not title the failure", PublishEventRequest{
+			Kind: "request", Destination: EventDestination{"agent", a.Inbox}, Summary: summary,
+		})
 		ids[i] = swarmNeedsTestDelivery(f, events[i])
 		f.exec(`UPDATE cairn.agent_delivery SET state='failed',code=$2,completed_at=$3 WHERE delivery_id=$1`,
 			ids[i], code, at.Add(time.Duration(i)*time.Second))
@@ -291,7 +297,11 @@ func TestSwarmNeedsFailedDeliveryGroups(t *testing.T) {
 	}{{0, 2}, {2, 1}} {
 		item := swarmNeedsTestItem(t, SwarmNeedsYou{Items: []SwarmNeed{needs.Items[i]}}, SwarmNeedFailedDelivery,
 			a.Inbox, "inspect", at.Add(time.Duration(expected.first)*time.Second))
-		if item.Count != expected.count || item.Refs.Code != codes[expected.first] || item.Refs.EventID != events[expected.first].EventID ||
+		wantTitle := "Process material to " + a.DisplayName + " (+1 more)"
+		if expected.first == 2 {
+			wantTitle = "request " + events[2].EventID + " to " + a.DisplayName
+		}
+		if item.Title != wantTitle || item.Count != expected.count || item.Refs.Code != codes[expected.first] || item.Refs.EventID != events[expected.first].EventID ||
 			strings.Join(item.Refs.DeliveryIDs, ",") != strings.Join(ids[expected.first:expected.first+expected.count], ",") {
 			t.Fatalf("failure group: %+v", item)
 		}
@@ -599,10 +609,10 @@ func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
 		item.ExpiresAt == nil || !item.ExpiresAt.Equal(card.CreatedAt.Add(10*time.Minute)) {
 		t.Errorf("expected envelope title and metadata from the first card, got %+v", item)
 	}
-	if item := items[note.EventID]; item.Title != "Board question" || item.Detail != "" || item.ExpiresAt != nil {
+	if item := items[note.EventID]; item.Title != "Board question from "+f.root.DisplayName || item.Detail != "" || item.ExpiresAt != nil {
 		t.Errorf("expected fixed title and no expiry for a request without a card, got %+v", item)
 	}
-	if item := items[malformed.EventID]; item.Title != "Board question" || item.Detail != "" || item.ExpiresAt == nil ||
+	if item := items[malformed.EventID]; item.Title != "Board question from "+f.root.DisplayName || item.Detail != "" || item.ExpiresAt == nil ||
 		!item.ExpiresAt.Equal(malformed.CreatedAt.Add(24*time.Hour)) {
 		t.Errorf("expected fixed title and fallback lifetime for a malformed card, got %+v", item)
 	}
@@ -669,4 +679,75 @@ func TestSwarmNeedsFormerMemberRemainsWithCampaign(t *testing.T) {
 	if !found {
 		t.Error("the former member should still be listed as a currently unaffiliated session")
 	}
+}
+
+func TestSwarmNeedsOperatorInboxHeadUsesClaimEligibilityBeforePageScope(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "operator-inbox-head")
+	_, outside := f.session("inbox-head-outsider")
+	operator := f.op.channel.Principal
+	deferred := swarmNeedsTestPublish(f, f.rootView, "notice", "agent", operator, "Deferred", "")
+	deferredID := swarmNeedsTestDelivery(f, deferred)
+	f.deferDelivery(deferredID, "1 hour")
+
+	leased := swarmNeedsTestPublish(f, f.rootView, "notice", "agent", operator, "Leased", "")
+	leasedID := swarmNeedsTestDelivery(f, leased)
+	f.exec(`UPDATE cairn.agent_delivery SET state='leased',lease_id=$2,lease_until=clock_timestamp()+interval '1 hour' WHERE delivery_id=$1`, leasedID, uuid.NewString())
+
+	expired := swarmNeedsTestPublish(f, f.rootView, "request", "agent", operator, "Admission expired", "")
+	expiredID := swarmNeedsTestDelivery(f, expired)
+	f.exec(`UPDATE cairn.agent_event SET admission_expires_at=clock_timestamp()-interval '1 second' WHERE event_id=$1`, expired.EventID)
+
+	foreign := swarmNeedsTestPublish(f, outside, "notice", "agent", operator, "Outside head", "")
+	foreignID := swarmNeedsTestDelivery(f, foreign)
+	inside := swarmNeedsTestPublish(f, f.rootView, "request", "agent", operator, "Inside head", "")
+	insideID := swarmNeedsTestDelivery(f, inside)
+
+	check := func(needs SwarmNeedsYou, want string, visible ...string) {
+		t.Helper()
+		rows := make(map[string]SwarmNeed, len(needs.Items))
+		for _, item := range needs.Items {
+			if item.Type != SwarmNeedOperatorDelivery {
+				continue
+			}
+			if len(item.Refs.DeliveryIDs) != 1 {
+				t.Fatalf("unexpected operator need: %+v", item)
+			}
+			rows[item.Refs.DeliveryIDs[0]] = item
+		}
+		if len(rows) != len(visible) {
+			t.Fatalf("operator rows: got %+v, want deliveries %v", rows, visible)
+		}
+		for _, id := range visible {
+			item, ok := rows[id]
+			if !ok || item.InboxHead != (id == want) {
+				t.Errorf("delivery %s: got head=%t, want %s as head", id, item.InboxHead, want)
+			}
+			wire, err := json.Marshal(item)
+			if err != nil || strings.Contains(string(wire), `"inbox_head"`) != item.InboxHead {
+				t.Errorf("inbox_head wire omission: %s %v", wire, err)
+			}
+		}
+	}
+
+	check(swarmNeedsTestSnapshot(f), "", deferredID, leasedID, expiredID, insideID)
+	check(swarmNeedsTestLanding(f), foreignID, foreignID)
+	claim := func(want string) {
+		t.Helper()
+		got, err := f.op.NextEvent(ctx, NextEventRequest{Repo: f.repo}, swarmOperatorDestination)
+		if err != nil || got.Delivery == nil || got.Delivery.DeliveryID != want {
+			t.Fatalf("claim wanted %s, got %+v %v", want, got.Delivery, err)
+		}
+	}
+	claim(foreignID)
+	check(swarmNeedsTestSnapshot(f), insideID, deferredID, leasedID, insideID)
+	check(swarmNeedsTestLanding(f), "", foreignID)
+
+	f.expireLease(leasedID)
+	check(swarmNeedsTestSnapshot(f), leasedID, deferredID, leasedID, insideID)
+	claim(leasedID)
+	check(swarmNeedsTestSnapshot(f), insideID, deferredID, leasedID, insideID)
+	claim(insideID)
+	check(swarmNeedsTestSnapshot(f), "", deferredID, leasedID, insideID)
+	check(swarmNeedsTestLanding(f), "", foreignID)
 }
