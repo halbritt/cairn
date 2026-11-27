@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"sort"
@@ -277,9 +278,7 @@ func (s *Store) swarmScopeTx(ctx context.Context, tx pgx.Tx, repo, campaign stri
 		return sc, nil, nil, err
 	}
 	sc.Campaign = camp
-	set := map[string]bool{camp.RootAgent: true}
 	for _, m := range camp.Members {
-		set[m.Member] = true
 		sc.MemberPrincipals = append(sc.MemberPrincipals, m.Member)
 	}
 	sort.Strings(sc.MemberPrincipals)
@@ -298,7 +297,6 @@ func (s *Store) swarmScopeTx(ctx context.Context, tx pgx.Tx, repo, campaign stri
 			rows.Close()
 			return sc, nil, nil, err
 		}
-		set[address], set[holder] = true, true
 		roleHolders[holder] = address
 	}
 	rows.Close()
@@ -316,17 +314,15 @@ func (s *Store) swarmScopeTx(ctx context.Context, tx pgx.Tx, repo, campaign stri
 			rows.Close()
 			return sc, nil, nil, err
 		}
-		set[h.FromPrincipal], set[h.ToPrincipal] = true, true
 		lineage = append(lineage, h)
 	}
 	rows.Close()
 	if err = rows.Err(); err != nil {
 		return sc, nil, nil, err
 	}
-	for p := range set {
-		if p != "" {
-			sc.Principals = append(sc.Principals, p)
-		}
+	// The principal set has one definition, shared with the landing read.
+	if err = tx.QueryRow(ctx, `SELECT `+swarmCampaignPrincipals+` FROM cairn.agent_team_campaign c WHERE c.repo=$1 AND c.campaign=$2`, repo, campaign).Scan(&sc.Principals); err != nil {
+		return sc, nil, nil, err
 	}
 	sort.Strings(sc.Principals)
 
@@ -652,13 +648,33 @@ func decodeSwarmCursor(raw string, sc swarmScope) (*swarmCursor, error) {
 // a pool delivery is not used. The journal link to a ledger item is written
 // in a later transaction and is never used either. Parameters: $1 repo,
 // $2 principals, $3 campaign name, $4 campaign creation time.
-const swarmEventInCampaign = `e.repo=$1 AND e.created_at>=$4 AND (
-	e.publisher=ANY($2)
-	OR (e.destination_type='agent' AND e.destination_name=ANY($2))
-	OR e.routing_info->>'campaign'=$3
+// The definition is written once and used twice: for one campaign's log
+// (swarmEventInCampaign) and, negated over every active campaign, for the
+// landing page's list of messages that no campaign claims
+// (swarmEventInAnyCampaign). %[1]s is the principals array, %[2]s the campaign
+// name and %[3]s the campaign's creation time.
+const swarmEventAttribution = `e.created_at>=%[3]s AND (
+	e.publisher=ANY(%[1]s)
+	OR (e.destination_type='agent' AND e.destination_name=ANY(%[1]s))
+	OR e.routing_info->>'campaign'=%[2]s
 	OR (e.destination_type='topic' AND (
-		EXISTS(SELECT 1 FROM cairn.agent_delivery a WHERE a.event_id=e.event_id AND a.consumer=ANY($2))
-		OR EXISTS(SELECT 1 FROM cairn.agent_organic_notice q WHERE q.event_id=e.event_id AND q.recipient_inbox=ANY($2)))))`
+		EXISTS(SELECT 1 FROM cairn.agent_delivery a WHERE a.event_id=e.event_id AND a.consumer=ANY(%[1]s))
+		OR EXISTS(SELECT 1 FROM cairn.agent_organic_notice q WHERE q.event_id=e.event_id AND q.recipient_inbox=ANY(%[1]s)))))`
+
+var (
+	swarmEventInCampaign    = "e.repo=$1 AND " + fmt.Sprintf(swarmEventAttribution, "$2", "$3", "$4")
+	swarmEventInAnyCampaign = fmt.Sprintf(swarmEventAttribution, "camp.principals", "camp.campaign", "camp.created_at")
+)
+
+// swarmCampaignPrincipals is every principal that attributes an event to the
+// campaign row c: its members, active or not, its root, its role addresses
+// and their holders, and both sides of every coordinator handoff.
+const swarmCampaignPrincipals = `ARRAY(SELECT p FROM (
+	SELECT c.root_agent AS p
+	UNION SELECT m.member FROM cairn.agent_team_member m WHERE m.repo=c.repo AND m.campaign=c.campaign
+	UNION SELECT unnest(ARRAY[b.role_address, b.holder_principal]) FROM cairn.campaign_role_binding b WHERE b.repo=c.repo AND b.campaign=c.campaign
+	UNION SELECT unnest(ARRAY[h.from_principal, h.to_principal]) FROM cairn.campaign_coordinator_handoff h WHERE h.repo=c.repo AND h.campaign=c.campaign
+) principals WHERE p<>'')`
 
 func (s *Store) swarmEventsTx(ctx context.Context, tx pgx.Tx, sc swarmScope, query string, args ...any) ([]SwarmEvent, error) {
 	base := []any{sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt}
@@ -926,10 +942,12 @@ func (s *Store) GetSwarmLanding(ctx context.Context, repo string) (SwarmLanding,
 		a := online[principal]
 		out.Unaffiliated = append(out.Unaffiliated, SwarmLandingSession{AgentID: a.AgentID, Label: a.DisplayName, State: a.Metadata.State, Harness: a.Metadata.Harness, Model: a.Metadata.Model, Project: a.Metadata.Project, TaskSummary: a.Metadata.TaskSummary, StartedAt: a.StartedAt})
 	}
-	// The newest events that no active campaign claims by publisher or
-	// addressed recipient. The landing page is not a resumable log: it is
-	// read whole each time.
-	rows, err = tx.Query(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.repo=$1 AND NOT (e.publisher=ANY($2) OR (e.destination_type='agent' AND e.destination_name=ANY($2))) ORDER BY e.position DESC LIMIT $3`, repo, members, swarmLandingEvents)
+	// The newest events that no active campaign claims, by the same
+	// attribution rule as a campaign's log, so that an event is on a
+	// campaign page or here and never on both or on neither. The landing
+	// page is not a resumable log: it is read whole each time.
+	rows, err = tx.Query(ctx, `WITH camp AS (SELECT c.campaign, c.created_at, `+swarmCampaignPrincipals+` AS principals FROM cairn.agent_team_campaign c WHERE c.repo=$1 AND c.active)
+		SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.repo=$1 AND NOT EXISTS(SELECT 1 FROM camp WHERE `+swarmEventInAnyCampaign+`) ORDER BY e.position DESC LIMIT $2`, repo, swarmLandingEvents)
 	if err != nil {
 		return out, err
 	}

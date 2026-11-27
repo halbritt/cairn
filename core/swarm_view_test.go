@@ -1110,3 +1110,82 @@ func TestSwarmStreamHandoffInAnotherCampaignResendsTheWindow(t *testing.T) {
 		t.Fatalf("an unrelated handoff resent the window: %q", out.ResyncReason)
 	}
 }
+
+// An event is on a campaign's page or on the landing page, never on both and
+// never on neither: the landing list is the complement of the campaign logs
+// under one attribution rule.
+func TestSwarmLandingEventsAreTheComplementOfCampaignLogs(t *testing.T) {
+	ctx := context.Background()
+	f := newNativeFixture(t)
+	root := f.register(nativeAgent{Binding: "swarm-root"})
+	rootView := f.view(sessionRef(root))
+	worker := f.register(nativeAgent{Binding: "worker-a"})
+	workerView := f.view(sessionRef(worker))
+	note := func(from *Store, destination EventDestination) string {
+		t.Helper()
+		e, err := from.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Repo: f.repo, Kind: "notice", Action: "review", Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: destination}, f.dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e.EventID
+	}
+	// A direct message from before the campaign; its sender and its
+	// recipient join the campaign afterwards.
+	before := note(workerView, EventDestination{"agent", root.Inbox})
+	if _, err := rootView.SetTeamCampaign(ctx, SetTeamCampaignRequest{RequestID: uuid.NewString(), Repo: f.repo, Campaign: "alpha", RootAgent: root.Inbox, OutOfChainPolicy: "allow", Sensitivity: "shareable"}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	sf := &swarmFixture{nativeFixture: f, campaign: "alpha", root: root, rootView: rootView, op: f.operator()}
+	sf.join(worker)
+	outsider, outsiderView := sf.session("outsider")
+	other, _ := sf.session("other")
+	if _, err := workerView.SetSubscription(ctx, SubscriptionRequest{RequestID: uuid.NewString(), Repo: f.repo, Topic: "swarm.shared", Active: true}); err != nil {
+		t.Fatal(err)
+	}
+	toSubscriber := note(outsiderView, EventDestination{"topic", "swarm.shared"}) // a topic with a campaign subscriber
+	unclaimed := note(outsiderView, EventDestination{"agent", other.Inbox})       // between two sessions in no campaign
+	byMember := note(workerView, EventDestination{"agent", outsider.Inbox})       // a member publishes
+
+	landing, err := sf.op.GetSwarmLanding(ctx, f.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	onLanding := map[string]bool{}
+	for i, e := range landing.Events {
+		onLanding[e.EventID] = true
+		if i > 0 && landing.Events[i-1].Position <= e.Position {
+			t.Fatalf("landing events are not newest first: %v", swarmEventIDs(landing.Events))
+		}
+	}
+	client := newSwarmClient(sf)
+	client.connect(0, -1)
+	for name, want := range map[string]struct {
+		id       string
+		campaign bool
+	}{
+		"topic with a campaign subscriber": {toSubscriber, true},
+		"member publication":               {byMember, true},
+		"between two outsiders":            {unclaimed, false},
+		"before the campaign":              {before, false},
+	} {
+		inLog := client.seen[want.id] == 1
+		if inLog != want.campaign || onLanding[want.id] == want.campaign {
+			t.Fatalf("%s: in the campaign log %v, on the landing page %v", name, inLog, onLanding[want.id])
+		}
+	}
+	// Every event of the collection is in exactly one of the two.
+	rows, err := sf.op.pool.Query(ctx, `SELECT event_id::text FROM cairn.agent_event WHERE repo=$1`, f.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if (client.seen[id] == 1) == onLanding[id] {
+			t.Fatalf("event %s: in the campaign log %v and on the landing page %v", id, client.seen[id] == 1, onLanding[id])
+		}
+	}
+}

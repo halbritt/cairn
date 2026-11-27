@@ -87,6 +87,10 @@ one of these holds:
 - it is a topic event that was published to a campaign principal (it has a
   delivery to one, or a queued next-turn notice for one).
 
+The landing page lists the newest messages that no active campaign claims.
+It uses the same rule, negated over every active campaign, so a message is on
+a campaign page or on the landing page, never on both and never on neither.
+
 The log carries envelopes: sender, recipient, kind and the one-line summary.
 A ledger item's summary can repeat a short message text, so do not treat the
 page as free of message content.
