@@ -380,7 +380,8 @@
             event.blocker ? el("span", { class: "tag flag", text: "blocker" }) : null,
             el("span", { class: "route", text: `${senderLabel(event)} → ${destinationLabel(event.to)}` }),
             el("span", { class: "muted" }, " · ", timeEl(event.created_at))),
-          el("p", { class: "summary" }, event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" }))));
+          el("p", { class: "summary" }, event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" })),
+          el("button", { type: "button", class: "secondary", text: "Open", onclick: () => openEvent(event.event_id) })));
       }
     }
   }
@@ -869,7 +870,9 @@
       const target = refs.principal || need.subject;
       if (target && canWrite(target)) controls.append(el("button", { type: "button", text: `Write to ${labelOf(target)}`, onclick: () => openDetail(target, true) }));
     }
-    if (refs.event_id && state.campaign) controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id, { board: need.type === "board_question" }) }));
+    if (refs.event_id && (state.campaign || need.type === "operator_delivery")) {
+      controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id, { board: need.type === "board_question" }) }));
+    }
     if (action.command) controls.append(copyButton(action.command, "Copy command"));
     row.append(controls);
     return row;
@@ -1512,6 +1515,7 @@
 
   function deliveryControls(delivery) {
     const controls = [];
+    if (!state.campaign) return controls;
     if (delivery.consumer === operator() && openDisplays.has(delivery.display || delivery.state)) {
       if (isInboxHead(delivery.delivery_id)) {
         controls.push(el("button", { type: "button", text: "Acknowledge", onclick: () => acknowledge(delivery.delivery_id, delivery.event_id) }));
@@ -1654,7 +1658,9 @@
     try {
       const reply = await api(`/api/swarm/event?campaign=${encodeURIComponent(state.campaign)}&event_id=${encodeURIComponent(eventID)}`);
       if (state.eventDetail !== eventID) return;
-      setChildren(body, eventEnvelope(reply.event || event || {}));
+      const detail = reply.event || event || {};
+      if (!event && detail.kind) byID("event-title").textContent = `${detail.kind}: ${detail.summary || eventID}`;
+      setChildren(body, eventEnvelope(detail));
       const deliveries = reply.deliveries || deliveriesOf(eventID);
       body.append(el("h3", { text: "Recipients" }), deliveries.length ? el("ul", { class: "plain" }, deliveries.map((delivery) => el("li", {},
         deliveryChip(delivery, fromOwner(reply.event || event)), " ", deliveryControls(delivery)))) : note("no delivery"));

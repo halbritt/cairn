@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -58,6 +60,17 @@ func swarmActionGetEvent(t *testing.T, f *swarmStoreFixture, id string) core.Swa
 	t.Helper()
 	resp, raw := f.do(http.MethodGet, "/api/swarm/event?campaign="+f.campaign+"&event_id="+id, nil, nil)
 	return swarmActionJSON[core.SwarmEventDetails](t, resp, raw, http.StatusOK)
+}
+
+func swarmActionAssertEventHidden(t *testing.T, f *swarmStoreFixture, campaign, id string) {
+	t.Helper()
+	path := "/api/swarm/event?campaign=" + campaign + "&event_id="
+	resp, raw := f.do(http.MethodGet, path+id, nil, nil)
+	unknown, unknownRaw := f.do(http.MethodGet, path+uuid.NewString(), nil, nil)
+	if resp.StatusCode != http.StatusNotFound || unknown.StatusCode != resp.StatusCode ||
+		swarmErrorCode(raw) != "NOT_FOUND" || string(raw) != string(unknownRaw) {
+		t.Fatalf("event outside page %q: %d %s, unknown: %d %s", campaign, resp.StatusCode, raw, unknown.StatusCode, unknownRaw)
+	}
 }
 
 func swarmActionPublishEvent(t *testing.T, f *swarmStoreFixture, s *core.Store, kind, to, cause, supersedes string) core.AgentEvent {
@@ -473,6 +486,17 @@ func TestSwarmActionHTTPInboxHasOneOwnerPagePerDelivery(t *testing.T) {
 	}
 	resp, raw := f.do(http.MethodGet, "/api/swarm/event?campaign="+closed+"&event_id="+fromClosed.event.EventID, nil, nil)
 	swarmActionJSON[core.SwarmEventDetails](t, resp, raw, http.StatusOK)
+	// Beta can read the pending operator request by inbox ownership. Landing
+	// can read the same event by log attribution because it predates Beta.
+	for _, page := range []string{beta, ""} {
+		resp, raw := f.do(http.MethodGet, "/api/swarm/event?campaign="+page+"&event_id="+beforeBeta.event.EventID, nil, nil)
+		detail := swarmActionJSON[core.SwarmEventDetails](t, resp, raw, http.StatusOK)
+		if detail.Event.EventID != beforeBeta.event.EventID || detail.Body == nil {
+			t.Fatalf("pre-campaign request on page %q: %+v", page, detail)
+		}
+	}
+	swarmActionAssertEventHidden(t, f, f.campaign, beforeBeta.event.EventID)
+	swarmActionAssertEventHidden(t, f, closed, beforeBeta.event.EventID)
 	pages := []string{"", f.campaign, beta, closed}
 	checkPartition := func(pending []item) {
 		t.Helper()
@@ -525,9 +549,68 @@ func TestSwarmActionHTTPInboxHasOneOwnerPagePerDelivery(t *testing.T) {
 		swarmActionAssertHandled(t, f, ack)
 	}
 	checkPartition(nil)
+	// The delivery has left the inbox, so the campaign no longer owns the
+	// detail read of an event outside its log.
+	swarmActionAssertEventHidden(t, f, beta, beforeBeta.event.EventID)
 }
 
-func TestSwarmActionHTTPCampaignRequiredExceptAcknowledge(t *testing.T) {
+func TestSwarmActionHTTPLandingEventDetails(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmStoreFixture(t, swarmNoPanes)
+	_, outside := f.session("event-detail-outsider")
+	former, formerView := f.member("event-detail-former-member")
+	operator := f.op.Channel().Principal
+	outsideEvent := swarmActionPublishEvent(t, f, outside, "notice", operator, "", "")
+	formerEvent := swarmActionPublishEvent(t, f, formerView, "notice", operator, "", "")
+	activeEvent := swarmActionPublishEvent(t, f, f.rootView, "notice", operator, "", "")
+	inactive := false
+	if _, err := f.rootView.SetTeamMember(ctx, core.SetTeamMemberRequest{
+		RequestID: uuid.NewString(), Repo: f.repo, Campaign: f.campaign, Member: former.Inbox, Active: &inactive,
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := f.do(http.MethodGet, "/api/swarm/landing", nil, nil)
+	landing := swarmActionJSON[core.SwarmLanding](t, resp, raw, http.StatusOK)
+	if slices.ContainsFunc(landing.Events, func(e core.SwarmEvent) bool { return e.EventID == formerEvent.EventID }) ||
+		!slices.ContainsFunc(landing.NeedsYou.Items, func(item core.SwarmNeed) bool {
+			return item.Type == core.SwarmNeedOperatorDelivery && item.Refs.EventID == formerEvent.EventID
+		}) {
+		t.Fatalf("former member's delivery must be on landing through inbox ownership only")
+	}
+	swarmActionAssertEventHidden(t, f, f.campaign, outsideEvent.EventID)
+	swarmActionAssertEventHidden(t, f, "", activeEvent.EventID)
+
+	// Keep the publication lock held while reading both page scopes. A
+	// mistaken lock acquisition fails with a bounded HTTP client timeout.
+	conn, err := pgx.Connect(ctx, os.Getenv("CAIRN_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	lock, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Rollback(ctx)
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "agent-events:"+f.repo); err != nil {
+		t.Fatal(err)
+	}
+	f.client.Timeout = 10 * time.Second
+	for _, tc := range []struct {
+		page  string
+		event core.AgentEvent
+	}{{"", outsideEvent}, {"", formerEvent}, {f.campaign, formerEvent}} {
+		resp, raw := f.do(http.MethodGet, "/api/swarm/event?campaign="+tc.page+"&event_id="+tc.event.EventID, nil, nil)
+		detail := swarmActionJSON[core.SwarmEventDetails](t, resp, raw, http.StatusOK)
+		if detail.Event.EventID != tc.event.EventID || detail.Event.Ref != tc.event.Ref || detail.Body == nil ||
+			*detail.Body != "swarm stream fixture source" || detail.BodyTruncated || detail.BodyUnavailable != "" ||
+			len(detail.Deliveries) != 1 || detail.Deliveries[0].State != "pending" || detail.Deliveries[0].Seen {
+			t.Fatalf("read of %s on page %q: %+v", tc.event.EventID, tc.page, detail)
+		}
+	}
+}
+
+func TestSwarmActionHTTPCampaignRequiredForSendAndCancellation(t *testing.T) {
 	f := newSwarmStoreFixture(t, swarmNoPanes)
 	e := swarmActionPublishEvent(t, f, f.rootView, "notice", f.op.Channel().Principal, "", "")
 	id := swarmActionGetEvent(t, f, e.EventID).Deliveries[0].DeliveryID
@@ -543,7 +626,6 @@ func TestSwarmActionHTTPCampaignRequiredExceptAcknowledge(t *testing.T) {
 		{"cancel-delivery", http.MethodPost, "/api/swarm/action/cancel-delivery", core.SwarmCancelDeliveryRequest{SwarmDeliveryActionRequest: delivery, Reason: "A campaign is required"}},
 		{"cancel-wait", http.MethodPost, "/api/swarm/action/cancel-wait", core.SwarmCancelWaitRequest{SwarmActionRequest: delivery.SwarmActionRequest, WaitID: uuid.NewString()}},
 		{"cancel-preview", http.MethodGet, "/api/swarm/action/cancel-preview?campaign=&delivery_id=" + id, nil},
-		{"event", http.MethodGet, "/api/swarm/event?campaign=&event_id=" + e.EventID, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp, raw := f.do(tc.method, tc.path, tc.body, map[string]string{"X-CSRF-Token": f.csrf})

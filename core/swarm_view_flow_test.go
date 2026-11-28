@@ -296,7 +296,7 @@ func TestSwarmFlowWaitAttributionAfterMemberJoins(t *testing.T) {
 
 			lookup := func(id string) (SwarmWait, error) {
 				t.Helper()
-				tx, sc, err := f.op.beginSwarmActionRead(ctx, f.repo, f.campaign)
+				tx, sc, err := f.op.beginSwarmActionRead(ctx, f.repo, f.campaign, false)
 				if err != nil {
 					t.Fatal(err)
 				}

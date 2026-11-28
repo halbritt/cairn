@@ -727,6 +727,8 @@ const swarmInboxEventOwner = `COALESCE(
 	 WHERE m.repo=e.repo AND m.member=e.publisher AND m.active AND c.active),
 	'')`
 
+const swarmInboxOpenDelivery = `d.state IN ('pending','leased')`
+
 func (sc swarmScope) inboxEventFilter() (string, []any) {
 	return `e.repo=$1 AND ` + swarmInboxEventOwner + `=$2`, []any{sc.Repo, sc.Campaign.Campaign}
 }

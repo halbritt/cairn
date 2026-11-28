@@ -922,8 +922,16 @@ class Fixture:
             outside_row = landing.locator(f"#landing-needs li.need[data-event='{outside['event_id']}']")
             self.expect(outside_row).to_have_count(1, timeout=20000)
             controls = outside_row.locator("button").all_inner_texts()
-            require(all(c in ("Acknowledge",) or c.startswith("Copy") for c in controls), "the landing page offers another action: " + json.dumps(controls))
+            require(all(c in ("Acknowledge", "Open the event") or c.startswith("Copy") for c in controls),
+                    "the landing page offers another action: " + json.dumps(controls))
             require(outside_row.locator("button", has_text="Acknowledge").count() == 1, "the landing head offers no Acknowledge")
+            with landing.expect_response(lambda r: "/api/swarm/event?campaign=&" in r.url) as info:
+                outside_row.get_by_role("button", name="Open the event", exact=True).click()
+            require(info.value.ok and info.value.json().get("body") == "Outside any campaign.",
+                    "landing event detail did not return the referenced body")
+            self.expect(landing.locator("#event-body pre.body")).to_have_text("Outside any campaign.")
+            require(landing.locator("#event-body button").count() == 0, "the landing event detail offers a write control")
+            landing.locator("#event-detail button.close").click()
             outside_row.locator("button", has_text="Acknowledge").click()
             with landing.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
                 landing.locator("#confirm-go").click()

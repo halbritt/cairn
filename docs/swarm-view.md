@@ -262,7 +262,7 @@ checkpoints identify their workstream owner.
 | Row | When it appears | Owner action |
 | --- | --- | --- |
 | Board question | An unanswered request on `agent-board` within its lifetime. The event summary supplies the title when present. The card supplies its lifetime and whether a default was declared. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |
-| Operator delivery | A pending or leased delivery addressed to the operator, shown on its owner page. Only the collection's oldest eligible delivery has `inbox_head: true`. | Acknowledge the head from its Needs You row. When the event is in the campaign log, open it to read the delivery. |
+| Operator delivery | A pending or leased delivery addressed to the operator, shown on its owner page. Only the collection's oldest eligible delivery has `inbox_head: true`. | Open the event from Needs You to read the delivery. Acknowledge it when it reaches the head. |
 | Decision | An open ledger decision owned by the coordinator or operator. A lead's decision appears on the lead's row. | Make the decision and record the outcome in the campaign ledger. |
 | Escalation | A ledger blocker marked escalated. | Review the campaign ledger and resolve the escalation with its owner. |
 | Workstream decision | The workstream has a nonempty `decision_needed` field. | Give the workstream owner a decision and clear the request. |
@@ -350,8 +350,8 @@ principal. Every
 a canonical `request_id` UUID. A retry of a committed request uses the same
 UUID and the same fields. Reusing that UUID with a different intent returns
 `IDEMPOTENCY_CONFLICT`. The server rejects unknown fields.
-Only Acknowledge accepts an empty `campaign`, which selects the landing page.
-Send, Cancel delivery, Cancel wait, Cancel preview and Event detail require a
+Acknowledge and Event detail accept an empty `campaign`, which selects the
+landing page. Send, Cancel delivery, Cancel wait and Cancel preview require a
 campaign name.
 An unknown campaign returns HTTP 404 with `NOT_FOUND` and the message
 “team campaign not found” on every route. The server resolves the campaign
@@ -365,6 +365,12 @@ before looking up the requested target.
 | `POST /api/swarm/action/cancel-delivery` | `delivery_id`, `reason` (8–4000 characters), `preview_token` from the preview. | `{outcome, delivery, detail?}`. The outcome is `cancelled`, `cancel_pending` while a supported native turn still has an open delivery, or `already_terminal` when the delivery reached another terminal outcome first. The reply includes the current delivery. |
 | `POST /api/swarm/action/cancel-wait` | `wait_id`, `expected_owner` (the wait owner shown in the view). | `{outcome: "cancelled", wait}` with the resolved wait. |
 | `GET /api/swarm/event` | Query `campaign`, `event_id`. | `{event, deliveries, body?, body_truncated?, body_unavailable?}`. Returns the exact referenced version up to 16 KiB of UTF-8, with `body_truncated: true` when cut. Every reply has either `body` or `body_unavailable`. |
+
+Event detail uses the same read rule on campaign pages and landing. The event
+must be in the page's log or have a pending or leased operator delivery owned
+by that page. Log attribution can make an event readable on a second page.
+An event outside both parts of the page's scope returns the same `NOT_FOUND`
+as an unknown event ID.
 
 Sending requires an active campaign. Both the chosen address and the
 resolved destination must be its current root, an active member, or a role

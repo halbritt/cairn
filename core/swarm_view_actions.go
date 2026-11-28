@@ -86,7 +86,7 @@ type SwarmRefusal struct {
 
 // GetSwarmCancelPreview reads what a cancel of one delivery would affect.
 func (s *Store) GetSwarmCancelPreview(ctx context.Context, req SwarmCancelPreviewRequest) (SwarmCancelPreview, error) {
-	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign)
+	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign, false)
 	if err != nil {
 		return SwarmCancelPreview{}, err
 	}
@@ -179,7 +179,7 @@ func swarmCancelPreviewToken(campaign string, preview SwarmCancelPreview) string
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Store) beginSwarmActionRead(ctx context.Context, repo, campaign string) (pgx.Tx, swarmScope, error) {
+func (s *Store) beginSwarmActionRead(ctx context.Context, repo, campaign string, allowLanding bool) (pgx.Tx, swarmScope, error) {
 	repo, err := s.swarmRepo(repo)
 	if err != nil {
 		return nil, swarmScope{}, err
@@ -187,6 +187,9 @@ func (s *Store) beginSwarmActionRead(ctx context.Context, repo, campaign string)
 	tx, err := s.beginSwarmRead(ctx)
 	if err != nil {
 		return nil, swarmScope{}, err
+	}
+	if allowLanding && campaign == "" {
+		return tx, swarmScope{Repo: repo, Operator: s.channel.Principal}, nil
 	}
 	sc, _, _, err := s.swarmScopeTx(ctx, tx, repo, campaign)
 	if err != nil {
@@ -528,15 +531,23 @@ func (s *Store) swarmActionGuard(ctx context.Context, req SwarmActionRequest, ch
 }
 
 func (s *Store) swarmActionEventTx(ctx context.Context, tx pgx.Tx, sc swarmScope, eventID string) (SwarmEvent, error) {
-	query := "SELECT " + eventColumns + " FROM cairn.agent_event e WHERE " + swarmEventInCampaign + " AND e.event_id=$5"
-	events, err := s.swarmEventsTx(ctx, tx, sc, query, eventID)
+	query := `SELECT ` + eventColumns + ` FROM cairn.agent_event e WHERE e.repo=$1 AND e.event_id=$5 AND (
+		($3::text='' AND (` + swarmLandingEvent + `))
+		OR ($3<>'' AND (` + swarmEventInCampaign + `))
+		OR (` + swarmInboxEventOwner + `=$3 AND EXISTS (
+			SELECT 1 FROM cairn.agent_delivery d WHERE d.event_id=e.event_id AND d.consumer=$6 AND ` + swarmInboxOpenDelivery + `)))`
+	events, err := s.swarmEventsTx(ctx, tx, sc, query, eventID, sc.Operator)
 	if err != nil {
 		return SwarmEvent{}, err
 	}
 	if len(events) == 0 {
-		return SwarmEvent{}, failure("NOT_FOUND", "event not found in this campaign")
+		return SwarmEvent{}, failure("NOT_FOUND", "event not found on this page")
 	}
-	return events[0], nil
+	event := events[0]
+	if sc.Campaign.Campaign == "" {
+		event.Cursor = ""
+	}
+	return event, nil
 }
 
 const swarmEventBodyLimit = 16 << 10
@@ -546,7 +557,7 @@ func (s *Store) GetSwarmEvent(ctx context.Context, repo, campaign, eventID strin
 }
 
 func (s *Store) swarmEventDetails(ctx context.Context, repo, campaign, eventID string, includeBody bool) (SwarmEventDetails, error) {
-	tx, sc, err := s.beginSwarmActionRead(ctx, repo, campaign)
+	tx, sc, err := s.beginSwarmActionRead(ctx, repo, campaign, true)
 	if err != nil {
 		return SwarmEventDetails{}, err
 	}
@@ -850,7 +861,7 @@ func (s *Store) CancelSwarmDelivery(ctx context.Context, req SwarmCancelDelivery
 	if cancelErr != nil && !terminal {
 		return out, cancelErr
 	}
-	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign)
+	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign, false)
 	if err != nil {
 		return out, err
 	}
@@ -950,7 +961,7 @@ func (s *Store) CancelSwarmWait(ctx context.Context, req SwarmCancelWaitRequest)
 	if err != nil {
 		return out, err
 	}
-	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign)
+	tx, sc, err := s.beginSwarmActionRead(ctx, req.Repo, req.Campaign, false)
 	if err != nil {
 		return out, err
 	}

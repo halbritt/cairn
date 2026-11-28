@@ -539,7 +539,7 @@ func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx, sc
 	filter, args := sc.inboxEventFilter()
 	query := `SELECT d.delivery_id::text,e.event_id::text,e.publisher,` + swarmSystemEvent + `,e.created_at,COALESCE(e.summary,''),e.kind,e.record_id::text,e.version
 		FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
-		WHERE ` + filter + ` AND d.consumer=$3 AND d.state IN ('pending','leased')`
+		WHERE ` + filter + ` AND d.consumer=$3 AND ` + swarmInboxOpenDelivery
 	rows, err := tx.Query(ctx, query, append(args, r.operator)...)
 	if err != nil {
 		return nil, err
