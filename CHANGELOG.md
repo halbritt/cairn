@@ -12,11 +12,24 @@ processes.
 ## 2026-11-27
 
 - `cairn swarm serve` runs the live campaign page on loopback, and
-  `cairn swarm url` prints its sign-in address. The page shows campaign members
-  and their assignments, messages and pending deliveries, waits, decisions and
-  blockers that need the owner, and each agent's context state. By the owner's
-  decision, Cairn reads actual context-window fill from local harness transcripts
-  and shows when that measurement is unavailable.
+  `cairn swarm url` prints its sign-in address
+  ([swarm view](docs/swarm-view.md), CAIRN-826). The page shows campaign
+  members and what each works on, messages with their delivery state and
+  registered waits, what needs the owner, and each agent's context state. One
+  event stream keeps it current; a reconnect resumes from a cursor and delivers
+  each event exactly once. By the owner's decision, Cairn reads actual
+  context-window fill from local harness transcripts and says when that
+  measurement is unavailable.
+- From the page the local operator can send a request or notice to a current
+  campaign member, acknowledge a delivery in their own inbox, and cancel one
+  recipient's delivery or a wait (CAIRN-833). A cancellation shows the exact
+  recipient, the sibling deliveries and the waits it affects first, and the
+  confirmation is bound to that preview. The actions are the existing verbs
+  under the operator principal; the page adds no session control.
+- Messages that Cairn itself published (a wait notice, an overdue checkpoint, a
+  fired schedule, a stopped-delivery notice) carry a `system` value in the swarm
+  view's events, deliveries and owner rows, so they are not shown as the
+  operator's own.
 - Swarm leads can record the owner's prose as the campaign description and give
   each member a free-text role label (CAIRN-828). Migration 096 adds both fields.
   Team reads return them, and one `ledger get` also returns the ledger items.
