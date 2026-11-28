@@ -737,6 +737,12 @@ class Fixture:
             page.wait_for_function("() => window.cairnSwarmView.faults() > 0", timeout=20000)
             self.expect(page.locator("#fault")).to_be_visible()
             self.expect(page.locator("#observations")).to_contain_text("store unreadable")
+            # Both host readers still run. Unchanged pane/window values must
+            # get newer observation times while the database time stays fixed.
+            times = "[...document.querySelectorAll('#observations li')].slice(0, 3).map(row => row.querySelector('time')?.dateTime)"
+            before_times = page.evaluate("() => " + times)
+            page.wait_for_function("before => (" + times + ").every((now, i) => i === 0 ? now === before[i] : now > before[i])",
+                                   arg=before_times, timeout=30000)
         finally:
             checked(disposable_host.pg_start_command(cluster.pg_bin, cluster.root / "data", cluster.socket,
                                                      cluster.root / "postgres.log"), "restart disposable cluster", timeout=60)
@@ -1730,11 +1736,32 @@ class Fixture:
 
     def supersede_open_only(self, page):
         key = "owner-" + uid()[:8]
-        first = self.send_page(page, "worker_a", "Owner v1 " + key, key)
+        # Hold any campaign refresh that the first send starts. Its response
+        # describes v1 as pending; release it only after the stream shows v2.
+        held = []
+        def delay_refresh(route):
+            held.append((route, route.fetch()))
+
+        pattern = "**/api/swarm/campaign?*"
+        page.route(pattern, delay_refresh)
+        try:
+            first = self.send_page(page, "worker_a", "Owner v1 " + key, key)
+            v1 = page.locator(f"#flow li.event[data-event='{first['event']['event_id']}']")
+            self.expect(v1.locator("button", has_text="Supersede")).to_have_count(1, timeout=15000)
+        finally:
+            page.unroute(pattern, delay_refresh)
         second = self.send_page(page, "worker_a", "Owner v2 " + key, key)
-        v1 = page.locator(f"#flow li.event[data-event='{first['event']['event_id']}']")
         v2 = page.locator(f"#flow li.event[data-event='{second['event']['event_id']}']")
         self.expect(v1.locator(".chip-superseded")).to_have_count(1, timeout=15000)
+        observed = page.locator("#observations li").first.locator("time")
+        observed_at = observed.get_attribute("datetime")
+        for route, response in held:
+            route.fulfill(response=response)
+        # Let the next stream tick run. A stale refresh must not have replaced
+        # the superseded state, even if that tick carried no new snapshot.
+        page.wait_for_function("""before => document.querySelector('#observations li time')
+            .getAttribute('datetime') > before""", arg=observed_at, timeout=15000)
+        self.expect(v1.locator(".chip-superseded")).to_have_count(1)
         self.expect(v1.locator("button", has_text="Supersede")).to_have_count(0)
         self.expect(v2.locator("button", has_text="Supersede")).to_have_count(1)
 

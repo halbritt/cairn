@@ -45,6 +45,7 @@
     detailMember: "",
     eventDetail: "",
     landingTimer: null,
+    landingRequest: 0,
   };
 
   // Retries reuse the request UUID of the attempt they repeat.
@@ -228,6 +229,8 @@
 
   function showSignIn(message) {
     closeStream();
+    clearTimeout(state.landingTimer);
+    state.landingRequest++;
     for (const dialog of document.querySelectorAll("dialog[open]")) dialog.close();
     byID("landing").hidden = true;
     byID("campaign").hidden = true;
@@ -309,13 +312,16 @@
 
   async function loadLanding() {
     clearTimeout(state.landingTimer);
+    // A post-action refresh supersedes a poll that is already in flight.
+    const request = ++state.landingRequest;
     try {
       const landing = await api("/api/swarm/landing");
+      if (state.landingRequest !== request) return;
       hideFault();
       setLive("live", "current");
       renderLanding(landing);
     } catch (error) {
-      if (error.status === 401) return;
+      if (state.landingRequest !== request || error.status === 401) return;
       setLive("offline", "not current");
       showFault("Could not read the landing page: " + error.message + (error.code ? ` (${error.code})` : ""));
     }
@@ -476,6 +482,8 @@
     on("fault", (data) => {
       state.faults += 1;
       state.fault = data;
+      state.paneTick = data.panes || state.paneTick;
+      state.windowTick = data.window || state.windowTick;
       showFault(`The store could not be read (${data.code || "error"}): ${data.error || ""}. Showing the last snapshot; the server keeps trying.`);
       renderObservations();
     });
@@ -559,23 +567,10 @@
     byID("campaign").hidden = true;
   }
 
-  // One read outside the stream, so the page shows the store's state now.
-  async function refreshSnapshot() {
-    if (!state.campaign) {
-      // The landing page: an empty campaign is the landing scope.
-      if (!byID("landing").hidden) loadLanding();
-      return;
-    }
-    try {
-      const snapshot = await api("/api/swarm/campaign?campaign=" + encodeURIComponent(state.campaign));
-      if (snapshot && snapshot.schema) {
-        state.snapshot = snapshot;
-        state.dbObservedAt = snapshot.observed_at;
-        renderCampaign();
-      }
-    } catch (_) {
-      // The stream brings the next snapshot.
-    }
+  // Campaign updates arrive in stream order. Only landing needs a poll after
+  // an action because it has no stream.
+  function refreshSnapshot() {
+    if (!state.campaign && !byID("landing").hidden) loadLanding();
   }
 
   function addLog(event) {

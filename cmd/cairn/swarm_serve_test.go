@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -999,6 +1000,89 @@ func TestSwarmStreamProtocol(t *testing.T) {
 	}
 	if resp, _ := s.do(http.MethodPost, "/api/swarm/stream?campaign=alpha", nil, map[string]string{"X-CSRF-Token": s.csrf}); resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("POST stream: %d", resp.StatusCode)
+	}
+}
+
+func TestSwarmStreamObservesHostDuringStoreFault(t *testing.T) {
+	var offline, hostChanged atomic.Bool
+	panes := func(context.Context) swarmPaneObservation {
+		status := "working"
+		if hostChanged.Load() {
+			status = "idle"
+		}
+		return swarmPaneObservation{Status: "ok", Panes: map[string]swarmPane{"a": {AgentStatus: status}}}
+	}
+	s := newSwarmTestServer(t, nil, "fixture", panes)
+	s.server.panes = newSwarmPaneLoop(panes, time.Millisecond, time.Minute)
+	s.server.windows = newSwarmWindowLoop(func(context.Context) swarmWindowObservation {
+		used := int64(100)
+		if hostChanged.Load() {
+			used = 20
+		}
+		return swarmWindowObservation{Status: "ok", Windows: map[string]swarmWindow{"a": {UsedTokens: used}}}
+	}, time.Millisecond, time.Minute)
+	reads := &swarmScriptedReads{next: func(call int, req core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+		if offline.Load() {
+			return core.SwarmStreamRead{}, errors.New("store unavailable")
+		}
+		return core.SwarmStreamRead{Cursor: "last-good", Snapshot: swarmScriptedSnapshot(1)}, nil
+	}}
+	s.server.reads = reads
+	s.login()
+	conn := s.stream("alpha", "", nil)
+	defer conn.close()
+	conn.until(t, "tick")
+	offline.Store(true)
+	conn.until(t, "fault")
+	hostChanged.Store(true)
+
+	var gotPane, gotWindow bool
+	for i := 0; i < 40; i++ {
+		fault, frames := conn.until(t, "fault")
+		for _, f := range frames {
+			switch f.Event {
+			case "herdr":
+				gotPane = gotPane || strings.Contains(f.Data, `"agent_status":"idle"`)
+			case "window":
+				gotWindow = gotWindow || strings.Contains(f.Data, `"used_tokens":20`)
+			default:
+				t.Fatalf("unexpected %s frame during store outage", f.Event)
+			}
+			if f.ID != "" {
+				t.Fatalf("%s advanced cursor during store outage: %q", f.Event, f.ID)
+			}
+		}
+		if !gotPane || !gotWindow {
+			continue
+		}
+		if fault.ID != "" || strings.Contains(fault.Data, "db_observed_at") {
+			t.Fatalf("fault advanced store observation: %#v", fault)
+		}
+		var payload struct {
+			Panes  swarmPaneView
+			Window swarmWindowView
+		}
+		if err := json.Unmarshal([]byte(fault.Data), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Panes.ObservedAt.IsZero() || payload.Window.ObservedAt.IsZero() ||
+			payload.Panes.Status != "ok" || payload.Window.Status != "ok" {
+			t.Fatalf("fault missing current host observations: %s", fault.Data)
+		}
+		break
+	}
+	if !gotPane || !gotWindow {
+		t.Fatal("host observations failed to update while the store was unavailable")
+	}
+	offline.Store(false)
+	tick, _ := conn.until(t, "tick")
+	if tick.ID != "last-good" {
+		t.Fatalf("recovered on the wrong cursor: %s", tick.ID)
+	}
+	for _, cursor := range reads.cursors()[1:] {
+		if cursor != tick.ID {
+			t.Fatalf("outage changed the read cursor: %q", cursor)
+		}
 	}
 }
 
