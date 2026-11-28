@@ -409,7 +409,7 @@ class Fixture:
     # cannot decode. A long-lived child process stands in for each harness
     # process; the readers check it by PID, start time and boot ID.
     WINDOWS = {"root_next": ("claude-opus-5-5", 20_000, 880_000, 20_000, True),
-               "worker_a": ("claude-sonnet-5-5", 10_000, 400_000, 10_000, False)}
+               "worker_a": ("claude-sonnet-5-5", 10_000, 100_000, 10_000, False)}
 
     def seed_context(self):
         self.sleeper = subprocess.Popen(["sleep", "infinity"], stdin=subprocess.DEVNULL,
@@ -440,6 +440,10 @@ class Fixture:
                      {"type": "assistant", "timestamp": (now - timedelta(minutes=1)).isoformat(),
                       "message": {"model": model, "usage": {"input_tokens": fresh, "cache_read_input_tokens": read,
                                                             "cache_creation_input_tokens": written}}}]
+            if role == "root_next":
+                # The store recorded the coordinator's compaction, but its
+                # transcript marker lies outside the reader's last 2 MiB.
+                lines.insert(1, {"type": "user", "content": "x" * (2 << 20)})
             disposable_host.write_private(folder / f"{native}.jsonl", "\n".join(json.dumps(line) for line in lines) + "\n")
             disposable_host.write_private(self.runtime / "state-claude" / f"{role}.json", json.dumps({
                 "process": process, "workspace": workspace,
@@ -450,6 +454,15 @@ class Fixture:
         disposable_host.write_private(self.runtime / "state-opencode" / "worker_b.json", json.dumps({
             "process": process, "workspace": str(self.runtime / "ws" / "worker_b"),
             "agent": {"agent_id": worker_b["agent_id"], "native_session_id": uid(), "metadata": {"harness": "opencode"}}}))
+        # One below-limit measured session and one session with unknown fill
+        # both cross the high-injection threshold.
+        for role in ("worker_a", "worker_b"):
+            self.agent(role, "recall-observation", {
+                "request_id": uid(), "repo": self.collection, "harness": HARNESS[role][0],
+                "native_session_id": self.sessions[role]["native_session_id"],
+                "method": "cairn-lifecycle/recall-meter/1", "hook_event": "UserPromptSubmit",
+                "status": "completed", "injected_bytes": 64 * 1024,
+            })
         self.context_expected = expected
         self.report["context_seed"] = {"claude_sessions": sorted(v["role"] for v in expected.values()),
                                        "unknown_session": "worker_b (opencode)"}
@@ -788,7 +801,13 @@ class Fixture:
             text = row.inner_text()
             percent = f"{round(want['used'] * 100 / want['window'])}% · "
             require(percent in text, f"{role}'s row does not show its fill {percent!r}: " + text[:300])
-            require("1 compaction" in text, f"{role}'s row does not show the transcript's compaction")
+            if want["role"] == "root_next":
+                require("0 compactions in the inspected transcript tail" in text and "1 compaction recorded" in text,
+                        "partial transcript hid the coordinator's recorded compaction: " + text[:1200])
+            else:
+                require("1 compaction in the transcript" in text, "the whole transcript's count was lost")
+                require("64.0 KiB" in text and "high Cairn injection" not in text and
+                        "near-limit-row" not in row.get_attribute("class"), "the proxy contradicted a measured fill")
             if want["near"]:
                 require("near context limit" in text and "near its limit" in text, f"{role}'s row lacks the near-limit mark")
                 require("near-limit-row" in (row.get_attribute("class") or ""), f"{role}'s row is not marked near its limit")
@@ -797,6 +816,10 @@ class Fixture:
         near = sum(1 for want in self.context_expected.values() if want["near"])
         if near:
             self.expect(page.locator("#near-limit-count")).to_contain_text(f"{near} agent{'' if near == 1 else 's'} near")
+        banner = page.locator("#near-limit-count")
+        self.expect(banner).not_to_contain_text(self.sessions["worker_a"]["display_name"])
+        self.expect(banner).to_contain_text("High Cairn injection (window fill unknown): " + self.sessions["worker_b"]["display_name"])
+        self.expect(self.member_row(page, "worker_b").locator(".near-limit-tag")).to_have_text("⚠ high Cairn injection")
         worker_b = self.sessions["worker_b"]["agent_id"]
         require(worker_b in unknown, "the opencode session is not reported unknown by the reader")
         self.expect(self.member_row(page, "worker_b")).to_contain_text("unknown: " + unknown[worker_b][:40])

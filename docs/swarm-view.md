@@ -124,7 +124,7 @@ inactive or changing its role does not change the epoch.
 | `log` | cursor | One event envelope (`SwarmEvent`). No record body. |
 | `snapshot` | cursor | The whole snapshot (`cairn.swarm-snapshot/1`). |
 | `herdr` | | The pane observation: `observed_at`, `status` (`ok`, `unavailable`, `pending`), `error`, `stale`, `sessions`, `panes` by agent UUID. Sent when it changes. |
-| `window` | | The context-window observation read from the harness transcripts of this host: `observed_at`, `status`, `error`, `stale`, `sessions`, `near_limit_rule`, `windows` by agent UUID (`used_tokens`, `window_tokens`, `model`, `measured_at`, `compactions`, `last_compaction_at`, `source`, `near_limit`) and `unknown` by agent UUID with the reason. Sent when it changes. |
+| `window` | | The context-window observation read from the harness transcripts of this host: `observed_at`, `status`, `error`, `stale`, `sessions`, `near_limit_rule`, `windows` by agent UUID (`used_tokens`, `window_tokens`, `model`, `measured_at`, `compactions`, `compactions_partial`, `last_compaction_at`, `source`, `near_limit`) and `unknown` by agent UUID with the reason. Sent when it changes. |
 | `tick` | cursor | `db_observed_at`, and `panes` and `window` (`observed_at`, `status`, `error`, `stale` each). Sent after every read. |
 | `fault` | | `code`, `error`, `at`. The store could not be read; the server keeps trying. |
 | `reset` | | `code`, `error`. The stream cannot continue and the server closes it. |
@@ -347,8 +347,13 @@ after the first, the current interval is unknown. A value without a
 measurement in the interval is unknown. The source timestamp is the newest
 counter observation among the campaign's sessions. The proxy flags a session
 at 64 KiB of measured Cairn output in the current interval, a fixed
-threshold for accumulated output across multiple hooks. Harness-reported
-window fill is read independently.
+threshold for accumulated output across multiple hooks. When the transcript gives
+both usage and capacity, its fill determines the near-limit warning. Otherwise
+the page labels high Cairn injection separately and shows the fill as unknown.
+
+The transcript reader inspects up to the last 2 MiB. For a longer transcript,
+`compactions_partial` is true and the count covers only markers in that tail.
+The page also shows the store’s recorded compaction count and time when available.
 
 ## Plane
 

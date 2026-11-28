@@ -998,7 +998,7 @@
       const body = el("tbody");
       for (const member of list) {
         const selected = state.filter === member.member;
-        const row = el("tr", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${nearLimit(member) ? " near-limit-row" : ""}`,
+        const row = el("tr", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${contextWarning(member) ? " near-limit-row" : ""}`,
           dataset: { member: member.member, label: member.label || shortPrincipal(member.member) } },
           agentColumns.map((column, i) => el(i === 0 ? "th" : "td", i === 0 ? { scope: "row" } : {}, column.cell(member))));
         // A click anywhere on the row opens the detail panel; the controls in
@@ -1022,7 +1022,7 @@
   function agentCard(member) {
     const label = member.label || shortPrincipal(member.member);
     const selected = state.filter === member.member;
-    const card = el("article", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${nearLimit(member) ? " near-limit-row" : ""}`, dataset: { member: member.member, label }, "aria-label": label });
+    const card = el("article", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${contextWarning(member) ? " near-limit-row" : ""}`, dataset: { member: member.member, label }, "aria-label": label });
     card.append(el("header", { class: "agent-head" }, agentCell(member)));
     const fields = el("dl", { class: "fields" });
     for (const column of agentColumns.slice(1)) fields.append(field(column.name, column.cell(member)));
@@ -1037,6 +1037,7 @@
   function agentCell(member) {
     const label = member.label || shortPrincipal(member.member);
     const selected = state.filter === member.member;
+    const warning = contextWarning(member);
     return el("div", { class: "agent-cell" },
       el("div", { class: "agent-name" },
         el("strong", { class: "agent-label", text: label }), " ",
@@ -1044,7 +1045,7 @@
         member.role_label && member.role ? el("span", { class: "muted", text: ` (${member.role})` }) : null),
       member.role_address ? el("code", { class: "role-address", text: member.role_address }) : null,
       member.active ? null : el("span", { class: "tag", text: "inactive member" }),
-      nearLimit(member) ? el("span", { class: "tag flag near-limit-tag", text: "⚠ near context limit" }) : null,
+      warning ? el("span", { class: "tag flag near-limit-tag", text: warning === "measured" ? "⚠ near context limit" : "⚠ high Cairn injection" }) : null,
       el("div", { class: "agent-actions" },
         el("button", { type: "button", class: "small", text: "Details", "aria-label": `Details and actions for ${label}`, onclick: () => openDetail(member.member) }),
         el("button", { type: "button", class: "small secondary", "aria-pressed": selected ? "true" : "false",
@@ -1232,25 +1233,32 @@
     return member.agent_id ? room[member.agent_id] || null : null;
   }
 
-  // Near the limit by the transcript's rule, or by the Cairn proxy's rule.
-  function nearLimit(member) {
+  function contextWarning(member) {
     const window = windowOf(member);
-    if (window && window.near_limit) return true;
+    if (window && window.window_tokens > 0) return window.near_limit ? "measured" : "";
     const proxy = proxyOf(member);
-    return !!(proxy && proxy.known && proxy.near_limit);
+    return proxy && proxy.known && proxy.near_limit ? "proxy" : "";
   }
 
   function renderNearLimit() {
     const box = byID("near-limit-count");
-    if (!state.campaign || !state.snapshot) {
-      box.hidden = true;
-      return;
+    const measured = [], proxy = [];
+    if (state.campaign && state.snapshot) {
+      for (const member of members()) {
+        if (!member.active && !member.role_address) continue;
+        const warning = contextWarning(member);
+        const label = member.label || shortPrincipal(member.member);
+        if (warning === "measured") measured.push(label);
+        if (warning === "proxy") proxy.push(label);
+      }
     }
-    const near = members().filter((member) => (member.active || member.role_address) && nearLimit(member));
-    box.hidden = !near.length;
-    box.textContent = near.length
-      ? `⚠ ${near.length} agent${near.length === 1 ? "" : "s"} near ${near.length === 1 ? "its" : "their"} context limit: ${near.map((m) => m.label || shortPrincipal(m.member)).join(", ")}`
-      : "";
+    const warnings = [];
+    if (measured.length) {
+      warnings.push(`⚠ ${measured.length} agent${measured.length === 1 ? "" : "s"} near ${measured.length === 1 ? "its" : "their"} context limit: ${measured.join(", ")}`);
+    }
+    if (proxy.length) warnings.push(`⚠ High Cairn injection (window fill unknown): ${proxy.join(", ")}`);
+    box.hidden = !warnings.length;
+    box.textContent = warnings.join(" · ");
   }
 
   // Both rules: the transcript fill's and the Cairn proxy's.
@@ -1267,9 +1275,9 @@
     if (window) {
       if (window.near_limit) parts.push(el("p", { class: "near-limit" }, el("strong", { text: "⚠ near its limit" })));
       parts.push(el("p", { class: "window-fill" }, el("strong", { text: formatWindow(window) })));
-      const detail = [];
-      detail.push(`${window.compactions} compaction${window.compactions === 1 ? "" : "s"}`);
-      parts.push(el("p", { class: "small-text muted" }, detail.join(""),
+      const compactions = window.compactions === 1 ? "1 compaction" : `${window.compactions} compactions`;
+      parts.push(el("p", { class: "small-text muted" }, compactions,
+        window.compactions_partial ? " in the inspected transcript tail" : " in the transcript",
         window.last_compaction_at ? [", last ", timeEl(window.last_compaction_at)] : "",
         " · measured ", timeEl(window.measured_at), window.source ? ` · ${window.source}` : ""));
     } else if (observed && member.agent_id && (observed.unknown || {})[member.agent_id]) {
@@ -1288,7 +1296,7 @@
       return parts;
     }
     const proxy = proxyOf(member);
-    if (proxy && (proxy.compactions !== undefined && proxy.compactions !== null || proxy.last_compaction_at) && !window) {
+    if (proxy && (proxy.compactions !== undefined && proxy.compactions !== null || proxy.last_compaction_at)) {
       parts.push(el("p", { class: "small-text muted" },
         proxy.compactions !== undefined && proxy.compactions !== null ? `${proxy.compactions} compaction${proxy.compactions === 1 ? "" : "s"} recorded` : "compactions unknown",
         proxy.last_compaction_at ? [", last ", timeEl(proxy.last_compaction_at)] : ""));
@@ -1300,7 +1308,7 @@
       parts.push(el("p", { class: "small-text proxy" }, "Cairn-injected since compaction (proxy): ",
         proxy.injected_bytes !== undefined && proxy.injected_bytes !== null ? bytes(proxy.injected_bytes) : "unknown",
         counts.length ? ` (${counts.join(", ")})` : "",
-        proxy.near_limit ? el("strong", { class: "near-limit", text: " ⚠ near limit" + (proxy.reasons && proxy.reasons.length ? ": " + proxy.reasons.join("; ") : "") }) : null));
+        contextWarning(member) === "proxy" ? el("strong", { class: "near-limit", text: " ⚠ high Cairn injection" }) : null));
     } else {
       parts.push(el("p", { class: "small-text muted", text: "Cairn-injected since compaction (proxy): unknown" }));
     }

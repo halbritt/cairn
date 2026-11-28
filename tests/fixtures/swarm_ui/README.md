@@ -63,8 +63,10 @@ One campaign, `swarm-fixture`, in a fresh collection:
 - for the context room: a private bindings directory with a Claude and an
   OpenCode binding, session state files whose process is a long-lived `sleep`
   child of the fixture, and sample Claude transcripts, so the real transcript
-  reader measures one member at 92% of its window (near the limit), one at 42%,
-  and reports the OpenCode member as unknown.
+  reader measures one member at 92% of its window (near the limit), one at 12%,
+  and reports the OpenCode member as unknown. The 12% session and the OpenCode
+  session both have 64 KiB of recorded Cairn injection. The coordinator’s
+  compaction marker is older than the inspected transcript tail.
 
 A step that the candidate refuses is listed under `seed_gaps` and does not stop
 the run; the checks that need it then fail on their own.
