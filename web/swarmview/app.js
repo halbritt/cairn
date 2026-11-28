@@ -191,9 +191,10 @@
   }
 
   async function api(path, options = {}) {
+    const csrf = state.csrf;
     const headers = new Headers(options.headers || {});
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
-    if ((options.method || "GET") !== "GET") headers.set("X-CSRF-Token", state.csrf);
+    if ((options.method || "GET") !== "GET") headers.set("X-CSRF-Token", csrf);
     let response;
     try {
       response = await fetch(path, {
@@ -210,7 +211,8 @@
       body = null;
     }
     if (!response.ok) {
-      if (response.status === 401) showSignIn();
+      // A late rejection belongs to the session that sent this request.
+      if (response.status === 401 && csrf === state.csrf) showSignIn();
       throw new APIError((body && (body.error || body.message)) || `request failed (${response.status})`, body && body.code, response.status, body);
     }
     return body;
@@ -228,9 +230,11 @@
   }
 
   function showSignIn(message) {
-    closeStream();
+    state.csrf = "";
     clearTimeout(state.landingTimer);
+    closeStream();
     state.landingRequest++;
+    byID("detail-compose").replaceChildren();
     for (const dialog of document.querySelectorAll("dialog[open]")) dialog.close();
     byID("landing").hidden = true;
     byID("campaign").hidden = true;
@@ -290,13 +294,13 @@
   });
 
   byID("signout").addEventListener("click", async () => {
+    const csrf = state.csrf;
     try {
       await post("/api/auth/logout", {});
     } catch (_) {
       // The session is gone either way.
     }
-    state.csrf = "";
-    showSignIn();
+    if (state.csrf === csrf) showSignIn();
   });
 
   // ----------------------------------------------------------------- landing
@@ -530,35 +534,42 @@
   }
 
   async function recover() {
+    const csrf = state.csrf;
+    const recovering = () => csrf && state.csrf === csrf && !state.source;
     const attempt = state.failures;
     await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * attempt, 10000)));
-    if (state.source) return;
+    if (!recovering()) return;
     let session;
     try {
       session = await api("/api/auth/session");
     } catch (error) {
+      if (!recovering()) return;
       setLive("offline", "server unavailable");
       state.failures += 1;
       recover();
       return;
     }
+    if (!recovering()) return;
     if (!session.authenticated) {
       showSignIn("The server no longer knows this browser. Sign in again; the page continues where it stopped.");
       return;
     }
     state.csrf = session.csrf_token || state.csrf;
+    const recoveredSession = state.csrf;
     // Continue from the last cursor first. If the cursor is refused twice,
     // start a new window: the list is replaced, nothing is repeated.
     if (attempt >= 3) {
       try {
         await api("/api/swarm/campaign?campaign=" + encodeURIComponent(state.campaign));
       } catch (error) {
+        if (recoveredSession !== state.csrf || state.source) return;
         if (error.code === "NOT_FOUND" || error.code === "INVALID_REQUEST") {
           setLive("offline", "not available");
           showFault("This campaign cannot be shown: " + error.message + ` (${error.code})`);
           return;
         }
       }
+      if (recoveredSession !== state.csrf || state.source) return;
       state.cursor = "";
     }
     openStream(state.cursor);
@@ -1634,6 +1645,7 @@
     form.elements.kind.addEventListener("change", () => updateComposeKind(form));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const csrf = state.csrf;
       const kind = form.elements.kind.value;
       const payload = {
         campaign: state.campaign, to: form.elements.to.value, kind,
@@ -1657,7 +1669,7 @@
         result.textContent = "Sent. The agent sees it at its next turn boundary; until it claims the delivery the flow shows it as sent and not yet seen." + outcomeText(reply);
         form.elements.summary.value = "";
         form.elements.body.value = "";
-        refreshSnapshot();
+        if (csrf === state.csrf) refreshSnapshot();
       } catch (error) {
         result.className = "result refused";
         result.textContent = refusalText(error) + " Sending again reuses the same request.";
@@ -1786,6 +1798,7 @@
       eventID && !kept ? el("div", { class: "only-link" },
         note("This page can open the message only while it is in your inbox. After you acknowledge it, the page has no link to it.", "warning"),
         el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(eventID) })) : null);
+    const csrf = state.csrf;
     prepareConfirm(true, "Acknowledge", async () => {
       let reply;
       try {
@@ -1796,7 +1809,7 @@
           pendingRequests.delete(key);
           const oldest = error.body.oldest;
           const expected = flow().deliveries.find((d) => d.delivery_id === error.body.expected);
-          refreshSnapshot();
+          if (csrf === state.csrf) refreshSnapshot();
           throw new APIError(`${error.message}. Nothing was changed. You chose "${expected ? expected.summary || expected.event_id : error.body.expected}", ` +
             `but your oldest delivery is "${oldest.summary || oldest.event_id}" from ${senderLabel(oldest)}. Acknowledge that one first`, error.code, error.status, error.body);
         }
@@ -1975,7 +1988,8 @@
 
   function prepareConfirm(enabled, label, run) {
     const version = ++confirmationVersion;
-    const isCurrent = () => version === confirmationVersion && byID("confirm").open;
+    const csrf = state.csrf;
+    const isCurrent = () => csrf === state.csrf && version === confirmationVersion && byID("confirm").open;
     const go = byID("confirm-go");
     const result = byID("confirm-result");
     result.textContent = "";
@@ -1994,7 +2008,7 @@
           if (isCurrent()) outcome.reconfirm();
           return;
         }
-        refreshSnapshot();
+        if (csrf === state.csrf) refreshSnapshot();
         if (!isCurrent()) return;
         result.textContent = outcome;
         go.hidden = true;
