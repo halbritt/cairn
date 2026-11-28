@@ -130,6 +130,7 @@ inactive or changing its role does not change the epoch.
 | `herdr` | | The pane observation: `observed_at`, `status` (`ok`, `unavailable`, `pending`), `error`, `stale`, `sessions`, `panes` by agent UUID. Sent when it changes. |
 | `window` | | The context-window observation read from the harness transcripts of this host: `observed_at`, `status`, `error`, `stale`, `sessions`, `near_limit_rule`, `windows` by agent UUID (`used_tokens`, `window_tokens`, `model`, `measured_at`, `compactions`, `compactions_partial`, `last_compaction_at`, `source`, `near_limit`) and `unknown` by agent UUID with the reason. Sent when it changes. |
 | `tick` | cursor | `db_observed_at`, and `panes` and `window` (`observed_at`, `status`, `error`, `stale` each). Sent after each successful store read. |
+| `host` | | `panes` and `window` observation times and status. Sent each tick while a store read is still pending. The previous database observation ages until the read completes. |
 | `fault` | | `code`, `error`, `at`. The store read failed. The server keeps its cursor, retries, and includes the latest `panes` and `window` observation times and status as in `tick`. |
 | `reset` | | `code`, `error`. The stream cannot continue and the server closes it. |
 

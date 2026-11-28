@@ -471,6 +471,11 @@
       renderNearLimit();
       renderObservations();
     });
+    on("host", (data) => {
+      state.paneTick = data.panes;
+      state.windowTick = data.window;
+      renderObservations();
+    });
     on("tick", (data) => {
       state.dbObservedAt = data.db_observed_at || state.dbObservedAt;
       state.paneTick = data.panes || state.paneTick;
