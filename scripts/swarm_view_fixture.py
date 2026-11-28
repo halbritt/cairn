@@ -741,7 +741,7 @@ class Fixture:
             # get newer observation times while the database time stays fixed.
             times = "[...document.querySelectorAll('#observations li')].slice(0, 3).map(row => row.querySelector('time')?.dateTime)"
             before_times = page.evaluate("() => " + times)
-            page.wait_for_function("before => (" + times + ").every((now, i) => i === 0 ? now === before[i] : now > before[i])",
+            page.wait_for_function("before => (" + times + ").every((now, i) => i === 0 ? now === before[i] : now && (!before[i] || now > before[i]))",
                                    arg=before_times, timeout=30000)
         finally:
             checked(disposable_host.pg_start_command(cluster.pg_bin, cluster.root / "data", cluster.socket,
@@ -1762,13 +1762,23 @@ class Fixture:
         self.expect(v1.locator(".chip-superseded")).to_have_count(1, timeout=15000)
         observed = page.locator("#observations li").first.locator("time")
         observed_at = observed.get_attribute("datetime")
+        # Even if another snapshot restores v2, catch a rollback between ticks.
+        watch = v1.evaluate_handle("""row => {
+            const selector = 'li[data-event="' + row.dataset.event + '"] .chip-superseded';
+            const flow = row.parentElement;
+            let reverted = false;
+            const observer = new MutationObserver(() => { if (!flow.querySelector(selector)) reverted = true; });
+            observer.observe(flow, {childList: true, subtree: true});
+            return () => { observer.disconnect(); return reverted; };
+        }""")
         gate.evaluate("g => g.release()")
         gate.dispose()
         # Let the next stream tick run. A stale refresh must not have replaced
         # the superseded state, even if that tick carried no new snapshot.
         page.wait_for_function("""before => document.querySelector('#observations li time')
             .getAttribute('datetime') > before""", arg=observed_at, timeout=15000)
-        self.expect(v1.locator(".chip-superseded")).to_have_count(1)
+        require(not watch.evaluate("finish => finish()"), "an older action refresh resurrected the superseded notice")
+        watch.dispose()
         self.expect(v1.locator("button", has_text="Supersede")).to_have_count(0)
         self.expect(v2.locator("button", has_text="Supersede")).to_have_count(1)
 

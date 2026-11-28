@@ -292,8 +292,13 @@ func TestSwarmStreamOverHTTPRefusals(t *testing.T) {
 			t.Fatalf("%s: status %d %s", name, conn.Status, conn.Body)
 		}
 		reset, before := conn.until(t, "reset")
-		if len(before) != 1 || before[0].Event != "hello" || !strings.Contains(reset.Data, `"code":"`+try[2]+`"`) {
+		if len(before) == 0 || before[0].Event != "hello" || !strings.Contains(reset.Data, `"code":"`+try[2]+`"`) {
 			t.Fatalf("%s: %v then %s", name, before, reset.Data)
+		}
+		for _, frame := range before[1:] {
+			if !frame.hostObservation() {
+				t.Fatalf("%s: received %s before the refusal", name, frame.Event)
+			}
 		}
 	}
 	if resp, raw := f.do(http.MethodGet, "/api/swarm/campaign?campaign=gamma", nil, nil); resp.StatusCode != http.StatusNotFound {
