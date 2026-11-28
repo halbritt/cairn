@@ -829,16 +829,19 @@
     return present.flatMap((part, i) => (i ? [" · ", part] : [part]));
   }
 
+  // Row types whose subject is the sender of the row's event.
+  const senderSubjectTypes = new Set(["operator_delivery", "board_question"]);
+
   // The sender a row names, through the page's single sender function. A row
-  // built from one event carries that event's `system`; until the store sends
-  // it, an operator-delivery row (whose subject is its sender) takes the value
-  // of its event or delivery from wherever the page has it.
+  // built from one event carries that event's `system`; when it does not, a
+  // row whose subject is its sender takes the value of its event or of a
+  // delivery of that event from wherever the page has it.
   function needSystem(need) {
     if (need.system) return need.system;
-    if (need.type !== "operator_delivery") return "";
+    if (!senderSubjectTypes.has(need.type)) return "";
     const refs = need.refs || {};
-    const deliveryID = (refs.delivery_ids || [])[0];
-    const delivery = deliveryID ? flow().deliveries.find((d) => d.delivery_id === deliveryID) : null;
+    const deliveryIDs = refs.delivery_ids || [];
+    const delivery = flow().deliveries.find((d) => deliveryIDs.includes(d.delivery_id) || (refs.event_id && d.event_id === refs.event_id));
     const landingEvent = state.landingEvents ? state.landingEvents.get(refs.event_id) : null;
     return systemOf(state.log.get(refs.event_id)) || systemOf(delivery) || (landingEvent && landingEvent.system) || "";
   }
@@ -1748,9 +1751,16 @@
     const key = "ack:" + deliveryID;
     const body = byID("confirm-body");
     byID("confirm-title").textContent = "Acknowledge your delivery";
-    setChildren(body, 
+    const logged = eventID ? state.log.get(eventID) : null;
+    const known = logged || (eventID && state.landingEvents ? state.landingEvents.get(eventID) : null);
+    setChildren(body,
       note("The server claims your oldest eligible delivery and completes it, so your inbox is acknowledged in order."),
-      eventID && state.log.get(eventID) ? el("p", {}, "Expected: ", linked(state.log.get(eventID).summary || eventID)) : null);
+      known ? el("p", {}, "Expected: ", summaryNode(known)) : null,
+      // When the event is not in this page's log, the delivery is the page's
+      // only link to the message: say so before it goes.
+      eventID && !logged ? el("div", { class: "only-link" },
+        note("This page can open the message only while it is in your inbox. After you acknowledge it, the page has no link to it.", "warning"),
+        el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(eventID) })) : null);
     prepareConfirm(true, "Acknowledge", async () => {
       let reply;
       try {

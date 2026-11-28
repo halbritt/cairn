@@ -900,6 +900,8 @@ class Fixture:
             raise AssertionError("waiting: the snapshot marks no inbox_head row, so no row offers Acknowledge (needs-you author's field)")
         head = page.locator(f"#needs li.need[data-need='{heads[0]['id']}']")
         head.locator("button", has_text="Acknowledge").click()
+        # The event is in this page's log: the confirmation says nothing extra.
+        require(page.locator("#confirm-body .only-link").count() == 0, "the confirmation warns about a message the page can still open")
         with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
             page.locator("#confirm-go").click()
         reply = info.value.json()
@@ -968,6 +970,10 @@ class Fixture:
             landing.locator("#event-detail button.close").click()
             outside_row.locator("button", has_text="Acknowledge").click()
             self.no_null(landing.locator("#confirm-body"), "the landing acknowledge dialog")
+            # Not in a log: acknowledging removes the page's only link, and the dialog says so.
+            only = landing.locator("#confirm-body .only-link")
+            self.expect(only).to_contain_text("only while it is in your inbox")
+            require(only.locator("button", has_text="Open the event").count() == 1, "the confirmation offers no Open the event")
             with landing.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
                 landing.locator("#confirm-go").click()
             sent = info.value.request.post_data_json or {}
@@ -1420,8 +1426,24 @@ class Fixture:
         self.events["scheduled"] = {"event_id": events[0], "occurrence_id": scheduled.get("occurrence_id")}
         return events[0]
 
+    def scheduled_board_question(self):
+        """A request Cairn's scheduler publishes to the agent-board topic."""
+        note = self.agent("bystander", "create", {"request_id": uid(), "draft": {
+            "kind": "note", "body": "Should the fixture keep its scheduled reminder?", "claim_type": "self", "sensitivity": "shareable",
+            "scope": {"repo": self.collection, "task_id": "coordination/" + uid(), "run_id": "*"}}})
+        self.host.operator("event-schedule", {
+            "request_id": uid(), "not_before": rfc3339(timedelta(seconds=2)), "grace_seconds": 600,
+            "publication": {"repo": self.collection, "kind": "request", "ref": ref(note),
+                            "destination": {"type": "topic", "name": BOARD_TOPIC}}})
+        time.sleep(3)
+        fired = self.host.operator("schedule-tick", {"repo": self.collection})
+        events = [o.get("event_id") for o in fired.get("occurrences", []) if o.get("event_id")]
+        require(events, "the board schedule did not fire: " + json.dumps(fired)[:300])
+        return events[0]
+
     def needs_you_system(self, page):
         event_id = self.scheduled_to_operator()
+        board_id = self.scheduled_board_question()
         operator = self.report["operator_principal"]
 
         def check(view, where):
@@ -1432,12 +1454,28 @@ class Fixture:
             require("you (operator)" not in text, f"{where}: the scheduled request's row reads as the owner's: " + text[:200])
             return row
 
+        def board(view, where):
+            # The board question's row reads as from Cairn wherever it is listed.
+            row = view.locator(f"li.need[data-event='{board_id}']")
+            if row.count() == 0:
+                return False
+            sender = row.locator("p.meta").inner_text()
+            require("Cairn (scheduled message)" in sender, f"{where}: the scheduled board question's sender is not Cairn: " + sender[:200])
+            require("you (operator)" not in sender and "local-uid:" not in sender, f"{where}: the scheduled board question's sender reads as the owner's")
+            return True
+
+        page.wait_for_timeout(2500)
+        board_places = []
+        if board(page, "campaign page"):
+            board_places.append("campaign")
         landing = page.context.new_page()
         try:
             landing.goto(f"http://127.0.0.1:{self.port}/")
             check(landing, "landing page")
-            landing.locator("#landing-needs").screenshot(path=str(self.output / "needs-you-landing-system-desktop.png"))
-            self.report["screenshots"].append("needs-you-landing-system-desktop.png")
+            if board(landing, "landing page"):
+                board_places.append("landing")
+            # The landing page re-renders every 5 s; a page capture does not wait for it to hold still.
+            self.shot(landing, "needs-you-landing-system-desktop")
         finally:
             landing.close()
         phone = page.context.browser.new_context(viewport=PHONE)
@@ -1445,17 +1483,33 @@ class Fixture:
             small = phone.new_page()
             small.goto(f"http://127.0.0.1:{self.port}/#token=" + self.token)
             check(small, "landing page at 390 px")
-            small.locator("#landing-needs").screenshot(path=str(self.output / "needs-you-landing-system-phone.png"))
-            self.report["screenshots"].append("needs-you-landing-system-phone.png")
+            if board(small, "landing page at 390 px"):
+                board_places.append("landing-390")
+            small.goto(self.campaign_url())
+            self.expect(small.locator("#agents .agent").first).to_be_visible(timeout=20000)
+            small.wait_for_timeout(1500)
+            if board(small, "campaign page at 390 px"):
+                board_places.append("campaign-390")
+            self.shot(small, "needs-you-landing-system-phone")
         finally:
             phone.close()
+        self.report["scheduled_board_places"] = board_places
+        rows = [i for i in self.page_json("/api/swarm/landing")["needs_you"]["items"] if (i.get("refs") or {}).get("event_id") == board_id]
+        self.report["scheduled_board_row_system"] = rows[0].get("system") if rows else "row not on landing"
+        require(board_places, "the scheduled board question is listed on neither page")
         # No raw operator principal anywhere on the campaign page or the landing page.
-        require(operator not in page.locator("body").inner_text(), "the campaign page shows the raw operator principal")
+        def raw_principal(view, where):
+            # Name the element that shows it, so a store-written title is told apart from page text.
+            hits = view.evaluate("""(needle) => [...document.querySelectorAll('body *')]
+                .filter((n) => n.children.length === 0 && (n.textContent || '').includes(needle))
+                .map((n) => (n.closest('li') ? n.closest('li').dataset.type || n.closest('li').className : n.tagName) + ': ' + n.textContent.trim().slice(0, 80))""", operator)
+            require(not hits, f"{where} shows the raw operator principal: " + json.dumps(hits[:3]))
+        raw_principal(page, "the campaign page")
         landing = page.context.new_page()
         try:
             landing.goto(f"http://127.0.0.1:{self.port}/")
             self.expect(landing.locator("#campaigns")).to_contain_text(CAMPAIGN, timeout=15000)
-            require("local-uid:" not in landing.locator("body").inner_text(), "the landing page shows a raw principal")
+            raw_principal(landing, "the landing page")
         finally:
             landing.close()
         # The campaign page: no row with a Cairn sender reads as the owner's.
