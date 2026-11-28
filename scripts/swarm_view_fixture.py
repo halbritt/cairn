@@ -635,7 +635,7 @@ class Fixture:
         self.check("an owner notice is shown as sent, not yet seen", lambda: self.send_unseen(page), page,
                    category="slice:CAIRN-833")
         self.check("a landing Needs you row opens its event with the empty campaign; no raw principal on the landing page",
-                   lambda: self.landing_event(page), page, category="waiting:landing-event")
+                   lambda: self.landing_event(page), page, category="slice:CAIRN-833")
         self.check("empty summaries say what the message is, in the flow and in Details", lambda: self.empty_summaries(page), page)
         self.check("the landing page acknowledges a delivery outside any campaign; a campaign page says it is not the next",
                    lambda: self.landing_acknowledge(page), page, category="slice:CAIRN-833")
@@ -921,8 +921,7 @@ class Fixture:
             with landing.expect_response(lambda r: "/api/swarm/event?" in r.url) as info:
                 row.locator("button", has_text="Open the event").click()
             require("campaign=&" in info.value.url, "the landing page did not read the event with the empty campaign")
-            if not info.value.ok:
-                raise AssertionError("waiting: the event route refuses the landing scope: " + json.dumps(info.value.json())[:200])
+            require(info.value.ok, "the event route refuses the landing scope: " + json.dumps(info.value.json())[:200])
             body = landing.locator("#event-body")
             self.expect(body).to_contain_text("Outside any campaign.", timeout=10000)
             self.no_null(body, "the landing event panel")
@@ -1450,6 +1449,15 @@ class Fixture:
             self.report["screenshots"].append("needs-you-landing-system-phone.png")
         finally:
             phone.close()
+        # No raw operator principal anywhere on the campaign page or the landing page.
+        require(operator not in page.locator("body").inner_text(), "the campaign page shows the raw operator principal")
+        landing = page.context.new_page()
+        try:
+            landing.goto(f"http://127.0.0.1:{self.port}/")
+            self.expect(landing.locator("#campaigns")).to_contain_text(CAMPAIGN, timeout=15000)
+            require("local-uid:" not in landing.locator("body").inner_text(), "the landing page shows a raw principal")
+        finally:
+            landing.close()
         # The campaign page: no row with a Cairn sender reads as the owner's.
         for item in self.snapshot()["needs_you"]["items"]:
             if item.get("system"):
