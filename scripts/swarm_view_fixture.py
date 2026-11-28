@@ -954,6 +954,20 @@ class Fixture:
             body = landing.locator("#event-body")
             self.expect(body).to_contain_text("Outside any campaign.", timeout=10000)
             self.no_null(body, "the landing event panel")
+            landing.locator("#event-detail button.close").click()
+            # A landing row whose event is in the landing Messages opens it too: the
+            # bystander's timed-out wait names its dependency event.
+            waits = [i for i in self.page_json("/api/swarm/landing")["needs_you"]["items"] if i["type"] == "wait_timed_out"]
+            require(waits, "the landing page lists no timed-out wait")
+            wait_event = (waits[0].get("refs") or {}).get("event_id")
+            wait_row = landing.locator(f"#landing-needs li.need[data-need='{waits[0]['id']}']")
+            self.expect(wait_row.locator("button", has_text="Open the event")).to_have_count(1, timeout=10000)
+            with landing.expect_response(lambda r: "/api/swarm/event?" in r.url) as opened:
+                wait_row.locator("button", has_text="Open the event").click()
+            require(opened.value.ok, "the landing wait row's event does not open: " + json.dumps(opened.value.json())[:200])
+            self.expect(landing.locator("#event-body")).to_contain_text("Unrelated request.", timeout=10000)
+            self.no_null(landing.locator("#event-body"), "the landing wait event panel")
+            self.report["landing_wait_event"] = wait_event
         finally:
             landing.close()
 

@@ -893,11 +893,16 @@
       const target = refs.principal || need.subject;
       if (target && canWrite(target)) controls.append(el("button", { type: "button", text: `Write to ${labelOf(target)}`, onclick: () => openDetail(target, true) }));
     }
-    // A campaign page opens the events of its rows. The landing page has no
-    // log: it opens the event of an operator-inbox delivery it owns, with the
-    // empty campaign as its scope.
-    if (refs.event_id && (state.campaign || need.type === "operator_delivery")) {
+    // A campaign page opens the events of its rows. The landing page reads,
+    // with the empty campaign as its scope, the event of an operator-inbox
+    // delivery it owns and any event in its Messages.
+    const openable = refs.event_id && (state.campaign || need.type === "operator_delivery" ||
+      (state.landingEvents && state.landingEvents.has(refs.event_id)));
+    if (openable) {
       controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id, { board: need.type === "board_question" }) }));
+    } else if (refs.event_id && /\bopen\b/i.test(actionText)) {
+      // Keep the action honest: this page cannot open that event.
+      controls.append(el("span", { class: "muted", text: "This page cannot open that event." }));
     }
     if (action.command) controls.append(copyButton(action.command, "Copy command"));
     row.append(controls);
