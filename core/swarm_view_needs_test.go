@@ -684,9 +684,8 @@ func TestSwarmNeedsBoardSnapshotDoesNotExposeRecordText(t *testing.T) {
 		item.ExpiresAt == nil || !item.ExpiresAt.Equal(note.CreatedAt.Add(24*time.Hour)) {
 		t.Errorf("expected fixed title and default lifetime for a request without a card, got %+v", item)
 	}
-	if item := items[malformed.EventID]; item.Title != "Board question from "+f.root.DisplayName || item.Detail != "" || item.ExpiresAt == nil ||
-		!item.ExpiresAt.Equal(malformed.CreatedAt.Add(24*time.Hour)) {
-		t.Errorf("expected fixed title and fallback lifetime for a malformed card, got %+v", item)
+	if item := items[malformed.EventID]; item.Title != "Board question from "+f.root.DisplayName || item.Detail != "Expiry not known exactly" || item.ExpiresAt != nil {
+		t.Errorf("expected fixed title and unknown expiry for a malformed card, got %+v", item)
 	}
 }
 

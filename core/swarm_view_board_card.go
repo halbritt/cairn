@@ -2,254 +2,286 @@ package core
 
 import (
 	"encoding/json"
-	"io"
 	"math"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
-	"unicode"
 )
 
-// Fernside's card contract is pinned to agent-board/server/cards.py at 5ccacf9
-// (parse_card, normalize, _number, _stamp, _verbs, _items and _series).
+// These bounds and the strict subset below follow agent-board/server/cards.py
+// at 5ccacf9. For other forms we bound the lifetime without inferring a slot
+// or default. The board's cap starts at poll time, which Cairn cannot observe.
 const (
 	swarmBoardDefaultTTL = 24 * time.Hour
 	swarmBoardMaxTTL     = 72 * time.Hour
 )
 
+type swarmBoardCertainty uint8
+
+const (
+	swarmBoardCertainValid swarmBoardCertainty = iota
+	swarmBoardCertainCardless
+	swarmBoardUncertain
+)
+
 type swarmBoardCardFacts struct {
-	valid           bool
-	expires         time.Time
+	certainty       swarmBoardCertainty
+	keepUntil       time.Time
 	defaultDeclared bool
 	slot            string
 }
 
-func swarmBoardCard(block string, published time.Time) swarmBoardCardFacts {
-	fallback := swarmBoardCardFacts{expires: published.Add(swarmBoardDefaultTTL)}
-	decoder := json.NewDecoder(strings.NewReader(block))
+func swarmBoardCard(block *string, published time.Time) swarmBoardCardFacts {
+	cardlessUntil := published.Add(swarmBoardDefaultTTL)
+	cardless := swarmBoardCardFacts{certainty: swarmBoardCertainCardless, keepUntil: cardlessUntil}
+	if block == nil {
+		return cardless
+	}
+	capAt := published.Add(swarmBoardMaxTTL)
+	var value any
+	decoder := json.NewDecoder(strings.NewReader(*block))
 	decoder.UseNumber()
-	var card map[string]any
-	var extra any
-	if decoder.Decode(&card) != nil || card == nil || decoder.Decode(&extra) != io.EOF {
-		return fallback
+	if !json.Valid([]byte(*block)) || decoder.Decode(&value) != nil {
+		// Python accepts some JSON spellings that Go rejects. Without an object
+		// we cannot rule out a valid long lifetime elsewhere in the block.
+		return swarmBoardCardFacts{certainty: swarmBoardUncertain, keepUntil: capAt}
 	}
-	switch card["severity"] {
-	case nil, "info", "notice", "warn", "urgent":
+	card, ok := value.(map[string]any)
+	if !ok {
+		return cardless // Other JSON types are certainly not objects.
+	}
+	expiry, lifetime := swarmBoardLifetime(card, published)
+	status, slot, defaultDeclared := swarmBoardFields(card)
+	switch max(status, lifetime) {
+	case swarmBoardCertainCardless:
+		return cardless
+	case swarmBoardUncertain:
+		if lifetime == swarmBoardUncertain {
+			expiry = capAt
+		} else if expiry.Before(cardlessUntil) {
+			expiry = cardlessUntil
+		}
+		return swarmBoardCardFacts{certainty: swarmBoardUncertain, keepUntil: expiry}
 	default:
-		return fallback
+		return swarmBoardCardFacts{certainty: swarmBoardCertainValid, keepUntil: expiry, defaultDeclared: defaultDeclared, slot: slot}
 	}
+}
 
+func swarmBoardLifetime(card map[string]any, published time.Time) (time.Time, swarmBoardCertainty) {
+	status := swarmBoardCertainValid
 	capAt := published.Add(swarmBoardMaxTTL)
 	ttl := swarmBoardDefaultTTL.Seconds()
 	if raw, present := card["ttl"]; present {
-		value, valid := swarmBoardNumber(raw)
-		if !valid || value < 1 {
-			return fallback
-		}
-		ttl = value
-	}
-	facts := swarmBoardCardFacts{
-		valid:   true,
-		expires: published.Add(time.Duration(min(ttl, swarmBoardMaxTTL.Seconds()) * float64(time.Second))),
-	}
-	for _, field := range []string{"expires_at", "observed_at", "until", "start", "end"} {
-		if raw, present := card[field]; present {
-			at, valid := swarmBoardStamp(raw, capAt)
-			if !valid {
-				return fallback
-			}
-			// normalize treats an expiry at epoch zero as unset.
-			if field == "expires_at" && !at.Equal(time.Unix(0, 0)) {
-				facts.expires = at
-				if facts.expires.After(capAt) {
-					facts.expires = capAt
-				}
-			}
+		seconds, ok := swarmBoardNumber(raw)
+		switch {
+		case !ok:
+			status = swarmBoardUncertain
+		case seconds < 1:
+			status = swarmBoardCertainCardless
+		default:
+			ttl = min(seconds, swarmBoardMaxTTL.Seconds())
 		}
 	}
-
-	shape, _ := card["shape"].(string)
-	if raw, present := card["verbs"]; present {
-		verbs, valid := swarmBoardVerbs(raw)
-		if !valid {
-			return fallback
-		}
-		if rawDefault, declared := card["default"]; declared {
-			id, ok := rawDefault.(string)
-			if !ok || !verbs[id] {
-				return fallback
-			}
-			facts.defaultDeclared = true
-		}
-	} else if _, declared := card["default"]; declared || strings.ToLower(swarmBoardClean(shape, 24)) == "question" {
-		return fallback
-	}
-	if !swarmBoardTypedFields(card) {
-		return fallback
-	}
-	if raw := card["slot"]; swarmBoardTruthy(raw) {
-		slot, ok := swarmBoardStringOrInteger(raw)
-		if raw == true {
-			slot, ok = "True", true
-		}
-		// Container and floating-point representations are Python-specific.
+	// Round outward so a sub-nanosecond TTL fraction cannot remove a row early.
+	expiry := published.Add(time.Duration(math.Ceil(ttl * float64(time.Second))))
+	if raw, present := card["expires_at"]; present {
+		at, ok := swarmBoardStamp(raw)
 		if !ok {
-			return fallback
+			return capAt, swarmBoardUncertain
 		}
-		facts.slot = strings.Map(func(r rune) rune {
-			if unicode.IsLetter(r) || unicode.IsNumber(r) || strings.ContainsRune("_.-", r) {
-				return r
-			}
-			return '-'
-		}, swarmBoardClean(slot, 40))
-	}
-	return facts
-}
-
-func swarmBoardStringOrInteger(raw any) (string, bool) {
-	switch value := raw.(type) {
-	case string:
-		return value, true
-	case json.Number:
-		digits := value.String()
-		if !strings.ContainsAny(digits, ".eE") {
-			if digits == "-0" {
-				digits = "0"
-			}
-			return digits, true
+		if !at.Equal(time.Unix(0, 0)) {
+			expiry = at
 		}
 	}
-	return "", false
-}
-
-func swarmBoardNumber(value any) (float64, bool) {
-	number, ok := value.(json.Number)
-	if !ok {
-		return 0, false
+	if expiry.After(capAt) {
+		expiry = capAt
 	}
-	n, err := number.Float64()
-	return n, err == nil && !math.IsInf(n, 0) && !math.IsNaN(n)
+	return expiry, status
 }
 
-func swarmBoardTruthy(value any) bool {
-	switch v := value.(type) {
-	case nil:
-		return false
-	case bool:
-		return v
-	case string:
-		return v != ""
-	case json.Number:
-		n, _ := v.Float64()
-		return n != 0
-	case []any:
-		return len(v) != 0
-	case map[string]any:
-		return len(v) != 0
+func swarmBoardFields(card map[string]any) (swarmBoardCertainty, string, bool) {
+	status := swarmBoardCertainValid
+	if severity, present := card["severity"]; present {
+		switch severity {
+		case "info", "notice", "warn", "urgent":
+		default:
+			if _, ok := swarmBoardASCII(severity); ok {
+				status = swarmBoardCertainCardless
+			} else {
+				status = swarmBoardUncertain
+			}
+		}
 	}
-	return false
+	var shape string
+	if raw, present := card["shape"]; present {
+		var ok bool
+		shape, ok = swarmBoardASCII(raw)
+		if !ok {
+			status = swarmBoardUncertain
+		}
+	}
+
+	var slot string
+	if raw, present := card["slot"]; present {
+		if value, ok := swarmBoardASCII(raw); ok && value != "" {
+			slot = strings.Map(func(r rune) rune {
+				switch {
+				case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', strings.ContainsRune("_.-", r):
+					return r
+				default:
+					return '-'
+				}
+			}, swarmBoardCleanASCII(value, 40))
+		} else {
+			status = swarmBoardUncertain
+		}
+	}
+
+	var verbs map[string]bool
+	if raw, present := card["verbs"]; present {
+		var validity swarmBoardCertainty
+		verbs, validity = swarmBoardVerbs(raw)
+		status = max(status, validity)
+	} else if strings.EqualFold(swarmBoardCleanASCII(shape, 24), "question") {
+		status = max(status, swarmBoardCertainCardless)
+	}
+	var defaultDeclared bool
+	if raw, present := card["default"]; present {
+		id, ok := raw.(string)
+		switch {
+		case !ok:
+			status = swarmBoardUncertain
+		case !verbs[id]:
+			status = max(status, swarmBoardCertainCardless)
+		default:
+			defaultDeclared = true
+		}
+	}
+	return max(status, swarmBoardTypedFields(card)), slot, defaultDeclared
 }
 
-func swarmBoardClean(value string, limit int) string {
-	words := strings.FieldsFunc(value, func(r rune) bool {
-		return unicode.IsSpace(r) || r >= 0x1c && r <= 0x1f
+func swarmBoardASCII(raw any) (string, bool) {
+	value, ok := raw.(string)
+	for i := range len(value) {
+		if value[i] >= 0x80 {
+			return "", false
+		}
+	}
+	return value, ok
+}
+
+func swarmBoardCleanASCII(value string, limit int) string {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ' ' || r >= '\t' && r <= '\r' || r >= 0x1c && r <= 0x1f
 	})
-	runes := []rune(strings.Join(words, " "))
-	return string(runes[:min(len(runes), limit)])
-}
-
-func swarmBoardHasLabel(value any) bool {
-	if label, ok := value.(string); ok {
-		return swarmBoardClean(label, 24) != ""
-	}
-	return swarmBoardTruthy(value)
+	value = strings.Join(fields, " ")
+	return value[:min(len(value), limit)]
 }
 
 var swarmBoardVerbID = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,23}$`)
 
-// The map records whether each unique verb is eligible to be the default.
-func swarmBoardVerbs(raw any) (map[string]bool, bool) {
+func swarmBoardVerbs(raw any) (map[string]bool, swarmBoardCertainty) {
 	entries, ok := raw.([]any)
 	if !ok || len(entries) < 1 || len(entries) > 3 {
-		return nil, false
+		return nil, swarmBoardCertainCardless
 	}
+	status := swarmBoardCertainValid
 	verbs := make(map[string]bool, len(entries))
 	for _, rawVerb := range entries {
 		entry, ok := rawVerb.(map[string]any)
-		if !ok || !swarmBoardHasLabel(entry["label"]) {
-			return nil, false
+		if !ok {
+			status = max(status, swarmBoardCertainCardless)
+			continue
 		}
-		id, _ := swarmBoardStringOrInteger(entry["id"])
-		if _, exists := verbs[id]; exists || !swarmBoardVerbID.MatchString(id) {
-			return nil, false
+		id, idOK := swarmBoardASCII(entry["id"])
+		label, labelOK := swarmBoardASCII(entry["label"])
+		if !idOK || !labelOK {
+			status = swarmBoardUncertain
+		} else if _, exists := verbs[id]; exists || !swarmBoardVerbID.MatchString(id) || swarmBoardCleanASCII(label, 24) == "" {
+			status = max(status, swarmBoardCertainCardless)
 		}
 		rawSnooze, snoozes := entry["snooze"]
 		if snoozes {
-			seconds, valid := swarmBoardNumber(rawSnooze)
-			if !valid || seconds < 60 || seconds > 24*3600 {
-				return nil, false
+			seconds, ok := swarmBoardNumber(rawSnooze)
+			if !ok {
+				status = swarmBoardUncertain
+			} else if seconds < 60 || seconds > 86400 {
+				status = max(status, swarmBoardCertainCardless)
 			}
 		}
 		verbs[id] = !snoozes
 	}
-	return verbs, true
+	return verbs, status
 }
 
-func swarmBoardTypedFields(card map[string]any) bool {
+func swarmBoardTypedFields(card map[string]any) swarmBoardCertainty {
+	status := swarmBoardCertainValid
+	for _, field := range []string{"observed_at", "until", "start", "end"} {
+		if raw, present := card[field]; present {
+			if _, ok := swarmBoardStamp(raw); !ok {
+				return swarmBoardUncertain
+			}
+		}
+	}
 	if raw, present := card["progress"]; present {
-		progress, valid := swarmBoardNumber(raw)
-		if !valid || progress < 0 || progress > 1 {
-			return false
+		progress, ok := swarmBoardNumber(raw)
+		if !ok {
+			return swarmBoardUncertain
+		}
+		if progress < 0 || progress > 1 {
+			status = swarmBoardCertainCardless
 		}
 	}
 	if raw, present := card["items"]; present {
 		items, ok := raw.([]any)
 		if !ok || len(items) > 12 {
-			return false
-		}
-		for _, rawItem := range items {
-			switch item := rawItem.(type) {
-			case string:
-				if !swarmBoardHasLabel(item) {
-					return false
+			status = swarmBoardCertainCardless
+		} else {
+			for _, rawItem := range items {
+				if item, ok := rawItem.(map[string]any); ok {
+					rawItem = item["label"]
 				}
-			case map[string]any:
-				if !swarmBoardHasLabel(item["label"]) {
-					return false
+				label, ok := swarmBoardASCII(rawItem)
+				if !ok {
+					return swarmBoardUncertain
 				}
-			default:
-				return false
+				if swarmBoardCleanASCII(label, 60) == "" {
+					status = swarmBoardCertainCardless
+				}
 			}
 		}
 	}
 	if raw, present := card["series"]; present {
 		series, ok := raw.([]any)
 		if !ok || len(series) < 2 || len(series) > 200 {
-			return false
+			return swarmBoardCertainCardless
 		}
 		for _, point := range series {
-			if _, valid := swarmBoardNumber(point); !valid {
-				return false
+			if _, ok := swarmBoardNumber(point); !ok {
+				return swarmBoardUncertain
 			}
 		}
 	}
-	return true
+	return status
 }
 
-const swarmBoardISODate = `[0-9]{4}(?:-[0-9]{2}-[0-9]{2}|[0-9]{4}|-W[0-9]{2}(?:-[1-7])?|W[0-9]{2}[1-7]?)`
-const swarmBoardISOClock = `[0-9]{2}(?::[0-9]{2}(?::[0-9]{2}(?:[.,][0-9]+)?)?|[0-9]{2}(?:[0-9]{2}(?:[.,][0-9]+)?)?)?`
+func swarmBoardNumber(raw any) (float64, bool) {
+	number, ok := raw.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	n, err := number.Float64()
+	// Keep integers in the exactly representable range, well beyond any
+	// supported lifetime or civil timestamp.
+	return n, err == nil && math.Abs(n) < 1<<53
+}
 
-var swarmBoardISOStamp = regexp.MustCompile(`^(` + swarmBoardISODate + `)(?s:.)(` + swarmBoardISOClock + `)(Z|([+-])(` + swarmBoardISOClock + `))$`)
+var swarmBoardISOStamp = regexp.MustCompile(`^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\.[0-9]+)?(Z|[+-](?:[01][0-9]|2[0-3]):?[0-5][0-9])$`)
 
-func swarmBoardStamp(raw any, capAt time.Time) (time.Time, bool) {
-	if seconds, valid := swarmBoardNumber(raw); valid {
+func swarmBoardStamp(raw any) (time.Time, bool) {
+	if seconds, ok := swarmBoardNumber(raw); ok {
 		if seconds < 0 {
 			return time.Time{}, false
-		}
-		// Bound large numeric timestamps before converting to Unix seconds.
-		if seconds >= float64(capAt.Unix())+1 {
-			return capAt, true
 		}
 		whole, fraction := math.Modf(seconds)
 		return time.Unix(int64(whole), int64(math.Round(fraction*float64(time.Second)))).UTC(), true
@@ -259,63 +291,12 @@ func swarmBoardStamp(raw any, capAt time.Time) (time.Time, bool) {
 	if parts == nil {
 		return time.Time{}, false
 	}
-	date, valid := swarmBoardDate(parts[1])
-	if !valid {
-		return time.Time{}, false
+	// Python's datetime uses microsecond precision and truncates extra digits.
+	fraction := parts[2][:min(len(parts[2]), 7)]
+	offset := parts[3]
+	if len(offset) == 5 {
+		offset = offset[:3] + ":" + offset[3:]
 	}
-	hour, minute, second, fraction := swarmBoardClock(parts[2])
-	if hour >= 24 || minute >= 60 || second >= 60 {
-		return time.Time{}, false
-	}
-	at := date.Add(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute + time.Duration(second)*time.Second + fraction)
-	if parts[3] == "Z" {
-		return at, true
-	}
-	hour, minute, second, fraction = swarmBoardClock(parts[5])
-	offset := time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute + time.Duration(second)*time.Second
-	if offset != 0 {
-		offset += fraction
-	}
-	if offset >= 24*time.Hour {
-		return time.Time{}, false
-	}
-	if parts[4] == "-" {
-		offset = -offset
-	}
-	return at.Add(-offset), true
-}
-
-func swarmBoardDate(raw string) (time.Time, bool) {
-	date := strings.ReplaceAll(raw, "-", "")
-	if date[4] != 'W' {
-		at, err := time.Parse("20060102", date)
-		return at, err == nil && at.Year() >= 1
-	}
-	year, _ := strconv.Atoi(date[:4])
-	week, _ := strconv.Atoi(date[5:7])
-	weekday := 1
-	if len(date) == 8 {
-		weekday = int(date[7] - '0')
-	}
-	jan4 := time.Date(year, 1, 4, 0, 0, 0, 0, time.UTC)
-	at := jan4.AddDate(0, 0, (week-1)*7+weekday-1-(int(jan4.Weekday())+6)%7)
-	isoYear, isoWeek := at.ISOWeek()
-	return at, year >= 1 && at.Year() >= 1 && at.Year() <= 9999 && isoYear == year && isoWeek == week
-}
-
-// The caller has already matched the clock spelling. Python datetime discards
-// fractional digits beyond microseconds.
-func swarmBoardClock(raw string) (hour, minute, second int, fraction time.Duration) {
-	whole := strings.ReplaceAll(raw, ":", "")
-	if i := strings.IndexAny(whole, ".,"); i != -1 {
-		digits := (whole[i+1:] + "000000")[:6]
-		microseconds, _ := strconv.Atoi(digits)
-		fraction = time.Duration(microseconds) * time.Microsecond
-		whole = whole[:i]
-	}
-	whole += strings.Repeat("0", 6-len(whole))
-	hour, _ = strconv.Atoi(whole[:2])
-	minute, _ = strconv.Atoi(whole[2:4])
-	second, _ = strconv.Atoi(whole[4:6])
-	return
+	at, err := time.Parse(time.RFC3339Nano, parts[1]+fraction+offset)
+	return at, err == nil && at.Year() >= 1
 }

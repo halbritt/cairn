@@ -2,14 +2,19 @@
 """Regenerate core/testdata/swarm_board_cards.json from the pinned board code."""
 
 import argparse
+import ast
 import json
+import random
 import subprocess
 import sys
+import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 BOARD_REVISION = "5ccacf9"
+RANDOM_SEED = 8319
 PUBLISHED = datetime(2026, 11, 27, 20, tzinfo=timezone.utc)
 FIXTURE = Path(__file__).resolve().parents[1] / "core/testdata/swarm_board_cards.json"
 
@@ -34,6 +39,8 @@ def card_cases():
     reviewer_default = {"ttl": 3600, "shape": "question", "verbs": [yes], "default": "missing"}
     cases = {
         "empty_card": {},
+        "reviewer_ambiguous_week_date": {"ttl": 3600, "observed_at": "2026-W48-5012Z"},
+        "reviewer_numeric_slot": {"ttl": 172800, "slot": 10.2},
         "non_object": [],
         "valid_default": {"shape": " QUESTION ", "verbs": [yes, snooze], "default": "yes"},
         "null_severity": {"severity": None},
@@ -149,35 +156,112 @@ def card_cases():
     return bodies
 
 
-def case_result(cards, name, body):
-    title, detail, card, _ = cards.parse_note(body)
-    item = cards.normalize({
-        "id": name, "title": title, "detail": detail, "kind": "attention",
-        "card": card, "card_trusted": True, "at": PUBLISHED.timestamp(), "ttl_from_at": True,
-    })
+def documented_cases():
+    """Ordinary examples for each shape and the fields in docs/agents.md."""
     return {
-        "name": name, "body": body, "valid": bool(card),
-        "lifetime_seconds": item["expires"] - PUBLISHED.timestamp(),
-        "default_declared": "default" in card, "slot": card.get("slot", ""),
+        "docs_message": note({"shape": "message", "severity": "notice", "slot": "backup"}),
+        "docs_question": note({
+            "shape": "question", "ttl": 7200, "default": "no",
+            "verbs": [{"id": "open", "label": "Open it", "confirm": True, "style": "primary"},
+                      {"id": "no", "label": "Not today"},
+                      {"id": "later", "label": "Ask at 6", "snooze": 3600}],
+        }),
+        "docs_stat": note({"shape": "stat", "value": 31, "unit": "°C", "severity": "info"}),
+        "docs_countdown": note({"shape": "countdown", "until": "2026-11-27T22:00:00Z"}),
+        "docs_progress": note({"shape": "progress", "progress": 0.5, "expires_at": "2026-11-29T20:00:00+0000"}),
+        "docs_trend": note({"shape": "trend", "series": [0, 0.5, 2], "value": 2, "unit": "kV"}),
+        "docs_checklist": note({"shape": "checklist", "items": [{"id": "vent", "label": "Close the vent", "done": True}]}),
+        "docs_event": note({"shape": "event", "start": "2026-11-29T12:00:00-08:00",
+                            "end": "2026-11-29T12:30:00.123456-08:00", "all_day": False, "location": "Garden"}),
     }
 
 
-def slot_cases(cards, messages):
+def random_cases():
+    """Exercise supported forms, coercions, bounds and interactions reproducibly."""
+    rng = random.Random(RANDOM_SEED)
+    stamp = ["2026-11-29T21:00:00.125-01:00", "2026-11-29T20:00:00+0000",
+             "2026-11-29⌚20:00:00Z", "2026-W48-5012Z", "20261129T2000Z",
+             "2026-11-29T21:00:00+01", "2026-11-29 20:00:00Z",
+             PUBLISHED.timestamp() + 172800, 0, -1, None, [], 1e22]
+    yes = {"id": "yes", "label": "Proceed"}
+    values = {
+        "shape": ["message", " Question ", "event", "QUESTİON", 0, []],
+        "severity": ["info", "notice", "warn", "urgent", "urgent!", None, 1],
+        "ttl": [1, 1.5, 45.125, 3600, 172800, 259199, 999999, 0, -1, True, "3600", 1e99, float("nan")],
+        "expires_at": stamp,
+        "slot": ["settings", "   ", "a / _œ ", "A / .", "x" * 50, 10.2, False, [], ["a"], {"x": 1}],
+        "verbs": [[yes], [yes, yes], [], {}, [dict(yes, id=7)], [dict(yes, label="Go π")],
+                  [dict(yes, snooze=60)], [dict(yes, snooze=59)], [dict(yes, snooze=True)],
+                  [dict(yes, snooze=86400)], [dict(yes, label=False)], [dict(yes, label=" ")],
+                  [dict(yes, confirm=["x"], style=3)]],
+        "default": ["yes", "missing", "", "π", 1, None],
+        "progress": [0, 0.5, 1, 1.05, -0.01, True, "0.5", float("inf")],
+        "items": [[], ["okay"], [{"label": "yes", "done": False}], [""], ["π"],
+                  [{"label": True}], [1], {}, ["x"] * 13],
+        "series": [[0, 1], [0.125, 1, 50], [], [1], [False, 1], ["1", 2], [float("nan"), 1]],
+        "value": [1.3, "42", "µs", None],
+        "unit": ["V", "Ω", 2, None],
+        "label": ["Readout", "π", True, {}],
+        "all_day": [True, False, 5, {}],
+        "location": ["Garden", "à l’étage", 1, []],
+        "ignored": ["example", None, float("nan"), ["question"]],
+    }
+    values.update({field: stamp for field in ("observed_at", "until", "start", "end")})
+    seen = set()
+    while len(seen) < 2200:
+        fields = rng.sample(list(values), rng.choices((1, 2, 3), (4, 5, 1))[0])
+        card = {field: rng.choice(values[field]) for field in sorted(fields)}
+        body = note(card)
+        if body not in seen:
+            seen.add(body)
+            yield body
+
+
+def case_result(cards, name, body, documented=False):
+    title, detail, card, _ = cards.parse_note(body)
+    item = cards.normalize({
+        "id": name or "generated", "title": title, "detail": detail, "kind": "attention",
+        "card": card, "card_trusted": True, "at": PUBLISHED.timestamp(), "ttl_from_at": True,
+    })
+    return {
+        **({"name": name} if name else {}), "body": body, "valid": bool(card),
+        "lifetime_seconds": item["expires"] - PUBLISHED.timestamp(),
+        "default_declared": "default" in card, "slot": card.get("slot", ""),
+        **({"documented": True} if documented else {}),
+    }
+
+
+def board_mutations(checkout, revision, cards):
+    """Use the board's real mutations without importing its hardware stack."""
+    path = "server/board_server.py"
+    source = subprocess.check_output(["git", "-C", str(checkout), "show", f"{revision}:{path}"])
+    tree = ast.parse(source, filename=path)
+    board = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Board")
+    names = {"upsert", "delete", "answer"}
+    methods = [node for node in board.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    constants = [node for node in tree.body if isinstance(node, ast.Assign)
+                 and any(isinstance(name, ast.Name) and name.id in {"UNDO_WINDOW", "ANSWER_RETENTION"}
+                         for name in node.targets)]
+    namespace = {"normalize": cards.normalize, "time": cards.time, "uuid": uuid}
+    exec(compile(ast.Module(body=constants + methods, type_ignores=[]), path, "exec"), namespace)
+    return {name: namespace[name] for name in names}
+
+
+def slot_cases(messages, mutations):
     first, second = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
     class Board:
         def __init__(self):
             self.items = {}
+            self.lock = threading.RLock()
 
-        def upsert(self, raw):
-            item = cards.normalize(raw)
-            self.items[item["id"]] = item
-            return item
+        def _save(self):
+            pass
 
-        def delete(self, item_id):
-            self.items.pop(item_id, None)
+    for method, implementation in mutations.items():
+        setattr(Board, method, implementation)
 
-    def run(name, events):
+    def run(name, events, answered=(), retained=()):
         events = [{"id": key, "sender": sender, "kind": kind, "body": note(card), "age_seconds": age}
                   for key, sender, kind, card, age in events]
         notes = {event["id"]: event["body"] for event in events}
@@ -206,8 +290,13 @@ def slot_cases(cards, messages):
         board = Board()
         if Poll(board, "unused", "unused", "unused").poll() != len(page):
             raise AssertionError("Board poll did not consume the fixture page")
-        live = sorted(item["event"]["id"] for item in board.items.values() if item["kind"] == "attention")
-        return {"name": name, "events": events, "live_requests": live}
+        for event_id in answered:
+            item = next(item for item in board.items.values() if item["event"]["id"] == event_id)
+            board.answer(item["id"], "yes")
+        live = sorted(item["event"]["id"] for item in board.items.values()
+                      if item["kind"] == "attention" and not item.get("answer"))
+        return {"name": name, "events": events, "live_requests": live,
+                "answered_requests": answered, "retain_conservatively": retained}
 
     slot = {"slot": "settings"}
     return [
@@ -221,6 +310,18 @@ def slot_cases(cards, messages):
             ("prior", first, "request", slot, 0),
             ("replacement", first, "notice", slot, 0),
         ]),
+        run("replacement_answered", [
+            ("prior", first, "request", slot, 0),
+            ("replacement", first, "request", dict(slot, verbs=[{"id": "yes", "label": "Yes"}]), 0),
+        ], answered=("replacement",)),
+        run("uncertain_replacement_keeps_prior", [
+            ("prior", first, "request", slot, 0),
+            ("replacement", first, "request", dict(slot, observed_at="2026-W48-5T20:00:00Z"), 0),
+        ], retained=("prior",)),
+        run("certain_replacement_keeps_uncertain_prior", [
+            ("prior", first, "request", dict(slot, observed_at="2026-W48-5T20:00:00Z"), 0),
+            ("replacement", first, "request", slot, 0),
+        ], retained=("prior",)),
         run("expired_replacement_does_not_restore_prior", [
             ("prior", first, "request", slot, 120),
             ("expired", first, "request", dict(slot, ttl=1), 60),
@@ -238,13 +339,19 @@ def main():
     cards = load_board_module(args.board_checkout, commit, "cards")
     sys.modules["cards"] = cards
     messages = load_board_module(args.board_checkout, commit, "cairn_messages")
-    data = {
-        "board_commit": commit,
-        "published_at": PUBLISHED.isoformat(),
-        "cards": [case_result(cards, name, body) for name, body in card_cases().items()],
-        "slots": slot_cases(cards, messages),
-    }
-    FIXTURE.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    cases = [case_result(cards, name, body) for name, body in card_cases().items()]
+    cases.extend(case_result(cards, name, body, documented=True) for name, body in documented_cases().items())
+    cases.extend(case_result(cards, None, body) for body in random_cases())
+    slots = slot_cases(messages, board_mutations(args.board_checkout, commit, cards))
+
+    def compact(value):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+    with FIXTURE.open("w", encoding="utf-8") as fixture:
+        fixture.write('{"board_commit":' + compact(commit) + ', "published_at":' + compact(PUBLISHED.isoformat())
+                      + ', "random_seed":' + str(RANDOM_SEED) + ',\n"cards":[\n')
+        fixture.write(",\n".join(compact(case) for case in cases))
+        fixture.write('\n],\n"slots":' + json.dumps(slots, ensure_ascii=False, indent=2) + '\n}\n')
 
 
 if __name__ == "__main__":

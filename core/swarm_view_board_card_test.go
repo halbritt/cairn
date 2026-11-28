@@ -3,25 +3,38 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+type swarmBoardCase struct {
+	Name            string
+	Body            string
+	Valid           bool
+	LifetimeSeconds float64 `json:"lifetime_seconds"`
+	DefaultDeclared bool    `json:"default_declared"`
+	Slot            string
+	Documented      bool
+}
+
+func (tc swarmBoardCase) testName(index int) string {
+	if tc.Name != "" {
+		return tc.Name
+	}
+	return fmt.Sprintf("generated_%04d", index)
+}
 
 type swarmBoardFixture struct {
 	BoardCommit string    `json:"board_commit"`
 	PublishedAt time.Time `json:"published_at"`
-	Cards       []struct {
-		Name            string
-		Body            string
-		Valid           bool
-		LifetimeSeconds float64 `json:"lifetime_seconds"`
-		DefaultDeclared bool    `json:"default_declared"`
-		Slot            string
-	}
-	Slots []struct {
+	Cards       []swarmBoardCase
+	Slots       []struct {
 		Name   string
 		Events []struct {
 			ID         string
@@ -30,7 +43,9 @@ type swarmBoardFixture struct {
 			Body       string
 			AgeSeconds int `json:"age_seconds"`
 		}
-		LiveRequests []string `json:"live_requests"`
+		LiveRequests         []string `json:"live_requests"`
+		AnsweredRequests     []string `json:"answered_requests"`
+		RetainConservatively []string `json:"retain_conservatively"`
 	}
 }
 
@@ -54,40 +69,65 @@ func readSwarmBoardFixture(t *testing.T) swarmBoardFixture {
 func TestSwarmBoardCardCorpus(t *testing.T) {
 	corpus := readSwarmBoardFixture(t)
 	fence := regexp.MustCompile("(?ms)" + swarmBoardCardFence)
-	for _, tc := range corpus.Cards {
-		t.Run(tc.Name, func(t *testing.T) {
-			var block string
+	counts := map[swarmBoardCertainty]int{}
+	for i, tc := range corpus.Cards {
+		t.Run(tc.testName(i), func(t *testing.T) {
+			var block *string
 			if parts := fence.FindStringSubmatch(tc.Body); parts != nil {
-				block = parts[1]
+				block = &parts[1]
 			}
 			got := swarmBoardCard(block, corpus.PublishedAt)
-			checkSwarmBoardCardFacts(t, got, corpus.PublishedAt, tc.Valid, tc.LifetimeSeconds, tc.DefaultDeclared, tc.Slot)
+			counts[got.certainty]++
+			checkSwarmBoardCardFacts(t, got, corpus.PublishedAt, tc)
 		})
 	}
+	t.Logf("Board corpus: %d CERTAIN (%d valid, %d cardless), %d UNCERTAIN",
+		counts[swarmBoardCertainValid]+counts[swarmBoardCertainCardless],
+		counts[swarmBoardCertainValid], counts[swarmBoardCertainCardless], counts[swarmBoardUncertain])
 }
 
-func checkSwarmBoardCardFacts(t *testing.T, got swarmBoardCardFacts, published time.Time, valid bool, lifetime float64, defaultDeclared bool, slot string) {
+func checkSwarmBoardCardFacts(t *testing.T, got swarmBoardCardFacts, published time.Time, tc swarmBoardCase) {
 	t.Helper()
-	gotLifetime := got.expires.Sub(published).Seconds()
-	// The board computes from floating-point Unix timestamps.
-	if got.valid != valid || math.Abs(gotLifetime-lifetime) > 1e-6 || got.defaultDeclared != defaultDeclared || got.slot != slot {
-		t.Errorf("got valid=%t lifetime=%vs default=%t slot=%q, want valid=%t lifetime=%vs default=%t slot=%q",
-			got.valid, gotLifetime, got.defaultDeclared, got.slot, valid, lifetime, defaultDeclared, slot)
+	gotLifetime := got.keepUntil.Sub(published).Seconds()
+	// Compare removal times at the board's floating-point clock precision.
+	boardClock := func(at time.Time) float64 {
+		return float64(at.Unix()) + float64(at.Nanosecond())/float64(time.Second)
+	}
+	if boardClock(got.keepUntil) < boardClock(published)+tc.LifetimeSeconds {
+		t.Errorf("removes at %v seconds, before the board's %v seconds", gotLifetime, tc.LifetimeSeconds)
+	}
+	if gotLifetime > swarmBoardMaxTTL.Seconds() {
+		t.Errorf("retention %v seconds exceeds the 72-hour read horizon", gotLifetime)
+	}
+	const tolerance = 1e-6
+	if got.certainty == swarmBoardUncertain {
+		if tc.Documented {
+			t.Error("documented card was classified as uncertain")
+		}
+		if got.defaultDeclared || got.slot != "" {
+			t.Errorf("uncertain card supplied a default or slot: %+v", got)
+		}
+		return
+	}
+	if (got.certainty == swarmBoardCertainValid) != tc.Valid || math.Abs(gotLifetime-tc.LifetimeSeconds) > tolerance ||
+		got.defaultDeclared != tc.DefaultDeclared || got.slot != tc.Slot {
+		t.Errorf("got status=%d lifetime=%vs default=%t slot=%q, want valid=%t lifetime=%vs default=%t slot=%q",
+			got.certainty, gotLifetime, got.defaultDeclared, got.slot, tc.Valid, tc.LifetimeSeconds, tc.DefaultDeclared, tc.Slot)
 	}
 }
 
 func TestSwarmBoardCardPostgresCorpus(t *testing.T) {
 	corpus := readSwarmBoardFixture(t)
 	op := newNativeFixture(t).operator()
-	for _, tc := range corpus.Cards {
-		t.Run(tc.Name, func(t *testing.T) {
-			var block string
+	for i, tc := range corpus.Cards {
+		t.Run(tc.testName(i), func(t *testing.T) {
+			var block *string
 			if err := op.pool.QueryRow(context.Background(),
-				`SELECT COALESCE(substring($1::text FROM $2::text), '')`, tc.Body, swarmBoardCardBlock).Scan(&block); err != nil {
+				`SELECT substring($1::text FROM $2::text)`, tc.Body, swarmBoardCardBlock).Scan(&block); err != nil {
 				t.Fatal(err)
 			}
 			got := swarmBoardCard(block, corpus.PublishedAt)
-			checkSwarmBoardCardFacts(t, got, corpus.PublishedAt, tc.Valid, tc.LifetimeSeconds, tc.DefaultDeclared, tc.Slot)
+			checkSwarmBoardCardFacts(t, got, corpus.PublishedAt, tc)
 		})
 	}
 }
@@ -95,14 +135,20 @@ func TestSwarmBoardCardPostgresCorpus(t *testing.T) {
 func TestSwarmNeedsBoardReviewerCases(t *testing.T) {
 	corpus := readSwarmBoardFixture(t)
 	f := newSwarmFixture(t, "board-reviewer-cases")
-	cases := map[string]time.Duration{
-		"expires_reviewer_compact_offset": 25 * time.Hour,
-		"reviewer_invalid_default":        2 * time.Hour,
+	type reviewerCase struct {
+		age       time.Duration
+		uncertain bool
+	}
+	cases := map[string]reviewerCase{
+		"expires_reviewer_compact_offset": {25 * time.Hour, false},
+		"reviewer_invalid_default":        {2 * time.Hour, false},
+		"reviewer_ambiguous_week_date":    {2 * time.Hour, true},
+		"reviewer_numeric_slot":           {25 * time.Hour, true},
 	}
 
 	foundCases := 0
 	for _, tc := range corpus.Cards {
-		age, ok := cases[tc.Name]
+		example, ok := cases[tc.Name]
 		if !ok {
 			continue
 		}
@@ -114,7 +160,7 @@ func TestSwarmNeedsBoardReviewerCases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r := swarmNeedsReader{repo: f.repo, now: corpus.PublishedAt.Add(age), principals: []string{f.root.Inbox}, out: emptySwarmNeedsYou()}
+		r := swarmNeedsReader{repo: f.repo, now: corpus.PublishedAt.Add(example.age), principals: []string{f.root.Inbox}, out: emptySwarmNeedsYou()}
 		items, readErr := r.board(context.Background(), tx)
 		if err := tx.Rollback(context.Background()); err != nil {
 			t.Fatal(err)
@@ -129,12 +175,16 @@ func TestSwarmNeedsBoardReviewerCases(t *testing.T) {
 				continue
 			}
 			found = true
-			if item.Detail != "" || item.ExpiresAt == nil || !item.ExpiresAt.Equal(expiry) {
+			if example.uncertain {
+				if item.Detail != "Expiry not known exactly" || item.ExpiresAt != nil {
+					t.Errorf("%s: got %+v, want unknown expiry and no default", tc.Name, item)
+				}
+			} else if item.Detail != "" || item.ExpiresAt == nil || !item.ExpiresAt.Equal(expiry) {
 				t.Errorf("%s: got %+v, want expiry %s and no default", tc.Name, item, expiry)
 			}
 		}
 		if !found {
-			t.Errorf("%s: request missing at age %s", tc.Name, age)
+			t.Errorf("%s: request missing at age %s", tc.Name, example.age)
 		}
 	}
 	if foundCases != len(cases) {
@@ -147,8 +197,15 @@ func TestSwarmNeedsBoardSlots(t *testing.T) {
 	for _, tc := range corpus.Slots {
 		t.Run(tc.Name, func(t *testing.T) {
 			f := newSwarmFixture(t, "board-slots")
+			if len(tc.AnsweredRequests) != 0 {
+				if _, err := f.sender.SetSubscription(context.Background(), SubscriptionRequest{
+					RequestID: uuid.NewString(), Repo: f.repo, Topic: "agent-board", Active: true,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			senders := map[string]*Store{}
-			eventIDs := map[string]string{}
+			events := map[string]AgentEvent{}
 			for _, entry := range tc.Events {
 				view := senders[entry.Sender]
 				if view == nil {
@@ -158,11 +215,17 @@ func TestSwarmNeedsBoardSlots(t *testing.T) {
 				event := swarmNeedsTestPublish(f, view, entry.Kind, "topic", "agent-board", entry.Body, "")
 				f.exec(`UPDATE cairn.agent_event SET created_at=$2 WHERE event_id=$1`, event.EventID,
 					event.CreatedAt.Add(-time.Duration(entry.AgeSeconds)*time.Second))
-				eventIDs[entry.ID] = event.EventID
+				events[entry.ID] = event
+			}
+			for _, id := range tc.AnsweredRequests {
+				event := events[id]
+				swarmNeedsTestPublish(f, f.sender, "response", "agent", event.From, "Board answer: Yes", event.EventID)
 			}
 			want := map[string]bool{}
-			for _, id := range tc.LiveRequests {
-				want[eventIDs[id]] = true
+			for _, ids := range [][]string{tc.LiveRequests, tc.RetainConservatively} {
+				for _, id := range ids {
+					want[events[id].EventID] = true
+				}
 			}
 			for _, item := range swarmNeedsTestSnapshot(f).Items {
 				if item.Type != SwarmNeedBoardQuestion {
@@ -178,4 +241,42 @@ func TestSwarmNeedsBoardSlots(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSwarmNeedsBoardQuestionSystemOrigin(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "board-system-origin")
+	agentQuestion := swarmNeedsTestPublish(f, f.rootView, "request", "topic", "agent-board", swarmNeedsTestBoard, "")
+	scheduled, err := f.op.ScheduleEvent(ctx, ScheduleEventRequest{
+		RequestID: uuid.NewString(), NotBefore: time.Now().Add(-time.Second), GraceSeconds: 300,
+		Publication: PublishEventRequest{
+			Repo: f.repo, Kind: "request", Ref: RecordVersionRef{f.source.RecordID, f.source.Version},
+			Destination: EventDestination{Type: "topic", Name: "agent-board"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tick, err := f.op.TickSchedules(ctx, ScheduleTickRequest{Repo: f.repo})
+	if err != nil || len(tick.Occurrences) != 1 || tick.Occurrences[0].EventID != scheduled.OccurrenceID {
+		t.Fatalf("fire the schedule: %+v, %v", tick, err)
+	}
+	check := func(needs SwarmNeedsYou, eventID, wantSystem string) {
+		t.Helper()
+		for _, item := range needs.Items {
+			if item.Type == SwarmNeedBoardQuestion && item.Refs.EventID == eventID {
+				swarmRequireSystemJSON(t, item, wantSystem)
+				if item.System != wantSystem {
+					t.Errorf("board question %s has system %q, want %q", eventID, item.System, wantSystem)
+				}
+				if wantSystem != "" && item.Title != "Board question from Cairn" {
+					t.Errorf("scheduled question has title %q, want a Cairn attribution", item.Title)
+				}
+				return
+			}
+		}
+		t.Fatalf("board question %s is missing", eventID)
+	}
+	check(swarmNeedsTestLanding(f), scheduled.OccurrenceID, "scheduled_event")
+	check(swarmNeedsTestSnapshot(f), agentQuestion.EventID, "")
 }

@@ -64,8 +64,7 @@ type SwarmNeed struct {
 	System string `json:"system,omitempty"`
 	// Since is omitted when the store cannot determine when the need began.
 	Since time.Time `json:"since,omitzero"`
-	// ExpiresAt is set for a board question with a lifetime. After it, the
-	// row leaves the list.
+	// ExpiresAt is set when the board question has a known expiry.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// Action is what the owner can do about the row.
 	Action SwarmNeedAction `json:"action"`
@@ -397,23 +396,28 @@ const swarmBoardCardFence = "^```board-card[ \t]*?\n(.*?)\n```[ \t]*$"
 const swarmBoardCardBlock = "(?w)" + swarmBoardCardFence
 
 func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, error) {
-	// Select unanswered requests before joining their records. A later board
-	// message can also replace a request if it uses the same valid slot.
-	rows, err := tx.Query(ctx, `WITH unanswered AS MATERIALIZED (
-		SELECT e.event_id,e.repo,e.publisher,e.created_at,e.record_id,e.version,e.summary,e.kind,e.position
+	// Select envelopes before reading card metadata. Answered requests only
+	// supply slots for senders with unanswered requests inside the horizon.
+	// Only the fenced block is read in this transaction, and answered
+	// requests contribute no row, expiry, default or source to the snapshot.
+	rows, err := tx.Query(ctx, `WITH questions AS MATERIALIZED (
+		SELECT e.event_id,e.repo,e.publisher,e.created_at,e.record_id,e.version,e.summary,e.kind,e.position,e.destination_name,e.causation_id,
+			EXISTS (SELECT 1 FROM cairn.agent_event reply WHERE reply.repo=e.repo AND reply.kind='response' AND reply.causation_id=e.event_id) AS answered
 		FROM cairn.agent_event e
 		WHERE e.repo=$1 AND e.destination_type='topic' AND e.destination_name='agent-board' AND e.kind='request'
 		AND e.created_at>$4 AND (e.publisher=ANY($2::text[])) <> $3
-		AND NOT EXISTS (SELECT 1 FROM cairn.agent_event reply WHERE reply.repo=e.repo AND reply.kind='response' AND reply.causation_id=e.event_id)
+	), unanswered_senders AS MATERIALIZED (
+		SELECT publisher, min(position) AS oldest FROM questions WHERE NOT answered GROUP BY publisher
 	), candidates AS MATERIALIZED (
-		SELECT * FROM unanswered
+		SELECT q.* FROM questions q JOIN unanswered_senders u ON u.publisher=q.publisher
+		WHERE NOT q.answered OR q.position>u.oldest
 		UNION ALL
-		SELECT e.event_id,e.repo,e.publisher,e.created_at,e.record_id,e.version,e.summary,e.kind,e.position
-		FROM cairn.agent_event e
-		WHERE e.repo=$1 AND e.destination_type='topic' AND e.destination_name='agent-board' AND e.kind<>'request'
-		AND e.created_at>$4 AND EXISTS (SELECT 1 FROM unanswered q WHERE q.publisher=e.publisher AND q.position<e.position)
+		SELECT e.event_id,e.repo,e.publisher,e.created_at,e.record_id,e.version,e.summary,e.kind,e.position,e.destination_name,e.causation_id,false
+		FROM cairn.agent_event e JOIN unanswered_senders u ON u.publisher=e.publisher AND u.oldest<e.position
+		WHERE e.repo=$1 AND e.destination_type='topic' AND e.destination_name='agent-board' AND e.kind<>'request' AND e.created_at>$4
 	)
-	SELECT e.event_id::text,e.publisher,e.created_at,e.record_id::text,e.version,COALESCE(e.summary,''),e.kind,
+	SELECT e.event_id::text,e.publisher,e.created_at,e.record_id::text,e.version,COALESCE(e.summary,''),e.kind,e.answered,
+		CASE WHEN e.kind='request' AND NOT e.answered THEN `+swarmSystemEvent+` ELSE '' END,
 		COALESCE('agent-'||a.ordinal::text,e.publisher),COALESCE(src.available,false),
 		CASE WHEN src.available THEN substring(v.body FROM $5::text) END
 	FROM candidates e
@@ -432,25 +436,22 @@ func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, e
 	missing := 0
 	for rows.Next() {
 		var ref RecordVersionRef
-		var available bool
+		var available, answered bool
 		var kind, publisherLabel string
 		var block *string
 		item := SwarmNeed{Type: SwarmNeedBoardQuestion}
 		if err := rows.Scan(&item.Refs.EventID, &item.Subject, &item.Since, &ref.RecordID, &ref.Version, &item.Title, &kind,
-			&publisherLabel, &available, &block); err != nil {
+			&answered, &item.System, &publisherLabel, &available, &block); err != nil {
 			return nil, err
 		}
+		show := kind == "request" && !answered
 		if !available {
-			if kind == "request" {
+			if show {
 				missing++
 			}
 			continue
 		}
-		var text string
-		if block != nil {
-			text = *block
-		}
-		facts := swarmBoardCard(text, item.Since)
+		facts := swarmBoardCard(block, item.Since)
 		if facts.slot != "" {
 			key := senderSlot{item.Subject, facts.slot}
 			if seenSlots[key] {
@@ -458,11 +459,18 @@ func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, e
 			}
 			seenSlots[key] = true
 		}
-		if kind != "request" || !facts.expires.After(r.now) {
+		if !show || !facts.keepUntil.After(r.now) {
 			continue
 		}
-		item.ExpiresAt = &facts.expires
+		if facts.certainty == swarmBoardUncertain {
+			item.Detail = "Expiry not known exactly"
+		} else {
+			item.ExpiresAt = &facts.keepUntil
+		}
 		if item.Title == "" {
+			if item.System != "" {
+				publisherLabel = "Cairn"
+			}
 			item.Title = "Board question from " + publisherLabel
 		}
 		item.ID = item.Type + ":" + item.Refs.EventID

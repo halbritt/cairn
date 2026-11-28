@@ -242,20 +242,31 @@ gives the time the current age limit was reached on its own.
 
 Board questions follow the publisher's campaign affiliation regardless of
 when the campaign was created. Both pages read the last 72 hours of requests.
-Cairn excludes answered requests before reading card metadata. It follows the
-Fernside board's card parser at agent-board commit
-`5ccacf9768ff872ad7f6c822d96967b09b153fb7`. It reads the first fenced
-`board-card` block and uses the card only if the whole block passes validation.
-A valid card can set an absolute expiry or a TTL measured from publication.
-Without a usable lifetime, including when a card is missing or invalid, the
-request lives for 24 hours from publication. Only a valid card that names a
-non-snooze verb can declare an unattended default.
+Cairn reads the first fenced `board-card` block and keeps a question at least
+as long as the board could keep it within the read horizon. Its three outcomes
+are based on Fernside's parser at agent-board commit
+`5ccacf9768ff872ad7f6c822d96967b09b153fb7`.
 
-A later board event with the same publisher and valid slot replaces the
-earlier unanswered question. The 72-hour maximum is measured from publication
-in Cairn. The board measures its cap from the time it reads the event, which the
-Cairn store does not record. The snapshot carries the derived expiry and
-default indicator without exposing note or card text.
+- A certainly valid card uses its absolute expiry, its TTL from publication,
+  or 24 hours from publication. A default is declared when the card names a
+  verb without a snooze duration.
+- A question with no card or a certainly invalid card has a 24-hour lifetime
+  from publication.
+- An uncertain card stays for at least 24 hours, or its longer readable
+  lifetime. When its lifetime fields or JSON block cannot be read reliably,
+  it stays for 72 hours. The row says “Expiry not known exactly” and carries
+  neither a timestamp nor a default.
+
+A later board event from the same publisher replaces an earlier question only
+when both cards are certainly valid and match by normalized slot. For senders
+with an unanswered request in the 72-hour horizon, Cairn reads the first
+fenced block of later answered requests in that horizon in the same read-only
+transaction. Those answered requests contribute only a slot to the comparison.
+They supply no snapshot rows or metadata. No note or card text reaches the
+snapshot. Scheduled board questions carry their event's system origin.
+
+Cairn measures the 72-hour maximum from publication. The board measures its
+cap from the time it reads the event, which the Cairn store does not record.
 
 To regenerate the card conformance fixture, run
 `python3 -B scripts/generate_swarm_board_corpus.py ~/git/agent-board`.
