@@ -1738,25 +1738,32 @@ class Fixture:
         key = "owner-" + uid()[:8]
         # Hold any campaign refresh that the first send starts. Its response
         # describes v1 as pending; release it only after the stream shows v2.
-        held = []
-        def delay_refresh(route):
-            held.append((route, route.fetch()))
-
-        pattern = "**/api/swarm/campaign?*"
-        page.route(pattern, delay_refresh)
+        gate = page.evaluate_handle("""() => {
+            const fetch = window.fetch;
+            const reads = [];
+            let release;
+            const hold = new Promise(resolve => { release = resolve; });
+            window.fetch = (...args) => {
+                const response = fetch(...args);
+                if (new URL(args[0], location.href).pathname !== '/api/swarm/campaign') return response;
+                reads.push(response);
+                return Promise.all([response, hold]).then(([res]) => res);
+            };
+            return {release, stop: () => { window.fetch = fetch; return Promise.all(reads).then(() => true); }};
+        }""")
         try:
             first = self.send_page(page, "worker_a", "Owner v1 " + key, key)
             v1 = page.locator(f"#flow li.event[data-event='{first['event']['event_id']}']")
             self.expect(v1.locator("button", has_text="Supersede")).to_have_count(1, timeout=15000)
         finally:
-            page.unroute(pattern, delay_refresh)
+            gate.evaluate("g => g.stop()")
         second = self.send_page(page, "worker_a", "Owner v2 " + key, key)
         v2 = page.locator(f"#flow li.event[data-event='{second['event']['event_id']}']")
         self.expect(v1.locator(".chip-superseded")).to_have_count(1, timeout=15000)
         observed = page.locator("#observations li").first.locator("time")
         observed_at = observed.get_attribute("datetime")
-        for route, response in held:
-            route.fulfill(response=response)
+        gate.evaluate("g => g.release()")
+        gate.dispose()
         # Let the next stream tick run. A stale refresh must not have replaced
         # the superseded state, even if that tick carried no new snapshot.
         page.wait_for_function("""before => document.querySelector('#observations li time')
