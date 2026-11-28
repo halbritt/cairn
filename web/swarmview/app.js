@@ -707,7 +707,7 @@
     const left = members().length - enrolled.length;
     const meta = byID("campaign-meta");
     meta.hidden = false;
-    setChildren(meta, 
+    setChildren(meta,
       `${enrolled.length} member${enrolled.length === 1 ? "" : "s"} enrolled${states.length ? " (" + states.join(", ") + ")" : ""}`,
       left ? ` · ${left} no longer enrolled` : "", " · started ",
       timeEl(campaign.created_at),
@@ -1794,7 +1794,7 @@
     const ids = { summary: uuid(), body: uuid() };
     const summary = el("input", { id: ids.summary, type: "text", maxlength: "280", autocomplete: "off" });
     const message = el("textarea", { id: ids.body, rows: "5" });
-    setChildren(byID("confirm-body"), 
+    setChildren(byID("confirm-body"),
       el("p", {}, "In answer to: ", linked(title || (state.log.get(eventID) || {}).summary || eventID)),
       el("div", { class: "compose" },
         el("div", { class: "row" }, el("label", { for: ids.summary, text: "Summary" }), summary),
@@ -1820,7 +1820,7 @@
   async function cancelWait(waitID, shown, changed) {
     const wait = shown || waitByID(waitID);
     byID("confirm-title").textContent = "Cancel the wait";
-    setChildren(byID("confirm-body"), 
+    setChildren(byID("confirm-body"),
       changed ? note("The wait changed since it was shown. Review it and confirm again.", "warning") : null,
       wait ? el("p", {}, `${labelOf(wait.owner)} stops waiting for `, waitText(wait)) : el("p", {}, "Wait ", el("code", { text: waitID })),
       note("The waiting agent sees the cancellation at its next turn boundary."));
@@ -1887,7 +1887,7 @@
     const delivery = preview.delivery || {};
     // A handoff can move the delivery: the confirmation targets what the preview shows.
     const deliveryID = delivery.delivery_id || shownID;
-    setChildren(body, 
+    setChildren(body,
       changed ? note("What this cancel affects changed since it was shown: the recipient or the waits are different. Review it and confirm again.", "warning") : null,
       el("dl", { class: "fields preview" },
         field("Recipient", el("strong", { text: labelOf(delivery.consumer) }), " ", el("code", { text: delivery.consumer || "" })),
