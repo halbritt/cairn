@@ -157,6 +157,10 @@ type swarmStreamEvent struct {
 	Data  string
 }
 
+func (e swarmStreamEvent) hostObservation() bool {
+	return e.ID == "" && (e.Event == "herdr" || e.Event == "window" || e.Event == "host")
+}
+
 // swarmStreamConn is one stream connection, as an EventSource holds it.
 type swarmStreamConn struct {
 	Status int
@@ -891,7 +895,7 @@ func TestSwarmStreamProtocol(t *testing.T) {
 	paneEvents := 0
 	for {
 		event := conn.next(t)
-		if event.Event == "herdr" || event.Event == "window" {
+		if event.hostObservation() {
 			// The host observations come from their own loops, so when
 			// they arrive is not part of the order checked here.
 			paneEvents++
@@ -962,7 +966,13 @@ func TestSwarmStreamProtocol(t *testing.T) {
 		if first := conn.next(t); first.Event != "hello" {
 			t.Fatalf("%s at connect: first event %q", name, first.Event)
 		}
-		if reset := conn.next(t); reset.Event != "reset" || !strings.Contains(reset.Data, `"code":"`+refusal.Code+`"`) {
+		reset, before := conn.until(t, "reset")
+		for _, frame := range before {
+			if !frame.hostObservation() {
+				t.Fatalf("%s: received %s before the refusal", name, frame.Event)
+			}
+		}
+		if !strings.Contains(reset.Data, `"code":"`+refusal.Code+`"`) {
 			t.Fatalf("%s at connect: %q %s", name, reset.Event, reset.Data)
 		}
 		if _, open := <-conn.Events; open {
@@ -981,7 +991,7 @@ func TestSwarmStreamProtocol(t *testing.T) {
 	var recovered []string
 	for {
 		event := conn.next(t)
-		if event.Event == "herdr" || event.Event == "window" {
+		if event.hostObservation() {
 			continue
 		}
 		recovered = append(recovered, event.Event)
