@@ -48,11 +48,29 @@ func newSwarmTailnetTestServer(t *testing.T) *swarmServer {
 // that arrived on the tailnet socket, as swarmTailnetConn does for a real
 // connection.
 type swarmDoorRequest struct {
+	// host is the address that the caller asked for. At the loopback door it
+	// is the Host header. At the tailnet door tailscaled states it in the
+	// forwarded-host header and sends "localhost" as Host. sentHost replaces
+	// that Host line; asked replaces the forwarded-host lines; noAsked leaves
+	// them out.
 	method, path, host string
 	tailnet            bool
+	sentHost           string
+	asked              []string
+	noAsked            bool
 	header             map[string][]string
 	body               string
 	cookies            []*http.Cookie
+}
+
+func (q swarmDoorRequest) askedHosts(host string) []string {
+	if q.noAsked {
+		return nil
+	}
+	if q.asked != nil {
+		return q.asked
+	}
+	return []string{host}
 }
 
 func (q swarmDoorRequest) do(server *swarmServer) *httptest.ResponseRecorder {
@@ -66,6 +84,17 @@ func (q swarmDoorRequest) do(server *swarmServer) *httptest.ResponseRecorder {
 	}
 	req := httptest.NewRequest(method, "http://"+swarmTestLoopbackHost+q.path, body)
 	req.Host = q.host
+	if q.tailnet {
+		// As tailscaled sends it to a socket: the asked-for address is in
+		// the forwarded-host header and Host is "localhost".
+		req.Host = "localhost"
+		if q.sentHost != "" {
+			req.Host = q.sentHost
+		}
+		for _, asked := range q.askedHosts(q.host) {
+			req.Header.Add(swarmTailnetHostHeader, asked)
+		}
+	}
 	for key, values := range q.header {
 		for _, value := range values {
 			req.Header.Add(key, value)
@@ -269,6 +298,14 @@ func TestSwarmTailnetDoorAccessChecks(t *testing.T) {
 		"no port":              door(swarmDoorRequest{host: "box.example-tailnet.ts.net"}),
 		"default https port":   door(swarmDoorRequest{host: "box.example-tailnet.ts.net:443"}),
 		"lookalike host":       door(swarmDoorRequest{host: "box.example-tailnet.ts.net.example.com:8087"}),
+		"no asked-for host":    door(swarmDoorRequest{noAsked: true}),
+		"asked-for twice":      door(swarmDoorRequest{asked: []string{swarmTestTailnetHost, swarmTestTailnetHost}}),
+		"asked-for and other":  door(swarmDoorRequest{asked: []string{"example.com:8087", swarmTestTailnetHost}}),
+		"asked-for list":       door(swarmDoorRequest{asked: []string{swarmTestTailnetHost + ", example.com"}}),
+		"asked-for only Host":  door(swarmDoorRequest{noAsked: true, sentHost: swarmTestTailnetHost}),
+		"foreign Host line":    door(swarmDoorRequest{sentHost: "example.com:8087"}),
+		"loopback Host line":   door(swarmDoorRequest{sentHost: swarmTestLoopbackHost}),
+		"localhost with port":  door(swarmDoorRequest{sentHost: "localhost:8087"}),
 		"foreign origin":       door(swarmDoorRequest{header: swarmTailnetHeader(map[string]string{"Origin": "https://example.com"})}),
 		"sibling service":      door(swarmDoorRequest{header: swarmTailnetHeader(map[string]string{"Origin": "https://box.example-tailnet.ts.net:10000"})}),
 		"origin without port":  door(swarmDoorRequest{header: swarmTailnetHeader(map[string]string{"Origin": "https://box.example-tailnet.ts.net"})}),
@@ -303,6 +340,7 @@ func TestSwarmTailnetDoorAccessChecks(t *testing.T) {
 		"second address":      door(swarmDoorRequest{header: swarmTailnetIdentity([]string{swarmTestTailnetLogin}, []string{swarmTestClientV6})}),
 		"host in upper case":  door(swarmDoorRequest{host: strings.ToUpper(swarmTestTailnetHost)}),
 		"own origin":          door(swarmDoorRequest{header: swarmTailnetHeader(map[string]string{"Origin": swarmTestTailnetOrigin})}),
+		"Host passed through": door(swarmDoorRequest{sentHost: swarmTestTailnetHost}),
 	} {
 		q.path = "/"
 		rec := q.do(server)
@@ -534,10 +572,11 @@ func TestSwarmTailnetSocket(t *testing.T) {
 	client := &http.Client{Transport: transport}
 	ask := func(host, login, device string) (*http.Response, string) {
 		t.Helper()
-		req, rErr := http.NewRequest(http.MethodGet, "http://"+host+"/api/auth/session", nil)
+		req, rErr := http.NewRequest(http.MethodGet, "http://localhost/api/auth/session", nil)
 		if rErr != nil {
 			t.Fatal(rErr)
 		}
+		req.Header.Set(swarmTailnetHostHeader, host)
 		if login != "" {
 			req.Header.Set(swarmTailnetLoginHeader, login)
 		}

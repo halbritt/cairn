@@ -78,13 +78,15 @@ type swarmTailnet struct {
 	clients map[netip.Addr]struct{}
 }
 
-// swarmTailnetLoginHeader and swarmTailnetClientHeader are set by tailscaled
-// on a request that it proxies: the tailnet login of the caller and the
-// tailnet address of the caller's device. tailscaled replaces values that
-// the client sent.
+// These headers are set by tailscaled on a request that it proxies: the
+// tailnet login of the caller, the tailnet address of the caller's device,
+// and the host[:port] that the caller asked for. tailscaled replaces values
+// that the client sent. For a Unix socket target it sends "Host: localhost",
+// so the address that the browser asked for is in the forwarded-host header.
 const (
 	swarmTailnetLoginHeader  = "Tailscale-User-Login"
 	swarmTailnetClientHeader = "X-Forwarded-For"
+	swarmTailnetHostHeader   = "X-Forwarded-Host"
 	swarmTailnetClientsLimit = 64 << 10
 )
 
@@ -137,13 +139,24 @@ func swarmTailnetAuthority(got, want string) bool {
 	return got == want || (!strings.Contains(want, ":") && got == want+":443")
 }
 
-// checkTailnetRequest admits a request at the tailnet door only when it is
+// checkTailnetRequest admits a request at the tailnet door only when it was
 // addressed to the page's tailnet address, comes from that page (a GET or
 // HEAD may state no origin), and carries, exactly once each and as tailscaled
 // wrote them, the configured login and the address of a listed device.
 func (s *swarmServer) checkTailnetRequest(r *http.Request) bool {
 	door := s.tailnet
-	if door == nil || !swarmTailnetAuthority(r.Host, door.authority) {
+	if door == nil {
+		return false
+	}
+	// The address that the browser asked for, as tailscaled states it. Host
+	// itself is what tailscaled writes for its target: "localhost" for a
+	// socket. The tailnet address is accepted there too, in case a later
+	// tailscaled passes it through as it does for a TCP target.
+	asked := r.Header.Values(swarmTailnetHostHeader)
+	if len(asked) != 1 || !swarmTailnetAuthority(asked[0], door.authority) {
+		return false
+	}
+	if r.Host != "localhost" && !swarmTailnetAuthority(r.Host, door.authority) {
 		return false
 	}
 	if origin := r.Header.Get("Origin"); origin == "" {

@@ -103,9 +103,12 @@ devices only. The loopback door and its token do not change.
 - Both headers are trusted at this door only. The loopback listener ignores
   them, because any local process can write them there. The door trusts what
   the token file trusts: this user's processes and root.
-- `Host` must be the tailnet address. `Origin`, when present, must be that
-  page; a request that can change state must state it. The `Sec-Fetch-Site`
-  check and the CSRF token apply as on loopback.
+- The request must have been addressed to the tailnet address. For a socket
+  target tailscaled sends `Host: localhost` and states the address that the
+  browser asked for in `X-Forwarded-Host`; the door reads that header, which
+  must be there exactly once. `Origin`, when present, must be that page; a
+  request that can change state must state it. The `Sec-Fetch-Site` check and
+  the CSRF token apply as on loopback.
 - The first request of the page signs it in. Signing out ends the session; the
   next visit starts a new one.
 - A session is good only at the door that issued it. The tailnet session
