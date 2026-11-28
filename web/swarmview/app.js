@@ -324,6 +324,8 @@
 
   function renderLanding(landing) {
     state.landingLabels = new Map();
+    state.landingOperator = landing.operator_principal || "";
+    state.landingEvents = new Map((landing.events || []).map((event) => [event.event_id, event]));
     for (const session of landing.unaffiliated || []) state.landingLabels.set("agent/" + session.agent_id, session.label);
     const meta = byID("campaign-meta");
     meta.hidden = false;
@@ -630,7 +632,7 @@
   }
 
   function operator() {
-    return (state.snapshot && state.snapshot.operator_principal) || (state.hello && state.hello.operator_principal) || "";
+    return (state.snapshot && state.snapshot.operator_principal) || (state.hello && state.hello.operator_principal) || state.landingOperator || "";
   }
 
   function labelOf(principal) {
@@ -827,6 +829,24 @@
     return present.flatMap((part, i) => (i ? [" · ", part] : [part]));
   }
 
+  // The sender a row names, through the page's single sender function. A row
+  // built from one event carries that event's `system`; until the store sends
+  // it, an operator-delivery row (whose subject is its sender) takes the value
+  // of its event or delivery from wherever the page has it.
+  function needSystem(need) {
+    if (need.system) return need.system;
+    if (need.type !== "operator_delivery") return "";
+    const refs = need.refs || {};
+    const deliveryID = (refs.delivery_ids || [])[0];
+    const delivery = deliveryID ? flow().deliveries.find((d) => d.delivery_id === deliveryID) : null;
+    const landingEvent = state.landingEvents ? state.landingEvents.get(refs.event_id) : null;
+    return systemOf(state.log.get(refs.event_id)) || systemOf(delivery) || (landingEvent && landingEvent.system) || "";
+  }
+
+  function needSender(need) {
+    return senderLabel({ from: need.subject, system: needSystem(need) });
+  }
+
   function needRow(need, operatorPrincipal) {
     const action = need.action || {};
     const refs = need.refs || {};
@@ -838,7 +858,7 @@
       need.detail ? el("p", { class: "detail" }, linked(need.detail)) : null,
       needEventLine(need),
       el("p", { class: "meta" }, joinParts([
-        need.subject ? labelOf(need.subject) : null,
+        need.subject ? needSender(need) : null,
         need.since ? ["since ", timeEl(need.since)] : null,
         need.expires_at ? ["expires ", timeEl(need.expires_at)] : null,
         need.waiters ? `${need.waiters} session${need.waiters === 1 ? "" : "s"} waiting on it` : null])));

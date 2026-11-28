@@ -35,6 +35,9 @@ CAMPAIGN = "swarm-fixture"
 TOPIC = "swarm-fixture.review"
 BOARD_TOPIC = "agent-board"
 ROLES = ("root", "lead", "worker_a", "worker_b", "worker_c", "bystander")
+# A fixture identity whose principal is the operator principal, used only to
+# subscribe the operator's inbox to a topic through the API.
+OWNER_INBOX = "owner_inbox"
 WORKERS = ("worker_a", "worker_b", "worker_c")
 HARNESS = {"root": ("claude", "claude-opus-5-5"), "lead": ("codex", "gpt-5.5-codex"),
            "worker_a": ("claude", "claude-sonnet-5-5"), "worker_b": ("opencode", "qwen3.8-27b"),
@@ -629,6 +632,8 @@ class Fixture:
                    category="slice:CAIRN-833")
         self.check("the landing page acknowledges a delivery outside any campaign; a campaign page says it is not the next",
                    lambda: self.landing_acknowledge(page), page, category="slice:CAIRN-833")
+        self.check("a request Cairn's scheduler sent to the owner reads as from Cairn in Needs you, desktop and 390 px",
+                   lambda: self.needs_you_system(page), page, category="slice:CAIRN-831")
         self.check("Supersede is offered only on the owner's notice that is still open", lambda: self.supersede_open_only(page), page,
                    category="slice:CAIRN-833")
         self.check("a cancel confirmed after a handoff is refused with a fresh preview, then confirmed again",
@@ -1345,6 +1350,64 @@ class Fixture:
         finally:
             landing.close()
 
+    def scheduled_to_operator(self):
+        """A request the scheduler publishes to a topic the operator principal
+        subscribes to. The subscription is made through the real API by a
+        fixture identity whose principal is the operator principal (the CLI has
+        no operator subscribe); the schedule and its firing use the real
+        operator commands."""
+        topic = "swarm-fixture.scheduled"
+        self.cli(["subscribe", "--token-file", str(self.host.token("owner_inbox")), "--socket", str(self.host.socket),
+                  "--repo", self.collection, "--request-id", uid(), "--topic", topic])
+        note = self.agent("bystander", "create", {"request_id": uid(), "draft": {
+            "kind": "note", "body": "Scheduled reminder for the owner.", "claim_type": "self", "sensitivity": "shareable",
+            "scope": {"repo": self.collection, "task_id": "coordination/" + uid(), "run_id": "*"}}})
+        scheduled = self.host.operator("event-schedule", {
+            "request_id": uid(), "not_before": rfc3339(timedelta(seconds=2)), "grace_seconds": 600,
+            "publication": {"repo": self.collection, "kind": "request", "ref": ref(note),
+                            "destination": {"type": "topic", "name": topic}}})
+        time.sleep(3)
+        fired = self.host.operator("schedule-tick", {"repo": self.collection})
+        events = [o.get("event_id") for o in fired.get("occurrences", []) if o.get("event_id")]
+        require(events, "the schedule did not fire: " + json.dumps(fired)[:300])
+        self.events["scheduled"] = {"event_id": events[0], "occurrence_id": scheduled.get("occurrence_id")}
+        return events[0]
+
+    def needs_you_system(self, page):
+        event_id = self.scheduled_to_operator()
+        operator = self.report["operator_principal"]
+
+        def check(view, where):
+            row = view.locator(f"li.need[data-event='{event_id}']")
+            self.expect(row).to_have_count(1, timeout=20000)
+            text = row.inner_text()
+            require("Cairn (scheduled message)" in text, f"{where}: the scheduled request's row does not read as from Cairn: " + text[:200])
+            require("you (operator)" not in text, f"{where}: the scheduled request's row reads as the owner's: " + text[:200])
+            return row
+
+        landing = page.context.new_page()
+        try:
+            landing.goto(f"http://127.0.0.1:{self.port}/")
+            check(landing, "landing page")
+            landing.locator("#landing-needs").screenshot(path=str(self.output / "needs-you-landing-system-desktop.png"))
+            self.report["screenshots"].append("needs-you-landing-system-desktop.png")
+        finally:
+            landing.close()
+        phone = page.context.browser.new_context(viewport=PHONE)
+        try:
+            small = phone.new_page()
+            small.goto(f"http://127.0.0.1:{self.port}/#token=" + self.token)
+            check(small, "landing page at 390 px")
+            small.locator("#landing-needs").screenshot(path=str(self.output / "needs-you-landing-system-phone.png"))
+            self.report["screenshots"].append("needs-you-landing-system-phone.png")
+        finally:
+            phone.close()
+        # The campaign page: no row with a Cairn sender reads as the owner's.
+        for item in self.snapshot()["needs_you"]["items"]:
+            if item.get("system"):
+                text = page.locator(f"#needs li.need[data-need='{item['id']}']").inner_text()
+                require("you (operator)" not in text and "Cairn (" in text, "a campaign need row with a Cairn sender reads as the owner's: " + text[:200])
+
     def system_everywhere(self, page):
         """Every Cairn-published event, in every place the page shows a sender."""
         snapshot = self.snapshot()
@@ -1587,8 +1650,11 @@ class Fixture:
         os.environ.clear()
         os.environ.update(self.env)
         self.cluster = OwnedCluster.start(self.runtime / "pg")
-        self.host = DisposableHost.start(self.cluster, binary=self.binary, repo=self.collection, roles=ROLES,
-                                         database="swarm_ui", home=self.runtime / "h", label="swarm_ui", env=self.env)
+        operator = "local-uid:" + str(os.geteuid())
+        principals = lambda role: operator if role == OWNER_INBOX else f"agent/swarm-ui-{role}-{uid()}"
+        self.host = DisposableHost.start(self.cluster, binary=self.binary, repo=self.collection, roles=(*ROLES, OWNER_INBOX),
+                                         principals=principals, database="swarm_ui", home=self.runtime / "h",
+                                         label="swarm_ui", env=self.env)
         require(self.host.env["CAIRN_HOME"].startswith(str(self.runtime)), "fixture state directory escaped the runtime")
         self.report["collection"] = self.collection
         self.seed()
