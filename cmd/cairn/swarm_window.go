@@ -18,14 +18,15 @@ import (
 )
 
 type swarmWindow struct {
-	UsedTokens       int64      `json:"used_tokens"`
-	WindowTokens     int64      `json:"window_tokens,omitempty"`
-	Model            string     `json:"model,omitempty"`
-	MeasuredAt       time.Time  `json:"measured_at"`
-	Compactions      int        `json:"compactions"`
-	LastCompactionAt *time.Time `json:"last_compaction_at,omitempty"`
-	Source           string     `json:"source"`
-	NearLimit        bool       `json:"near_limit"`
+	UsedTokens         int64      `json:"used_tokens"`
+	WindowTokens       int64      `json:"window_tokens,omitempty"`
+	Model              string     `json:"model,omitempty"`
+	MeasuredAt         time.Time  `json:"measured_at"`
+	Compactions        int        `json:"compactions"`
+	CompactionsPartial bool       `json:"compactions_partial,omitempty"`
+	LastCompactionAt   *time.Time `json:"last_compaction_at,omitempty"`
+	Source             string     `json:"source"`
+	NearLimit          bool       `json:"near_limit"`
 }
 
 type swarmWindowObservation struct {
@@ -362,6 +363,7 @@ func readSwarmWindowTail(ctx context.Context, file io.ReaderAt, size int64, harn
 	// the inspected tail, which covers the whole file for smaller transcripts.
 	tail := make([]byte, min(size, swarmWindowMaxTail))
 	base := size - int64(len(tail))
+	window.CompactionsPartial = base > 0
 	remaining := len(tail)
 	for end := len(tail); end > 0; {
 		if err := ctx.Err(); err != nil {
@@ -400,7 +402,7 @@ func (window *swarmWindow) readRecord(line []byte, harness string) {
 	if record.Type == "compacted" && harness == wake.HarnessCodex ||
 		record.Type == "system" && record.Subtype == "compact_boundary" && harness == wake.HarnessClaude {
 		window.Compactions++
-		if window.LastCompactionAt == nil {
+		if window.Compactions == 1 {
 			if at, err := time.Parse(time.RFC3339Nano, record.Timestamp); err == nil {
 				window.LastCompactionAt = &at
 			}
