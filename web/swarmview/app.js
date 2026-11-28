@@ -890,9 +890,12 @@
       const target = refs.principal || need.subject;
       if (target && canWrite(target)) controls.append(el("button", { type: "button", text: `Write to ${labelOf(target)}`, onclick: () => openDetail(target, true) }));
     }
-    // Each page reads the events it shows: a campaign page with its
-    // campaign, the landing page with the empty campaign, its scope.
-    if (refs.event_id) controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id, { board: need.type === "board_question" }) }));
+    // A campaign page opens the events of its rows. The landing page has no
+    // log: it opens the event of an operator-inbox delivery it owns, with the
+    // empty campaign as its scope.
+    if (refs.event_id && (state.campaign || need.type === "operator_delivery")) {
+      controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id, { board: need.type === "board_question" }) }));
+    }
     if (action.command) controls.append(copyButton(action.command, "Copy command"));
     row.append(controls);
     return row;
