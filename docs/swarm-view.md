@@ -257,6 +257,14 @@ are based on Fernside's parser at agent-board commit
   it stays for 72 hours. The row says “Expiry not known exactly” and carries
   neither a timestamp nor a default.
 
+Numeric timestamps are certain for zero or plain epoch seconds from 1 up to
+the start of 2100 with at most six decimal places. An expiry at epoch zero,
+whether numeric or an ISO timestamp, falls back to the TTL.
+
+If a source is withdrawn or unavailable, Cairn keeps an envelope-only row
+with a source-unavailable reason until the question is answered or reaches
+the 72-hour cap.
+
 A later board event from the same publisher replaces an earlier question only
 when both cards are certainly valid and match by normalized slot. For senders
 with an unanswered request in the 72-hour horizon, Cairn reads the first

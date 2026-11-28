@@ -2,8 +2,8 @@ package core
 
 import (
 	"encoding/json"
-	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -14,6 +14,10 @@ import (
 const (
 	swarmBoardDefaultTTL = 24 * time.Hour
 	swarmBoardMaxTTL     = 72 * time.Hour
+
+	swarmBoardMicrosPerSecond = int64(time.Second / time.Microsecond)
+	swarmBoardMaxExactMicros  = 1<<53 - 1
+	swarmBoardLatestEpoch     = 4102444800 * swarmBoardMicrosPerSecond // 2100-01-01 UTC
 )
 
 type swarmBoardCertainty uint8
@@ -70,25 +74,26 @@ func swarmBoardCard(block *string, published time.Time) swarmBoardCardFacts {
 func swarmBoardLifetime(card map[string]any, published time.Time) (time.Time, swarmBoardCertainty) {
 	status := swarmBoardCertainValid
 	capAt := published.Add(swarmBoardMaxTTL)
-	ttl := swarmBoardDefaultTTL.Seconds()
+	ttl := swarmBoardDefaultTTL.Microseconds()
 	if raw, present := card["ttl"]; present {
-		seconds, ok := swarmBoardNumber(raw)
+		micros, ok := swarmBoardNumber(raw)
 		switch {
 		case !ok:
 			status = swarmBoardUncertain
-		case seconds < 1:
+		case micros < swarmBoardMicrosPerSecond:
 			status = swarmBoardCertainCardless
 		default:
-			ttl = min(seconds, swarmBoardMaxTTL.Seconds())
+			ttl = min(micros, swarmBoardMaxTTL.Microseconds())
 		}
 	}
-	// Round outward so a sub-nanosecond TTL fraction cannot remove a row early.
-	expiry := published.Add(time.Duration(math.Ceil(ttl * float64(time.Second))))
+	expiry := published.Add(time.Duration(ttl) * time.Microsecond)
 	if raw, present := card["expires_at"]; present {
 		at, ok := swarmBoardStamp(raw)
 		if !ok {
 			return capAt, swarmBoardUncertain
 		}
+		// normalize treats the parsed number 0.0 as unset, including an ISO
+		// timestamp at the epoch. Unrepresentable nonzero numbers stay uncertain.
 		if !at.Equal(time.Unix(0, 0)) {
 			expiry = at
 		}
@@ -202,13 +207,14 @@ func swarmBoardVerbs(raw any) (map[string]bool, swarmBoardCertainty) {
 		}
 		rawSnooze, snoozes := entry["snooze"]
 		if snoozes {
-			seconds, ok := swarmBoardNumber(rawSnooze)
+			micros, ok := swarmBoardNumber(rawSnooze)
 			if !ok {
 				status = swarmBoardUncertain
-			} else if seconds < 60 || seconds > 86400 {
+			} else if micros < time.Minute.Microseconds() || micros > swarmBoardDefaultTTL.Microseconds() {
 				status = max(status, swarmBoardCertainCardless)
 			}
 		}
+		// confirm and style affect presentation and cannot invalidate a verb.
 		verbs[id] = !snoozes
 	}
 	return verbs, status
@@ -228,7 +234,7 @@ func swarmBoardTypedFields(card map[string]any) swarmBoardCertainty {
 		if !ok {
 			return swarmBoardUncertain
 		}
-		if progress < 0 || progress > 1 {
+		if progress < 0 || progress > swarmBoardMicrosPerSecond {
 			status = swarmBoardCertainCardless
 		}
 	}
@@ -239,6 +245,8 @@ func swarmBoardTypedFields(card map[string]any) swarmBoardCertainty {
 		} else {
 			for _, rawItem := range items {
 				if item, ok := rawItem.(map[string]any); ok {
+					// id and done affect presentation only. Only label
+					// truthiness can make this item invalid.
 					rawItem = item["label"]
 				}
 				label, ok := swarmBoardASCII(rawItem)
@@ -265,26 +273,50 @@ func swarmBoardTypedFields(card map[string]any) swarmBoardCertainty {
 	return status
 }
 
-func swarmBoardNumber(raw any) (float64, bool) {
+// swarmBoardNumber reads plain JSON decimals in millionths of a unit. This
+// keeps tests for zero, field bounds and the TTL cap ahead of any rounding.
+// Exponents, extra fractional digits and large magnitudes stay uncertain.
+func swarmBoardNumber(raw any) (int64, bool) {
 	number, ok := raw.(json.Number)
 	if !ok {
 		return 0, false
 	}
-	n, err := number.Float64()
-	// Keep integers in the exactly representable range, well beyond any
-	// supported lifetime or civil timestamp.
-	return n, err == nil && math.Abs(n) < 1<<53
+	text := number.String()
+	negative := strings.HasPrefix(text, "-")
+	whole, fraction, _ := strings.Cut(strings.TrimPrefix(text, "-"), ".")
+	seconds, err := strconv.ParseInt(whole, 10, 64)
+	if err != nil || seconds > swarmBoardMaxExactMicros/swarmBoardMicrosPerSecond || len(fraction) > 6 {
+		return 0, false
+	}
+	micros, err := strconv.ParseInt(fraction+strings.Repeat("0", 6-len(fraction)), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	micros += seconds * swarmBoardMicrosPerSecond
+	if negative {
+		micros = -micros
+	}
+	return micros, micros >= -swarmBoardMaxExactMicros && micros <= swarmBoardMaxExactMicros
 }
 
 var swarmBoardISOStamp = regexp.MustCompile(`^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\.[0-9]+)?(Z|[+-](?:[01][0-9]|2[0-3]):?[0-5][0-9])$`)
 
 func swarmBoardStamp(raw any) (time.Time, bool) {
-	if seconds, ok := swarmBoardNumber(raw); ok {
-		if seconds < 0 {
+	if number, numeric := raw.(json.Number); numeric {
+		significand := number.String()
+		if exponent := strings.IndexAny(significand, "eE"); exponent != -1 {
+			significand = significand[:exponent]
+		}
+		// Check the digits before converting so underflow cannot look like
+		// zero. A literal zero remains zero even with an exponent.
+		if strings.Trim(significand, "-0.") == "" {
+			return time.Unix(0, 0).UTC(), true
+		}
+		micros, ok := swarmBoardNumber(raw)
+		if !ok || micros < swarmBoardMicrosPerSecond || micros >= swarmBoardLatestEpoch {
 			return time.Time{}, false
 		}
-		whole, fraction := math.Modf(seconds)
-		return time.Unix(int64(whole), int64(math.Round(fraction*float64(time.Second)))).UTC(), true
+		return time.UnixMicro(micros).UTC(), true
 	}
 	stamp, _ := raw.(string)
 	parts := swarmBoardISOStamp.FindStringSubmatch(stamp)

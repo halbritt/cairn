@@ -17,7 +17,7 @@ type swarmBoardCase struct {
 	Name            string
 	Body            string
 	Valid           bool
-	LifetimeSeconds float64 `json:"lifetime_seconds"`
+	ExpiresEpoch    float64 `json:"expires_epoch"`
 	DefaultDeclared bool    `json:"default_declared"`
 	Slot            string
 	Documented      bool
@@ -93,8 +93,9 @@ func checkSwarmBoardCardFacts(t *testing.T, got swarmBoardCardFacts, published t
 	boardClock := func(at time.Time) float64 {
 		return float64(at.Unix()) + float64(at.Nanosecond())/float64(time.Second)
 	}
-	if boardClock(got.keepUntil) < boardClock(published)+tc.LifetimeSeconds {
-		t.Errorf("removes at %v seconds, before the board's %v seconds", gotLifetime, tc.LifetimeSeconds)
+	gotEpoch := boardClock(got.keepUntil)
+	if gotEpoch < tc.ExpiresEpoch {
+		t.Errorf("removes at epoch %.12f before the board's %.12f", gotEpoch, tc.ExpiresEpoch)
 	}
 	if gotLifetime > swarmBoardMaxTTL.Seconds() {
 		t.Errorf("retention %v seconds exceeds the 72-hour read horizon", gotLifetime)
@@ -109,10 +110,10 @@ func checkSwarmBoardCardFacts(t *testing.T, got swarmBoardCardFacts, published t
 		}
 		return
 	}
-	if (got.certainty == swarmBoardCertainValid) != tc.Valid || math.Abs(gotLifetime-tc.LifetimeSeconds) > tolerance ||
+	if (got.certainty == swarmBoardCertainValid) != tc.Valid || math.Abs(gotEpoch-tc.ExpiresEpoch) > tolerance ||
 		got.defaultDeclared != tc.DefaultDeclared || got.slot != tc.Slot {
 		t.Errorf("got status=%d lifetime=%vs default=%t slot=%q, want valid=%t lifetime=%vs default=%t slot=%q",
-			got.certainty, gotLifetime, got.defaultDeclared, got.slot, tc.Valid, tc.LifetimeSeconds, tc.DefaultDeclared, tc.Slot)
+			got.certainty, gotLifetime, got.defaultDeclared, got.slot, tc.Valid, tc.ExpiresEpoch-boardClock(published), tc.DefaultDeclared, tc.Slot)
 	}
 }
 
@@ -144,6 +145,13 @@ func TestSwarmNeedsBoardReviewerCases(t *testing.T) {
 		"reviewer_invalid_default":        {2 * time.Hour, false},
 		"reviewer_ambiguous_week_date":    {2 * time.Hour, true},
 		"reviewer_numeric_slot":           {25 * time.Hour, true},
+		"reviewer_epoch_1e_10":            {25 * time.Hour, true},
+		"reviewer_epoch_1e_12":            {25 * time.Hour, true},
+		"reviewer_epoch_4_9e_10":          {25 * time.Hour, true},
+		"numeric_epoch_zero_ttl_86400":    {23 * time.Hour, false},
+		"string_epoch_zero_ttl_86400":     {23 * time.Hour, false},
+		"negative_zero_exponent":          {23 * time.Hour, false},
+		"zero_extra_precision":            {23 * time.Hour, false},
 	}
 
 	foundCases := 0
@@ -168,7 +176,7 @@ func TestSwarmNeedsBoardReviewerCases(t *testing.T) {
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		expiry := corpus.PublishedAt.Add(time.Duration(tc.LifetimeSeconds * float64(time.Second)))
+		expiry := time.UnixMicro(int64(math.Round(tc.ExpiresEpoch * float64(time.Second/time.Microsecond))))
 		found := false
 		for _, item := range items {
 			if item.Refs.EventID != event.EventID {

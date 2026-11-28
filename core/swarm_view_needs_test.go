@@ -892,3 +892,102 @@ func TestSwarmNeedsOperatorInboxHeadUsesClaimEligibilityBeforePageScope(t *testi
 	check(swarmNeedsTestSnapshot(f), "", deferredID, leasedID, insideID)
 	check(swarmNeedsTestLanding(f), "", foreignID)
 }
+
+func TestSwarmNeedsBoardWithdrawnSource(t *testing.T) {
+	ctx := context.Background()
+	for _, mode := range []string{"retracted", "forgotten"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newSwarmFixture(t, "board-withdrawn-source")
+			op, grant := testOperator(t)
+			if _, err := f.sender.SetSubscription(ctx, SubscriptionRequest{
+				RequestID: uuid.NewString(), Repo: f.repo, Topic: "agent-board", Active: true,
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			const marker = "PRIVATE-WITHDRAWN-BOARD-SOURCE"
+			body := marker + "\n```board-card\n" +
+				`{"ttl":172800,"slot":"setting","verbs":[{"id":"yes","label":"` + marker + `"}],"default":"yes"}` +
+				"\n```"
+			summary, title := "", "Board question from "+f.root.DisplayName
+			if mode == "retracted" {
+				summary, title = "Choose a setting", "Choose a setting"
+			}
+			event := swarmNeedsTestPublishRequest(f, f.rootView, body, PublishEventRequest{
+				Kind: "request", Destination: EventDestination{Type: "topic", Name: "agent-board"}, Summary: summary,
+			})
+			before := swarmNeedsTestItem(t, swarmNeedsTestSnapshot(f), SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", event.CreatedAt)
+			if before.ExpiresAt == nil || !before.ExpiresAt.Equal(event.CreatedAt.Add(48*time.Hour)) ||
+				before.Detail != "Unattended default declared" {
+				t.Fatalf("expected the original 48-hour card: %+v", before)
+			}
+
+			if mode == "retracted" {
+				preview, err := op.PreviewRetraction(ctx, event.Ref.RecordID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = op.Retract(ctx, RetractRequest{
+					RequestID: uuid.NewString(), RecordID: event.Ref.RecordID, ExpectedVersion: event.Ref.Version,
+					GrantID: grant.ID, PreviewID: preview.PreviewID, Reason: "Withdraw a synthetic board question",
+				}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				preview, err := op.PreviewDeletion(ctx, event.Ref.RecordID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = op.Forget(ctx, ForgetRequest{
+					RequestID: uuid.NewString(), RecordID: event.Ref.RecordID, ExpectedVersion: event.Ref.Version,
+					GrantID: grant.ID, PreviewID: preview.PreviewID,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			read := func() SwarmNeedsYou {
+				t.Helper()
+				snap, err := f.op.GetSwarmSnapshot(ctx, SwarmSnapshotRequest{Repo: f.repo, Campaign: f.campaign})
+				if err != nil || len(snap.SectionErrors) != 0 {
+					t.Fatalf("snapshot err=%v sections=%v", err, snap.SectionErrors)
+				}
+				wire, err := json.Marshal(snap)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(wire), marker) {
+					t.Fatal("snapshot exposed the withdrawn source")
+				}
+				return snap.NeedsYou
+			}
+			checkNeutral := func(since time.Time) {
+				t.Helper()
+				needs := read()
+				item := swarmNeedsTestItem(t, needs, SwarmNeedBoardQuestion, f.root.Inbox, "answer_board", since)
+				if item.Refs.EventID != event.EventID || item.Title != title || item.ExpiresAt != nil ||
+					item.Refs.Record != nil || item.Detail != "The message source is no longer available" {
+					t.Errorf("expected a neutral envelope-only row: %+v", item)
+				}
+				if len(needs.Unavailable) != 1 || needs.Unavailable[0].Type != SwarmNeedBoardQuestion ||
+					!strings.Contains(needs.Unavailable[0].Reason, "1 unanswered board requests") {
+					t.Errorf("expected the existing missing-source count: %+v", needs.Unavailable)
+				}
+			}
+			checkNeutral(event.CreatedAt)
+			inside := event.CreatedAt.Add(-71 * time.Hour)
+			f.exec(`UPDATE cairn.agent_event SET created_at=$2 WHERE event_id=$1`, event.EventID, inside)
+			checkNeutral(inside)
+			f.exec(`UPDATE cairn.agent_event SET created_at=clock_timestamp()-interval '72 hours' WHERE event_id=$1`, event.EventID)
+			swarmNeedsTestAbsent(t, read(), SwarmNeedBoardQuestion)
+
+			f.exec(`UPDATE cairn.agent_event SET created_at=$2 WHERE event_id=$1`, event.EventID, inside)
+			swarmNeedsTestPublish(f, f.sender, "response", "agent", f.root.Inbox, "Board answer: Yes", event.EventID)
+			answered := read()
+			swarmNeedsTestAbsent(t, answered, SwarmNeedBoardQuestion)
+			if len(answered.Unavailable) != 0 {
+				t.Errorf("answered source still counted as unavailable: %+v", answered.Unavailable)
+			}
+		})
+	}
+}

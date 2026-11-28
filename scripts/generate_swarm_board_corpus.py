@@ -39,6 +39,15 @@ def card_cases():
     reviewer_default = {"ttl": 3600, "shape": "question", "verbs": [yes], "default": "missing"}
     cases = {
         "empty_card": {},
+        "reviewer_epoch_1e_10": {"ttl": 86400, "expires_at": 1e-10},
+        "reviewer_epoch_1e_12": {"ttl": 86400, "expires_at": 1e-12},
+        "reviewer_epoch_4_9e_10": {"ttl": 86400, "expires_at": 4.9e-10},
+        "epoch_subsecond": {"ttl": 86400, "expires_at": 0.5},
+        "epoch_six_fraction_digits": {"ttl": 86400, "expires_at": 1.123456},
+        "epoch_seven_fraction_digits": {"ttl": 86400, "expires_at": 1.1234567},
+        "epoch_year_2100": {"ttl": 86400, "expires_at": 4102444800},
+        "numeric_epoch_zero_ttl_86400": {"ttl": 86400, "expires_at": 0},
+        "string_epoch_zero_ttl_86400": {"ttl": 86400, "expires_at": "1970-01-01T00:00:00Z"},
         "reviewer_ambiguous_week_date": {"ttl": 3600, "observed_at": "2026-W48-5012Z"},
         "reviewer_numeric_slot": {"ttl": 172800, "slot": 10.2},
         "non_object": [],
@@ -58,6 +67,13 @@ def card_cases():
         "slot_boolean": {"slot": True},
         "slot_false": {"slot": False},
         "ttl_number": {"ttl": 1.5},
+        "ttl_last_microsecond_below_cap": {"ttl": 259199.999999},
+        "ttl_first_microsecond_above_cap": {"ttl": 259200.000001},
+        "ttl_last_microsecond_below_minimum": {"ttl": 0.999999},
+        "snooze_last_microsecond_below_minimum": {"verbs": [dict(snooze, snooze=59.999999)]},
+        "snooze_first_microsecond_above_minimum": {"verbs": [dict(snooze, snooze=60.000001)]},
+        "progress_last_microsecond_below_maximum": {"progress": 0.999999},
+        "progress_first_microsecond_above_maximum": {"progress": 1.000001},
         "ttl_lower_bound": {"ttl": 1},
         "ttl_capped": {"ttl": 999999},
         "ttl_string": {"ttl": "3600"},
@@ -141,6 +157,8 @@ def card_cases():
         cases[f"expires_{name}"] = {"expires_at": timestamp, "ttl": 60}
 
     bodies = {name: note(card) for name, card in cases.items()}
+    for name, spelling in {"negative_zero_exponent": "-0e-300", "zero_extra_precision": "0.0000000"}.items():
+        bodies[name] = bodies["numeric_epoch_zero_ttl_86400"].replace('"expires_at": 0', f'"expires_at": {spelling}')
     bodies.update({
         "no_block": "Question without a card",
         "not_json": "Question\n```board-card\n{broken\n```",
@@ -179,30 +197,35 @@ def documented_cases():
 def random_cases():
     """Exercise supported forms, coercions, bounds and interactions reproducibly."""
     rng = random.Random(RANDOM_SEED)
+    edges = [0, -0.0, 1e-12, 1e-10, 4.9e-10, 0.000001, 0.5, 1.000001, 1.0000001,
+             4102444799.999999, 4102444800, 1e20, -1e120]
     stamp = ["2026-11-29T21:00:00.125-01:00", "2026-11-29T20:00:00+0000",
              "2026-11-29⌚20:00:00Z", "2026-W48-5012Z", "20261129T2000Z",
              "2026-11-29T21:00:00+01", "2026-11-29 20:00:00Z",
-             PUBLISHED.timestamp() + 172800, 0, -1, None, [], 1e22]
+             PUBLISHED.timestamp() + 172800, -1, None, [], *edges]
     yes = {"id": "yes", "label": "Proceed"}
     values = {
         "shape": ["message", " Question ", "event", "QUESTİON", 0, []],
         "severity": ["info", "notice", "warn", "urgent", "urgent!", None, 1],
-        "ttl": [1, 1.5, 45.125, 3600, 172800, 259199, 999999, 0, -1, True, "3600", 1e99, float("nan")],
+        "ttl": [1, 1.5, 45.125, 3600, 172800, 259199, 999999, 0, -1, True, "3600", 1e99, float("nan"), *edges],
         "expires_at": stamp,
-        "slot": ["settings", "   ", "a / _œ ", "A / .", "x" * 50, 10.2, False, [], ["a"], {"x": 1}],
+        "slot": ["settings", "   ", "a / _œ ", "A / .", "x" * 50, 10.2, False, [], ["a"], {"x": 1}, *edges],
         "verbs": [[yes], [yes, yes], [], {}, [dict(yes, id=7)], [dict(yes, label="Go π")],
                   [dict(yes, snooze=60)], [dict(yes, snooze=59)], [dict(yes, snooze=True)],
                   [dict(yes, snooze=86400)], [dict(yes, label=False)], [dict(yes, label=" ")],
-                  [dict(yes, confirm=["x"], style=3)]],
+                  [dict(yes, confirm=["x"], style=3)],
+                  *([dict(yes, snooze=n)] for n in edges),
+                  *([dict(yes, confirm=n)] for n in edges)],
         "default": ["yes", "missing", "", "π", 1, None],
-        "progress": [0, 0.5, 1, 1.05, -0.01, True, "0.5", float("inf")],
+        "progress": [0, 0.5, 1, 1.05, -0.01, True, "0.5", float("inf"), *edges],
         "items": [[], ["okay"], [{"label": "yes", "done": False}], [""], ["π"],
-                  [{"label": True}], [1], {}, ["x"] * 13],
-        "series": [[0, 1], [0.125, 1, 50], [], [1], [False, 1], ["1", 2], [float("nan"), 1]],
-        "value": [1.3, "42", "µs", None],
+                  [{"label": True}], [1], {}, ["x"] * 13,
+                  *([{"label": "yes", "done": n}] for n in edges)],
+        "series": [[0, 1], [0.125, 1, 50], [], [1], [False, 1], ["1", 2], [float("nan"), 1], *([n, 1] for n in edges)],
+        "value": [1.3, "42", "µs", None, *edges],
         "unit": ["V", "Ω", 2, None],
         "label": ["Readout", "π", True, {}],
-        "all_day": [True, False, 5, {}],
+        "all_day": [True, False, 5, {}, *edges],
         "location": ["Garden", "à l’étage", 1, []],
         "ignored": ["example", None, float("nan"), ["question"]],
     }
@@ -225,7 +248,7 @@ def case_result(cards, name, body, documented=False):
     })
     return {
         **({"name": name} if name else {}), "body": body, "valid": bool(card),
-        "lifetime_seconds": item["expires"] - PUBLISHED.timestamp(),
+        "expires_epoch": item["expires"],
         "default_declared": "default" in card, "slot": card.get("slot", ""),
         **({"documented": True} if documented else {}),
     }

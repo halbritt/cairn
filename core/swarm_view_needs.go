@@ -445,13 +445,16 @@ func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, e
 			return nil, err
 		}
 		show := kind == "request" && !answered
-		if !available {
-			if show {
-				missing++
-			}
+		var facts swarmBoardCardFacts
+		switch {
+		case available:
+			facts = swarmBoardCard(block, item.Since)
+		case show:
+			missing++
+			facts = swarmBoardCardFacts{certainty: swarmBoardUncertain, keepUntil: item.Since.Add(swarmBoardMaxTTL)}
+		default:
 			continue
 		}
-		facts := swarmBoardCard(block, item.Since)
 		if facts.slot != "" {
 			key := senderSlot{item.Subject, facts.slot}
 			if seenSlots[key] {
@@ -462,9 +465,12 @@ func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, e
 		if !show || !facts.keepUntil.After(r.now) {
 			continue
 		}
-		if facts.certainty == swarmBoardUncertain {
+		switch {
+		case !available:
+			item.Detail = "The message source is no longer available"
+		case facts.certainty == swarmBoardUncertain:
 			item.Detail = "Expiry not known exactly"
-		} else {
+		default:
 			item.ExpiresAt = &facts.keepUntil
 		}
 		if item.Title == "" {
@@ -477,7 +483,9 @@ func (r *swarmNeedsReader) board(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, e
 		if facts.defaultDeclared {
 			item.Detail = "Unattended default declared"
 		}
-		item.Refs.Record = &ref
+		if available {
+			item.Refs.Record = &ref
+		}
 		item.Action = SwarmNeedAction{Kind: "answer_board", Label: "Answer this question on the Fernside board"}
 		items = append(items, item)
 	}
