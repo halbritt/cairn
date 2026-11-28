@@ -25,6 +25,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlsplit
 
 import disposable_host
 from disposable_host import DisposableHost, OwnedCluster, HostRefusal, checked, require, stop_process
@@ -624,6 +625,7 @@ class Fixture:
         self.check("every command a needs-you row offers runs with exit 0", lambda: self.copy_commands(page), page,
                    category="slice:CAIRN-831")
         self.check("send is offered only to current principals", lambda: self.current_principals(page), page)
+        self.check("typing focus and selection survive a live member update", lambda: self.compose_focus(page), page)
         self.check("paper cuts: close button, selection, reply naming, plain words, filtered count", lambda: self.paper_cuts(page), page)
         self.check("flow rows show each recipient's state; agent rows label waits apart", lambda: self.flow_rows(page), page,
                    category="slice:CAIRN-830")
@@ -1138,6 +1140,20 @@ class Fixture:
         require(snapshot["campaign"]["role_address"] in options, "the root holder cannot be written to by its role address")
         page.locator("#detail button.close").click()
 
+    def compose_focus(self, page):
+        self.member_row(page, "worker_a").locator("button", has_text="Details").click()
+        field = page.locator("#detail textarea[name=body]")
+        field.fill("owner draft text")
+        field.evaluate("field => field.setSelectionRange(6, 11)")
+        marker = "Compose focus " + uid()[:8]
+        self.publish("lead", "Delivery during composition", self.to("worker_a"), kind="notice", action="none", summary=marker)
+        # The detail panel sees the event only after its snapshot rerender.
+        self.expect(page.locator("#detail .deliveries-list")).to_contain_text([marker], timeout=15000)
+        self.expect(field).to_be_focused()
+        page.keyboard.insert_text("edited")
+        self.expect(field).to_have_value("owner edited text")
+        page.locator("#detail button.close").click()
+
     def paper_cuts(self, page):
         # A long event title does not wrap the Close button.
         row = page.locator("#flow li.event", has_text="Untrusted").first
@@ -1278,31 +1294,39 @@ class Fixture:
         require(target, "worker_a's pending group delivery is not in the snapshot")
         before_status = {d["delivery_id"]: d["state"] for d in self.event_status(group_id)["deliveries"]}
         before_group = self.group_state()
-        # Hold the real preview reply for 3 s: the confirm control must stay
-        # disabled until it has loaded. The reply itself is the server's.
-        held = []
+        # Keep an abandoned preview in flight. Return the selected
+        # recipient's real preview first, then release the stale response.
+        abandoned_target = next(d for d in snapshot["flow"]["deliveries"] if d["event_id"] == self.events["assign_b"]["event_id"])
+        previews = {}
+        pattern = "**/api/swarm/action/cancel-preview*"
 
-        def delay(route):
-            response = route.fetch()
-            held.append(response.status)
-            try:
-                self.preview_token = json.loads(response.text()).get("preview_token") or ""
-            except ValueError:
-                self.preview_token = ""
-            page.wait_for_timeout(3000)
-            route.fulfill(response=response)
-        page.route("**/api/swarm/action/cancel-preview*", delay)
+        def hold_preview(route):
+            delivery_id = parse_qs(urlsplit(route.request.url).query)["delivery_id"][0]
+            previews[delivery_id] = route
+
+        page.route(pattern, hold_preview)
         try:
-            self.open_member_delivery(page, "worker_a", target["delivery_id"])
-            go = page.locator("#confirm-go")
-            self.expect(page.locator("#confirm")).to_be_visible()
-            require(go.is_disabled(), "confirm is enabled before the preview has loaded")
+            for role, delivery in (("worker_b", abandoned_target), ("worker_a", target)):
+                with page.expect_request(lambda req: "/api/swarm/action/cancel-preview?" in req.url):
+                    self.open_member_delivery(page, role, delivery["delivery_id"])
+                go = page.locator("#confirm-go")
+                self.expect(go).to_be_disabled()
+                if role == "worker_b":
+                    page.locator("#confirm-keep").click()
+                    page.locator("#detail button.close").click()
+            selected = previews[target["delivery_id"]]
+            response = selected.fetch()
+            self.preview_token = response.json()["preview_token"]
+            selected.fulfill(response=response)
+            self.expect(go).to_be_enabled()
+            abandoned = previews[abandoned_target["delivery_id"]]
+            with page.expect_request_finished(lambda req: req.url == abandoned.request.url):
+                abandoned.fulfill(response=abandoned.fetch())
             body = page.locator("#confirm-body")
-            self.expect(body).to_contain_text("Recipient", timeout=15000)
+            self.expect(body.locator(".preview dd").first).to_contain_text(self.principal("worker_a"))
             self.no_null(body, "the cancel preview")
         finally:
-            page.unroute("**/api/swarm/action/cancel-preview*")
-        require(held == [200], f"the preview did not answer 200: {held}")
+            page.unroute(pattern, hold_preview)
         text = body.inner_text()
         require(self.label(snapshot, "worker_a") in text and self.principal("worker_a") in text,
                 "the preview does not name the exact recipient (label and principal)")
@@ -1323,6 +1347,7 @@ class Fixture:
         reply = info.value.json()
         sent = info.value.request.post_data_json or {}
         self.report["preview_token"] = dict(served=bool(self.preview_token), sent=bool(sent.get("preview_token")))
+        require(sent.get("delivery_id") == target["delivery_id"], "a late preview redirected the cancellation")
         require(sent.get("preview_token", "") == self.preview_token, "the cancel did not send the preview's token")
         require(info.value.ok and reply.get("outcome") == "cancelled", "cancel outcome: " + json.dumps(reply)[:300])
         self.expect(page.locator("#confirm-result")).to_contain_text("The store recorded the cancellation", timeout=10000)
