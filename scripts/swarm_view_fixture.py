@@ -259,6 +259,12 @@ class Fixture:
         self.events["early_board"] = self.step("board question before the campaign", lambda: self.publish(
             "worker_b", "Is the flow order final?", {"type": "topic", "name": BOARD_TOPIC},
             summary="Board question: is the flow order final?"))
+        # A request to the owner from a future member, before the campaign exists:
+        # the campaign page owns the delivery, but the event is not in its log.
+        operator_principal = "local-uid:" + str(os.geteuid())
+        self.events["early_request"] = self.step("request to the owner before the campaign", lambda: self.publish(
+            "worker_b", "Please confirm the flow layout.", {"type": "agent", "name": operator_principal},
+            summary="For the owner: flow reader request from before the campaign"))
         time.sleep(1)
         describe = self.supports(["team", "set-campaign"], "--description")
         labels = self.supports(["team", "set-member"], "--role-label")
@@ -899,14 +905,35 @@ class Fixture:
         if not heads:
             raise AssertionError("waiting: the snapshot marks no inbox_head row, so no row offers Acknowledge (needs-you author's field)")
         head = page.locator(f"#needs li.need[data-need='{heads[0]['id']}']")
+        head_event = (heads[0].get("refs") or {}).get("event_id")
+        early = self.events.get("early_request")
+        require(early and head_event == early["event_id"], "the request from before the campaign is not the owner's oldest delivery")
+        in_log = head_event in page.evaluate("() => window.cairnSwarmView.logIDs()")
+        require(not in_log, "the pre-campaign request is in the campaign log")
         head.locator("button", has_text="Acknowledge").click()
-        # The event is in this page's log: the confirmation says nothing extra.
-        require(page.locator("#confirm-body .only-link").count() == 0, "the confirmation warns about a message the page can still open")
+        # Readable through the inbox only: the dialog warns and offers the event.
+        only = page.locator("#confirm-body .only-link")
+        self.expect(only).to_contain_text("only while it is in your inbox")
+        require(only.locator("button", has_text="Open the event").count() == 1, "the confirmation offers no Open the event")
         with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
             page.locator("#confirm-go").click()
         reply = info.value.json()
         require(info.value.ok and (reply.get("delivery") or {}).get("state") == "handled", "acknowledge: " + json.dumps(reply)[:300])
         self.expect(page.locator(f"#needs li.need[data-need='{heads[0]['id']}']")).to_have_count(0, timeout=15000)
+        page.locator("#confirm-keep").click()
+        # After acknowledging, the page has no link to it: the event route no longer opens it here.
+        status = page.evaluate("async ([c, e]) => (await fetch(`/api/swarm/event?campaign=${c}&event_id=${e}`, {cache: 'no-store'})).status",
+                               [CAMPAIGN, head_event])
+        require(status == 404, f"the campaign page can still open an acknowledged inbox-only event ({status})")
+        # The next head's event is in the campaign log: its confirmation says nothing extra.
+        page.wait_for_timeout(2500)
+        nxt = [i for i in self.snapshot()["needs_you"]["items"] if i["type"] == "operator_delivery" and i.get("inbox_head") is True]
+        require(nxt, "no next operator delivery is the head")
+        require((nxt[0].get("refs") or {}).get("event_id") in page.evaluate("() => window.cairnSwarmView.logIDs()"),
+                "the next head's event is not in the campaign log")
+        page.locator(f"#needs li.need[data-need='{nxt[0]['id']}'] button", has_text="Acknowledge").click()
+        require(page.locator("#confirm-body .only-link").count() == 0, "the confirmation warns about a message the page can still open")
+        page.locator("#confirm-keep").click()
 
     def no_null(self, locator, where):
         lines = [line.strip() for line in locator.inner_text().splitlines()]
@@ -970,10 +997,10 @@ class Fixture:
             landing.locator("#event-detail button.close").click()
             outside_row.locator("button", has_text="Acknowledge").click()
             self.no_null(landing.locator("#confirm-body"), "the landing acknowledge dialog")
-            # Not in a log: acknowledging removes the page's only link, and the dialog says so.
-            only = landing.locator("#confirm-body .only-link")
-            self.expect(only).to_contain_text("only while it is in your inbox")
-            require(only.locator("button", has_text="Open the event").count() == 1, "the confirmation offers no Open the event")
+            # The event is also in the landing Messages: the page keeps a link, so no warning.
+            require(landing.locator(f"#landing-events li[data-event='{outside['event_id']}']").count() == 1,
+                    "the landing delivery's event is not in the landing Messages")
+            require(landing.locator("#confirm-body .only-link").count() == 0, "the landing dialog warns although Messages keeps the link")
             with landing.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
                 landing.locator("#confirm-go").click()
             sent = info.value.request.post_data_json or {}
@@ -984,6 +1011,16 @@ class Fixture:
                                      + str(reply.get("code")) + " " + str(reply.get("error"))[:160])
             require((reply.get("delivery") or {}).get("state") == "handled", "landing acknowledge: " + json.dumps(reply)[:300])
             self.expect(landing.locator(f"#landing-needs li.need[data-event='{outside['event_id']}']")).to_have_count(0, timeout=15000)
+            landing.locator("#confirm-keep").click()
+            # After acknowledging and a reload, Messages still opens it.
+            landing.reload()
+            message = landing.locator(f"#landing-events li[data-event='{outside['event_id']}']")
+            self.expect(message).to_have_count(1, timeout=15000)
+            with landing.expect_response(lambda r: "/api/swarm/event?" in r.url) as opened:
+                message.locator("button", has_text="Open").click()
+            require(opened.value.ok, "the landing Messages entry no longer opens after acknowledging")
+            self.expect(landing.locator("#event-body")).to_contain_text("Outside any campaign.", timeout=10000)
+            landing.locator("#event-detail button.close").click()
         finally:
             landing.close()
         campaign_ack = row.locator("button", has_text="Acknowledge")

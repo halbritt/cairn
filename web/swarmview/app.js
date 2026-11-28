@@ -1751,14 +1751,15 @@
     const key = "ack:" + deliveryID;
     const body = byID("confirm-body");
     byID("confirm-title").textContent = "Acknowledge your delivery";
-    const logged = eventID ? state.log.get(eventID) : null;
-    const known = logged || (eventID && state.landingEvents ? state.landingEvents.get(eventID) : null);
+    // What the open page keeps: a campaign page its log, the landing page its
+    // messages. Only an event in neither is readable through the inbox alone.
+    const kept = !eventID ? null : state.campaign ? state.log.get(eventID)
+      : (state.landingEvents ? state.landingEvents.get(eventID) : null);
     setChildren(body,
       note("The server claims your oldest eligible delivery and completes it, so your inbox is acknowledged in order."),
-      known ? el("p", {}, "Expected: ", summaryNode(known)) : null,
-      // When the event is not in this page's log, the delivery is the page's
-      // only link to the message: say so before it goes.
-      eventID && !logged ? el("div", { class: "only-link" },
+      kept ? el("p", {}, "Expected: ", summaryNode(kept)) : null,
+      // The delivery is the page's only link to the message: say so before it goes.
+      eventID && !kept ? el("div", { class: "only-link" },
         note("This page can open the message only while it is in your inbox. After you acknowledge it, the page has no link to it.", "warning"),
         el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(eventID) })) : null);
     prepareConfirm(true, "Acknowledge", async () => {
