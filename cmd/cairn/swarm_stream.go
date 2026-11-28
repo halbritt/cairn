@@ -323,32 +323,25 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 			signedOut()
 			return
 		}
-		if err != nil {
-			code := core.Code(err)
-			if swarmStreamFatal[code] {
-				emit("reset", "", map[string]any{"code": code, "error": err.Error()})
-				return
-			}
-			// The store could not be read. Keep the connection and say so;
-			// the host observations are still their own.
-			if !emit("fault", "", map[string]any{"code": code, "error": err.Error(), "at": s.now()}) || !wait() {
-				return
-			}
-			continue
-		}
-		if read.Resync && !emit("resync", "", map[string]any{"reason": read.ResyncReason, "membership_epoch": read.Snapshot.MembershipEpoch}) {
+		if err != nil && swarmStreamFatal[core.Code(err)] {
+			emit("reset", "", map[string]any{"code": core.Code(err), "error": err.Error()})
 			return
 		}
-		for _, event := range read.Events {
-			if !emit("log", event.Cursor, event) {
+		if err == nil {
+			if read.Resync && !emit("resync", "", map[string]any{"reason": read.ResyncReason, "membership_epoch": read.Snapshot.MembershipEpoch}) {
 				return
 			}
-		}
-		if digest := swarmSnapshotDigest(read.Snapshot); !sentSnapshot || digest != lastSnapshot {
-			if !emit("snapshot", read.Cursor, read.Snapshot) {
-				return
+			for _, event := range read.Events {
+				if !emit("log", event.Cursor, event) {
+					return
+				}
 			}
-			lastSnapshot, sentSnapshot = digest, true
+			if digest := swarmSnapshotDigest(read.Snapshot); !sentSnapshot || digest != lastSnapshot {
+				if !emit("snapshot", read.Cursor, read.Snapshot) {
+					return
+				}
+				lastSnapshot, sentSnapshot = digest, true
+			}
 		}
 		panes := s.paneView(s.now())
 		if digest := swarmPaneDigest(panes); !sentPanes || digest != lastPanes {
@@ -366,11 +359,21 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 		}
 		// Each observation carries its own time, so the page can show the
 		// age of each and mark one stale without hiding the other.
-		if !emit("tick", read.Cursor, map[string]any{
-			"db_observed_at": read.Snapshot.ObservedAt,
-			"panes":          map[string]any{"observed_at": panes.ObservedAt, "status": panes.Status, "error": panes.Error, "stale": panes.Stale},
-			"window":         map[string]any{"observed_at": windows.ObservedAt, "status": windows.Status, "error": windows.Error, "stale": windows.Stale},
-		}) {
+		observations := map[string]any{
+			"panes":  map[string]any{"observed_at": panes.ObservedAt, "status": panes.Status, "error": panes.Error, "stale": panes.Stale},
+			"window": map[string]any{"observed_at": windows.ObservedAt, "status": windows.Status, "error": windows.Error, "stale": windows.Stale},
+		}
+		if err != nil {
+			observations["code"] = core.Code(err)
+			observations["error"] = err.Error()
+			observations["at"] = s.now()
+			if !emit("fault", "", observations) || !wait() {
+				return
+			}
+			continue
+		}
+		observations["db_observed_at"] = read.Snapshot.ObservedAt
+		if !emit("tick", read.Cursor, observations) {
 			return
 		}
 		request.Cursor = read.Cursor
