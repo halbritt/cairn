@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -255,7 +256,12 @@ func TestSwarmTailnetClientList(t *testing.T) {
 	} {
 		refused(name, write("case", content, 0o600))
 	}
-	refused("too large", write("large", strings.Repeat("# filler line of the list\n", 4000)+swarmTestClient+"\n", 0o600))
+	refused("too large", write("large", swarmTestClient+"\n"+strings.Repeat("# filler line of the list\n", 4000), 0o600))
+	// A list that just fits is read whole: an address at its end counts.
+	fits := strings.Repeat("#\n", (swarmTailnetClientsLimit-len(swarmTestOtherClient)-1)/2) + swarmTestOtherClient + "\n"
+	if clients, err = readSwarmTailnetClients(write("fits", fits, 0o600)); err != nil || len(clients) != 1 {
+		t.Fatalf("list of %d bytes: %v %v", len(fits), clients, err)
+	}
 }
 
 func TestSwarmTailnetDoorAccessChecks(t *testing.T) {
@@ -338,6 +344,7 @@ func TestSwarmTailnetDoorAccessChecks(t *testing.T) {
 		"opened from a link":  door(swarmDoorRequest{header: swarmTailnetHeader(map[string]string{"Sec-Fetch-Site": "cross-site"})}),
 		"login in upper case": door(swarmDoorRequest{header: swarmTailnetIdentity([]string{strings.ToUpper(swarmTestTailnetLogin)}, []string{swarmTestClient})}),
 		"second address":      door(swarmDoorRequest{header: swarmTailnetIdentity([]string{swarmTestTailnetLogin}, []string{swarmTestClientV6})}),
+		"v4-mapped notation":  door(swarmDoorRequest{header: swarmTailnetIdentity([]string{swarmTestTailnetLogin}, []string{"::ffff:" + swarmTestClient})}),
 		"host in upper case":  door(swarmDoorRequest{host: strings.ToUpper(swarmTestTailnetHost)}),
 		"own origin":          door(swarmDoorRequest{header: swarmTailnetHeader(map[string]string{"Origin": swarmTestTailnetOrigin})}),
 		"Host passed through": door(swarmDoorRequest{sentHost: swarmTestTailnetHost}),
@@ -412,8 +419,15 @@ func TestSwarmTailnetDoorSignsInByLogin(t *testing.T) {
 		return swarmDoorRequest{path: path, host: swarmTestLoopbackHost, cookies: cookies}.do(server)
 	}
 
+	// Only the page itself starts a session without the token: the browser
+	// says that the request is its own. Any other client gets none.
+	rec := tailnet(http.MethodGet, "/api/auth/session", swarmTailnetHeader(nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"authenticated":false`) || len(rec.Result().Cookies()) != 0 || swarmSessionCount(server) != 0 {
+		t.Fatalf("session question that is not the page's own: %d %s, %d sessions", rec.Code, rec.Body, swarmSessionCount(server))
+	}
+
 	// The first question of the page starts the session: no token.
-	rec := tailnet(http.MethodGet, "/api/auth/session", sameOrigin)
+	rec = tailnet(http.MethodGet, "/api/auth/session", sameOrigin)
 	var first sessionBody
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &first) != nil || !first.Authenticated || first.CSRF == "" || first.Collection != "fixture" {
 		t.Fatalf("sign-in by login: %d %s", rec.Code, rec.Body)
@@ -439,6 +453,26 @@ func TestSwarmTailnetDoorSignsInByLogin(t *testing.T) {
 	// Without the cookie nothing but the session question answers.
 	if rec = tailnet(http.MethodGet, "/api/swarm/landing", sameOrigin); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("landing without a session: %d %s", rec.Code, rec.Body)
+	}
+
+	// The login, the device and the address are checked on every request. A
+	// good session cookie does not replace any of them.
+	for name, q := range map[string]swarmDoorRequest{
+		"another login":      {header: swarmTailnetIdentity([]string{"other@example.com"}, []string{swarmTestClient})},
+		"no login":           {header: swarmTailnetIdentity(nil, []string{swarmTestClient})},
+		"an unlisted device": {header: swarmTailnetIdentity([]string{swarmTestTailnetLogin}, []string{swarmTestOtherClient})},
+		"the serving host":   {header: swarmTailnetIdentity([]string{swarmTestTailnetLogin}, []string{swarmTestServingHost})},
+		"no device":          {header: swarmTailnetIdentity([]string{swarmTestTailnetLogin}, nil)},
+		"no asked-for host":  {header: swarmTailnetHeader(nil), noAsked: true},
+		"another host":       {header: swarmTailnetHeader(nil), asked: []string{"example.com:8087"}},
+	} {
+		q.path, q.host, q.tailnet, q.cookies = "/api/swarm/landing", swarmTestTailnetHost, true, []*http.Cookie{cookie}
+		if rec = q.do(server); rec.Code != http.StatusForbidden {
+			t.Fatalf("good cookie with %s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+	if rec = tailnet(http.MethodGet, "/api/swarm/landing", sameOrigin, cookie); rec.Code != http.StatusOK {
+		t.Fatalf("tailnet session after the refused requests: %d %s", rec.Code, rec.Body)
 	}
 
 	// A session is good only at its own door. The loopback door refuses the
@@ -577,6 +611,7 @@ func TestSwarmTailnetSocket(t *testing.T) {
 			t.Fatal(rErr)
 		}
 		req.Header.Set(swarmTailnetHostHeader, host)
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
 		if login != "" {
 			req.Header.Set(swarmTailnetLoginHeader, login)
 		}
@@ -610,4 +645,217 @@ func TestSwarmTailnetSocket(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || !strings.Contains(raw, `"authenticated":true`) || len(resp.Cookies()) != 1 || !resp.Cookies()[0].Secure {
 		t.Fatalf("socket with the login: %d %s %v", resp.StatusCode, raw, resp.Cookies())
 	}
+}
+
+// The servers are built as the serve command builds them. Only a connection
+// of the socket is at the tailnet door: the headers of tailscaled, written by
+// a local process on the loopback port, sign nobody in.
+func TestSwarmDoorServersMarkOnlyTheSocket(t *testing.T) {
+	tcp, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := tcp.Addr().(*net.TCPAddr).Port
+	directory := swarmShortTempDir(t)
+	path := filepath.Join(directory, "t.sock")
+	unix, err := listenSwarmSocket(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := newSwarmServer(nil, "fixture", port, swarmTestToken, swarmNoPanes)
+	server.reads = &swarmScriptedReads{}
+	if server.tailnet, err = parseSwarmTailnet(swarmTestTailnetOrigin, swarmTestTailnetLogin); err != nil {
+		t.Fatal(err)
+	}
+	server.tailnet.clients = map[netip.Addr]struct{}{netip.MustParseAddr(swarmTestClient): {}}
+	loopback, socket := swarmDoorServers(t.Context(), server, true)
+	if socket == nil || loopback.ConnContext != nil {
+		t.Fatal("the socket server is missing, or the loopback server marks its connections")
+	}
+	if only, none := swarmDoorServers(t.Context(), server, false); only == nil || none != nil {
+		t.Fatal("a server without the tailnet door has a socket server")
+	}
+	go func() { _ = loopback.Serve(tcp) }()
+	go func() { _ = socket.Serve(unix) }()
+	t.Cleanup(func() { _ = loopback.Close(); _ = socket.Close() })
+
+	ask := func(client *http.Client, url, host string) (int, string, int) {
+		t.Helper()
+		req, rErr := http.NewRequest(http.MethodGet, url+"/api/auth/session", nil)
+		if rErr != nil {
+			t.Fatal(rErr)
+		}
+		req.Host = host
+		req.Header.Set(swarmTailnetHostHeader, swarmTestTailnetHost)
+		req.Header.Set(swarmTailnetLoginHeader, swarmTestTailnetLogin)
+		req.Header.Set(swarmTailnetClientHeader, swarmTestClient)
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		resp, rErr := client.Do(req)
+		if rErr != nil {
+			t.Fatal(rErr)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(raw), len(resp.Cookies())
+	}
+	overSocket := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "unix", path)
+	}}
+	t.Cleanup(overSocket.CloseIdleConnections)
+	plain := &http.Transport{}
+	t.Cleanup(plain.CloseIdleConnections)
+
+	loopbackURL := "http://127.0.0.1:" + strconv.Itoa(port)
+	for _, host := range []string{"127.0.0.1:" + strconv.Itoa(port), "localhost:" + strconv.Itoa(port)} {
+		if code, body, cookies := ask(&http.Client{Transport: plain}, loopbackURL, host); code != http.StatusOK || !strings.Contains(body, `"authenticated":false`) || cookies != 0 {
+			t.Fatalf("tailscaled headers on the loopback port as %s: %d %s, %d cookies", host, code, body, cookies)
+		}
+	}
+	for _, host := range []string{"localhost", swarmTestTailnetHost} {
+		if code, body, _ := ask(&http.Client{Transport: plain}, loopbackURL, host); code != http.StatusForbidden {
+			t.Fatalf("loopback port addressed as %s: %d %s", host, code, body)
+		}
+	}
+	if code, body, cookies := ask(&http.Client{Transport: overSocket}, "http://localhost", "localhost"); code != http.StatusOK || !strings.Contains(body, `"authenticated":true`) || cookies != 1 {
+		t.Fatalf("the same request on the socket: %d %s, %d cookies", code, body, cookies)
+	}
+	if n := swarmSessionCount(server); n != 1 {
+		t.Fatalf("%d sessions: only the socket request may start one", n)
+	}
+}
+
+// One server per socket: the lock lasts as long as the listener.
+func TestSwarmTailnetSocketHasOneServer(t *testing.T) {
+	path := filepath.Join(swarmShortTempDir(t), "t.sock")
+	first, err := listenSwarmSocket(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second, sErr := listenSwarmSocket(path); sErr == nil {
+		_ = second.Close()
+		t.Fatal("a second server took the socket of a running one")
+	}
+	// The refused start left the socket of the first server in place.
+	conn, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatalf("the first server's socket after the refused start: %v", err)
+	}
+	_ = conn.Close()
+	if err = first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	next, err := listenSwarmSocket(path)
+	if err != nil {
+		t.Fatalf("a start after the first server stopped: %v", err)
+	}
+	_ = next.Close()
+}
+
+// Each door has its own session limit. The tailnet door signs in without a
+// token, so its sign-ins must never push out a loopback session, and the
+// other way round.
+func TestSwarmSessionLimitIsCountedForEachDoor(t *testing.T) {
+	server := newSwarmTailnetTestServer(t)
+	alive := func(id string) bool { return server.sessionAlive(id) }
+	local, _, err := server.issueSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstTailnet string
+	for i := 0; i < swarmSessionLimit+5; i++ {
+		id, _, iErr := server.issueDoorSession(true)
+		if iErr != nil {
+			t.Fatal(iErr)
+		}
+		if i == 0 {
+			firstTailnet = id
+		}
+	}
+	if !alive(local) {
+		t.Fatal("tailnet sign-ins pushed out the loopback session")
+	}
+	if alive(firstTailnet) {
+		t.Fatal("the oldest tailnet session outlived the limit of its door")
+	}
+	if n := swarmSessionCount(server); n != swarmSessionLimit+1 {
+		t.Fatalf("%d sessions, want the tailnet limit and one loopback session", n)
+	}
+	lastTailnet, _, err := server.issueDoorSession(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < swarmSessionLimit+5; i++ {
+		if _, _, err = server.issueSession(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !alive(lastTailnet) {
+		t.Fatal("loopback sign-ins pushed out a tailnet session")
+	}
+	if alive(local) {
+		t.Fatal("the oldest loopback session outlived the limit of its door")
+	}
+}
+
+// The device list must not name the serving host: tailscaled states the
+// owner's login and the host's own address for every local user and container.
+func TestSwarmTailnetClientListMustNotNameThisHost(t *testing.T) {
+	clients := map[netip.Addr]struct{}{netip.MustParseAddr(swarmTestClient): {}, netip.MustParseAddr(swarmTestClientV6): {}}
+	own := []net.Addr{
+		&net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)},
+		&net.IPNet{IP: net.ParseIP("192.0.2.7"), Mask: net.CIDRMask(24, 32)},
+		&net.IPAddr{IP: net.ParseIP("2001:db8::7")},
+	}
+	if address, listed := swarmListedOwnAddress(clients, own); listed {
+		t.Fatalf("found %s in a list that names no address of the host", address)
+	}
+	for _, mine := range []net.Addr{
+		&net.IPNet{IP: net.ParseIP(swarmTestClient), Mask: net.CIDRMask(32, 32)},
+		&net.IPNet{IP: net.ParseIP(swarmTestClient).To4(), Mask: net.CIDRMask(10, 32)},
+		&net.IPAddr{IP: net.ParseIP(swarmTestClientV6)},
+	} {
+		if address, listed := swarmListedOwnAddress(clients, append(append([]net.Addr{}, own...), mine)); !listed || (address.String() != swarmTestClient && address.String() != swarmTestClientV6) {
+			t.Fatalf("host address %v in the list was not found: %v %v", mine, address, listed)
+		}
+	}
+
+	// The serve command refuses such a list, when this machine has an address
+	// that a list can name.
+	addresses, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, each := range addresses {
+		network, ok := each.(*net.IPNet)
+		address, valid := netip.AddrFromSlice(network.IP)
+		if !ok || !valid || address.Unmap().IsLoopback() || address.Zone() != "" || address.Unmap().IsLinkLocalUnicast() {
+			continue
+		}
+		list := filepath.Join(t.TempDir(), "clients")
+		if err = os.WriteFile(list, []byte(swarmTestClient+"\n"+address.Unmap().String()+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err = runSwarmServe(t.Context(), nil, []string{"--collection", "fixture", "--tailnet-socket", "/run/x/t.sock", "--tailnet-origin", swarmTestTailnetOrigin, "--tailnet-login", swarmTestTailnetLogin, "--tailnet-clients", list})
+		if err == nil || !strings.Contains(err.Error(), "an address of this host") {
+			t.Fatalf("list that names this machine's %s: %v", address.Unmap(), err)
+		}
+		break
+	}
+}
+
+// swarmShortTempDir is a private directory with a short name: a Unix socket
+// address has little room.
+func swarmShortTempDir(t *testing.T) string {
+	t.Helper()
+	directory, err := os.MkdirTemp("", "csw")
+	if err == nil && len(directory) > 80 {
+		_ = os.RemoveAll(directory)
+		directory, err = os.MkdirTemp("/tmp", "csw")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(directory) })
+	return directory
 }

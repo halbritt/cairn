@@ -78,10 +78,12 @@ The four flags come together. The page is then at the `--tailnet-origin`
 address and needs no token. It opens for the named login from the listed
 devices only. The loopback door and its token do not change.
 
-- The socket has mode 0600. Its directory must belong to this user and be
-  closed to everyone else (mode 0700), or the server does not start. Only this
-  user and root can connect. Tailscale Serve, which runs as root, is the
-  intended client.
+- The socket has mode 0600. Its directory must exist, belong to this user and
+  be closed to everyone else (mode 0700), or the server does not start,
+  loopback door included. In a user unit, `RuntimeDirectory=` with
+  `RuntimeDirectoryMode=0700` makes it. Only this user and root can connect.
+  Tailscale Serve, which runs as root, is the intended client. A lock file
+  beside the socket allows one server for each socket.
 - tailscaled states the tailnet login of the caller in `Tailscale-User-Login`
   on each request that it proxies. The door admits a request only when that
   header is there exactly once and equals `--tailnet-login`. A request with no
@@ -94,25 +96,32 @@ devices only. The loopback door and its token do not change.
   address of the caller's device in `X-Forwarded-For` and replaces a value
   that the client sent (measured on Tailscale 1.104.7, IPv4). The door admits
   a request only when that header is there exactly once, holds one address and
-  no list, and the address is in the `--tailnet-clients` file. Do not list the
-  serving host or other servers.
+  no list, and the address is in the `--tailnet-clients` file. The server does
+  not start with a list that names an address of the serving host. Do not
+  list other servers either.
 - The clients file has one tailnet address per line; `#` starts a comment. A
   device has an IPv4 and an IPv6 address: list both. The file must belong to
   this user and be closed to writes by anyone else, and it must name at least
   one address. It is read at start.
-- Both headers are trusted at this door only. The loopback listener ignores
-  them, because any local process can write them there. The door trusts what
-  the token file trusts: this user's processes and root.
+- These headers are trusted at this door only. The loopback listener ignores
+  them, because any local process can write them there. This door trusts more
+  than the token file does: this user's processes and root on this host,
+  tailscaled and the control plane of the tailnet, and every process on a
+  listed device.
 - The request must have been addressed to the tailnet address. For a socket
   target tailscaled sends `Host: localhost` and states the address that the
   browser asked for in `X-Forwarded-Host`; the door reads that header, which
   must be there exactly once. `Origin`, when present, must be that page; a
   request that can change state must state it. The `Sec-Fetch-Site` check and
   the CSRF token apply as on loopback.
-- The first request of the page signs it in. Signing out ends the session; the
-  next visit starts a new one.
-- A session is good only at the door that issued it. The tailnet session
-  cookie is `__Host-cairn_swarm_PORT` (`Secure`, `HttpOnly`,
+- The page's first question (`GET /api/auth/session`) signs it in, when the
+  browser marks the request as the page's own (`Sec-Fetch-Site: same-origin`).
+  Another client on a listed device gets no session that way; it can sign in
+  with the token. Signing out ends the session; the next visit starts a new
+  one.
+- A session is good only at the door that issued it, and each door has its
+  own limit of 64 sessions, so sign-ins at one door never end a session of
+  the other. The tailnet session cookie is `__Host-cairn_swarm_PORT` (`Secure`, `HttpOnly`,
   `SameSite=Strict`). A browser sends it to every `https` service under the
   same host name, whatever the port. Such a service cannot use it at the
   loopback listener, and cannot reach the socket unless it runs as this user.

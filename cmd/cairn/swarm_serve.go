@@ -235,9 +235,24 @@ func readSwarmTailnetClients(path string) (map[netip.Addr]struct{}, error) {
 	return clients, nil
 }
 
+// swarmSocketListener is the listener of the tailnet door with the lock
+// that makes this process the only server of its socket path.
+type swarmSocketListener struct {
+	net.Listener
+	lock *os.File
+}
+
+func (l *swarmSocketListener) Close() error {
+	err := l.Listener.Close()
+	_ = l.lock.Close()
+	return err
+}
+
 // listenSwarmSocket creates the socket of the tailnet door. Its directory
 // must belong to this user and be closed to everyone else, so that no other
-// user can reach the socket, also before its own mode is set.
+// user can reach the socket, also before its own mode is set. A lock file
+// beside the socket is held for as long as the listener is open: a second
+// server is refused, and a socket found without a lock holder is stale.
 func listenSwarmSocket(path string) (net.Listener, error) {
 	if !filepath.IsAbs(path) {
 		return nil, invalid("--tailnet-socket must be an absolute path")
@@ -251,28 +266,79 @@ func listenSwarmSocket(path string) (net.Listener, error) {
 	if !info.IsDir() || info.Mode().Perm()&0o077 != 0 || !ok || int(stat.Uid) != os.Geteuid() {
 		return nil, invalid("the directory of --tailnet-socket must be owned by this user with mode 0700: " + directory)
 	}
+	lock, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = lock.Close()
+		return nil, invalid("another server holds the tailnet socket: " + path)
+	}
 	if existing, lErr := os.Lstat(path); lErr == nil {
 		if existing.Mode()&os.ModeSocket == 0 {
+			_ = lock.Close()
 			return nil, invalid("--tailnet-socket names a file that is not a socket: " + path)
 		}
-		// A socket that an earlier run left behind. The loopback port is
-		// bound before this, so a server that still runs on that port has
-		// already refused this start.
+		// A socket that an earlier run left behind: no server holds the lock.
 		if err = os.Remove(path); err != nil {
+			_ = lock.Close()
 			return nil, err
 		}
 	} else if !errors.Is(lErr, os.ErrNotExist) {
+		_ = lock.Close()
 		return nil, lErr
 	}
 	listener, err := net.Listen("unix", path)
 	if err != nil {
+		_ = lock.Close()
 		return nil, err
 	}
 	if err = os.Chmod(path, 0o600); err != nil {
 		_ = listener.Close()
+		_ = lock.Close()
 		return nil, err
 	}
-	return listener, nil
+	return &swarmSocketListener{Listener: listener, lock: lock}, nil
+}
+
+// swarmListedOwnAddress reports a listed device address that is an address
+// of this host. Such a line would admit every local user and container:
+// tailscaled states the owner's login and the host's own address for them.
+func swarmListedOwnAddress(clients map[netip.Addr]struct{}, own []net.Addr) (netip.Addr, bool) {
+	for _, each := range own {
+		var ip net.IP
+		switch value := each.(type) {
+		case *net.IPNet:
+			ip = value.IP
+		case *net.IPAddr:
+			ip = value.IP
+		}
+		address, ok := netip.AddrFromSlice(ip)
+		if !ok {
+			continue
+		}
+		address = address.Unmap()
+		if _, listed := clients[address]; listed {
+			return address, true
+		}
+	}
+	return netip.Addr{}, false
+}
+
+// swarmDoorServers builds the HTTP server of each door. Only the server of
+// the socket marks its connections, and the handler applies the tailnet
+// rules to a marked connection and the loopback rules to any other.
+func swarmDoorServers(ctx context.Context, handler http.Handler, tailnet bool) (loopback, socket *http.Server) {
+	base := func(net.Listener) context.Context { return ctx }
+	// No write timeout: the stream stays open. Each stream write sets its own deadline.
+	loopback = &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, BaseContext: base}
+	if tailnet {
+		// tailscaled keeps connections to the socket and reuses them. A long
+		// idle time here lets tailscaled close an idle connection first, so
+		// that it does not send a request into one that this side has closed.
+		socket = &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 5 * time.Minute, BaseContext: base, ConnContext: swarmTailnetConn}
+	}
+	return loopback, socket
 }
 
 // errSwarmSessionEnded refuses a commit for a session that has ended.
@@ -495,17 +561,23 @@ func (s *swarmServer) issueDoorSession(tailnet bool) (string, string, error) {
 	now := s.now()
 	var ended []*swarmSessionCommits
 	s.mu.Lock()
-	oldest, oldestAt := "", time.Time{}
+	// The limit is counted for each door. A sign-in at one door never pushes
+	// out a session of the other: the tailnet door signs in without a token.
+	oldest, oldestAt, count := "", time.Time{}, 0
 	for key, session := range s.sessions {
 		if !session.expires.After(now) {
 			ended = append(ended, s.endSessionLocked(key))
 			continue
 		}
+		if session.tailnet != tailnet {
+			continue
+		}
+		count++
 		if oldest == "" || session.expires.Before(oldestAt) {
 			oldest, oldestAt = key, session.expires
 		}
 	}
-	if len(s.sessions) >= swarmSessionLimit {
+	if count >= swarmSessionLimit {
 		ended = append(ended, s.endSessionLocked(oldest))
 	}
 	s.sessions[id] = swarmBrowserSession{csrf: csrf, expires: now.Add(swarmSessionLifetime), revoked: make(chan struct{}), commits: newSwarmSessionCommits(), tailnet: tailnet}
@@ -803,9 +875,12 @@ func (s *swarmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, session, ok := s.session(r); ok {
 			writeSwarmJSON(w, http.StatusOK, map[string]any{"authenticated": true, "csrf_token": session.csrf, "collection": s.collection, "plane_url": s.planeURL})
-		} else if tailnet {
-			// The tailnet door has already admitted the login that tailscaled
-			// stated, so the page is signed in without the token.
+		} else if tailnet && r.Header.Get("Sec-Fetch-Site") == "same-origin" {
+			// The tailnet door has already admitted the login and the device
+			// that tailscaled stated, so the page is signed in without the
+			// token. Only this page starts a session this way: the browser
+			// must say that the request is its own. Any other client of a
+			// listed device gets no session here and can sign in with the token.
 			id, csrf, err := s.issueDoorSession(true)
 			if err != nil {
 				swarmRefuse(w, http.StatusInternalServerError, "INTERNAL", "could not create a session")
@@ -988,6 +1063,13 @@ func runSwarmServe(ctx context.Context, store *core.Store, args []string) (any, 
 		if door.clients, tErr = readSwarmTailnetClients(*tailnetClients); tErr != nil {
 			return nil, tErr
 		}
+		own, oErr := net.InterfaceAddrs()
+		if oErr != nil {
+			return nil, oErr
+		}
+		if address, listed := swarmListedOwnAddress(door.clients, own); listed {
+			return nil, invalid("--tailnet-clients lists " + address.String() + ", an address of this host: every local user and container would be admitted")
+		}
 		tailnet = door
 	}
 	if *planeURL != "" {
@@ -1036,15 +1118,11 @@ func runSwarmServe(ctx context.Context, store *core.Store, args []string) (any, 
 	// The true window fill comes from the harness transcripts of this host.
 	server.windows = newSwarmWindowLoop(newTranscriptWindowReader(directory, "/proc"), 15*time.Second, 60*time.Second)
 	fmt.Fprintf(os.Stderr, "cairn swarm view: http://127.0.0.1:%d/ (collection %s; token file %s)\n", bound, *collection, path)
-	// No write timeout: the stream stays open. Each stream write sets its own deadline.
-	httpServer := &http.Server{Handler: server, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}
+	httpServer, tailnetServer := swarmDoorServers(ctx, server, tailnetListener != nil)
 	servers := []*http.Server{httpServer}
 	failed := make(chan error, 2)
 	go func() { failed <- httpServer.Serve(listener) }()
-	if tailnetListener != nil {
-		// The same handler behind the second door. Every connection of the
-		// socket is marked, and the handler applies the tailnet rules to it.
-		tailnetServer := &http.Server{Handler: server, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }, ConnContext: swarmTailnetConn}
+	if tailnetServer != nil {
 		servers = append(servers, tailnetServer)
 		fmt.Fprintf(os.Stderr, "cairn swarm view: tailnet address %s/ (socket %s; %d client addresses)\n", tailnet.origin, *tailnetSocket, len(tailnet.clients))
 		go func() { failed <- tailnetServer.Serve(tailnetListener) }()
