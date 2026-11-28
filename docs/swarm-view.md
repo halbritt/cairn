@@ -32,6 +32,10 @@ in and removes it from the address bar.
 | `--token-file PATH` | Login token file. Default `swarm-view.token` in the Cairn state directory. |
 | `--bindings DIR` | Coordination bindings directory for the Herdr read. Default `coordination/bindings` in the Cairn state directory. |
 | `--plane-url TEMPLATE` | Address of a tracker item, with `{id}` for the identifier. Optional. |
+| `--tailnet-socket PATH` | Unix socket of the [tailnet address](#tailnet-address). Optional; needs the three flags below. |
+| `--tailnet-origin URL` | The page's `https` address on the tailnet, with no path. |
+| `--tailnet-login LOGIN` | The one tailnet login that may open the page at that address. |
+| `--tailnet-clients PATH` | File that lists the tailnet addresses of the devices that may open it. |
 
 The server opens the store with the local operator channel, as other operator
 commands do. It needs schema version 96 or later.
@@ -40,7 +44,8 @@ commands do. It needs schema version 96 or later.
 
 - The listener is loopback only. A request whose `Host` is not
   `127.0.0.1:PORT` or `localhost:PORT` is refused, and so is an `Origin` other
-  than the page's own.
+  than the page's own. The optional [tailnet address](#tailnet-address) is a
+  second door with its own rules.
 - A browser signs in by presenting the token from the token file. The server
   creates a missing token file with mode 0600 and refuses a file that another
   user can read. The token is compared in constant time.
@@ -53,7 +58,66 @@ commands do. It needs schema version 96 or later.
   not `same-origin`. The stream is a `GET` with no `Origin` header, so this is
   the check that keeps another local page from opening it.
 
-Exposure beyond loopback is an owner decision and is not provided.
+### Tailnet address
+
+Exposure beyond loopback is an owner decision. One form is provided: an
+address on the owner's tailnet behind Tailscale Serve, by the owner's decision
+of 2026-11-28. The server itself still listens on no network address. It
+opens a second door, a Unix socket, and Tailscale Serve proxies to it.
+
+```sh
+cairn swarm serve --collection "$HOME/git/cairn" \
+  --tailnet-socket "$XDG_RUNTIME_DIR/cairn-swarm/tailnet.sock" \
+  --tailnet-origin https://HOST.TAILNET.ts.net:8087 \
+  --tailnet-login OWNER_LOGIN \
+  --tailnet-clients "$HOME/.config/cairn/swarm-tailnet-clients"
+sudo tailscale serve --bg --https=8087 "unix:$XDG_RUNTIME_DIR/cairn-swarm/tailnet.sock"
+```
+
+The four flags come together. The page is then at the `--tailnet-origin`
+address and needs no token. It opens for the named login from the listed
+devices only. The loopback door and its token do not change.
+
+- The socket has mode 0600. Its directory must belong to this user and be
+  closed to everyone else (mode 0700), or the server does not start. Only this
+  user and root can connect. Tailscale Serve, which runs as root, is the
+  intended client.
+- tailscaled states the tailnet login of the caller in `Tailscale-User-Login`
+  on each request that it proxies. The door admits a request only when that
+  header is there exactly once and equals `--tailnet-login`. A request with no
+  such header or with another login is refused. On Tailscale 1.104.7,
+  tailscaled replaced a value that the client had sent in that header.
+- The login is not enough. tailscaled states the same login for every device
+  of that user. That includes the serving host itself: any local user or
+  container that calls the tailnet address gets the login of the host's
+  owner. So the door also needs the device. tailscaled states the tailnet
+  address of the caller's device in `X-Forwarded-For` and replaces a value
+  that the client sent (measured on Tailscale 1.104.7, IPv4). The door admits
+  a request only when that header is there exactly once, holds one address and
+  no list, and the address is in the `--tailnet-clients` file. Do not list the
+  serving host or other servers.
+- The clients file has one tailnet address per line; `#` starts a comment. A
+  device has an IPv4 and an IPv6 address: list both. The file must belong to
+  this user and be closed to writes by anyone else, and it must name at least
+  one address. It is read at start.
+- Both headers are trusted at this door only. The loopback listener ignores
+  them, because any local process can write them there. The door trusts what
+  the token file trusts: this user's processes and root.
+- `Host` must be the tailnet address. `Origin`, when present, must be that
+  page; a request that can change state must state it. The `Sec-Fetch-Site`
+  check and the CSRF token apply as on loopback.
+- The first request of the page signs it in. Signing out ends the session; the
+  next visit starts a new one.
+- A session is good only at the door that issued it. The tailnet session
+  cookie is `__Host-cairn_swarm_PORT` (`Secure`, `HttpOnly`,
+  `SameSite=Strict`). A browser sends it to every `https` service under the
+  same host name, whatever the port. Such a service cannot use it at the
+  loopback listener, and cannot reach the socket unless it runs as this user.
+- The server sends no `Strict-Transport-Security`, because services on other
+  ports share the host name.
+
+To turn the tailnet address off, run `sudo tailscale serve --https=8087 off`
+and remove the four flags.
 
 ## Live updates
 

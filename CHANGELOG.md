@@ -9,6 +9,16 @@ installation with `cairn version`; use
 See [build identity](docs/build-identity.md) for unstamped builds and MCP
 processes.
 
+## 2026-11-28
+
+- `cairn swarm serve` can give the page an address on the owner's tailnet
+  (`--tailnet-socket`, `--tailnet-origin`, `--tailnet-login`,
+  `--tailnet-clients`), by the owner's decision. Tailscale Serve proxies to a
+  Unix socket that only this user and root can reach. The page signs in the
+  one named tailnet login from the listed devices without the token. The
+  loopback listener and its token do not change
+  ([swarm view](docs/swarm-view.md#tailnet-address), CAIRN-826).
+
 ## 2026-11-27
 
 - `cairn swarm serve` runs the live campaign page on loopback, and

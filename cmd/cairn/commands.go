@@ -69,7 +69,7 @@ Everyday commands:
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST | proposal PROPOSAL_UUID | evidence EVIDENCE_UUID | refusal REFUSAL_UUID
   list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--task TASK] [--run RUN] [--limit N] [--offset N] [--days N] REPO | telemetry-report [--harness H] [--session SID] [--days N] REPO | run-report [--policy-rev REVISION_UUID|local-loop/1] [--task TASK] [--run RUN] [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
   work project (add|list|show|disable) | work refresh | work list | work show | work associate | work unassociate | work progress | work blocker | work artifact | work advice | work metadata | work features
-  swarm serve --collection REPO [--port PORT] [--token-file PATH] | swarm url [--port PORT] (the swarm view page; see docs/swarm-view.md)
+  swarm serve --collection REPO [--port PORT] [--token-file PATH] [--tailnet-socket PATH --tailnet-origin URL --tailnet-login LOGIN --tailnet-clients PATH] | swarm url [--port PORT] (the swarm view page; see docs/swarm-view.md)
 
 JSON commands (read one request from stdin):
   event-admission-policy event-admission-configure event-pressure-collection event-fanout-collection event-admission-preview-collection event-admission-refusals (local operator; see docs/event-admission.md)

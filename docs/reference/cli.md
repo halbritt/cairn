@@ -216,5 +216,9 @@ cairn swarm url
 
 `swarm serve` listens on `127.0.0.1` (default port 8087) with the local
 operator channel. `swarm url` prints the page address with the login token.
+With `--tailnet-socket`, `--tailnet-origin`, `--tailnet-login` and
+`--tailnet-clients`, the page also has an address on the owner's tailnet
+behind Tailscale Serve. It opens signed in for one tailnet login from the
+listed devices.
 See [swarm view](../swarm-view.md) for access rules, the event stream and the
 operator actions.

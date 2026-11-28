@@ -158,7 +158,8 @@ time. Cookies on loopback are shared across ports, so the session cookie name
 carries the bound port. The stream is a GET with no `Origin` header, so the
 stream route also checks `Sec-Fetch-Site`. The view runs as a user unit so that
 it is active without a manual start. Exposure beyond loopback stays an owner
-decision and is not part of this design.
+decision and is not part of this design. The owner took that decision on
+2026-11-28; see the owner decisions below.
 
 ## Herdr pane state
 
@@ -376,6 +377,18 @@ build ("read the transcripts"). The reader takes only token counts, model
 names, record types and times from a transcript; no message text leaves it and
 nothing is stored. The Cairn-attributed figures stay on the page beside it as
 a proxy. [Swarm view](../swarm-view.md#context-room) describes the result.
+
+On 2026-11-28 the owner extended decision 1: the page also has an address
+that the owner can open from another device ("Put it on a URL that I can
+click on"). The owner's words name the result. The construction is the
+lead's: the page is published on the owner's tailnet behind Tailscale Serve,
+as the other services of the host are. The server still listens on no network
+address. It opens a second door, a Unix socket that only this user and root
+can reach, and signs in the one tailnet login from the devices that the
+owner's unit names, as tailscaled states both on each proxied request. The
+login alone would also admit the serving host itself and every container on
+it. The loopback door and its token do not change. [Swarm view](../swarm-view.md#tailnet-address) describes the
+result.
 
 Deferred, with no work: whether to revisit orchestration inside Cairn after
 Striatum-next lands.
