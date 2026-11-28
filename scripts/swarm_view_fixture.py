@@ -615,7 +615,7 @@ class Fixture:
         self.check("NOT_FOUND stops, offers the landing page and does not retry", lambda: self.not_found(page), page)
         self.check("a refusal that persists stays visible and is retried slowly", lambda: self.persistent_refusal(page), page)
         self.check("a transient store fault keeps the cursor", lambda: self.store_fault(page), page)
-        self.check("sign-out in a second tab ends the first tab's stream", lambda: self.second_tab_signout(page), page)
+        self.check("sign-out in a second tab ends the first tab's stream; an old 401 leaves the next session live", lambda: self.second_tab_signout(page), page)
         self.check("the context room shows the transcript fill, the near-limit mark and unknowns", lambda: self.context_cell(page), page)
         self.check("every member row says what it works on, by source", lambda: self.working_on(page), page)
         self.check("the header counts enrolled, online and stopped apart", lambda: self.header_counts(page), page)
@@ -752,6 +752,14 @@ class Fixture:
         require(len(ids) == len(set(ids)) and not (before - set(ids)), "the outage lost or repeated an event")
 
     def second_tab_signout(self, page):
+        # Pause a real preview request. Read its 401 after logout and
+        # deliver the response only when the next session has a dialog open.
+        delivery = next(d for d in self.snapshot()["flow"]["deliveries"] if d["event_id"] == self.events["assign_b"]["event_id"])
+        held = []
+        page.route("**/api/swarm/action/cancel-preview*", lambda route: held.append(route), times=1)
+        with page.expect_request(lambda req: "/api/swarm/action/cancel-preview?" in req.url):
+            self.open_member_delivery(page, "worker_b", delivery["delivery_id"])
+        self.expect(page.locator("#confirm-go")).to_be_disabled()
         other = page.context.new_page()
         try:
             other.goto(self.campaign_url(token=False))
@@ -761,15 +769,23 @@ class Fixture:
             require("UNAUTHENTICATED" in page.evaluate("window.cairnSwarmView.resets()"), "the stream did not end with UNAUTHENTICATED")
         finally:
             other.close()
+        expired = held[0].fetch()
+        require(expired.status == 401, "the signed-out session's preview was not refused")
         before = set(page.evaluate("window.cairnSwarmView.logIDs()"))
         page.fill("#token-input", self.token)
         page.click("#signin button[type=submit]")
         self.expect(page.locator("#live")).to_have_text("live", timeout=15000)
+        self.open_member_delivery(page, "worker_b", delivery["delivery_id"])
+        self.expect(page.locator("#confirm-go")).to_be_enabled()
+        with page.expect_request_finished(lambda req: req.url == held[0].request.url):
+            held[0].fulfill(response=expired)
         marker = "signin-" + uid()[:8]
         self.publish("lead", "After signing in again.", self.to("worker_a"), kind="notice", action="none", summary="Back " + marker)
         self.expect(page.locator("#flow li.event", has_text=marker)).to_have_count(1, timeout=15000)
         ids = page.evaluate("window.cairnSwarmView.logIDs()")
         require(len(ids) == len(set(ids)) and not (before - set(ids)), "signing in again lost or repeated an event")
+        self.expect(page.locator("#confirm")).to_be_visible()
+        self.expect(page.locator("#confirm-go")).to_be_enabled()
 
     def member_row(self, page, role):
         return page.locator(f"#agents .agent[data-member='{self.principal(role)}']")
