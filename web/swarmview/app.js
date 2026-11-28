@@ -1490,7 +1490,7 @@
     renderDetail(principal);
     openDialog("detail");
     if (focusCompose) {
-      const form = byID("detail-body").querySelector("form.compose");
+      const form = byID("detail-compose").querySelector("form.compose");
       if (form) {
         if (supersedes) {
           form.elements.kind.value = "notice";
@@ -1507,9 +1507,6 @@
     const label = member ? member.label || shortPrincipal(principal) : labelOf(principal);
     byID("detail-title").textContent = label;
     const body = byID("detail-body");
-    // Keep a draft that the owner is writing across snapshot updates.
-    const existing = body.querySelector("form.compose");
-    const draft = existing && existing.dataset.principal === principal ? existing : null;
     body.replaceChildren();
     body.append(el("p", { class: "meta" }, el("code", { text: principal }),
       member && member.session ? ` · ${presenceText(member.session).textContent}` : ""));
@@ -1540,10 +1537,26 @@
       : note("none in the window"));
 
     body.append(el("h3", { text: "Write to " + label }));
-    if (canWrite(principal) || (member && member.role_address && canWrite(member.role_address))) {
-      body.append(draft || composeForm(principal, member && member.role_address));
+    const compose = byID("detail-compose");
+    const roleAddress = member && member.role_address;
+    const targets = [principal, roleAddress].filter((target) => target && canWrite(target));
+    if (targets.length) {
+      let form = compose.querySelector("form.compose");
+      if (!form || form.dataset.principal !== principal) {
+        form = composeForm(principal);
+        compose.replaceChildren(form);
+      }
+      // Keep the draft attached so typing, focus and selection survive live reads.
+      const select = form.elements.to;
+      const options = [...select.options];
+      if (options.length !== targets.length || targets.some((target, i) => options[i].value !== target)) {
+        const selected = select.value;
+        select.replaceChildren(...targets.map((target) => el("option", { value: target,
+          text: target === roleAddress ? `${target} (the role, whoever holds it)` : `${labelOf(target)} (${target})` })));
+        if (targets.includes(selected)) select.value = selected;
+      }
     } else {
-      body.append(note(state.snapshot && state.snapshot.campaign && state.snapshot.campaign.active === false
+      compose.replaceChildren(note(state.snapshot && state.snapshot.campaign && state.snapshot.campaign.active === false
         ? "The campaign is inactive; the page sends to no one in it."
         : "Not a current principal of the campaign (it left, or handed off); the page sends only to the root, active members and role addresses."));
     }
@@ -1585,17 +1598,13 @@
     form.querySelector(".notice-only").hidden = !notice;
   }
 
-  function composeForm(principal, roleAddress) {
+  function composeForm(principal) {
     const form = el("form", { class: "compose", dataset: { principal } });
     const ids = { to: uuid(), kind: uuid(), action: uuid(), summary: uuid(), body: uuid(), supersedes: uuid() };
-    // The holder of a role address can be written to by its address, which
-    // follows the role across a handoff.
-    const targets = [principal, roleAddress].filter((target) => target && canWrite(target));
     form.append(
       el("div", { class: "row" },
         el("label", { for: ids.to, text: "To" }),
-        el("select", { id: ids.to, name: "to" }, targets.map((target) => el("option", { value: target,
-          text: target === roleAddress ? `${target} (the role, whoever holds it)` : `${labelOf(target)} (${target})` })))),
+        el("select", { id: ids.to, name: "to" })),
       el("div", { class: "row" },
         el("label", { for: ids.kind, text: "Kind" }),
         el("select", { id: ids.kind, name: "kind" }, el("option", { value: "request", text: "request" }), el("option", { value: "notice", text: "notice" }))),
@@ -1752,6 +1761,8 @@
 
   // ---------------------------------------------------------------- actions
 
+  let confirmationVersion = 0;
+
   async function acknowledge(deliveryID, eventID) {
     const key = "ack:" + deliveryID;
     const body = byID("confirm-body");
@@ -1845,8 +1856,7 @@
       } catch (error) {
         if (error.status === 409 && error.body && error.body.wait) {
           pendingRequests.delete(key);
-          cancelWait(waitID, error.body.wait, true);
-          return { reconfirm: "The wait changed; review it above and confirm again." };
+          return { reconfirm: () => cancelWait(waitID, error.body.wait, true) };
         }
         throw error;
       }
@@ -1872,16 +1882,17 @@
     byID("confirm-title").textContent = "Cancel this recipient's delivery";
     const body = byID("confirm-body");
     setChildren(body, note("Reading what the cancel affects…"));
-    prepareConfirm(false, "Cancel this delivery", null);
+    const isCurrent = prepareConfirm(false, "Cancel this delivery", null);
     openDialog("confirm");
     let preview;
     try {
       preview = await api(`/api/swarm/action/cancel-preview?campaign=${encodeURIComponent(state.campaign)}&delivery_id=${encodeURIComponent(deliveryID)}`);
     } catch (error) {
+      if (!isCurrent()) return;
       setChildren(body, note("The preview is unavailable, so the cancel cannot be confirmed. " + refusalText(error), "unavailable"));
       return;
     }
-    showCancelPreview(deliveryID, preview, false);
+    if (isCurrent()) showCancelPreview(deliveryID, preview, false);
   }
 
   // The confirmation shows exactly what the store previewed, and sends its
@@ -1945,8 +1956,7 @@
       } catch (error) {
         if (error.status === 409 && error.code === "VERSION_CONFLICT" && error.body && error.body.preview) {
           pendingRequests.delete(attempt);
-          showCancelPreview(deliveryID, error.body.preview, true);
-          return { reconfirm: "What the cancel affects changed; review it above and confirm again." };
+          return { reconfirm: () => showCancelPreview(deliveryID, error.body.preview, true) };
         }
         throw error;
       }
@@ -1956,6 +1966,8 @@
   }
 
   function prepareConfirm(enabled, label, run) {
+    const version = ++confirmationVersion;
+    const isCurrent = () => version === confirmationVersion && byID("confirm").open;
     const go = byID("confirm-go");
     const result = byID("confirm-result");
     result.textContent = "";
@@ -1971,20 +1983,23 @@
         const outcome = await run();
         if (outcome && outcome.reconfirm) {
           // What was shown changed: a new confirmation is required.
-          result.textContent = outcome.reconfirm;
+          if (isCurrent()) outcome.reconfirm();
           return;
         }
+        refreshSnapshot();
+        if (!isCurrent()) return;
         result.textContent = outcome;
         go.hidden = true;
         byID("confirm-keep").textContent = "Close";
-        refreshSnapshot();
       } catch (error) {
+        if (!isCurrent()) return;
         result.className = "refused";
         result.textContent = refusalText(error) + " Trying again reuses the same request.";
         go.disabled = false;
       }
     } : null;
     go.hidden = false;
+    return isCurrent;
   }
 
   // Ages move on without a new message.
