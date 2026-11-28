@@ -142,6 +142,10 @@ transaction, and only while a browser is connected. It takes no lock.
 
 ### Which events belong to a campaign
 
+Member details and coordinator totals include all open ledger items held by
+the relevant members. The log links events to the first 500 ledger items in
+kind and key order and labels the links incomplete when that list is capped.
+
 An event is in the campaign's log when it was created after the campaign and
 one of these holds:
 
@@ -188,9 +192,10 @@ inactive or changing its role does not change the epoch.
 | `log` | cursor | One event envelope (`SwarmEvent`). No record body. |
 | `snapshot` | cursor | The whole snapshot (`cairn.swarm-snapshot/1`). |
 | `herdr` | | The pane observation: `observed_at`, `status` (`ok`, `unavailable`, `pending`), `error`, `stale`, `sessions`, `panes` by agent UUID. Sent when it changes. |
-| `window` | | The context-window observation read from the harness transcripts of this host: `observed_at`, `status`, `error`, `stale`, `sessions`, `near_limit_rule`, `windows` by agent UUID (`used_tokens`, `window_tokens`, `model`, `measured_at`, `compactions`, `last_compaction_at`, `source`, `near_limit`) and `unknown` by agent UUID with the reason. Sent when it changes. |
-| `tick` | cursor | `db_observed_at`, and `panes` and `window` (`observed_at`, `status`, `error`, `stale` each). Sent after every read. |
-| `fault` | | `code`, `error`, `at`. The store could not be read; the server keeps trying. |
+| `window` | | The context-window observation read from the harness transcripts of this host: `observed_at`, `status`, `error`, `stale`, `sessions`, `near_limit_rule`, `windows` by agent UUID (`used_tokens`, `window_tokens`, `model`, `measured_at`, `compactions`, `compactions_partial`, `last_compaction_at`, `source`, `near_limit`) and `unknown` by agent UUID with the reason. Sent when it changes. |
+| `tick` | cursor | `db_observed_at`, and `panes` and `window` (`observed_at`, `status`, `error`, `stale` each). Sent after each successful store read. |
+| `host` | | `panes` and `window` observation times and status. Sent each tick while a store read is still pending. The previous database observation ages until the read completes. |
+| `fault` | | `code`, `error`, `at`. The store read failed. The server keeps its cursor, retries, and includes the latest `panes` and `window` observation times and status as in `tick`. |
 | `reset` | | `code`, `error`. The stream cannot continue and the server closes it. |
 
 A stream request from a signed-in session is always answered as an event
@@ -411,8 +416,13 @@ after the first, the current interval is unknown. A value without a
 measurement in the interval is unknown. The source timestamp is the newest
 counter observation among the campaign's sessions. The proxy flags a session
 at 64 KiB of measured Cairn output in the current interval, a fixed
-threshold for accumulated output across multiple hooks. Harness-reported
-window fill is read independently.
+threshold for accumulated output across multiple hooks. When the transcript gives
+both usage and capacity, its fill determines the near-limit warning. Otherwise
+the page labels high Cairn injection separately and shows the fill as unknown.
+
+The transcript reader inspects up to the last 2 MiB. For a longer transcript,
+`compactions_partial` is true and the count covers only markers in that tail.
+The page also shows the store’s recorded compaction count and time when available.
 
 ## Plane
 
@@ -480,7 +490,9 @@ Delivery cancellation and preview require a campaign consumer. The delivery
 must belong to a campaign event or be live for an active member. Siblings in
 a preview give context about a shared event. Wait cancellation requires a
 waiting state and a campaign owner. A wait can be visible through its
-dependency even when that owner is outside the campaign. An out-of-scope
+dependency even when that owner is outside the campaign. The flow marks
+scope on each delivery and waiting wait so the page offers cancellation
+only where this campaign can act. The preview rechecks current state. An out-of-scope
 target and an unknown ID both return `NOT_FOUND` before confirmation fields
 are checked. A matching committed cancellation receipt can read back its
 terminal result if the recipient or wait owner still passes campaign scope.

@@ -167,6 +167,11 @@ func (s *swarmServer) windowView(now time.Time) swarmWindowView {
 	return swarmWindowView{swarmWindowObservation: observation, Stale: stale}
 }
 
+type swarmReadResult struct {
+	read core.SwarmStreamRead
+	err  error
+}
+
 type swarmStreamWriter struct {
 	w          http.ResponseWriter
 	flusher    http.Flusher
@@ -307,13 +312,64 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 	}
 	var lastSnapshot, lastPanes, lastWindows [sha256.Size]byte
 	sentSnapshot, sentPanes, sentWindows := false, false, false
+	observeHost := func() map[string]any {
+		panes := s.paneView(s.now())
+		if digest := swarmPaneDigest(panes); !sentPanes || digest != lastPanes {
+			if !emit("herdr", "", panes) {
+				return nil
+			}
+			lastPanes, sentPanes = digest, true
+		}
+		windows := s.windowView(s.now())
+		if digest := swarmWindowDigest(windows); !sentWindows || digest != lastWindows {
+			if !emit("window", "", windows) {
+				return nil
+			}
+			lastWindows, sentWindows = digest, true
+		}
+		// Each observation carries its own time, so the page can show the
+		// age of each and mark one stale without hiding the other.
+		return map[string]any{
+			"panes":  map[string]any{"observed_at": panes.ObservedAt, "status": panes.Status, "error": panes.Error, "stale": panes.Stale},
+			"window": map[string]any{"observed_at": windows.ObservedAt, "status": windows.Status, "error": windows.Error, "stale": windows.Stale},
+		}
+	}
+	readResults := make(chan swarmReadResult, 1)
+	pendingTick := time.NewTicker(s.tick)
+	defer pendingTick.Stop()
+	store := s.reads
 	for {
 		// Nothing is read for a session that has ended.
 		if !s.sessionAlive(sessionID) {
 			signedOut()
 			return
 		}
-		read, err := s.reads.ReadSwarmStream(streamCtx, request)
+		// Only one store read is in flight. While it waits for a connection
+		// or for PostgreSQL, publish the independently sampled host state.
+		pendingTick.Reset(s.tick)
+		go func(request core.SwarmStreamRequest) {
+			read, err := store.ReadSwarmStream(streamCtx, request)
+			readResults <- swarmReadResult{read, err}
+		}(request)
+		var result swarmReadResult
+	waitForRead:
+		for {
+			select {
+			case result = <-readResults:
+				break waitForRead
+			case <-streamCtx.Done():
+				if ctx.Err() == nil {
+					signedOut()
+				}
+				return
+			case <-pendingTick.C:
+				observations := observeHost()
+				if observations == nil || !emit("host", "", observations) {
+					return
+				}
+			}
+		}
+		read, err := result.read, result.err
 		if ctx.Err() != nil {
 			return
 		}
@@ -323,54 +379,41 @@ func (s *swarmServer) handleStream(w http.ResponseWriter, r *http.Request, sessi
 			signedOut()
 			return
 		}
-		if err != nil {
-			code := core.Code(err)
-			if swarmStreamFatal[code] {
-				emit("reset", "", map[string]any{"code": code, "error": err.Error()})
+		if err != nil && swarmStreamFatal[core.Code(err)] {
+			emit("reset", "", map[string]any{"code": core.Code(err), "error": err.Error()})
+			return
+		}
+		if err == nil {
+			if read.Resync && !emit("resync", "", map[string]any{"reason": read.ResyncReason, "membership_epoch": read.Snapshot.MembershipEpoch}) {
 				return
 			}
-			// The store could not be read. Keep the connection and say so;
-			// the host observations are still their own.
-			if !emit("fault", "", map[string]any{"code": code, "error": err.Error(), "at": s.now()}) || !wait() {
+			for _, event := range read.Events {
+				if !emit("log", event.Cursor, event) {
+					return
+				}
+			}
+			if digest := swarmSnapshotDigest(read.Snapshot); !sentSnapshot || digest != lastSnapshot {
+				if !emit("snapshot", read.Cursor, read.Snapshot) {
+					return
+				}
+				lastSnapshot, sentSnapshot = digest, true
+			}
+		}
+		observations := observeHost()
+		if observations == nil {
+			return
+		}
+		if err != nil {
+			observations["code"] = core.Code(err)
+			observations["error"] = err.Error()
+			observations["at"] = s.now()
+			if !emit("fault", "", observations) || !wait() {
 				return
 			}
 			continue
 		}
-		if read.Resync && !emit("resync", "", map[string]any{"reason": read.ResyncReason, "membership_epoch": read.Snapshot.MembershipEpoch}) {
-			return
-		}
-		for _, event := range read.Events {
-			if !emit("log", event.Cursor, event) {
-				return
-			}
-		}
-		if digest := swarmSnapshotDigest(read.Snapshot); !sentSnapshot || digest != lastSnapshot {
-			if !emit("snapshot", read.Cursor, read.Snapshot) {
-				return
-			}
-			lastSnapshot, sentSnapshot = digest, true
-		}
-		panes := s.paneView(s.now())
-		if digest := swarmPaneDigest(panes); !sentPanes || digest != lastPanes {
-			if !emit("herdr", "", panes) {
-				return
-			}
-			lastPanes, sentPanes = digest, true
-		}
-		windows := s.windowView(s.now())
-		if digest := swarmWindowDigest(windows); !sentWindows || digest != lastWindows {
-			if !emit("window", "", windows) {
-				return
-			}
-			lastWindows, sentWindows = digest, true
-		}
-		// Each observation carries its own time, so the page can show the
-		// age of each and mark one stale without hiding the other.
-		if !emit("tick", read.Cursor, map[string]any{
-			"db_observed_at": read.Snapshot.ObservedAt,
-			"panes":          map[string]any{"observed_at": panes.ObservedAt, "status": panes.Status, "error": panes.Error, "stale": panes.Stale},
-			"window":         map[string]any{"observed_at": windows.ObservedAt, "status": windows.Status, "error": windows.Error, "stale": windows.Stale},
-		}) {
+		observations["db_observed_at"] = read.Snapshot.ObservedAt
+		if !emit("tick", read.Cursor, observations) {
 			return
 		}
 		request.Cursor = read.Cursor

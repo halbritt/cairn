@@ -48,6 +48,8 @@ const (
 // SwarmDelivery is one recipient's delivery of one campaign event. The
 // envelope is repeated so that a row renders without the event log.
 type SwarmDelivery struct {
+	// CancelInScope means the page can open a preview. The preview then checks the live delivery state.
+	CancelInScope bool      `json:"cancel_in_scope,omitempty"`
 	DeliveryID    string    `json:"delivery_id"`
 	EventID       string    `json:"event_id"`
 	EventPosition int64     `json:"event_position"`
@@ -88,7 +90,8 @@ type SwarmDelivery struct {
 // SwarmWait is one registered wait. A wait joins to its request by
 // DependencyEventID, never by correlation alone.
 type SwarmWait struct {
-	WaitID string `json:"wait_id"`
+	WaitID    string `json:"wait_id"`
+	CanCancel bool   `json:"can_cancel,omitempty"`
 	// Owner is the principal that waits.
 	Owner string `json:"owner"`
 	// Predicate is request_response (a direct reply) or
@@ -213,7 +216,7 @@ WITH recent AS MATERIALIZED (
 )
 	SELECT d.delivery_id::text, e.event_id::text, e.position, e.kind, `+swarmSystemEvent+`, e.publisher, d.consumer,
 		COALESCE(e.summary,''), COALESCE(e.notice_action,''), e.blocker, COALESCE(e.causation_id::text,''), e.created_at,
-		d.state, d.code, h.held, d.attempts, d.available_at, d.lease_until, d.completed_at, COALESCE(d.superseded_by::text,'')
+		d.state, d.code, h.held, d.attempts, d.available_at, d.lease_until, d.completed_at, COALESCE(d.superseded_by::text,''), (`+swarmEventInCampaign+`) IS TRUE
 	FROM cairn.agent_event e JOIN cairn.agent_delivery d USING(event_id)
 	CROSS JOIN LATERAL (SELECT `+swarmFlowHeld+` AS held) h
 	WHERE e.repo=$1 AND (e.event_id IN (SELECT event_id FROM recent)
@@ -229,15 +232,16 @@ WITH recent AS MATERIALIZED (
 	defer rows.Close()
 	out := []SwarmDelivery{}
 	for rows.Next() {
-		var d SwarmDelivery
+		var d swarmActionDelivery
 		if err := rows.Scan(&d.DeliveryID, &d.EventID, &d.EventPosition, &d.Kind, &d.System, &d.From, &d.Consumer,
 			&d.Summary, &d.Action, &d.Blocker, &d.CausationID, &d.CreatedAt, &d.State, &d.Code, &d.Held,
-			&d.Attempts, &d.AvailableAt, &d.LeaseUntil, &d.CompletedAt, &d.SupersededBy); err != nil {
+			&d.Attempts, &d.AvailableAt, &d.LeaseUntil, &d.CompletedAt, &d.SupersededBy, &d.eventInCampaign); err != nil {
 			return nil, false, err
 		}
-		d.Display = swarmDeliveryDisplay(d)
+		d.CancelInScope = d.canCancel(sc)
+		d.Display = swarmDeliveryDisplay(d.SwarmDelivery)
 		d.Seen = d.Attempts > 0
-		out = append(out, d)
+		out = append(out, d.SwarmDelivery)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, false, err
@@ -317,6 +321,7 @@ FROM selected ORDER BY resolved_at DESC NULLS FIRST, CASE WHEN resolved_at IS NU
 			return nil, false, err
 		}
 		if w.State == WaitStateWaiting {
+			w.CanCancel = sc.isMember(w.Owner)
 			w.Overdue = !w.Deadline.After(sc.Now)
 		} else {
 			resolved++

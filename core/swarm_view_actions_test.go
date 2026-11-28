@@ -522,8 +522,14 @@ func TestSwarmActionCancelScopeUsesTheSelectedTopicRecipient(t *testing.T) {
 		t.Fatalf("topic event: %+v %v", detail, err)
 	}
 	ids := map[string]string{}
+	flow := swarmFlowRead(f)
 	for _, delivery := range detail.Deliveries {
 		ids[delivery.Consumer] = delivery.DeliveryID
+		row := swarmFlowDelivery(flow, event, delivery.Consumer)
+		want := delivery.Consumer == member.Inbox
+		if row.DeliveryID != delivery.DeliveryID || row.CancelInScope != want || delivery.CancelInScope != want {
+			t.Fatalf("recipient %s should have cancellation scope %t in flow and event details: %+v, %+v", delivery.Consumer, want, row, delivery)
+		}
 	}
 	previewReq := SwarmCancelPreviewRequest{Repo: f.repo, Campaign: f.campaign, DeliveryID: ids[member.Inbox]}
 	preview, err := f.op.GetSwarmCancelPreview(ctx, previewReq)

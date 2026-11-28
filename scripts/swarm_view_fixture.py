@@ -25,6 +25,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlsplit
 
 import disposable_host
 from disposable_host import DisposableHost, OwnedCluster, HostRefusal, checked, require, stop_process
@@ -409,7 +410,7 @@ class Fixture:
     # cannot decode. A long-lived child process stands in for each harness
     # process; the readers check it by PID, start time and boot ID.
     WINDOWS = {"root_next": ("claude-opus-5-5", 20_000, 880_000, 20_000, True),
-               "worker_a": ("claude-sonnet-5-5", 10_000, 400_000, 10_000, False)}
+               "worker_a": ("claude-sonnet-5-5", 10_000, 100_000, 10_000, False)}
 
     def seed_context(self):
         self.sleeper = subprocess.Popen(["sleep", "infinity"], stdin=subprocess.DEVNULL,
@@ -440,6 +441,10 @@ class Fixture:
                      {"type": "assistant", "timestamp": (now - timedelta(minutes=1)).isoformat(),
                       "message": {"model": model, "usage": {"input_tokens": fresh, "cache_read_input_tokens": read,
                                                             "cache_creation_input_tokens": written}}}]
+            if role == "root_next":
+                # The store recorded the coordinator's compaction, but its
+                # transcript marker lies outside the reader's last 2 MiB.
+                lines.insert(1, {"type": "user", "content": "x" * (2 << 20)})
             disposable_host.write_private(folder / f"{native}.jsonl", "\n".join(json.dumps(line) for line in lines) + "\n")
             disposable_host.write_private(self.runtime / "state-claude" / f"{role}.json", json.dumps({
                 "process": process, "workspace": workspace,
@@ -450,6 +455,15 @@ class Fixture:
         disposable_host.write_private(self.runtime / "state-opencode" / "worker_b.json", json.dumps({
             "process": process, "workspace": str(self.runtime / "ws" / "worker_b"),
             "agent": {"agent_id": worker_b["agent_id"], "native_session_id": uid(), "metadata": {"harness": "opencode"}}}))
+        # One below-limit measured session and one session with unknown fill
+        # both cross the high-injection threshold.
+        for role in ("worker_a", "worker_b"):
+            self.agent(role, "recall-observation", {
+                "request_id": uid(), "repo": self.collection, "harness": HARNESS[role][0],
+                "native_session_id": self.sessions[role]["native_session_id"],
+                "method": "cairn-lifecycle/recall-meter/1", "hook_event": "UserPromptSubmit",
+                "status": "completed", "injected_bytes": 64 * 1024,
+            })
         self.context_expected = expected
         self.report["context_seed"] = {"claude_sessions": sorted(v["role"] for v in expected.values()),
                                        "unknown_session": "worker_b (opencode)"}
@@ -614,15 +628,17 @@ class Fixture:
         self.check("NOT_FOUND stops, offers the landing page and does not retry", lambda: self.not_found(page), page)
         self.check("a refusal that persists stays visible and is retried slowly", lambda: self.persistent_refusal(page), page)
         self.check("a transient store fault keeps the cursor", lambda: self.store_fault(page), page)
-        self.check("sign-out in a second tab ends the first tab's stream", lambda: self.second_tab_signout(page), page)
+        self.check("sign-out in a second tab ends the first tab's stream; an old 401 leaves the next session live", lambda: self.second_tab_signout(page), page)
         self.check("the context room shows the transcript fill, the near-limit mark and unknowns", lambda: self.context_cell(page), page)
         self.check("every member row says what it works on, by source", lambda: self.working_on(page), page)
+        self.check("open work survives the ledger history cap", lambda: self.open_ledger_work(page), page)
         self.check("the header counts enrolled, online and stopped apart", lambda: self.header_counts(page), page)
         self.check("waits on, oldest pending and waited on are separate facts", lambda: self.waiting_facts(page), page)
         self.check("needs-you rows: board opens the event, failed delivery names its request", lambda: self.needs_rows(page), page)
         self.check("every command a needs-you row offers runs with exit 0", lambda: self.copy_commands(page), page,
                    category="slice:CAIRN-831")
         self.check("send is offered only to current principals", lambda: self.current_principals(page), page)
+        self.check("typing focus and selection survive a live member update", lambda: self.compose_focus(page), page)
         self.check("paper cuts: close button, selection, reply naming, plain words, filtered count", lambda: self.paper_cuts(page), page)
         self.check("flow rows show each recipient's state; agent rows label waits apart", lambda: self.flow_rows(page), page,
                    category="slice:CAIRN-830")
@@ -661,9 +677,31 @@ class Fixture:
                    lambda: self.signed_out_routes(page), page)
         self.check("a member that left gets no send control and the store refuses a send to it",
                    lambda: self.member_left(page), page, category="slice:CAIRN-833")
+        self.check("member details limits cancellation to in-scope recipients and wait owners",
+                   lambda: self.external_cancellation_controls(page), page)
         self.check("no forbidden control exists", lambda: self.forbidden(page), page)
         self.check("screenshots of the owner's views at 1280 px", lambda: self.view_shots(page, "desktop"), page, category="evidence")
         self.shot(page, "desktop-final")
+
+    def external_cancellation_controls(self, page):
+        outbound = self.publish("lead", "Outside recipient", self.to("bystander"), summary="Outside recipient")
+        inbound = self.publish("bystander", "Outside wait owner", self.to("lead"), summary="Outside wait owner")
+        self.wait("lead", "request_response", outbound["event_id"])
+        self.wait("bystander", "request_response", inbound["event_id"])
+        self.member_row(page, "lead").get_by_role("button", name="Details").click()
+        try:
+            body = page.locator("#detail-body")
+            for event, can_cancel in [(inbound, True), (outbound, False)]:
+                row = body.locator(f"ul.deliveries-list li[data-event='{event['event_id']}']")
+                self.expect(row).to_be_visible(timeout=15000)
+                self.expect(row.get_by_role("button", name="Cancel this recipient's delivery")).to_have_count(int(can_cancel))
+            waits = body.locator("h3", has_text="Waits").locator("xpath=following-sibling::ul[1]").locator("li")
+            for summary, can_cancel in [("Outside recipient", True), ("Outside wait owner", False)]:
+                row = waits.filter(has_text=summary)
+                self.expect(row).to_be_visible(timeout=15000)
+                self.expect(row.get_by_role("button", name="Cancel the wait")).to_have_count(int(can_cancel))
+        finally:
+            page.locator("#detail button.close").click()
 
     def stale_cursor(self, page):
         cursor = page.evaluate("window.cairnSwarmView.cursor()")
@@ -737,6 +775,12 @@ class Fixture:
             page.wait_for_function("() => window.cairnSwarmView.faults() > 0", timeout=20000)
             self.expect(page.locator("#fault")).to_be_visible()
             self.expect(page.locator("#observations")).to_contain_text("store unreadable")
+            # Both host readers still run. Unchanged pane/window values must
+            # get newer observation times while the database time stays fixed.
+            times = "[...document.querySelectorAll('#observations li')].slice(0, 3).map(row => row.querySelector('time')?.dateTime)"
+            before_times = page.evaluate("() => " + times)
+            page.wait_for_function("before => (" + times + ").every((now, i) => i === 0 ? now === before[i] : now && (!before[i] || now > before[i]))",
+                                   arg=before_times, timeout=30000)
         finally:
             checked(disposable_host.pg_start_command(cluster.pg_bin, cluster.root / "data", cluster.socket,
                                                      cluster.root / "postgres.log"), "restart disposable cluster", timeout=60)
@@ -750,6 +794,14 @@ class Fixture:
         require(len(ids) == len(set(ids)) and not (before - set(ids)), "the outage lost or repeated an event")
 
     def second_tab_signout(self, page):
+        # Pause a real preview request. Read its 401 after logout and
+        # deliver the response only when the next session has a dialog open.
+        delivery = next(d for d in self.snapshot()["flow"]["deliveries"] if d["event_id"] == self.events["assign_b"]["event_id"])
+        held = []
+        page.route("**/api/swarm/action/cancel-preview*", lambda route: held.append(route), times=1)
+        with page.expect_request(lambda req: "/api/swarm/action/cancel-preview?" in req.url):
+            self.open_member_delivery(page, "worker_b", delivery["delivery_id"])
+        self.expect(page.locator("#confirm-go")).to_be_disabled()
         other = page.context.new_page()
         try:
             other.goto(self.campaign_url(token=False))
@@ -759,15 +811,23 @@ class Fixture:
             require("UNAUTHENTICATED" in page.evaluate("window.cairnSwarmView.resets()"), "the stream did not end with UNAUTHENTICATED")
         finally:
             other.close()
+        expired = held[0].fetch()
+        require(expired.status == 401, "the signed-out session's preview was not refused")
         before = set(page.evaluate("window.cairnSwarmView.logIDs()"))
         page.fill("#token-input", self.token)
         page.click("#signin button[type=submit]")
         self.expect(page.locator("#live")).to_have_text("live", timeout=15000)
+        self.open_member_delivery(page, "worker_b", delivery["delivery_id"])
+        self.expect(page.locator("#confirm-go")).to_be_enabled()
+        with page.expect_request_finished(lambda req: req.url == held[0].request.url):
+            held[0].fulfill(response=expired)
         marker = "signin-" + uid()[:8]
         self.publish("lead", "After signing in again.", self.to("worker_a"), kind="notice", action="none", summary="Back " + marker)
         self.expect(page.locator("#flow li.event", has_text=marker)).to_have_count(1, timeout=15000)
         ids = page.evaluate("window.cairnSwarmView.logIDs()")
         require(len(ids) == len(set(ids)) and not (before - set(ids)), "signing in again lost or repeated an event")
+        self.expect(page.locator("#confirm")).to_be_visible()
+        self.expect(page.locator("#confirm-go")).to_be_enabled()
 
     def member_row(self, page, role):
         return page.locator(f"#agents .agent[data-member='{self.principal(role)}']")
@@ -788,7 +848,13 @@ class Fixture:
             text = row.inner_text()
             percent = f"{round(want['used'] * 100 / want['window'])}% · "
             require(percent in text, f"{role}'s row does not show its fill {percent!r}: " + text[:300])
-            require("1 compaction" in text, f"{role}'s row does not show the transcript's compaction")
+            if want["role"] == "root_next":
+                require("0 compactions in the inspected transcript tail" in text and "1 compaction recorded" in text,
+                        "partial transcript hid the coordinator's recorded compaction: " + text[:1200])
+            else:
+                require("1 compaction in the transcript" in text, "the whole transcript's count was lost")
+                require("64.0 KiB" in text and "high Cairn injection" not in text and
+                        "near-limit-row" not in row.get_attribute("class"), "the proxy contradicted a measured fill")
             if want["near"]:
                 require("near context limit" in text and "near its limit" in text, f"{role}'s row lacks the near-limit mark")
                 require("near-limit-row" in (row.get_attribute("class") or ""), f"{role}'s row is not marked near its limit")
@@ -797,6 +863,10 @@ class Fixture:
         near = sum(1 for want in self.context_expected.values() if want["near"])
         if near:
             self.expect(page.locator("#near-limit-count")).to_contain_text(f"{near} agent{'' if near == 1 else 's'} near")
+        banner = page.locator("#near-limit-count")
+        self.expect(banner).not_to_contain_text(self.sessions["worker_a"]["display_name"])
+        self.expect(banner).to_contain_text("High Cairn injection (window fill unknown): " + self.sessions["worker_b"]["display_name"])
+        self.expect(self.member_row(page, "worker_b").locator(".near-limit-tag")).to_have_text("⚠ high Cairn injection")
         worker_b = self.sessions["worker_b"]["agent_id"]
         require(worker_b in unknown, "the opencode session is not reported unknown by the reader")
         self.expect(self.member_row(page, "worker_b")).to_contain_text("unknown: " + unknown[worker_b][:40])
@@ -825,6 +895,30 @@ class Fixture:
         require("Reported by the session" in worker_c, "a worker with no assignment hides its reported task")
         worker_a = self.member_row(page, "worker_a").inner_text()
         require(worker_a.index("Ledger assignments") < worker_a.index("Reported by the session"), "assignments do not come first")
+
+    def open_ledger_work(self, page):
+        # The capped ledger is ordered by kind and key. Fill its first 500
+        # entries with closed assignments before slice-a and slice-b.
+        for index in range(500):
+            self.ledger("set", "--kind", "assignment", "--key", f"00-history-{index:03d}",
+                        "--status", "completed", "--summary", "Finished fixture work")
+        snapshot = self.snapshot()
+        require(snapshot.get("ledger_truncated") and not any(item["open"] for item in snapshot["ledger"]),
+                "the fixture did not push all open work beyond the history cap")
+        page.reload()
+        lead = self.member_row(page, "lead")
+        # Derive the expected number from the two workers' complete assignments.
+        assignments = sum(item["kind"] == "assignment" for m in snapshot["members"]
+                          if m.get("lead") == self.principal("lead") for item in m["holds"])
+        require(assignments > 0, "no open assignment in lead's subtree")
+        self.expect(page.locator("#flow-meta")).to_contain_text("ledger links may be incomplete")
+        self.expect(lead).to_contain_text(f"{assignments} assignment")
+        self.member_row(page, "worker_a").get_by_role("button", name="Details").click()
+        try:
+            held = page.locator("#detail-body h3", has_text="Ledger items held").locator("xpath=following-sibling::*[1]")
+            self.expect(held).to_contain_text("slice-a")
+        finally:
+            page.locator("#detail button.close").click()
 
     def header_counts(self, page):
         snapshot = self.snapshot()
@@ -1091,6 +1185,20 @@ class Fixture:
         require(snapshot["campaign"]["role_address"] in options, "the root holder cannot be written to by its role address")
         page.locator("#detail button.close").click()
 
+    def compose_focus(self, page):
+        self.member_row(page, "worker_a").locator("button", has_text="Details").click()
+        field = page.locator("#detail textarea[name=body]")
+        field.fill("owner draft text")
+        field.evaluate("field => field.setSelectionRange(6, 11)")
+        marker = "Compose focus " + uid()[:8]
+        self.publish("lead", "Delivery during composition", self.to("worker_a"), kind="notice", action="none", summary=marker)
+        # The detail panel sees the event only after its snapshot rerender.
+        self.expect(page.locator("#detail .deliveries-list")).to_contain_text([marker], timeout=15000)
+        self.expect(field).to_be_focused()
+        page.keyboard.insert_text("edited")
+        self.expect(field).to_have_value("owner edited text")
+        page.locator("#detail button.close").click()
+
     def paper_cuts(self, page):
         # A long event title does not wrap the Close button.
         row = page.locator("#flow li.event", has_text="Untrusted").first
@@ -1231,31 +1339,39 @@ class Fixture:
         require(target, "worker_a's pending group delivery is not in the snapshot")
         before_status = {d["delivery_id"]: d["state"] for d in self.event_status(group_id)["deliveries"]}
         before_group = self.group_state()
-        # Hold the real preview reply for 3 s: the confirm control must stay
-        # disabled until it has loaded. The reply itself is the server's.
-        held = []
+        # Keep an abandoned preview in flight. Return the selected
+        # recipient's real preview first, then release the stale response.
+        abandoned_target = next(d for d in snapshot["flow"]["deliveries"] if d["event_id"] == self.events["assign_b"]["event_id"])
+        previews = {}
+        pattern = "**/api/swarm/action/cancel-preview*"
 
-        def delay(route):
-            response = route.fetch()
-            held.append(response.status)
-            try:
-                self.preview_token = json.loads(response.text()).get("preview_token") or ""
-            except ValueError:
-                self.preview_token = ""
-            page.wait_for_timeout(3000)
-            route.fulfill(response=response)
-        page.route("**/api/swarm/action/cancel-preview*", delay)
+        def hold_preview(route):
+            delivery_id = parse_qs(urlsplit(route.request.url).query)["delivery_id"][0]
+            previews[delivery_id] = route
+
+        page.route(pattern, hold_preview)
         try:
-            self.open_member_delivery(page, "worker_a", target["delivery_id"])
-            go = page.locator("#confirm-go")
-            self.expect(page.locator("#confirm")).to_be_visible()
-            require(go.is_disabled(), "confirm is enabled before the preview has loaded")
+            for role, delivery in (("worker_b", abandoned_target), ("worker_a", target)):
+                with page.expect_request(lambda req: "/api/swarm/action/cancel-preview?" in req.url):
+                    self.open_member_delivery(page, role, delivery["delivery_id"])
+                go = page.locator("#confirm-go")
+                self.expect(go).to_be_disabled()
+                if role == "worker_b":
+                    page.locator("#confirm-keep").click()
+                    page.locator("#detail button.close").click()
+            selected = previews[target["delivery_id"]]
+            response = selected.fetch()
+            self.preview_token = response.json()["preview_token"]
+            selected.fulfill(response=response)
+            self.expect(go).to_be_enabled()
+            abandoned = previews[abandoned_target["delivery_id"]]
+            with page.expect_request_finished(lambda req: req.url == abandoned.request.url):
+                abandoned.fulfill(response=abandoned.fetch())
             body = page.locator("#confirm-body")
-            self.expect(body).to_contain_text("Recipient", timeout=15000)
+            self.expect(body.locator(".preview dd").first).to_contain_text(self.principal("worker_a"))
             self.no_null(body, "the cancel preview")
         finally:
-            page.unroute("**/api/swarm/action/cancel-preview*")
-        require(held == [200], f"the preview did not answer 200: {held}")
+            page.unroute(pattern, hold_preview)
         text = body.inner_text()
         require(self.label(snapshot, "worker_a") in text and self.principal("worker_a") in text,
                 "the preview does not name the exact recipient (label and principal)")
@@ -1276,6 +1392,7 @@ class Fixture:
         reply = info.value.json()
         sent = info.value.request.post_data_json or {}
         self.report["preview_token"] = dict(served=bool(self.preview_token), sent=bool(sent.get("preview_token")))
+        require(sent.get("delivery_id") == target["delivery_id"], "a late preview redirected the cancellation")
         require(sent.get("preview_token", "") == self.preview_token, "the cancel did not send the preview's token")
         require(info.value.ok and reply.get("outcome") == "cancelled", "cancel outcome: " + json.dumps(reply)[:300])
         self.expect(page.locator("#confirm-result")).to_contain_text("The store recorded the cancellation", timeout=10000)
@@ -1730,11 +1847,49 @@ class Fixture:
 
     def supersede_open_only(self, page):
         key = "owner-" + uid()[:8]
-        first = self.send_page(page, "worker_a", "Owner v1 " + key, key)
+        # Hold any campaign refresh that the first send starts. Its response
+        # describes v1 as pending; release it only after the stream shows v2.
+        gate = page.evaluate_handle("""() => {
+            const fetch = window.fetch;
+            const reads = [];
+            let release;
+            const hold = new Promise(resolve => { release = resolve; });
+            window.fetch = (...args) => {
+                const response = fetch(...args);
+                if (new URL(args[0], location.href).pathname !== '/api/swarm/campaign') return response;
+                reads.push(response);
+                return Promise.all([response, hold]).then(([res]) => res);
+            };
+            return {release, stop: () => { window.fetch = fetch; return Promise.all(reads).then(() => true); }};
+        }""")
+        try:
+            first = self.send_page(page, "worker_a", "Owner v1 " + key, key)
+            v1 = page.locator(f"#flow li.event[data-event='{first['event']['event_id']}']")
+            self.expect(v1.locator("button", has_text="Supersede")).to_have_count(1, timeout=15000)
+        finally:
+            gate.evaluate("g => g.stop()")
         second = self.send_page(page, "worker_a", "Owner v2 " + key, key)
-        v1 = page.locator(f"#flow li.event[data-event='{first['event']['event_id']}']")
         v2 = page.locator(f"#flow li.event[data-event='{second['event']['event_id']}']")
         self.expect(v1.locator(".chip-superseded")).to_have_count(1, timeout=15000)
+        observed = page.locator("#observations li").first.locator("time")
+        observed_at = observed.get_attribute("datetime")
+        # Even if another snapshot restores v2, catch a rollback between ticks.
+        watch = v1.evaluate_handle("""row => {
+            const selector = 'li[data-event="' + row.dataset.event + '"] .chip-superseded';
+            const flow = row.parentElement;
+            let reverted = false;
+            const observer = new MutationObserver(() => { if (!flow.querySelector(selector)) reverted = true; });
+            observer.observe(flow, {childList: true, subtree: true});
+            return () => { observer.disconnect(); return reverted; };
+        }""")
+        gate.evaluate("g => g.release()")
+        gate.dispose()
+        # Let the next stream tick run. A stale refresh must not have replaced
+        # the superseded state, even if that tick carried no new snapshot.
+        page.wait_for_function("""before => document.querySelector('#observations li time')
+            .getAttribute('datetime') > before""", arg=observed_at, timeout=15000)
+        require(not watch.evaluate("finish => finish()"), "an older action refresh resurrected the superseded notice")
+        watch.dispose()
         self.expect(v1.locator("button", has_text="Supersede")).to_have_count(0)
         self.expect(v2.locator("button", has_text="Supersede")).to_have_count(1)
 

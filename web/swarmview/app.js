@@ -45,6 +45,7 @@
     detailMember: "",
     eventDetail: "",
     landingTimer: null,
+    landingRequest: 0,
   };
 
   // Retries reuse the request UUID of the attempt they repeat.
@@ -190,9 +191,10 @@
   }
 
   async function api(path, options = {}) {
+    const csrf = state.csrf;
     const headers = new Headers(options.headers || {});
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
-    if ((options.method || "GET") !== "GET") headers.set("X-CSRF-Token", state.csrf);
+    if ((options.method || "GET") !== "GET") headers.set("X-CSRF-Token", csrf);
     let response;
     try {
       response = await fetch(path, {
@@ -209,7 +211,8 @@
       body = null;
     }
     if (!response.ok) {
-      if (response.status === 401) showSignIn();
+      // A late rejection belongs to the session that sent this request.
+      if (response.status === 401 && csrf === state.csrf) showSignIn();
       throw new APIError((body && (body.error || body.message)) || `request failed (${response.status})`, body && body.code, response.status, body);
     }
     return body;
@@ -227,7 +230,11 @@
   }
 
   function showSignIn(message) {
+    state.csrf = "";
+    clearTimeout(state.landingTimer);
     closeStream();
+    state.landingRequest++;
+    byID("detail-compose").replaceChildren();
     for (const dialog of document.querySelectorAll("dialog[open]")) dialog.close();
     byID("landing").hidden = true;
     byID("campaign").hidden = true;
@@ -287,13 +294,13 @@
   });
 
   byID("signout").addEventListener("click", async () => {
+    const csrf = state.csrf;
     try {
       await post("/api/auth/logout", {});
     } catch (_) {
       // The session is gone either way.
     }
-    state.csrf = "";
-    showSignIn();
+    if (state.csrf === csrf) showSignIn();
   });
 
   // ----------------------------------------------------------------- landing
@@ -309,13 +316,16 @@
 
   async function loadLanding() {
     clearTimeout(state.landingTimer);
+    // A post-action refresh supersedes a poll that is already in flight.
+    const request = ++state.landingRequest;
     try {
       const landing = await api("/api/swarm/landing");
+      if (state.landingRequest !== request) return;
       hideFault();
       setLive("live", "current");
       renderLanding(landing);
     } catch (error) {
-      if (error.status === 401) return;
+      if (state.landingRequest !== request || error.status === 401) return;
       setLive("offline", "not current");
       showFault("Could not read the landing page: " + error.message + (error.code ? ` (${error.code})` : ""));
     }
@@ -465,6 +475,11 @@
       renderNearLimit();
       renderObservations();
     });
+    on("host", (data) => {
+      state.paneTick = data.panes;
+      state.windowTick = data.window;
+      renderObservations();
+    });
     on("tick", (data) => {
       state.dbObservedAt = data.db_observed_at || state.dbObservedAt;
       state.paneTick = data.panes || state.paneTick;
@@ -476,6 +491,8 @@
     on("fault", (data) => {
       state.faults += 1;
       state.fault = data;
+      state.paneTick = data.panes || state.paneTick;
+      state.windowTick = data.window || state.windowTick;
       showFault(`The store could not be read (${data.code || "error"}): ${data.error || ""}. Showing the last snapshot; the server keeps trying.`);
       renderObservations();
     });
@@ -517,35 +534,42 @@
   }
 
   async function recover() {
+    const csrf = state.csrf;
+    const recovering = () => csrf && state.csrf === csrf && !state.source;
     const attempt = state.failures;
     await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * attempt, 10000)));
-    if (state.source) return;
+    if (!recovering()) return;
     let session;
     try {
       session = await api("/api/auth/session");
     } catch (error) {
+      if (!recovering()) return;
       setLive("offline", "server unavailable");
       state.failures += 1;
       recover();
       return;
     }
+    if (!recovering()) return;
     if (!session.authenticated) {
       showSignIn("The server no longer knows this browser. Sign in again; the page continues where it stopped.");
       return;
     }
     state.csrf = session.csrf_token || state.csrf;
+    const recoveredSession = state.csrf;
     // Continue from the last cursor first. If the cursor is refused twice,
     // start a new window: the list is replaced, nothing is repeated.
     if (attempt >= 3) {
       try {
         await api("/api/swarm/campaign?campaign=" + encodeURIComponent(state.campaign));
       } catch (error) {
+        if (recoveredSession !== state.csrf || state.source) return;
         if (error.code === "NOT_FOUND" || error.code === "INVALID_REQUEST") {
           setLive("offline", "not available");
           showFault("This campaign cannot be shown: " + error.message + ` (${error.code})`);
           return;
         }
       }
+      if (recoveredSession !== state.csrf || state.source) return;
       state.cursor = "";
     }
     openStream(state.cursor);
@@ -559,23 +583,10 @@
     byID("campaign").hidden = true;
   }
 
-  // One read outside the stream, so the page shows the store's state now.
-  async function refreshSnapshot() {
-    if (!state.campaign) {
-      // The landing page: an empty campaign is the landing scope.
-      if (!byID("landing").hidden) loadLanding();
-      return;
-    }
-    try {
-      const snapshot = await api("/api/swarm/campaign?campaign=" + encodeURIComponent(state.campaign));
-      if (snapshot && snapshot.schema) {
-        state.snapshot = snapshot;
-        state.dbObservedAt = snapshot.observed_at;
-        renderCampaign();
-      }
-    } catch (_) {
-      // The stream brings the next snapshot.
-    }
+  // Campaign updates arrive in stream order. Only landing needs a poll after
+  // an action because it has no stream.
+  function refreshSnapshot() {
+    if (!state.campaign && !byID("landing").hidden) loadLanding();
   }
 
   function addLog(event) {
@@ -876,9 +887,9 @@
         controls.append(el("span", { class: "muted not-head", text: "Not the next delivery in your inbox" }));
       }
     }
-    if (action.kind === "cancel_delivery" && delivery && state.campaign) {
+    if (action.kind === "cancel_delivery" && state.campaign && flow().deliveries.some((d) => d.delivery_id === delivery && d.cancel_in_scope && openDisplays.has(d.display || d.state))) {
       controls.append(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery) }));
-    } else if (action.kind === "cancel_wait" && refs.wait_id && state.campaign) {
+    } else if (action.kind === "cancel_wait" && state.campaign && waitByID(refs.wait_id)?.can_cancel) {
       controls.append(el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(refs.wait_id) }));
     } else if (action.kind === "answer_board") {
       // A message without causation is not an answer: the board is where it
@@ -998,7 +1009,7 @@
       const body = el("tbody");
       for (const member of list) {
         const selected = state.filter === member.member;
-        const row = el("tr", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${nearLimit(member) ? " near-limit-row" : ""}`,
+        const row = el("tr", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${contextWarning(member) ? " near-limit-row" : ""}`,
           dataset: { member: member.member, label: member.label || shortPrincipal(member.member) } },
           agentColumns.map((column, i) => el(i === 0 ? "th" : "td", i === 0 ? { scope: "row" } : {}, column.cell(member))));
         // A click anywhere on the row opens the detail panel; the controls in
@@ -1022,7 +1033,7 @@
   function agentCard(member) {
     const label = member.label || shortPrincipal(member.member);
     const selected = state.filter === member.member;
-    const card = el("article", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${nearLimit(member) ? " near-limit-row" : ""}`, dataset: { member: member.member, label }, "aria-label": label });
+    const card = el("article", { class: `agent${member.active ? "" : " inactive"}${selected ? " selected" : ""}${contextWarning(member) ? " near-limit-row" : ""}`, dataset: { member: member.member, label }, "aria-label": label });
     card.append(el("header", { class: "agent-head" }, agentCell(member)));
     const fields = el("dl", { class: "fields" });
     for (const column of agentColumns.slice(1)) fields.append(field(column.name, column.cell(member)));
@@ -1037,6 +1048,7 @@
   function agentCell(member) {
     const label = member.label || shortPrincipal(member.member);
     const selected = state.filter === member.member;
+    const warning = contextWarning(member);
     return el("div", { class: "agent-cell" },
       el("div", { class: "agent-name" },
         el("strong", { class: "agent-label", text: label }), " ",
@@ -1044,7 +1056,7 @@
         member.role_label && member.role ? el("span", { class: "muted", text: ` (${member.role})` }) : null),
       member.role_address ? el("code", { class: "role-address", text: member.role_address }) : null,
       member.active ? null : el("span", { class: "tag", text: "inactive member" }),
-      nearLimit(member) ? el("span", { class: "tag flag near-limit-tag", text: "⚠ near context limit" }) : null,
+      warning ? el("span", { class: "tag flag near-limit-tag", text: warning === "measured" ? "⚠ near context limit" : "⚠ high Cairn injection" }) : null,
       el("div", { class: "agent-actions" },
         el("button", { type: "button", class: "small", text: "Details", "aria-label": `Details and actions for ${label}`, onclick: () => openDetail(member.member) }),
         el("button", { type: "button", class: "small secondary", "aria-pressed": selected ? "true" : "false",
@@ -1102,8 +1114,7 @@
       (state.snapshot && state.snapshot.campaign && state.snapshot.campaign.root_agent === member.member);
     if (coordinator) {
       const below = member.role === "root" || member.role_address ? members().filter((m) => m.active && m.member !== member.member) : subtreeOf(member);
-      const principals = new Set(below.map((m) => m.member));
-      const open = ((state.snapshot && state.snapshot.ledger) || []).filter((item) => item.open && principals.has(item.owner));
+      const open = below.flatMap((m) => m.holds || []);
       const count = (kind) => open.filter((item) => item.kind === kind).length;
       const reports = members().filter((m) => m.active && m.lead === member.member);
       if (below.length || open.length) {
@@ -1232,25 +1243,32 @@
     return member.agent_id ? room[member.agent_id] || null : null;
   }
 
-  // Near the limit by the transcript's rule, or by the Cairn proxy's rule.
-  function nearLimit(member) {
+  function contextWarning(member) {
     const window = windowOf(member);
-    if (window && window.near_limit) return true;
+    if (window && window.window_tokens > 0) return window.near_limit ? "measured" : "";
     const proxy = proxyOf(member);
-    return !!(proxy && proxy.known && proxy.near_limit);
+    return proxy && proxy.known && proxy.near_limit ? "proxy" : "";
   }
 
   function renderNearLimit() {
     const box = byID("near-limit-count");
-    if (!state.campaign || !state.snapshot) {
-      box.hidden = true;
-      return;
+    const measured = [], proxy = [];
+    if (state.campaign && state.snapshot) {
+      for (const member of members()) {
+        if (!member.active && !member.role_address) continue;
+        const warning = contextWarning(member);
+        const label = member.label || shortPrincipal(member.member);
+        if (warning === "measured") measured.push(label);
+        if (warning === "proxy") proxy.push(label);
+      }
     }
-    const near = members().filter((member) => (member.active || member.role_address) && nearLimit(member));
-    box.hidden = !near.length;
-    box.textContent = near.length
-      ? `⚠ ${near.length} agent${near.length === 1 ? "" : "s"} near ${near.length === 1 ? "its" : "their"} context limit: ${near.map((m) => m.label || shortPrincipal(m.member)).join(", ")}`
-      : "";
+    const warnings = [];
+    if (measured.length) {
+      warnings.push(`⚠ ${measured.length} agent${measured.length === 1 ? "" : "s"} near ${measured.length === 1 ? "its" : "their"} context limit: ${measured.join(", ")}`);
+    }
+    if (proxy.length) warnings.push(`⚠ High Cairn injection (window fill unknown): ${proxy.join(", ")}`);
+    box.hidden = !warnings.length;
+    box.textContent = warnings.join(" · ");
   }
 
   // Both rules: the transcript fill's and the Cairn proxy's.
@@ -1267,9 +1285,9 @@
     if (window) {
       if (window.near_limit) parts.push(el("p", { class: "near-limit" }, el("strong", { text: "⚠ near its limit" })));
       parts.push(el("p", { class: "window-fill" }, el("strong", { text: formatWindow(window) })));
-      const detail = [];
-      detail.push(`${window.compactions} compaction${window.compactions === 1 ? "" : "s"}`);
-      parts.push(el("p", { class: "small-text muted" }, detail.join(""),
+      const compactions = window.compactions === 1 ? "1 compaction" : `${window.compactions} compactions`;
+      parts.push(el("p", { class: "small-text muted" }, compactions,
+        window.compactions_partial ? " in the inspected transcript tail" : " in the transcript",
         window.last_compaction_at ? [", last ", timeEl(window.last_compaction_at)] : "",
         " · measured ", timeEl(window.measured_at), window.source ? ` · ${window.source}` : ""));
     } else if (observed && member.agent_id && (observed.unknown || {})[member.agent_id]) {
@@ -1288,7 +1306,7 @@
       return parts;
     }
     const proxy = proxyOf(member);
-    if (proxy && (proxy.compactions !== undefined && proxy.compactions !== null || proxy.last_compaction_at) && !window) {
+    if (proxy && (proxy.compactions !== undefined && proxy.compactions !== null || proxy.last_compaction_at)) {
       parts.push(el("p", { class: "small-text muted" },
         proxy.compactions !== undefined && proxy.compactions !== null ? `${proxy.compactions} compaction${proxy.compactions === 1 ? "" : "s"} recorded` : "compactions unknown",
         proxy.last_compaction_at ? [", last ", timeEl(proxy.last_compaction_at)] : ""));
@@ -1300,7 +1318,7 @@
       parts.push(el("p", { class: "small-text proxy" }, "Cairn-injected since compaction (proxy): ",
         proxy.injected_bytes !== undefined && proxy.injected_bytes !== null ? bytes(proxy.injected_bytes) : "unknown",
         counts.length ? ` (${counts.join(", ")})` : "",
-        proxy.near_limit ? el("strong", { class: "near-limit", text: " ⚠ near limit" + (proxy.reasons && proxy.reasons.length ? ": " + proxy.reasons.join("; ") : "") }) : null));
+        contextWarning(member) === "proxy" ? el("strong", { class: "near-limit", text: " ⚠ high Cairn injection" }) : null));
     } else {
       parts.push(el("p", { class: "small-text muted", text: "Cairn-injected since compaction (proxy): unknown" }));
     }
@@ -1361,6 +1379,7 @@
     if (sectionError("flow")) metaParts.push("delivery states unavailable: " + sectionError("flow"));
     else metaParts.push(`waits feature ${currentFlow.waits_feature}`);
     if (currentFlow.deliveries_truncated) metaParts.push("delivery list truncated");
+    if (state.snapshot && state.snapshot.ledger_truncated) metaParts.push("ledger links may be incomplete");
     meta.textContent = metaParts.join(" · ");
 
     let events = eventsNewestFirst();
@@ -1490,7 +1509,7 @@
     renderDetail(principal);
     openDialog("detail");
     if (focusCompose) {
-      const form = byID("detail-body").querySelector("form.compose");
+      const form = byID("detail-compose").querySelector("form.compose");
       if (form) {
         if (supersedes) {
           form.elements.kind.value = "notice";
@@ -1507,14 +1526,11 @@
     const label = member ? member.label || shortPrincipal(principal) : labelOf(principal);
     byID("detail-title").textContent = label;
     const body = byID("detail-body");
-    // Keep a draft that the owner is writing across snapshot updates.
-    const existing = body.querySelector("form.compose");
-    const draft = existing && existing.dataset.principal === principal ? existing : null;
     body.replaceChildren();
     body.append(el("p", { class: "meta" }, el("code", { text: principal }),
       member && member.session ? ` · ${presenceText(member.session).textContent}` : ""));
 
-    const ledger = ((state.snapshot && state.snapshot.ledger) || []).filter((item) => item.owner === principal && item.open);
+    const ledger = (member && member.holds) || [];
     body.append(el("h3", { text: "Ledger items held" }),
       ledger.length ? el("ul", { class: "plain" }, ledger.map((item) => el("li", {},
         el("span", { class: "tag", text: item.kind }), " ", el("strong", { text: item.item_key }), ` (${item.status}) `, linked(item.summary),
@@ -1530,7 +1546,7 @@
     const waits = flow().waits.filter((w) => w.owner === principal || (w.awaited || []).includes(principal));
     body.append(el("h3", { text: "Waits" }), waits.length ? el("ul", { class: "plain" }, waits.map((wait) => el("li", {},
       `${labelOf(wait.owner)} (${wait.state}) `, waitText(wait),
-      wait.state === "waiting" ? [" ", el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(wait.wait_id) })] : null)))
+      wait.can_cancel ? [" ", el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(wait.wait_id) })] : null)))
       : note(sectionError("flow") ? "unavailable: " + sectionError("flow") : `none (waits feature ${flow().waits_feature})`));
 
     const recent = eventsNewestFirst().filter((event) => involves(event, principal)).slice(0, 20);
@@ -1540,10 +1556,26 @@
       : note("none in the window"));
 
     body.append(el("h3", { text: "Write to " + label }));
-    if (canWrite(principal) || (member && member.role_address && canWrite(member.role_address))) {
-      body.append(draft || composeForm(principal, member && member.role_address));
+    const compose = byID("detail-compose");
+    const roleAddress = member && member.role_address;
+    const targets = [principal, roleAddress].filter((target) => target && canWrite(target));
+    if (targets.length) {
+      let form = compose.querySelector("form.compose");
+      if (!form || form.dataset.principal !== principal) {
+        form = composeForm(principal);
+        compose.replaceChildren(form);
+      }
+      // Keep the draft attached so typing, focus and selection survive live reads.
+      const select = form.elements.to;
+      const options = [...select.options];
+      if (options.length !== targets.length || targets.some((target, i) => options[i].value !== target)) {
+        const selected = select.value;
+        select.replaceChildren(...targets.map((target) => el("option", { value: target,
+          text: target === roleAddress ? `${target} (the role, whoever holds it)` : `${labelOf(target)} (${target})` })));
+        if (targets.includes(selected)) select.value = selected;
+      }
     } else {
-      body.append(note(state.snapshot && state.snapshot.campaign && state.snapshot.campaign.active === false
+      compose.replaceChildren(note(state.snapshot && state.snapshot.campaign && state.snapshot.campaign.active === false
         ? "The campaign is inactive; the page sends to no one in it."
         : "Not a current principal of the campaign (it left, or handed off); the page sends only to the root, active members and role addresses."));
     }
@@ -1568,7 +1600,7 @@
       } else {
         controls.push(el("span", { class: "muted not-head", text: "Not the next delivery in your inbox" }));
       }
-    } else if (openDisplays.has(delivery.display || delivery.state)) {
+    } else if (delivery.cancel_in_scope && openDisplays.has(delivery.display || delivery.state)) {
       controls.push(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery.delivery_id) }));
     }
     return controls;
@@ -1585,17 +1617,13 @@
     form.querySelector(".notice-only").hidden = !notice;
   }
 
-  function composeForm(principal, roleAddress) {
+  function composeForm(principal) {
     const form = el("form", { class: "compose", dataset: { principal } });
     const ids = { to: uuid(), kind: uuid(), action: uuid(), summary: uuid(), body: uuid(), supersedes: uuid() };
-    // The holder of a role address can be written to by its address, which
-    // follows the role across a handoff.
-    const targets = [principal, roleAddress].filter((target) => target && canWrite(target));
     form.append(
       el("div", { class: "row" },
         el("label", { for: ids.to, text: "To" }),
-        el("select", { id: ids.to, name: "to" }, targets.map((target) => el("option", { value: target,
-          text: target === roleAddress ? `${target} (the role, whoever holds it)` : `${labelOf(target)} (${target})` })))),
+        el("select", { id: ids.to, name: "to" })),
       el("div", { class: "row" },
         el("label", { for: ids.kind, text: "Kind" }),
         el("select", { id: ids.kind, name: "kind" }, el("option", { value: "request", text: "request" }), el("option", { value: "notice", text: "notice" }))),
@@ -1617,6 +1645,7 @@
     form.elements.kind.addEventListener("change", () => updateComposeKind(form));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const csrf = state.csrf;
       const kind = form.elements.kind.value;
       const payload = {
         campaign: state.campaign, to: form.elements.to.value, kind,
@@ -1640,7 +1669,7 @@
         result.textContent = "Sent. The agent sees it at its next turn boundary; until it claims the delivery the flow shows it as sent and not yet seen." + outcomeText(reply);
         form.elements.summary.value = "";
         form.elements.body.value = "";
-        refreshSnapshot();
+        if (csrf === state.csrf) refreshSnapshot();
       } catch (error) {
         result.className = "result refused";
         result.textContent = refusalText(error) + " Sending again reuses the same request.";
@@ -1752,6 +1781,8 @@
 
   // ---------------------------------------------------------------- actions
 
+  let confirmationVersion = 0;
+
   async function acknowledge(deliveryID, eventID) {
     const key = "ack:" + deliveryID;
     const body = byID("confirm-body");
@@ -1767,6 +1798,7 @@
       eventID && !kept ? el("div", { class: "only-link" },
         note("This page can open the message only while it is in your inbox. After you acknowledge it, the page has no link to it.", "warning"),
         el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(eventID) })) : null);
+    const csrf = state.csrf;
     prepareConfirm(true, "Acknowledge", async () => {
       let reply;
       try {
@@ -1777,7 +1809,7 @@
           pendingRequests.delete(key);
           const oldest = error.body.oldest;
           const expected = flow().deliveries.find((d) => d.delivery_id === error.body.expected);
-          refreshSnapshot();
+          if (csrf === state.csrf) refreshSnapshot();
           throw new APIError(`${error.message}. Nothing was changed. You chose "${expected ? expected.summary || expected.event_id : error.body.expected}", ` +
             `but your oldest delivery is "${oldest.summary || oldest.event_id}" from ${senderLabel(oldest)}. Acknowledge that one first`, error.code, error.status, error.body);
         }
@@ -1845,8 +1877,7 @@
       } catch (error) {
         if (error.status === 409 && error.body && error.body.wait) {
           pendingRequests.delete(key);
-          cancelWait(waitID, error.body.wait, true);
-          return { reconfirm: "The wait changed; review it above and confirm again." };
+          return { reconfirm: () => cancelWait(waitID, error.body.wait, true) };
         }
         throw error;
       }
@@ -1872,16 +1903,17 @@
     byID("confirm-title").textContent = "Cancel this recipient's delivery";
     const body = byID("confirm-body");
     setChildren(body, note("Reading what the cancel affects…"));
-    prepareConfirm(false, "Cancel this delivery", null);
+    const isCurrent = prepareConfirm(false, "Cancel this delivery", null);
     openDialog("confirm");
     let preview;
     try {
       preview = await api(`/api/swarm/action/cancel-preview?campaign=${encodeURIComponent(state.campaign)}&delivery_id=${encodeURIComponent(deliveryID)}`);
     } catch (error) {
+      if (!isCurrent()) return;
       setChildren(body, note("The preview is unavailable, so the cancel cannot be confirmed. " + refusalText(error), "unavailable"));
       return;
     }
-    showCancelPreview(deliveryID, preview, false);
+    if (isCurrent()) showCancelPreview(deliveryID, preview, false);
   }
 
   // The confirmation shows exactly what the store previewed, and sends its
@@ -1945,8 +1977,7 @@
       } catch (error) {
         if (error.status === 409 && error.code === "VERSION_CONFLICT" && error.body && error.body.preview) {
           pendingRequests.delete(attempt);
-          showCancelPreview(deliveryID, error.body.preview, true);
-          return { reconfirm: "What the cancel affects changed; review it above and confirm again." };
+          return { reconfirm: () => showCancelPreview(deliveryID, error.body.preview, true) };
         }
         throw error;
       }
@@ -1956,6 +1987,9 @@
   }
 
   function prepareConfirm(enabled, label, run) {
+    const version = ++confirmationVersion;
+    const csrf = state.csrf;
+    const isCurrent = () => csrf === state.csrf && version === confirmationVersion && byID("confirm").open;
     const go = byID("confirm-go");
     const result = byID("confirm-result");
     result.textContent = "";
@@ -1971,20 +2005,23 @@
         const outcome = await run();
         if (outcome && outcome.reconfirm) {
           // What was shown changed: a new confirmation is required.
-          result.textContent = outcome.reconfirm;
+          if (isCurrent()) outcome.reconfirm();
           return;
         }
+        if (csrf === state.csrf) refreshSnapshot();
+        if (!isCurrent()) return;
         result.textContent = outcome;
         go.hidden = true;
         byID("confirm-keep").textContent = "Close";
-        refreshSnapshot();
       } catch (error) {
+        if (!isCurrent()) return;
         result.className = "refused";
         result.textContent = refusalText(error) + " Trying again reuses the same request.";
         go.disabled = false;
       }
     } : null;
     go.hidden = false;
+    return isCurrent;
   }
 
   // Ages move on without a new message.

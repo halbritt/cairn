@@ -60,7 +60,7 @@ func TestSwarmWindowClaudeTailAndCache(t *testing.T) {
 	if observed.Status != "ok" || observed.Sessions != 1 || len(observed.Unknown) != 0 ||
 		got.UsedTokens != 900_000 || got.WindowTokens != 1_000_000 || !got.NearLimit ||
 		got.Source != "claude transcript" || got.Model != "claude-fable-5-2" ||
-		got.Compactions != 1 || got.LastCompactionAt == nil || got.LastCompactionAt.Second() != 1 || got.MeasuredAt.Second() != 2 {
+		got.CompactionsPartial || got.Compactions != 1 || got.LastCompactionAt == nil || got.LastCompactionAt.Second() != 1 || got.MeasuredAt.Second() != 2 {
 		t.Fatalf("unexpected observation: %+v", observed)
 	}
 	data, err := json.Marshal(observed)
@@ -392,8 +392,19 @@ func TestSwarmWindowTailReadLimit(t *testing.T) {
 	line := `{"type":"assistant","timestamp":"2026-11-27T19:00:02Z","message":{"model":"model","usage":{"input_tokens":61}}}` + "\n"
 	padding := strings.Repeat("{\"content\":\""+strings.Repeat("x", swarmWindowBlock-1)+"\"}\n", swarmWindowMaxTail/swarmWindowBlock+1)
 	parsed, err := readSwarmWindowTail(ctx, strings.NewReader(line+padding), int64(len(line)+len(padding)), "claude")
-	if err != nil || !parsed.MeasuredAt.Equal(time.Time{}) {
+	if err != nil || !parsed.CompactionsPartial || !parsed.MeasuredAt.Equal(time.Time{}) {
 		t.Fatalf("read beyond tail limit: %+v, %v", parsed, err)
+	}
+}
+
+func TestSwarmWindowLastCompactionTimeUnknown(t *testing.T) {
+	// A timestamp on the earlier of two markers cannot date the later one.
+	lines := `{"type":"compacted","timestamp":"2026-11-27T19:00:00Z"}
+{"type":"compacted"}
+`
+	window, err := readSwarmWindowTail(t.Context(), strings.NewReader(lines), int64(len(lines)), "codex")
+	if err != nil || window.Compactions != 2 || window.LastCompactionAt != nil {
+		t.Fatalf("compaction history = %+v, error = %v", window, err)
 	}
 }
 

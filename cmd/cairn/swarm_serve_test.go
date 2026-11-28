@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -154,6 +155,10 @@ type swarmStreamEvent struct {
 	Event string
 	ID    string
 	Data  string
+}
+
+func (e swarmStreamEvent) hostObservation() bool {
+	return e.ID == "" && (e.Event == "herdr" || e.Event == "window" || e.Event == "host")
 }
 
 // swarmStreamConn is one stream connection, as an EventSource holds it.
@@ -890,7 +895,7 @@ func TestSwarmStreamProtocol(t *testing.T) {
 	paneEvents := 0
 	for {
 		event := conn.next(t)
-		if event.Event == "herdr" || event.Event == "window" {
+		if event.hostObservation() {
 			// The host observations come from their own loops, so when
 			// they arrive is not part of the order checked here.
 			paneEvents++
@@ -961,7 +966,13 @@ func TestSwarmStreamProtocol(t *testing.T) {
 		if first := conn.next(t); first.Event != "hello" {
 			t.Fatalf("%s at connect: first event %q", name, first.Event)
 		}
-		if reset := conn.next(t); reset.Event != "reset" || !strings.Contains(reset.Data, `"code":"`+refusal.Code+`"`) {
+		reset, before := conn.until(t, "reset")
+		for _, frame := range before {
+			if !frame.hostObservation() {
+				t.Fatalf("%s: received %s before the refusal", name, frame.Event)
+			}
+		}
+		if !strings.Contains(reset.Data, `"code":"`+refusal.Code+`"`) {
 			t.Fatalf("%s at connect: %q %s", name, reset.Event, reset.Data)
 		}
 		if _, open := <-conn.Events; open {
@@ -980,7 +991,7 @@ func TestSwarmStreamProtocol(t *testing.T) {
 	var recovered []string
 	for {
 		event := conn.next(t)
-		if event.Event == "herdr" || event.Event == "window" {
+		if event.hostObservation() {
 			continue
 		}
 		recovered = append(recovered, event.Event)
@@ -999,6 +1010,115 @@ func TestSwarmStreamProtocol(t *testing.T) {
 	}
 	if resp, _ := s.do(http.MethodPost, "/api/swarm/stream?campaign=alpha", nil, map[string]string{"X-CSRF-Token": s.csrf}); resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("POST stream: %d", resp.StatusCode)
+	}
+}
+
+func TestSwarmStreamObservesHostWhenStoreIsUnavailable(t *testing.T) {
+	t.Run("store returns errors", func(t *testing.T) { checkSwarmHostDuringOutage(t, false) })
+	t.Run("store read blocks", func(t *testing.T) { checkSwarmHostDuringOutage(t, true) })
+}
+
+func checkSwarmHostDuringOutage(t *testing.T, blockRead bool) {
+	t.Helper()
+	resume := make(chan struct{})
+	release := sync.OnceFunc(func() { close(resume) })
+	defer release()
+	entered := make(chan struct{})
+	started := sync.OnceFunc(func() { close(entered) })
+
+	var offline, hostChanged atomic.Bool
+	panes := func(context.Context) swarmPaneObservation {
+		status := "working"
+		if hostChanged.Load() {
+			status = "idle"
+		}
+		return swarmPaneObservation{Status: "ok", Panes: map[string]swarmPane{"a": {AgentStatus: status}}}
+	}
+	s := newSwarmTestServer(t, nil, "fixture", panes)
+	s.server.panes = newSwarmPaneLoop(panes, time.Millisecond, time.Minute)
+	s.server.windows = newSwarmWindowLoop(func(context.Context) swarmWindowObservation {
+		used := int64(100)
+		if hostChanged.Load() {
+			used = 20
+		}
+		return swarmWindowObservation{Status: "ok", Windows: map[string]swarmWindow{"a": {UsedTokens: used}}}
+	}, time.Millisecond, time.Minute)
+	reads := &swarmScriptedReads{next: func(call int, req core.SwarmStreamRequest) (core.SwarmStreamRead, error) {
+		if offline.Load() {
+			started()
+			if !blockRead {
+				return core.SwarmStreamRead{}, errors.New("store unavailable")
+			}
+			<-resume
+		}
+		return core.SwarmStreamRead{Cursor: "last-good", Snapshot: swarmScriptedSnapshot(1)}, nil
+	}}
+	s.server.reads = reads
+	s.login()
+	conn := s.stream("alpha", "", nil)
+	defer conn.close()
+	conn.until(t, "tick")
+	offline.Store(true)
+	<-entered
+	duringOutage := "fault"
+	if blockRead {
+		duringOutage = "host"
+	}
+	conn.until(t, duringOutage)
+	blockedCount := len(reads.cursors())
+	hostChanged.Store(true)
+
+	var gotPane, gotWindow bool
+	for i := 0; i < 40; i++ {
+		heartbeat, frames := conn.until(t, duringOutage)
+		for _, f := range frames {
+			switch f.Event {
+			case "herdr":
+				gotPane = gotPane || strings.Contains(f.Data, `"agent_status":"idle"`)
+			case "window":
+				gotWindow = gotWindow || strings.Contains(f.Data, `"used_tokens":20`)
+			default:
+				t.Fatalf("unexpected %s frame during store outage", f.Event)
+			}
+			if f.ID != "" {
+				t.Fatalf("%s advanced cursor during store outage: %q", f.Event, f.ID)
+			}
+		}
+		if !gotPane || !gotWindow {
+			continue
+		}
+		if heartbeat.ID != "" || strings.Contains(heartbeat.Data, "db_observed_at") {
+			t.Fatalf("host update advanced store observation: %#v", heartbeat)
+		}
+		var payload struct {
+			Panes  swarmPaneView
+			Window swarmWindowView
+		}
+		if err := json.Unmarshal([]byte(heartbeat.Data), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Panes.ObservedAt.IsZero() || payload.Window.ObservedAt.IsZero() ||
+			payload.Panes.Status != "ok" || payload.Window.Status != "ok" {
+			t.Fatalf("missing current host observations: %s", heartbeat.Data)
+		}
+		break
+	}
+	if !gotPane || !gotWindow {
+		t.Fatal("host observations failed to update while the store was unavailable")
+	}
+	if blockRead && len(reads.cursors()) != blockedCount {
+		t.Fatal("started another store read while the first was blocked")
+	}
+	offline.Store(false)
+	release()
+	tick, _ := conn.until(t, "tick")
+	if tick.ID != "last-good" {
+		t.Fatalf("recovered on the wrong cursor: %s", tick.ID)
+	}
+	for _, cursor := range reads.cursors()[1:] {
+		if cursor != tick.ID {
+			t.Fatalf("outage changed the read cursor: %q", cursor)
+		}
 	}
 }
 
