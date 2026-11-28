@@ -78,6 +78,10 @@ transaction, and only while a browser is connected. It takes no lock.
 
 ### Which events belong to a campaign
 
+Member details and coordinator totals include all open ledger items held by
+the relevant members. The log links events to the first 500 ledger items in
+kind and key order and labels the links incomplete when that list is capped.
+
 An event is in the campaign's log when it was created after the campaign and
 one of these holds:
 
@@ -416,7 +420,9 @@ Delivery cancellation and preview require a campaign consumer. The delivery
 must belong to a campaign event or be live for an active member. Siblings in
 a preview give context about a shared event. Wait cancellation requires a
 waiting state and a campaign owner. A wait can be visible through its
-dependency even when that owner is outside the campaign. An out-of-scope
+dependency even when that owner is outside the campaign. The flow marks
+scope on each delivery and waiting wait so the page offers cancellation
+only where this campaign can act. The preview rechecks current state. An out-of-scope
 target and an unknown ID both return `NOT_FOUND` before confirmation fields
 are checked. A matching committed cancellation receipt can read back its
 terminal result if the recipient or wait owner still passes campaign scope.

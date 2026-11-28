@@ -617,6 +617,7 @@ class Fixture:
         self.check("sign-out in a second tab ends the first tab's stream", lambda: self.second_tab_signout(page), page)
         self.check("the context room shows the transcript fill, the near-limit mark and unknowns", lambda: self.context_cell(page), page)
         self.check("every member row says what it works on, by source", lambda: self.working_on(page), page)
+        self.check("open work survives the ledger history cap", lambda: self.open_ledger_work(page), page)
         self.check("the header counts enrolled, online and stopped apart", lambda: self.header_counts(page), page)
         self.check("waits on, oldest pending and waited on are separate facts", lambda: self.waiting_facts(page), page)
         self.check("needs-you rows: board opens the event, failed delivery names its request", lambda: self.needs_rows(page), page)
@@ -661,9 +662,31 @@ class Fixture:
                    lambda: self.signed_out_routes(page), page)
         self.check("a member that left gets no send control and the store refuses a send to it",
                    lambda: self.member_left(page), page, category="slice:CAIRN-833")
+        self.check("member details limits cancellation to in-scope recipients and wait owners",
+                   lambda: self.external_cancellation_controls(page), page)
         self.check("no forbidden control exists", lambda: self.forbidden(page), page)
         self.check("screenshots of the owner's views at 1280 px", lambda: self.view_shots(page, "desktop"), page, category="evidence")
         self.shot(page, "desktop-final")
+
+    def external_cancellation_controls(self, page):
+        outbound = self.publish("lead", "Outside recipient", self.to("bystander"), summary="Outside recipient")
+        inbound = self.publish("bystander", "Outside wait owner", self.to("lead"), summary="Outside wait owner")
+        self.wait("lead", "request_response", outbound["event_id"])
+        self.wait("bystander", "request_response", inbound["event_id"])
+        self.member_row(page, "lead").get_by_role("button", name="Details").click()
+        try:
+            body = page.locator("#detail-body")
+            for event, can_cancel in [(inbound, True), (outbound, False)]:
+                row = body.locator(f"ul.deliveries-list li[data-event='{event['event_id']}']")
+                self.expect(row).to_be_visible(timeout=15000)
+                self.expect(row.get_by_role("button", name="Cancel this recipient's delivery")).to_have_count(int(can_cancel))
+            waits = body.locator("h3", has_text="Waits").locator("xpath=following-sibling::ul[1]").locator("li")
+            for summary, can_cancel in [("Outside recipient", True), ("Outside wait owner", False)]:
+                row = waits.filter(has_text=summary)
+                self.expect(row).to_be_visible(timeout=15000)
+                self.expect(row.get_by_role("button", name="Cancel the wait")).to_have_count(int(can_cancel))
+        finally:
+            page.locator("#detail button.close").click()
 
     def stale_cursor(self, page):
         cursor = page.evaluate("window.cairnSwarmView.cursor()")
@@ -825,6 +848,30 @@ class Fixture:
         require("Reported by the session" in worker_c, "a worker with no assignment hides its reported task")
         worker_a = self.member_row(page, "worker_a").inner_text()
         require(worker_a.index("Ledger assignments") < worker_a.index("Reported by the session"), "assignments do not come first")
+
+    def open_ledger_work(self, page):
+        # The capped ledger is ordered by kind and key. Fill its first 500
+        # entries with closed assignments before slice-a and slice-b.
+        for index in range(500):
+            self.ledger("set", "--kind", "assignment", "--key", f"00-history-{index:03d}",
+                        "--status", "completed", "--summary", "Finished fixture work")
+        snapshot = self.snapshot()
+        require(snapshot.get("ledger_truncated") and not any(item["open"] for item in snapshot["ledger"]),
+                "the fixture did not push all open work beyond the history cap")
+        page.reload()
+        lead = self.member_row(page, "lead")
+        # Derive the expected number from the two workers' complete assignments.
+        assignments = sum(item["kind"] == "assignment" for m in snapshot["members"]
+                          if m.get("lead") == self.principal("lead") for item in m["holds"])
+        require(assignments > 0, "no open assignment in lead's subtree")
+        self.expect(page.locator("#flow-meta")).to_contain_text("ledger links may be incomplete")
+        self.expect(lead).to_contain_text(f"{assignments} assignment")
+        self.member_row(page, "worker_a").get_by_role("button", name="Details").click()
+        try:
+            held = page.locator("#detail-body h3", has_text="Ledger items held").locator("xpath=following-sibling::*[1]")
+            self.expect(held).to_contain_text("slice-a")
+        finally:
+            page.locator("#detail button.close").click()
 
     def header_counts(self, page):
         snapshot = self.snapshot()

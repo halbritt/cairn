@@ -876,9 +876,9 @@
         controls.append(el("span", { class: "muted not-head", text: "Not the next delivery in your inbox" }));
       }
     }
-    if (action.kind === "cancel_delivery" && delivery && state.campaign) {
+    if (action.kind === "cancel_delivery" && state.campaign && flow().deliveries.some((d) => d.delivery_id === delivery && d.cancel_in_scope && openDisplays.has(d.display || d.state))) {
       controls.append(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery) }));
-    } else if (action.kind === "cancel_wait" && refs.wait_id && state.campaign) {
+    } else if (action.kind === "cancel_wait" && state.campaign && waitByID(refs.wait_id)?.can_cancel) {
       controls.append(el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(refs.wait_id) }));
     } else if (action.kind === "answer_board") {
       // A message without causation is not an answer: the board is where it
@@ -1102,8 +1102,7 @@
       (state.snapshot && state.snapshot.campaign && state.snapshot.campaign.root_agent === member.member);
     if (coordinator) {
       const below = member.role === "root" || member.role_address ? members().filter((m) => m.active && m.member !== member.member) : subtreeOf(member);
-      const principals = new Set(below.map((m) => m.member));
-      const open = ((state.snapshot && state.snapshot.ledger) || []).filter((item) => item.open && principals.has(item.owner));
+      const open = below.flatMap((m) => m.holds || []);
       const count = (kind) => open.filter((item) => item.kind === kind).length;
       const reports = members().filter((m) => m.active && m.lead === member.member);
       if (below.length || open.length) {
@@ -1361,6 +1360,7 @@
     if (sectionError("flow")) metaParts.push("delivery states unavailable: " + sectionError("flow"));
     else metaParts.push(`waits feature ${currentFlow.waits_feature}`);
     if (currentFlow.deliveries_truncated) metaParts.push("delivery list truncated");
+    if (state.snapshot && state.snapshot.ledger_truncated) metaParts.push("ledger links may be incomplete");
     meta.textContent = metaParts.join(" · ");
 
     let events = eventsNewestFirst();
@@ -1514,7 +1514,7 @@
     body.append(el("p", { class: "meta" }, el("code", { text: principal }),
       member && member.session ? ` · ${presenceText(member.session).textContent}` : ""));
 
-    const ledger = ((state.snapshot && state.snapshot.ledger) || []).filter((item) => item.owner === principal && item.open);
+    const ledger = (member && member.holds) || [];
     body.append(el("h3", { text: "Ledger items held" }),
       ledger.length ? el("ul", { class: "plain" }, ledger.map((item) => el("li", {},
         el("span", { class: "tag", text: item.kind }), " ", el("strong", { text: item.item_key }), ` (${item.status}) `, linked(item.summary),
@@ -1530,7 +1530,7 @@
     const waits = flow().waits.filter((w) => w.owner === principal || (w.awaited || []).includes(principal));
     body.append(el("h3", { text: "Waits" }), waits.length ? el("ul", { class: "plain" }, waits.map((wait) => el("li", {},
       `${labelOf(wait.owner)} (${wait.state}) `, waitText(wait),
-      wait.state === "waiting" ? [" ", el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(wait.wait_id) })] : null)))
+      wait.can_cancel ? [" ", el("button", { type: "button", text: "Cancel the wait", onclick: () => cancelWait(wait.wait_id) })] : null)))
       : note(sectionError("flow") ? "unavailable: " + sectionError("flow") : `none (waits feature ${flow().waits_feature})`));
 
     const recent = eventsNewestFirst().filter((event) => involves(event, principal)).slice(0, 20);
@@ -1568,7 +1568,7 @@
       } else {
         controls.push(el("span", { class: "muted not-head", text: "Not the next delivery in your inbox" }));
       }
-    } else if (openDisplays.has(delivery.display || delivery.state)) {
+    } else if (delivery.cancel_in_scope && openDisplays.has(delivery.display || delivery.state)) {
       controls.push(el("button", { type: "button", text: "Cancel this recipient's delivery", onclick: () => cancelDelivery(delivery.delivery_id) }));
     }
     return controls;

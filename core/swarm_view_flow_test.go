@@ -127,7 +127,7 @@ func TestSwarmFlowQueueAndExactWaits(t *testing.T) {
 		if w.WaitID == groupWait.WaitUUID {
 			wanted, event = groupWait, group
 		}
-		if w.WaitID != wanted.WaitUUID || w.Owner != wanted.OwnerPrincipal || w.Predicate != wanted.PredicateKind ||
+		if !w.CanCancel || w.WaitID != wanted.WaitUUID || w.Owner != wanted.OwnerPrincipal || w.Predicate != wanted.PredicateKind ||
 			w.DependencyEventID != event.EventID || w.DependencySummary != event.Summary || !slices.Equal(w.Awaited, []string{worker.Inbox}) {
 			t.Fatalf("wrong wait or correlation-only join: %+v", w)
 		}
@@ -278,7 +278,7 @@ func TestSwarmFlowWaitAttributionAfterMemberJoins(t *testing.T) {
 			}
 			f.join(worker)
 			flow := swarmFlowRead(f)
-			if len(flow.Waits) != 2 || flow.Waits[0].WaitID != openWait.WaitUUID || flow.Waits[0].Predicate != predicate ||
+			if len(flow.Waits) != 2 || flow.Waits[0].CanCancel || flow.Waits[1].CanCancel || flow.Waits[0].WaitID != openWait.WaitUUID || flow.Waits[0].Predicate != predicate ||
 				flow.Waits[1].WaitID != memberWait.WaitUUID || flow.Waits[1].State != WaitStateSatisfied {
 				t.Fatalf("expected only the open outsider wait and the member's resolved wait: %+v", flow.Waits)
 			}

@@ -117,7 +117,7 @@ func swarmCancelPreviewTx(ctx context.Context, tx pgx.Tx, sc swarmScope, deliver
 		return SwarmCancelPreview{}, err
 	}
 	out.Cancellable = out.Refusal == nil
-	out.Siblings, err = swarmActionDeliveriesTx(ctx, tx, delivery.EventID, delivery.DeliveryID)
+	out.Siblings, err = swarmActionDeliveriesTx(ctx, tx, sc, delivery.EventID, delivery.DeliveryID)
 	if err != nil {
 		return SwarmCancelPreview{}, err
 	}
@@ -237,10 +237,7 @@ func swarmActionDeliveryTx(ctx context.Context, tx pgx.Tx, sc swarmScope, id str
 		return swarmActionDelivery{}, err
 	}
 	out, err := pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (swarmActionDelivery, error) {
-		var out swarmActionDelivery
-		var scanErr error
-		out.SwarmDelivery, scanErr = scanSwarmActionDeliveryFields(row, &out.eventInCampaign)
-		return out, scanErr
+		return scanSwarmScopedDelivery(row, sc)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, swarmDeliveryNotFound()
@@ -287,14 +284,25 @@ func scanSwarmActionDeliveryFields(row pgx.CollectableRow, extra ...any) (SwarmD
 	return d, err
 }
 
-func swarmActionDeliveriesTx(ctx context.Context, tx pgx.Tx, eventID, exceptID string) ([]SwarmDelivery, error) {
-	rows, err := tx.Query(ctx, `SELECT `+swarmActionDeliveryColumns+swarmActionDeliveryFrom+
-		` WHERE d.event_id=$1 AND d.delivery_id IS DISTINCT FROM NULLIF($2::text,'')::uuid
-		ORDER BY d.consumer,d.delivery_id`, eventID, exceptID)
+func swarmActionDeliveriesTx(ctx context.Context, tx pgx.Tx, sc swarmScope, eventID, exceptID string) ([]SwarmDelivery, error) {
+	rows, err := tx.Query(ctx, `SELECT `+swarmActionDeliveryColumns+", ("+swarmEventInCampaign+") IS TRUE"+swarmActionDeliveryFrom+
+		` WHERE e.repo=$1 AND d.event_id=$5 AND d.delivery_id IS DISTINCT FROM NULLIF($6::text,'')::uuid
+		ORDER BY d.consumer,d.delivery_id`, sc.Repo, sc.Principals, sc.Campaign.Campaign, sc.Campaign.CreatedAt, eventID, exceptID)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, scanSwarmActionDelivery)
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (SwarmDelivery, error) {
+		d, err := scanSwarmScopedDelivery(row, sc)
+		return d.SwarmDelivery, err
+	})
+}
+
+func scanSwarmScopedDelivery(row pgx.CollectableRow, sc swarmScope) (swarmActionDelivery, error) {
+	var d swarmActionDelivery
+	var err error
+	d.SwarmDelivery, err = scanSwarmActionDeliveryFields(row, &d.eventInCampaign)
+	d.CancelInScope = d.canCancel(sc)
+	return d, err
 }
 
 // The preview observes the same conditions as CancelWork without a row lock.
@@ -569,7 +577,7 @@ func (s *Store) swarmEventDetails(ctx context.Context, repo, campaign, eventID s
 	if err != nil {
 		return SwarmEventDetails{}, err
 	}
-	deliveries, err := swarmActionDeliveriesTx(ctx, tx, eventID, "")
+	deliveries, err := swarmActionDeliveriesTx(ctx, tx, sc, eventID, "")
 	if err != nil {
 		return SwarmEventDetails{}, err
 	}
