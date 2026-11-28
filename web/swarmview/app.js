@@ -382,7 +382,7 @@
             event.blocker ? el("span", { class: "tag flag", text: "blocker" }) : null,
             el("span", { class: "route", text: `${senderLabel(event)} → ${destinationLabel(event.to)}` }),
             el("span", { class: "muted" }, " · ", timeEl(event.created_at))),
-          el("p", { class: "summary" }, event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" })),
+          el("p", { class: "summary" }, summaryNode(event)),
           el("button", { type: "button", class: "secondary", text: "Open", onclick: () => openEvent(event.event_id) })));
       }
     }
@@ -808,7 +808,7 @@
     // The sender is always named; the summary only when the title lacks it.
     const named = event.summary && (need.title || "").includes(event.summary);
     return el("p", { class: "detail" }, `${event.kind} from ${senderLabel(event)} to ${destinationLabel(event.to)}`,
-      named ? "" : [": ", event.summary ? linked(event.summary) : el("span", { class: "muted", text: "no summary" })]);
+      named ? "" : [": ", summaryNode(event)]);
   }
 
   // Send goes only to current principals of an active campaign: the root,
@@ -890,9 +890,9 @@
       const target = refs.principal || need.subject;
       if (target && canWrite(target)) controls.append(el("button", { type: "button", text: `Write to ${labelOf(target)}`, onclick: () => openDetail(target, true) }));
     }
-    if (refs.event_id && (state.campaign || need.type === "operator_delivery")) {
-      controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id, { board: need.type === "board_question" }) }));
-    }
+    // Each page reads the events it shows: a campaign page with its
+    // campaign, the landing page with the empty campaign, its scope.
+    if (refs.event_id) controls.append(el("button", { type: "button", class: "secondary", text: "Open the event", onclick: () => openEvent(refs.event_id, { board: need.type === "board_question" }) }));
     if (action.command) controls.append(copyButton(action.command, "Copy command"));
     row.append(controls);
     return row;
@@ -1178,7 +1178,7 @@
     if (!memberFlow || !memberFlow.oldest_pending) return el("span", { class: "muted", text: "inbox empty" });
     const delivery = flow().deliveries.find((d) => d.delivery_id === memberFlow.oldest_pending);
     return el("span", {},
-      delivery ? [linked(delivery.summary || delivery.kind), ` from ${senderLabel(delivery)}, `, timeEl(delivery.created_at)] : memberFlow.oldest_pending,
+      delivery ? [summaryNode(delivery), ` from ${senderLabel(delivery)}, `, timeEl(delivery.created_at)] : memberFlow.oldest_pending,
       memberFlow.pending > 1 ? ` (${memberFlow.pending} pending)` : "");
   }
 
@@ -1401,6 +1401,24 @@
     return "";
   }
 
+  const systemSummaries = {
+    wait_notice: "Wait notice from Cairn", stopped_delivery_notice: "Notice about work sent to a stopped session",
+    overdue_checkpoint: "Overdue checkpoint notice", scheduled_event: "Scheduled message",
+  };
+
+  // The one-line summary of an event or a delivery. An empty summary becomes
+  // "Reply to: <request>" for a response whose cause is in the window, and
+  // fixed words from the system value for a message Cairn itself sent.
+  function summaryNode(item) {
+    if (!item) return el("span", { class: "muted", text: "no summary" });
+    if (item.summary) return linked(item.summary);
+    const cause = item.causation_id ? state.log.get(item.causation_id) : null;
+    if (cause) return el("span", {}, "Reply to: ", linked(cause.summary || cause.kind));
+    const system = systemOf(item);
+    if (system) return el("span", { class: "muted", text: systemSummaries[system] || "Message from Cairn" });
+    return el("span", { class: "muted", text: item.kind === "response" ? "reply to a request outside the window" : "no summary" });
+  }
+
   function senderLabel(item) {
     const system = systemOf(item);
     if (system) return `Cairn (${systemWords[system] || String(system).replace(/_/g, " ")})`;
@@ -1423,10 +1441,7 @@
       el("span", { class: "route", text: `${senderLabel(event)} → ${destinationLabel(event.to)}` }),
       event.system ? el("span", { class: "tag system", text: "from Cairn" }) : null,
       el("span", { class: "muted" }, " · ", timeEl(event.created_at))));
-    const cause = event.causation_id ? state.log.get(event.causation_id) : null;
-    row.append(el("p", { class: "summary" }, event.summary ? linked(event.summary)
-      : cause ? ["Reply to: ", linked(cause.summary || cause.kind)]
-      : el("span", { class: "muted", text: event.kind === "response" ? "reply to a request outside the window" : "no summary" })));
+    row.append(el("p", { class: "summary" }, summaryNode(event)));
     const states = el("div", { class: "deliveries", "aria-label": "Delivery state of each recipient" });
     if (deliveries.length) states.append(...deliveries.map((delivery) => deliveryChip(delivery, ownerSent)));
     else states.append(el("span", { class: "muted", text: sectionError("flow") ? "delivery state unavailable"
@@ -1509,7 +1524,7 @@
 
     const recent = eventsNewestFirst().filter((event) => involves(event, principal)).slice(0, 20);
     body.append(el("h3", { text: "Recent events" }), recent.length ? el("ul", { class: "plain recent" }, recent.map((event) => el("li", { dataset: { event: event.event_id } },
-      el("span", { class: "tag", text: event.kind }), ` ${senderLabel(event)} → ${destinationLabel(event.to)}: `, linked(event.summary || ""), " · ", timeEl(event.created_at), " ",
+      el("span", { class: "tag", text: event.kind }), ` ${senderLabel(event)} → ${destinationLabel(event.to)}: `, summaryNode(event), " · ", timeEl(event.created_at), " ",
       el("button", { type: "button", class: "secondary", text: "Open", onclick: () => openEvent(event.event_id) }))))
       : note("none in the window"));
 
@@ -1529,7 +1544,7 @@
     return el("ul", { class: "plain deliveries-list" }, list.map((delivery) => el("li", { dataset: { event: delivery.event_id } },
       deliveryChip(delivery, fromOwner(delivery)), " ",
       el("span", { class: "tag", text: delivery.kind }), " ",
-      linked(delivery.summary || ""), ` · ${incoming ? "from " + senderLabel(delivery) : "to " + labelOf(delivery.consumer)} · `, timeEl(delivery.created_at), " ",
+      summaryNode(delivery), ` · ${incoming ? "from " + senderLabel(delivery) : "to " + labelOf(delivery.consumer)} · `, timeEl(delivery.created_at), " ",
       deliveryControls(delivery))));
   }
 
@@ -1669,7 +1684,7 @@
 
   async function openEvent(eventID, hint = {}) {
     state.eventDetail = eventID;
-    const event = state.log.get(eventID);
+    const event = state.log.get(eventID) || (state.landingEvents && state.landingEvents.get(eventID)) || null;
     byID("event-title").textContent = event ? `${event.kind}: ${event.summary || event.event_id}` : "Event " + eventID;
     const body = byID("event-body");
     setChildren(body, note("Reading the event…"));
@@ -1696,7 +1711,7 @@
       if (event) body.append(eventEnvelope(event));
       const deliveries = deliveriesOf(eventID);
       body.append(el("h3", { text: "Recipients" }), deliveries.length ? el("ul", { class: "plain" }, deliveries.map((delivery) => el("li", {},
-        deliveryChip(delivery, fromOwner(event)), " ", deliveryControls(delivery)))) : note("no delivery in the snapshot"));
+        deliveryChip(delivery, fromOwner(event)), " ", deliveryControls(delivery)))) : note("no recipient recorded"));
       if (hint.board && error.code === "NOT_FOUND") {
         // A board question can predate the campaign: it is listed here, but its
         // event is not in this campaign's log, so the detail route does not open it.
@@ -1718,7 +1733,7 @@
       field("From", senderLabel(event)),
       field("To", destinationLabel(event.to)),
       field("Kind", [event.kind, event.action ? "action " + event.action : "", event.blocker ? "blocker" : ""].filter(Boolean).join(" · ")),
-      field("Summary", linked(event.summary || "")),
+      field("Summary", summaryNode(event)),
       field("Created", timeEl(event.created_at)),
       event.causation_id ? field("Answers", el("code", { text: event.causation_id })) : null,
       field("Event", el("code", { text: event.event_id || "" })));

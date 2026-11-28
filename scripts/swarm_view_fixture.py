@@ -326,6 +326,10 @@ class Fixture:
             self.events[f"operator_{n}"] = self.step(f"event addressed to the operator ({n})", lambda n=n: self.publish(
                 "worker_b", f"Owner note {n}.", {"type": "agent", "name": operator}, kind="notice", action="review",
                 summary=f"For the owner: flow reader note {n}"))
+        # A delivery to the owner that belongs to no campaign: the landing page owns it.
+        self.events["owner_outside"] = self.step("delivery to the owner outside any campaign", lambda: self.publish(
+            "bystander", "Outside any campaign.", {"type": "agent", "name": operator}, kind="notice",
+            action="review", summary="For the owner: bystander note outside the campaign"))
         self.step("hostile and long summary", lambda: self.publish("lead", "Long text.", self.to("worker_a"), kind="notice",
                                                                    action="none", summary=LONG_SUMMARY[:280]))
 
@@ -630,6 +634,9 @@ class Fixture:
                    lambda: self.acknowledge_head(page), page, category="slice:CAIRN-831")
         self.check("an owner notice is shown as sent, not yet seen", lambda: self.send_unseen(page), page,
                    category="slice:CAIRN-833")
+        self.check("a landing Needs you row opens its event with the empty campaign; no raw principal on the landing page",
+                   lambda: self.landing_event(page), page, category="waiting:landing-event")
+        self.check("empty summaries say what the message is, in the flow and in Details", lambda: self.empty_summaries(page), page)
         self.check("the landing page acknowledges a delivery outside any campaign; a campaign page says it is not the next",
                    lambda: self.landing_acknowledge(page), page, category="slice:CAIRN-833")
         self.check("a request Cairn's scheduler sent to the owner reads as from Cairn in Needs you, desktop and 390 px",
@@ -899,6 +906,29 @@ class Fixture:
         require(info.value.ok and (reply.get("delivery") or {}).get("state") == "handled", "acknowledge: " + json.dumps(reply)[:300])
         self.expect(page.locator(f"#needs li.need[data-need='{heads[0]['id']}']")).to_have_count(0, timeout=15000)
 
+    def no_null(self, locator, where):
+        lines = [line.strip() for line in locator.inner_text().splitlines()]
+        require("null" not in lines, f"{where} shows the text null")
+
+    def landing_event(self, page):
+        outside = self.events["owner_outside"]
+        landing = page.context.new_page()
+        try:
+            landing.goto(f"http://127.0.0.1:{self.port}/")
+            row = landing.locator(f"#landing-needs li.need[data-event='{outside['event_id']}']")
+            self.expect(row).to_have_count(1, timeout=20000)
+            require("local-uid:" not in landing.locator("#landing").inner_text(), "the landing page shows a raw principal")
+            with landing.expect_response(lambda r: "/api/swarm/event?" in r.url) as info:
+                row.locator("button", has_text="Open the event").click()
+            require("campaign=&" in info.value.url, "the landing page did not read the event with the empty campaign")
+            if not info.value.ok:
+                raise AssertionError("waiting: the event route refuses the landing scope: " + json.dumps(info.value.json())[:200])
+            body = landing.locator("#event-body")
+            self.expect(body).to_contain_text("Outside any campaign.", timeout=10000)
+            self.no_null(body, "the landing event panel")
+        finally:
+            landing.close()
+
     def landing_acknowledge(self, page):
         operator = self.report["operator_principal"]
         # Clear the campaign's own operator deliveries through the campaign page, head first.
@@ -913,8 +943,8 @@ class Fixture:
             page.locator("#confirm-keep").click()
             page.wait_for_timeout(2500)
         # A delivery to the operator that belongs to no campaign is now the head; a newer campaign one is not.
-        outside = self.publish("bystander", "Outside any campaign.", {"type": "agent", "name": operator}, kind="notice",
-                               action="review", summary="For the owner: bystander note outside the campaign")
+        outside = self.events["owner_outside"]
+        require(outside, "the seed has no delivery to the owner outside any campaign")
         inside = self.publish("worker_b", "Inside the campaign.", {"type": "agent", "name": operator}, kind="request",
                               summary="For the owner: flow reader request")
         row = page.locator(f"#needs li.need[data-event='{inside['event_id']}']")
@@ -938,6 +968,7 @@ class Fixture:
             require(landing.locator("#event-body button").count() == 0, "the landing event detail offers a write control")
             landing.locator("#event-detail button.close").click()
             outside_row.locator("button", has_text="Acknowledge").click()
+            self.no_null(landing.locator("#confirm-body"), "the landing acknowledge dialog")
             with landing.expect_response(lambda r: r.url.endswith("/api/swarm/action/acknowledge")) as info:
                 landing.locator("#confirm-go").click()
             sent = info.value.request.post_data_json or {}
@@ -959,6 +990,21 @@ class Fixture:
         require(info.value.ok and (reply.get("delivery") or {}).get("state") == "handled",
                 "campaign request acknowledge: " + json.dumps(reply)[:300])
         page.locator("#confirm-keep").click()
+
+    def empty_summaries(self, page):
+        wait_rows = page.locator("#flow li.event", has_text="Cairn (wait notice)")
+        require(wait_rows.count() >= 1, "no Cairn wait notice in the flow")
+        for text in wait_rows.all_inner_texts():
+            require("Wait notice from Cairn" in text and "no summary" not in text, "a Cairn wait notice has no words: " + text[:160])
+        page.locator(f"#agents .agent[data-member='{self.principal('lead')}'] button", has_text="Details").click()
+        try:
+            detail = page.locator("#detail")
+            responses = [t for t in detail.locator("li").all_inner_texts() if "response" in t.split("\n")[0] or " response " in t]
+            require(responses, "the lead's Details list no response")
+            for text in responses:
+                require("Reply to:" in text, "a response in Details has a blank summary: " + text[:160])
+        finally:
+            page.locator("#detail button.close").click()
 
     def copy_commands(self, page):
         env = dict(self.host.env, PATH=str(self.runtime) + os.pathsep + self.host.env.get("PATH", ""))
@@ -1150,6 +1196,7 @@ class Fixture:
             require(go.is_disabled(), "confirm is enabled before the preview has loaded")
             body = page.locator("#confirm-body")
             self.expect(body).to_contain_text("Recipient", timeout=15000)
+            self.no_null(body, "the cancel preview")
         finally:
             page.unroute("**/api/swarm/action/cancel-preview*")
         require(held == [200], f"the preview did not answer 200: {held}")
@@ -1259,6 +1306,7 @@ class Fixture:
         item = page.locator("#detail li", has_text="Coordinator asks worker_a to report back")
         item.locator("button", has_text="Cancel the wait").first.click()
         self.expect(page.locator("#confirm-body")).to_contain_text("stops waiting for")
+        self.no_null(page.locator("#confirm-body"), "the cancel-wait dialog")
         new = "root_" + str(int(old.split("_")[-1]) + 1) if old.split("_")[-1].isdigit() else "root_3"
         self.handoff_from(old, new)
         with page.expect_response(lambda r: r.url.endswith("/api/swarm/action/cancel-wait")) as info:
