@@ -254,6 +254,11 @@ root or an active member. Landing owns the delivery when neither rule assigns
 a campaign. A closed campaign can retain the event in its historical log. The
 delivery's Needs You row appears only on its current owner page.
 
+An operator-delivery row carries the optional `system` value when its event
+was published by Cairn. A missed-checkpoint row carries the source event's
+`system` value when it shows the publisher of a request or notice. Workstream
+checkpoints identify their workstream owner.
+
 | Row | When it appears | Owner action |
 | --- | --- | --- |
 | Board question | An unanswered request on `agent-board` within its lifetime. The event summary supplies the title when present. The card supplies its lifetime and whether a default was declared. A response with the request as its cause, including the board's recorded default, clears the row. | Open the event for context and answer on the Fernside board. |

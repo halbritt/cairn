@@ -60,6 +60,8 @@ type SwarmNeed struct {
 	// Subject is the principal the row is about: the sender of a question,
 	// the recipient of a failed delivery, the stalled session.
 	Subject string `json:"subject,omitempty"`
+	// System identifies a Cairn publication when the subject is its sender.
+	System string `json:"system,omitempty"`
 	// Since is omitted when the store cannot determine when the need began.
 	Since time.Time `json:"since,omitzero"`
 	// ExpiresAt is set for a board question with a lifetime. After it, the
@@ -535,7 +537,7 @@ func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx, sc
 		}
 	}
 	filter, args := sc.inboxEventFilter()
-	query := `SELECT d.delivery_id::text,e.event_id::text,e.publisher,e.created_at,COALESCE(e.summary,''),e.kind,e.record_id::text,e.version
+	query := `SELECT d.delivery_id::text,e.event_id::text,e.publisher,` + swarmSystemEvent + `,e.created_at,COALESCE(e.summary,''),e.kind,e.record_id::text,e.version
 		FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
 		WHERE ` + filter + ` AND d.consumer=$3 AND d.state IN ('pending','leased')`
 	rows, err := tx.Query(ctx, query, append(args, r.operator)...)
@@ -546,7 +548,7 @@ func (r *swarmNeedsReader) operatorDeliveries(ctx context.Context, tx pgx.Tx, sc
 		item := SwarmNeed{Type: SwarmNeedOperatorDelivery}
 		var deliveryID, kind string
 		var ref RecordVersionRef
-		if err := row.Scan(&deliveryID, &item.Refs.EventID, &item.Subject, &item.Since, &item.Title, &kind, &ref.RecordID, &ref.Version); err != nil {
+		if err := row.Scan(&deliveryID, &item.Refs.EventID, &item.Subject, &item.System, &item.Since, &item.Title, &kind, &ref.RecordID, &ref.Version); err != nil {
 			return item, err
 		}
 		item.ID = item.Type + ":" + deliveryID
@@ -851,6 +853,7 @@ func (r *swarmNeedsReader) timedOutWaits(ctx context.Context, tx pgx.Tx) ([]Swar
 type swarmMissedCheckpoint struct {
 	id, kind, key, sender, subscriber, sensitivity, eventID, noticeID  string
 	destinationType, destinationName, supersedes, correlation, summary string
+	system                                                             string
 	deadline, created                                                  time.Time
 	position                                                           int64
 	record                                                             *RecordVersionRef
@@ -858,12 +861,13 @@ type swarmMissedCheckpoint struct {
 
 func (r *swarmNeedsReader) missedCheckpoints(ctx context.Context, tx pgx.Tx) ([]SwarmNeed, error) {
 	rows, err := tx.Query(ctx, `SELECT oc.checkpoint_id::text,oc.source_kind,oc.source_key,oc.sender,oc.subscriber_consumer,oc.sensitivity,
-			oc.deadline_at,COALESCE(src.event_id::text,''),oc.notice_event_id::text,
-			COALESCE(src.destination_type,''),COALESCE(src.destination_name,''),COALESCE(src.notice_supersedes,''),COALESCE(src.correlation_id::text,''),
-			COALESCE(src.position,0),COALESCE(src.created_at,oc.source_updated_at),n.record_id::text,n.version,COALESCE(src.summary,'')
+			oc.deadline_at,COALESCE(e.event_id::text,''),oc.notice_event_id::text,
+			COALESCE(e.destination_type,''),COALESCE(e.destination_name,''),COALESCE(e.notice_supersedes,''),COALESCE(e.correlation_id::text,''),
+			COALESCE(e.position,0),COALESCE(e.created_at,oc.source_updated_at),n.record_id::text,n.version,COALESCE(e.summary,''),
+			CASE WHEN oc.source_kind IN ('notice','request') AND oc.sender=e.publisher THEN `+swarmSystemEvent+` ELSE '' END
 		FROM cairn.agent_overdue_checkpoint oc
 		JOIN cairn.agent_event n ON n.event_id=oc.notice_event_id AND n.repo=oc.repo
-		LEFT JOIN cairn.agent_event src ON src.event_id=oc.source_event_id AND src.repo=oc.repo
+		LEFT JOIN cairn.agent_event e ON e.event_id=oc.source_event_id AND e.repo=oc.repo
 		WHERE oc.repo=$1 AND oc.state='emitted'
 		AND (oc.sender=ANY($2::text[])) <> $3`, r.repo, r.principals, r.landing)
 	if err != nil {
@@ -874,7 +878,7 @@ func (r *swarmNeedsReader) missedCheckpoints(ctx context.Context, tx pgx.Tx) ([]
 		c.record = &RecordVersionRef{}
 		err := row.Scan(&c.id, &c.kind, &c.key, &c.sender, &c.subscriber, &c.sensitivity,
 			&c.deadline, &c.eventID, &c.noticeID, &c.destinationType, &c.destinationName, &c.supersedes, &c.correlation,
-			&c.position, &c.created, &c.record.RecordID, &c.record.Version, &c.summary)
+			&c.position, &c.created, &c.record.RecordID, &c.record.Version, &c.summary, &c.system)
 		return c, err
 	})
 	if err != nil {
@@ -890,7 +894,7 @@ func (r *swarmNeedsReader) missedCheckpoints(ctx context.Context, tx pgx.Tx) ([]
 			continue
 		}
 		item := SwarmNeed{ID: SwarmNeedMissedCheckpoint + ":" + c.id, Type: SwarmNeedMissedCheckpoint,
-			Title: "Missed checkpoint for " + swarmNeedEventTitle(c.summary, c.kind, c.key), Subject: c.sender, Since: c.deadline,
+			Title: "Missed checkpoint for " + swarmNeedEventTitle(c.summary, c.kind, c.key), Subject: c.sender, System: c.system, Since: c.deadline,
 			Action: SwarmNeedAction{Kind: "inspect", Label: "Open the overdue notice and follow up with the checkpoint sender"},
 			Refs:   SwarmNeedRefs{Principal: c.sender, EventID: c.noticeID, Record: c.record}}
 		if c.eventID != "" {

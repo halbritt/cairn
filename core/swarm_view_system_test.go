@@ -261,6 +261,87 @@ func TestSwarmSystemDeliveriesOutsideLogWindow(t *testing.T) {
 	}
 }
 
+func TestSwarmNeedsSystemPublisher(t *testing.T) {
+	ctx := context.Background()
+	f := newSwarmFixture(t, "swarm-needs-system")
+	_, worker := f.member("needs-system-worker")
+	_, outsider := f.session("needs-system-outsider")
+	operator := f.op.channel.Principal
+	campaignMessage := f.notice(f.rootView, operator)
+	landingMessage := f.notice(outsider, operator)
+
+	const topic = "swarm-needs-scheduled"
+	for _, name := range []string{topic, "request-overdue", "workstream-overdue"} {
+		if _, err := f.op.SetSubscription(ctx, SubscriptionRequest{RequestID: uuid.NewString(), Repo: f.repo, Topic: name, Active: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"request-overdue", "workstream-overdue"} {
+		if _, err := f.rootView.SetSubscription(ctx, SubscriptionRequest{RequestID: uuid.NewString(), Repo: f.repo, Topic: name, Active: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deadline := time.Now().UTC().Add(-5 * time.Minute)
+	if _, err := worker.SetWorkstreamStatus(ctx, SetWorkstreamStatusRequest{RequestID: uuid.NewString(), Repo: f.repo,
+		Stream: "system-needs-fixture", State: "active", NextCheckpoint: &deadline}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	scheduled, err := f.op.ScheduleEvent(ctx, ScheduleEventRequest{RequestID: uuid.NewString(),
+		NotBefore: time.Now().Add(-time.Second), GraceSeconds: 300, Publication: PublishEventRequest{
+			Repo: f.repo, Kind: "request", Ref: RecordVersionRef{f.source.RecordID, f.source.Version},
+			Destination: EventDestination{Type: "topic", Name: topic}, ExpectBy: &deadline,
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tick, err := f.op.TickSchedules(ctx, ScheduleTickRequest{Repo: f.repo})
+	if err != nil || len(tick.Occurrences) != 1 || tick.Occurrences[0].EventID != scheduled.OccurrenceID {
+		t.Fatalf("fire the schedule: %+v, %v", tick, err)
+	}
+	_, err = f.op.CreateWait(ctx, CreateWaitRequest{RequestID: uuid.NewString(), Collection: f.repo,
+		DependencyEventUUID: scheduled.OccurrenceID, PredicateKind: WaitPredicateRequestResponse, Deadline: time.Now().Add(time.Minute)}, swarmOperatorDestination)
+	requireCode(t, err, "AUTHORITY_DENIED")
+	overdue, err := f.op.SweepOverdueDeadlines(ctx, OverdueSweepRequest{Repo: f.repo, GraceSeconds: intPtr(0)})
+	if err != nil || len(overdue.Published) != 1 || overdue.EmittedItems != 2 {
+		t.Fatalf("emit one overdue notice for the scheduled request and workstream: %+v, %v", overdue, err)
+	}
+	alertID := overdue.Published[0].EventID
+	alert, err := f.op.GetSwarmEvent(ctx, f.repo, f.campaign, alertID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swarmRequireEventSystem(t, alert.Event, "overdue_checkpoint")
+	if len(alert.Deliveries) != 1 || alert.Deliveries[0].Consumer != f.root.Inbox {
+		t.Fatalf("overdue sweep should deliver only to the subscribed agent inbox: %+v", alert.Deliveries)
+	}
+
+	checkNeed := func(needs SwarmNeedsYou, rowType, eventID, subject, system string) SwarmNeed {
+		t.Helper()
+		for _, item := range needs.Items {
+			if item.Type != rowType || item.Refs.EventID != eventID {
+				continue
+			}
+			if item.Subject != subject || item.System != system {
+				t.Fatalf("needs-you %s subject=%q system=%q, want %q and %q", item.ID, item.Subject, item.System, subject, system)
+			}
+			swarmRequireSystemJSON(t, item, system)
+			return item
+		}
+		t.Fatalf("missing %s for %s: %+v", rowType, eventID, needs)
+		return SwarmNeed{}
+	}
+	landing := swarmNeedsTestLanding(f)
+	checkNeed(landing, SwarmNeedOperatorDelivery, scheduled.OccurrenceID, operator, "scheduled_event")
+	checkNeed(landing, SwarmNeedOperatorDelivery, landingMessage.EventID, landingMessage.From, "")
+	missed := checkNeed(landing, SwarmNeedMissedCheckpoint, alertID, operator, "scheduled_event")
+	if len(missed.Refs.EventIDs) != 2 || missed.Refs.EventIDs[1] != scheduled.OccurrenceID {
+		t.Fatalf("missed checkpoint lacks its scheduled source event: %+v", missed.Refs)
+	}
+	campaign := swarmNeedsTestSnapshot(f)
+	checkNeed(campaign, SwarmNeedOperatorDelivery, campaignMessage.EventID, campaignMessage.From, "")
+	checkNeed(campaign, SwarmNeedMissedCheckpoint, alertID, worker.channel.Principal, "")
+}
+
 func swarmRequireEventSystem(t *testing.T, event SwarmEvent, want string) {
 	t.Helper()
 	if event.System != want {
